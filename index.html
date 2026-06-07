@@ -1671,13 +1671,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
         <div class="form-group"><label class="form-label">Data<span>*</span></label><input type="date" id="l-data" style="width:100%"></div>
         <div class="form-group"><label class="form-label">Status<span>*</span></label><select id="l-status" style="width:100%"><option value="A Receber">A Receber</option><option value="Recebido">Recebido</option></select></div>
         <div class="form-group full"><label class="form-label">Plano de Contas<span>*</span></label>
-          <select id="l-plano" style="width:100%">
-            <optgroup label="3. RECEITAS"><option>3.1 Receita de Vendas</option><option>3.2 Outras Receitas</option><option>3.3 Recebimento de Juros</option></optgroup>
-            <optgroup label="4. CUSTOS VARIÁVEIS"><option>4.1 Custos Tributários / Financeiros</option><option>4.2 Custos com Fornecedores</option><option>4.3 Custos com Embalagens</option><option>4.4 Transporte de Mercadoria</option><option>4.5 Custo com Vendas</option><option>4.6 Outros Custos Variáveis</option></optgroup>
-            <optgroup label="5. DESPESAS FIXAS"><option>5.1 Despesas Financeiras</option><option>5.2 Despesas Administrativas</option><option>5.3 Despesas com Pessoal</option><option>5.4 Materiais e Equipamentos</option><option>5.5 Despesas com Veículos</option><option>5.8 Outros</option></optgroup>
-            <optgroup label="6. INVESTIMENTOS"><option>6.1 Marketing</option><option>6.2 Bens Materiais</option><option>6.3 Desenvolvimento Empresarial</option><option>6.4 Outros Investimentos</option></optgroup>
-            <optgroup label="7. NÃO OPERACIONAIS"><option>7.1 Entradas não Operacionais</option><option>7.2 Saídas não Operacionais</option></optgroup>
-          </select>
+          <select id="l-plano" style="width:100%"></select>
         </div>
         <div class="form-group" id="lg-cli"><label class="form-label">Cliente</label><input type="text" id="l-cliente" placeholder="Nome do cliente" style="width:100%"></div>
         <div class="form-group" id="lg-for" style="display:none"><label class="form-label">Fornecedor</label><input type="text" id="l-fornecedor" placeholder="Nome do fornecedor" style="width:100%"></div>
@@ -3908,6 +3902,29 @@ function renderPag(prefix,total,tp,pkey){
 }
 
 // ============================================================
+// POPULAR SELECT DE PLANO DE CONTAS DINAMICAMENTE
+// ============================================================
+function popularSelectPlano(){
+  const selPlano = document.getElementById('l-plano');
+  if(!selPlano) return;
+  
+  let html = '';
+  PLANO_DATA.forEach(grupo => {
+    // Agrupa as opções por seção
+    const opcoes = grupo.itens
+      .filter(it => it.l >= 1) // Apenas níveis 1 e 2 (não o nível 0)
+      .map(it => `<option value="${it.c} ${it.n}">${'  '.repeat(it.l - 1)}${it.c} ${it.n}</option>`)
+      .join('');
+    
+    if(opcoes){
+      html += `<optgroup label="${grupo.g}">${opcoes}</optgroup>`;
+    }
+  });
+  
+  selPlano.innerHTML = html;
+}
+
+// ============================================================
 // MODAL LANÇAMENTO
 // ============================================================
 let repTipo='unico';
@@ -3971,6 +3988,9 @@ function setLancTipo(t){
 }
 
 function abrirModalLancamento(tipo=null,idx=null){
+  // Popular o select de plano de contas dinamicamente
+  popularSelectPlano();
+  
   lancEditIdx=idx;
   const t=tipo||lancTipo||'receber';
   setLancTipo(t);
