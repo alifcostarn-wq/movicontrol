@@ -2011,35 +2011,60 @@ function calcDRE(modo){
   const lc=gd('sf_lancamentos');
   const d={};
   DRE_IDS.forEach(id=>d[id]=Array(12).fill(0));
+
+  // Mapeamento: código exato (extraído do início do plano) → id DRE
+  // Ordem importa: mais específico primeiro para evitar double-count
+  const mp=[
+    ['3.1.1','rec1_1'],['3.1.2','rec1_2'],['3.1.3','rec1_3'],['3.1.99','rec1_99'],
+    ['3.1','rec1'],['3.2','rec2'],['3.3','rec3'],
+    ['4.1','cv1'],['4.2','cv2'],['4.3','cv3'],['4.4','cv4'],['4.5','cv5'],['4.6','cv5'],
+    ['5.1','df1'],['5.2','df2'],['5.3','df3'],['5.4','df4'],['5.5','df5'],['5.8','df5'],
+    ['6.1','inv1'],['6.2','inv2'],['6.3','inv3'],['6.4','inv3'],
+    ['7.1','nop1'],['7.2','nop2'],
+  ];
+
   lc.forEach(l=>{
     if(!l.data)return;
     const m=parseInt(l.data.split('-')[1])-1;
     if(m<0||m>11)return;
 
-    const isRec = l.tipo==='receber';
-    const isPag = l.tipo==='pagar';
-    const statusOk = l.status==='Recebido'||l.status==='Pago';
+    const statusOk   = l.status==='Recebido'||l.status==='Pago';
     const statusPrev = l.status==='A Receber'||l.status==='A Pagar';
 
-    if(modo==='realizado' && !statusOk) return;
+    if(modo==='realizado' && !statusOk)   return;
     if(modo==='previsto'  && !statusPrev) return;
 
-    // Valor correto por modo e tipo
+    // Detecta tipo pelo status quando o campo tipo estiver ausente
+    let isRec;
+    if(l.tipo) {
+      isRec = l.tipo==='receber';
+    } else {
+      isRec = l.status==='A Receber'||l.status==='Recebido'||(l.aReceber>0||l.recebido>0);
+    }
+
+    // Valor correto por modo
     let v=0;
     if(modo==='realizado'){
       v = isRec ? (l.recebido||0) : (l.pago||0);
     } else if(modo==='previsto'){
       v = isRec ? (l.aReceber||0) : (l.aPagar||0);
     } else {
-      // todos: usa o que tiver preenchido
-      v = isRec ? ((l.recebido||0)+(l.aReceber||0)) : ((l.pago||0)+(l.aPagar||0));
+      v = isRec
+        ? ((l.recebido||0)+(l.aReceber||0))
+        : ((l.pago||0)+(l.aPagar||0));
     }
     if(!v) return;
 
-    const pl=l.plano||'';
-    const mp={'3.1':'rec1','3.2':'rec2','3.3':'rec3','4.1':'cv1','4.2':'cv2','4.3':'cv3','4.4':'cv4','4.5':'cv5','5.1':'df1','5.2':'df2','5.3':'df3','5.4':'df4','5.5':'df5','6.1':'inv1','6.2':'inv2','6.3':'inv3','7.1':'nop1','7.2':'nop2','3.1.1':'rec1_1','3.1.2':'rec1_2','3.1.3':'rec1_3','3.1.99':'rec1_99'};
-    Object.entries(mp).forEach(([c,eid])=>{if(pl.startsWith(c))d[eid][m]+=v;});
+    // Extrai o código numérico do plano (ex: "3.1 Receita de Vendas" → "3.1")
+    const pl = (l.plano||'').trim();
+    const cod = pl.split(' ')[0]; // pega só o código antes do espaço
+
+    // Encontra o id mais específico que bate exatamente
+    for(const [c,eid] of mp){
+      if(cod===c){ d[eid][m]+=v; break; }
+    }
   });
+
   const s=(p,ch)=>{for(let m=0;m<12;m++)d[p][m]=ch.reduce((x,c)=>x+(d[c]?.[m]||0),0);};
   s('rec1',['rec1_1','rec1_2','rec1_3','rec1_99']);
   s('rec',['rec1','rec2','rec3']);
