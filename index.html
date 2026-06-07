@@ -653,7 +653,52 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
 .bv-atrasado{background:var(--danger-bg);color:var(--danger)}.bv-hoje{background:var(--info-bg);color:var(--info)}.bv-semana{background:var(--warn-bg);color:var(--warn)}.bv-futuro{background:var(--surface2);color:var(--text3)}.bv-pago{background:var(--accent2);color:var(--accent)}
 .filtros-bar,.filtros-periodo{display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap}
 
-/* ======== ENDIVIDAMENTO — PAINEL AMPLIADO ======== */
+/* ======== SCORE DE SAÚDE FINANCEIRA ======== */
+.score-widget{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:22px 24px;margin-bottom:22px;
+  display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:start;
+}
+.score-gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;min-width:160px}
+.score-gauge-svg{width:160px;height:90px;overflow:visible}
+.score-gauge-val{font-family:'DM Mono',monospace;font-size:38px;font-weight:700;line-height:1;margin-top:-6px;letter-spacing:-1px}
+.score-gauge-label{font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:4px 14px;border-radius:20px}
+.score-gauge-mes{font-size:10px;color:var(--text3);margin-top:2px}
+/* cores por nível */
+.score-critico .score-gauge-val{color:#C23B2A}
+.score-critico .score-gauge-label{background:var(--danger-bg);color:var(--danger)}
+.score-alerta .score-gauge-val{color:#C9850A}
+.score-alerta .score-gauge-label{background:var(--warn-bg);color:var(--warn)}
+.score-atencao .score-gauge-val{color:#8A6200}
+.score-atencao .score-gauge-label{background:#FDF6E3;color:#8A6200}
+.score-bom .score-gauge-val{color:var(--info)}
+.score-bom .score-gauge-label{background:var(--info-bg);color:var(--info)}
+.score-excelente .score-gauge-val{color:var(--accent)}
+.score-excelente .score-gauge-label{background:var(--accent2);color:var(--accent)}
+
+.score-right{flex:1}
+.score-title{font-size:13px;font-weight:700;margin-bottom:2px}
+.score-subtitle{font-size:11px;color:var(--text3);margin-bottom:16px}
+.score-criterios{display:flex;flex-direction:column;gap:8px}
+.score-crit-item{display:grid;grid-template-columns:18px 1fr auto auto;align-items:center;gap:8px}
+.score-crit-icon{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0}
+.sci-ok{background:var(--accent2);color:var(--accent)}
+.sci-warn{background:var(--warn-bg);color:var(--warn)}
+.sci-bad{background:var(--danger-bg);color:var(--danger)}
+.score-crit-label{font-size:11.5px;color:var(--text2)}
+.score-crit-val{font-size:10.5px;font-family:'DM Mono',monospace;font-weight:600;text-align:right;white-space:nowrap}
+.score-crit-pts{font-size:9.5px;padding:1px 7px;border-radius:10px;font-weight:700;white-space:nowrap}
+.pts-ok{background:var(--accent2);color:var(--accent)}
+.pts-warn{background:var(--warn-bg);color:var(--warn)}
+.pts-bad{background:var(--danger-bg);color:var(--danger)}
+.score-crit-track{grid-column:2/-1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:-4px}
+.score-crit-fill{height:100%;border-radius:2px;transition:width 0.8s cubic-bezier(.4,0,.2,1)}
+.score-tip{margin-top:14px;padding:10px 13px;background:var(--surface2);border-radius:8px;border-left:3px solid;font-size:11.5px;color:var(--text2);line-height:1.5}
+.score-tip.critico{border-color:var(--danger)}
+.score-tip.alerta{border-color:var(--warn)}
+.score-tip.atencao{border-color:#C9850A}
+.score-tip.bom{border-color:var(--info)}
+.score-tip.excelente{border-color:var(--accent)}
 .divida-panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:22px}
 .divida-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
 .divida-panel-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
@@ -979,6 +1024,11 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
     <button class="nav-item" data-page="planejamento" onclick="navTo('planejamento',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       Planejamento Financeiro
+    </button>
+    <div class="nav-section">Análises</div>
+    <button class="nav-item" data-page="analises" onclick="navTo('analises',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M6 20V10M12 20V4M18 20v-8"/></svg>
+      Saúde Financeira
     </button>
     <div class="nav-section">Cadastros</div>
     <button class="nav-item" data-page="clientes" onclick="navTo('clientes',this)">
@@ -1551,6 +1601,24 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
       </div>
     </div>
 
+    <!-- ====== ANÁLISES — SAÚDE FINANCEIRA ====== -->
+    <div class="page" id="page-analises">
+      <div class="score-widget" id="score-widget">
+        <div class="score-gauge-wrap" id="score-gauge-wrap">
+          <svg class="score-gauge-svg" id="score-svg" viewBox="0 0 160 90"></svg>
+          <div class="score-gauge-val" id="score-val">—</div>
+          <div class="score-gauge-label" id="score-label">Calculando...</div>
+          <div class="score-gauge-mes" id="score-mes"></div>
+        </div>
+        <div class="score-right">
+          <div class="score-title">Score de Saúde Financeira</div>
+          <div class="score-subtitle">Análise automática da situação financeira do mês atual</div>
+          <div class="score-criterios" id="score-criterios"></div>
+          <div class="score-tip" id="score-tip"></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </main>
 
@@ -1777,6 +1845,7 @@ const PAGE_META={
   planejamento:{title:'Planejamento Financeiro',sub:'Metas previstas vs. realizadas'},
   clientes:{title:'Clientes',sub:'Cadastro de clientes'},
   fornecedores:{title:'Fornecedores',sub:'Cadastro de fornecedores'},
+  analises:{title:'Análises — Saúde Financeira',sub:'Score e diagnóstico financeiro do mês atual'},
   bancos:{title:'Contas Bancárias',sub:'Gestão de contas, extratos e transferências'},
   plano:{title:'Plano de Contas',sub:'Estrutura hierárquica de contas'},
 };
@@ -1799,7 +1868,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML='<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML='';
   // Render da página
-  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos};
+  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos};
   renders[page]?.();
   atualizarBadges();
 }
@@ -2815,6 +2884,181 @@ function sortCP(col){
 function diasAtraso(data){
   const d=new Date((data||hoje())+'T00:00:00'),h=new Date(hoje()+'T00:00:00');
   return Math.floor((h-d)/86400000);
+}
+
+function renderAnalises(){
+  const lc=gd('sf_lancamentos');
+  renderScoreSaude(lc);
+}
+
+function renderScoreSaude(lc){
+  const mesStr=hoje().slice(0,7);
+
+  // ---- Dados do mês atual ----
+  const mesLanc=lc.filter(l=>(l.data||'').startsWith(mesStr));
+
+  // Receita realizada no mês (status Recebido)
+  const recMes=mesLanc.filter(l=>l.status==='Recebido').reduce((s,l)=>s+(l.recebido||0),0);
+  // A Receber previsto no mês
+  const aRecMes=mesLanc.filter(l=>l.status==='A Receber').reduce((s,l)=>s+(l.aReceber||0),0);
+  // Total receita (recebido + a receber no mês)
+  const totEntradaMes=recMes+aRecMes;
+
+  // Despesas pagas no mês
+  const despPagas=mesLanc.filter(l=>l.status==='Pago').reduce((s,l)=>s+(l.pago||0),0);
+  // Despesas a pagar no mês
+  const despAPagar=mesLanc.filter(l=>l.status==='A Pagar').reduce((s,l)=>s+(l.aPagar||0),0);
+  const totDespMes=despPagas+despAPagar;
+
+  // Contas atrasadas (total geral, não só do mês)
+  const h=hoje();
+  const atrasadas=lc.filter(l=>l.status==='A Pagar'&&(l.data||'')<h);
+  const totAtrasado=atrasadas.reduce((s,l)=>s+(l.aPagar||0),0);
+  const pendentes=lc.filter(l=>l.status==='A Pagar'&&l.aPagar>0);
+  const totPend=pendentes.reduce((s,l)=>s+(l.aPagar||0),0);
+
+  // ---- Critérios e pontuação ----
+  // 1. Cobertura de despesas (receita vs despesa do mês) — 0 a 30 pts
+  const cobRatio=totDespMes>0?(totEntradaMes/totDespMes):1;
+  let ptsCob=0,corCob='ok';
+  if(cobRatio>=1.5){ptsCob=30;corCob='ok';}
+  else if(cobRatio>=1.2){ptsCob=22;corCob='ok';}
+  else if(cobRatio>=1.0){ptsCob=15;corCob='warn';}
+  else if(cobRatio>=0.7){ptsCob=7;corCob='bad';}
+  else{ptsCob=0;corCob='bad';}
+
+  // 2. Índice de atraso (atrasado / total pendente) — 0 a 25 pts
+  const indAtraso=totPend>0?(totAtrasado/totPend):0;
+  let ptsAtr=0,corAtr='ok';
+  if(indAtraso===0){ptsAtr=25;corAtr='ok';}
+  else if(indAtraso<=0.1){ptsAtr=18;corAtr='ok';}
+  else if(indAtraso<=0.25){ptsAtr=10;corAtr='warn';}
+  else if(indAtraso<=0.5){ptsAtr=4;corAtr='bad';}
+  else{ptsAtr=0;corAtr='bad';}
+
+  // 3. Margem líquida do mês (resultado / receita) — 0 a 25 pts
+  const resultado=totEntradaMes-totDespMes;
+  const margem=totEntradaMes>0?(resultado/totEntradaMes):0;
+  let ptsMarg=0,corMarg='ok';
+  if(margem>=0.2){ptsMarg=25;corMarg='ok';}
+  else if(margem>=0.1){ptsMarg=18;corMarg='ok';}
+  else if(margem>=0){ptsMarg=10;corMarg='warn';}
+  else if(margem>=-0.1){ptsMarg=4;corMarg='bad';}
+  else{ptsMarg=0;corMarg='bad';}
+
+  // 4. Velocidade de pagamento (pago / (pago + a pagar) no mês) — 0 a 20 pts
+  const velPag=totDespMes>0?(despPagas/totDespMes):1;
+  let ptsVel=0,corVel='ok';
+  if(velPag>=0.8){ptsVel=20;corVel='ok';}
+  else if(velPag>=0.6){ptsVel=13;corVel='warn';}
+  else if(velPag>=0.4){ptsVel=6;corVel='bad';}
+  else{ptsVel=0;corVel='bad';}
+
+  const score=ptsCob+ptsAtr+ptsMarg+ptsVel; // 0–100
+
+  // ---- Classificação ----
+  let nivel,labelTxt,tip,gaugeColor;
+  if(score>=85){
+    nivel='excelente';labelTxt='Excelente';gaugeColor='#2D8C57';
+    tip='✅ Empresa em ótima saúde financeira. As receitas cobrem com folga as despesas, não há atrasos relevantes e a margem está saudável. Continue assim!';
+  } else if(score>=65){
+    nivel='bom';labelTxt='Bom';gaugeColor='#1A5CA0';
+    tip='👍 Situação financeira boa, mas há margem para melhorar. Acompanhe de perto os pagamentos pendentes e tente aumentar a margem de resultado.';
+  } else if(score>=45){
+    nivel='atencao';labelTxt='Atenção';gaugeColor='#C9850A';
+    tip='⚠️ Atenção requerida. As despesas estão próximas ou superando as receitas do mês. Priorize recebimentos e revise os custos.';
+  } else if(score>=25){
+    nivel='alerta';labelTxt='Alerta';gaugeColor='#C9850A';
+    tip='🚨 Alerta financeiro! As despesas superam as receitas e há contas em atraso. Negocie prazo com fornecedores e acelere cobranças imediatamente.';
+  } else {
+    nivel='critico';labelTxt='Crítico';gaugeColor='#C23B2A';
+    tip='🔴 Situação crítica! A empresa está gastando muito mais do que recebe. Ação imediata necessária: corte custos não essenciais, renegocie dívidas e priorize entradas.';
+  }
+
+  // ---- Gauge SVG semicircular ----
+  const cx=80,cy=85,r=68;
+  const startAngle=-Math.PI,endAngle=0;
+  function polarToXY(angle){return{x:cx+r*Math.cos(angle),y:cy+r*Math.sin(angle)};}
+  const s=polarToXY(startAngle),e=polarToXY(endAngle);
+  // Trilha
+  const trackPath=`M ${s.x} ${s.y} A ${r} ${r} 0 0 1 ${e.x} ${e.y}`;
+  // Fill (score 0–100 → ângulo -π a 0)
+  const fillAngle=startAngle+(score/100)*Math.PI;
+  const fillEnd=polarToXY(fillAngle);
+  const largeArc=score>50?1:0;
+  const fillPath=`M ${s.x} ${s.y} A ${r} ${r} 0 ${largeArc} 1 ${fillEnd.x} ${fillEnd.y}`;
+  // Marcadores
+  const ticks=[0,25,50,75,100].map(v=>{
+    const a=startAngle+(v/100)*Math.PI;
+    const inner=polarToXY_r(cx,cy,r-10,a);
+    const outer=polarToXY_r(cx,cy,r+4,a);
+    return`<line x1="${inner.x}" y1="${inner.y}" x2="${outer.x}" y2="${outer.y}" stroke="#D0CEC8" stroke-width="1.5"/>`;
+  }).join('');
+  function polarToXY_r(ox,oy,rad,angle){return{x:ox+rad*Math.cos(angle),y:oy+rad*Math.sin(angle)};}
+
+  document.getElementById('score-svg').innerHTML=`
+    <path d="${trackPath}" fill="none" stroke="#E4E2DC" stroke-width="14" stroke-linecap="round"/>
+    <path d="${fillPath}" fill="none" stroke="${gaugeColor}" stroke-width="14" stroke-linecap="round" style="filter:drop-shadow(0 0 6px ${gaugeColor}44)"/>
+    ${ticks}
+    <text x="12" y="88" font-size="9" fill="#A8A59E" font-family="DM Mono,monospace">0</text>
+    <text x="138" y="88" font-size="9" fill="#A8A59E" font-family="DM Mono,monospace">100</text>`;
+
+  // ---- Aplica no DOM ----
+  const wrap=document.getElementById('score-widget');
+  wrap.className='score-widget score-'+nivel;
+  document.getElementById('score-val').textContent=score;
+  document.getElementById('score-label').textContent=labelTxt;
+  document.getElementById('score-mes').textContent=`Referência: ${MESES_EXT[new Date().getMonth()]} ${new Date().getFullYear()}`;
+
+  const fmtCrit=(cor,pts,maxPts)=>`<span class="score-crit-pts ${cor==='ok'?'pts-ok':cor==='warn'?'pts-warn':'pts-bad'}">${pts}/${maxPts}pts</span>`;
+  const iconCrit=(cor)=>`<div class="score-crit-icon ${cor==='ok'?'sci-ok':cor==='warn'?'sci-warn':'sci-bad'}">${cor==='ok'?'✓':cor==='warn'?'!':'✗'}</div>`;
+  const fillBar=(pct,cor)=>{
+    const c=cor==='ok'?'#2D8C57':cor==='warn'?'#C9850A':'#C23B2A';
+    return`<div class="score-crit-track"><div class="score-crit-fill" style="width:${pct}%;background:${c}"></div></div>`;
+  };
+
+  const cobPct=Math.round((ptsCob/30)*100);
+  const atrPct=Math.round((ptsAtr/25)*100);
+  const margPct=Math.round((ptsMarg/25)*100);
+  const velPct=Math.round((ptsVel/20)*100);
+  const cobLabel=totDespMes>0?`${(cobRatio*100).toFixed(0)}% cobertura`:'Sem despesas';
+  const atrLabel=`${(indAtraso*100).toFixed(0)}% em atraso`;
+  const margLabel=`${(margem*100).toFixed(1)}% de margem`;
+  const velLabel=`${(velPag*100).toFixed(0)}% pago`;
+
+  document.getElementById('score-criterios').innerHTML=`
+    <div class="score-crit-item">
+      ${iconCrit(corCob)}
+      <span class="score-crit-label">Cobertura de despesas <span style="font-size:10px;color:var(--text3)">(receita vs despesa do mês)</span></span>
+      <span class="score-crit-val" style="color:${corCob==='ok'?'var(--accent)':corCob==='warn'?'var(--warn)':'var(--danger)'}">${cobLabel}</span>
+      ${fmtCrit(corCob,ptsCob,30)}
+      ${fillBar(cobPct,corCob)}
+    </div>
+    <div class="score-crit-item">
+      ${iconCrit(corAtr)}
+      <span class="score-crit-label">Índice de atraso <span style="font-size:10px;color:var(--text3)">(contas vencidas / total)</span></span>
+      <span class="score-crit-val" style="color:${corAtr==='ok'?'var(--accent)':corAtr==='warn'?'var(--warn)':'var(--danger)'}">${atrLabel}</span>
+      ${fmtCrit(corAtr,ptsAtr,25)}
+      ${fillBar(atrPct,corAtr)}
+    </div>
+    <div class="score-crit-item">
+      ${iconCrit(corMarg)}
+      <span class="score-crit-label">Margem líquida do mês <span style="font-size:10px;color:var(--text3)">(resultado / receita)</span></span>
+      <span class="score-crit-val" style="color:${corMarg==='ok'?'var(--accent)':corMarg==='warn'?'var(--warn)':'var(--danger)'}">${margLabel}</span>
+      ${fmtCrit(corMarg,ptsMarg,25)}
+      ${fillBar(margPct,corMarg)}
+    </div>
+    <div class="score-crit-item">
+      ${iconCrit(corVel)}
+      <span class="score-crit-label">Velocidade de pagamento <span style="font-size:10px;color:var(--text3)">(pago / total a pagar no mês)</span></span>
+      <span class="score-crit-val" style="color:${corVel==='ok'?'var(--accent)':corVel==='warn'?'var(--warn)':'var(--danger)'}">${velLabel}</span>
+      ${fmtCrit(corVel,ptsVel,20)}
+      ${fillBar(velPct,corVel)}
+    </div>`;
+
+  const tipEl=document.getElementById('score-tip');
+  tipEl.className='score-tip '+nivel;
+  tipEl.textContent=tip;
 }
 
 function renderPainelEndividamento(lc){
