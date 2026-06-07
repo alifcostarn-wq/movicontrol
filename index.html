@@ -280,11 +280,12 @@ table.plan{width:100%;border-collapse:collapse;min-width:1000px}
 .pcv-input{width:100%;background:none;border:none;outline:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--info);text-align:right;padding:6px 7px;cursor:text;display:block}
 .pcv-input:focus{background:var(--info-bg)}
 
-/* ======== PLANO DE CONTAS ======== */
+/* ======== PLANO DE CONTAS — EDIÇÃO ======== */
 .plano-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px}
-.plano-row{display:flex;align-items:center;border-bottom:1px solid var(--bg)}
+.plano-row{display:flex;align-items:center;border-bottom:1px solid var(--bg);transition:background 0.1s}
 .plano-row:last-child{border-bottom:none}
 .plano-row:hover{background:var(--surface2)}
+.plano-row:hover .plano-actions{opacity:1}
 .plano-cod{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);padding:8px 12px;min-width:66px;border-right:1px solid var(--bg)}
 .plano-nome{font-size:12px;padding:8px 14px;flex:1}
 .plano-nome.b{font-weight:600}.plano-nome.s{padding-left:26px;color:var(--text2)}.plano-nome.s2{padding-left:40px;font-size:11px;color:var(--text3)}
@@ -292,7 +293,29 @@ table.plan{width:100%;border-collapse:collapse;min-width:1000px}
 .pbt-rec{color:var(--accent)}.pbt-custo{color:var(--danger)}.pbt-desp{color:var(--warn)}.pbt-inv{color:var(--info)}.pbt-nop{color:var(--text3)}
 .plano-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;margin-left:8px}
 .pb-rec{background:var(--accent2);color:var(--accent)}.pb-custo{background:var(--danger-bg);color:var(--danger)}.pb-desp{background:var(--warn-bg);color:var(--warn)}.pb-inv{background:var(--info-bg);color:var(--info)}.pb-nop{background:var(--surface2);color:var(--text2)}
-.plano-section-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:9px;display:flex;align-items:center}
+.plano-section-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.plano-actions{opacity:0;display:flex;align-items:center;gap:2px;padding-right:8px;transition:opacity 0.15s}
+.plano-act-btn{width:24px;height:24px;border-radius:5px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);transition:all 0.12s}
+.plano-act-btn:hover{background:var(--surface);color:var(--text)}
+.plano-act-btn.del:hover{background:var(--danger-bg);color:var(--danger)}
+.plano-section-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.plano-add-btn{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;padding:3px 8px;border-radius:6px;border:1px dashed var(--border);background:none;font-family:inherit;transition:all 0.12s}
+.plano-add-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent2)}
+
+/* Modal plano */
+.modal-plano-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:300;display:none;align-items:center;justify-content:center}
+.modal-plano-overlay.open{display:flex}
+.modal-plano{background:var(--surface);border-radius:14px;padding:28px;width:440px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.18)}
+.mp-title{font-size:15px;font-weight:600;margin-bottom:20px}
+.mp-field{margin-bottom:14px}
+.mp-label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:5px}
+.mp-input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--surface2);color:var(--text);outline:none;transition:border 0.12s}
+.mp-input:focus{border-color:var(--accent)}
+.mp-row{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
+.mp-cancel{padding:8px 18px;border-radius:7px;border:1px solid var(--border);background:none;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;color:var(--text2)}
+.mp-cancel:hover{background:var(--surface2)}
+.mp-save{padding:8px 20px;border-radius:7px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer}
+.mp-save:hover{background:#155030}
 
 /* ======== CONTAS PAGAR/RECEBER ======== */
 .resumo-rapido{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:22px}
@@ -610,7 +633,56 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
     </div>
 
     <!-- ====== PLANO DE CONTAS ====== -->
-    <div class="page" id="page-plano"><div id="plano-content"></div></div>
+    <div class="page" id="page-plano">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div>
+          <div style="font-size:13px;font-weight:600">Plano de Contas</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">Passe o mouse sobre uma linha para editar ou excluir</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="plano-search" placeholder="Buscar conta..." oninput="renderPlano()"
+            style="padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-family:'DM Sans',sans-serif;font-size:12px;background:var(--surface2);color:var(--text);outline:none;width:200px">
+        </div>
+      </div>
+      <div id="plano-content"></div>
+    </div>
+
+    <!-- MODAL PLANO DE CONTAS -->
+    <div class="modal-plano-overlay" id="modal-plano-overlay">
+      <div class="modal-plano">
+        <div class="mp-title" id="mp-title">Nova Conta</div>
+        <div class="mp-field">
+          <div class="mp-label">Grupo</div>
+          <select id="mp-grupo" class="mp-input" onchange="mpGrupoChange()">
+            <option value="0">RECEITAS</option>
+            <option value="1">CUSTOS VARIÁVEIS</option>
+            <option value="2">DESPESAS FIXAS</option>
+            <option value="3">INVESTIMENTOS</option>
+            <option value="4">NÃO OPERACIONAIS</option>
+          </select>
+        </div>
+        <div class="mp-field" id="mp-nivel-field">
+          <div class="mp-label">Nível</div>
+          <select id="mp-nivel" class="mp-input" onchange="mpNivelChange()">
+            <option value="0">Grupo (nível 0)</option>
+            <option value="1">Subcategoria (nível 1)</option>
+            <option value="2">Conta (nível 2)</option>
+          </select>
+        </div>
+        <div class="mp-field">
+          <div class="mp-label">Código <span style="color:var(--text3);font-weight:400">(opcional para nível 2)</span></div>
+          <input type="text" id="mp-cod" class="mp-input" placeholder="ex: 3.1, 501">
+        </div>
+        <div class="mp-field">
+          <div class="mp-label">Nome da Conta</div>
+          <input type="text" id="mp-nome" class="mp-input" placeholder="ex: 5.2 Despesas Administrativas">
+        </div>
+        <div class="mp-row">
+          <button class="mp-cancel" onclick="fecharModalPlano()">Cancelar</button>
+          <button class="mp-save" onclick="salvarPlano()">Salvar</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ====== CONTAS BANCÁRIAS ====== -->
     <div class="page" id="page-bancos">
@@ -1378,23 +1450,189 @@ function exportarCadastroCSV(tipo){
 }
 
 // ============================================================
-// PLANO DE CONTAS
+// PLANO DE CONTAS — EDITÁVEL
 // ============================================================
-const PLANO_DATA=[
-  {g:'RECEITAS',cls:'pb-rec',t:'rec',itens:[{c:'300',n:'RECEITA / FATURAMENTO',l:0},{c:'301',n:'3.1 Receita de Vendas',l:1},{c:'',n:'3.1.1 Vendas em Dinheiro',l:2},{c:'',n:'3.1.2 Vendas Cartões Débito',l:2},{c:'',n:'3.1.3 Vendas Cartões Crédito',l:2},{c:'',n:'3.1.5 Vendas em Boleto',l:2},{c:'302',n:'3.2 Outras Receitas',l:1},{c:'303',n:'3.3 Recebimento de Juros',l:1}]},
-  {g:'CUSTOS VARIÁVEIS',cls:'pb-custo',t:'custo',itens:[{c:'399',n:'CUSTOS VARIÁVEIS',l:0},{c:'401',n:'4.1 Custos Tributários / Financeiros',l:1},{c:'',n:'4.1.1 Simples Nacional',l:2},{c:'',n:'4.1.2 Taxas de Cartões',l:2},{c:'',n:'4.1.3 Taxas de Boleto',l:2},{c:'402',n:'4.2 Custos com Fornecedores',l:1},{c:'403',n:'4.3 Custos com Embalagens',l:1},{c:'404',n:'4.4 Transporte de Mercadoria',l:1},{c:'405',n:'4.5 Custo com Vendas',l:1},{c:'',n:'4.5.1 Comissão interna',l:2},{c:'',n:'4.5.2 Frete envio de produtos',l:2},{c:'406',n:'4.6 Outros Custos Variáveis',l:1}]},
-  {g:'DESPESAS FIXAS',cls:'pb-desp',t:'desp',itens:[{c:'500',n:'DESPESAS FIXAS',l:0},{c:'501',n:'5.1 Despesas Financeiras',l:1},{c:'502',n:'5.2 Despesas Administrativas',l:1},{c:'',n:'5.2.1 Telefone e Internet',l:2},{c:'',n:'5.2.3 Energia Elétrica',l:2},{c:'',n:'5.2.4 Aluguel e Condomínio',l:2},{c:'',n:'5.2.11 Contador',l:2},{c:'',n:'5.2.12 Mensalidade de Softwares',l:2},{c:'503',n:'5.3 Despesas com Pessoal',l:1},{c:'',n:'5.3.1 Salário de Funcionários',l:2},{c:'',n:'5.3.9 Pró-Labore',l:2},{c:'504',n:'5.4 Materiais e Equipamentos',l:1},{c:'505',n:'5.5 Despesas com Veículos',l:1},{c:'508',n:'5.8 Outros',l:1}]},
-  {g:'INVESTIMENTOS',cls:'pb-inv',t:'inv',itens:[{c:'600',n:'INVESTIMENTOS',l:0},{c:'601',n:'6.1 Marketing',l:1},{c:'',n:'6.1.3 Mídias / Propaganda',l:2},{c:'602',n:'6.2 Bens Materiais',l:1},{c:'603',n:'6.3 Desenvolvimento Empresarial',l:1},{c:'604',n:'6.4 Outros Investimentos',l:1}]},
-  {g:'NÃO OPERACIONAIS',cls:'pb-nop',t:'nop',itens:[{c:'700',n:'MOVIMENTAÇÕES NÃO OPERACIONAIS',l:0},{c:'701',n:'7.1 Entradas não Operacionais',l:1},{c:'',n:'7.1.1 Empréstimos obtidos',l:2},{c:'',n:'7.1.2 Capitalização dos sócios',l:2},{c:'702',n:'7.2 Saídas não Operacionais',l:1},{c:'',n:'7.2.1 Pagamento de Empréstimos',l:2},{c:'',n:'7.2.4 Distribuição de Lucros',l:2}]},
+let PLANO_DATA = gd('sf_plano') || [
+  {g:'RECEITAS',cls:'pb-rec',t:'rec',itens:[
+    {c:'300',n:'RECEITA / FATURAMENTO',l:0},
+    {c:'301',n:'3.1 Receita de Vendas',l:1},
+    {c:'',n:'3.1.1 Vendas em Dinheiro',l:2},
+    {c:'',n:'3.1.2 Vendas Cartões Débito',l:2},
+    {c:'',n:'3.1.3 Vendas Cartões Crédito',l:2},
+    {c:'',n:'3.1.5 Vendas em Boleto',l:2},
+    {c:'302',n:'3.2 Outras Receitas',l:1},
+    {c:'303',n:'3.3 Recebimento de Juros',l:1}
+  ]},
+  {g:'CUSTOS VARIÁVEIS',cls:'pb-custo',t:'custo',itens:[
+    {c:'399',n:'CUSTOS VARIÁVEIS',l:0},
+    {c:'401',n:'4.1 Custos Tributários / Financeiros',l:1},
+    {c:'',n:'4.1.1 Simples Nacional',l:2},
+    {c:'',n:'4.1.2 Taxas de Cartões',l:2},
+    {c:'',n:'4.1.3 Taxas de Boleto',l:2},
+    {c:'402',n:'4.2 Custos com Fornecedores',l:1},
+    {c:'403',n:'4.3 Custos com Embalagens',l:1},
+    {c:'404',n:'4.4 Transporte de Mercadoria',l:1},
+    {c:'405',n:'4.5 Custo com Vendas',l:1},
+    {c:'',n:'4.5.1 Comissão interna',l:2},
+    {c:'',n:'4.5.2 Frete envio de produtos',l:2},
+    {c:'406',n:'4.6 Outros Custos Variáveis',l:1}
+  ]},
+  {g:'DESPESAS FIXAS',cls:'pb-desp',t:'desp',itens:[
+    {c:'500',n:'DESPESAS FIXAS',l:0},
+    {c:'501',n:'5.1 Despesas Financeiras',l:1},
+    {c:'502',n:'5.2 Despesas Administrativas',l:1},
+    {c:'',n:'5.2.1 Telefone e Internet',l:2},
+    {c:'',n:'5.2.3 Energia Elétrica',l:2},
+    {c:'',n:'5.2.4 Aluguel e Condomínio',l:2},
+    {c:'',n:'5.2.11 Contador',l:2},
+    {c:'',n:'5.2.12 Mensalidade de Softwares',l:2},
+    {c:'503',n:'5.3 Despesas com Pessoal',l:1},
+    {c:'',n:'5.3.1 Salário de Funcionários',l:2},
+    {c:'',n:'5.3.9 Pró-Labore',l:2},
+    {c:'504',n:'5.4 Materiais e Equipamentos',l:1},
+    {c:'505',n:'5.5 Despesas com Veículos',l:1},
+    {c:'508',n:'5.8 Outros',l:1}
+  ]},
+  {g:'INVESTIMENTOS',cls:'pb-inv',t:'inv',itens:[
+    {c:'600',n:'INVESTIMENTOS',l:0},
+    {c:'601',n:'6.1 Marketing',l:1},
+    {c:'',n:'6.1.3 Mídias / Propaganda',l:2},
+    {c:'602',n:'6.2 Bens Materiais',l:1},
+    {c:'603',n:'6.3 Desenvolvimento Empresarial',l:1},
+    {c:'604',n:'6.4 Outros Investimentos',l:1}
+  ]},
+  {g:'NÃO OPERACIONAIS',cls:'pb-nop',t:'nop',itens:[
+    {c:'700',n:'MOVIMENTAÇÕES NÃO OPERACIONAIS',l:0},
+    {c:'701',n:'7.1 Entradas não Operacionais',l:1},
+    {c:'',n:'7.1.1 Empréstimos obtidos',l:2},
+    {c:'',n:'7.1.2 Capitalização dos sócios',l:2},
+    {c:'702',n:'7.2 Saídas não Operacionais',l:1},
+    {c:'',n:'7.2.1 Pagamento de Empréstimos',l:2},
+    {c:'',n:'7.2.4 Distribuição de Lucros',l:2}
+  ]},
 ];
+
+function savePlano() { sd('sf_plano', PLANO_DATA); }
+
 const pbtMap={rec:'pbt-rec',custo:'pbt-custo',desp:'pbt-desp',inv:'pbt-inv',nop:'pbt-nop'};
 const nivelLabel=['Grupo','Subcategoria','Conta'];
+const nivelCls=['b','s','s2'];
 
 function renderPlano(){
-  document.getElementById('plano-content').innerHTML=PLANO_DATA.map(g=>`
-    <div class="plano-section-title">${g.g}<span class="plano-badge ${g.cls}" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;margin-left:8px">${g.t.charAt(0).toUpperCase()+g.t.slice(1)}</span></div>
-    <div class="plano-card">${g.itens.map(it=>`<div class="plano-row"><div class="plano-cod">${it.c||''}</div><div class="plano-nome ${it.l===0?'b':it.l===2?'s2':'s'}">${it.n}</div><div class="plano-tipo ${pbtMap[g.t]}">${nivelLabel[it.l]}</div></div>`).join('')}</div>`).join('');
+  const q = (document.getElementById('plano-search')?.value||'').toLowerCase().trim();
+  const pbtMapBadge = {rec:'pb-rec',custo:'pb-custo',desp:'pb-desp',inv:'pb-inv',nop:'pb-nop'};
+  const tipLabel = {rec:'Receita',custo:'Custo',desp:'Despesa',inv:'Investimento',nop:'Não Op.'};
+
+  // SVG icons inline (sem FontAwesome pois o arquivo usa SVGs próprios)
+  const icoEdit = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11.5 2.5l2 2-8 8-2.5.5.5-2.5 8-8z"/></svg>`;
+  const icoDel  = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="2,4 14,4"/><path d="M5,4V2h6v2"/><path d="M6,7v5M10,7v5"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>`;
+  const icoAdd  = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="11" height="11"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>`;
+
+  document.getElementById('plano-content').innerHTML = PLANO_DATA.map((g, gi) => {
+    const filtrados = q
+      ? g.itens.filter(it => it.n.toLowerCase().includes(q) || (it.c||'').toLowerCase().includes(q))
+      : g.itens;
+    if (q && filtrados.length === 0) return '';
+
+    const rows = filtrados.map((it, ii) => {
+      // real index in g.itens
+      const ri = g.itens.indexOf(it);
+      return `<div class="plano-row">
+        <div class="plano-cod">${it.c||''}</div>
+        <div class="plano-nome ${nivelCls[it.l]}">${it.n}</div>
+        <div class="plano-tipo ${pbtMap[g.t]}">${nivelLabel[it.l]}</div>
+        <div class="plano-actions">
+          <button class="plano-act-btn" title="Editar" onclick="abrirModalPlano('edit',${gi},${ri})">${icoEdit}</button>
+          <button class="plano-act-btn del" title="Excluir" onclick="excluirContaPlano(${gi},${ri})">${icoDel}</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="plano-section-bar">
+        <div class="plano-section-title">
+          ${g.g}
+          <span class="plano-badge ${pbtMapBadge[g.t]}">${tipLabel[g.t]}</span>
+        </div>
+        <button class="plano-add-btn" onclick="abrirModalPlano('add',${gi})">${icoAdd} Adicionar conta</button>
+      </div>
+      <div class="plano-card">${rows}</div>`;
+  }).join('');
 }
+
+// ── Estado do modal ───────────────────────────────────────────
+let _mpModo = 'add', _mpGi = 0, _mpRi = null;
+
+function abrirModalPlano(modo, gi, ri) {
+  _mpModo = modo; _mpGi = gi; _mpRi = ri ?? null;
+  const overlay = document.getElementById('modal-plano-overlay');
+  const g = PLANO_DATA[gi];
+
+  document.getElementById('mp-grupo').value = gi;
+
+  if (modo === 'edit') {
+    const it = g.itens[ri];
+    document.getElementById('mp-title').textContent = 'Editar Conta';
+    document.getElementById('mp-nivel').value = it.l;
+    document.getElementById('mp-cod').value  = it.c || '';
+    document.getElementById('mp-nome').value = it.n;
+    document.getElementById('mp-grupo').disabled = true;
+    document.getElementById('mp-nivel').disabled  = true;
+  } else {
+    document.getElementById('mp-title').textContent = 'Nova Conta — ' + g.g;
+    document.getElementById('mp-nivel').value = '2';
+    document.getElementById('mp-cod').value  = '';
+    document.getElementById('mp-nome').value = '';
+    document.getElementById('mp-grupo').disabled = false;
+    document.getElementById('mp-nivel').disabled  = false;
+  }
+
+  overlay.classList.add('open');
+  setTimeout(() => document.getElementById('mp-nome').focus(), 80);
+}
+
+function fecharModalPlano() {
+  document.getElementById('modal-plano-overlay').classList.remove('open');
+}
+
+function mpGrupoChange() {
+  _mpGi = parseInt(document.getElementById('mp-grupo').value);
+}
+
+function mpNivelChange() {}
+
+function salvarPlano() {
+  const nome = document.getElementById('mp-nome').value.trim();
+  const cod  = document.getElementById('mp-cod').value.trim();
+  const nivel = parseInt(document.getElementById('mp-nivel').value);
+
+  if (!nome) { alert('Informe o nome da conta.'); return; }
+
+  if (_mpModo === 'add') {
+    PLANO_DATA[_mpGi].itens.push({ c: cod, n: nome, l: nivel });
+  } else {
+    const it = PLANO_DATA[_mpGi].itens[_mpRi];
+    it.c = cod;
+    it.n = nome;
+  }
+
+  savePlano();
+  fecharModalPlano();
+  renderPlano();
+}
+
+function excluirContaPlano(gi, ri) {
+  const it = PLANO_DATA[gi].itens[ri];
+  if (!confirm(`Excluir "${it.n}"?`)) return;
+  PLANO_DATA[gi].itens.splice(ri, 1);
+  savePlano();
+  renderPlano();
+}
+
+// Fechar modal clicando fora
+document.getElementById('modal-plano-overlay').addEventListener('click', function(e) {
+  if (e.target === this) fecharModalPlano();
+});
 
 // ============================================================
 // PAGINAÇÃO GENÉRICA
