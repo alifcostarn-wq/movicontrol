@@ -1324,6 +1324,13 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
           <button class="main-tab" id="ft-trimestral" onclick="setFluxoView('trimestral')">Trimestral</button>
           <button class="main-tab" id="ft-anual" onclick="setFluxoView('anual')">Anual</button>
         </div>
+        <!-- Toggle Realizado / Previsto / Todos -->
+        <div class="main-tabs" style="margin-bottom:0">
+          <button class="main-tab active" id="fm-realizado" onclick="setFluxoModo('realizado')">✅ Realizado</button>
+          <button class="main-tab" id="fm-previsto" onclick="setFluxoModo('previsto')">📅 Previsto</button>
+          <button class="main-tab" id="fm-todos" onclick="setFluxoModo('todos')">Todos</button>
+        </div>
+        <div id="fluxo-modo-desc" style="font-size:11px;color:var(--text3);padding:4px 10px;background:var(--surface2);border-radius:7px;border:1px solid var(--border)">Exibindo apenas lançamentos confirmados (Pago / Recebido)</div>
         <button class="btn" onclick="exportarDreCSV()" style="margin-left:auto">↓ Exportar CSV</button>
       </div>
       <div class="dre-wrap">
@@ -2000,7 +2007,7 @@ const DRE_STRUCT=[
 ];
 
 function calcDRE(modo){
-  // modo: 'realizado' | 'previsto' | undefined (todos)
+  // modo: 'realizado' | 'previsto' | undefined/null (todos)
   const lc=gd('sf_lancamentos');
   const d={};
   DRE_IDS.forEach(id=>d[id]=Array(12).fill(0));
@@ -2008,16 +2015,30 @@ function calcDRE(modo){
     if(!l.data)return;
     const m=parseInt(l.data.split('-')[1])-1;
     if(m<0||m>11)return;
-    // Filtro previsto/realizado
+
+    const isRec = l.tipo==='receber';
+    const isPag = l.tipo==='pagar';
+    const statusOk = l.status==='Recebido'||l.status==='Pago';
+    const statusPrev = l.status==='A Receber'||l.status==='A Pagar';
+
+    if(modo==='realizado' && !statusOk) return;
+    if(modo==='previsto'  && !statusPrev) return;
+
+    // Valor correto por modo e tipo
+    let v=0;
     if(modo==='realizado'){
-      if(l.status!=='Pago'&&l.status!=='Recebido')return;
+      v = isRec ? (l.recebido||0) : (l.pago||0);
     } else if(modo==='previsto'){
-      if(l.status!=='A Pagar'&&l.status!=='A Receber')return;
+      v = isRec ? (l.aReceber||0) : (l.aPagar||0);
+    } else {
+      // todos: usa o que tiver preenchido
+      v = isRec ? ((l.recebido||0)+(l.aReceber||0)) : ((l.pago||0)+(l.aPagar||0));
     }
+    if(!v) return;
+
     const pl=l.plano||'';
-    const v=Math.abs(l.valorLiquido||0);
     const mp={'3.1':'rec1','3.2':'rec2','3.3':'rec3','4.1':'cv1','4.2':'cv2','4.3':'cv3','4.4':'cv4','4.5':'cv5','5.1':'df1','5.2':'df2','5.3':'df3','5.4':'df4','5.5':'df5','6.1':'inv1','6.2':'inv2','6.3':'inv3','7.1':'nop1','7.2':'nop2','3.1.1':'rec1_1','3.1.2':'rec1_2','3.1.3':'rec1_3','3.1.99':'rec1_99'};
-    Object.entries(mp).forEach(([c,eid])=>{if(pl.includes(c))d[eid][m]+=v;});
+    Object.entries(mp).forEach(([c,eid])=>{if(pl.startsWith(c))d[eid][m]+=v;});
   });
   const s=(p,ch)=>{for(let m=0;m<12;m++)d[p][m]=ch.reduce((x,c)=>x+(d[c]?.[m]||0),0);};
   s('rec1',['rec1_1','rec1_2','rec1_3','rec1_99']);
@@ -2160,7 +2181,7 @@ function renderKpiMiniStrips(){
 
 function renderKpiDestaque(){
   const mesHoje = new Date().getMonth();
-  const d = calcDRE();
+  const d = calcDRE(_painelModo);
 
   const m = kpiMesAtual;
   const rec  = d['rec']?.[m]  || 0;
@@ -2329,7 +2350,7 @@ function renderPainel(){
 let _caixaChartInst = null;
 
 function renderCaixaChart(dreData){
-  const d = dreData || calcDRE();
+  const d = dreData || calcDRE(_painelModo);
   const ano = new Date().getFullYear();
 
   // Resultado líquido por mês
@@ -2558,7 +2579,7 @@ function rxdLimparTodos(){
 }
 
 function renderRxDChart(){
-  const d = calcDRE();
+  const d = calcDRE(_painelModo);
 
   // Popular select de ano (apenas uma vez)
   const anoSel = document.getElementById('rxd-ano');
@@ -2889,8 +2910,21 @@ function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showTo
 // ============================================================
 function setFluxoView(v){fluxoView=v;['mensal','trimestral','anual'].forEach(x=>document.getElementById('ft-'+x).classList.remove('active'));document.getElementById('ft-'+v).classList.add('active');renderFluxo();}
 
+let _fluxoModo='realizado';
+function setFluxoModo(modo){
+  _fluxoModo=modo;
+  ['realizado','previsto','todos'].forEach(m=>{
+    const el=document.getElementById('fm-'+m);
+    if(el) el.classList.toggle('active', m===modo);
+  });
+  const descs={realizado:'Exibindo apenas lançamentos confirmados (Pago / Recebido)',previsto:'Exibindo apenas lançamentos pendentes (A Pagar / A Receber)',todos:'Exibindo todos os lançamentos'};
+  const desc=document.getElementById('fluxo-modo-desc');
+  if(desc) desc.textContent=descs[modo]||'';
+  renderFluxo();
+}
+
 function renderFluxo(){
-  const d=calcDRE();
+  const d=calcDRE(_fluxoModo);
   const totRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
   const totCv=MESES.reduce((s,_,i)=>s+(d['cv']?.[i]||0),0);
   const totMc=MESES.reduce((s,_,i)=>s+(d['mc']?.[i]||0),0);
@@ -2924,7 +2958,7 @@ function renderFluxo(){
 }
 
 function exportarDreCSV(){
-  const d=calcDRE();
+  const d=calcDRE(_fluxoModo);
   const h='Conta;'+MESES.join(';')+';Total';
   const r=DRE_STRUCT.map(l=>`"${l.nome}";${MESES.map((_,i)=>(d[l.id]?.[i]||0).toFixed(2).replace('.',',')).join(';')};${MESES.reduce((s,_,i)=>s+(d[l.id]?.[i]||0),0).toFixed(2).replace('.',',')}`);
   const a=document.createElement('a');
