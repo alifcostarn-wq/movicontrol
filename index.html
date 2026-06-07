@@ -131,6 +131,19 @@ textarea{resize:vertical;min-height:54px}
 .tipo-btn.at-rec{background:var(--accent2);color:var(--accent)}
 .tipo-btn.at-pag{background:var(--danger-bg);color:var(--danger)}
 
+/* ======== PARCELAMENTO / RECORRÊNCIA ======== */
+.repeticao-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:0}
+.rep-btn{flex:1;padding:7px 10px;border:none;background:none;font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;color:var(--text3);transition:all 0.13s}
+.rep-btn.active-parc{background:var(--info-bg);color:var(--info)}
+.rep-btn.active-rec{background:var(--warn-bg);color:var(--warn)}
+.rep-btn:hover:not(.active-parc):not(.active-rec){background:var(--surface2);color:var(--text)}
+.rep-panel{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:13px 14px;margin-top:10px}
+.rep-panel-title{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px}
+.parc-badge{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--info-bg);color:var(--info);white-space:nowrap}
+.rec-badge{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--warn-bg);color:var(--warn);white-space:nowrap}
+.row-parc td{background:#EDF3FB!important}
+.row-rec td{background:#FDF6E3!important}
+
 /* ======== KPI DESTAQUE STRIP (Painel) ======== */
 .kpi-destaque-bar{
   display:flex;align-items:center;justify-content:space-between;
@@ -1255,11 +1268,15 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
           <button class="diario-mes-hoje-btn" id="diario-mes-hoje-btn" onclick="diarioIrHoje()" title="Ir para o mês atual">Hoje</button>
         </div>
         <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="d-busca" placeholder="Buscar histórico, cliente, fornecedor..." oninput="renderDiario()" style="width:220px"></div>
-        <select id="d-fstatus" onchange="renderDiario()"><option value="">Todos os status</option><option>A Receber</option><option>Recebido</option><option>A Pagar</option><option>Pago</option></select>
+        <select id="d-fstatus" onchange="renderDiario()"><option value="">Todos os tipos</option><option>A Receber</option><option>Recebido</option><option>A Pagar</option><option>Pago</option><option value="Transferência">Transferências</option></select>
         <select id="d-fconta" onchange="renderDiario()"><option value="">Todas as contas</option></select>
         <input type="date" id="d-fde" onchange="renderDiario()" title="De">
         <input type="date" id="d-fate" onchange="renderDiario()" title="Até">
         <button class="btn" onclick="limparFiltrosDiario()">Limpar</button>
+        <button class="btn" onclick="abrirModalTransferencia()" style="color:var(--info);border-color:var(--info);display:flex;align-items:center;gap:5px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M8 3L4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/></svg>
+          Transferência
+        </button>
         <button class="btn" onclick="exportarDiarioCSV()" style="margin-left:auto">↓ CSV</button>
       </div>
       <div class="table-wrap">
@@ -1653,6 +1670,54 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
         <div class="form-group full"><label class="form-label">Histórico / Descrição</label><input type="text" id="l-hist" placeholder="Descrição do lançamento..." style="width:100%"></div>
         <div class="form-group"><label class="form-label">Data Original</label><input type="date" id="l-dorig" style="width:100%"></div>
         <div class="form-group"><label class="form-label">Reg. Cheque</label><input type="text" id="l-cheque" placeholder="Nº cheque" style="width:100%"></div>
+
+        <!-- PARCELAMENTO / RECORRÊNCIA -->
+        <div class="form-group full" id="lg-repeticao">
+          <label class="form-label">Repetição</label>
+          <div class="repeticao-toggle">
+            <button class="rep-btn active" id="rep-unico" onclick="setRepTipo('unico')">Único</button>
+            <button class="rep-btn" id="rep-parc" onclick="setRepTipo('parcelado')">📑 Parcelado</button>
+            <button class="rep-btn" id="rep-rec" onclick="setRepTipo('recorrente')">🔁 Recorrente</button>
+          </div>
+          <div id="rep-panel-parc" class="rep-panel" style="display:none">
+            <div class="rep-panel-title">📑 Parcelamento</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Nº de Parcelas<span>*</span></label>
+                <input type="number" id="parc-num" min="2" max="360" placeholder="Ex: 12" style="width:100%" oninput="atualizarPreviewParc()">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Periodicidade</label>
+                <select id="parc-periodo" style="width:100%" onchange="atualizarPreviewParc()">
+                  <option value="mensal">Mensal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
+            </div>
+            <div id="parc-preview" style="margin-top:10px;font-size:11px;color:var(--text3);padding:8px 10px;background:var(--surface);border-radius:7px;border:1px solid var(--border)"></div>
+          </div>
+          <div id="rep-panel-rec" class="rep-panel" style="display:none">
+            <div class="rep-panel-title">🔁 Recorrência</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Repetir por (meses)<span>*</span></label>
+                <input type="number" id="rec-meses" min="1" max="360" placeholder="Ex: 12" style="width:100%" oninput="atualizarPreviewRec()">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Periodicidade</label>
+                <select id="rec-periodo" style="width:100%" onchange="atualizarPreviewRec()">
+                  <option value="mensal">Mensal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
+            </div>
+            <div id="rec-preview" style="margin-top:10px;font-size:11px;color:var(--text3);padding:8px 10px;background:var(--surface);border-radius:7px;border:1px solid var(--border)"></div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-lanc')">Cancelar</button><button class="btn btn-primary" onclick="salvarLancamento()">Salvar Lançamento</button></div>
@@ -3200,7 +3265,7 @@ function renderContas(){
       <td style="font-weight:500;font-size:12px">${l.fornecedor||'<span style="color:var(--text3)">—</span>'}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text2)">${l.historico||'—'}</td>
       <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;color:var(--text3)">${l.plano||'—'}</td>
-      <td>${svBadge(l.data,l.status)}</td>
+      <td>${svBadge(l.data,l.status)}${l.parcGroupId?`<span class="parc-badge" style="margin-left:4px">📑 ${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?`<span class="rec-badge" style="margin-left:4px">🔁 ${l.recNum}/${l.recTotal}</span>`:''}</td>
       <td style="font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${l.status==='Pago'?'var(--accent)':'var(--danger)'};">${brl(v,true)}</td>
       <td>
         <div class="action-btns">
@@ -3235,7 +3300,7 @@ function renderContas(){
       <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;font-size:10.5px">${l.plano||'—'}</td>
       <td style="font-size:11px">${l.cliente||'—'}</td>
       <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;color:var(--text2)">${l.historico||'—'}</td>
-      <td>${svBadge(l.data,l.status)}</td>
+      <td>${svBadge(l.data,l.status)}${l.parcGroupId?`<span class="parc-badge" style="margin-left:4px">📑 ${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?`<span class="rec-badge" style="margin-left:4px">🔁 ${l.recNum}/${l.recTotal}</span>`:''}</td>
       <td class="td-green" style="font-family:'DM Mono',monospace;font-size:11px">${brl(v,true)}</td>
       <td><div class="action-btns">
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -3754,6 +3819,56 @@ function renderPag(prefix,total,tp,pkey){
 // ============================================================
 // MODAL LANÇAMENTO
 // ============================================================
+let repTipo='unico';
+
+function setRepTipo(t){
+  repTipo=t;
+  ['unico','parc','rec'].forEach(k=>{
+    const btn=document.getElementById('rep-'+k);
+    if(btn){btn.className='rep-btn'+(k==='parc'&&t==='parcelado'?' active-parc':k==='rec'&&t==='recorrente'?' active-rec':k==='unico'&&t==='unico'?' active':'');}
+  });
+  document.getElementById('rep-panel-parc').style.display=t==='parcelado'?'':'none';
+  document.getElementById('rep-panel-rec').style.display=t==='recorrente'?'':'none';
+  if(t==='parcelado') atualizarPreviewParc();
+  if(t==='recorrente') atualizarPreviewRec();
+  // Oculta campo de repet. na edição
+  const repEl=document.getElementById('lg-repeticao');
+  if(repEl) repEl.style.opacity=t==='unico'?'1':'1';
+}
+
+function addMeses(dateStr, n, periodo){
+  const d=new Date(dateStr+'T00:00:00');
+  if(periodo==='mensal'){d.setMonth(d.getMonth()+n);}
+  else if(periodo==='quinzenal'){d.setDate(d.getDate()+n*15);}
+  else if(periodo==='semanal'){d.setDate(d.getDate()+n*7);}
+  else if(periodo==='anual'){d.setFullYear(d.getFullYear()+n);}
+  return d.toISOString().split('T')[0];
+}
+
+function atualizarPreviewParc(){
+  const n=parseInt(document.getElementById('parc-num')?.value)||0;
+  const per=document.getElementById('parc-periodo')?.value||'mensal';
+  const data=document.getElementById('l-data')?.value||hoje();
+  const val=parseFloat(document.getElementById(lancTipo==='receber'?'l-ar':'l-ap').value)||0;
+  const el=document.getElementById('parc-preview');
+  if(!el)return;
+  if(!n||n<2){el.innerHTML='<span style="color:var(--danger)">Informe ao menos 2 parcelas.</span>';return;}
+  const vParc=val?'R$ '+(val/n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const datas=[data,...Array.from({length:n-1},(_,i)=>addMeses(data,i+1,per))];
+  el.innerHTML=`<strong>${n}x de ${vParc}</strong> &nbsp;·&nbsp; 1ª em ${fmtData(data)} → última em ${fmtData(datas[n-1])} &nbsp;<span style="opacity:.6">(${per})</span>`;
+}
+
+function atualizarPreviewRec(){
+  const n=parseInt(document.getElementById('rec-meses')?.value)||0;
+  const per=document.getElementById('rec-periodo')?.value||'mensal';
+  const data=document.getElementById('l-data')?.value||hoje();
+  const el=document.getElementById('rec-preview');
+  if(!el)return;
+  if(!n||n<1){el.innerHTML='<span style="color:var(--danger)">Informe o número de repetições.</span>';return;}
+  const ultima=addMeses(data,n-1,per);
+  el.innerHTML=`<strong>${n} lançamentos</strong> &nbsp;·&nbsp; 1º em ${fmtData(data)} → último em ${fmtData(ultima)} &nbsp;<span style="opacity:.6">(${per})</span>`;
+}
+
 function setLancTipo(t){
   lancTipo=t;
   document.getElementById('lt-rec').className='tipo-btn'+(t==='receber'?' at-rec':'');
@@ -3787,6 +3902,8 @@ function abrirModalLancamento(tipo=null,idx=null){
       document.getElementById('l-cheque').value=l.cheque||'';
     }
     document.getElementById('lanc-titulo').textContent='Editar Lançamento';
+    // Oculta repetição na edição
+    const rgEl=document.getElementById('lg-repeticao');if(rgEl)rgEl.style.display='none';
   } else {
     popularSelectContas('l-conta', '');
     ['l-data','l-dorig'].forEach(id=>document.getElementById(id).value=hoje());
@@ -3794,6 +3911,11 @@ function abrirModalLancamento(tipo=null,idx=null){
     ['l-ar','l-rec','l-ap','l-pago'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('l-plano').value=t==='receber'?'3.1 Receita de Vendas':'4.2 Custos com Fornecedores';
     document.getElementById('lanc-titulo').textContent='Novo Lançamento';
+    // Reset repetição
+    setRepTipo('unico');
+    const pfEl=document.getElementById('parc-num');if(pfEl)pfEl.value='';
+    const rfEl=document.getElementById('rec-meses');if(rfEl)rfEl.value='';
+    const rgEl=document.getElementById('lg-repeticao');if(rgEl)rgEl.style.display='';
   }
   abrirModal('modal-lanc');
 }
@@ -3806,9 +3928,9 @@ function salvarLancamento(){
   const rec=parseFloat(document.getElementById('l-rec').value)||0;
   const aP=parseFloat(document.getElementById('l-ap').value)||0;
   const pg=parseFloat(document.getElementById('l-pago').value)||0;
-  const liquido=isRec?(rec||aR):-(pg||aP);
-  const item={
-    tipo:lancTipo,data,
+
+  const baseItem={
+    tipo:lancTipo,
     dataOriginal:document.getElementById('l-dorig').value||data,
     status:document.getElementById('l-status').value,
     plano:document.getElementById('l-plano').value,
@@ -3818,15 +3940,95 @@ function salvarLancamento(){
     aReceber:aR,recebido:rec,aPagar:aP,pago:pg,
     cheque:document.getElementById('l-cheque').value,
     historico:document.getElementById('l-hist').value,
-    valorLiquido:liquido
   };
+
   const lc=gd('sf_lancamentos');
-  if(lancEditIdx!==null){lc[lancEditIdx]=item;}
-  else{item.lin=lc.length+10;lc.push(item);}
+
+  // --- Edição simples ---
+  if(lancEditIdx!==null){
+    const liquido=isRec?(rec||aR):-(pg||aP);
+    lc[lancEditIdx]={...baseItem,data,valorLiquido:liquido};
+    sd('sf_lancamentos',lc);
+    fecharModal('modal-lanc');
+    atualizarBadges();
+    showToast('Lançamento atualizado!');
+    const active=document.querySelector('.page.active')?.id?.replace('page-','');
+    if(active){const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores')};renders[active]?.();}
+    return;
+  }
+
+  // --- Parcelado ---
+  if(repTipo==='parcelado'){
+    const nParc=parseInt(document.getElementById('parc-num').value)||0;
+    if(nParc<2){showToast('Informe ao menos 2 parcelas.',true);return;}
+    const per=document.getElementById('parc-periodo').value;
+    const valTotal=isRec?(aR||rec):(aP||pg);
+    if(!valTotal){showToast('Informe o valor para parcelar.',true);return;}
+    const valParc=valTotal/nParc;
+    const parcGroupId='parc_'+Date.now();
+    for(let i=0;i<nParc;i++){
+      const dt=i===0?data:addMeses(data,i,per);
+      const vR=isRec?valParc:0, vP=isRec?0:valParc;
+      const liquido=isRec?vR:-vP;
+      lc.push({
+        ...baseItem,
+        data:dt,
+        aReceber:vR,recebido:0,aPagar:vP,pago:0,
+        status:isRec?'A Receber':'A Pagar',
+        valorLiquido:liquido,
+        historico:(baseItem.historico||baseItem.plano)+` (${i+1}/${nParc})`,
+        parcGroupId,parcNum:i+1,parcTotal:nParc,
+        lin:lc.length+10,
+      });
+    }
+    sd('sf_lancamentos',lc);
+    fecharModal('modal-lanc');
+    atualizarBadges();
+    showToast(`${nParc} parcelas criadas!`);
+    const active=document.querySelector('.page.active')?.id?.replace('page-','');
+    if(active){const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores')};renders[active]?.();}
+    return;
+  }
+
+  // --- Recorrente ---
+  if(repTipo==='recorrente'){
+    const nRec=parseInt(document.getElementById('rec-meses').value)||0;
+    if(nRec<1){showToast('Informe o número de repetições.',true);return;}
+    const per=document.getElementById('rec-periodo').value;
+    const recGroupId='rec_'+Date.now();
+    for(let i=0;i<nRec;i++){
+      const dt=i===0?data:addMeses(data,i,per);
+      const liquido=isRec?(rec||aR):-(pg||aP);
+      lc.push({
+        ...baseItem,
+        data:dt,
+        status:isRec?'A Receber':'A Pagar',
+        aReceber:isRec?(aR||rec):0, recebido:0,
+        aPagar:isRec?0:(aP||pg), pago:0,
+        valorLiquido:liquido,
+        historico:(baseItem.historico||baseItem.plano)+` (recorrência ${i+1}/${nRec})`,
+        recGroupId,recNum:i+1,recTotal:nRec,
+        lin:lc.length+10,
+      });
+    }
+    sd('sf_lancamentos',lc);
+    fecharModal('modal-lanc');
+    atualizarBadges();
+    showToast(`${nRec} lançamentos recorrentes criados!`);
+    const active=document.querySelector('.page.active')?.id?.replace('page-','');
+    if(active){const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores')};renders[active]?.();}
+    return;
+  }
+
+  // --- Único (padrão) ---
+  const liquido=isRec?(rec||aR):-(pg||aP);
+  const item={...baseItem,data,valorLiquido:liquido};
+  item.lin=lc.length+10;
+  lc.push(item);
   sd('sf_lancamentos',lc);
   fecharModal('modal-lanc');
   atualizarBadges();
-  showToast(lancEditIdx!==null?'Lançamento atualizado!':'Lançamento salvo!');
+  showToast('Lançamento salvo!');
   const active=document.querySelector('.page.active')?.id?.replace('page-','');
   if(active){const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores')};renders[active]?.();}
 }
