@@ -643,7 +643,7 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
     <div class="page" id="page-fluxo">
       <div class="kpi-strip" id="kpi-fluxo"></div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-        <select id="f-ano" onchange="renderFluxo()"><option value="2025">2025</option><option value="2024">2024</option><option value="2026">2026</option></select>
+        <select id="f-ano" onchange="renderFluxo()"></select>
         <div class="main-tabs" style="margin-bottom:0">
           <button class="main-tab active" id="ft-mensal" onclick="setFluxoView('mensal')">Mensal</button>
           <button class="main-tab" id="ft-trimestral" onclick="setFluxoView('trimestral')">Trimestral</button>
@@ -687,7 +687,7 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
     <!-- ====== PLANEJAMENTO ====== -->
     <div class="page" id="page-planejamento">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap">
-        <select id="pl-ano" onchange="renderPlan()"><option value="2025">2025</option><option value="2024">2024</option><option value="2026">2026</option></select>
+        <select id="pl-ano" onchange="renderPlan()"></select>
         <select id="pl-mes" onchange="renderPlan()"><option value="all">Todos os meses</option><option value="0">Janeiro</option><option value="1">Fevereiro</option><option value="2">Março</option><option value="3">Abril</option><option value="4">Maio</option><option value="5">Junho</option><option value="6">Julho</option><option value="7">Agosto</option><option value="8">Setembro</option><option value="9">Outubro</option><option value="10">Novembro</option><option value="11">Dezembro</option></select>
         <button class="btn btn-primary" onclick="showToast('Metas salvas!')">💾 Salvar Metas</button>
         <div style="margin-left:auto;display:flex;gap:12px">
@@ -2508,6 +2508,21 @@ function exportarExtratoCSV(){
 // ============================================================
 // INIT
 // ============================================================
+
+// Preenche todos os seletores de ano com o ano atual fixo como selecionado
+(function popularSeletoresAno() {
+  const anoAtual = new Date().getFullYear();
+  const range = 3; // anos antes e depois do atual
+  const opts = Array.from({length: range * 2 + 1}, (_, i) => {
+    const a = anoAtual - range + i;
+    return `<option value="${a}"${a === anoAtual ? ' selected' : ''}>${a}</option>`;
+  }).join('');
+  ['f-ano', 'pl-ano'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+})();
+
 renderPainel();
 atualizarBadges();
 </script>
