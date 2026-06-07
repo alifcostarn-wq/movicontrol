@@ -6,6 +6,7 @@
 <title>SistemaFin — Gestão Financeira</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -130,7 +131,216 @@ textarea{resize:vertical;min-height:54px}
 .tipo-btn.at-rec{background:var(--accent2);color:var(--accent)}
 .tipo-btn.at-pag{background:var(--danger-bg);color:var(--danger)}
 
-/* ======== PAINEL ======== */
+/* ======== KPI DESTAQUE STRIP (Painel) ======== */
+.kpi-destaque-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:14px;gap:10px;flex-wrap:wrap;
+}
+.kpi-destaque-titulo{
+  display:flex;align-items:center;gap:7px;
+  font-size:10.5px;font-weight:700;color:var(--text3);
+  letter-spacing:0.07em;text-transform:uppercase;
+}
+.kpi-mes-nav{display:flex;align-items:center;gap:6px}
+.kpi-mes-arrow{
+  width:26px;height:26px;border-radius:7px;border:1px solid var(--border);
+  background:var(--surface);cursor:pointer;font-size:16px;color:var(--text2);
+  display:flex;align-items:center;justify-content:center;line-height:1;
+  transition:all 0.13s;font-family:inherit;
+}
+.kpi-mes-arrow:hover{background:var(--surface2);border-color:var(--text3);color:var(--text)}
+.kpi-mes-arrow:disabled{opacity:0.3;cursor:not-allowed}
+.kpi-mes-label{
+  font-size:13px;font-weight:600;color:var(--text);
+  min-width:110px;text-align:center;
+}
+.kpi-mes-atual-badge{
+  font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;
+  background:var(--accent2);color:var(--accent);cursor:pointer;
+  border:1px solid var(--accent3);transition:all 0.13s;letter-spacing:0.03em;
+  display:none;
+}
+.kpi-mes-atual-badge:hover{background:var(--accent3)}
+.kpi-mes-atual-badge.visible{display:inline-flex;align-items:center}
+
+.kpi-destaque-strip{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  margin-bottom:26px;
+}
+.kd-card{
+  border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;
+  border:1px solid transparent;
+  transition:transform 0.18s cubic-bezier(.34,1.56,.64,1),box-shadow 0.18s ease;
+  animation:cardEntrada 0.35s ease both;
+  cursor:default;
+}
+.kd-card:hover{transform:translateY(-3px) scale(1.015);box-shadow:0 10px 28px rgba(0,0,0,0.11)}
+.kd-card::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 60%);
+  pointer-events:none;border-radius:inherit;
+}
+/* Receita — verde */
+.kd-rec{background:linear-gradient(135deg,#1A5C3A 0%,#2D8C57 100%);border-color:#1A5C3A}
+/* Despesas — vermelho */
+.kd-desp{background:linear-gradient(135deg,#8B2218 0%,#C23B2A 100%);border-color:#8B2218}
+/* Resultado positivo — azul escuro */
+.kd-res-pos{background:linear-gradient(135deg,#0F3460 0%,#1A5CA0 100%);border-color:#0F3460}
+/* Resultado negativo — laranja/âmbar */
+.kd-res-neg{background:linear-gradient(135deg,#6B4400 0%,#8A6200 100%);border-color:#6B4400}
+/* Resultado zero — cinza */
+.kd-res-zero{background:linear-gradient(135deg,#3A3933 0%,#6B6861 100%);border-color:#3A3933}
+
+.kd-icon{
+  width:36px;height:36px;border-radius:10px;
+  background:rgba(255,255,255,0.15);
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;margin-bottom:14px;
+}
+.kd-label{font-size:10px;font-weight:700;color:rgba(255,255,255,0.55);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px}
+.kd-val{font-family:'DM Mono',monospace;font-size:24px;font-weight:500;color:#fff;line-height:1;margin-bottom:4px}
+.kd-sub{font-size:10.5px;color:rgba(255,255,255,0.45);display:flex;align-items:center;gap:5px}
+.kd-delta{
+  position:absolute;top:16px;right:16px;
+  font-size:10px;font-weight:700;
+  padding:3px 8px;border-radius:20px;
+  background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.85);
+  display:flex;align-items:center;gap:3px;
+}
+.kd-bar-track{height:3px;background:rgba(255,255,255,0.15);border-radius:2px;margin-top:14px;overflow:hidden}
+.kd-bar-fill{height:100%;border-radius:2px;background:rgba(255,255,255,0.5);transition:width 0.8s cubic-bezier(.4,0,.2,1)}
+
+/* ======== GRÁFICO CAIXA ======== */
+.caixa-mes-item{
+  text-align:center;padding:8px 4px;border-radius:8px;
+  background:var(--surface2);border:1px solid var(--border);
+}
+.caixa-mes-nome{font-size:9.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px}
+.caixa-mes-res{font-family:'DM Mono',monospace;font-size:10px;margin-bottom:2px}
+.caixa-mes-res.pos{color:var(--accent)}.caixa-mes-res.neg{color:var(--danger)}.caixa-mes-res.zero{color:var(--text3)}
+.caixa-mes-acum{font-family:'DM Mono',monospace;font-size:10.5px;font-weight:600}
+.caixa-mes-acum.pos{color:var(--accent)}.caixa-mes-acum.neg{color:var(--danger)}.caixa-mes-acum.zero{color:var(--text3)}
+
+/* ======== GRÁFICO RECEITA × DESPESAS ======== */
+/* ======== RXD DROPDOWN MULTI-SELECT ======== */
+.rxd-dropdown-wrap{
+  position:relative;margin-bottom:16px;
+}
+.rxd-dropdown-trigger{
+  display:flex;align-items:center;gap:7px;
+  width:100%;padding:8px 13px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:9px;cursor:pointer;font-family:'DM Sans',sans-serif;
+  font-size:12.5px;font-weight:500;color:var(--text2);
+  transition:all 0.13s;text-align:left;
+}
+.rxd-dropdown-trigger:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
+.rxd-dropdown-trigger.open{border-color:#2D8C57;box-shadow:0 0 0 3px rgba(45,140,87,0.1);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.rxd-dropdown-chevron{transition:transform 0.2s ease}
+.rxd-dropdown-trigger.open .rxd-dropdown-chevron{transform:rotate(180deg)}
+.rxd-dropdown-menu{
+  display:none;position:absolute;top:100%;left:0;right:0;z-index:80;
+  background:var(--surface);border:1px solid #2D8C57;border-top:none;
+  border-bottom-left-radius:9px;border-bottom-right-radius:9px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.12);
+  max-height:340px;overflow-y:auto;
+}
+.rxd-dropdown-menu.open{display:block}
+.rxd-dropdown-top{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px 8px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:var(--surface);z-index:2;
+}
+.rxd-dropdown-count{font-size:11px;color:var(--text3);font-weight:500}
+.rxd-dropdown-grupos{padding:10px 12px 12px}
+.rxd-secao-bloco{margin-bottom:12px}
+.rxd-secao-bloco:last-child{margin-bottom:0}
+.rxd-secao-label{
+  font-size:9.5px;font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.07em;
+  padding:0 4px 6px;border-bottom:1px solid var(--border);margin-bottom:5px;
+}
+.rxd-secao-pills{display:flex;flex-direction:column;gap:2px}
+.rxd-secao-pills .rxd-grupo-pill{
+  width:100%;justify-content:flex-start;
+  padding:6px 10px;border-radius:6px;font-size:12px;
+  text-align:left;
+}
+
+.rxd-filtro-action{
+  font-family:'DM Sans',sans-serif;font-size:10.5px;font-weight:500;
+  padding:3px 10px;border-radius:6px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text2);cursor:pointer;
+  transition:all 0.13s;
+}
+.rxd-filtro-action:hover{background:var(--text);color:#fff;border-color:var(--text)}
+.rxd-tipo-tabs{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:2px;gap:2px}
+.rxd-tipo-tab{display:flex;align-items:center;gap:5px;padding:5px 11px;border:none;background:none;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;border-radius:6px;transition:all 0.13s}
+.rxd-tipo-tab.active{background:var(--text);color:#fff}
+.rxd-tipo-tab:hover:not(.active){background:var(--border);color:var(--text)}
+
+.rxd-grupo-pill{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface);font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text2);transition:all 0.13s;white-space:nowrap}
+.rxd-grupo-pill:hover{border-color:var(--text3);color:var(--text)}
+.rxd-grupo-pill.active{color:#fff;border-color:transparent}
+.rxd-grupo-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+.rxd-legenda-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)}
+.rxd-legenda-cor{width:28px;height:3px;border-radius:2px;flex-shrink:0}
+
+.rxd-total-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 13px}
+.rxd-total-nome{font-size:9.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rxd-total-val{font-family:'DM Mono',monospace;font-size:13px;font-weight:500}
+.rxd-total-val.green{color:var(--accent)}.rxd-total-val.red{color:var(--danger)}.rxd-total-val.blue{color:var(--info)}.rxd-total-val.warn{color:var(--warn)}
+.rxd-total-sub{font-size:9.5px;color:var(--text3);margin-top:2px}
+
+/* ======== KM GRID ======== */
+.km-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
+  margin-bottom:6px;
+}
+.kpi-mini-strip{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
+  margin-bottom:6px;
+}
+.km-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:14px 16px;
+  position:relative;overflow:hidden;
+  transition:transform 0.18s cubic-bezier(.34,1.56,.64,1),box-shadow 0.18s ease,border-color 0.18s ease;
+  animation:cardEntrada 0.3s ease both;
+  cursor:pointer;
+}
+.km-card:hover{transform:translateY(-2px) scale(1.015);box-shadow:0 6px 20px rgba(0,0,0,0.09)}
+.km-card::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.55) 50%,transparent 60%);
+  background-size:400px 100%;background-position:-400px 0;opacity:0;
+}
+.km-card:hover::before{animation:shimmer 0.55s ease forwards;opacity:1}
+.km-pago        { border-left:3px solid #2D8C57 }
+.km-apagar      { border-left:3px solid var(--danger) }
+.km-apagar-hoje { border-left:3px solid #1A5CA0; background:var(--info-bg) }
+.km-apagar-sem  { border-left:3px solid var(--warn); background:var(--warn-bg) }
+.km-recebido    { border-left:3px solid #2D8C57 }
+.km-areceber    { border-left:3px solid var(--warn) }
+.km-areceber-hoje{ border-left:3px solid #1A5CA0; background:var(--info-bg) }
+.km-areceber-sem { border-left:3px solid #2D8C57; background:#EAF8F0 }
+.km-icon{font-size:18px;margin-bottom:9px;line-height:1}
+.km-label{font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:4px}
+.km-val{font-family:'DM Mono',monospace;font-size:17px;font-weight:500;margin-bottom:2px}
+.km-val.green{color:var(--accent)}.km-val.red{color:var(--danger)}.km-val.warn{color:var(--warn)}.km-val.blue{color:var(--info)}
+.km-sub{font-size:10px;color:var(--text3)}
+.km-badge{
+  position:absolute;top:12px;right:12px;
+  font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;
+  background:var(--surface2);color:var(--text3);
+}
+.km-badge.red{background:var(--danger-bg);color:var(--danger)}
+.km-badge.green{background:var(--accent2);color:var(--accent)}
+.km-badge.blue{background:var(--info-bg);color:var(--info)}
+.km-badge.warn{background:var(--warn-bg);color:var(--warn)}
+
+/* ======== KPI DESTAQUE STRIP (Painel) ======== */
 @keyframes cardEntrada{from{opacity:0;transform:translateY(10px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
 @keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(45,140,87,0)}50%{box-shadow:0 0 0 6px rgba(45,140,87,0.18)}}
@@ -442,12 +652,170 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
 .badge-vence{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
 .bv-atrasado{background:var(--danger-bg);color:var(--danger)}.bv-hoje{background:var(--info-bg);color:var(--info)}.bv-semana{background:var(--warn-bg);color:var(--warn)}.bv-futuro{background:var(--surface2);color:var(--text3)}.bv-pago{background:var(--accent2);color:var(--accent)}
 .filtros-bar,.filtros-periodo{display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap}
+
+/* ======== LIVRO DIÁRIO — KPI DO DIA + SELETOR DE MÊS ======== */
+.diario-kpi-hoje{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:16px 20px;margin-bottom:16px;
+}
+.diario-kpi-data{
+  font-size:10px;font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;
+  display:flex;align-items:center;gap:7px;
+}
+.diario-kpi-data::before{
+  content:'';width:6px;height:6px;border-radius:50%;
+  background:#2D8C57;display:inline-block;
+  box-shadow:0 0 0 3px rgba(45,140,87,0.2);
+}
+.diario-kpi-cards{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:12px;
+}
+/* Cards modernos do diário */
+.dkpi{
+  border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;
+  border:1px solid transparent;
+  transition:transform 0.18s cubic-bezier(.34,1.56,.64,1),box-shadow 0.2s ease;
+  animation:cardEntrada 0.35s ease both;
+  cursor:default;
+}
+.dkpi:hover{transform:translateY(-3px) scale(1.02);box-shadow:0 10px 28px rgba(0,0,0,0.15)}
+.dkpi::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 55%);
+  pointer-events:none;
+}
+/* A Receber — âmbar/ouro */
+.dkpi-areceber{
+  background:linear-gradient(135deg,#92580A 0%,#C9850A 100%);
+  border-color:#7A4A08;
+}
+/* Recebido — verde esmeralda */
+.dkpi-recebido{
+  background:linear-gradient(135deg,#14532D 0%,#16A34A 100%);
+  border-color:#14532D;
+}
+/* A Pagar — vermelho coral */
+.dkpi-apagar{
+  background:linear-gradient(135deg,#7F1D1D 0%,#DC2626 100%);
+  border-color:#7F1D1D;
+}
+/* Pago — azul ardósia */
+.dkpi-pago{
+  background:linear-gradient(135deg,#1E3A5F 0%,#2563EB 100%);
+  border-color:#1E3A5F;
+}
+/* Resultado — dinâmico via JS */
+.dkpi-resultado-pos{
+  background:linear-gradient(135deg,#064E3B 0%,#059669 100%);
+  border-color:#064E3B;
+}
+.dkpi-resultado-neg{
+  background:linear-gradient(135deg,#4C0519 0%,#BE123C 100%);
+  border-color:#4C0519;
+}
+.dkpi-resultado-zero{
+  background:linear-gradient(135deg,#1C1917 0%,#57534E 100%);
+  border-color:#1C1917;
+}
+.dkpi-ico{
+  width:36px;height:36px;border-radius:10px;
+  background:rgba(255,255,255,0.15);backdrop-filter:blur(4px);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:14px;flex-shrink:0;
+}
+.dkpi-ico svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.dkpi-label{font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.55);letter-spacing:0.09em;text-transform:uppercase;margin-bottom:4px}
+.dkpi-val{font-family:'DM Mono',monospace;font-size:20px;font-weight:500;color:#fff;line-height:1.1;margin-bottom:4px}
+.dkpi-sub{font-size:10px;color:rgba(255,255,255,0.45);display:flex;align-items:center;gap:4px}
+.dkpi-sub svg{width:10px;height:10px;stroke:rgba(255,255,255,0.45);flex-shrink:0}
+.dkpi-divider{height:1px;background:rgba(255,255,255,0.12);margin:10px 0 8px}
+.dkpi-tag{
+  position:absolute;top:14px;right:14px;
+  font-size:9px;font-weight:700;letter-spacing:0.04em;
+  background:rgba(255,255,255,0.18);color:rgba(255,255,255,0.9);
+  padding:2px 8px;border-radius:20px;
+}
+
+.diario-filtros-wrap{
+  display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;
+}
+.diario-mes-selector{
+  display:flex;align-items:center;gap:4px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;padding:3px 6px;flex-shrink:0;
+}
+.diario-mes-arrow{
+  width:24px;height:24px;border:none;background:none;
+  cursor:pointer;color:var(--text2);font-size:18px;line-height:1;
+  border-radius:5px;display:flex;align-items:center;justify-content:center;
+  transition:all 0.13s;font-family:inherit;
+}
+.diario-mes-arrow:hover{background:var(--border);color:var(--text)}
+.diario-mes-label{
+  font-size:12.5px;font-weight:600;color:var(--text);
+  min-width:116px;text-align:center;
+}
+.diario-mes-hoje-btn{
+  font-family:'DM Sans',sans-serif;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:20px;border:1px solid var(--accent3);
+  background:var(--accent2);color:var(--accent);cursor:pointer;
+  letter-spacing:0.03em;transition:all 0.13s;display:none;
+}
+.diario-mes-hoje-btn.visible{display:inline-flex}
+.diario-mes-hoje-btn:hover{background:var(--accent3)}
 .filtro-label{font-size:11px;color:var(--text3);font-weight:500}
 .periodo-btn{padding:5px 13px;border-radius:20px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text2);transition:all 0.13s}
 .periodo-btn:hover{border-color:var(--text3)}
 .periodo-btn.act{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* ======== TOAST ======== */
+/* ======== PAINEL — BARRA PREVISTO/REALIZADO ======== */
+.painel-modo-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:11px 16px;margin-bottom:20px;
+  gap:12px;flex-wrap:wrap;
+}
+.painel-modo-esq{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+.painel-modo-ico{
+  width:30px;height:30px;border-radius:8px;
+  background:var(--accent2);border:1px solid var(--accent3);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  color:var(--accent);
+}
+.painel-modo-titulo{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;flex-shrink:0}
+.painel-modo-desc{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.painel-modo-tabs{
+  display:flex;background:var(--surface2);border:1px solid var(--border);
+  border-radius:9px;padding:3px;gap:2px;flex-shrink:0;
+}
+.painel-modo-tab{
+  display:flex;align-items:center;gap:5px;
+  padding:6px 14px;border:none;background:none;
+  font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;
+  color:var(--text3);cursor:pointer;border-radius:7px;
+  transition:all 0.15s;white-space:nowrap;
+}
+.painel-modo-tab:hover:not(.active){background:var(--border);color:var(--text)}
+.painel-modo-tab.active{
+  background:var(--text);color:#fff;
+  box-shadow:0 1px 4px rgba(0,0,0,0.15);
+}
+.painel-modo-tab#btn-painel-realizado.active{background:#1A5C3A}
+.painel-modo-tab#btn-painel-previsto.active{background:#8A6200}
+.painel-modo-tab#btn-painel-todos.active{background:var(--text)}
+
+/* Badge de modo no topo da página */
+.painel-modo-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;
+  letter-spacing:0.04em;
+}
+.modo-badge-realizado{background:var(--accent2);color:var(--accent);border:1px solid var(--accent3)}
+.modo-badge-previsto{background:var(--warn-bg);color:var(--warn);border:1px solid #E8C96A}
+.modo-badge-todos{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
 .toast{position:fixed;bottom:22px;right:22px;background:var(--text);color:#fff;font-size:12.5px;font-weight:500;padding:11px 18px;border-radius:10px;z-index:999;transform:translateY(80px);opacity:0;transition:all 0.28s;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,0.18)}
 .toast.show{transform:translateY(0);opacity:1}
 .toast svg{width:15px;height:15px;color:#2D8C57}
@@ -577,11 +945,67 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
 
     <!-- ====== PAINEL ====== -->
     <div class="page active" id="page-painel">
-      <div class="section-label">Saldos Disponíveis</div>
+
+      <!-- FILTRO PREVISTO / REALIZADO -->
+      <div class="painel-modo-bar">
+        <div class="painel-modo-esq">
+          <div class="painel-modo-ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          </div>
+          <span class="painel-modo-titulo">Visão do Painel</span>
+          <span class="painel-modo-desc" id="painel-modo-desc">Exibindo apenas lançamentos confirmados</span>
+        </div>
+        <div class="painel-modo-tabs">
+          <button class="painel-modo-tab active" id="btn-painel-realizado" onclick="setPainelModo('realizado')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px"><polyline points="20 6 9 17 4 12"/></svg>
+            Realizado
+          </button>
+          <button class="painel-modo-tab" id="btn-painel-previsto" onclick="setPainelModo('previsto')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Previsto
+          </button>
+          <button class="painel-modo-tab" id="btn-painel-todos" onclick="setPainelModo('todos')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Todos
+          </button>
+        </div>
+      </div>
+      <div class="kpi-destaque-bar">
+        <div class="kpi-destaque-titulo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:.6"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Resultado por Mês
+        </div>
+        <div class="kpi-mes-nav">
+          <button class="kpi-mes-arrow" id="kd-prev" onclick="kpiMesNav(-1)">&#8249;</button>
+          <span class="kpi-mes-label" id="kd-mes-label">—</span>
+          <button class="kpi-mes-arrow" id="kd-next" onclick="kpiMesNav(1)">&#8250;</button>
+          <span class="kpi-mes-atual-badge" id="kd-hoje-badge" onclick="kpiMesIrHoje()" title="Ir para o mês atual">Hoje</span>
+        </div>
+      </div>
+      <div class="kpi-destaque-strip" id="kpi-destaque-strip"></div>
+
+      <div class="section-label" style="margin-top:26px">Saldos Disponíveis</div>
       <div class="saldo-grid" id="saldo-grid"></div>
-      <div class="section-label">Status de Contas</div>
-      <div class="kpi-strip" id="kpi-strip-painel"></div>
-      <div class="section-label">Desempenho — Mês Atual</div>
+
+      <!-- KPIs PAGAMENTOS -->
+      <div class="kpi-destaque-bar" style="margin-top:6px">
+        <div class="kpi-destaque-titulo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:.6"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+          Pagamentos
+        </div>
+      </div>
+      <div class="kpi-mini-strip" id="kpi-pagamentos-strip"></div>
+
+      <!-- KPIs RECEBIMENTOS -->
+      <div class="kpi-destaque-bar" style="margin-top:18px">
+        <div class="kpi-destaque-titulo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:.6"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          Recebimentos
+        </div>
+      </div>
+      <div class="kpi-mini-strip" id="kpi-recebimentos-strip"></div>
+
+      <div class="section-label" style="margin-top:26px">Desempenho — Mês Atual</div>
       <div class="mid-grid">
         <div class="card">
           <div class="card-header"><span class="card-title">Receita / Faturamento</span><span class="card-action" onclick="navTo('fluxo',null)">Ver DRE →</span></div>
@@ -602,13 +1026,108 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
       <div class="dre-wrap">
         <div class="dre-scroll"><table class="dre"><thead id="dre-thead-p"></thead><tbody id="dre-tbody-p"></tbody></table></div>
       </div>
+
+      <!-- GRÁFICO DISPONIBILIDADE EM CAIXA -->
+      <div class="section-label" style="margin-top:26px">Disponibilidade em Caixa — Acumulado Mensal</div>
+      <div class="card" id="caixa-chart-card" style="padding:22px 24px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:3px">Saldo Acumulado em Caixa</div>
+            <div style="font-size:11px;color:var(--text3)">Resultado líquido acumulado mês a mês — todos os caixas</div>
+          </div>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)">
+              <span style="width:24px;height:3px;background:#2D8C57;border-radius:2px;display:inline-block"></span>Saldo Acumulado
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)">
+              <span style="width:24px;height:3px;background:#1A5CA0;border-radius:2px;display:inline-block;border-top:2px dashed #1A5CA0;background:none"></span>Resultado Mensal
+            </div>
+            <div id="caixa-saldo-final" style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500"></div>
+          </div>
+        </div>
+        <div style="position:relative;height:260px">
+          <canvas id="caixa-chart"></canvas>
+        </div>
+        <div id="caixa-resumo-meses" style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:18px;border-top:1px solid var(--border);padding-top:16px"></div>
+      </div>
+
+      <!-- GRÁFICO RECEITA X DESPESAS -->
+      <div class="section-label" style="margin-top:26px">Receita × Despesas — Comparativo Mensal</div>
+      <div class="card" style="padding:22px 24px">
+
+        <!-- Cabeçalho + filtros -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:3px">Análise Comparativa por Grupo</div>
+            <div style="font-size:11px;color:var(--text3)">Selecione os grupos do plano de contas para detalhar a análise</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <!-- Tipo de gráfico -->
+            <div class="rxd-tipo-tabs">
+              <button class="rxd-tipo-tab active" id="rxd-tab-barra" onclick="rxdSetTipo('barra')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+                Barras
+              </button>
+              <button class="rxd-tipo-tab" id="rxd-tab-linha" onclick="rxdSetTipo('linha')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Linhas
+              </button>
+            </div>
+            <!-- Ano -->
+            <select id="rxd-ano" onchange="renderRxDChart()" style="font-size:11.5px;padding:5px 9px;border-radius:7px;border:1px solid var(--border)"></select>
+          </div>
+        </div>
+
+        <!-- Filtros de grupos — dropdown multi-seleção -->
+        <div class="rxd-dropdown-wrap" id="rxd-dropdown-wrap">
+          <button class="rxd-dropdown-trigger" id="rxd-dropdown-trigger" onclick="rxdToggleDropdown(event)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span id="rxd-dropdown-label">Selecionar grupos…</span>
+            <svg class="rxd-dropdown-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;flex-shrink:0;margin-left:auto"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="rxd-dropdown-menu" id="rxd-dropdown-menu">
+            <div class="rxd-dropdown-top">
+              <span class="rxd-dropdown-count" id="rxd-dropdown-count">0 selecionados</span>
+              <div style="display:flex;gap:5px">
+                <button class="rxd-filtro-action" onclick="rxdSelecionarTodos()">Todos</button>
+                <button class="rxd-filtro-action" onclick="rxdLimparTodos()">Limpar</button>
+              </div>
+            </div>
+            <div id="rxd-grupos" class="rxd-dropdown-grupos"></div>
+          </div>
+        </div>
+
+        <!-- Legenda -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px" id="rxd-legenda"></div>
+
+        <!-- Canvas -->
+        <div style="position:relative;height:300px">
+          <canvas id="rxd-chart"></canvas>
+        </div>
+
+        <!-- Totais por grupo abaixo -->
+        <div id="rxd-totais" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-top:18px;border-top:1px solid var(--border);padding-top:16px"></div>
+      </div>
     </div>
 
     <!-- ====== LIVRO DIÁRIO ====== -->
     <div class="page" id="page-diario">
-      <div class="kpi-strip" id="kpi-diario"></div>
-      <div class="filtros-bar">
-        <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="d-busca" placeholder="Buscar histórico, cliente, fornecedor..." oninput="renderDiario()" style="width:280px"></div>
+
+      <!-- KPI do Dia -->
+      <div class="diario-kpi-hoje">
+        <div class="diario-kpi-data" id="diario-data-hoje"></div>
+        <div class="diario-kpi-cards" id="kpi-diario"></div>
+      </div>
+
+      <!-- Barra de filtros com seletor de mês fixo -->
+      <div class="diario-filtros-wrap">
+        <div class="diario-mes-selector">
+          <button class="diario-mes-arrow" onclick="diarioNavMes(-1)">&#8249;</button>
+          <span class="diario-mes-label" id="diario-mes-label"></span>
+          <button class="diario-mes-arrow" onclick="diarioNavMes(1)">&#8250;</button>
+          <button class="diario-mes-hoje-btn" id="diario-mes-hoje-btn" onclick="diarioIrHoje()" title="Ir para o mês atual">Hoje</button>
+        </div>
+        <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="d-busca" placeholder="Buscar histórico, cliente, fornecedor..." oninput="renderDiario()" style="width:220px"></div>
         <select id="d-fstatus" onchange="renderDiario()"><option value="">Todos os status</option><option>A Receber</option><option>Recebido</option><option>A Pagar</option><option>Pago</option></select>
         <select id="d-fconta" onchange="renderDiario()"><option value="">Todas as contas</option></select>
         <input type="date" id="d-fde" onchange="renderDiario()" title="De">
@@ -1131,7 +1650,8 @@ const DRE_STRUCT=[
   {id:'resultado',n:0,nome:'RESULTADO LÍQUIDO',t:'resultado'},
 ];
 
-function calcDRE(){
+function calcDRE(modo){
+  // modo: 'realizado' | 'previsto' | undefined (todos)
   const lc=gd('sf_lancamentos');
   const d={};
   DRE_IDS.forEach(id=>d[id]=Array(12).fill(0));
@@ -1139,6 +1659,12 @@ function calcDRE(){
     if(!l.data)return;
     const m=parseInt(l.data.split('-')[1])-1;
     if(m<0||m>11)return;
+    // Filtro previsto/realizado
+    if(modo==='realizado'){
+      if(l.status!=='Pago'&&l.status!=='Recebido')return;
+    } else if(modo==='previsto'){
+      if(l.status!=='A Pagar'&&l.status!=='A Receber')return;
+    }
     const pl=l.plano||'';
     const v=Math.abs(l.valorLiquido||0);
     const mp={'3.1':'rec1','3.2':'rec2','3.3':'rec3','4.1':'cv1','4.2':'cv2','4.3':'cv3','4.4':'cv4','4.5':'cv5','5.1':'df1','5.2':'df2','5.3':'df3','5.4':'df4','5.5':'df5','6.1':'inv1','6.2':'inv2','6.3':'inv3','7.1':'nop1','7.2':'nop2','3.1.1':'rec1_1','3.1.2':'rec1_2','3.1.3':'rec1_3','3.1.99':'rec1_99'};
@@ -1164,6 +1690,19 @@ function calcDRE(){
 // ============================================================
 // PAINEL
 // ============================================================
+let _painelModo = 'realizado'; // padrão fixado em realizado
+
+function setPainelModo(modo){
+  _painelModo = modo;
+  const descs={realizado:'Exibindo apenas lançamentos confirmados (Pago / Recebido)',previsto:'Exibindo apenas lançamentos pendentes (A Pagar / A Receber)',todos:'Exibindo todos os lançamentos'};
+  const desc=document.getElementById('painel-modo-desc');
+  if(desc) desc.textContent = descs[modo]||'';
+  ['btn-painel-realizado','btn-painel-previsto','btn-painel-todos'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.classList.toggle('active', id===`btn-painel-${modo}`);
+  });
+  renderPainel();
+}
 function criarRipple(e){
   const card=e.currentTarget;
   const r=document.createElement('span');
@@ -1175,9 +1714,193 @@ function criarRipple(e){
   r.addEventListener('animationend',()=>r.remove());
 }
 
+// ============================================================
+// KPI DESTAQUE — RECEITA / DESPESAS / RESULTADO POR MÊS
+// ============================================================
+let kpiMesAtual = new Date().getMonth(); // 0-11, fixo no mês atual ao iniciar
+
+function kpiMesNav(delta){
+  kpiMesAtual = Math.max(0, Math.min(11, kpiMesAtual + delta));
+  renderKpiDestaque();
+}
+
+function kpiMesIrHoje(){
+  kpiMesAtual = new Date().getMonth();
+  renderKpiDestaque();
+}
+
+// ============================================================
+// KPI MINI STRIPS — PAGAMENTOS E RECEBIMENTOS
+// ============================================================
+function renderKpiMiniStrips(){
+  const lc = gd('sf_lancamentos');
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const hStr = hoje.toISOString().slice(0,10);
+
+  // Próxima semana: hoje+1 até hoje+7
+  const proxSemIni = new Date(hoje); proxSemIni.setDate(proxSemIni.getDate()+1);
+  const proxSemFim = new Date(hoje); proxSemFim.setDate(proxSemFim.getDate()+7);
+  const psIStr = proxSemIni.toISOString().slice(0,10);
+  const psFStr = proxSemFim.toISOString().slice(0,10);
+
+  // Mês atual via kpiMesAtual
+  const m = kpiMesAtual;
+  const ano = hoje.getFullYear();
+  const mesStr = String(m+1).padStart(2,'0');
+  const prefMes = `${ano}-${mesStr}`;
+
+  // ---- PAGAMENTOS ----
+  const pagos = lc.filter(l => l.pago > 0);
+  const aPagar = lc.filter(l => (l.aPagar||0) > 0);
+
+  const pagoMes   = pagos.filter(l => (l.data||'').startsWith(prefMes));
+  const apagarMes = aPagar.filter(l => (l.data||'').startsWith(prefMes));
+  const apagarHoje = aPagar.filter(l => (l.data||'') === hStr);
+  const apagarSem  = aPagar.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
+
+  const sumPagoMes   = pagoMes.reduce((s,l)=>s+(l.pago||0),0);
+  const sumApagarMes = apagarMes.reduce((s,l)=>s+(l.aPagar||0),0);
+  const sumApagarHoje= apagarHoje.reduce((s,l)=>s+(l.aPagar||0),0);
+  const sumApagarSem = apagarSem.reduce((s,l)=>s+(l.aPagar||0),0);
+
+  // ---- RECEBIMENTOS ----
+  const recebidos = lc.filter(l => l.recebido > 0);
+  const aReceber  = lc.filter(l => (l.aReceber||0) > 0);
+
+  const recebidoMes    = recebidos.filter(l => (l.data||'').startsWith(prefMes));
+  const areceberMes    = aReceber.filter(l => (l.data||'').startsWith(prefMes));
+  const areceberHoje   = aReceber.filter(l => (l.data||'') === hStr);
+  const areceberSem    = aReceber.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
+
+  const sumRecebidoMes  = recebidoMes.reduce((s,l)=>s+(l.recebido||0),0);
+  const sumAreceberMes  = areceberMes.reduce((s,l)=>s+(l.aReceber||0),0);
+  const sumAreceberHoje = areceberHoje.reduce((s,l)=>s+(l.aReceber||0),0);
+  const sumAreceberSem  = areceberSem.reduce((s,l)=>s+(l.aReceber||0),0);
+
+  const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const nomeMes = MESES_FULL[m];
+
+  function kmCard(cls, icon, label, val, valCls, sub, badgeQtd, badgeCls, delay, onclick){
+    const bdg = badgeQtd > 0
+      ? `<div class="km-badge ${badgeCls}">${badgeQtd} conta${badgeQtd!==1?'s':''}</div>`
+      : '';
+    return `<div class="km-card ${cls}" style="animation-delay:${delay}s" onclick="${onclick}">
+      ${bdg}
+      <div class="km-icon">${icon}</div>
+      <div class="km-label">${label}</div>
+      <div class="km-val ${valCls}">${brl(val,true)}</div>
+      <div class="km-sub">${sub}</div>
+    </div>`;
+  }
+
+  document.getElementById('kpi-pagamentos-strip').innerHTML =
+    kmCard('km-pago',      '✅', `Pago em ${nomeMes}`,         sumPagoMes,    'green', `${pagoMes.length} lançamento${pagoMes.length!==1?'s':''}`,          pagoMes.length,    'green', 0,    "navTo('contas',null)") +
+    kmCard('km-apagar',    '📤', `A Pagar em ${nomeMes}`,      sumApagarMes,  'red',   `${apagarMes.length} conta${apagarMes.length!==1?'s':''}`,           apagarMes.length,  'red',  0.06, "navTo('contas',null)") +
+    kmCard('km-apagar-hoje','🔔', 'A Pagar Hoje',               sumApagarHoje, 'blue',  apagarHoje.length ? `vence hoje` : 'nenhuma hoje',                   apagarHoje.length, 'blue', 0.12, "navTo('contas',null)") +
+    kmCard('km-apagar-sem', '📅', 'A Pagar — Próx. Semana',    sumApagarSem,  'warn',  apagarSem.length ? `próximos 7 dias` : 'nenhuma nos próx. 7 dias',   apagarSem.length,  'warn', 0.18, "navTo('contas',null)");
+
+  document.getElementById('kpi-recebimentos-strip').innerHTML =
+    kmCard('km-recebido',     '💰', `Recebido em ${nomeMes}`,       sumRecebidoMes,  'green', `${recebidoMes.length} lançamento${recebidoMes.length!==1?'s':''}`,        recebidoMes.length,  'green', 0,    "navTo('contas',null)") +
+    kmCard('km-areceber',     '📥', `A Receber em ${nomeMes}`,      sumAreceberMes,  'warn',  `${areceberMes.length} conta${areceberMes.length!==1?'s':''}`,             areceberMes.length,  'warn',  0.06, "navTo('contas',null)") +
+    kmCard('km-areceber-hoje','🔔', 'A Receber Hoje',                sumAreceberHoje, 'blue',  areceberHoje.length ? `vence hoje` : 'nenhum hoje',                        areceberHoje.length, 'blue',  0.12, "navTo('contas',null)") +
+    kmCard('km-areceber-sem', '📅', 'A Receber — Próx. Semana',     sumAreceberSem,  'green', areceberSem.length ? `próximos 7 dias` : 'nenhum nos próx. 7 dias',        areceberSem.length,  'green', 0.18, "navTo('contas',null)");
+
+  // Ripple nos cards mini
+  document.querySelectorAll('.km-card').forEach(c=>c.addEventListener('click',criarRipple));
+}
+
+function renderKpiDestaque(){
+  const mesHoje = new Date().getMonth();
+  const d = calcDRE();
+
+  const m = kpiMesAtual;
+  const rec  = d['rec']?.[m]  || 0;
+  const desp = d['desp_op']?.[m] || 0;
+  const res  = d['resultado']?.[m] || 0;
+
+  // Variação vs mês anterior
+  const mPrev = m > 0 ? m - 1 : null;
+  const recPrev  = mPrev !== null ? (d['rec']?.[mPrev]  || 0) : null;
+  const despPrev = mPrev !== null ? (d['desp_op']?.[mPrev] || 0) : null;
+  const resPrev  = mPrev !== null ? (d['resultado']?.[mPrev] || 0) : null;
+
+  function delta(cur, prev){
+    if(prev === null || prev === 0) return null;
+    const pct = ((cur - prev) / Math.abs(prev) * 100).toFixed(1);
+    const up = cur >= prev;
+    return { pct, up };
+  }
+
+  const dRec  = delta(rec, recPrev);
+  const dDesp = delta(desp, despPrev);
+  const dRes  = delta(res, resPrev);
+
+  // Barra de progresso: % do melhor mês do ano
+  const maxRec  = Math.max(...MESES.map((_,i) => d['rec']?.[i]   || 0), 1);
+  const maxDesp = Math.max(...MESES.map((_,i) => d['desp_op']?.[i] || 0), 1);
+  const maxResAbs = Math.max(...MESES.map((_,i) => Math.abs(d['resultado']?.[i] || 0)), 1);
+
+  // Classe do card de resultado
+  const resClass = res > 0 ? 'kd-res-pos' : res < 0 ? 'kd-res-neg' : 'kd-res-zero';
+  const resIcon  = res > 0 ? '✨' : res < 0 ? '⚠️' : '➖';
+
+  function deltaHtml(d, invertido){
+    if(!d) return '';
+    // Para despesas: subir é ruim (invertido=true)
+    const bom = invertido ? !d.up : d.up;
+    const seta = d.up ? '▲' : '▼';
+    const cor  = bom ? 'rgba(200,255,200,0.85)' : 'rgba(255,200,200,0.85)';
+    return `<div class="kd-delta" style="color:${cor}">${seta} ${Math.abs(d.pct)}%<span style="font-weight:400;opacity:.7">vs anterior</span></div>`;
+  }
+
+  const strip = document.getElementById('kpi-destaque-strip');
+  strip.innerHTML = `
+    <div class="kd-card kd-rec" style="animation-delay:0s">
+      ${deltaHtml(dRec, false)}
+      <div class="kd-icon">📈</div>
+      <div class="kd-label">Receita</div>
+      <div class="kd-val">${brl(rec, true)}</div>
+      <div class="kd-sub">faturamento do mês</div>
+      <div class="kd-bar-track"><div class="kd-bar-fill" style="width:${Math.min(100,(rec/maxRec*100))}%"></div></div>
+    </div>
+    <div class="kd-card kd-desp" style="animation-delay:0.07s">
+      ${deltaHtml(dDesp, true)}
+      <div class="kd-icon">📉</div>
+      <div class="kd-label">Despesas</div>
+      <div class="kd-val">${brl(desp, true)}</div>
+      <div class="kd-sub">custos + desp. fixas + invest.</div>
+      <div class="kd-bar-track"><div class="kd-bar-fill" style="width:${Math.min(100,(desp/maxDesp*100))}%"></div></div>
+    </div>
+    <div class="kd-card ${resClass}" style="animation-delay:0.14s">
+      ${deltaHtml(dRes, false)}
+      <div class="kd-icon">${resIcon}</div>
+      <div class="kd-label">Resultado Líquido</div>
+      <div class="kd-val">${brl(res, true)}</div>
+      <div class="kd-sub">${res >= 0 ? 'lucro no mês' : 'prejuízo no mês'}</div>
+      <div class="kd-bar-track"><div class="kd-bar-fill" style="width:${Math.min(100,(Math.abs(res)/maxResAbs*100))}%"></div></div>
+    </div>`;
+
+  // Label do mês
+  const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  document.getElementById('kd-mes-label').textContent = MESES_FULL[m] + ' ' + new Date().getFullYear();
+
+  // Setas
+  document.getElementById('kd-prev').disabled = m === 0;
+  document.getElementById('kd-next').disabled = m === 11;
+
+  // Badge "Hoje" — aparece só quando não está no mês atual
+  const badge = document.getElementById('kd-hoje-badge');
+  if(m !== mesHoje) badge.classList.add('visible');
+  else badge.classList.remove('visible');
+
+  // Mini strips (sincronizam com o mesmo mês)
+  renderKpiMiniStrips();
+}
+
 function renderPainel(){
+  renderKpiDestaque();
   const lc=gd('sf_lancamentos');
-  const d=calcDRE();
+  const d=calcDRE(_painelModo);
 
   // ---- Saldos — fonte única: sf_bancos ----
   const sg=document.getElementById('saldo-grid');
@@ -1211,30 +1934,8 @@ function renderPainel(){
   // adicionar ripple nos saldo-cards
   document.querySelectorAll('.saldo-card').forEach(c=>c.addEventListener('click',criarRipple));
 
-  // ---- KPIs ----
-  const aR=lc.reduce((s,l)=>s+(l.aReceber||0),0);
-  const aP=lc.reduce((s,l)=>s+(l.aPagar||0),0);
-  const rec=lc.reduce((s,l)=>s+(l.recebido||0),0);
-  const totalRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
-  const totalRes=MESES.reduce((s,_,i)=>s+(d['resultado']?.[i]||0),0);
-  const kpis=[
-    {ic:'📥',label:'A Receber',val:brl(aR,true),cls:'warn',sub:lc.filter(l=>l.aReceber).length+' contas',acao:()=>navTo('contas',null),delay:0},
-    {ic:'📤',label:'A Pagar',val:brl(aP,true),cls:'red',sub:lc.filter(l=>l.aPagar).length+' contas',acao:()=>navTo('contas',null),delay:1},
-    {ic:'✅',label:'Recebido',val:brl(rec,true),cls:'green',sub:'total acumulado',acao:()=>navTo('diario',null),delay:2},
-    {ic:'📊',label:'Receita Acumulada',val:brl(totalRec,true),cls:'green',sub:'no ano',acao:()=>navTo('fluxo',null),delay:3},
-    {ic:'💡',label:'Resultado Líquido',val:brl(totalRes,true),cls:'',dark:true,sub:'no ano',acao:()=>navTo('fluxo',null),delay:4},
-  ];
-  document.getElementById('kpi-strip-painel').innerHTML=kpis.map(k=>`
-    <div class="kpi-card ${k.dark?'dark':''}" onclick="(${k.acao})()" style="animation-delay:${k.delay*0.07}s">
-      <div style="font-size:18px;margin-bottom:6px;line-height:1">${k.ic}</div>
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-val ${k.cls}">${k.val}</div>
-      <div class="kpi-sub">${k.sub}</div>
-      <div class="kpi-arrow">→</div>
-    </div>`).join('');
-  document.querySelectorAll('#kpi-strip-painel .kpi-card').forEach(c=>c.addEventListener('click',criarRipple));
-
   // ---- Receita/Desp mensal ----
+  const totalRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
   const maxR=Math.max(...MESES.map((_,i)=>d['rec'][i]||0),1);
   const maxDe=Math.max(...MESES.map((_,i)=>d['desp_op'][i]||0),1);
   document.getElementById('p-receita').textContent=brl(totalRec,true);
@@ -1265,6 +1966,400 @@ function renderPainel(){
       <td class="cv ${total>=0?'pos':'neg'}">${total?brlN(total):'—'}</td>
     </tr>`;
   }).join('');
+
+  // ---- Gráfico de Caixa ----
+  renderCaixaChart(d);
+
+  // ---- Gráfico Receita x Despesas ----
+  renderRxDChart();
+}
+
+// ============================================================
+// GRÁFICO — DISPONIBILIDADE EM CAIXA (acumulado mensal)
+// ============================================================
+let _caixaChartInst = null;
+
+function renderCaixaChart(dreData){
+  const d = dreData || calcDRE();
+  const ano = new Date().getFullYear();
+
+  // Resultado líquido por mês
+  const resultadoMes = MESES.map((_,i) => d['resultado']?.[i] || 0);
+
+  // Acumulado mês a mês (saldo em caixa)
+  const acumulado = [];
+  let soma = 0;
+  resultadoMes.forEach(v => { soma += v; acumulado.push(soma); });
+
+  // Saldo final para badge
+  const saldoFinal = acumulado[acumulado.length - 1];
+  const sfEl = document.getElementById('caixa-saldo-final');
+  if(sfEl){
+    sfEl.textContent = brl(saldoFinal, true);
+    sfEl.style.color = saldoFinal >= 0 ? 'var(--accent)' : 'var(--danger)';
+  }
+
+  // Cores dinâmicas por ponto (verde = positivo, vermelho = negativo)
+  const pontoCores = acumulado.map(v => v >= 0 ? '#2D8C57' : '#C23B2A');
+  const pontoBordas = acumulado.map(v => v >= 0 ? '#1A5C3A' : '#8B2218');
+
+  // Zona de fundo: verde acima do zero, vermelho abaixo
+  const canvas = document.getElementById('caixa-chart');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Destruir instância anterior se existir
+  if(_caixaChartInst){ _caixaChartInst.destroy(); _caixaChartInst = null; }
+
+  // Gradiente preenchimento acumulado
+  const gradAcum = ctx.createLinearGradient(0, 0, 0, 260);
+  gradAcum.addColorStop(0,   'rgba(45,140,87,0.18)');
+  gradAcum.addColorStop(0.5, 'rgba(45,140,87,0.05)');
+  gradAcum.addColorStop(1,   'rgba(45,140,87,0)');
+
+  _caixaChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: MESES,
+      datasets: [
+        {
+          label: 'Saldo Acumulado',
+          data: acumulado,
+          borderColor: '#2D8C57',
+          borderWidth: 2.5,
+          backgroundColor: gradAcum,
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: pontoCores,
+          pointBorderColor: pontoBordas,
+          pointBorderWidth: 2,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          yAxisID: 'y',
+          order: 1,
+        },
+        {
+          label: 'Resultado Mensal',
+          data: resultadoMes,
+          borderColor: '#1A5CA0',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.3,
+          pointBackgroundColor: resultadoMes.map(v => v >= 0 ? '#1A5CA0' : '#C23B2A'),
+          pointBorderColor: '#fff',
+          pointBorderWidth: 1.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          yAxisID: 'y',
+          order: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1A1916',
+          titleColor: 'rgba(255,255,255,0.55)',
+          bodyColor: '#fff',
+          padding: 12,
+          cornerRadius: 10,
+          titleFont: { family: 'DM Sans', size: 11 },
+          bodyFont: { family: 'DM Mono', size: 12 },
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              const prefixo = ctx.dataset.label === 'Saldo Acumulado' ? '💰 Acumulado: ' : '📊 Mensal: ';
+              return prefixo + (v >= 0 ? '+' : '') + brl(v, true);
+            }
+          }
+        },
+        annotation: {}
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false },
+          ticks: { font: { family: 'DM Sans', size: 11 }, color: '#A8A59E' }
+        },
+        y: {
+          grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
+          ticks: {
+            font: { family: 'DM Mono', size: 10 },
+            color: '#A8A59E',
+            callback: v => {
+              if(Math.abs(v) >= 1000) return (v/1000).toFixed(0)+'k';
+              return v.toFixed(0);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // ---- Resumo mensal abaixo do gráfico ----
+  const mesAtual = new Date().getMonth();
+  const resumoEl = document.getElementById('caixa-resumo-meses');
+  if(resumoEl){
+    resumoEl.innerHTML = MESES.map((m, i) => {
+      const res = resultadoMes[i];
+      const acum = acumulado[i];
+      const resCls = res > 0 ? 'pos' : res < 0 ? 'neg' : 'zero';
+      const acumCls = acum > 0 ? 'pos' : acum < 0 ? 'neg' : 'zero';
+      const destaque = i === mesAtual ? 'border-color:#2D8C57;background:var(--accent2)' : '';
+      return `<div class="caixa-mes-item" style="${destaque}">
+        <div class="caixa-mes-nome">${m}</div>
+        <div class="caixa-mes-res ${resCls}">${res ? (res>0?'+':'')+brlN(res) : '—'}</div>
+        <div style="font-size:8.5px;color:var(--text3);margin-bottom:2px">acumulado</div>
+        <div class="caixa-mes-acum ${acumCls}">${acum ? brlN(acum) : 'R$ 0'}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ============================================================
+// GRÁFICO — RECEITA × DESPESAS COMPARATIVO MENSAL
+// ============================================================
+let _rxdChartInst = null;
+let _rxdTipo = 'barra';
+
+// Definição dos grupos disponíveis para filtro
+const RXD_GRUPOS = [
+  { id:'rec',   label:'Receita Total',           cor:'#2D8C57', tipo:'rec'  },
+  { id:'rec1',  label:'3.1 Rec. de Vendas',       cor:'#4CAF76', tipo:'rec'  },
+  { id:'rec2',  label:'3.2 Outras Receitas',       cor:'#81C995', tipo:'rec'  },
+  { id:'rec3',  label:'3.3 Rec. de Juros',         cor:'#A8D5B5', tipo:'rec'  },
+  { id:'cv',    label:'Custos Variáveis',           cor:'#C23B2A', tipo:'desp' },
+  { id:'cv1',   label:'4.1 Trib./Financeiro',      cor:'#D9534F', tipo:'desp' },
+  { id:'cv2',   label:'4.2 Fornecedores',           cor:'#E07B6A', tipo:'desp' },
+  { id:'cv3',   label:'4.3 Embalagens',             cor:'#E89A8E', tipo:'desp' },
+  { id:'cv4',   label:'4.4 Transporte',             cor:'#F0B8B0', tipo:'desp' },
+  { id:'cv5',   label:'4.5 Custo Vendas',           cor:'#F5CBC5', tipo:'desp' },
+  { id:'df',    label:'Despesas Fixas',             cor:'#8A6200', tipo:'desp' },
+  { id:'df1',   label:'5.1 Desp. Financeiras',     cor:'#C9850A', tipo:'desp' },
+  { id:'df2',   label:'5.2 Desp. Adm.',            cor:'#D9A030', tipo:'desp' },
+  { id:'df3',   label:'5.3 Pessoal',               cor:'#E6B84E', tipo:'desp' },
+  { id:'df4',   label:'5.4 Mat. e Equip.',          cor:'#EFD080', tipo:'desp' },
+  { id:'df5',   label:'5.5 Veículos',               cor:'#F5E0A0', tipo:'desp' },
+  { id:'inv',   label:'Investimentos',              cor:'#1A5CA0', tipo:'inv'  },
+  { id:'inv1',  label:'6.1 Marketing',              cor:'#2979C8', tipo:'inv'  },
+  { id:'inv2',  label:'6.2 Bens Materiais',         cor:'#5999D8', tipo:'inv'  },
+  { id:'inv3',  label:'6.3 Desenv. Empresarial',    cor:'#8ABAE8', tipo:'inv'  },
+  { id:'nop1',  label:'7.1 Ent. não Operacional',   cor:'#6B6861', tipo:'rec'  },
+  { id:'nop2',  label:'7.2 Saí. não Operacional',   cor:'#A8A59E', tipo:'desp' },
+];
+
+// Seleção padrão ao abrir
+let _rxdAtivos = new Set(['rec','cv','df']);
+
+function rxdSetTipo(tipo){
+  _rxdTipo = tipo;
+  ['barra','linha'].forEach(t => document.getElementById('rxd-tab-'+t)?.classList.remove('active'));
+  document.getElementById('rxd-tab-'+tipo)?.classList.add('active');
+  renderRxDChart();
+}
+
+function rxdToggleDropdown(e){
+  e && e.stopPropagation();
+  const trigger = document.getElementById('rxd-dropdown-trigger');
+  const menu = document.getElementById('rxd-dropdown-menu');
+  const isOpen = menu.classList.contains('open');
+  if(isOpen){ rxdFecharDropdown(); } else {
+    trigger.classList.add('open');
+    menu.classList.add('open');
+  }
+}
+function rxdFecharDropdown(){
+  const trigger = document.getElementById('rxd-dropdown-trigger');
+  const menu = document.getElementById('rxd-dropdown-menu');
+  trigger && trigger.classList.remove('open');
+  menu && menu.classList.remove('open');
+}
+function rxdAtualizarLabel(){
+  const n = _rxdAtivos.size;
+  const label = document.getElementById('rxd-dropdown-label');
+  const count = document.getElementById('rxd-dropdown-count');
+  if(label) label.textContent = n === 0 ? 'Selecionar grupos…' : n === RXD_GRUPOS.length ? 'Todos os grupos' : `${n} grupo${n!==1?'s':''} selecionado${n!==1?'s':''}`;
+  if(count) count.textContent = `${n} de ${RXD_GRUPOS.length} selecionado${n!==1?'s':''}`;
+}
+// Fechar ao clicar fora
+document.addEventListener('click', function(e){
+  const wrap = document.getElementById('rxd-dropdown-wrap');
+  if(wrap && !wrap.contains(e.target)) rxdFecharDropdown();
+});
+
+function rxdToggleGrupo(id){
+  if(_rxdAtivos.has(id)) _rxdAtivos.delete(id);
+  else _rxdAtivos.add(id);
+  renderRxDChart();
+}
+
+function rxdSelecionarTodos(){
+  RXD_GRUPOS.forEach(g => _rxdAtivos.add(g.id));
+  renderRxDChart();
+}
+
+function rxdLimparTodos(){
+  _rxdAtivos.clear();
+  renderRxDChart();
+}
+
+function renderRxDChart(){
+  const d = calcDRE();
+
+  // Popular select de ano (apenas uma vez)
+  const anoSel = document.getElementById('rxd-ano');
+  if(anoSel && !anoSel.dataset.init){
+    const anoAtual = new Date().getFullYear();
+    for(let a = anoAtual; a >= anoAtual - 4; a--){
+      const op = document.createElement('option');
+      op.value = a; op.textContent = a;
+      if(a === anoAtual) op.selected = true;
+      anoSel.appendChild(op);
+    }
+    anoSel.dataset.init = '1';
+  }
+
+  // Renderizar pills de grupos
+  const gruposEl = document.getElementById('rxd-grupos');
+  if(gruposEl && !gruposEl.dataset.init){
+    // Separadores por seção
+    const secoes = [
+      { label:'Receitas', ids:['rec','rec1','rec2','rec3'] },
+      { label:'Custos Variáveis', ids:['cv','cv1','cv2','cv3','cv4','cv5'] },
+      { label:'Despesas Fixas', ids:['df','df1','df2','df3','df4','df5'] },
+      { label:'Investimentos', ids:['inv','inv1','inv2','inv3'] },
+      { label:'Não Operacionais', ids:['nop1','nop2'] },
+    ];
+    gruposEl.innerHTML = secoes.map(sec => {
+      const pills = sec.ids.map(id => {
+        const g = RXD_GRUPOS.find(x => x.id === id);
+        if(!g) return '';
+        const ativo = _rxdAtivos.has(id);
+        return `<button class="rxd-grupo-pill${ativo?' active':''}" id="rxd-pill-${id}"
+          onclick="rxdToggleGrupo('${id}')"
+          style="${ativo?`background:${g.cor};border-color:${g.cor}`:''}">
+          <span class="rxd-grupo-dot" style="background:${g.cor}"></span>${g.label}
+        </button>`;
+      }).filter(Boolean).join('');
+      if(!pills) return '';
+      return `<div class="rxd-secao-bloco">
+        <div class="rxd-secao-label">${sec.label}</div>
+        <div class="rxd-secao-pills">${pills}</div>
+      </div>`;
+    }).join('');
+    gruposEl.dataset.init = '1';
+  } else if(gruposEl){
+    // Atualizar estado visual das pills
+    RXD_GRUPOS.forEach(g => {
+      const pill = document.getElementById('rxd-pill-'+g.id);
+      if(!pill) return;
+      if(_rxdAtivos.has(g.id)){
+        pill.classList.add('active');
+        pill.style.background = g.cor;
+        pill.style.borderColor = g.cor;
+      } else {
+        pill.classList.remove('active');
+        pill.style.background = '';
+        pill.style.borderColor = '';
+      }
+    });
+  }
+  rxdAtualizarLabel();
+
+  // Datasets ativos
+  const gruposAtivos = RXD_GRUPOS.filter(g => _rxdAtivos.has(g.id));
+
+  // Legenda
+  const legendaEl = document.getElementById('rxd-legenda');
+  if(legendaEl){
+    legendaEl.innerHTML = gruposAtivos.map(g => `
+      <div class="rxd-legenda-item">
+        <div class="rxd-legenda-cor" style="background:${g.cor}${_rxdTipo==='linha'?'':';height:12px;border-radius:3px'}"></div>
+        ${g.label}
+      </div>`).join('');
+  }
+
+  const canvas = document.getElementById('rxd-chart');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if(_rxdChartInst){ _rxdChartInst.destroy(); _rxdChartInst = null; }
+
+  const datasets = gruposAtivos.map(g => {
+    const dados = MESES.map((_,i) => d[g.id]?.[i] || 0);
+    const base = {
+      label: g.label,
+      data: dados,
+      borderColor: g.cor,
+      backgroundColor: _rxdTipo === 'linha'
+        ? g.cor + '22'
+        : g.cor + 'CC',
+    };
+    if(_rxdTipo === 'linha'){
+      return { ...base, type:'line', fill:false, tension:0.4, borderWidth:2.5,
+        pointBackgroundColor:g.cor, pointBorderColor:'#fff', pointBorderWidth:1.5,
+        pointRadius:4, pointHoverRadius:6 };
+    } else {
+      return { ...base, type:'bar', borderRadius:4, borderWidth:0,
+        hoverBackgroundColor: g.cor };
+    }
+  });
+
+  _rxdChartInst = new Chart(ctx, {
+    type: _rxdTipo === 'linha' ? 'line' : 'bar',
+    data: { labels: MESES, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          backgroundColor:'#1A1916',
+          titleColor:'rgba(255,255,255,0.55)',
+          bodyColor:'#fff',
+          padding:12, cornerRadius:10,
+          titleFont:{ family:'DM Sans', size:11 },
+          bodyFont:{ family:'DM Mono', size:12 },
+          callbacks:{
+            label: ctx => `${ctx.dataset.label}: ${brl(ctx.parsed.y, true)}`
+          }
+        }
+      },
+      scales: {
+        x:{
+          grid:{ color:'rgba(0,0,0,0.04)', drawBorder:false },
+          ticks:{ font:{ family:'DM Sans', size:11 }, color:'#A8A59E' }
+        },
+        y:{
+          grid:{ color:'rgba(0,0,0,0.05)', drawBorder:false },
+          ticks:{
+            font:{ family:'DM Mono', size:10 }, color:'#A8A59E',
+            callback: v => Math.abs(v)>=1000 ? (v/1000).toFixed(0)+'k' : v
+          }
+        }
+      }
+    }
+  });
+
+  // Totais por grupo ativo
+  const totaisEl = document.getElementById('rxd-totais');
+  if(totaisEl){
+    totaisEl.innerHTML = gruposAtivos.map(g => {
+      const total = MESES.reduce((s,_,i) => s + (d[g.id]?.[i]||0), 0);
+      const melhorMes = MESES.reduce((best,m,i) => (d[g.id]?.[i]||0) > (d[g.id]?.[best]||0) ? i : best, 0);
+      const cls = g.tipo === 'rec' ? 'green' : g.tipo === 'inv' ? 'blue' : 'red';
+      return `<div class="rxd-total-card" style="border-left:3px solid ${g.cor}">
+        <div class="rxd-total-nome" title="${g.label}">${g.label}</div>
+        <div class="rxd-total-val ${cls}">${brl(total,true)}</div>
+        <div class="rxd-total-sub">Maior: ${MESES[melhorMes]} (${brl(d[g.id]?.[melhorMes]||0,true)})</div>
+      </div>`;
+    }).join('') || '<div style="font-size:12px;color:var(--text3);padding:8px">Selecione ao menos um grupo acima.</div>';
+  }
 }
 
 // ============================================================
@@ -1287,20 +2382,93 @@ function getLancFiltrados(){
   });
 }
 
+// ---- seletor de mês do diário ----
+let _diarioMes = new Date().getMonth();
+let _diarioAno = new Date().getFullYear();
+const MESES_EXT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function diarioNavMes(dir){
+  _diarioMes += dir;
+  if(_diarioMes > 11){ _diarioMes = 0; _diarioAno++; }
+  if(_diarioMes < 0){ _diarioMes = 11; _diarioAno--; }
+  renderDiario();
+}
+function diarioIrHoje(){
+  _diarioMes = new Date().getMonth();
+  _diarioAno = new Date().getFullYear();
+  renderDiario();
+}
+function diarioAtualizarMesLabel(){
+  const el = document.getElementById('diario-mes-label');
+  if(el) el.textContent = MESES_EXT[_diarioMes] + ' ' + _diarioAno;
+  const d = new Date();
+  const btn = document.getElementById('diario-mes-hoje-btn');
+  if(btn) btn.classList.toggle('visible', !(_diarioMes===d.getMonth() && _diarioAno===d.getFullYear()));
+}
+
 function renderDiario(){
   popularFiltroContas();
-  const lc=gd('sf_lancamentos');
-  const aR=lc.reduce((s,l)=>s+(l.aReceber||0),0);
-  const rec=lc.reduce((s,l)=>s+(l.recebido||0),0);
-  const aP=lc.reduce((s,l)=>s+(l.aPagar||0),0);
-  const pago=lc.reduce((s,l)=>s+(l.pago||0),0);
+  diarioAtualizarMesLabel();
+  const lc = gd('sf_lancamentos');
+  const hj = hoje();
+
+  // KPI do dia
+  const lancHoje = lc.filter(l => l.data === hj);
+  const aRHoje   = lancHoje.reduce((s,l)=>s+(l.aReceber||0),0);
+  const recHoje  = lancHoje.reduce((s,l)=>s+(l.recebido||0),0);
+  const aPHoje   = lancHoje.reduce((s,l)=>s+(l.aPagar||0),0);
+  const pagoHoje = lancHoje.reduce((s,l)=>s+(l.pago||0),0);
+  const saldoHoje = recHoje - aPHoje;
+  const dataFmt = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const dataEl = document.getElementById('diario-data-hoje');
+  if(dataEl) dataEl.innerHTML = '📅 Hoje — ' + dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
   document.getElementById('kpi-diario').innerHTML=`
-    <div class="kpi-card"><div class="kpi-label">A Receber</div><div class="kpi-val warn">${brl(aR,true)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Recebido</div><div class="kpi-val green">${brl(rec,true)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">A Pagar</div><div class="kpi-val red">${brl(aP,true)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Pago</div><div class="kpi-val red">${brl(pago,true)}</div></div>
-    <div class="kpi-card dark"><div class="kpi-label">Total de Lançamentos</div><div class="kpi-val">${lc.length}</div></div>`;
+    <div class="dkpi dkpi-areceber">
+      <div class="dkpi-tag">Pendente</div>
+      <div class="dkpi-ico"><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+      <div class="dkpi-label">A Receber Hoje</div>
+      <div class="dkpi-val">${brl(aRHoje,true)}</div>
+      <div class="dkpi-divider"></div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${lancHoje.filter(l=>l.aReceber).length} lançamento(s) hoje</div>
+    </div>
+    <div class="dkpi dkpi-recebido">
+      <div class="dkpi-tag">Confirmado</div>
+      <div class="dkpi-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
+      <div class="dkpi-label">Recebido Hoje</div>
+      <div class="dkpi-val">${brl(recHoje,true)}</div>
+      <div class="dkpi-divider"></div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>${lancHoje.filter(l=>l.recebido).length} lançamento(s) confirmado(s)</div>
+    </div>
+    <div class="dkpi dkpi-apagar">
+      <div class="dkpi-tag">Vence hoje</div>
+      <div class="dkpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div class="dkpi-label">A Pagar Hoje</div>
+      <div class="dkpi-val">${brl(aPHoje,true)}</div>
+      <div class="dkpi-divider"></div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>${lancHoje.filter(l=>l.aPagar).length} conta(s) a vencer</div>
+    </div>
+    <div class="dkpi dkpi-pago">
+      <div class="dkpi-tag">Quitado</div>
+      <div class="dkpi-ico"><svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div>
+      <div class="dkpi-label">Pago Hoje</div>
+      <div class="dkpi-val">${brl(pagoHoje,true)}</div>
+      <div class="dkpi-divider"></div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>${lancHoje.filter(l=>l.pago).length} pagamento(s) efetuado(s)</div>
+    </div>
+    <div class="dkpi ${saldoHoje>0?'dkpi-resultado-pos':saldoHoje<0?'dkpi-resultado-neg':'dkpi-resultado-zero'}">
+      <div class="dkpi-tag">${saldoHoje>=0?'Positivo':'Negativo'}</div>
+      <div class="dkpi-ico"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div class="dkpi-label">Resultado do Dia</div>
+      <div class="dkpi-val">${brl(saldoHoje,true)}</div>
+      <div class="dkpi-divider"></div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${lancHoje.length} lançamento(s) no dia</div>
+    </div>`;
+
+  // Filtrar pelo mês selecionado (exceto quando há filtro de data manual)
+  const fde  = document.getElementById('d-fde')?.value  || '';
+  const fate = document.getElementById('d-fate')?.value || '';
+  const mesStr = String(_diarioAno)+'-'+String(_diarioMes+1).padStart(2,'0');
   let lista=getLancFiltrados();
+  if(!fde && !fate){ lista = lista.filter(l=>(l.data||'').startsWith(mesStr)); }
   lista.sort((a,b)=>{
     let va=a[sortDiarState.col]??'',vb=b[sortDiarState.col]??'';
     if(typeof va==='number')return sortDiarState.dir==='asc'?va-vb:vb-va;
