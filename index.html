@@ -431,7 +431,7 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
       <div class="filtros-bar">
         <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="d-busca" placeholder="Buscar histórico, cliente, fornecedor..." oninput="renderDiario()" style="width:280px"></div>
         <select id="d-fstatus" onchange="renderDiario()"><option value="">Todos os status</option><option>A Receber</option><option>Recebido</option><option>A Pagar</option><option>Pago</option></select>
-        <select id="d-fconta" onchange="renderDiario()"><option value="">Todas as contas</option><option>Caixa (Dinheiro)</option><option>Santander</option><option>Mercado Pago</option><option>c2</option><option>c3</option><option>c4</option><option>c5</option><option>c7</option><option>c8</option><option>c9</option><option>c10</option></select>
+        <select id="d-fconta" onchange="renderDiario()"><option value="">Todas as contas</option></select>
         <input type="date" id="d-fde" onchange="renderDiario()" title="De">
         <input type="date" id="d-fate" onchange="renderDiario()" title="Até">
         <button class="btn" onclick="limparFiltrosDiario()">Limpar</button>
@@ -615,7 +615,7 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
         </div>
         <div class="form-group" id="lg-cli"><label class="form-label">Cliente</label><input type="text" id="l-cliente" placeholder="Nome do cliente" style="width:100%"></div>
         <div class="form-group" id="lg-for" style="display:none"><label class="form-label">Fornecedor</label><input type="text" id="l-fornecedor" placeholder="Nome do fornecedor" style="width:100%"></div>
-        <div class="form-group"><label class="form-label">Conta<span>*</span></label><select id="l-conta" style="width:100%"><option>Caixa (Dinheiro)</option><option>Santander</option><option>Mercado Pago</option><option>c2</option><option>c3</option><option>c4</option><option>c5</option><option>c7</option><option>c8</option><option>c9</option><option>c10</option></select></div>
+        <div class="form-group"><label class="form-label">Conta<span>*</span></label><select id="l-conta" style="width:100%"></select></div>
         <div class="form-group" id="lg-ar"><label class="form-label">A Receber (R$)</label><input type="number" id="l-ar" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
         <div class="form-group" id="lg-rec"><label class="form-label">Recebido (R$)</label><input type="number" id="l-rec" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
         <div class="form-group" id="lg-ap" style="display:none"><label class="form-label">A Pagar (R$)</label><input type="number" id="l-ap" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
@@ -781,6 +781,28 @@ function brlN(v){return parseFloat(v||0).toLocaleString('pt-BR',{minimumFraction
 function hoje(){return new Date().toISOString().split('T')[0]}
 function fmtData(d){return d?d.split('-').reverse().join('/'):'—'}
 function initials(n){if(!n)return'?';const p=n.trim().split(' ');return(p[0][0]+(p[1]?.[0]||'')).toUpperCase()}
+
+// Popula qualquer <select> com as contas bancárias cadastradas
+function popularSelectContas(selectId, valorAtual=''){
+  const el=document.getElementById(selectId);
+  if(!el)return;
+  const bancos=JSON.parse(localStorage.getItem('sf_bancos')||'[]');
+  if(bancos.length===0){
+    el.innerHTML='<option value="">— Nenhuma conta cadastrada —</option>';
+    return;
+  }
+  el.innerHTML=bancos.map(b=>`<option value="${b.nome}" ${b.nome===valorAtual?'selected':''}>${b.nome}${b.banco?' · '+b.banco:''}</option>`).join('');
+}
+
+// Popula o filtro de conta do Livro Diário (mantém "Todas as contas")
+function popularFiltroContas(){
+  const el=document.getElementById('d-fconta');
+  if(!el)return;
+  const val=el.value;
+  const bancos=JSON.parse(localStorage.getItem('sf_bancos')||'[]');
+  el.innerHTML='<option value="">Todas as contas</option>'
+    +bancos.map(b=>`<option value="${b.nome}" ${b.nome===val?'selected':''}>${b.nome}</option>`).join('');
+}
 
 // ============================================================
 // NAVEGAÇÃO
@@ -973,6 +995,7 @@ function getLancFiltrados(){
 }
 
 function renderDiario(){
+  popularFiltroContas();
   const lc=gd('sf_lancamentos');
   const aR=lc.reduce((s,l)=>s+(l.aReceber||0),0);
   const rec=lc.reduce((s,l)=>s+(l.recebido||0),0);
@@ -1308,12 +1331,12 @@ function abrirModalLancamento(tipo=null,idx=null){
     const lc=gd('sf_lancamentos');const l=lc[idx];
     if(l){
       setLancTipo(l.tipo||'receber');
+      popularSelectContas('l-conta', l.conta||'');
       document.getElementById('l-data').value=l.data||'';
       document.getElementById('l-status').value=l.status||'A Receber';
       document.getElementById('l-plano').value=l.plano||'3.1 Receita de Vendas';
       document.getElementById('l-cliente').value=l.cliente||'';
       document.getElementById('l-fornecedor').value=l.fornecedor||'';
-      document.getElementById('l-conta').value=l.conta||'Caixa (Dinheiro)';
       document.getElementById('l-ar').value=l.aReceber||'';
       document.getElementById('l-rec').value=l.recebido||'';
       document.getElementById('l-ap').value=l.aPagar||'';
@@ -1324,11 +1347,11 @@ function abrirModalLancamento(tipo=null,idx=null){
     }
     document.getElementById('lanc-titulo').textContent='Editar Lançamento';
   } else {
+    popularSelectContas('l-conta', '');
     ['l-data','l-dorig'].forEach(id=>document.getElementById(id).value=hoje());
     ['l-cliente','l-fornecedor','l-hist','l-cheque'].forEach(id=>document.getElementById(id).value='');
     ['l-ar','l-rec','l-ap','l-pago'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('l-plano').value=t==='receber'?'3.1 Receita de Vendas':'4.2 Custos com Fornecedores';
-    document.getElementById('l-conta').value='Caixa (Dinheiro)';
     document.getElementById('lanc-titulo').textContent='Novo Lançamento';
   }
   abrirModal('modal-lanc');
@@ -1471,6 +1494,7 @@ function movBadgeHtml(cat){
 
 // ---------- render principal ----------
 function renderBancos(){
+  popularFiltroContas();
   const bancos=gdBancos();
   const grid=document.getElementById('banco-grid');
   const cores={corrente:'#1A5C3A',poupanca:'#1A5CA0',caixa:'#8A6200',investimento:'#6B21A8',digital:'#0E7490',outro:'#555'};
