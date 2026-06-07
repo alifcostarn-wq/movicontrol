@@ -272,6 +272,53 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
 .toast{position:fixed;bottom:22px;right:22px;background:var(--text);color:#fff;font-size:12.5px;font-weight:500;padding:11px 18px;border-radius:10px;z-index:999;transform:translateY(80px);opacity:0;transition:all 0.28s;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,0.18)}
 .toast.show{transform:translateY(0);opacity:1}
 .toast svg{width:15px;height:15px;color:#2D8C57}
+
+/* ======== CONTAS BANCÁRIAS ======== */
+.banco-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:26px}
+.banco-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;position:relative;cursor:pointer;transition:all 0.15s}
+.banco-card:hover{border-color:#2D8C57;box-shadow:0 2px 12px rgba(45,140,87,0.12)}
+.banco-card.selected{border-color:#2D8C57;background:var(--accent2)}
+.banco-card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+.banco-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+.banco-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.13s}
+.banco-card:hover .banco-actions{opacity:1}
+.banco-nome{font-size:13px;font-weight:600;margin-bottom:2px}
+.banco-tipo-label{font-size:10.5px;color:var(--text3)}
+.banco-saldo-label{font-size:10px;color:var(--text3);margin-bottom:3px}
+.banco-saldo-val{font-family:'DM Mono',monospace;font-size:18px;font-weight:500}
+.banco-saldo-val.pos{color:var(--accent)}.banco-saldo-val.neg{color:var(--danger)}
+.banco-footer{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.banco-footer-label{font-size:10px;color:var(--text3)}
+.banco-footer-val{font-family:'DM Mono',monospace;font-size:10.5px}
+.banco-add-card{background:none;border:2px dashed var(--border);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;min-height:140px;transition:all 0.13s;color:var(--text3);font-family:inherit;font-size:12px;font-weight:500}
+.banco-add-card:hover{border-color:#2D8C57;color:#2D8C57;background:var(--accent2)}
+.banco-add-card svg{width:22px;height:22px}
+.extrato-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.extrato-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.extrato-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.extrato-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px}
+.extrato-kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.extrato-kpi.dark{background:var(--text);border-color:var(--text)}
+.extrato-kpi-label{font-size:10px;color:var(--text3);margin-bottom:3px}
+.extrato-kpi.dark .extrato-kpi-label{color:rgba(255,255,255,0.4)}
+.extrato-kpi-val{font-family:'DM Mono',monospace;font-size:14px;font-weight:500}
+.extrato-kpi.dark .extrato-kpi-val{color:#fff}
+.extrato-line{display:grid;grid-template-columns:90px 1fr auto;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--bg);transition:background 0.1s}
+.extrato-line:hover{background:var(--surface2)}
+.extrato-line:last-child{border-bottom:none}
+.extrato-date{font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)}
+.extrato-desc{font-size:12px}.extrato-desc-main{font-weight:500;margin-bottom:1px}.extrato-desc-sub{font-size:10.5px;color:var(--text3)}
+.extrato-val{font-family:'DM Mono',monospace;font-size:12.5px;font-weight:500;text-align:right;white-space:nowrap}
+.extrato-val.credit{color:var(--accent)}.extrato-val.debit{color:var(--danger)}.extrato-val.transfer{color:var(--info)}
+.extrato-saldo-running{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);text-align:right;margin-top:1px}
+.extrato-tipo-badge{display:inline-flex;align-items:center;font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:10px;margin-right:6px}
+.etb-entrada{background:var(--accent2);color:var(--accent)}
+.etb-saida{background:var(--danger-bg);color:var(--danger)}
+.etb-transf{background:var(--info-bg);color:var(--info)}
+.etb-ajuste{background:var(--surface2);color:var(--text2)}
+.banco-sel-btn{padding:5px 12px;border-radius:20px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text2);transition:all 0.13s;white-space:nowrap}
+.banco-sel-btn:hover{border-color:var(--text3)}
+.banco-sel-btn.act{background:var(--accent);color:#fff;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -317,6 +364,10 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
     <button class="nav-item" data-page="fornecedores" onclick="navTo('fornecedores',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
       Fornecedores
+    </button>
+    <button class="nav-item" data-page="bancos" onclick="navTo('bancos',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      Contas Bancárias
     </button>
     <button class="nav-item" data-page="plano" onclick="navTo('plano',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -501,6 +552,43 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
     <!-- ====== PLANO DE CONTAS ====== -->
     <div class="page" id="page-plano"><div id="plano-content"></div></div>
 
+    <!-- ====== CONTAS BANCÁRIAS ====== -->
+    <div class="page" id="page-bancos">
+      <!-- Cards de contas -->
+      <div class="section-label" id="bancos-section-label">Suas Contas</div>
+      <div class="banco-grid" id="banco-grid"></div>
+
+      <!-- Extrato -->
+      <div id="extrato-section" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <div class="section-label" style="margin-bottom:0" id="extrato-section-label">Extrato</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+            <button class="banco-sel-btn act" id="eb-mes" onclick="setBancoExtratoPeriodo('mes')">Este Mês</button>
+            <button class="banco-sel-btn" id="eb-3m" onclick="setBancoExtratoPeriodo('3m')">3 Meses</button>
+            <button class="banco-sel-btn" id="eb-6m" onclick="setBancoExtratoPeriodo('6m')">6 Meses</button>
+            <button class="banco-sel-btn" id="eb-todos" onclick="setBancoExtratoPeriodo('todos')">Todos</button>
+            <input type="date" id="eb-de" title="De" onchange="setBancoExtratoPeriodo('custom')" style="font-size:11.5px">
+            <input type="date" id="eb-ate" title="Até" onchange="setBancoExtratoPeriodo('custom')" style="font-size:11.5px">
+          </div>
+        </div>
+        <div class="extrato-kpis" id="extrato-kpis"></div>
+        <div class="extrato-wrap">
+          <div class="extrato-header">
+            <div class="extrato-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span id="extrato-title-text">Extrato de Movimentação</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="extrato-busca" placeholder="Buscar..." oninput="renderExtrato()" style="width:200px"></div>
+              <button class="btn" onclick="exportarExtratoCSV()">↓ CSV</button>
+            </div>
+          </div>
+          <div id="extrato-body"></div>
+          <div class="paginacao"><span class="pag-info" id="extrato-pinfo">0 movimentações</span><div class="pag-btns" id="extrato-pbtn"></div></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </main>
 
@@ -575,6 +663,97 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
   </div>
 </div>
 
+<!-- ========== MODAL CONTA BANCÁRIA ========== -->
+<div class="modal-overlay" id="modal-banco" onclick="if(event.target===this)fecharModal('modal-banco')">
+  <div class="modal md">
+    <div class="modal-header"><span class="modal-title" id="banco-titulo">Nova Conta</span><button class="modal-close" onclick="fecharModal('modal-banco')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full"><label class="form-label">Nome da Conta<span>*</span></label><input type="text" id="bc-nome" style="width:100%" placeholder="Ex: Itaú Corrente, Caixa..."></div>
+        <div class="form-group"><label class="form-label">Tipo<span>*</span></label>
+          <select id="bc-tipo" style="width:100%">
+            <option value="corrente">Conta Corrente</option>
+            <option value="poupanca">Poupança</option>
+            <option value="caixa">Caixa (Dinheiro)</option>
+            <option value="investimento">Investimento</option>
+            <option value="digital">Conta Digital</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Banco / Instituição</label><input type="text" id="bc-banco" style="width:100%" placeholder="Ex: Itaú, Nubank..."></div>
+        <div class="form-group"><label class="form-label">Agência</label><input type="text" id="bc-agencia" style="width:100%" placeholder="0000-0"></div>
+        <div class="form-group"><label class="form-label">Conta / Dígito</label><input type="text" id="bc-conta" style="width:100%" placeholder="00000-0"></div>
+        <div class="form-group"><label class="form-label">Saldo Inicial (R$)<span>*</span></label><input type="number" id="bc-saldo" step="0.01" placeholder="0,00" style="width:100%"></div>
+        <div class="form-group"><label class="form-label">Data do Saldo Inicial</label><input type="date" id="bc-datasaldo" style="width:100%"></div>
+        <div class="form-group"><label class="form-label">Cor</label>
+          <select id="bc-cor" style="width:100%">
+            <option value="#1A5C3A">Verde</option>
+            <option value="#1A5CA0">Azul</option>
+            <option value="#8A6200">Âmbar</option>
+            <option value="#C23B2A">Vermelho</option>
+            <option value="#555">Cinza</option>
+            <option value="#6B21A8">Roxo</option>
+            <option value="#0E7490">Ciano</option>
+          </select>
+        </div>
+        <div class="form-group full"><label class="form-label">Observação</label><textarea id="bc-obs" style="width:100%" placeholder="Informações adicionais..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-banco')">Cancelar</button><button class="btn btn-primary" onclick="salvarConta()">Salvar Conta</button></div>
+  </div>
+</div>
+
+<!-- ========== MODAL AJUSTE DE SALDO ========== -->
+<div class="modal-overlay" id="modal-ajuste" onclick="if(event.target===this)fecharModal('modal-ajuste')">
+  <div class="modal md">
+    <div class="modal-header"><span class="modal-title" id="ajuste-titulo">Ajustar Saldo</span><button class="modal-close" onclick="fecharModal('modal-ajuste')">✕</button></div>
+    <div class="modal-body">
+      <div style="background:var(--surface2);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Saldo atual</div>
+        <div class="td-mono" style="font-size:20px;font-weight:600" id="ajuste-saldo-atual">R$ 0,00</div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label">Tipo de Ajuste</label>
+          <div class="tipo-toggle">
+            <button class="tipo-btn at-rec" id="aj-tipo-entrada" onclick="setAjusteTipo('entrada')">↓ Entrada</button>
+            <button class="tipo-btn" id="aj-tipo-saida" onclick="setAjusteTipo('saida')">↑ Saída</button>
+            <button class="tipo-btn" id="aj-tipo-ajuste" onclick="setAjusteTipo('ajuste')">⚖ Ajuste de Saldo</button>
+          </div>
+        </div>
+        <div class="form-group" id="ajuste-grupo-valor"><label class="form-label">Valor (R$)<span>*</span></label><input type="number" id="aj-valor" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
+        <div class="form-group" id="ajuste-grupo-novo" style="display:none"><label class="form-label">Novo Saldo (R$)<span>*</span></label><input type="number" id="aj-novosal" step="0.01" placeholder="0,00" style="width:100%"></div>
+        <div class="form-group"><label class="form-label">Data<span>*</span></label><input type="date" id="aj-data" style="width:100%"></div>
+        <div class="form-group full"><label class="form-label">Descrição<span>*</span></label><input type="text" id="aj-desc" style="width:100%" placeholder="Motivo do ajuste..."></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-ajuste')">Cancelar</button><button class="btn btn-primary" onclick="salvarMovimento()">Confirmar</button></div>
+  </div>
+</div>
+
+<!-- ========== MODAL TRANSFERÊNCIA ========== -->
+<div class="modal-overlay" id="modal-transf" onclick="if(event.target===this)fecharModal('modal-transf')">
+  <div class="modal md">
+    <div class="modal-header"><span class="modal-title">Transferência entre Contas</span><button class="modal-close" onclick="fecharModal('modal-transf')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Conta Origem<span>*</span></label><select id="tr-origem" style="width:100%" onchange="atualizarSaldoOrigem()"></select></div>
+        <div class="form-group"><label class="form-label">Conta Destino<span>*</span></label><select id="tr-destino" style="width:100%"></select></div>
+        <div class="form-group full">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <label class="form-label" style="margin-bottom:0">Valor (R$)<span>*</span></label>
+            <span style="font-size:10.5px;color:var(--text3)">Saldo: <span id="tr-saldo-origem" class="td-mono">—</span></span>
+          </div>
+          <input type="number" id="tr-valor" step="0.01" min="0" placeholder="0,00" style="width:100%">
+        </div>
+        <div class="form-group"><label class="form-label">Data<span>*</span></label><input type="date" id="tr-data" style="width:100%"></div>
+        <div class="form-group"><label class="form-label">Descrição</label><input type="text" id="tr-desc" style="width:100%" placeholder="Motivo da transferência..."></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-transf')">Cancelar</button><button class="btn btn-primary" onclick="salvarTransferencia()">Transferir</button></div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span id="toast-msg">Salvo!</span></div>
 
@@ -614,6 +793,7 @@ const PAGE_META={
   planejamento:{title:'Planejamento Financeiro',sub:'Metas previstas vs. realizadas'},
   clientes:{title:'Clientes',sub:'Cadastro de clientes'},
   fornecedores:{title:'Fornecedores',sub:'Cadastro de fornecedores'},
+  bancos:{title:'Contas Bancárias',sub:'Gestão de contas, extratos e transferências'},
   plano:{title:'Plano de Contas',sub:'Estrutura hierárquica de contas'},
 };
 
@@ -631,9 +811,10 @@ function navTo(page,btn){
   if(page==='painel'||page==='diario'||page==='contas') tr.innerHTML='<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
   else if(page==='clientes') tr.innerHTML='<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
   else if(page==='fornecedores') tr.innerHTML='<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
+  else if(page==='bancos') tr.innerHTML='<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML='';
   // Render da página
-  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano};
+  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos};
   renders[page]?.();
   atualizarBadges();
 }
@@ -720,14 +901,25 @@ function calcDRE(){
 function renderPainel(){
   const lc=gd('sf_lancamentos');
   const d=calcDRE();
-  // Saldos
+  // Saldos — fonte única: sf_bancos + sf_mov_bancarias
   const sg=document.getElementById('saldo-grid');
-  const totalSaldo=lc.reduce((s,l)=>s+(l.valorLiquido||0),0);
-  const saldosConta={};
-  CONTAS.forEach(c=>saldosConta[c]=0);
-  lc.forEach(l=>{if(l.conta&&saldosConta[l.conta]!==undefined)saldosConta[l.conta]+=(l.valorLiquido||0);});
-  sg.innerHTML=`<div class="saldo-card total-card"><div class="saldo-label">Saldo Total</div><div class="saldo-val">${brl(totalSaldo,true)}</div></div>`
-    +CONTAS.map(c=>`<div class="saldo-card"><div class="saldo-dot"></div><div class="saldo-label">${c}</div><div class="saldo-val">${brl(saldosConta[c],true)}</div></div>`).join('');
+  const bancos=gdBancos();
+  if(bancos.length===0){
+    sg.innerHTML=`<div class="saldo-card total-card" style="grid-column:1/-1"><div class="saldo-label">Saldo Total (Contas Bancárias)</div><div class="saldo-val">R$ 0,00</div><div style="font-size:10.5px;color:rgba(255,255,255,0.38);margin-top:4px">Cadastre contas em <a onclick="navTo('bancos',null)" style="color:rgba(255,255,255,0.6);cursor:pointer;text-decoration:underline">Contas Bancárias</a></div></div>`;
+  } else {
+    const totalSaldo=bancos.reduce((_,__,i)=>_+calcSaldoConta(i),0);
+    sg.innerHTML=`<div class="saldo-card total-card" onclick="navTo('bancos',null)" style="cursor:pointer"><div class="saldo-label">Saldo Total</div><div class="saldo-val">${brl(totalSaldo,true)}</div></div>`
+      +bancos.map((b,i)=>{
+        const s=calcSaldoConta(i);
+        const cor=b.cor||'#2D8C57';
+        return`<div class="saldo-card" onclick="navTo('bancos',null);selecionarConta(${i})" style="cursor:pointer">
+          <div class="saldo-dot" style="background:${cor}"></div>
+          <div class="saldo-label">${b.nome}</div>
+          <div class="saldo-val" style="color:${s<0?'var(--danger)':''}">${brl(s,true)}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">${tipoLabel(b.tipo)}</div>
+        </div>`;
+      }).join('');
+  }
   // KPIs
   const aR=lc.reduce((s,l)=>s+(l.aReceber||0),0);
   const aP=lc.reduce((s,l)=>s+(l.aPagar||0),0);
@@ -1217,6 +1409,474 @@ function showToast(msg,err=false){
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ============================================================
+// CONTAS BANCÁRIAS — MÓDULO COMPLETO
+// ============================================================
+let bancoEditIdx=null;
+let ajusteContaIdx=null;
+let ajusteTipoAtual='entrada';
+let extratoContaIdx=null; // null = todas
+let extratoPeriodo='mes';
+let extratoPagina=1;
+const EXTRATO_POR_PAG=20;
+
+// ---------- helpers ----------
+function gdBancos(){return JSON.parse(localStorage.getItem('sf_bancos')||'[]');}
+function sdBancos(v){localStorage.setItem('sf_bancos',JSON.stringify(v));}
+function gdMov(){return JSON.parse(localStorage.getItem('sf_mov_bancarias')||'[]');}
+function sdMov(v){localStorage.setItem('sf_mov_bancarias',JSON.stringify(v));}
+
+function calcSaldoConta(idx){
+  const bancos=gdBancos();
+  if(!bancos[idx])return 0;
+  const nomeConta=bancos[idx].nome||'';
+  // Saldo inicial da conta
+  const saldoInicial=parseFloat(bancos[idx].saldoInicial)||0;
+  // Movimentações manuais (entradas/saídas/transferências/ajustes)
+  const mov=gdMov().filter(m=>m.contaIdx===idx);
+  const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
+  // Lançamentos do Livro Diário vinculados a esta conta (por nome)
+  const lc=gd('sf_lancamentos');
+  const lancTotal=lc.filter(l=>(l.conta||'')=== nomeConta)
+    .reduce((s,l)=>s+(l.valorLiquido||0),0);
+  return saldoInicial+movTotal+lancTotal;
+}
+
+function calcSaldoContaAteData(idx,dataLimite){
+  const bancos=gdBancos();
+  if(!bancos[idx])return 0;
+  const nomeConta=bancos[idx].nome||'';
+  const mov=gdMov().filter(m=>m.contaIdx===idx&&(m.data||'')<=dataLimite);
+  const saldoInicial=parseFloat(bancos[idx].saldoInicial)||0;
+  const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
+  const lc=gd('sf_lancamentos');
+  const lancTotal=lc.filter(l=>(l.conta||'')===nomeConta&&(l.data||'')<=dataLimite)
+    .reduce((s,l)=>s+(l.valorLiquido||0),0);
+  return saldoInicial+movTotal+lancTotal;
+}
+
+function tipoLabel(tipo){
+  const m={corrente:'Corrente',poupanca:'Poupança',caixa:'Caixa',investimento:'Investimento',digital:'Digital',outro:'Outro'};
+  return m[tipo]||tipo;
+}
+
+function corIcone(cor){return cor||'#1A5C3A';}
+
+function movBadgeHtml(cat){
+  const m={entrada:'<span class="extrato-tipo-badge etb-entrada">↓ Entrada</span>',saida:'<span class="extrato-tipo-badge etb-saida">↑ Saída</span>',transferencia_entrada:'<span class="extrato-tipo-badge etb-transf">⇄ Transf. In</span>',transferencia_saida:'<span class="extrato-tipo-badge etb-transf">⇄ Transf. Out</span>',ajuste:'<span class="extrato-tipo-badge etb-ajuste">⚖ Ajuste</span>'};
+  return m[cat]||'';
+}
+
+// ---------- render principal ----------
+function renderBancos(){
+  const bancos=gdBancos();
+  const grid=document.getElementById('banco-grid');
+  const cores={corrente:'#1A5C3A',poupanca:'#1A5CA0',caixa:'#8A6200',investimento:'#6B21A8',digital:'#0E7490',outro:'#555'};
+
+  let html=bancos.map((b,i)=>{
+    const saldo=calcSaldoConta(i);
+    const cor=b.cor||cores[b.tipo]||'#555';
+    const letra=(b.nome||'?')[0].toUpperCase();
+    const movCount=gdMov().filter(m=>m.contaIdx===i).length;
+    return`<div class="banco-card ${extratoContaIdx===i?'selected':''}" onclick="selecionarConta(${i})">
+      <div class="banco-card-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="banco-icon" style="background:${cor}22;color:${cor}">${letra}</div>
+          <div><div class="banco-nome">${b.nome}</div><div class="banco-tipo-label">${tipoLabel(b.tipo)}${b.banco?' · '+b.banco:''}</div></div>
+        </div>
+        <div class="banco-actions">
+          <button class="action-btn" title="Editar" onclick="event.stopPropagation();abrirModalBanco(${i})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="action-btn" title="Ajustar saldo" onclick="event.stopPropagation();abrirModalAjuste(${i},'entrada')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+          <button class="action-btn del" title="Excluir" onclick="event.stopPropagation();excluirConta(${i})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+        </div>
+      </div>
+      <div class="banco-saldo-label">Saldo atual</div>
+      <div class="banco-saldo-val ${saldo>=0?'pos':'neg'}">${brl(saldo,true)}</div>
+      <div class="banco-footer">
+        <span class="banco-footer-label">${movCount} movimentações</span>
+        ${b.agencia?`<span class="banco-footer-val td-muted" style="font-size:10px">Ag: ${b.agencia}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // card total + botão adicionar
+  const totalGeral=bancos.reduce((_,__,i)=>_+calcSaldoConta(i),0);
+  const cardTotal=bancos.length>0?`<div class="banco-card" style="background:var(--text);border-color:var(--text);cursor:default" onclick="selecionarConta(null)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div class="banco-icon" style="background:rgba(255,255,255,0.12);color:#fff">Σ</div>
+      <div><div style="color:#fff;font-size:13px;font-weight:600">Todas as Contas</div><div style="font-size:10.5px;color:rgba(255,255,255,0.45)">${bancos.length} conta${bancos.length!==1?'s':''}</div></div>
+    </div>
+    <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:3px">Saldo consolidado</div>
+    <div style="font-family:'DM Mono',monospace;font-size:20px;font-weight:500;color:#fff">${brl(totalGeral,true)}</div>
+  </div>`:'';
+
+  const btnAdd=`<button class="banco-add-card" onclick="abrirModalBanco()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Nova Conta</button>`;
+
+  grid.innerHTML=cardTotal+html+btnAdd;
+
+  if(bancos.length===0){
+    document.getElementById('extrato-section').style.display='none';
+  } else {
+    document.getElementById('extrato-section').style.display='';
+    renderExtrato();
+  }
+}
+
+function selecionarConta(idx){
+  extratoContaIdx=idx;
+  extratoPagina=1;
+  renderBancos();
+}
+
+// ---------- extrato ----------
+function setBancoExtratoPeriodo(p){
+  extratoPeriodo=p;
+  extratoPagina=1;
+  ['mes','3m','6m','todos'].forEach(id=>{
+    const el=document.getElementById('eb-'+id);
+    if(el)el.className='banco-sel-btn'+(p===id?' act':'');
+  });
+  renderExtrato();
+}
+
+function filtrarMovPeriodo(mov){
+  const hoje_=new Date();
+  const iso=d=>d.toISOString().split('T')[0];
+  let de='',ate='';
+  if(extratoPeriodo==='mes'){
+    de=iso(new Date(hoje_.getFullYear(),hoje_.getMonth(),1));
+    ate=iso(new Date(hoje_.getFullYear(),hoje_.getMonth()+1,0));
+  } else if(extratoPeriodo==='3m'){
+    de=iso(new Date(hoje_.getFullYear(),hoje_.getMonth()-2,1));
+    ate=iso(hoje_);
+  } else if(extratoPeriodo==='6m'){
+    de=iso(new Date(hoje_.getFullYear(),hoje_.getMonth()-5,1));
+    ate=iso(hoje_);
+  } else if(extratoPeriodo==='custom'){
+    de=document.getElementById('eb-de')?.value||'';
+    ate=document.getElementById('eb-ate')?.value||'';
+  }
+  if(!de&&!ate)return mov;
+  return mov.filter(m=>{
+    if(de&&m.data<de)return false;
+    if(ate&&m.data>ate)return false;
+    return true;
+  });
+}
+
+function renderExtrato(){
+  const bancos=gdBancos();
+  const allMovBanco=gdMov();
+  const allLanc=gd('sf_lancamentos');
+  const busca=(document.getElementById('extrato-busca')?.value||'').toLowerCase();
+
+  // Converter lançamentos do Livro Diário em movimentações para o extrato
+  const lancComoMov=[];
+  bancos.forEach((b,i)=>{
+    allLanc.filter(l=>(l.conta||'')===b.nome).forEach(l=>{
+      const v=l.valorLiquido||0;
+      if(v===0)return;
+      lancComoMov.push({
+        id:'lanc_'+l.lin+'_'+i,
+        contaIdx:i,
+        contaNome:b.nome,
+        cat:v>0?'entrada':'saida',
+        data:l.data||'',
+        descricao:(l.historico||l.plano||'Lançamento'),
+        valor:v,
+        ts:0,
+        _deLanc:true,
+      });
+    });
+  });
+
+  const allMov=[...allMovBanco,...lancComoMov];
+
+  // Filtrar por conta selecionada
+  let mov=extratoContaIdx===null?allMov:allMov.filter(m=>m.contaIdx===extratoContaIdx);
+
+  // filtrar período
+  mov=filtrarMovPeriodo(mov);
+
+  // filtrar busca
+  if(busca)mov=mov.filter(m=>(m.descricao||'').toLowerCase().includes(busca)||(m.contaNome||'').toLowerCase().includes(busca));
+
+  // ordenar mais recente primeiro
+  mov=[...mov].sort((a,b)=>(b.data||'').localeCompare(a.data||'')||(b.ts||0)-(a.ts||0));
+
+  // título
+  const nome=extratoContaIdx===null?'Todas as Contas':(bancos[extratoContaIdx]?.nome||'Conta');
+  document.getElementById('extrato-title-text').textContent='Extrato — '+nome;
+  document.getElementById('extrato-section-label').textContent='Extrato — '+nome;
+
+  // KPIs do período
+  const entradas=mov.filter(m=>m.cat==='entrada'||m.cat==='transferencia_entrada').reduce((s,m)=>s+Math.abs(m.valor||0),0);
+  const saidas=mov.filter(m=>m.cat==='saida'||m.cat==='transferencia_saida').reduce((s,m)=>s+Math.abs(m.valor||0),0);
+  const saldoPeriodo=entradas-saidas;
+  const saldoAtual=extratoContaIdx===null?bancos.reduce((_,__,i)=>_+calcSaldoConta(i),0):calcSaldoConta(extratoContaIdx);
+
+  document.getElementById('extrato-kpis').innerHTML=`
+    <div class="extrato-kpi"><div class="extrato-kpi-label">Entradas no Período</div><div class="extrato-kpi-val" style="color:var(--accent)">${brl(entradas,true)}</div></div>
+    <div class="extrato-kpi"><div class="extrato-kpi-label">Saídas no Período</div><div class="extrato-kpi-val" style="color:var(--danger)">${brl(saidas,true)}</div></div>
+    <div class="extrato-kpi"><div class="extrato-kpi-label">Saldo do Período</div><div class="extrato-kpi-val" style="color:${saldoPeriodo>=0?'var(--accent)':'var(--danger)'}">${brl(saldoPeriodo,true)}</div></div>
+    <div class="extrato-kpi dark"><div class="extrato-kpi-label">Saldo Atual</div><div class="extrato-kpi-val">${brl(saldoAtual,true)}</div></div>`;
+
+  // paginação
+  const total=mov.length;
+  const tp=Math.max(1,Math.ceil(total/EXTRATO_POR_PAG));
+  if(extratoPagina>tp)extratoPagina=tp;
+  const pag=mov.slice((extratoPagina-1)*EXTRATO_POR_PAG,extratoPagina*EXTRATO_POR_PAG);
+
+  if(mov.length===0){
+    document.getElementById('extrato-body').innerHTML='<div class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div><div class="empty-title">Sem movimentações</div><div class="empty-sub">Nenhuma movimentação encontrada para o período.</div></div>';
+  } else {
+    document.getElementById('extrato-body').innerHTML=pag.map((m)=>{
+      const isPos=m.valor>0;
+      const valClass=m.cat?.startsWith('transfer')?'transfer':(isPos?'credit':'debit');
+      const contaNome=extratoContaIdx===null?(m.contaNome||''):'';
+      const origemLabel=m._deLanc?'<span style="font-size:9.5px;background:var(--surface2);color:var(--text3);padding:1px 6px;border-radius:8px;margin-right:4px">Livro Diário</span>':'';
+      const delBtn=m._deLanc?'<span style="font-size:10px;color:var(--text3)" title="Edite no Livro Diário">—</span>'
+        :`<button class="action-btn del" onclick="excluirMovimento('${m.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg></button>`;
+      return`<div class="extrato-line">
+        <div><div class="extrato-date">${fmtData(m.data)}</div></div>
+        <div class="extrato-desc">
+          <div class="extrato-desc-main">${origemLabel}${movBadgeHtml(m.cat)}${m.descricao||'—'}</div>
+          <div class="extrato-desc-sub">${contaNome?contaNome+' · ':''}${m.cat==='transferencia_saida'?'Para: '+m.contaDestNome:m.cat==='transferencia_entrada'?'De: '+m.contaOrigNome:''}</div>
+        </div>
+        <div>
+          <div class="extrato-val ${valClass}">${isPos?'+':''} ${brl(Math.abs(m.valor),true)}</div>
+          <div class="action-btns" style="justify-content:flex-end;margin-top:4px">${delBtn}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // pag info
+  document.getElementById('extrato-pinfo').textContent=`${total} movimentação${total!==1?'s':''}`;
+  const pb=document.getElementById('extrato-pbtn');
+  pb.innerHTML='';
+  const addP=(txt,pg,dis,act)=>{
+    const b=document.createElement('button');b.className='pag-btn'+(act?' active':'');
+    b.textContent=txt;b.disabled=dis;b.onclick=()=>{extratoPagina=pg;renderExtrato();};pb.appendChild(b);
+  };
+  addP('«',1,extratoPagina===1,false);addP('‹',extratoPagina-1,extratoPagina===1,false);
+  let s=Math.max(1,extratoPagina-2),e=Math.min(tp,s+4);if(e-s<4)s=Math.max(1,e-4);
+  for(let i=s;i<=e;i++)addP(i,i,false,i===extratoPagina);
+  addP('›',extratoPagina+1,extratoPagina===tp,false);addP('»',tp,extratoPagina===tp,false);
+}
+
+// ---------- modal conta bancária ----------
+function abrirModalBanco(idx=null){
+  bancoEditIdx=idx;
+  const bancos=gdBancos();
+  document.getElementById('banco-titulo').textContent=idx!==null?'Editar Conta':'Nova Conta';
+  const campos=['nome','tipo','banco','agencia','conta','saldo','datasaldo','cor','obs'];
+  const defaults={tipo:'corrente',cor:'#1A5C3A',datasaldo:hoje(),saldo:''};
+  if(idx!==null){
+    const b=bancos[idx];
+    document.getElementById('bc-nome').value=b.nome||'';
+    document.getElementById('bc-tipo').value=b.tipo||'corrente';
+    document.getElementById('bc-banco').value=b.banco||'';
+    document.getElementById('bc-agencia').value=b.agencia||'';
+    document.getElementById('bc-conta').value=b.conta||'';
+    document.getElementById('bc-saldo').value=b.saldoInicial||'';
+    document.getElementById('bc-datasaldo').value=b.dataSaldoInicial||hoje();
+    document.getElementById('bc-cor').value=b.cor||'#1A5C3A';
+    document.getElementById('bc-obs').value=b.obs||'';
+  } else {
+    document.getElementById('bc-nome').value='';
+    document.getElementById('bc-tipo').value='corrente';
+    document.getElementById('bc-banco').value='';
+    document.getElementById('bc-agencia').value='';
+    document.getElementById('bc-conta').value='';
+    document.getElementById('bc-saldo').value='';
+    document.getElementById('bc-datasaldo').value=hoje();
+    document.getElementById('bc-cor').value='#1A5C3A';
+    document.getElementById('bc-obs').value='';
+  }
+  abrirModal('modal-banco');
+}
+
+function salvarConta(){
+  const nome=document.getElementById('bc-nome').value.trim();
+  if(!nome){showToast('Informe o nome da conta.',true);return;}
+  const saldo=parseFloat(document.getElementById('bc-saldo').value)||0;
+  const bancos=gdBancos();
+  const item={
+    nome,
+    tipo:document.getElementById('bc-tipo').value,
+    banco:document.getElementById('bc-banco').value,
+    agencia:document.getElementById('bc-agencia').value,
+    conta:document.getElementById('bc-conta').value,
+    saldoInicial:saldo,
+    dataSaldoInicial:document.getElementById('bc-datasaldo').value||hoje(),
+    cor:document.getElementById('bc-cor').value,
+    obs:document.getElementById('bc-obs').value,
+  };
+  if(bancoEditIdx!==null){
+    bancos[bancoEditIdx]={...bancos[bancoEditIdx],...item};
+  } else {
+    bancos.push(item);
+  }
+  sdBancos(bancos);
+  fecharModal('modal-banco');
+  renderBancos();
+  showToast(bancoEditIdx!==null?'Conta atualizada!':'Conta criada!');
+}
+
+function excluirConta(idx){
+  if(!confirm('Excluir esta conta e todas as suas movimentações?'))return;
+  const bancos=gdBancos();
+  bancos.splice(idx,1);
+  sdBancos(bancos);
+  // reindexar movimentos
+  const mov=gdMov().filter(m=>m.contaIdx!==idx).map(m=>{
+    if(m.contaIdx>idx)return{...m,contaIdx:m.contaIdx-1};
+    return m;
+  });
+  sdMov(mov);
+  if(extratoContaIdx===idx||extratoContaIdx===null)extratoContaIdx=null;
+  else if(extratoContaIdx>idx)extratoContaIdx--;
+  renderBancos();
+  showToast('Conta excluída.');
+}
+
+// ---------- modal ajuste/entrada/saída ----------
+function setAjusteTipo(t){
+  ajusteTipoAtual=t;
+  ['entrada','saida','ajuste'].forEach(k=>{
+    const el=document.getElementById('aj-tipo-'+k);
+    if(!el)return;
+    el.className='tipo-btn'+(t===k?(k==='entrada'?' at-rec':k==='saida'?' at-pag':' at-rec'):'');
+  });
+  document.getElementById('ajuste-grupo-valor').style.display=t==='ajuste'?'none':'';
+  document.getElementById('ajuste-grupo-novo').style.display=t==='ajuste'?'':'none';
+}
+
+function abrirModalAjuste(idx=null,tipoInicial='entrada'){
+  const bancos=gdBancos();
+  ajusteContaIdx=idx;
+  // Se idx null, pegar conta selecionada ou a primeira
+  const contaReal=idx!==null?idx:(extratoContaIdx!==null?extratoContaIdx:(bancos.length>0?0:null));
+  if(contaReal===null&&bancos.length===0){showToast('Cadastre uma conta primeiro.',true);return;}
+  ajusteContaIdx=contaReal;
+  const saldoAtual=calcSaldoConta(contaReal);
+  document.getElementById('ajuste-titulo').textContent=(bancos[contaReal]?.nome||'Conta')+' — Movimentação';
+  document.getElementById('ajuste-saldo-atual').textContent=brl(saldoAtual,true);
+  document.getElementById('aj-valor').value='';
+  document.getElementById('aj-novosal').value='';
+  document.getElementById('aj-data').value=hoje();
+  document.getElementById('aj-desc').value='';
+  setAjusteTipo(tipoInicial);
+  abrirModal('modal-ajuste');
+}
+
+function salvarMovimento(){
+  if(ajusteContaIdx===null){showToast('Nenhuma conta selecionada.',true);return;}
+  const bancos=gdBancos();
+  const desc=document.getElementById('aj-desc').value.trim();
+  if(!desc){showToast('Informe uma descrição.',true);return;}
+  const data=document.getElementById('aj-data').value;
+  if(!data){showToast('Informe a data.',true);return;}
+  let valor=0;
+  const saldoAtual=calcSaldoConta(ajusteContaIdx);
+  if(ajusteTipoAtual==='ajuste'){
+    const novoSaldo=parseFloat(document.getElementById('aj-novosal').value);
+    if(isNaN(novoSaldo)){showToast('Informe o novo saldo.',true);return;}
+    valor=novoSaldo-saldoAtual;
+  } else {
+    const v=parseFloat(document.getElementById('aj-valor').value);
+    if(!v||v<=0){showToast('Informe um valor válido.',true);return;}
+    valor=ajusteTipoAtual==='entrada'?v:-v;
+  }
+  const mov=gdMov();
+  mov.push({
+    id:'mov_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+    contaIdx:ajusteContaIdx,
+    contaNome:bancos[ajusteContaIdx]?.nome||'',
+    cat:ajusteTipoAtual==='ajuste'?'ajuste':ajusteTipoAtual,
+    data,
+    descricao:desc,
+    valor,
+    ts:Date.now(),
+  });
+  sdMov(mov);
+  fecharModal('modal-ajuste');
+  renderBancos();
+  showToast('Movimentação registrada!');
+}
+
+function excluirMovimento(id){
+  if(!confirm('Excluir esta movimentação?'))return;
+  sdMov(gdMov().filter(m=>m.id!==id));
+  renderBancos();
+  showToast('Movimentação excluída.');
+}
+
+// ---------- modal transferência ----------
+function abrirModalTransferencia(){
+  const bancos=gdBancos();
+  if(bancos.length<2){showToast('Você precisa de ao menos 2 contas para transferir.',true);return;}
+  const opts=bancos.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
+  document.getElementById('tr-origem').innerHTML=opts;
+  document.getElementById('tr-destino').innerHTML=opts;
+  if(bancos.length>1)document.getElementById('tr-destino').selectedIndex=1;
+  document.getElementById('tr-valor').value='';
+  document.getElementById('tr-data').value=hoje();
+  document.getElementById('tr-desc').value='';
+  atualizarSaldoOrigem();
+  abrirModal('modal-transf');
+}
+
+function atualizarSaldoOrigem(){
+  const idx=parseInt(document.getElementById('tr-origem').value);
+  const saldo=calcSaldoConta(idx);
+  document.getElementById('tr-saldo-origem').textContent=brl(saldo,true);
+}
+
+function salvarTransferencia(){
+  const bancos=gdBancos();
+  const origIdx=parseInt(document.getElementById('tr-origem').value);
+  const destIdx=parseInt(document.getElementById('tr-destino').value);
+  if(origIdx===destIdx){showToast('Origem e destino não podem ser iguais.',true);return;}
+  const valor=parseFloat(document.getElementById('tr-valor').value);
+  if(!valor||valor<=0){showToast('Informe um valor válido.',true);return;}
+  const data=document.getElementById('tr-data').value;
+  if(!data){showToast('Informe a data.',true);return;}
+  const desc=document.getElementById('tr-desc').value.trim()||'Transferência entre contas';
+  const pairId='tr_'+Date.now();
+  const mov=gdMov();
+  mov.push({
+    id:pairId+'_s',contaIdx:origIdx,contaNome:bancos[origIdx]?.nome||'',
+    cat:'transferencia_saida',data,descricao:desc,valor:-valor,
+    contaDestNome:bancos[destIdx]?.nome||'',ts:Date.now(),pairId,
+  });
+  mov.push({
+    id:pairId+'_e',contaIdx:destIdx,contaNome:bancos[destIdx]?.nome||'',
+    cat:'transferencia_entrada',data,descricao:desc,valor:valor,
+    contaOrigNome:bancos[origIdx]?.nome||'',ts:Date.now(),pairId,
+  });
+  sdMov(mov);
+  fecharModal('modal-transf');
+  renderBancos();
+  showToast(`Transferência de ${brl(valor,true)} realizada!`);
+}
+
+// ---------- exportar extrato CSV ----------
+function exportarExtratoCSV(){
+  const bancos=gdBancos();
+  const allMov=gdMov();
+  let mov=extratoContaIdx===null?allMov:allMov.filter(m=>m.contaIdx===extratoContaIdx);
+  mov=filtrarMovPeriodo(mov);
+  mov=[...mov].sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  if(!mov.length){showToast('Sem dados para exportar.',true);return;}
+  const h='Data;Conta;Tipo;Descrição;Valor';
+  const r=mov.map(m=>[fmtData(m.data),(m.contaNome||''),m.cat||'',(m.descricao||'').replace(/;/g,' '),parseFloat(m.valor||0).toFixed(2).replace('.',',')].join(';'));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));
+  a.download='extrato_bancario.csv';a.click();showToast('CSV exportado!');
 }
 
 // ============================================================
