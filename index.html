@@ -280,42 +280,138 @@ table.plan{width:100%;border-collapse:collapse;min-width:1000px}
 .pcv-input{width:100%;background:none;border:none;outline:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--info);text-align:right;padding:6px 7px;cursor:text;display:block}
 .pcv-input:focus{background:var(--info-bg)}
 
-/* ======== PLANO DE CONTAS — EDIÇÃO ======== */
-.plano-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px}
-.plano-row{display:flex;align-items:center;border-bottom:1px solid var(--bg);transition:background 0.1s}
-.plano-row:last-child{border-bottom:none}
-.plano-row:hover{background:var(--surface2)}
-.plano-row:hover .plano-actions{opacity:1}
-.plano-cod{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);padding:8px 12px;min-width:66px;border-right:1px solid var(--bg)}
-.plano-nome{font-size:12px;padding:8px 14px;flex:1}
-.plano-nome.b{font-weight:600}.plano-nome.s{padding-left:26px;color:var(--text2)}.plano-nome.s2{padding-left:40px;font-size:11px;color:var(--text3)}
-.plano-tipo{font-size:10px;font-weight:600;padding:8px 12px;min-width:80px;text-align:right}
-.pbt-rec{color:var(--accent)}.pbt-custo{color:var(--danger)}.pbt-desp{color:var(--warn)}.pbt-inv{color:var(--info)}.pbt-nop{color:var(--text3)}
-.plano-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;margin-left:8px}
-.pb-rec{background:var(--accent2);color:var(--accent)}.pb-custo{background:var(--danger-bg);color:var(--danger)}.pb-desp{background:var(--warn-bg);color:var(--warn)}.pb-inv{background:var(--info-bg);color:var(--info)}.pb-nop{background:var(--surface2);color:var(--text2)}
-.plano-section-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+/* ======== PLANO DE CONTAS — 3 NÍVEIS ======== */
+.plano-section{margin-bottom:28px}
+
+/* Nível 0 — Conta Geral (ex: 3. RECEITA / FATURAMENTO) */
+.plano-l0{
+  display:flex;align-items:center;gap:0;
+  background:var(--text);border-radius:10px;
+  margin-bottom:4px;overflow:hidden;
+  transition:background 0.12s;
+}
+.plano-l0:hover .plano-actions{opacity:1}
+.plano-l0-cod{
+  font-family:'DM Mono',monospace;font-size:11px;font-weight:600;
+  color:rgba(255,255,255,0.45);padding:11px 14px;min-width:70px;
+  border-right:1px solid rgba(255,255,255,0.08);
+}
+.plano-l0-nome{
+  font-size:12.5px;font-weight:700;color:#fff;
+  padding:11px 16px;flex:1;letter-spacing:0.02em;text-transform:uppercase;
+}
+.plano-l0-tag{
+  font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;
+  margin-right:10px;
+}
+.plano-l0-actions{opacity:0;display:flex;align-items:center;gap:2px;padding-right:8px;transition:opacity 0.15s}
+
+/* Nível 1 — Grupo (ex: 3.1 Receita de Vendas) */
+.plano-l1-wrap{
+  border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;margin-bottom:4px;margin-left:20px;
+  background:var(--surface);
+}
+.plano-l1{
+  display:flex;align-items:center;
+  background:var(--surface2);
+  border-bottom:1px solid var(--border);
+  transition:background 0.1s;
+}
+.plano-l1:hover{background:#EEF0EA}
+.plano-l1:hover .plano-actions{opacity:1}
+.plano-l1-cod{
+  font-family:'DM Mono',monospace;font-size:10.5px;font-weight:600;
+  color:var(--text2);padding:9px 14px;min-width:70px;
+  border-right:1px solid var(--border);
+}
+.plano-l1-nome{
+  font-size:12px;font-weight:600;color:var(--text);
+  padding:9px 14px;flex:1;
+}
+
+/* Nível 2 — Subgrupo (ex: 3.1.1 Vendas em Dinheiro) */
+.plano-l2{
+  display:flex;align-items:center;
+  border-bottom:1px solid var(--bg);
+  background:var(--surface);
+  transition:background 0.1s;
+}
+.plano-l2:last-child{border-bottom:none}
+.plano-l2:hover{background:var(--surface2)}
+.plano-l2:hover .plano-actions{opacity:1}
+.plano-l2-cod{
+  font-family:'DM Mono',monospace;font-size:10px;
+  color:var(--text3);padding:7px 14px;min-width:70px;
+  border-right:1px solid var(--bg);
+}
+.plano-l2-nome{
+  font-size:11.5px;color:var(--text2);
+  padding:7px 14px 7px 28px;flex:1;
+}
+
+/* Ações hover (compartilhado) */
 .plano-actions{opacity:0;display:flex;align-items:center;gap:2px;padding-right:8px;transition:opacity 0.15s}
 .plano-act-btn{width:24px;height:24px;border-radius:5px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);transition:all 0.12s}
-.plano-act-btn:hover{background:var(--surface);color:var(--text)}
-.plano-act-btn.del:hover{background:var(--danger-bg);color:var(--danger)}
-.plano-section-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
-.plano-add-btn{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;padding:3px 8px;border-radius:6px;border:1px dashed var(--border);background:none;font-family:inherit;transition:all 0.12s}
+.plano-act-btn:hover{background:rgba(255,255,255,0.12);color:#fff}
+.plano-l1 .plano-act-btn:hover,.plano-l2 .plano-act-btn:hover{background:var(--surface);color:var(--text)}
+.plano-act-btn.del:hover{background:var(--danger-bg)!important;color:var(--danger)!important}
+
+/* Botões adicionar */
+.plano-add-row{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 14px 6px 28px;
+  font-size:11px;color:var(--text3);cursor:pointer;
+  border-top:1px dashed var(--border);
+  background:var(--surface);
+  transition:all 0.12s;
+  border:none;width:100%;font-family:inherit;text-align:left;
+}
+.plano-add-row:hover{background:var(--accent2);color:var(--accent)}
+.plano-add-l1{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 14px;font-size:11px;color:var(--text3);cursor:pointer;
+  background:rgba(255,255,255,0.04);border:none;width:100%;
+  font-family:inherit;text-align:left;
+  border-top:1px dashed rgba(255,255,255,0.1);
+  transition:all 0.12s;
+}
+.plano-add-l1:hover{background:rgba(255,255,255,0.09);color:rgba(255,255,255,0.8)}
+
+/* Tags de categoria */
+.tag-rec{background:var(--accent2);color:var(--accent)}
+.tag-custo{background:var(--danger-bg);color:var(--danger)}
+.tag-desp{background:var(--warn-bg);color:var(--warn)}
+.tag-inv{background:var(--info-bg);color:var(--info)}
+.tag-nop{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.6)}
+
+/* Barra superior da seção */
+.plano-section-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.plano-section-title{font-size:10.5px;font-weight:700;color:var(--text3);letter-spacing:0.07em;text-transform:uppercase}
+.plano-add-btn{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;padding:4px 10px;border-radius:6px;border:1px dashed var(--border);background:none;font-family:inherit;transition:all 0.12s}
 .plano-add-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent2)}
 
-/* Modal plano */
+/* Modal */
 .modal-plano-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:300;display:none;align-items:center;justify-content:center}
 .modal-plano-overlay.open{display:flex}
-.modal-plano{background:var(--surface);border-radius:14px;padding:28px;width:440px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.18)}
-.mp-title{font-size:15px;font-weight:600;margin-bottom:20px}
+.modal-plano{background:var(--surface);border-radius:14px;padding:28px;width:460px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.18)}
+.mp-title{font-size:15px;font-weight:600;margin-bottom:4px}
+.mp-subtitle{font-size:11px;color:var(--text3);margin-bottom:20px}
 .mp-field{margin-bottom:14px}
-.mp-label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:5px}
+.mp-label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:5px;display:block}
 .mp-input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--surface2);color:var(--text);outline:none;transition:border 0.12s}
 .mp-input:focus{border-color:var(--accent)}
-.mp-row{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
+.mp-input:disabled{opacity:0.5;cursor:not-allowed}
+.mp-nivel-pills{display:flex;gap:6px;margin-top:2px}
+.mp-nivel-pill{flex:1;padding:8px;border-radius:8px;border:2px solid var(--border);background:var(--surface2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text2);transition:all 0.12s;text-align:center}
+.mp-nivel-pill:hover{border-color:var(--text3)}
+.mp-nivel-pill.active{border-color:var(--accent);background:var(--accent2);color:var(--accent)}
+.mp-row{display:flex;gap:10px;margin-top:22px;justify-content:flex-end}
 .mp-cancel{padding:8px 18px;border-radius:7px;border:1px solid var(--border);background:none;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;color:var(--text2)}
 .mp-cancel:hover{background:var(--surface2)}
-.mp-save{padding:8px 20px;border-radius:7px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer}
+.mp-save{padding:8px 22px;border-radius:7px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer}
 .mp-save:hover{background:#155030}
+.mp-nivel-hint{font-size:10.5px;color:var(--text3);margin-top:6px;padding:8px 10px;background:var(--surface2);border-radius:6px;line-height:1.5}
 
 /* ======== CONTAS PAGAR/RECEBER ======== */
 .resumo-rapido{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:22px}
@@ -651,8 +747,28 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
     <div class="modal-plano-overlay" id="modal-plano-overlay">
       <div class="modal-plano">
         <div class="mp-title" id="mp-title">Nova Conta</div>
+        <div class="mp-subtitle" id="mp-subtitle">Selecione o nível e preencha os dados</div>
+
         <div class="mp-field">
-          <div class="mp-label">Grupo</div>
+          <label class="mp-label">Nível</label>
+          <div class="mp-nivel-pills">
+            <button class="mp-nivel-pill" id="mp-pill-0" onclick="mpSetNivel(0)">
+              Conta Geral<br><span style="font-size:9.5px;font-weight:400;opacity:0.7">ex: 3. RECEITAS</span>
+            </button>
+            <button class="mp-nivel-pill" id="mp-pill-1" onclick="mpSetNivel(1)">
+              Grupo<br><span style="font-size:9.5px;font-weight:400;opacity:0.7">ex: 3.1 Rec. de Vendas</span>
+            </button>
+            <button class="mp-nivel-pill active" id="mp-pill-2" onclick="mpSetNivel(2)">
+              Subgrupo<br><span style="font-size:9.5px;font-weight:400;opacity:0.7">ex: 3.1.1 Em Dinheiro</span>
+            </button>
+          </div>
+          <div class="mp-nivel-hint" id="mp-nivel-hint">
+            📌 <strong>Subgrupo</strong> — conta analítica vinculada a um Grupo. É o nível mais detalhado do plano.
+          </div>
+        </div>
+
+        <div class="mp-field">
+          <label class="mp-label">Seção</label>
           <select id="mp-grupo" class="mp-input" onchange="mpGrupoChange()">
             <option value="0">RECEITAS</option>
             <option value="1">CUSTOS VARIÁVEIS</option>
@@ -661,22 +777,18 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
             <option value="4">NÃO OPERACIONAIS</option>
           </select>
         </div>
-        <div class="mp-field" id="mp-nivel-field">
-          <div class="mp-label">Nível</div>
-          <select id="mp-nivel" class="mp-input" onchange="mpNivelChange()">
-            <option value="0">Grupo (nível 0)</option>
-            <option value="1">Subcategoria (nível 1)</option>
-            <option value="2">Conta (nível 2)</option>
-          </select>
+
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+          <div class="mp-field">
+            <label class="mp-label">Código</label>
+            <input type="text" id="mp-cod" class="mp-input" placeholder="ex: 3.1.1">
+          </div>
+          <div class="mp-field">
+            <label class="mp-label">Nome da Conta</label>
+            <input type="text" id="mp-nome" class="mp-input" placeholder="ex: Vendas em Dinheiro">
+          </div>
         </div>
-        <div class="mp-field">
-          <div class="mp-label">Código <span style="color:var(--text3);font-weight:400">(opcional para nível 2)</span></div>
-          <input type="text" id="mp-cod" class="mp-input" placeholder="ex: 3.1, 501">
-        </div>
-        <div class="mp-field">
-          <div class="mp-label">Nome da Conta</div>
-          <input type="text" id="mp-nome" class="mp-input" placeholder="ex: 5.2 Despesas Administrativas">
-        </div>
+
         <div class="mp-row">
           <button class="mp-cancel" onclick="fecharModalPlano()">Cancelar</button>
           <button class="mp-save" onclick="salvarPlano()">Salvar</button>
@@ -1450,145 +1562,290 @@ function exportarCadastroCSV(tipo){
 }
 
 // ============================================================
-// PLANO DE CONTAS — EDITÁVEL
+// PLANO DE CONTAS — HIERARQUIA 3 NÍVEIS
+// Nível 0 = Conta Geral  (ex: 3. RECEITA / FATURAMENTO)
+// Nível 1 = Grupo        (ex: 3.1 Receita de Vendas)
+// Nível 2 = Subgrupo     (ex: 3.1.1 Vendas em Dinheiro)
 // ============================================================
 const _planoSalvo = JSON.parse(localStorage.getItem('sf_plano') || 'null');
 let PLANO_DATA = (_planoSalvo && _planoSalvo.length > 0) ? _planoSalvo : [
-  {g:'RECEITAS',cls:'pb-rec',t:'rec',itens:[
-    {c:'300',n:'RECEITA / FATURAMENTO',l:0},
-    {c:'301',n:'3.1 Receita de Vendas',l:1},
-    {c:'',n:'3.1.1 Vendas em Dinheiro',l:2},
-    {c:'',n:'3.1.2 Vendas Cartões Débito',l:2},
-    {c:'',n:'3.1.3 Vendas Cartões Crédito',l:2},
-    {c:'',n:'3.1.5 Vendas em Boleto',l:2},
-    {c:'302',n:'3.2 Outras Receitas',l:1},
-    {c:'303',n:'3.3 Recebimento de Juros',l:1}
+  {g:'RECEITAS', cls:'pb-rec', t:'rec', itens:[
+    {c:'3.',   n:'RECEITA / FATURAMENTO',               l:0},
+    {c:'3.1',  n:'Receita de Vendas',                   l:1},
+    {c:'3.1.1',n:'Vendas em Dinheiro',                  l:2},
+    {c:'3.1.2',n:'Vendas Cartões de Débito',            l:2},
+    {c:'3.1.3',n:'Vendas Cartões de Crédito',           l:2},
+    {c:'3.1.4',n:'Vendas em Cheque',                    l:2},
+    {c:'3.1.5',n:'Vendas em Boleto',                    l:2},
+    {c:'3.1.99',n:'Outros Produtos / Serviços',         l:2},
+    {c:'3.2',  n:'Outras Receitas de Vendas',           l:1},
+    {c:'3.2.99',n:'Outros Receitas de Vendas',          l:2},
+    {c:'3.3',  n:'Recebimento de Juros',                l:1},
   ]},
-  {g:'CUSTOS VARIÁVEIS',cls:'pb-custo',t:'custo',itens:[
-    {c:'399',n:'CUSTOS VARIÁVEIS',l:0},
-    {c:'401',n:'4.1 Custos Tributários / Financeiros',l:1},
-    {c:'',n:'4.1.1 Simples Nacional',l:2},
-    {c:'',n:'4.1.2 Taxas de Cartões',l:2},
-    {c:'',n:'4.1.3 Taxas de Boleto',l:2},
-    {c:'402',n:'4.2 Custos com Fornecedores',l:1},
-    {c:'403',n:'4.3 Custos com Embalagens',l:1},
-    {c:'404',n:'4.4 Transporte de Mercadoria',l:1},
-    {c:'405',n:'4.5 Custo com Vendas',l:1},
-    {c:'',n:'4.5.1 Comissão interna',l:2},
-    {c:'',n:'4.5.2 Frete envio de produtos',l:2},
-    {c:'406',n:'4.6 Outros Custos Variáveis',l:1}
+  {g:'CUSTOS VARIÁVEIS', cls:'pb-custo', t:'custo', itens:[
+    {c:'4.',   n:'CUSTOS VARIÁVEIS',                    l:0},
+    {c:'4.1',  n:'Custos Tributários / Financeiros',    l:1},
+    {c:'4.1.1',n:'Simples Nacional',                    l:2},
+    {c:'4.1.2',n:'Taxas de Cartões',                    l:2},
+    {c:'4.1.3',n:'Taxas de Boleto',                     l:2},
+    {c:'4.1.99',n:'Outros Custos Financeiros',          l:2},
+    {c:'4.2',  n:'Custos com Fornecedores',             l:1},
+    {c:'4.2.1',n:'Fornecedores',                        l:2},
+    {c:'4.2.99',n:'Outros Custos com Fornecedores',     l:2},
+    {c:'4.3',  n:'Custos com Embalagens',               l:1},
+    {c:'4.3.1',n:'Custos com Embalagens',               l:2},
+    {c:'4.4',  n:'Transporte de Mercadoria',            l:1},
+    {c:'4.4.1',n:'Transporte',                          l:2},
+    {c:'4.4.99',n:'Outros Custos com Transporte',       l:2},
+    {c:'4.5',  n:'Custo com Vendas',                    l:1},
+    {c:'4.5.1',n:'Comissão Interna',                    l:2},
+    {c:'4.5.2',n:'Frete Envio de Produtos',             l:2},
+    {c:'4.5.99',n:'Outros Custos com Vendas',           l:2},
+    {c:'4.6',  n:'Outros Custos Variáveis',             l:1},
   ]},
-  {g:'DESPESAS FIXAS',cls:'pb-desp',t:'desp',itens:[
-    {c:'500',n:'DESPESAS FIXAS',l:0},
-    {c:'501',n:'5.1 Despesas Financeiras',l:1},
-    {c:'502',n:'5.2 Despesas Administrativas',l:1},
-    {c:'',n:'5.2.1 Telefone e Internet',l:2},
-    {c:'',n:'5.2.3 Energia Elétrica',l:2},
-    {c:'',n:'5.2.4 Aluguel e Condomínio',l:2},
-    {c:'',n:'5.2.11 Contador',l:2},
-    {c:'',n:'5.2.12 Mensalidade de Softwares',l:2},
-    {c:'503',n:'5.3 Despesas com Pessoal',l:1},
-    {c:'',n:'5.3.1 Salário de Funcionários',l:2},
-    {c:'',n:'5.3.9 Pró-Labore',l:2},
-    {c:'504',n:'5.4 Materiais e Equipamentos',l:1},
-    {c:'505',n:'5.5 Despesas com Veículos',l:1},
-    {c:'508',n:'5.8 Outros',l:1}
+  {g:'DESPESAS FIXAS', cls:'pb-desp', t:'desp', itens:[
+    {c:'5.',   n:'DESPESAS FIXAS',                      l:0},
+    {c:'5.1',  n:'Despesas Financeiras',                l:1},
+    {c:'5.1.1',n:'Tarifas Bancárias',                   l:2},
+    {c:'5.1.2',n:'Aluguel de Máquinas de Cartão',       l:2},
+    {c:'5.1.3',n:'Tarifas DOC / TED',                   l:2},
+    {c:'5.1.99',n:'Outros Custos com Desp. Financeiras',l:2},
+    {c:'5.2',  n:'Despesas Administrativas',            l:1},
+    {c:'5.2.1',n:'Telefone e Internet',                 l:2},
+    {c:'5.2.2',n:'Celular',                             l:2},
+    {c:'5.2.3',n:'Energia Elétrica',                    l:2},
+    {c:'5.2.4',n:'Aluguel e Condomínio',                l:2},
+    {c:'5.2.5',n:'Água',                                l:2},
+    {c:'5.2.6',n:'IPTU e Taxas Públicas',               l:2},
+    {c:'5.2.7',n:'Táxi / Uber',                         l:2},
+    {c:'5.2.8',n:'Almoço / Supermercado / Lanches',     l:2},
+    {c:'5.2.9',n:'Correios',                            l:2},
+    {c:'5.2.10',n:'Cartórios',                          l:2},
+    {c:'5.2.11',n:'Contador',                           l:2},
+    {c:'5.2.12',n:'Mensalidade de Softwares',           l:2},
+    {c:'5.2.13',n:'Alarme Monitorado / Segurança',      l:2},
+    {c:'5.2.99',n:'Outras Despesas Administrativas',    l:2},
+    {c:'5.3',  n:'Despesas com Pessoal',                l:1},
+    {c:'5.3.1',n:'Salário de Funcionários',             l:2},
+    {c:'5.3.2',n:'Bolsa de Estágio',                    l:2},
+    {c:'5.3.3',n:'VT e VR',                             l:2},
+    {c:'5.3.4',n:'Rescisão',                            l:2},
+    {c:'5.3.5',n:'FGTS',                                l:2},
+    {c:'5.3.6',n:'INSS / Federação / Sindicato / IR',   l:2},
+    {c:'5.3.7',n:'13º e Férias',                        l:2},
+    {c:'5.3.8',n:'Exames Ocupacionais',                 l:2},
+    {c:'5.3.9',n:'Pró-Labore',                          l:2},
+    {c:'5.3.10',n:'Plano de Saúde',                     l:2},
+    {c:'5.3.11',n:'Confraternizações / Festas',         l:2},
+    {c:'5.3.12',n:'Diarista',                           l:2},
+    {c:'5.3.99',n:'Outras Despesas com Pessoal',        l:2},
+    {c:'5.4',  n:'Materiais e Equipamentos',            l:1},
+    {c:'5.4.1',n:'Manutenção Máquinas e Equipamentos',  l:2},
+    {c:'5.4.2',n:'Serviços Técnico em Informática',     l:2},
+    {c:'5.4.3',n:'Materiais de Expediente / Escritório',l:2},
+    {c:'5.4.4',n:'Materiais de Limpeza / Manutenção',   l:2},
+    {c:'5.4.99',n:'Outras Despesas com Materiais',      l:2},
+    {c:'5.5',  n:'Despesas com Veículos',               l:1},
+    {c:'5.5.1',n:'Gasolina / Combustível',              l:2},
+    {c:'5.5.2',n:'Manutenção de Veículos',              l:2},
+    {c:'5.5.3',n:'IPVA / Licenciamento / Despachante',  l:2},
+    {c:'5.5.4',n:'Estacionamento / Pedágios',           l:2},
+    {c:'5.5.99',n:'Outras Despesas com Veículos',       l:2},
+    {c:'5.8',  n:'Outros Tipos de Despesas',            l:1},
   ]},
-  {g:'INVESTIMENTOS',cls:'pb-inv',t:'inv',itens:[
-    {c:'600',n:'INVESTIMENTOS',l:0},
-    {c:'601',n:'6.1 Marketing',l:1},
-    {c:'',n:'6.1.3 Mídias / Propaganda',l:2},
-    {c:'602',n:'6.2 Bens Materiais',l:1},
-    {c:'603',n:'6.3 Desenvolvimento Empresarial',l:1},
-    {c:'604',n:'6.4 Outros Investimentos',l:1}
+  {g:'INVESTIMENTOS', cls:'pb-inv', t:'inv', itens:[
+    {c:'6.',   n:'INVESTIMENTOS',                       l:0},
+    {c:'6.1',  n:'Investimentos em Marketing',          l:1},
+    {c:'6.1.1',n:'Papelaria (folder, cartão visitas…)', l:2},
+    {c:'6.1.2',n:'Site / Internet',                     l:2},
+    {c:'6.1.3',n:'Mídias / Propaganda',                 l:2},
+    {c:'6.1.4',n:'Realização de Eventos',               l:2},
+    {c:'6.1.5',n:'Prestadores de Serviços de Marketing',l:2},
+    {c:'6.1.99',n:'Outros Investimentos em Marketing',  l:2},
+    {c:'6.2',  n:'Investimentos em Bens Materiais',     l:1},
+    {c:'6.2.1',n:'Compra de Equipamentos de Informática',l:2},
+    {c:'6.2.2',n:'Reformas / Estrutura',                l:2},
+    {c:'6.2.3',n:'Mobiliário',                          l:2},
+    {c:'6.2.4',n:'Compra de Veículos',                  l:2},
+    {c:'6.2.99',n:'Outros Investimentos em Bens',       l:2},
+    {c:'6.3',  n:'Desenvolvimento Empresarial',         l:1},
+    {c:'6.3.1',n:'Consultoria',                         l:2},
+    {c:'6.3.2',n:'Treinamentos',                        l:2},
+    {c:'6.3.99',n:'Outros Invest. em Desenv. Empresarial',l:2},
+    {c:'6.4',  n:'Outros Investimentos',                l:1},
+    {c:'6.4.99',n:'Outros Investimentos',               l:2},
   ]},
-  {g:'NÃO OPERACIONAIS',cls:'pb-nop',t:'nop',itens:[
-    {c:'700',n:'MOVIMENTAÇÕES NÃO OPERACIONAIS',l:0},
-    {c:'701',n:'7.1 Entradas não Operacionais',l:1},
-    {c:'',n:'7.1.1 Empréstimos obtidos',l:2},
-    {c:'',n:'7.1.2 Capitalização dos sócios',l:2},
-    {c:'702',n:'7.2 Saídas não Operacionais',l:1},
-    {c:'',n:'7.2.1 Pagamento de Empréstimos',l:2},
-    {c:'',n:'7.2.4 Distribuição de Lucros',l:2}
+  {g:'NÃO OPERACIONAIS', cls:'pb-nop', t:'nop', itens:[
+    {c:'7.',   n:'MOVIMENTAÇÕES NÃO OPERACIONAIS',      l:0},
+    {c:'7.1',  n:'Entradas não Operacionais',           l:1},
+    {c:'7.1.1',n:'Empréstimos Obtidos',                 l:2},
+    {c:'7.1.2',n:'Capitalização dos Sócios',            l:2},
+    {c:'7.1.3',n:'Venda de Equipamentos Usados',        l:2},
+    {c:'7.1.99',n:'Outros Entradas não Operacionais',   l:2},
+    {c:'7.2',  n:'Saídas não Operacionais',             l:1},
+    {c:'7.2.1',n:'Pagamento de Empréstimos',            l:2},
+    {c:'7.2.2',n:'Juros Bancários e por Atraso',        l:2},
+    {c:'7.2.3',n:'Pagamento de Dívidas Passadas',       l:2},
+    {c:'7.2.4',n:'Distribuição de Lucros',              l:2},
+    {c:'7.2.5',n:'Juros de Antecipação de Recebíveis',  l:2},
+    {c:'7.2.99',n:'Outras Saídas não Operacionais',     l:2},
   ]},
 ];
 
 function savePlano() { sd('sf_plano', PLANO_DATA); }
 
-const pbtMap={rec:'pbt-rec',custo:'pbt-custo',desp:'pbt-desp',inv:'pbt-inv',nop:'pbt-nop'};
-const nivelLabel=['Grupo','Subcategoria','Conta'];
-const nivelCls=['b','s','s2'];
+// SVG icons
+const _icoEdit = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11.5 2.5l2 2-8 8-2.5.5.5-2.5 8-8z"/></svg>`;
+const _icoDel  = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="2,4 14,4"/><path d="M5,4V2h6v2M6,7v5M10,7v5"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>`;
+const _icoPlus = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" width="11" height="11"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>`;
 
-function renderPlano(){
+const tagMap = {rec:'tag-rec',custo:'tag-custo',desp:'tag-desp',inv:'tag-inv',nop:'tag-nop'};
+const tipLabel = {rec:'Receita',custo:'Custo Variável',desp:'Despesa Fixa',inv:'Investimento',nop:'Não Operacional'};
+
+function renderPlano() {
   const q = (document.getElementById('plano-search')?.value||'').toLowerCase().trim();
-  const pbtMapBadge = {rec:'pb-rec',custo:'pb-custo',desp:'pb-desp',inv:'pb-inv',nop:'pb-nop'};
-  const tipLabel = {rec:'Receita',custo:'Custo',desp:'Despesa',inv:'Investimento',nop:'Não Op.'};
-
-  // SVG icons inline (sem FontAwesome pois o arquivo usa SVGs próprios)
-  const icoEdit = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11.5 2.5l2 2-8 8-2.5.5.5-2.5 8-8z"/></svg>`;
-  const icoDel  = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="2,4 14,4"/><path d="M5,4V2h6v2"/><path d="M6,7v5M10,7v5"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>`;
-  const icoAdd  = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="11" height="11"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>`;
 
   document.getElementById('plano-content').innerHTML = PLANO_DATA.map((g, gi) => {
-    const filtrados = q
-      ? g.itens.filter(it => it.n.toLowerCase().includes(q) || (it.c||'').toLowerCase().includes(q))
+    // Filtra itens se há busca
+    const itens = q
+      ? g.itens.filter(it => it.n.toLowerCase().includes(q) || it.c.toLowerCase().includes(q))
       : g.itens;
-    if (q && filtrados.length === 0) return '';
+    if (q && itens.length === 0) return '';
 
-    const rows = filtrados.map((it, ii) => {
-      // real index in g.itens
+    // Renderiza hierarquia: agrupa l1 com seus l2 filhos
+    let html = '';
+    let i = 0;
+    while (i < itens.length) {
+      const it = itens[i];
       const ri = g.itens.indexOf(it);
-      return `<div class="plano-row">
-        <div class="plano-cod">${it.c||''}</div>
-        <div class="plano-nome ${nivelCls[it.l]}">${it.n}</div>
-        <div class="plano-tipo ${pbtMap[g.t]}">${nivelLabel[it.l]}</div>
-        <div class="plano-actions">
-          <button class="plano-act-btn" title="Editar" onclick="abrirModalPlano('edit',${gi},${ri})">${icoEdit}</button>
-          <button class="plano-act-btn del" title="Excluir" onclick="excluirContaPlano(${gi},${ri})">${icoDel}</button>
-        </div>
-      </div>`;
-    }).join('');
+
+      if (it.l === 0) {
+        // ── NÍVEL 0: Conta Geral ────────────────────────────
+        html += `
+          <div class="plano-l0">
+            <div class="plano-l0-cod">${it.c}</div>
+            <div class="plano-l0-nome">${it.n}</div>
+            <span class="plano-l0-tag ${tagMap[g.t]}">${tipLabel[g.t]}</span>
+            <div class="plano-l0-actions plano-actions">
+              <button class="plano-act-btn" title="Editar" onclick="abrirModalPlano('edit',${gi},${ri})">${_icoEdit}</button>
+              <button class="plano-act-btn del" title="Excluir" onclick="excluirContaPlano(${gi},${ri})">${_icoDel}</button>
+            </div>
+          </div>`;
+        i++;
+
+      } else if (it.l === 1) {
+        // ── NÍVEL 1: Grupo ──────────────────────────────────
+        // Coleta os l2 filhos consecutivos
+        let subRows = '';
+        let j = i + 1;
+        while (j < itens.length && itens[j].l === 2) {
+          const sub = itens[j];
+          const sri = g.itens.indexOf(sub);
+          subRows += `
+            <div class="plano-l2">
+              <div class="plano-l2-cod">${sub.c}</div>
+              <div class="plano-l2-nome">${sub.n}</div>
+              <div class="plano-actions">
+                <button class="plano-act-btn" title="Editar" onclick="abrirModalPlano('edit',${gi},${sri})">${_icoEdit}</button>
+                <button class="plano-act-btn del" title="Excluir" onclick="excluirContaPlano(${gi},${sri})">${_icoDel}</button>
+              </div>
+            </div>`;
+          j++;
+        }
+        // Botão adicionar subgrupo dentro deste grupo
+        subRows += `<button class="plano-add-row" onclick="abrirModalPlano('add',${gi},null,2,${ri})">${_icoPlus} Adicionar subgrupo</button>`;
+
+        html += `
+          <div class="plano-l1-wrap">
+            <div class="plano-l1">
+              <div class="plano-l1-cod">${it.c}</div>
+              <div class="plano-l1-nome">${it.n}</div>
+              <div class="plano-actions">
+                <button class="plano-act-btn" title="Editar" onclick="abrirModalPlano('edit',${gi},${ri})">${_icoEdit}</button>
+                <button class="plano-act-btn del" title="Excluir" onclick="excluirContaPlano(${gi},${ri})">${_icoDel}</button>
+              </div>
+            </div>
+            ${subRows}
+          </div>`;
+        i = j;
+
+      } else {
+        // l2 solto (sem l1 pai na busca filtrada)
+        html += `
+          <div class="plano-l1-wrap">
+            <div class="plano-l2" style="padding-left:14px">
+              <div class="plano-l2-cod">${it.c}</div>
+              <div class="plano-l2-nome" style="padding-left:14px">${it.n}</div>
+              <div class="plano-actions">
+                <button class="plano-act-btn" title="Editar" onclick="abrirModalPlano('edit',${gi},${ri})">${_icoEdit}</button>
+                <button class="plano-act-btn del" title="Excluir" onclick="excluirContaPlano(${gi},${ri})">${_icoDel}</button>
+              </div>
+            </div>
+          </div>`;
+        i++;
+      }
+    }
+
+    // Botão adicionar grupo (l1) no final da seção
+    if (!q) {
+      html += `<button class="plano-add-l1" onclick="abrirModalPlano('add',${gi},null,1)">${_icoPlus} Adicionar grupo</button>`;
+    }
 
     return `
-      <div class="plano-section-bar">
-        <div class="plano-section-title">
-          ${g.g}
-          <span class="plano-badge ${pbtMapBadge[g.t]}">${tipLabel[g.t]}</span>
+      <div class="plano-section">
+        <div class="plano-section-bar" style="margin-bottom:8px">
+          <div class="plano-section-title">${g.g}</div>
+          <button class="plano-add-btn" onclick="abrirModalPlano('add',${gi},null,0)">${_icoPlus} Nova conta geral</button>
         </div>
-        <button class="plano-add-btn" onclick="abrirModalPlano('add',${gi})">${icoAdd} Adicionar conta</button>
-      </div>
-      <div class="plano-card">${rows}</div>`;
+        ${html}
+      </div>`;
   }).join('');
 }
 
-// ── Estado do modal ───────────────────────────────────────────
-let _mpModo = 'add', _mpGi = 0, _mpRi = null;
+// ── Modal ─────────────────────────────────────────────────────
+let _mpModo = 'add', _mpGi = 0, _mpRi = null, _mpNivel = 2;
 
-function abrirModalPlano(modo, gi, ri) {
-  _mpModo = modo; _mpGi = gi; _mpRi = ri ?? null;
-  const overlay = document.getElementById('modal-plano-overlay');
-  const g = PLANO_DATA[gi];
+const _nivelHints = [
+  '📂 <strong>Conta Geral</strong> — nível mais alto. Representa um grande bloco (ex: <em>3. RECEITAS</em>).',
+  '📁 <strong>Grupo</strong> — agrupa subcontas de um mesmo tipo (ex: <em>3.1 Receita de Vendas</em>).',
+  '📄 <strong>Subgrupo</strong> — conta analítica, nível mais detalhado (ex: <em>3.1.1 Vendas em Dinheiro</em>).',
+];
+
+function mpSetNivel(n) {
+  _mpNivel = n;
+  [0,1,2].forEach(i => {
+    document.getElementById('mp-pill-'+i).classList.toggle('active', i===n);
+  });
+  document.getElementById('mp-nivel-hint').innerHTML = _nivelHints[n];
+  // Sugerir código placeholder
+  const placeholders = ['ex: 3.', 'ex: 3.1', 'ex: 3.1.1'];
+  document.getElementById('mp-cod').placeholder = placeholders[n];
+}
+
+function abrirModalPlano(modo, gi, ri = null, nivelSugerido = 2, refRi = null) {
+  _mpModo = modo; _mpGi = gi; _mpRi = ri;
 
   document.getElementById('mp-grupo').value = gi;
+  document.getElementById('mp-grupo').disabled = modo === 'edit';
 
   if (modo === 'edit') {
-    const it = g.itens[ri];
+    const it = PLANO_DATA[gi].itens[ri];
     document.getElementById('mp-title').textContent = 'Editar Conta';
-    document.getElementById('mp-nivel').value = it.l;
-    document.getElementById('mp-cod').value  = it.c || '';
+    document.getElementById('mp-subtitle').textContent = 'Altere o código ou o nome.';
+    mpSetNivel(it.l);
+    [0,1,2].forEach(i => document.getElementById('mp-pill-'+i).disabled = true);
+    document.getElementById('mp-cod').value  = it.c;
     document.getElementById('mp-nome').value = it.n;
-    document.getElementById('mp-grupo').disabled = true;
-    document.getElementById('mp-nivel').disabled  = true;
   } else {
-    document.getElementById('mp-title').textContent = 'Nova Conta — ' + g.g;
-    document.getElementById('mp-nivel').value = '2';
+    document.getElementById('mp-title').textContent = 'Nova Conta';
+    document.getElementById('mp-subtitle').textContent = 'Escolha o nível e preencha os dados.';
+    [0,1,2].forEach(i => document.getElementById('mp-pill-'+i).disabled = false);
+    mpSetNivel(nivelSugerido);
     document.getElementById('mp-cod').value  = '';
     document.getElementById('mp-nome').value = '';
-    document.getElementById('mp-grupo').disabled = false;
-    document.getElementById('mp-nivel').disabled  = false;
   }
 
-  overlay.classList.add('open');
+  document.getElementById('modal-plano-overlay').classList.add('open');
   setTimeout(() => document.getElementById('mp-nome').focus(), 80);
 }
 
@@ -1600,21 +1857,19 @@ function mpGrupoChange() {
   _mpGi = parseInt(document.getElementById('mp-grupo').value);
 }
 
-function mpNivelChange() {}
-
 function salvarPlano() {
-  const nome = document.getElementById('mp-nome').value.trim();
-  const cod  = document.getElementById('mp-cod').value.trim();
-  const nivel = parseInt(document.getElementById('mp-nivel').value);
+  const nome  = document.getElementById('mp-nome').value.trim();
+  const cod   = document.getElementById('mp-cod').value.trim();
 
   if (!nome) { alert('Informe o nome da conta.'); return; }
+  if (!cod)  { alert('Informe o código da conta.'); return; }
 
   if (_mpModo === 'add') {
-    PLANO_DATA[_mpGi].itens.push({ c: cod, n: nome, l: nivel });
+    // Insere na posição correta: após último item do mesmo nível ou ao final
+    PLANO_DATA[_mpGi].itens.push({ c: cod, n: nome, l: _mpNivel });
   } else {
-    const it = PLANO_DATA[_mpGi].itens[_mpRi];
-    it.c = cod;
-    it.n = nome;
+    PLANO_DATA[_mpGi].itens[_mpRi].c = cod;
+    PLANO_DATA[_mpGi].itens[_mpRi].n = nome;
   }
 
   savePlano();
@@ -1624,13 +1879,12 @@ function salvarPlano() {
 
 function excluirContaPlano(gi, ri) {
   const it = PLANO_DATA[gi].itens[ri];
-  if (!confirm(`Excluir "${it.n}"?`)) return;
+  if (!confirm(`Excluir "${it.c} — ${it.n}"?`)) return;
   PLANO_DATA[gi].itens.splice(ri, 1);
   savePlano();
   renderPlano();
 }
 
-// Fechar modal clicando fora
 document.getElementById('modal-plano-overlay').addEventListener('click', function(e) {
   if (e.target === this) fecharModalPlano();
 });
