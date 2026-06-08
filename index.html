@@ -453,6 +453,12 @@ textarea{resize:vertical;min-height:54px}
 
 /* DRE rows clicáveis */
 .dre-wrap .dn2{cursor:pointer;}
+.dre-toggle-btn{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;background:rgba(255,255,255,0.12);border:none;cursor:pointer;margin-right:5px;flex-shrink:0;transition:background 0.15s,transform 0.2s;color:inherit;font-size:9px;padding:0;vertical-align:middle}
+.dn1r .dre-toggle-btn,.dn1 .dre-toggle-btn{background:rgba(0,0,0,0.08)}
+.dre-toggle-btn:hover{background:rgba(0,0,0,0.15)}
+.dre-toggle-btn.collapsed{transform:rotate(-90deg)}
+.dre-sub-hidden{display:none}
+.dre-wrap .cn{display:flex;align-items:center}
 .dre-wrap tr.dn1r td,.dre-wrap tr.dmargem td,.dre-wrap tr.dlucrop td,.dre-wrap tr.dresult td{cursor:pointer;transition:filter 0.15s;}
 .dre-wrap tr.dn1r:hover td,.dre-wrap tr.dmargem:hover td,.dre-wrap tr.dlucrop:hover td,.dre-wrap tr.dresult:hover td{filter:brightness(0.94);}
 
@@ -1331,7 +1337,11 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
           <button class="main-tab" id="fm-todos" onclick="setFluxoModo('todos')">Todos</button>
         </div>
         <div id="fluxo-modo-desc" style="font-size:11px;color:var(--text3);padding:4px 10px;background:var(--surface2);border-radius:7px;border:1px solid var(--border)">Exibindo apenas lançamentos confirmados (Pago / Recebido)</div>
-        <button class="btn" onclick="exportarDreCSV()" style="margin-left:auto">↓ Exportar CSV</button>
+        <div style="display:flex;gap:6px;margin-left:auto">
+          <button class="btn" id="btn-dre-expand" onclick="dreExpandAll()" style="font-size:11px;padding:5px 10px" title="Expandir todas as subcategorias">⊞ Expandir</button>
+          <button class="btn" id="btn-dre-collapse" onclick="dreCollapseAll()" style="font-size:11px;padding:5px 10px" title="Recolher todas as subcategorias">⊟ Recolher</button>
+          <button class="btn" onclick="exportarDreCSV()" style="font-size:11px;padding:5px 10px">↓ CSV</button>
+        </div>
       </div>
       <div class="dre-wrap">
         <div class="dre-scroll"><table class="dre"><thead id="dre-thead-f"></thead><tbody id="dre-tbody-f"></tbody></table></div>
@@ -2943,6 +2953,21 @@ function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showTo
 function setFluxoView(v){fluxoView=v;['mensal','trimestral','anual'].forEach(x=>document.getElementById('ft-'+x).classList.remove('active'));document.getElementById('ft-'+v).classList.add('active');renderFluxo();}
 
 let _fluxoModo='realizado';
+// Grupos colapsados no DRE: Set com os ids de nível 0/1 que estão fechados
+const _dreCollapsed = new Set();
+function toggleDreGroup(groupId, btn){
+  if(_dreCollapsed.has(groupId)){
+    _dreCollapsed.delete(groupId);
+    btn.classList.remove('collapsed');
+  } else {
+    _dreCollapsed.add(groupId);
+    btn.classList.add('collapsed');
+  }
+  // Mostra/oculta as linhas filhas sem re-renderizar
+  document.querySelectorAll(`[data-parent="${groupId}"]`).forEach(tr=>{
+    tr.classList.toggle('dre-sub-hidden', _dreCollapsed.has(groupId));
+  });
+}
 function setFluxoModo(modo){
   _fluxoModo=modo;
   ['realizado','previsto','todos'].forEach(m=>{
@@ -2955,6 +2980,21 @@ function setFluxoModo(modo){
   renderFluxo();
 }
 
+function dreExpandAll(){
+  _dreCollapsed.clear();
+  document.querySelectorAll('#dre-tbody-f tr[data-parent]').forEach(tr=>tr.classList.remove('dre-sub-hidden'));
+  document.querySelectorAll('#dre-tbody-f .dre-toggle-btn').forEach(btn=>btn.classList.remove('collapsed'));
+}
+function dreCollapseAll(){
+  // Coleta todos os groupIds com filhos e adiciona ao Set
+  document.querySelectorAll('#dre-tbody-f .dre-toggle-btn').forEach(btn=>{
+    const onclick=btn.getAttribute('onclick')||'';
+    const m=onclick.match(/toggleDreGroup\('([^']+)'/);
+    if(m) _dreCollapsed.add(m[1]);
+    btn.classList.add('collapsed');
+  });
+  document.querySelectorAll('#dre-tbody-f tr[data-parent]').forEach(tr=>tr.classList.add('dre-sub-hidden'));
+}
 function renderFluxo(){
   const d=calcDRE(_fluxoModo);
   const totRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
@@ -2973,7 +3013,22 @@ function renderFluxo(){
   else if(fluxoView==='trimestral') cols=[{label:'T1 (Jan-Mar)',idx:[0,1,2]},{label:'T2 (Abr-Jun)',idx:[3,4,5]},{label:'T3 (Jul-Set)',idx:[6,7,8]},{label:'T4 (Out-Dez)',idx:[9,10,11]}];
   else cols=[{label:'Total Ano',idx:[0,1,2,3,4,5,6,7,8,9,10,11]}];
   document.getElementById('dre-thead-f').innerHTML=`<tr><th style="text-align:left;min-width:240px">Conta</th>${cols.map(c=>`<th>${c.label}</th><th>AV%</th>`).join('')}<th>Total</th><th>AV%</th></tr>`;
-  document.getElementById('dre-tbody-f').innerHTML=DRE_STRUCT.map(l=>{
+  // Monta mapa de parent: cada linha n=1 ou n=2 pertence ao grupo n=0 ou n=1 acima
+  let _curParent0=null, _curParent1=null;
+  const dreWithParent=DRE_STRUCT.map(l=>{
+    if(l.n===0){_curParent0=l.id;_curParent1=null;}
+    else if(l.n===1){_curParent1=l.id;}
+    return{...l, parent0:_curParent0, parent1:_curParent1};
+  });
+
+  // Verifica quais grupos têm filhos
+  const hasChildren=new Set();
+  dreWithParent.forEach(l=>{
+    if(l.n===1 && l.parent0) hasChildren.add(l.parent0);
+    if(l.n===2 && l.parent1) hasChildren.add(l.parent1);
+  });
+
+  document.getElementById('dre-tbody-f').innerHTML=dreWithParent.map(l=>{
     const isNeg=['custo0','desp0','inv0'].includes(l.t);
     const rCls=l.t==='resultado'?'dresult':l.t==='margem'?'dmargem':l.t==='lucrop'?'dlucrop':l.n===0?'dn0':l.n===1?(l.id.startsWith('rec')?'dn1r':'dn1'):'dn2';
     const indent=l.n===1?' i1':l.n===2?' i2':'';
@@ -2985,7 +3040,20 @@ function renderFluxo(){
       const cls=v===0?'zero':isNeg&&v>0?'neg':'pos';
       return`<td class="cv ${cls}">${v?brlN(v):'—'}</td><td class="cv zero" style="font-size:9.5px">${av}</td>`;
     }).join('');
-    return`<tr class="${rCls}"><td class="cn${indent}">${l.nome}</td>${colsH}<td class="cv ${tot===0?'zero':tot>=0?'pos':'neg'}">${tot?brlN(tot):'—'}</td><td class="cv zero" style="font-size:9.5px">${totAV}</td></tr>`;
+
+    // Botão toggle para linhas que têm filhos (n=0 e n=1 com children)
+    const canToggle = hasChildren.has(l.id);
+    const isCollapsed = _dreCollapsed.has(l.id);
+    const toggleBtn = canToggle
+      ? `<button class="dre-toggle-btn${isCollapsed?' collapsed':''}" onclick="event.stopPropagation();toggleDreGroup('${l.id}',this)" title="${isCollapsed?'Expandir':'Recolher'}">▾</button>`
+      : (l.n===0||l.n===1?'<span style="display:inline-block;width:21px;flex-shrink:0"></span>':'');
+
+    // data-parent para ocultar quando pai está colapsado
+    const parentAttr = l.n===1 && l.parent0 ? ` data-parent="${l.parent0}"`
+                     : l.n===2 && l.parent1 ? ` data-parent="${l.parent1}"` : '';
+    const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0)) || (l.n===2 && _dreCollapsed.has(l.parent1)) ? ' dre-sub-hidden' : '';
+
+    return`<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}${l.nome}</td>${colsH}<td class="cv ${tot===0?'zero':tot>=0?'pos':'neg'}">${tot?brlN(tot):'—'}</td><td class="cv zero" style="font-size:9.5px">${totAV}</td></tr>`;
   }).join('');
 }
 
