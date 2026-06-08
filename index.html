@@ -21,31 +21,73 @@
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
 
 /* ======== SIDEBAR ======== */
-.sidebar{width:var(--sidebar);background:var(--text);min-height:100vh;display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100}
-.sidebar-logo{padding:26px 22px 18px;border-bottom:1px solid rgba(255,255,255,0.08)}
-.logo-mark{display:flex;align-items:center;gap:10px}
+/* ---- Sidebar collapsed state ---- */
+:root{--sidebar-collapsed:64px}
+.sidebar{width:var(--sidebar);background:var(--text);height:100vh;display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.22s cubic-bezier(.4,0,.2,1)}
+.sidebar.collapsed{width:var(--sidebar-collapsed)}
+.main{transition:margin-left 0.22s cubic-bezier(.4,0,.2,1)}
+.sidebar.collapsed~.main{margin-left:var(--sidebar-collapsed)}
+
+.sidebar-logo{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;overflow:hidden}
+.logo-mark{display:flex;align-items:center;gap:10px;min-width:0}
 .logo-icon{width:34px;height:34px;background:#2D8C57;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .logo-icon svg{width:18px;height:18px;fill:#fff}
+.logo-texts{overflow:hidden;transition:opacity 0.18s,width 0.22s;white-space:nowrap}
+.sidebar.collapsed .logo-texts{opacity:0;width:0;pointer-events:none}
 .logo-text{font-family:'Nunito',sans-serif;font-size:16px;font-weight:800;color:#FFD600;letter-spacing:-0.3px;line-height:1}
 .logo-sub{font-family:'Nunito',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,0.65);margin-top:2px;letter-spacing:0.2px;display:flex;align-items:center;gap:5px}
 .logo-sub-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.4);display:inline-block;flex-shrink:0}
-.sidebar-nav{flex:1;padding:14px 10px;display:flex;flex-direction:column;gap:1px;overflow-y:auto}
-.nav-section{font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.45);letter-spacing:0.09em;text-transform:uppercase;padding:14px 12px 5px;margin-top:6px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,0.78);font-size:13.5px;font-weight:400;border:none;background:none;width:100%;text-align:left;transition:all 0.13s;font-family:inherit}
+
+/* Toggle button */
+.sidebar-toggle{width:26px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.07);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:rgba(255,255,255,0.6);transition:all 0.13s}
+.sidebar-toggle:hover{background:rgba(255,255,255,0.15);color:#fff}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform 0.22s}
+.sidebar.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.sidebar.collapsed .sidebar-toggle{margin:0 auto}
+.sidebar.collapsed .sidebar-logo{justify-content:center;padding:20px 0 16px}
+
+/* Scrollable nav */
+.sidebar-nav{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:1px;overflow-y:auto;overflow-x:hidden;min-height:0;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.12) transparent}
+.sidebar-nav::-webkit-scrollbar{width:4px}
+.sidebar-nav::-webkit-scrollbar-track{background:transparent}
+.sidebar-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px}
+
+.nav-section{font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.45);letter-spacing:0.09em;text-transform:uppercase;padding:14px 12px 5px;margin-top:6px;white-space:nowrap;overflow:hidden;transition:opacity 0.18s,height 0.22s,padding 0.22s}
+.sidebar.collapsed .nav-section{opacity:0;height:0;padding:0;pointer-events:none}
+
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,0.78);font-size:13.5px;font-weight:400;border:none;background:none;width:100%;text-align:left;transition:all 0.13s;font-family:inherit;position:relative;white-space:nowrap}
 .nav-item:hover{background:rgba(255,255,255,0.09);color:#fff}
 .nav-item.active{background:#2D8C57;color:#fff;font-weight:600}
 .nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:0.85}
 .nav-item.active svg{opacity:1}
-.nav-item .nav-badge{margin-left:auto;font-size:9px;font-weight:700;background:rgba(255,255,255,0.15);padding:2px 6px;border-radius:10px}
+.nav-item .nav-label{overflow:hidden;transition:opacity 0.18s,width 0.22s;white-space:nowrap}
+.sidebar.collapsed .nav-item .nav-label{opacity:0;width:0}
+.sidebar.collapsed .nav-item{justify-content:center;padding:10px 0}
+.nav-item .nav-badge{margin-left:auto;font-size:9px;font-weight:700;background:rgba(255,255,255,0.15);padding:2px 6px;border-radius:10px;flex-shrink:0;transition:opacity 0.18s}
 .nav-item.active .nav-badge{background:rgba(255,255,255,0.25)}
-.sidebar-footer{padding:14px 10px;border-top:1px solid rgba(255,255,255,0.08)}
-.user-pill{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.06)}
+.sidebar.collapsed .nav-item .nav-badge{opacity:0;width:0;overflow:hidden;padding:0;margin:0}
+
+/* Tooltip on collapsed */
+.sidebar.collapsed .nav-item:hover::after{
+  content:attr(data-tooltip);
+  position:absolute;left:calc(var(--sidebar-collapsed) - 2px);top:50%;transform:translateY(-50%);
+  background:rgba(26,25,22,0.92);color:#fff;font-size:12px;font-weight:500;
+  padding:5px 11px;border-radius:7px;white-space:nowrap;pointer-events:none;z-index:200;
+  border:1px solid rgba(255,255,255,0.12);backdrop-filter:blur(4px)
+}
+
+.sidebar-footer{padding:12px 8px;border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0;overflow:hidden}
+.user-pill{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.06);overflow:hidden}
+.sidebar.collapsed .user-pill{justify-content:center;padding:8px 0;background:none}
 .ava{width:30px;height:30px;border-radius:50%;background:#2D8C57;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.user-info{overflow:hidden;transition:opacity 0.18s,width 0.22s;white-space:nowrap}
+.sidebar.collapsed .user-info{opacity:0;width:0}
 .user-name{font-size:13px;color:rgba(255,255,255,0.90);font-weight:500}
 .user-role{font-size:11px;color:rgba(255,255,255,0.50)}
 
 /* ======== MAIN ======== */
-.main{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;min-height:100vh}
+.main{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;min-height:100vh;transition:margin-left 0.22s cubic-bezier(.4,0,.2,1)}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 30px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
 .topbar-left{display:flex;flex-direction:column}
 .page-title{font-size:14.5px;font-weight:600}
@@ -1262,73 +1304,76 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
   </div>
 </div>
 <!-- ========== /TELA DE AUTENTICAÇÃO ========== -->
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="logo-mark">
       <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M3 3h18v4H3V3zm0 6h8v12H3V9zm10 0h8v5h-8V9zm0 7h8v5h-8v-5z"/></svg></div>
-      <div>
+      <div class="logo-texts">
         <div class="logo-text">moviOn</div>
         <div class="logo-sub"><span class="logo-sub-dot"></span>MoviControl</div>
       </div>
     </div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Recolher menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
   </div>
   <nav class="sidebar-nav">
     <div class="nav-section">Principal</div>
-    <button class="nav-item active" data-page="painel" onclick="navTo('painel',this)">
+    <button class="nav-item active" data-page="painel" data-tooltip="Painel de Controle" onclick="navTo('painel',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      Painel de Controle
+      <span class="nav-label">Painel de Controle</span>
     </button>
-    <button class="nav-item" data-page="diario" onclick="navTo('diario',this)">
+    <button class="nav-item" data-page="diario" data-tooltip="Livro Diário" onclick="navTo('diario',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      Livro Diário
+      <span class="nav-label">Livro Diário</span>
       <span class="nav-badge" id="nb-diario">0</span>
     </button>
     <div class="nav-section">Financeiro</div>
-    <button class="nav-item" data-page="fluxo" onclick="navTo('fluxo',this)">
+    <button class="nav-item" data-page="fluxo" data-tooltip="Fluxo de Caixa / DRE" onclick="navTo('fluxo',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-      Fluxo de Caixa / DRE
+      <span class="nav-label">Fluxo de Caixa / DRE</span>
     </button>
-    <button class="nav-item" data-page="contas" onclick="navTo('contas',this)">
+    <button class="nav-item" data-page="contas" data-tooltip="Contas a Pagar/Receber" onclick="navTo('contas',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      Contas a Pagar/Receber
+      <span class="nav-label">Contas a Pagar/Receber</span>
       <span class="nav-badge" id="nb-contas">0</span>
     </button>
-    <button class="nav-item" data-page="planejamento" onclick="navTo('planejamento',this)">
+    <button class="nav-item" data-page="planejamento" data-tooltip="Planejamento Financeiro" onclick="navTo('planejamento',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-      Planejamento Financeiro
+      <span class="nav-label">Planejamento Financeiro</span>
     </button>
     <div class="nav-section">Análises</div>
-    <button class="nav-item" data-page="analises" onclick="navTo('analises',this)">
+    <button class="nav-item" data-page="analises" data-tooltip="Saúde Financeira" onclick="navTo('analises',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M6 20V10M12 20V4M18 20v-8"/></svg>
-      Saúde Financeira
+      <span class="nav-label">Saúde Financeira</span>
     </button>
     <div class="nav-section">Cadastros</div>
-    <button class="nav-item" data-page="clientes" onclick="navTo('clientes',this)">
+    <button class="nav-item" data-page="clientes" data-tooltip="Clientes" onclick="navTo('clientes',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-      Clientes
+      <span class="nav-label">Clientes</span>
     </button>
-    <button class="nav-item" data-page="fornecedores" onclick="navTo('fornecedores',this)">
+    <button class="nav-item" data-page="fornecedores" data-tooltip="Fornecedores" onclick="navTo('fornecedores',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
-      Fornecedores
+      <span class="nav-label">Fornecedores</span>
     </button>
-    <button class="nav-item" data-page="bancos" onclick="navTo('bancos',this)">
+    <button class="nav-item" data-page="bancos" data-tooltip="Contas Bancárias" onclick="navTo('bancos',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-      Contas Bancárias
+      <span class="nav-label">Contas Bancárias</span>
     </button>
-    <button class="nav-item" data-page="plano" onclick="navTo('plano',this)">
+    <button class="nav-item" data-page="plano" data-tooltip="Plano de Contas" onclick="navTo('plano',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-      Plano de Contas
+      <span class="nav-label">Plano de Contas</span>
     </button>
     <div class="nav-section" id="nav-sec-admin" style="display:none">Sistema</div>
-    <button class="nav-item" id="nav-usuarios" data-page="usuarios" onclick="navTo('usuarios',this)" style="display:none">
+    <button class="nav-item" id="nav-usuarios" data-page="usuarios" data-tooltip="Usuários" onclick="navTo('usuarios',this)" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Usuários
+      <span class="nav-label">Usuários</span>
     </button>
   </nav>
   <div class="sidebar-footer">
     <div class="user-pill" style="cursor:pointer" onclick="fazerLogout()" title="Sair do sistema">
       <div class="ava" id="sidebar-ava">?</div>
-      <div>
+      <div class="user-info">
         <div class="user-name" id="sidebar-nome">Carregando...</div>
         <div class="user-role" id="sidebar-perfil">—</div>
       </div>
@@ -5362,6 +5407,21 @@ const _origNavTo=typeof navTo==='function'?navTo:null;
 
 renderPainel();
 atualizarBadges();
+
+// ============================================================
+// SIDEBAR TOGGLE
+// ============================================================
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed')?'1':'0');
+}
+(function initSidebar(){
+  if(localStorage.getItem('sidebarCollapsed')==='1'){
+    const sb=document.getElementById('sidebar');
+    if(sb)sb.classList.add('collapsed');
+  }
+})();
 </script>
 </body>
 </html>
