@@ -728,6 +728,33 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
 .filtros-bar,.filtros-periodo{display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap}
 
 /* ======== SCORE DE SAÚDE FINANCEIRA ======== */
+.diag-scores-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px}
+.diag-score-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:10px}
+.diag-score-card.ds-green{border-left:4px solid #2D8C57;background:linear-gradient(135deg,#fff 80%,#E8F2ED)}
+.diag-score-card.ds-blue{border-left:4px solid #1A5CA0;background:linear-gradient(135deg,#fff 80%,#EDF3FB)}
+.diag-score-card.ds-warn{border-left:4px solid #C9850A;background:linear-gradient(135deg,#fff 80%,#FDF6E3)}
+.diag-score-card.ds-red{border-left:4px solid var(--danger);background:linear-gradient(135deg,#fff 80%,#FBF0EE)}
+.diag-score-card.ds-gray{border-left:4px solid var(--text3);background:var(--surface)}
+.ds-header{display:flex;align-items:center;justify-content:space-between}
+.ds-title{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em}
+.ds-badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.ds-badge.b-green{background:var(--accent2);color:var(--accent)}
+.ds-badge.b-blue{background:#EDF3FB;color:#1A5CA0}
+.ds-badge.b-warn{background:var(--warn-bg);color:var(--warn)}
+.ds-badge.b-red{background:var(--danger-bg);color:var(--danger)}
+.ds-badge.b-gray{background:var(--surface2);color:var(--text3)}
+.ds-score-row{display:flex;align-items:flex-end;gap:10px}
+.ds-score-num{font-family:'DM Mono',monospace;font-size:42px;font-weight:500;line-height:1}
+.ds-score-max{font-size:14px;color:var(--text3);margin-bottom:6px}
+.ds-gauge{flex:1;display:flex;flex-direction:column;gap:5px}
+.ds-gauge-track{height:8px;background:var(--border);border-radius:4px;overflow:hidden}
+.ds-gauge-fill{height:100%;border-radius:4px;transition:width 0.6s cubic-bezier(.4,0,.2,1)}
+.ds-gauge-label{font-size:11px;color:var(--text3)}
+.ds-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
+.ds-kpi{background:var(--surface2);border-radius:8px;padding:9px 12px}
+.ds-kpi-label{font-size:10px;color:var(--text3);margin-bottom:3px}
+.ds-kpi-val{font-family:'DM Mono',monospace;font-size:13px;font-weight:500}
+.ds-tip{font-size:11.5px;color:var(--text2);line-height:1.55;padding:10px 12px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--border)}
 .score-widget{
   background:var(--surface);border:1px solid var(--border);border-radius:16px;
   padding:22px 24px;margin-bottom:22px;
@@ -1978,6 +2005,8 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
       <!-- Abas do módulo Diagnóstico -->
       <div class="main-tabs" style="margin-bottom:22px">
         <button class="main-tab active" id="diag-tab-saude" onclick="diagSetTab('saude')">❤️ Saúde Financeira</button>
+        <button class="main-tab" id="diag-tab-equilibrio" onclick="diagSetTab('equilibrio')">⚖️ Equilíbrio</button>
+        <button class="main-tab" id="diag-tab-caixa" onclick="diagSetTab('caixa')">📈 Geração de Caixa</button>
         <button class="main-tab" id="diag-tab-endivid" onclick="diagSetTab('endivid')">⚠️ Endividamento</button>
       </div>
 
@@ -1996,6 +2025,52 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
             <div class="score-criterios" id="score-criterios"></div>
             <div class="score-tip" id="score-tip"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Aba: Equilíbrio Financeiro -->
+      <div id="diag-panel-equilibrio" style="display:none">
+        <div class="diag-scores-grid">
+          <div class="diag-score-card ds-gray" id="eq-card">
+            <div class="ds-header">
+              <span class="ds-title">⚖️ Equilíbrio Receita × Despesa</span>
+              <span class="ds-badge b-gray" id="eq-badge">—</span>
+            </div>
+            <div class="ds-score-row">
+              <div class="ds-score-num" id="eq-score">—</div>
+              <div class="ds-score-max">/100</div>
+              <div class="ds-gauge">
+                <div class="ds-gauge-track"><div class="ds-gauge-fill" id="eq-gauge" style="width:0%;background:#ccc"></div></div>
+                <div class="ds-gauge-label" id="eq-gauge-label">Calculando...</div>
+              </div>
+            </div>
+            <div class="ds-kpis" id="eq-kpis"></div>
+            <div class="ds-tip" id="eq-tip"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px" id="eq-detalhes"></div>
+        </div>
+      </div>
+
+      <!-- Aba: Geração de Caixa -->
+      <div id="diag-panel-caixa" style="display:none">
+        <div class="diag-scores-grid">
+          <div class="diag-score-card ds-gray" id="gc-card">
+            <div class="ds-header">
+              <span class="ds-title">📈 Geração de Caixa</span>
+              <span class="ds-badge b-gray" id="gc-badge">—</span>
+            </div>
+            <div class="ds-score-row">
+              <div class="ds-score-num" id="gc-score">—</div>
+              <div class="ds-score-max">/100</div>
+              <div class="ds-gauge">
+                <div class="ds-gauge-track"><div class="ds-gauge-fill" id="gc-gauge" style="width:0%;background:#ccc"></div></div>
+                <div class="ds-gauge-label" id="gc-gauge-label">Calculando...</div>
+              </div>
+            </div>
+            <div class="ds-kpis" id="gc-kpis"></div>
+            <div class="ds-tip" id="gc-tip"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px" id="gc-detalhes"></div>
         </div>
       </div>
 
@@ -3622,13 +3697,185 @@ function diasAtraso(data){
 }
 
 function diagSetTab(tab) {
-  ['saude','endivid'].forEach(t => {
+  ['saude','equilibrio','caixa','endivid'].forEach(t => {
     document.getElementById('diag-tab-'+t).classList.toggle('active', t===tab);
     document.getElementById('diag-panel-'+t).style.display = t===tab ? '' : 'none';
   });
   const lc = gd('sf_lancamentos');
-  if(tab === 'saude') renderScoreSaude(lc);
-  if(tab === 'endivid') renderPainelEndividamentoDiag(lc);
+  if(tab === 'saude')      renderScoreSaude(lc);
+  if(tab === 'equilibrio') renderScoreEquilibrio(lc);
+  if(tab === 'caixa')      renderScoreGeracao(lc);
+  if(tab === 'endivid')    renderPainelEndividamentoDiag(lc);
+}
+
+// ── Score de Equilíbrio Receita × Despesa ─────────────────────
+function renderScoreEquilibrio(lc) {
+  const mesStr = hoje().slice(0,7);
+  const mesLanc = lc.filter(l => (l.data||'').startsWith(mesStr));
+
+  const recebido  = mesLanc.filter(l => l.status==='Recebido').reduce((s,l) => s+(l.recebido||0), 0);
+  const aReceber  = mesLanc.filter(l => l.status==='A Receber').reduce((s,l) => s+(l.aReceber||0), 0);
+  const pago      = mesLanc.filter(l => l.status==='Pago').reduce((s,l) => s+(l.pago||0), 0);
+  const aPagar    = mesLanc.filter(l => l.status==='A Pagar').reduce((s,l) => s+(l.aPagar||0), 0);
+
+  const totalRec  = recebido + aReceber;
+  const totalDesp = pago + aPagar;
+  const resultado = totalRec - totalDesp;
+  const ratio     = totalDesp > 0 ? totalRec / totalDesp : (totalRec > 0 ? 2 : 0);
+
+  // Score baseado no ratio receita/despesa
+  let score, cls, badgeCls, badge, tip, gaugeColor;
+  if (ratio >= 1.3) {
+    score = Math.min(100, Math.round(70 + (ratio - 1.3) * 30));
+    cls = 'ds-green'; badgeCls = 'b-green'; badge = '✅ Superávit Forte';
+    gaugeColor = '#2D8C57';
+    tip = 'Excelente! A receita supera as despesas em ' + ((ratio-1)*100).toFixed(0) + '%. O negócio está gerando resultado positivo com folga.';
+  } else if (ratio >= 1.0) {
+    score = Math.round(40 + (ratio - 1.0) * 100);
+    cls = 'ds-blue'; badgeCls = 'b-blue'; badge = '👍 Equilibrado';
+    gaugeColor = '#1A5CA0';
+    tip = 'Receita cobre as despesas. Margem de ' + ((ratio-1)*100).toFixed(0) + '%. Tente ampliar essa diferença para criar reserva.';
+  } else if (ratio >= 0.8) {
+    score = Math.round(20 + (ratio - 0.8) * 100);
+    cls = 'ds-warn'; badgeCls = 'b-warn'; badge = '⚠️ Déficit Leve';
+    gaugeColor = '#C9850A';
+    tip = 'As despesas superam a receita em ' + ((1-ratio)*100).toFixed(0) + '%. Revise custos ou antecipe recebimentos para fechar o mês no azul.';
+  } else {
+    score = Math.max(0, Math.round((ratio / 0.8) * 20));
+    cls = 'ds-red'; badgeCls = 'b-red'; badge = '🚨 Déficit Crítico';
+    gaugeColor = 'var(--danger)';
+    tip = 'Atenção: as despesas superam a receita em ' + ((1-ratio)*100).toFixed(0) + '%. Ação imediata necessária para evitar comprometer o caixa.';
+  }
+
+  // Atualiza card
+  const card = document.getElementById('eq-card');
+  card.className = 'diag-score-card ' + cls;
+  document.getElementById('eq-score').textContent = score;
+  document.getElementById('eq-badge').textContent = badge;
+  document.getElementById('eq-badge').className = 'ds-badge ' + badgeCls;
+  document.getElementById('eq-gauge').style.width = score + '%';
+  document.getElementById('eq-gauge').style.background = gaugeColor;
+  document.getElementById('eq-gauge-label').textContent = 'Ratio: ' + ratio.toFixed(2) + 'x (receita ÷ despesa)';
+  document.getElementById('eq-tip').textContent = tip;
+
+  document.getElementById('eq-kpis').innerHTML =
+    '<div class="ds-kpi"><div class="ds-kpi-label">Total Receita</div><div class="ds-kpi-val" style="color:var(--accent)">' + brl(totalRec,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">Total Despesa</div><div class="ds-kpi-val" style="color:var(--danger)">' + brl(totalDesp,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">Recebido</div><div class="ds-kpi-val">' + brl(recebido,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">A Receber</div><div class="ds-kpi-val">' + brl(aReceber,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">Pago</div><div class="ds-kpi-val">' + brl(pago,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">A Pagar</div><div class="ds-kpi-val">' + brl(aPagar,true) + '</div></div>';
+
+  // Detalhes: barra visual receita vs despesa
+  const maxBar = Math.max(totalRec, totalDesp, 1);
+  document.getElementById('eq-detalhes').innerHTML =
+    '<div class="diag-score-card ds-gray" style="gap:14px">' +
+      '<div class="ds-title">Receita × Despesa — ' + mesStr.slice(0,7).replace('-','/') + '</div>' +
+      '<div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--accent);font-weight:600">Receita</span><span style="font-family:DM Mono,monospace">' + brl(totalRec,true) + '</span></div>' +
+        '<div style="height:14px;background:var(--border);border-radius:6px;overflow:hidden"><div style="height:100%;width:' + Math.round((totalRec/maxBar)*100) + '%;background:#2D8C57;border-radius:6px;transition:width 0.6s"></div></div>' +
+      '</div>' +
+      '<div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--danger);font-weight:600">Despesa</span><span style="font-family:DM Mono,monospace">' + brl(totalDesp,true) + '</span></div>' +
+        '<div style="height:14px;background:var(--border);border-radius:6px;overflow:hidden"><div style="height:100%;width:' + Math.round((totalDesp/maxBar)*100) + '%;background:var(--danger);border-radius:6px;transition:width 0.6s"></div></div>' +
+      '</div>' +
+      '<div style="padding:12px;background:' + (resultado>=0?'var(--accent2)':'var(--danger-bg)') + ';border-radius:9px;display:flex;justify-content:space-between;align-items:center">' +
+        '<span style="font-size:12px;font-weight:600;color:' + (resultado>=0?'var(--accent)':'var(--danger)') + '">' + (resultado>=0?'✅ Resultado Positivo':'❌ Resultado Negativo') + '</span>' +
+        '<span style="font-family:DM Mono,monospace;font-size:16px;font-weight:500;color:' + (resultado>=0?'var(--accent)':'var(--danger)') + '">' + brl(resultado,true) + '</span>' +
+      '</div>' +
+    '</div>';
+}
+
+// ── Score de Geração de Caixa ──────────────────────────────────
+function renderScoreGeracao(lc) {
+  const mesStr   = hoje().slice(0,7);
+  const anoMes   = mesStr.split('-');
+  // Mês anterior
+  let mesAntNum  = parseInt(anoMes[1]) - 1;
+  let anoAnt     = parseInt(anoMes[0]);
+  if (mesAntNum === 0) { mesAntNum = 12; anoAnt--; }
+  const mesAntStr = anoAnt + '-' + String(mesAntNum).padStart(2,'0');
+
+  // Saldo total atual de todas as contas bancárias
+  const bancos = gdBancos();
+  const saldoAtual = bancos.reduce((_,__,i) => _ + calcSaldoConta(i), 0);
+
+  // Saldo projetado no fim do mês anterior (até último dia do mês anterior)
+  const ultimoDiaMesAnt = new Date(parseInt(anoMes[0]), parseInt(anoMes[1])-1, 0).toISOString().split('T')[0];
+  const saldoMesAnt = bancos.reduce((_,__,i) => _ + calcSaldoContaAteData(i, ultimoDiaMesAnt), 0);
+
+  const variacao  = saldoAtual - saldoMesAnt;
+  const pctVar    = saldoMesAnt !== 0 ? (variacao / Math.abs(saldoMesAnt)) * 100 : (saldoAtual > 0 ? 100 : 0);
+
+  // Entradas e saídas efetivadas do mês atual
+  const mesLanc   = lc.filter(l => (l.data||'').startsWith(mesStr));
+  const entradas  = mesLanc.filter(l => l.status==='Recebido').reduce((s,l) => s+(l.recebido||0), 0);
+  const saidas    = mesLanc.filter(l => l.status==='Pago').reduce((s,l) => s+(l.pago||0), 0);
+  const fluxoLiq  = entradas - saidas;
+
+  // Score: baseado em variação % do caixa e se fluxo líquido é positivo
+  let score, cls, badgeCls, badge, tip, gaugeColor;
+  if (variacao > 0 && pctVar >= 10) {
+    score = Math.min(100, Math.round(75 + Math.min(pctVar - 10, 25)));
+    cls = 'ds-green'; badgeCls = 'b-green'; badge = '📈 Caixa Crescendo';
+    gaugeColor = '#2D8C57';
+    tip = 'Ótimo! O caixa cresceu ' + pctVar.toFixed(1) + '% em relação ao mês anterior. O negócio está acumulando reservas.';
+  } else if (variacao > 0) {
+    score = Math.round(55 + pctVar * 2);
+    cls = 'ds-blue'; badgeCls = 'b-blue'; badge = '➡️ Caixa Estável';
+    gaugeColor = '#1A5CA0';
+    tip = 'O caixa cresceu levemente (' + pctVar.toFixed(1) + '%). Situação estável, mas há espaço para melhorar a geração de caixa.';
+  } else if (variacao === 0) {
+    score = 50;
+    cls = 'ds-gray'; badgeCls = 'b-gray'; badge = '⏸️ Sem Variação';
+    gaugeColor = 'var(--text3)';
+    tip = 'O caixa não variou em relação ao mês anterior. Verifique se há lançamentos pendentes de registro.';
+  } else if (pctVar >= -15) {
+    score = Math.max(20, Math.round(50 + pctVar * 2));
+    cls = 'ds-warn'; badgeCls = 'b-warn'; badge = '⚠️ Caixa Reduzindo';
+    gaugeColor = '#C9850A';
+    tip = 'O caixa reduziu ' + Math.abs(pctVar).toFixed(1) + '% neste mês. Monitore de perto os próximos vencimentos.';
+  } else {
+    score = Math.max(0, Math.round(20 + pctVar));
+    cls = 'ds-red'; badgeCls = 'b-red'; badge = '🔴 Queima de Caixa';
+    gaugeColor = 'var(--danger)';
+    tip = 'Alerta: o caixa caiu ' + Math.abs(pctVar).toFixed(1) + '% este mês. Revise urgentemente as saídas e antecipe recebimentos.';
+  }
+
+  const card = document.getElementById('gc-card');
+  card.className = 'diag-score-card ' + cls;
+  document.getElementById('gc-score').textContent = score;
+  document.getElementById('gc-badge').textContent = badge;
+  document.getElementById('gc-badge').className = 'ds-badge ' + badgeCls;
+  document.getElementById('gc-gauge').style.width = score + '%';
+  document.getElementById('gc-gauge').style.background = gaugeColor;
+  document.getElementById('gc-gauge-label').textContent = (variacao >= 0 ? '+' : '') + brl(variacao,true) + ' vs mês anterior';
+  document.getElementById('gc-tip').textContent = tip;
+
+  document.getElementById('gc-kpis').innerHTML =
+    '<div class="ds-kpi"><div class="ds-kpi-label">Saldo Atual</div><div class="ds-kpi-val" style="color:' + (saldoAtual>=0?'var(--accent)':'var(--danger)') + '">' + brl(saldoAtual,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">Saldo Mês Anterior</div><div class="ds-kpi-val">' + brl(saldoMesAnt,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">Entradas Efetivadas</div><div class="ds-kpi-val" style="color:var(--accent)">' + brl(entradas,true) + '</div></div>' +
+    '<div class="ds-kpi"><div class="ds-kpi-label">Saídas Efetivadas</div><div class="ds-kpi-val" style="color:var(--danger)">' + brl(saidas,true) + '</div></div>';
+
+  // Detalhes: fluxo do mês
+  const maxBar2 = Math.max(entradas, saidas, 1);
+  document.getElementById('gc-detalhes').innerHTML =
+    '<div class="diag-score-card ds-gray" style="gap:14px">' +
+      '<div class="ds-title">Fluxo Efetivado — ' + mesStr.slice(5,7) + '/' + mesStr.slice(0,4) + '</div>' +
+      '<div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--accent);font-weight:600">↓ Entradas</span><span style="font-family:DM Mono,monospace">' + brl(entradas,true) + '</span></div>' +
+        '<div style="height:14px;background:var(--border);border-radius:6px;overflow:hidden"><div style="height:100%;width:' + Math.round((entradas/maxBar2)*100) + '%;background:#2D8C57;border-radius:6px;transition:width 0.6s"></div></div>' +
+      '</div>' +
+      '<div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--danger);font-weight:600">↑ Saídas</span><span style="font-family:DM Mono,monospace">' + brl(saidas,true) + '</span></div>' +
+        '<div style="height:14px;background:var(--border);border-radius:6px;overflow:hidden"><div style="height:100%;width:' + Math.round((saidas/maxBar2)*100) + '%;background:var(--danger);border-radius:6px;transition:width 0.6s"></div></div>' +
+      '</div>' +
+      '<div style="padding:12px;background:' + (fluxoLiq>=0?'var(--accent2)':'var(--danger-bg)') + ';border-radius:9px;display:flex;justify-content:space-between;align-items:center">' +
+        '<span style="font-size:12px;font-weight:600;color:' + (fluxoLiq>=0?'var(--accent)':'var(--danger)') + '">' + (fluxoLiq>=0?'✅ Fluxo Positivo':'❌ Fluxo Negativo') + '</span>' +
+        '<span style="font-family:DM Mono,monospace;font-size:16px;font-weight:500;color:' + (fluxoLiq>=0?'var(--accent)':'var(--danger)') + '">' + brl(fluxoLiq,true) + '</span>' +
+      '</div>' +
+    '</div>';
 }
 
 function renderAnalises(){
