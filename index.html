@@ -2056,8 +2056,14 @@ function calcDRE(modo){
 
     // Encontra o id mais específico: bate exato ou por prefixo (suporta subcódigos nível 2+)
     // Ex: cod=5.3.1 → bate em mp['5.3'] → df3; cod=6.1.2 → bate em mp['6.1'] → inv1
+    let mapeado = false;
     for(const [c,eid] of mp){
-      if(cod===c || cod.startsWith(c+'.')){ d[eid][m]+=v; break; }
+      if(cod===c || cod.startsWith(c+'.')){ d[eid][m]+=v; mapeado=true; break; }
+    }
+    // Fallback: plano vazio, customizado ou fora do mapa padrão — não perde o valor
+    if(!mapeado){
+      if(isRec){ d['rec1_base'][m]+=v; }  // receita sem código → 3.1 Receita de Vendas
+      else     { d['df2'][m]+=v; }         // despesa sem código → 5.2 Despesas Administrativas
     }
   });
 
@@ -2140,9 +2146,14 @@ function renderKpiMiniStrips(){
   const mesStr = String(m+1).padStart(2,'0');
   const prefMes = `${ano}-${mesStr}`;
 
-  // ---- PAGAMENTOS ----
-  const pagos = lc.filter(l => l.pago > 0);
-  const aPagar = lc.filter(l => (l.aPagar||0) > 0);
+  // ---- PAGAMENTOS ---- (filtra conforme modo do painel)
+  const lcFiltrado = _painelModo === 'realizado'
+    ? lc.filter(l => l.status === 'Pago' || l.status === 'Recebido')
+    : _painelModo === 'previsto'
+    ? lc.filter(l => l.status === 'A Pagar' || l.status === 'A Receber')
+    : lc;
+  const pagos = lcFiltrado.filter(l => l.pago > 0);
+  const aPagar = lcFiltrado.filter(l => (l.aPagar||0) > 0);
 
   const pagoMes   = pagos.filter(l => (l.data||'').startsWith(prefMes));
   const apagarMes = aPagar.filter(l => (l.data||'').startsWith(prefMes));
@@ -2155,8 +2166,8 @@ function renderKpiMiniStrips(){
   const sumApagarSem = apagarSem.reduce((s,l)=>s+(l.aPagar||0),0);
 
   // ---- RECEBIMENTOS ----
-  const recebidos = lc.filter(l => l.recebido > 0);
-  const aReceber  = lc.filter(l => (l.aReceber||0) > 0);
+  const recebidos = lcFiltrado.filter(l => l.recebido > 0);
+  const aReceber  = lcFiltrado.filter(l => (l.aReceber||0) > 0);
 
   const recebidoMes    = recebidos.filter(l => (l.data||'').startsWith(prefMes));
   const areceberMes    = aReceber.filter(l => (l.data||'').startsWith(prefMes));
