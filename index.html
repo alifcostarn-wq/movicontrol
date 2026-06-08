@@ -1343,9 +1343,9 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
       <span class="nav-label">Planejamento Financeiro</span>
     </button>
     <div class="nav-section">Análises</div>
-    <button class="nav-item" data-page="analises" data-tooltip="Saúde Financeira" onclick="navTo('analises',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M6 20V10M12 20V4M18 20v-8"/></svg>
-      <span class="nav-label">Saúde Financeira</span>
+    <button class="nav-item" data-page="analises" data-tooltip="Diagnóstico" onclick="navTo('analises',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span class="nav-label">Diagnóstico</span>
     </button>
     <div class="nav-section">Cadastros</div>
     <button class="nav-item" data-page="clientes" data-tooltip="Clientes" onclick="navTo('clientes',this)">
@@ -1705,38 +1705,6 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
     <!-- ====== CONTAS ====== -->
     <div class="page" id="page-contas">
 
-      <!-- PAINEL DE ENDIVIDAMENTO -->
-      <div class="divida-panel">
-        <div class="divida-panel-header">
-          <div class="divida-panel-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Painel de Endividamento
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn" onclick="exportarContasPagarCSV()">↓ Exportar CSV</button>
-            <button class="btn btn-primary" onclick="abrirModalLancamento('pagar')">+ Nova Conta a Pagar</button>
-          </div>
-        </div>
-        <!-- KPIs de endividamento -->
-        <div class="divida-kpis" id="div-kpis"></div>
-        <!-- Aging -->
-        <div class="aging-section">
-          <div class="aging-title">Envelhecimento das Dívidas (Aging)</div>
-          <div class="aging-bars" id="div-aging"></div>
-        </div>
-        <!-- Concentração por fornecedor -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:4px">
-          <div>
-            <div class="aging-title">Concentração por Fornecedor (Top 5)</div>
-            <div class="conc-list" id="div-conc"></div>
-          </div>
-          <div>
-            <div class="aging-title">Resumo Geral</div>
-            <div class="resumo-rapido" id="rr-contas" style="grid-template-columns:1fr 1fr;margin-bottom:0;gap:8px"></div>
-          </div>
-        </div>
-      </div>
-
       <!-- FILTROS PERÍODO -->
       <div class="filtros-periodo">
         <span class="filtro-label">Período:</span>
@@ -1758,6 +1726,10 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
             Contas a Pagar
             <span style="font-size:11px;font-weight:400;color:var(--text3)" id="ct-info-pagar">0 contas</span>
             <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--danger);margin-left:4px" id="ct-pagar">R$ 0,00</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="btn" onclick="exportarContasPagarCSV()">↓ Exportar CSV</button>
+            <button class="btn btn-primary" onclick="abrirModalLancamento('pagar')">+ Nova Conta a Pagar</button>
           </div>
           <div class="cp-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2003,18 +1975,54 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
 
     <!-- ====== ANÁLISES — SAÚDE FINANCEIRA ====== -->
     <div class="page" id="page-analises">
-      <div class="score-widget" id="score-widget">
-        <div class="score-gauge-wrap" id="score-gauge-wrap">
-          <svg class="score-gauge-svg" id="score-svg" viewBox="0 0 160 90"></svg>
-          <div class="score-gauge-val" id="score-val">—</div>
-          <div class="score-gauge-label" id="score-label">Calculando...</div>
-          <div class="score-gauge-mes" id="score-mes"></div>
+      <!-- Abas do módulo Diagnóstico -->
+      <div class="main-tabs" style="margin-bottom:22px">
+        <button class="main-tab active" id="diag-tab-saude" onclick="diagSetTab('saude')">❤️ Saúde Financeira</button>
+        <button class="main-tab" id="diag-tab-endivid" onclick="diagSetTab('endivid')">⚠️ Endividamento</button>
+      </div>
+
+      <!-- Aba: Saúde Financeira -->
+      <div id="diag-panel-saude">
+        <div class="score-widget" id="score-widget">
+          <div class="score-gauge-wrap" id="score-gauge-wrap">
+            <svg class="score-gauge-svg" id="score-svg" viewBox="0 0 160 90"></svg>
+            <div class="score-gauge-val" id="score-val">—</div>
+            <div class="score-gauge-label" id="score-label">Calculando...</div>
+            <div class="score-gauge-mes" id="score-mes"></div>
+          </div>
+          <div class="score-right">
+            <div class="score-title">Score de Saúde Financeira</div>
+            <div class="score-subtitle">Análise automática da situação financeira do mês atual</div>
+            <div class="score-criterios" id="score-criterios"></div>
+            <div class="score-tip" id="score-tip"></div>
+          </div>
         </div>
-        <div class="score-right">
-          <div class="score-title">Score de Saúde Financeira</div>
-          <div class="score-subtitle">Análise automática da situação financeira do mês atual</div>
-          <div class="score-criterios" id="score-criterios"></div>
-          <div class="score-tip" id="score-tip"></div>
+      </div>
+
+      <!-- Aba: Painel de Endividamento -->
+      <div id="diag-panel-endivid" style="display:none">
+        <div class="divida-panel">
+          <div class="divida-panel-header">
+            <div class="divida-panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Painel de Endividamento
+            </div>
+          </div>
+          <div class="divida-kpis" id="diag-div-kpis"></div>
+          <div class="aging-section">
+            <div class="aging-title">Envelhecimento das Dívidas (Aging)</div>
+            <div class="aging-bars" id="diag-div-aging"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:4px">
+            <div>
+              <div class="aging-title">Concentração por Fornecedor (Top 5)</div>
+              <div class="conc-list" id="diag-div-conc"></div>
+            </div>
+            <div>
+              <div class="aging-title">Resumo Geral</div>
+              <div class="resumo-rapido" id="diag-rr-contas" style="grid-template-columns:1fr 1fr;margin-bottom:0;gap:8px"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2287,7 +2295,7 @@ const PAGE_META={
   planejamento:{title:'Planejamento Financeiro',sub:'Metas previstas vs. realizadas'},
   clientes:{title:'Clientes',sub:'Cadastro de clientes'},
   fornecedores:{title:'Fornecedores',sub:'Cadastro de fornecedores'},
-  analises:{title:'Análises — Saúde Financeira',sub:'Score e diagnóstico financeiro do mês atual'},
+  analises:{title:'Diagnóstico Financeiro',sub:'Saúde financeira e painel de endividamento'},
   bancos:{title:'Contas Bancárias',sub:'Gestão de contas, extratos e transferências'},
   plano:{title:'Plano de Contas',sub:'Estrutura hierárquica de contas'},
   usuarios:{title:'Usuários do Sistema',sub:'Gerenciar acessos e permissões'},
@@ -3613,9 +3621,77 @@ function diasAtraso(data){
   return Math.floor((h-d)/86400000);
 }
 
+function diagSetTab(tab) {
+  ['saude','endivid'].forEach(t => {
+    document.getElementById('diag-tab-'+t).classList.toggle('active', t===tab);
+    document.getElementById('diag-panel-'+t).style.display = t===tab ? '' : 'none';
+  });
+  const lc = gd('sf_lancamentos');
+  if(tab === 'saude') renderScoreSaude(lc);
+  if(tab === 'endivid') renderPainelEndividamentoDiag(lc);
+}
+
 function renderAnalises(){
   const lc=gd('sf_lancamentos');
   renderScoreSaude(lc);
+}
+
+function renderPainelEndividamentoDiag(lc){
+  const h=hoje();
+  const pendentes=lc.filter(l=>l.status==='A Pagar'&&l.aPagar>0);
+  const atrasadas=pendentes.filter(l=>(l.data||'')<h);
+  const hoje_list=pendentes.filter(l=>l.data===h);
+  const semana_list=pendentes.filter(l=>{const d=new Date((l.data||h)+'T00:00:00'),hd=new Date(h+'T00:00:00');return d>hd&&(d-hd)/86400000<=7;});
+  const pagas_mes=lc.filter(l=>l.status==='Pago'&&l.pago>0&&(l.data||'').startsWith(h.slice(0,7)));
+  const totPend=pendentes.reduce((s,l)=>s+(l.aPagar||0),0);
+  const totAtras=atrasadas.reduce((s,l)=>s+(l.aPagar||0),0);
+  const totPagMes=pagas_mes.reduce((s,l)=>s+(l.pago||0),0);
+  const indEnv=totPend>0?((totAtras/totPend)*100).toFixed(1):0;
+
+  document.getElementById('diag-div-kpis').innerHTML=
+    '<div class="dk-card dk-red"><div class="dk-label">Total em Aberto</div><div class="dk-val">'+brl(totPend,true)+'</div><div class="dk-sub">'+pendentes.length+' conta'+(pendentes.length!==1?'s':'')+' pendente'+(pendentes.length!==1?'s':'')+'</div></div>'+
+    '<div class="dk-card dk-red"><div class="dk-label">Atrasadas</div><div class="dk-val">'+brl(totAtras,true)+'</div><div class="dk-sub">'+atrasadas.length+' conta'+(atrasadas.length!==1?'s':'')+' em atraso</div></div>'+
+    '<div class="dk-card dk-orange"><div class="dk-label">Vence Hoje</div><div class="dk-val">'+brl(hoje_list.reduce((s,l)=>s+(l.aPagar||0),0),true)+'</div><div class="dk-sub">'+hoje_list.length+' conta'+(hoje_list.length!==1?'s':'')+'</div></div>'+
+    '<div class="dk-card dk-blue"><div class="dk-label">Próximos 7 Dias</div><div class="dk-val">'+brl(semana_list.reduce((s,l)=>s+(l.aPagar||0),0),true)+'</div><div class="dk-sub">'+semana_list.length+' conta'+(semana_list.length!==1?'s':'')+'</div></div>'+
+    '<div class="dk-card dk-green"><div class="dk-label">Pago Este Mês</div><div class="dk-val">'+brl(totPagMes,true)+'</div><div class="dk-sub">'+pagas_mes.length+' pagamento'+(pagas_mes.length!==1?'s':'')+'</div></div>'+
+    '<div class="dk-card dk-neutral"><div class="dk-label">Índice de Atraso</div><div class="dk-val" style="color:'+(indEnv>50?'var(--danger)':indEnv>20?'var(--warn)':'var(--accent)')+'">'+indEnv+'%</div><div class="dk-sub">do total em atraso</div></div>';
+
+  const maxVal=Math.max(1,
+    atrasadas.filter(l=>diasAtraso(l.data)<=7).reduce((s,l)=>s+(l.aPagar||0),0),
+    atrasadas.filter(l=>diasAtraso(l.data)>7&&diasAtraso(l.data)<=30).reduce((s,l)=>s+(l.aPagar||0),0),
+    atrasadas.filter(l=>diasAtraso(l.data)>30&&diasAtraso(l.data)<=60).reduce((s,l)=>s+(l.aPagar||0),0),
+    atrasadas.filter(l=>diasAtraso(l.data)>60).reduce((s,l)=>s+(l.aPagar||0),0)
+  );
+  const agBands=[
+    {label:'Até 7 dias',filter:l=>diasAtraso(l.data)<=7,cls:'ab-ok'},
+    {label:'8 a 30 dias',filter:l=>diasAtraso(l.data)>7&&diasAtraso(l.data)<=30,cls:'ab-warn'},
+    {label:'31 a 60 dias',filter:l=>diasAtraso(l.data)>30&&diasAtraso(l.data)<=60,cls:'ab-danger'},
+    {label:'Mais de 60 dias',filter:l=>diasAtraso(l.data)>60,cls:'ab-critical'},
+  ];
+  document.getElementById('diag-div-aging').innerHTML=agBands.map(b=>{
+    const items=atrasadas.filter(b.filter);
+    const val=items.reduce((s,l)=>s+(l.aPagar||0),0);
+    const pct=Math.round((val/maxVal)*100);
+    const cor=b.cls==='ab-ok'?'var(--accent)':b.cls==='ab-warn'?'var(--warn)':'var(--danger)';
+    return '<div class="aging-bar-item"><div class="aging-bar-label">'+b.label+'</div><div class="aging-bar-track"><div class="aging-bar-fill '+b.cls+'" style="width:'+pct+'%"></div></div><div class="aging-bar-val" style="color:'+cor+'">'+brl(val,true)+'</div><div class="aging-bar-cnt">'+items.length+' conta'+(items.length!==1?'s':'')+'</div></div>';
+  }).join('');
+
+  const forMap={};
+  pendentes.forEach(l=>{const f=l.fornecedor||'(sem fornecedor)';forMap[f]=(forMap[f]||0)+(l.aPagar||0);});
+  const sorted=Object.entries(forMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxFor=sorted[0]?.[1]||1;
+  document.getElementById('diag-div-conc').innerHTML=sorted.length?sorted.map(([nome,val])=>{
+    const pct=((val/totPend)*100).toFixed(1);
+    const barW=Math.round((val/maxFor)*100);
+    return '<div class="conc-item"><span class="conc-nome" title="'+nome+'">'+nome+'</span><div class="conc-track"><div class="conc-fill" style="width:'+barW+'%"></div></div><span class="conc-pct">'+pct+'%</span><span class="conc-val">'+brl(val,true)+'</span></div>';
+  }).join(''):'<div style="font-size:12px;color:var(--text3)">Nenhum fornecedor com conta em aberto.</div>';
+
+  const totRec=lc.reduce((s,l)=>s+(l.aReceber||0),0);
+  document.getElementById('diag-rr-contas').innerHTML=
+    '<div class="rr-card"><div class="rr-label">A Pagar Atrasado</div><div class="rr-val red">'+brl(totAtras,true)+'</div></div>'+
+    '<div class="rr-card"><div class="rr-label">A Pagar Total</div><div class="rr-val warn">'+brl(totPend,true)+'</div></div>'+
+    '<div class="rr-card"><div class="rr-label">A Receber Total</div><div class="rr-val green">'+brl(totRec,true)+'</div></div>'+
+    '<div class="rr-card"><div class="rr-label">Saldo Projetado</div><div class="rr-val '+(totRec-totPend>=0?'green':'red')+'">'+brl(totRec-totPend,true)+'</div></div>';
 }
 
 function renderScoreSaude(lc){
@@ -3886,9 +3962,6 @@ function renderPainelEndividamento(lc){
 function renderContas(){
   const lc=gd('sf_lancamentos');
   const h=hoje();
-
-  // Painel de endividamento (sempre com todos os dados)
-  renderPainelEndividamento(lc);
 
   // Contas a pagar filtradas por período + busca + status + situação
   let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago)&&dentroP(l.data,contasPeriodo));
