@@ -2267,17 +2267,21 @@ function renderKpiMiniStrips(){
   const mesStr = String(m+1).padStart(2,'0');
   const prefMes = `${ano}-${mesStr}`;
 
-  // ---- PAGAMENTOS ---- (filtra conforme modo do painel)
-  const lcFiltrado = _painelModo === 'realizado'
+  // ---- PAGAMENTOS ----
+  // Pago/Recebido: respeitam o modo do painel (realizado vs previsto vs todos)
+  const lcRealizado = _painelModo === 'realizado'
     ? lc.filter(l => l.status === 'Pago' || l.status === 'Recebido')
     : _painelModo === 'previsto'
     ? lc.filter(l => l.status === 'A Pagar' || l.status === 'A Receber')
     : lc;
-  const pagos = lcFiltrado.filter(l => l.pago > 0);
-  const aPagar = lcFiltrado.filter(l => (l.aPagar||0) > 0);
+  // A Pagar / A Receber: sempre do total, pois servem como análise futura independente do modo
+  const lcPrevisto = lc.filter(l => l.status === 'A Pagar' || l.status === 'A Receber');
 
-  const pagoMes   = pagos.filter(l => (l.data||'').startsWith(prefMes));
-  const apagarMes = aPagar.filter(l => (l.data||'').startsWith(prefMes));
+  const pagos  = lcRealizado.filter(l => (l.pago||0) > 0);
+  const aPagar = lcPrevisto.filter(l => (l.aPagar||0) > 0);
+
+  const pagoMes    = pagos.filter(l => (l.data||'').startsWith(prefMes));
+  const apagarMes  = aPagar.filter(l => (l.data||'').startsWith(prefMes));
   const apagarHoje = aPagar.filter(l => (l.data||'') === hStr);
   const apagarSem  = aPagar.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
 
@@ -2287,13 +2291,13 @@ function renderKpiMiniStrips(){
   const sumApagarSem = apagarSem.reduce((s,l)=>s+(l.aPagar||0),0);
 
   // ---- RECEBIMENTOS ----
-  const recebidos = lcFiltrado.filter(l => l.recebido > 0);
-  const aReceber  = lcFiltrado.filter(l => (l.aReceber||0) > 0);
+  const recebidos = lcRealizado.filter(l => (l.recebido||0) > 0);
+  const aReceber  = lcPrevisto.filter(l => (l.aReceber||0) > 0);
 
-  const recebidoMes    = recebidos.filter(l => (l.data||'').startsWith(prefMes));
-  const areceberMes    = aReceber.filter(l => (l.data||'').startsWith(prefMes));
-  const areceberHoje   = aReceber.filter(l => (l.data||'') === hStr);
-  const areceberSem    = aReceber.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
+  const recebidoMes  = recebidos.filter(l => (l.data||'').startsWith(prefMes));
+  const areceberMes  = aReceber.filter(l => (l.data||'').startsWith(prefMes));
+  const areceberHoje = aReceber.filter(l => (l.data||'') === hStr);
+  const areceberSem  = aReceber.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
 
   const sumRecebidoMes  = recebidoMes.reduce((s,l)=>s+(l.recebido||0),0);
   const sumAreceberMes  = areceberMes.reduce((s,l)=>s+(l.aReceber||0),0);
