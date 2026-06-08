@@ -1964,7 +1964,7 @@ function atualizarBadges(){
 // ============================================================
 // DRE DATA ENGINE
 // ============================================================
-const DRE_IDS=['rec','rec1','rec1_1','rec1_2','rec1_3','rec1_99','rec2','rec3','cv','cv1','cv2','cv3','cv4','cv5','mc','df','df1','df2','df3','df4','df5','inv','inv1','inv2','inv3','lop','desp_op','lucro_op','nop','nop1','nop2','resultado'];
+const DRE_IDS=['rec','rec1','rec1_base','rec1_1','rec1_2','rec1_3','rec1_99','rec2','rec3','cv','cv1','cv2','cv3','cv4','cv5','mc','df','df1','df2','df3','df4','df5','inv','inv1','inv2','inv3','lop','desp_op','lucro_op','nop','nop1','nop2','resultado'];
 const DRE_STRUCT=[
   {id:'rec',n:0,nome:'RECEITA / FATURAMENTO',t:'rec0'},
   {id:'rec1',n:1,nome:'3.1  Receita de Vendas',t:'sub'},
@@ -2010,7 +2010,7 @@ function calcDRE(modo){
   // Ordem importa: mais específico primeiro para evitar double-count
   const mp=[
     ['3.1.1','rec1_1'],['3.1.2','rec1_2'],['3.1.3','rec1_3'],['3.1.99','rec1_99'],
-    ['3.1','rec1'],['3.2','rec2'],['3.3','rec3'],
+    ['3.1','rec1_base'],['3.2','rec2'],['3.3','rec3'],
     ['4.1','cv1'],['4.2','cv2'],['4.3','cv3'],['4.4','cv4'],['4.5','cv5'],['4.6','cv5'],
     ['5.1','df1'],['5.2','df2'],['5.3','df3'],['5.4','df4'],['5.5','df5'],['5.8','df5'],
     ['6.1','inv1'],['6.2','inv2'],['6.3','inv3'],['6.4','inv3'],
@@ -2060,7 +2060,7 @@ function calcDRE(modo){
   });
 
   const s=(p,ch)=>{for(let m=0;m<12;m++)d[p][m]=ch.reduce((x,c)=>x+(d[c]?.[m]||0),0);};
-  s('rec1',['rec1_1','rec1_2','rec1_3','rec1_99']);
+  s('rec1',['rec1_base','rec1_1','rec1_2','rec1_3','rec1_99']);
   s('rec',['rec1','rec2','rec3']);
   s('cv',['cv1','cv2','cv3','cv4','cv5']);
   for(let m=0;m<12;m++)d['mc'][m]=d['rec'][m]-d['cv'][m];
