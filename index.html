@@ -1301,7 +1301,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
         <div class="table-scroll">
           <table class="t" style="min-width:1050px">
             <thead><tr>
-              <th onclick="sortDiario('lin')">#</th><th onclick="sortDiario('status')">Status</th><th onclick="sortDiario('data')">Data</th>
+              <th onclick="sortDiario('lin')">#</th><th onclick="sortDiario('status')">Status</th><th onclick="sortDiario('data')">Vencimento</th><th onclick="sortDiario('dataEfetivacao')">Efetivação</th>
               <th>Plano de Contas</th><th>Cliente</th><th>Fornecedor</th><th>Histórico</th>
               <th onclick="sortDiario('aReceber')">A Receber</th><th onclick="sortDiario('recebido')">Recebido</th>
               <th onclick="sortDiario('aPagar')">A Pagar</th><th onclick="sortDiario('pago')">Pago</th>
@@ -1678,7 +1678,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
         <div class="tipo-toggle"><button class="tipo-btn at-rec" id="lt-rec" onclick="setLancTipo('receber')">↓ A Receber / Recebido</button><button class="tipo-btn" id="lt-pag" onclick="setLancTipo('pagar')">↑ A Pagar / Pago</button></div>
       </div>
       <div class="form-grid">
-        <div class="form-group"><label class="form-label">Data<span>*</span></label><input type="date" id="l-data" style="width:100%"></div>
+        <div class="form-group"><label class="form-label">Vencimento<span>*</span></label><input type="date" id="l-data" style="width:100%"></div>
         <div class="form-group"><label class="form-label">Status<span>*</span></label><select id="l-status" style="width:100%"><option value="A Receber">A Receber</option><option value="Recebido">Recebido</option></select></div>
         <div class="form-group full"><label class="form-label">Plano de Contas<span>*</span></label>
           <select id="l-plano" style="width:100%"></select>
@@ -3015,6 +3015,7 @@ function renderDiario(){
       <td class="td-muted td-mono">${l.lin||'—'}</td>
       <td><span class="status-badge ${sb}"><span class="status-dot ${sdot}"></span>${l.status||'—'}</span></td>
       <td class="td-mono td-muted">${fmtData(l.data)}</td>
+      <td class="td-mono ${l.dataEfetivacao?'td-green':'td-muted'}">${l.dataEfetivacao?fmtData(l.dataEfetivacao):'—'}</td>
       <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${l.plano||'—'}</td>
       <td>${l.cliente||'<span class="td-muted">—</span>'}</td>
       <td>${l.fornecedor||'<span class="td-muted">—</span>'}</td>
@@ -3049,19 +3050,19 @@ function efetivarLancamento(idx){
   if(!l)return;
   if(l.status==='A Receber'){
     const val=l.aReceber||0;
-    lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,valorLiquido:val};
+    lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,valorLiquido:val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
     renderDiario();atualizarBadges();
     showToast('✓ Recebimento efetivado: '+brl(val,true));
   } else if(l.status==='A Pagar'){
     const val=l.aPagar||0;
-    lc[idx]={...l,status:'Pago',pago:val,aPagar:0,valorLiquido:-val};
+    lc[idx]={...l,status:'Pago',pago:val,aPagar:0,valorLiquido:-val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
     renderDiario();atualizarBadges();
     showToast('✓ Pagamento efetivado: '+brl(val,true));
   }
 }
-function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showToast('Sem dados.',true);return;}const h='Data;Status;Plano;Cliente;Fornecedor;Histórico;A Receber;Recebido;A Pagar;Pago;Conta;Val.Líquido';const r=lc.map(l=>[l.data||'',l.status||'',l.plano||'',l.cliente||'',l.fornecedor||'',(l.historico||'').replace(/;/g,' '),l.aReceber||0,l.recebido||0,l.aPagar||0,l.pago||0,l.conta||'',l.valorLiquido||0].join(';'));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n'),{type:'text/csv'}]));a.download='livro-diario.csv';a.click();showToast('CSV exportado!');}
+function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showToast('Sem dados.',true);return;}const h='Vencimento;Efetivação;Status;Plano;Cliente;Fornecedor;Histórico;A Receber;Recebido;A Pagar;Pago;Conta;Val.Líquido';const r=lc.map(l=>[l.data||'',l.dataEfetivacao||'',l.status||'',l.plano||'',l.cliente||'',l.fornecedor||'',(l.historico||'').replace(/;/g,' '),l.aReceber||0,l.recebido||0,l.aPagar||0,l.pago||0,l.conta||'',l.valorLiquido||0].join(';'));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n'),{type:'text/csv'}]));a.download='livro-diario.csv';a.click();showToast('CSV exportado!');}
 
 // ============================================================
 // FLUXO DE CAIXA
