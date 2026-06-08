@@ -2217,13 +2217,13 @@ function renderKpiDestaque(){
 
   const m = kpiMesAtual;
   const rec  = d['rec']?.[m]  || 0;
-  const desp = d['desp_op']?.[m] || 0;
+  const desp = (d['cv']?.[m] || 0) + (d['desp_op']?.[m] || 0); // cv + df + inv = total saídas
   const res  = d['resultado']?.[m] || 0;
 
   // Variação vs mês anterior
   const mPrev = m > 0 ? m - 1 : null;
   const recPrev  = mPrev !== null ? (d['rec']?.[mPrev]  || 0) : null;
-  const despPrev = mPrev !== null ? (d['desp_op']?.[mPrev] || 0) : null;
+  const despPrev = mPrev !== null ? ((d['cv']?.[mPrev] || 0) + (d['desp_op']?.[mPrev] || 0)) : null;
   const resPrev  = mPrev !== null ? (d['resultado']?.[mPrev] || 0) : null;
 
   function delta(cur, prev){
@@ -2239,7 +2239,7 @@ function renderKpiDestaque(){
 
   // Barra de progresso: % do melhor mês do ano
   const maxRec  = Math.max(...MESES.map((_,i) => d['rec']?.[i]   || 0), 1);
-  const maxDesp = Math.max(...MESES.map((_,i) => d['desp_op']?.[i] || 0), 1);
+  const maxDesp = Math.max(...MESES.map((_,i) => (d['cv']?.[i] || 0) + (d['desp_op']?.[i] || 0)), 1);
   const maxResAbs = Math.max(...MESES.map((_,i) => Math.abs(d['resultado']?.[i] || 0)), 1);
 
   // Classe do card de resultado
@@ -2270,8 +2270,8 @@ function renderKpiDestaque(){
       <div class="kd-icon">📉</div>
       <div class="kd-label">Despesas</div>
       <div class="kd-val">${brl(desp, true)}</div>
-      <div class="kd-sub">custos + desp. fixas + invest.</div>
-      <div class="kd-bar-track"><div class="kd-bar-fill" style="width:${Math.min(100,(desp/maxDesp*100))}%"></div></div>
+      <div class="kd-sub">cv + desp. fixas + invest.</div>
+      <div class="kd-bar-track"><div class="kd-bar-fill" style="width:${maxDesp>0?Math.min(100,(desp/maxDesp*100)):0}%"></div></div>
     </div>
     <div class="kd-card ${resClass}" style="animation-delay:0.14s">
       ${deltaHtml(dRes, false)}
@@ -2339,13 +2339,13 @@ function renderPainel(){
   // ---- Receita/Desp mensal ----
   const totalRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
   const maxR=Math.max(...MESES.map((_,i)=>d['rec'][i]||0),1);
-  const maxDe=Math.max(...MESES.map((_,i)=>d['desp_op'][i]||0),1);
+  const maxDe=Math.max(...MESES.map((_,i)=>(d['cv'][i]||0)+(d['desp_op'][i]||0)),1);
   document.getElementById('p-receita').textContent=brl(totalRec,true);
-  document.getElementById('p-desp').textContent=brl(MESES.reduce((s,_,i)=>s+(d['desp_op'][i]||0),0),true);
+  document.getElementById('p-desp').textContent=brl(MESES.reduce((s,_,i)=>s+(d['cv'][i]||0)+(d['desp_op'][i]||0),0),true);
   document.getElementById('p-bfr').style.width=(totalRec/Math.max(totalRec,1)*100)+'%';
-  document.getElementById('p-bfd').style.width=(MESES.reduce((s,_,i)=>s+(d['desp_op'][i]||0),0)/Math.max(MESES.reduce((s,_,i)=>s+(d['desp_op'][i]||0),0),1)*100)+'%';
+  document.getElementById('p-bfd').style.width='100%';
   document.getElementById('p-rec-rows').innerHTML=MESES.slice(0,6).map((m,i)=>`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${(d['rec'][i]||0)/maxR*100}%;background:#2D8C57"></div></div><span class="month-val">${d['rec'][i]?brlN(d['rec'][i]):'—'}</span></div>`).join('');
-  document.getElementById('p-desp-rows').innerHTML=MESES.slice(0,6).map((m,i)=>`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${(d['desp_op'][i]||0)/maxDe*100}%;background:var(--danger)"></div></div><span class="month-val">${d['desp_op'][i]?brlN(d['desp_op'][i]):'—'}</span></div>`).join('');
+  document.getElementById('p-desp-rows').innerHTML=MESES.slice(0,6).map((m,i)=>{const vd=(d['cv'][i]||0)+(d['desp_op'][i]||0);return`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${vd/maxDe*100}%;background:var(--danger)"></div></div><span class="month-val">${vd?brlN(vd):'—'}</span></div>`;}).join('');
 
   // ---- DRE resumida ----
   const cols=MESES.slice(0,6);
