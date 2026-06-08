@@ -1896,7 +1896,7 @@ function gd(k){return JSON.parse(localStorage.getItem(k)||'[]')}
 function sd(k,v){localStorage.setItem(k,JSON.stringify(v))}
 function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';return'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function brlN(v){return parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function hoje(){return new Date().toISOString().split('T')[0]}
+function hoje(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fmtData(d){return d?d.split('-').reverse().join('/'):'—'}
 function initials(n){if(!n)return'?';const p=n.trim().split(' ');return(p[0][0]+(p[1]?.[0]||'')).toUpperCase()}
 
@@ -2252,8 +2252,8 @@ function kpiMesIrHoje(){
 // ============================================================
 function renderKpiMiniStrips(){
   const lc = gd('sf_lancamentos');
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const hStr = hoje.toISOString().slice(0,10);
+  const hoje = new Date();
+  const hStr = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
 
   // Próxima semana: hoje+1 até hoje+7
   const proxSemIni = new Date(hoje); proxSemIni.setDate(proxSemIni.getDate()+1);
