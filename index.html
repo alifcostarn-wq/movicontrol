@@ -4369,7 +4369,7 @@ function renderPlano() {
 }
 
 // ── Modal ─────────────────────────────────────────────────────
-let _mpModo = 'add', _mpGi = 0, _mpRi = null, _mpNivel = 2;
+let _mpModo = 'add', _mpGi = 0, _mpRi = null, _mpNivel = 2, _mpRefRi = null;
 
 const _nivelHints = [
   '📂 <strong>Conta Geral</strong> — nível mais alto. Representa um grande bloco (ex: <em>3. RECEITAS</em>).',
@@ -4377,19 +4377,74 @@ const _nivelHints = [
   '📄 <strong>Subgrupo</strong> — conta analítica, nível mais detalhado (ex: <em>3.1.1 Vendas em Dinheiro</em>).',
 ];
 
+// Gera o próximo código automático conforme o nível e contexto
+function gerarProximoCodigo(gi, nivel, refRi) {
+  const itens = PLANO_DATA[gi].itens;
+
+  if (nivel === 0) {
+    // Nível 0: pega o maior prefixo numérico inteiro entre os l0 deste grupo e soma 1
+    // ex: "3." → base 3; próximo seria "4." etc — mas como cada grupo tem só 1 l0
+    // geralmente, simplesmente encontra o maior e incrementa
+    const nums = itens
+      .filter(it => it.l === 0)
+      .map(it => parseFloat(it.c));
+    const max = nums.length ? Math.max(...nums) : 0;
+    return (Math.floor(max) + 1) + '.';
+  }
+
+  if (nivel === 1) {
+    // Nível 1: pega o prefixo do l0 do grupo (ex: "4.") e lista todos os l1
+    // para encontrar o maior sufixo inteiro, ex: 4.1, 4.2... → próximo 4.X
+    const l0 = itens.find(it => it.l === 0);
+    const prefix = l0 ? l0.c.replace(/\.$/, '') : '?'; // ex: "4"
+    const nums = itens
+      .filter(it => it.l === 1 && it.c.startsWith(prefix + '.'))
+      .map(it => {
+        const part = it.c.slice(prefix.length + 1); // ex: "1", "2", "6"
+        return parseInt(part) || 0;
+      })
+      .filter(n => n < 99); // ignora .99
+    const max = nums.length ? Math.max(...nums) : 0;
+    return prefix + '.' + (max + 1);
+  }
+
+  if (nivel === 2) {
+    // Nível 2: usa o l1 pai (refRi) para descobrir o prefixo e os filhos existentes
+    if (refRi === null) return '';
+    const parent = itens[refRi];
+    if (!parent) return '';
+    const prefix = parent.c; // ex: "4.2"
+    const nums = itens
+      .filter(it => it.l === 2 && it.c.startsWith(prefix + '.'))
+      .map(it => {
+        const part = it.c.slice(prefix.length + 1); // ex: "1", "2", "99"
+        return parseInt(part) || 0;
+      })
+      .filter(n => n < 99); // ignora .99 reservado
+    const max = nums.length ? Math.max(...nums) : 0;
+    return prefix + '.' + (max + 1);
+  }
+
+  return '';
+}
+
 function mpSetNivel(n) {
   _mpNivel = n;
   [0,1,2].forEach(i => {
     document.getElementById('mp-pill-'+i).classList.toggle('active', i===n);
   });
   document.getElementById('mp-nivel-hint').innerHTML = _nivelHints[n];
-  // Sugerir código placeholder
   const placeholders = ['ex: 3.', 'ex: 3.1', 'ex: 3.1.1'];
   document.getElementById('mp-cod').placeholder = placeholders[n];
+  // Preenche código automático só no modo add
+  if (_mpModo === 'add') {
+    const autoCod = gerarProximoCodigo(_mpGi, n, _mpRefRi);
+    document.getElementById('mp-cod').value = autoCod;
+  }
 }
 
 function abrirModalPlano(modo, gi, ri = null, nivelSugerido = 2, refRi = null) {
-  _mpModo = modo; _mpGi = gi; _mpRi = ri;
+  _mpModo = modo; _mpGi = gi; _mpRi = ri; _mpRefRi = refRi;
 
   document.getElementById('mp-grupo').value = gi;
   document.getElementById('mp-grupo').disabled = modo === 'edit';
@@ -4407,7 +4462,7 @@ function abrirModalPlano(modo, gi, ri = null, nivelSugerido = 2, refRi = null) {
     document.getElementById('mp-subtitle').textContent = 'Escolha o nível e preencha os dados.';
     [0,1,2].forEach(i => document.getElementById('mp-pill-'+i).disabled = false);
     mpSetNivel(nivelSugerido);
-    document.getElementById('mp-cod').value  = '';
+    // mpSetNivel já preenche o código automático
     document.getElementById('mp-nome').value = '';
   }
 
@@ -4421,6 +4476,12 @@ function fecharModalPlano() {
 
 function mpGrupoChange() {
   _mpGi = parseInt(document.getElementById('mp-grupo').value);
+  // Ao trocar de grupo, refRi perde referência — zera e recalcula
+  _mpRefRi = null;
+  if (_mpModo === 'add') {
+    const autoCod = gerarProximoCodigo(_mpGi, _mpNivel, _mpRefRi);
+    document.getElementById('mp-cod').value = autoCod;
+  }
 }
 
 function salvarPlano() {
@@ -4431,8 +4492,22 @@ function salvarPlano() {
   if (!cod)  { alert('Informe o código da conta.'); return; }
 
   if (_mpModo === 'add') {
-    // Insere na posição correta: após último item do mesmo nível ou ao final
-    PLANO_DATA[_mpGi].itens.push({ c: cod, n: nome, l: _mpNivel });
+    // Insere na posição correta: se for subgrupo (l2) com pai l1 referenciado,
+    // insere imediatamente após o último l2 filho desse l1.
+    // Caso contrário, insere ao final.
+    const novoItem = { c: cod, n: nome, l: _mpNivel };
+    const itens = PLANO_DATA[_mpGi].itens;
+    if (_mpNivel === 2 && _mpRefRi !== null) {
+      // Encontra o índice real do l1 pai
+      let insertAt = _mpRefRi + 1;
+      // Avança enquanto os próximos itens forem l2 (filhos desse l1)
+      while (insertAt < itens.length && itens[insertAt].l === 2) {
+        insertAt++;
+      }
+      itens.splice(insertAt, 0, novoItem);
+    } else {
+      itens.push(novoItem);
+    }
   } else {
     PLANO_DATA[_mpGi].itens[_mpRi].c = cod;
     PLANO_DATA[_mpGi].itens[_mpRi].n = nome;
