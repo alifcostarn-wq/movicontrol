@@ -1974,59 +1974,132 @@ function atualizarBadges(){
 // ============================================================
 // DRE DATA ENGINE
 // ============================================================
-const DRE_IDS=['rec','rec1','rec1_base','rec1_1','rec1_2','rec1_3','rec1_99','rec2','rec3','cv','cv1','cv2','cv3','cv4','cv5','mc','df','df1','df2','df3','df4','df5','inv','inv1','inv2','inv3','lop','desp_op','lucro_op','nop','nop1','nop2','resultado'];
-const DRE_STRUCT=[
-  {id:'rec',n:0,nome:'RECEITA / FATURAMENTO',t:'rec0'},
-  {id:'rec1',n:1,nome:'3.1  Receita de Vendas',t:'sub'},
-  {id:'rec1_1',n:2,nome:'3.1.1 Vendas em Dinheiro',t:'det'},
-  {id:'rec1_2',n:2,nome:'3.1.2 Vendas Cartões Débito',t:'det'},
-  {id:'rec1_3',n:2,nome:'3.1.3 Vendas Cartões Crédito',t:'det'},
-  {id:'rec1_99',n:2,nome:'3.1.99 Outros Produtos/Serviços',t:'det'},
-  {id:'rec2',n:1,nome:'3.2  Outras Receitas de Vendas',t:'sub'},
-  {id:'rec3',n:1,nome:'3.3 Recebimento de Juros',t:'sub'},
-  {id:'cv',n:0,nome:'CUSTOS VARIÁVEIS',t:'custo0'},
-  {id:'cv1',n:1,nome:'4.1 Custos Tributários / Financeiros',t:'sub'},
-  {id:'cv2',n:1,nome:'4.2 Custos com Fornecedores',t:'sub'},
-  {id:'cv3',n:1,nome:'4.3 Custos com Embalagens',t:'sub'},
-  {id:'cv4',n:1,nome:'4.4 Transporte de Mercadoria',t:'sub'},
-  {id:'cv5',n:1,nome:'4.5 Custo com Vendas',t:'sub'},
-  {id:'mc',n:0,nome:'MARGEM DE CONTRIBUIÇÃO',t:'margem'},
-  {id:'df',n:0,nome:'DESPESAS FIXAS',t:'desp0'},
-  {id:'df1',n:1,nome:'5.1 Despesas Financeiras',t:'sub'},
-  {id:'df2',n:1,nome:'5.2 Despesas Administrativas',t:'sub'},
-  {id:'df3',n:1,nome:'5.3 Despesas com Pessoal',t:'sub'},
-  {id:'df4',n:1,nome:'5.4 Materiais e Equipamentos',t:'sub'},
-  {id:'df5',n:1,nome:'5.5 Despesas com Veículos',t:'sub'},
-  {id:'inv',n:0,nome:'INVESTIMENTOS',t:'inv0'},
-  {id:'inv1',n:1,nome:'6.1 Marketing',t:'sub'},
-  {id:'inv2',n:1,nome:'6.2 Bens Materiais',t:'sub'},
-  {id:'inv3',n:1,nome:'6.3 Desenvolvimento Empresarial',t:'sub'},
-  {id:'lop',n:0,nome:'LUCRO OPERACIONAL ANTES DOS INVESTIMENTOS',t:'lucrop'},
-  {id:'desp_op',n:0,nome:'DESPESA OPERACIONAL TOTAL',t:'lucrop'},
-  {id:'lucro_op',n:0,nome:'LUCRO OPERACIONAL',t:'lucrop'},
-  {id:'nop',n:0,nome:'MOVIMENTAÇÕES NÃO OPERACIONAIS',t:'nop0'},
-  {id:'nop1',n:1,nome:'7.1 Entradas não Operacionais',t:'sub'},
-  {id:'nop2',n:1,nome:'7.2 Saídas não Operacionais',t:'sub'},
-  {id:'resultado',n:0,nome:'RESULTADO LÍQUIDO',t:'resultado'},
-];
+// ============================================================
+// DRE DINÂMICO — gerado a partir do PLANO_DATA
+// ============================================================
+
+// Mapeia o tipo do grupo (PLANO_DATA[g].t) para os tipos DRE usados no render
+const _dreGrupoTipos = {
+  rec:   { t0:'rec0',   tSub:'sub', tDet:'det', id0:'rec'  },
+  custo: { t0:'custo0', tSub:'sub', tDet:'det', id0:'cv'   },
+  desp:  { t0:'desp0',  tSub:'sub', tDet:'det', id0:'df'   },
+  inv:   { t0:'inv0',   tSub:'sub', tDet:'det', id0:'inv'  },
+  nop:   { t0:'nop0',   tSub:'sub', tDet:'det', id0:'nop'  },
+};
+
+// Converte código "5.3.1" → id seguro "5_3_1"
+function _codToId(cod){ return cod.replace(/\./g,'_'); }
+
+// Reconstrói DRE_STRUCT e DRE_IDS dinamicamente a partir do PLANO_DATA
+function buildDreFromPlano(){
+  const struct = [];
+  const ids    = [];
+
+  // Função auxiliar para adicionar linha
+  const add = (id, n, nome, t) => { struct.push({id,n,nome,t}); ids.push(id); };
+
+  // Grupos operacionais na ordem: rec, custo, desp, inv — com separadores de resultado
+  const ordemGrupos = ['rec','custo','desp','inv','nop'];
+
+  // Índice: qual grupo t gera quais id0
+  const id0Map = { rec:'rec', custo:'cv', desp:'df', inv:'inv', nop:'nop' };
+
+  for(const tipo of ordemGrupos){
+    const grupo = PLANO_DATA.find(g => g.t === tipo);
+    if(!grupo) continue;
+
+    const id0   = id0Map[tipo];
+    const meta  = _dreGrupoTipos[tipo];
+
+    // Insere separador de resultado entre grupos
+    if(tipo === 'desp'){
+      add('mc', 0, 'MARGEM DE CONTRIBUIÇÃO', 'margem');
+    }
+    if(tipo === 'nop'){
+      add('lop',     0, 'LUCRO OPERACIONAL ANTES DOS INVESTIMENTOS', 'lucrop');
+      add('desp_op', 0, 'DESPESA OPERACIONAL TOTAL',                 'lucrop');
+      add('lucro_op',0, 'LUCRO OPERACIONAL',                         'lucrop');
+    }
+
+    // Nível 0 do grupo (ex: "3." RECEITA / FATURAMENTO)
+    const n0item = grupo.itens.find(it => it.l === 0);
+    add(id0, 0, n0item ? `${n0item.c} ${n0item.n}`.replace(/\.$/, '').trim() : grupo.g, meta.t0);
+    ids.push(id0 + '_base'); // bucket auxiliar de fallback (não aparece na struct)
+
+    // Itens de nível 1 e 2
+    const n1items = grupo.itens.filter(it => it.l === 1);
+    n1items.forEach(n1 => {
+      const n1id = id0 + '_' + _codToId(n1.c);
+      add(n1id, 1, `${n1.c} ${n1.n}`, 'sub');
+
+      const n2items = grupo.itens.filter(it => it.l === 2 && it.c.startsWith(n1.c + '.'));
+      n2items.forEach(n2 => {
+        const n2id = id0 + '_' + _codToId(n2.c);
+        add(n2id, 2, `${n2.c} ${n2.n}`, 'det');
+      });
+    });
+  }
+
+  // Resultado final
+  add('resultado', 0, 'RESULTADO LÍQUIDO', 'resultado');
+
+  return { struct, ids };
+}
+
+// Reconstrói o mapa de mapeamento código→id DRE dinamicamente
+function buildDreMapFromPlano(){
+  const mp = []; // [ [codigo, dreId], ... ] — mais específico primeiro
+
+  const id0Map = { rec:'rec', custo:'cv', desp:'df', inv:'inv', nop:'nop' };
+
+  for(const grupo of PLANO_DATA){
+    const id0 = id0Map[grupo.t];
+    if(!id0) continue;
+
+    // Ordena itens: nível 2 antes de nível 1 (mais específico primeiro)
+    const sorted = [...grupo.itens].filter(it=>it.l>=1).sort((a,b)=>{
+      const da = (a.c.match(/\./g)||[]).length;
+      const db = (b.c.match(/\./g)||[]).length;
+      return db - da; // mais pontos = mais específico = primeiro
+    });
+
+    sorted.forEach(it => {
+      const dreId = id0 + '_' + _codToId(it.c);
+      mp.push([it.c, dreId]);
+    });
+  }
+
+  return mp;
+}
+
+// Cache — reconstruído sempre que o plano muda
+let _dreCache = null;
+function getDre(){
+  if(!_dreCache) _dreCache = buildDreFromPlano();
+  return _dreCache;
+}
+function invalidateDreCache(){ _dreCache = null; }
+
+// Compatibilidade: DRE_STRUCT e DRE_IDS como getters dinâmicos
+Object.defineProperty(window,'DRE_STRUCT',{get:()=>getDre().struct});
+Object.defineProperty(window,'DRE_IDS',   {get:()=>getDre().ids});
 
 function calcDRE(modo){
   // modo: 'realizado' | 'previsto' | undefined/null (todos)
   const lc=gd('sf_lancamentos');
+  const dreIds = getDre().ids;
   const d={};
-  DRE_IDS.forEach(id=>d[id]=Array(12).fill(0));
+  dreIds.forEach(id=>d[id]=Array(12).fill(0));
 
-  // Mapeamento: prefixo do código → id DRE
-  // Ordem importa: mais específico primeiro para evitar double-count
-  // Suporta subcódigos de nível 2 (ex: 5.1.1, 5.3.2) via startsWith
-  const mp=[
-    ['3.1.1','rec1_1'],['3.1.2','rec1_2'],['3.1.3','rec1_3'],['3.1.99','rec1_99'],
-    ['3.1','rec1_base'],['3.2','rec2'],['3.3','rec3'],
-    ['4.1','cv1'],['4.2','cv2'],['4.3','cv3'],['4.4','cv4'],['4.5','cv5'],['4.6','cv5'],
-    ['5.1','df1'],['5.2','df2'],['5.3','df3'],['5.4','df4'],['5.5','df5'],['5.6','df5'],['5.7','df5'],['5.8','df5'],
-    ['6.1','inv1'],['6.2','inv2'],['6.3','inv3'],['6.4','inv3'],
-    ['7.1','nop1'],['7.2','nop2'],
-  ];
+  // Mapeamento dinâmico: código do plano → id DRE, construído a partir do PLANO_DATA atual
+  const mp = buildDreMapFromPlano();
+
+  // Identifica bucket de fallback para receitas e despesas
+  const id0Map = { rec:'rec', custo:'cv', desp:'df', inv:'inv', nop:'nop' };
+  const recGrupo  = PLANO_DATA.find(g=>g.t==='rec');
+  const despGrupo = PLANO_DATA.find(g=>g.t==='desp');
+  const recFallbackId  = recGrupo  ? 'rec_base'  : null;
+  const despFallbackId = despGrupo ? 'df_base'   : null;
 
   lc.forEach(l=>{
     if(!l.data)return;
@@ -2062,35 +2135,73 @@ function calcDRE(modo){
 
     // Extrai o código numérico do plano (ex: "5.3.1 Salários" → "5.3.1")
     const pl = (l.plano||'').trim();
-    const cod = pl.split(' ')[0]; // pega só o código antes do espaço
+    const cod = pl.split(' ')[0];
 
-    // Encontra o id mais específico: bate exato ou por prefixo (suporta subcódigos nível 2+)
-    // Ex: cod=5.3.1 → bate em mp['5.3'] → df3; cod=6.1.2 → bate em mp['6.1'] → inv1
+    // Encontra o id mais específico no mapa dinâmico
     let mapeado = false;
     for(const [c,eid] of mp){
-      if(cod===c || cod.startsWith(c+'.')){ d[eid][m]+=v; mapeado=true; break; }
+      if((cod===c || cod.startsWith(c+'.')) && d[eid]!==undefined){
+        d[eid][m]+=v; mapeado=true; break;
+      }
     }
-    // Fallback: plano vazio, customizado ou fora do mapa padrão — não perde o valor
+    // Fallback: sem código ou fora do mapa
     if(!mapeado){
-      if(isRec){ d['rec1_base'][m]+=v; }  // receita sem código → 3.1 Receita de Vendas
-      else     { d['df2'][m]+=v; }         // despesa sem código → 5.2 Despesas Administrativas
+      const fbId = isRec ? recFallbackId : despFallbackId;
+      if(fbId && d[fbId]!==undefined) d[fbId][m]+=v;
     }
   });
 
-  const s=(p,ch)=>{for(let m=0;m<12;m++)d[p][m]=ch.reduce((x,c)=>x+(d[c]?.[m]||0),0);};
-  s('rec1',['rec1_base','rec1_1','rec1_2','rec1_3','rec1_99']);
-  s('rec',['rec1','rec2','rec3']);
-  s('cv',['cv1','cv2','cv3','cv4','cv5']);
-  for(let m=0;m<12;m++)d['mc'][m]=d['rec'][m]-d['cv'][m];
-  s('df',['df1','df2','df3','df4','df5']);
-  s('inv',['inv1','inv2','inv3']);
-  for(let m=0;m<12;m++){
-    d['lop'][m]=d['mc'][m]-d['df'][m];
-    d['desp_op'][m]=d['df'][m]+d['inv'][m];
-    d['lucro_op'][m]=d['mc'][m]-d['desp_op'][m];
+  // Agrupamentos dinâmicos: nível 2 → nível 1 → nível 0
+  const struct = getDre().struct;
+
+  // Monta mapa pai→filhos a partir da struct
+  let _p0=null, _p1=null;
+  const children0={}, children1={};
+  struct.forEach(l=>{
+    if(l.n===0){_p0=l.id;_p1=null;children0[l.id]=[];}
+    else if(l.n===1){
+      _p1=l.id;
+      children1[l.id]=[];
+      if(_p0) (children0[_p0]=children0[_p0]||[]).push(l.id);
+    }
+    else if(l.n===2){
+      if(_p1) (children1[_p1]=children1[_p1]||[]).push(l.id);
+    }
+  });
+
+  // Nível 2 → Nível 1
+  Object.entries(children1).forEach(([p1id, ch])=>{
+    if(!d[p1id]) d[p1id]=Array(12).fill(0);
+    for(let m=0;m<12;m++) d[p1id][m] = ch.reduce((s,c)=>s+(d[c]?.[m]||0),0);
+  });
+
+  // Nível 1 → Nível 0 (exceto linhas de resultado)
+  const resultLines = new Set(['mc','lop','desp_op','lucro_op','resultado']);
+  Object.entries(children0).forEach(([p0id, ch])=>{
+    if(resultLines.has(p0id)) return;
+    if(!d[p0id]) d[p0id]=Array(12).fill(0);
+    for(let m=0;m<12;m++) d[p0id][m] = ch.reduce((s,c)=>s+(d[c]?.[m]||0),0);
+  });
+
+  // Linha especial: rec inclui também rec_base
+  if(d['rec_base'] && d['rec']){
+    const recN1s = children0['rec']||[];
+    for(let m=0;m<12;m++){
+      d['rec'][m] = (d['rec_base'][m]||0) + recN1s.reduce((s,c)=>s+(d[c]?.[m]||0),0);
+    }
   }
-  s('nop',['nop1','nop2']);
-  for(let m=0;m<12;m++)d['resultado'][m]=d['lucro_op'][m]+d['nop'][m];
+
+  // Cálculos derivados
+  const idMap = id0Map;
+  const recId='rec', cvId='cv', dfId='df', invId='inv', nopId='nop';
+  for(let m=0;m<12;m++){
+    if(d['mc']!==undefined)      d['mc'][m]      = (d[recId]?.[m]||0) - (d[cvId]?.[m]||0);
+    if(d['lop']!==undefined)     d['lop'][m]     = (d['mc']?.[m]||0) - (d[dfId]?.[m]||0);
+    if(d['desp_op']!==undefined) d['desp_op'][m] = (d[dfId]?.[m]||0) + (d[invId]?.[m]||0);
+    if(d['lucro_op']!==undefined)d['lucro_op'][m]= (d['mc']?.[m]||0) - (d['desp_op']?.[m]||0);
+    if(d['resultado']!==undefined)d['resultado'][m]=(d['lucro_op']?.[m]||0)+(d[nopId]?.[m]||0);
+  }
+
   return d;
 }
 
@@ -2963,9 +3074,23 @@ function toggleDreGroup(groupId, btn){
     _dreCollapsed.add(groupId);
     btn.classList.add('collapsed');
   }
-  // Mostra/oculta as linhas filhas sem re-renderizar
+  const isCollapsed = _dreCollapsed.has(groupId);
+  // Mostra/oculta as linhas filhas diretas
   document.querySelectorAll(`[data-parent="${groupId}"]`).forEach(tr=>{
-    tr.classList.toggle('dre-sub-hidden', _dreCollapsed.has(groupId));
+    tr.classList.toggle('dre-sub-hidden', isCollapsed);
+    // Se estamos recolhendo o pai, também oculta os netos (filhos dos filhos)
+    // Se estamos expandindo o pai, só mostra os netos se o filho (nível1) não estiver colapsado
+    const childId = tr.getAttribute('data-group');
+    if(childId){
+      document.querySelectorAll(`[data-parent="${childId}"]`).forEach(gtr=>{
+        if(isCollapsed){
+          gtr.classList.add('dre-sub-hidden');
+        } else {
+          // Só mostra se o pai intermediário não estiver colapsado
+          gtr.classList.toggle('dre-sub-hidden', _dreCollapsed.has(childId));
+        }
+      });
+    }
   });
 }
 function setFluxoModo(modo){
@@ -3049,9 +3174,12 @@ function renderFluxo(){
       : (l.n===0||l.n===1?'<span style="display:inline-block;width:21px;flex-shrink:0"></span>':'');
 
     // data-parent para ocultar quando pai está colapsado
-    const parentAttr = l.n===1 && l.parent0 ? ` data-parent="${l.parent0}"`
+    // data-group para identificar este elemento como pai de outros (usado na cascata do toggle)
+    const parentAttr = l.n===1 && l.parent0 ? ` data-parent="${l.parent0}" data-group="${l.id}"`
                      : l.n===2 && l.parent1 ? ` data-parent="${l.parent1}"` : '';
-    const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0)) || (l.n===2 && _dreCollapsed.has(l.parent1)) ? ' dre-sub-hidden' : '';
+    const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0))
+                   || (l.n===2 && (_dreCollapsed.has(l.parent1) || _dreCollapsed.has(l.parent0)))
+                     ? ' dre-sub-hidden' : '';
 
     return`<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}${l.nome}</td>${colsH}<td class="cv ${tot===0?'zero':tot>=0?'pos':'neg'}">${tot?brlN(tot):'—'}</td><td class="cv zero" style="font-size:9.5px">${totAV}</td></tr>`;
   }).join('');
@@ -3943,8 +4071,11 @@ function salvarPlano() {
   }
 
   savePlano();
+  invalidateDreCache();
   fecharModalPlano();
   renderPlano();
+  // Atualiza fluxo de caixa se estiver visível
+  if(document.getElementById('page-fluxo')?.classList.contains('active')) renderFluxo();
 }
 
 function excluirContaPlano(gi, ri) {
@@ -3952,7 +4083,10 @@ function excluirContaPlano(gi, ri) {
   if (!confirm(`Excluir "${it.c} — ${it.n}"?`)) return;
   PLANO_DATA[gi].itens.splice(ri, 1);
   savePlano();
+  invalidateDreCache();
   renderPlano();
+  // Atualiza fluxo de caixa se estiver visível
+  if(document.getElementById('page-fluxo')?.classList.contains('active')) renderFluxo();
 }
 
 document.getElementById('modal-plano-overlay').addEventListener('click', function(e) {
