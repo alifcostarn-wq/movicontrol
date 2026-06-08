@@ -3138,10 +3138,13 @@ function renderFluxo(){
   else if(fluxoView==='trimestral') cols=[{label:'T1 (Jan-Mar)',idx:[0,1,2]},{label:'T2 (Abr-Jun)',idx:[3,4,5]},{label:'T3 (Jul-Set)',idx:[6,7,8]},{label:'T4 (Out-Dez)',idx:[9,10,11]}];
   else cols=[{label:'Total Ano',idx:[0,1,2,3,4,5,6,7,8,9,10,11]}];
   document.getElementById('dre-thead-f').innerHTML=`<tr><th style="text-align:left;min-width:240px">Conta</th>${cols.map(c=>`<th>${c.label}</th><th>AV%</th>`).join('')}<th>Total</th><th>AV%</th></tr>`;
+  // Tipos que são linhas de resultado (não são grupos reais com filhos)
+  const _resultTypes = new Set(['margem','lucrop','resultado']);
   // Monta mapa de parent: cada linha n=1 ou n=2 pertence ao grupo n=0 ou n=1 acima
+  // Linhas de resultado (margem, lucrop, resultado) são n=0 mas não são pais de ninguém
   let _curParent0=null, _curParent1=null;
   const dreWithParent=DRE_STRUCT.map(l=>{
-    if(l.n===0){_curParent0=l.id;_curParent1=null;}
+    if(l.n===0 && !_resultTypes.has(l.t)){_curParent0=l.id;_curParent1=null;}
     else if(l.n===1){_curParent1=l.id;}
     return{...l, parent0:_curParent0, parent1:_curParent1};
   });
@@ -3153,9 +3156,13 @@ function renderFluxo(){
     if(l.n===2 && l.parent1) hasChildren.add(l.parent1);
   });
 
+  // Identifica o id0 do grupo de receitas para colorir dn1r
+  const recGrupoId = (PLANO_DATA.find(g=>g.t==='rec') ? 'rec' : null);
+
   document.getElementById('dre-tbody-f').innerHTML=dreWithParent.map(l=>{
-    const isNeg=['custo0','desp0','inv0'].includes(l.t);
-    const rCls=l.t==='resultado'?'dresult':l.t==='margem'?'dmargem':l.t==='lucrop'?'dlucrop':l.n===0?'dn0':l.n===1?(l.id.startsWith('rec')?'dn1r':'dn1'):'dn2';
+    const isNeg=['custo0','desp0','inv0','nop0'].includes(l.t);
+    const isRecSub = l.n===1 && l.parent0===recGrupoId;
+    const rCls=l.t==='resultado'?'dresult':l.t==='margem'?'dmargem':l.t==='lucrop'?'dlucrop':l.n===0?'dn0':l.n===1?(isRecSub?'dn1r':'dn1'):'dn2';
     const indent=l.n===1?' i1':l.n===2?' i2':'';
     const tot=MESES.reduce((s,_,i)=>s+(d[l.id]?.[i]||0),0);
     const totAV=totRec?(tot/totRec*100).toFixed(1)+'%':'—';
