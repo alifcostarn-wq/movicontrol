@@ -2006,13 +2006,14 @@ function calcDRE(modo){
   const d={};
   DRE_IDS.forEach(id=>d[id]=Array(12).fill(0));
 
-  // Mapeamento: código exato (extraído do início do plano) → id DRE
+  // Mapeamento: prefixo do código → id DRE
   // Ordem importa: mais específico primeiro para evitar double-count
+  // Suporta subcódigos de nível 2 (ex: 5.1.1, 5.3.2) via startsWith
   const mp=[
     ['3.1.1','rec1_1'],['3.1.2','rec1_2'],['3.1.3','rec1_3'],['3.1.99','rec1_99'],
     ['3.1','rec1_base'],['3.2','rec2'],['3.3','rec3'],
     ['4.1','cv1'],['4.2','cv2'],['4.3','cv3'],['4.4','cv4'],['4.5','cv5'],['4.6','cv5'],
-    ['5.1','df1'],['5.2','df2'],['5.3','df3'],['5.4','df4'],['5.5','df5'],['5.8','df5'],
+    ['5.1','df1'],['5.2','df2'],['5.3','df3'],['5.4','df4'],['5.5','df5'],['5.6','df5'],['5.7','df5'],['5.8','df5'],
     ['6.1','inv1'],['6.2','inv2'],['6.3','inv3'],['6.4','inv3'],
     ['7.1','nop1'],['7.2','nop2'],
   ];
@@ -2033,7 +2034,7 @@ function calcDRE(modo){
     if(l.tipo) {
       isRec = l.tipo==='receber';
     } else {
-      isRec = l.status==='A Receber'||l.status==='Recebido'||(l.aReceber>0||l.recebido>0);
+      isRec = l.status==='A Receber'||l.status==='Recebido'||(l.status!=='A Pagar'&&l.status!=='Pago'&&(l.aReceber>0||l.recebido>0));
     }
 
     // Valor correto por modo
@@ -2049,13 +2050,14 @@ function calcDRE(modo){
     }
     if(!v) return;
 
-    // Extrai o código numérico do plano (ex: "3.1 Receita de Vendas" → "3.1")
+    // Extrai o código numérico do plano (ex: "5.3.1 Salários" → "5.3.1")
     const pl = (l.plano||'').trim();
     const cod = pl.split(' ')[0]; // pega só o código antes do espaço
 
-    // Encontra o id mais específico que bate exatamente
+    // Encontra o id mais específico: bate exato ou por prefixo (suporta subcódigos nível 2+)
+    // Ex: cod=5.3.1 → bate em mp['5.3'] → df3; cod=6.1.2 → bate em mp['6.1'] → inv1
     for(const [c,eid] of mp){
-      if(cod===c){ d[eid][m]+=v; break; }
+      if(cod===c || cod.startsWith(c+'.')){ d[eid][m]+=v; break; }
     }
   });
 
