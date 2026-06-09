@@ -641,7 +641,19 @@ table.plan{width:100%;border-collapse:collapse;min-width:1000px}
 .plano-l1 .plano-act-btn:hover,.plano-l2 .plano-act-btn:hover{background:var(--surface);color:var(--text)}
 .plano-act-btn.del:hover{background:var(--danger-bg)!important;color:var(--danger)!important}
 
-/* Botões adicionar */
+/* ======== MODAL INATIVIDADE ======== */
+.inativ-overlay{display:none;position:fixed;inset:0;background:rgba(26,25,22,0.65);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.inativ-overlay.open{display:flex}
+.inativ-box{background:var(--surface);border-radius:16px;width:380px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,0.28);overflow:hidden;animation:cardEntrada 0.3s ease both}
+.inativ-header{padding:20px 24px 0;text-align:center}
+.inativ-icon{width:52px;height:52px;border-radius:50%;background:var(--warn-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px}
+.inativ-title{font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px}
+.inativ-sub{font-size:13px;color:var(--text2);line-height:1.5}
+.inativ-countdown{font-family:'DM Mono',monospace;font-size:36px;font-weight:700;color:var(--warn);text-align:center;padding:16px 0 8px;letter-spacing:2px}
+.inativ-countdown.urgente{color:var(--danger);animation:piscaAviso 0.8s ease-in-out infinite}
+@keyframes piscaAviso{0%,100%{opacity:1}50%{opacity:0.4}}
+.inativ-footer{padding:16px 24px 20px;display:flex;gap:8px}
+.inativ-footer .btn{flex:1;justify-content:center}
 .plano-add-row{
   display:flex;align-items:center;gap:6px;
   padding:6px 14px 6px 28px;
@@ -854,6 +866,9 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
 .dias-atraso{font-size:9.5px;font-weight:700;color:var(--danger);background:var(--danger-bg);padding:2px 6px;border-radius:10px;white-space:nowrap}
 .btn-quitar{padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent2);color:var(--accent);font-size:10.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.13s;white-space:nowrap}
 .btn-quitar:hover{background:var(--accent);color:#fff}
+.btn-estornar{padding:4px 10px;border-radius:6px;border:1px solid var(--warn);background:var(--warn-bg);color:var(--warn);font-size:10.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.13s;white-space:nowrap}
+.btn-estornar:hover{background:var(--warn);color:#fff}
+.mq-desc.mq-rec{border-left-color:var(--accent)}
 /* Concentração por fornecedor */
 .conc-list{display:flex;flex-direction:column;gap:6px}
 .conc-item{display:flex;align-items:center;gap:10px}
@@ -1824,18 +1839,18 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
     <div class="modal-quitar-overlay" id="modal-quitar" onclick="if(event.target===this)fecharModalQuitar()">
       <div class="modal-quitar">
         <div class="mq-header">
-          <span class="mq-title">Quitar Conta a Pagar</span>
+          <span class="mq-title" id="mq-title">Quitar Conta a Pagar</span>
           <button class="modal-close" onclick="fecharModalQuitar()">✕</button>
         </div>
         <div class="mq-body">
           <div class="mq-desc" id="mq-desc"></div>
           <div class="form-grid">
             <div class="form-group full">
-              <label class="form-label">Data do Pagamento<span style="color:var(--danger)">*</span></label>
+              <label class="form-label" id="mq-data-label">Data do Pagamento<span style="color:var(--danger)">*</span></label>
               <input type="date" id="mq-data" style="width:100%">
             </div>
             <div class="form-group full">
-              <label class="form-label">Valor Pago (R$)<span style="color:var(--danger)">*</span></label>
+              <label class="form-label" id="mq-valor-label">Valor Pago (R$)<span style="color:var(--danger)">*</span></label>
               <input type="number" id="mq-valor" step="0.01" min="0" placeholder="0,00" style="width:100%">
             </div>
             <div class="form-group full">
@@ -1846,7 +1861,23 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
         </div>
         <div class="mq-footer">
           <button class="btn" onclick="fecharModalQuitar()">Cancelar</button>
-          <button class="btn btn-primary" onclick="salvarQuitar()" style="background:#2D8C57;border-color:#2D8C57">✓ Confirmar Pagamento</button>
+          <button class="btn btn-primary" id="mq-btn-confirmar" onclick="salvarQuitar()" style="background:#2D8C57;border-color:#2D8C57">✓ Confirmar Pagamento</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== MODAL INATIVIDADE ====== -->
+    <div class="inativ-overlay" id="modal-inatividade">
+      <div class="inativ-box">
+        <div class="inativ-header">
+          <div class="inativ-icon">⏱️</div>
+          <div class="inativ-title">Sessão prestes a expirar</div>
+          <div class="inativ-sub">Você está inativo há quase 2 horas.<br>A sessão será encerrada automaticamente em:</div>
+        </div>
+        <div class="inativ-countdown" id="inativ-countdown">10:00</div>
+        <div class="inativ-footer">
+          <button class="btn" onclick="fazerLogout(true)">Sair agora</button>
+          <button class="btn btn-primary" onclick="renovarSessao()" style="background:#2D8C57;border-color:#2D8C57">✓ Continuar conectado</button>
         </div>
       </div>
     </div>
@@ -2718,7 +2749,7 @@ function renderKpiMiniStrips(){
   const pagos  = lcRealizado.filter(l => (l.pago||0) > 0);
   const aPagar = lcPrevisto.filter(l => (l.aPagar||0) > 0);
 
-  const pagoMes    = pagos.filter(l => (l.data||'').startsWith(prefMes));
+  const pagoMes    = pagos.filter(l => (l.dataEfetivacao||l.data||'').startsWith(prefMes));
   const apagarMes  = aPagar.filter(l => (l.data||'').startsWith(prefMes));
   const apagarHoje = aPagar.filter(l => (l.data||'') === hStr);
   const apagarSem  = aPagar.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
@@ -2732,7 +2763,7 @@ function renderKpiMiniStrips(){
   const recebidos = lcRealizado.filter(l => (l.recebido||0) > 0);
   const aReceber  = lcPrevisto.filter(l => (l.aReceber||0) > 0);
 
-  const recebidoMes  = recebidos.filter(l => (l.data||'').startsWith(prefMes));
+  const recebidoMes  = recebidos.filter(l => (l.dataEfetivacao||l.data||'').startsWith(prefMes));
   const areceberMes  = aReceber.filter(l => (l.data||'').startsWith(prefMes));
   const areceberHoje = aReceber.filter(l => (l.data||'') === hStr);
   const areceberSem  = aReceber.filter(l => (l.data||'') >= psIStr && (l.data||'') <= psFStr);
@@ -3466,6 +3497,7 @@ function renderDiario(){
       <td><div class="action-btns">
         ${l.status==='A Receber'?`<button class="btn-efetivar ef-rec" onclick="efetivarLancamento(${l._idx})" title="Marcar como Recebido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
         ${l.status==='A Pagar'?`<button class="btn-efetivar ef-pag" onclick="efetivarLancamento(${l._idx})" title="Marcar como Pago"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
+        ${(l.status==='Pago'||l.status==='Recebido')?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
@@ -3490,13 +3522,13 @@ function efetivarLancamento(idx){
     const val=l.aReceber||0;
     lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,valorLiquido:val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
-    renderDiario();atualizarBadges();
+    renderDiario();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Recebimento efetivado: '+brl(val,true));
   } else if(l.status==='A Pagar'){
     const val=l.aPagar||0;
     lc[idx]={...l,status:'Pago',pago:val,aPagar:0,valorLiquido:-val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
-    renderDiario();atualizarBadges();
+    renderDiario();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Pagamento efetivado: '+brl(val,true));
   }
 }
@@ -4252,6 +4284,7 @@ function renderContas(){
       <td>
         <div class="action-btns">
           ${l.status==='A Pagar'?`<button class="btn-quitar" onclick="abrirModalQuitar(${l._idx})">✓ Quitar</button>`:''}
+          ${l.status==='Pago'?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar pagamento">↩ Estornar</button>`:''}
           <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
           <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
         </div>
@@ -4285,6 +4318,8 @@ function renderContas(){
       <td>${svBadge(l.data,l.status)}${l.parcGroupId?`<span class="parc-badge" style="margin-left:4px">📑 ${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?`<span class="rec-badge" style="margin-left:4px">🔁 ${l.recNum}/${l.recTotal}</span>`:''}</td>
       <td class="td-green" style="font-family:'DM Mono',monospace;font-size:11px">${brl(v,true)}</td>
       <td><div class="action-btns">
+        ${l.status==='A Receber'?`<button class="btn-quitar" style="border-color:var(--accent);color:var(--accent)" onclick="abrirModalReceber(${l._idx})">✓ Receber</button>`:''}
+        ${l.status==='Recebido'?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar recebimento">↩ Estornar</button>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="deletarLanc(${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
@@ -4297,37 +4332,92 @@ function cpNavPag(p){if(p<1)return;cpPag=p;renderContas();}
 
 // ---- Modal Quitar ----
 let _quitarIdx=null;
-function abrirModalQuitar(idx){
+// abrirModalQuitar e fecharModalQuitar definidos junto com salvarQuitar
+let _quitarTipo='pagar'; // 'pagar' ou 'receber'
+
+function abrirModalReceber(idx){
   _quitarIdx=idx;
+  _quitarTipo='receber';
   const lc=gd('sf_lancamentos');
   const l=lc[idx];
   if(!l)return;
+  document.getElementById('mq-title').textContent='Confirmar Recebimento';
+  document.getElementById('mq-desc').className='mq-desc mq-rec';
+  document.getElementById('mq-desc').innerHTML=`<strong>${l.cliente||'Sem cliente'}</strong><br>${l.historico||''}<br><span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent)">${brl(l.aReceber,true)}</span> — Venc.: ${fmtData(l.data)}`;
+  document.getElementById('mq-data-label').innerHTML='Data do Recebimento<span style="color:var(--danger)">*</span>';
+  document.getElementById('mq-valor-label').innerHTML='Valor Recebido (R$)<span style="color:var(--danger)">*</span>';
+  document.getElementById('mq-data').value=hoje();
+  document.getElementById('mq-valor').value=(l.aReceber||0).toFixed(2);
+  document.getElementById('mq-obs').value='';
+  document.getElementById('mq-btn-confirmar').textContent='✓ Confirmar Recebimento';
+  document.getElementById('mq-btn-confirmar').style.background='#2D8C57';
+  document.getElementById('modal-quitar').classList.add('open');
+}
+
+function abrirModalQuitar(idx){
+  _quitarIdx=idx;
+  _quitarTipo='pagar';
+  const lc=gd('sf_lancamentos');
+  const l=lc[idx];
+  if(!l)return;
+  document.getElementById('mq-title').textContent='Quitar Conta a Pagar';
+  document.getElementById('mq-desc').className='mq-desc';
   document.getElementById('mq-desc').innerHTML=`<strong>${l.fornecedor||'Sem fornecedor'}</strong><br>${l.historico||''}<br><span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--danger)">${brl(l.aPagar,true)}</span> — Venc.: ${fmtData(l.data)}`;
+  document.getElementById('mq-data-label').innerHTML='Data do Pagamento<span style="color:var(--danger)">*</span>';
+  document.getElementById('mq-valor-label').innerHTML='Valor Pago (R$)<span style="color:var(--danger)">*</span>';
   document.getElementById('mq-data').value=hoje();
   document.getElementById('mq-valor').value=(l.aPagar||0).toFixed(2);
   document.getElementById('mq-obs').value='';
+  document.getElementById('mq-btn-confirmar').textContent='✓ Confirmar Pagamento';
+  document.getElementById('mq-btn-confirmar').style.background='#2D8C57';
   document.getElementById('modal-quitar').classList.add('open');
 }
+
 function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;}
+
 function salvarQuitar(){
   if(_quitarIdx===null)return;
-  const data=document.getElementById('mq-data').value;
+  const dataEfet=document.getElementById('mq-data').value;
   const valor=parseFloat(document.getElementById('mq-valor').value);
-  if(!data){showToast('Informe a data do pagamento.',true);return;}
-  if(!valor||valor<=0){showToast('Informe o valor pago.',true);return;}
+  if(!dataEfet){showToast('Informe a data.',true);return;}
+  if(!valor||valor<=0){showToast('Informe o valor.',true);return;}
   const lc=gd('sf_lancamentos');
   const l=lc[_quitarIdx];
   if(!l)return;
-  l.status='Pago';
-  l.pago=valor;
-  l.aPagar=0;
-  l.data=data;
-  if(document.getElementById('mq-obs').value.trim())l.historico=(l.historico?l.historico+' — ':'')+document.getElementById('mq-obs').value.trim();
+  const obs=document.getElementById('mq-obs').value.trim();
+  if(_quitarTipo==='receber'){
+    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,valorLiquido:valor,dataEfetivacao:dataEfet};
+    if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
+    sd('sf_lancamentos',lc);
+    fecharModalQuitar();
+    renderContas();atualizarBadges();renderPainel&&renderPainel();
+    showToast('✓ Recebimento confirmado: '+brl(valor,true));
+  } else {
+    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,valorLiquido:-valor,dataEfetivacao:dataEfet};
+    if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
+    sd('sf_lancamentos',lc);
+    fecharModalQuitar();
+    renderContas();atualizarBadges();renderPainel&&renderPainel();
+    showToast('✓ Pagamento confirmado: '+brl(valor,true));
+  }
+}
+
+function estornarLancamento(idx){
+  const lc=gd('sf_lancamentos');
+  const l=lc[idx];
+  if(!l)return;
+  const nome=l.status==='Pago'?'pagamento':'recebimento';
+  if(!confirm(`Estornar ${nome}?
+
+O lançamento voltará ao status anterior (A Pagar / A Receber).`))return;
+  if(l.status==='Pago'){
+    lc[idx]={...l,status:'A Pagar',aPagar:l.pago||l.aPagar||0,pago:0,valorLiquido:0,dataEfetivacao:null};
+  } else if(l.status==='Recebido'){
+    lc[idx]={...l,status:'A Receber',aReceber:l.recebido||l.aReceber||0,recebido:0,valorLiquido:0,dataEfetivacao:null};
+  }
   sd('sf_lancamentos',lc);
-  fecharModalQuitar();
-  renderContas();
-  atualizarBadges();
-  showToast('Conta quitada com sucesso!');
+  renderContas();atualizarBadges();renderPainel&&renderPainel();
+  showToast('↩ Estorno realizado com sucesso.');
 }
 
 // ---- Exportar Contas a Pagar CSV ----
@@ -5688,11 +5778,15 @@ function entrarNoSistema(user){
   }
   renderPainel();
   atualizarBadges();
+  // Inicia monitor de inatividade
+  iniciarMonitorInatividade();
 }
 
-function fazerLogout(){
-  if(!confirm('Deseja sair do sistema?'))return;
+function fazerLogout(semConfirm){
+  if(!semConfirm && !confirm('Deseja sair do sistema?'))return;
+  pararMonitorInatividade();
   sessionStorage.removeItem('movi_sessao');
+  sessionStorage.removeItem('movi_lastActivity');
   location.reload();
 }
 
@@ -5805,6 +5899,82 @@ atualizarBadges();
 
 // ============================================================
 // SIDEBAR TOGGLE
+// ============================================================
+// SISTEMA DE INATIVIDADE — logout automático após 2h
+// ============================================================
+const INATIV_LIMITE   = 2 * 60 * 60 * 1000; // 2 horas em ms
+const INATIV_AVISO    = 10 * 60 * 1000;       // avisa 10 min antes
+let _inativTimer      = null;  // timer principal (dispara o aviso)
+let _inativLogoutTimer= null;  // timer do countdown (dispara o logout)
+let _inativCountdown  = null;  // interval do contador visual
+let _inativAtivo      = false; // se o modal está aberto
+
+function resetarInatividade(){
+  if(_inativAtivo) return; // não resetar enquanto modal está aberto
+  clearTimeout(_inativTimer);
+  // Salva timestamp da última atividade
+  sessionStorage.setItem('movi_lastActivity', Date.now().toString());
+  _inativTimer = setTimeout(mostrarAvisoInatividade, INATIV_LIMITE - INATIV_AVISO);
+}
+
+function mostrarAvisoInatividade(){
+  _inativAtivo = true;
+  document.getElementById('modal-inatividade').classList.add('open');
+  let segsRestantes = INATIV_AVISO / 1000; // 600 segundos = 10 min
+  atualizarCountdown(segsRestantes);
+  _inativCountdown = setInterval(()=>{
+    segsRestantes--;
+    atualizarCountdown(segsRestantes);
+    if(segsRestantes <= 0){
+      clearInterval(_inativCountdown);
+      fazerLogoutInatividade();
+    }
+  }, 1000);
+}
+
+function atualizarCountdown(segs){
+  const min = Math.floor(segs / 60);
+  const s   = segs % 60;
+  const el  = document.getElementById('inativ-countdown');
+  if(!el) return;
+  el.textContent = `${String(min).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  el.classList.toggle('urgente', segs <= 60);
+}
+
+function renovarSessao(){
+  clearInterval(_inativCountdown);
+  clearTimeout(_inativLogoutTimer);
+  _inativAtivo = false;
+  document.getElementById('modal-inatividade').classList.remove('open');
+  resetarInatividade();
+  showToast('✓ Sessão renovada com sucesso.');
+}
+
+function fazerLogoutInatividade(){
+  clearInterval(_inativCountdown);
+  document.getElementById('modal-inatividade').classList.remove('open');
+  sessionStorage.removeItem('movi_sessao');
+  sessionStorage.removeItem('movi_lastActivity');
+  // Mostra mensagem antes de recarregar
+  alert('Sua sessão foi encerrada por inatividade (2 horas sem uso).');
+  location.reload();
+}
+
+function iniciarMonitorInatividade(){
+  // Eventos que resetam o timer
+  ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev=>{
+    document.addEventListener(ev, resetarInatividade, {passive:true});
+  });
+  resetarInatividade();
+}
+
+function pararMonitorInatividade(){
+  clearTimeout(_inativTimer);
+  clearInterval(_inativCountdown);
+  ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev=>{
+    document.removeEventListener(ev, resetarInatividade);
+  });
+}
 // ============================================================
 function toggleSidebar(){
   const sb=document.getElementById('sidebar');
