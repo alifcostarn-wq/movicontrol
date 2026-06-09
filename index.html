@@ -17,7 +17,47 @@
   --warn:#8A6200;--warn-bg:#FDF6E3;
   --info:#1A5CA0;--info-bg:#EDF3FB;
   --sidebar:280px;
+  --chart-grid:rgba(0,0,0,0.07);
 }
+
+/* ======== DARK MODE ======== */
+body.dark-mode{
+  --bg:#0F1117;--surface:#181C23;--surface2:#1E2330;--border:#2A2F3D;
+  --text:#E8E6E1;--text2:#9A97A0;--text3:#5C5A63;
+  --accent:#3CB371;--accent2:#1A2E22;--accent3:#1F3D2C;
+  --danger:#E05445;--danger-bg:#2A1A18;
+  --warn:#D4A027;--warn-bg:#271F0D;
+  --info:#4A90D9;--info-bg:#0D1C2E;
+  --chart-grid:rgba(255,255,255,0.07);
+}
+body.dark-mode .row-parc td{background:#0D1C2E!important}
+body.dark-mode .row-rec td{background:#271F0D!important}
+body.dark-mode .km-areceber-sem{background:#1A2E22}
+body.dark-mode .km-apagar-hoje,body.dark-mode .km-areceber-hoje{background:#0D1C2E}
+body.dark-mode .km-apagar-sem{background:#271F0D}
+body.dark-mode .saldo-card.total-card{background:#0A0D13;border-color:#2A2F3D}
+body.dark-mode .kpi-card.dark{background:#0A0D13;border-color:#2A2F3D}
+body.dark-mode select,
+body.dark-mode input[type=text],
+body.dark-mode input[type=date],
+body.dark-mode input[type=number],
+body.dark-mode input[type=email],
+body.dark-mode input[type=tel],
+body.dark-mode input[type=url],
+body.dark-mode input[type=password],
+body.dark-mode textarea{background:var(--surface2);color:var(--text);border-color:var(--border);color-scheme:dark}
+body.dark-mode select:focus,body.dark-mode input:focus,body.dark-mode textarea:focus{border-color:var(--accent)}
+body.dark-mode .modal-overlay{background:rgba(0,0,0,0.65)}
+
+/* Botão tema */
+.btn-tema{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;transition:all 0.15s;flex-shrink:0}
+.btn-tema:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
+.btn-tema svg{width:15px;height:15px;transition:transform 0.35s cubic-bezier(.34,1.56,.64,1)}
+.btn-tema:hover svg{transform:rotate(20deg)}
+.btn-tema .ico-sol{display:block}.btn-tema .ico-lua{display:none}
+body.dark-mode .btn-tema .ico-sol{display:none}
+body.dark-mode .btn-tema .ico-lua{display:block}
+body.dark-mode .btn-tema{border-color:#3A3F50;background:#1E2330;color:#D4A027}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
 
 /* ======== SIDEBAR ======== */
@@ -1455,6 +1495,14 @@ body:not(.valores-ocultos) .val-monetario{
       <div class="page-sub" id="page-sub">Visão geral financeira da empresa</div>
     </div>
     <div class="topbar-right" id="topbar-right" style="display:flex;align-items:center;gap:9px">
+      <button class="btn-tema" id="btn-tema" onclick="toggleTema()" title="Alternar tema claro/escuro">
+        <svg class="ico-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="ico-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
       <button class="btn-ocultar-vals" id="btn-ocultar-vals" onclick="toggleOcultarValores()" title="Ocultar/mostrar valores">
         <svg id="ico-olho-aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -2451,21 +2499,31 @@ function navTo(page,btn){
   document.getElementById('page-sub').textContent=m.sub||'';
   // Botão topbar
   const tr=document.getElementById('topbar-right');
-  const btnOcultar = `<button class="btn-ocultar-vals" id="btn-ocultar-vals" onclick="toggleOcultarValores()" title="Ocultar/mostrar valores">
-    <svg id="ico-olho-aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${document.body.classList.contains('valores-ocultos')?'style="display:none"':''}>
+  const isDark = document.body.classList.contains('dark-mode');
+  const oculto = document.body.classList.contains('valores-ocultos');
+  const btnTema = `<button class="btn-tema" id="btn-tema" onclick="toggleTema()" title="Alternar tema claro/escuro">
+    <svg class="ico-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${isDark?'style="display:none"':''}>
+      <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+    <svg class="ico-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${isDark?'':'style="display:none"'}>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>`;
+  const btnOcultar = `<button class="btn-ocultar-vals${oculto?' oculto':''}" id="btn-ocultar-vals" onclick="toggleOcultarValores()" title="Ocultar/mostrar valores">
+    <svg id="ico-olho-aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${oculto?'style="display:none"':''}>
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
     </svg>
-    <svg id="ico-olho-fechado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${document.body.classList.contains('valores-ocultos')?'':'style="display:none"'}>
+    <svg id="ico-olho-fechado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${oculto?'':'style="display:none"'}>
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>
     </svg>
-    <span id="txt-ocultar-vals">${document.body.classList.contains('valores-ocultos')?'Mostrar':'Ocultar'}</span>
+    <span id="txt-ocultar-vals">${oculto?'Mostrar':'Ocultar'}</span>
   </button>`;
-  if(page==='painel'||page==='diario') tr.innerHTML=btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
-  else if(page==='contas') tr.innerHTML=btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
-  else if(page==='clientes') tr.innerHTML=btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
-  else if(page==='fornecedores') tr.innerHTML=btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
-  else if(page==='bancos') tr.innerHTML=btnOcultar+'<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
-  else tr.innerHTML=btnOcultar;
+  if(page==='painel'||page==='diario') tr.innerHTML=btnTema+btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
+  else if(page==='contas') tr.innerHTML=btnTema+btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
+  else if(page==='clientes') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
+  else if(page==='fornecedores') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
+  else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
+  else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
   const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios};
   renders[page]?.();
@@ -3013,6 +3071,18 @@ function renderPainel(){
 }
 
 // ============================================================
+// HELPER: cores do tema para Chart.js
+// ============================================================
+function chartColors(){
+  const dark = document.body.classList.contains('dark-mode');
+  return {
+    grid: dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
+    ticks: dark ? '#5C5A63' : '#A8A59E',
+    tooltip: dark ? '#1E2330' : '#1A1916',
+  };
+}
+
+// ============================================================
 // GRÁFICO — DISPONIBILIDADE EM CAIXA (acumulado mensal)
 // ============================================================
 let _caixaChartInst = null;
@@ -3102,7 +3172,7 @@ function renderCaixaChart(dreData){
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1A1916',
+          backgroundColor: chartColors().tooltip,
           titleColor: 'rgba(255,255,255,0.55)',
           bodyColor: '#fff',
           padding: 12,
@@ -3121,14 +3191,14 @@ function renderCaixaChart(dreData){
       },
       scales: {
         x: {
-          grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false },
-          ticks: { font: { family: 'DM Sans', size: 11 }, color: '#A8A59E' }
+          grid: { color: chartColors().grid, drawBorder: false },
+          ticks: { font: { family: 'DM Sans', size: 11 }, color: chartColors().ticks }
         },
         y: {
-          grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false },
+          grid: { color: chartColors().grid, drawBorder: false },
           ticks: {
             font: { family: 'DM Mono', size: 10 },
-            color: '#A8A59E',
+            color: chartColors().ticks,
             callback: v => {
               if(Math.abs(v) >= 1000) return (v/1000).toFixed(0)+'k';
               return v.toFixed(0);
@@ -3357,7 +3427,7 @@ function renderRxDChart(){
       plugins: {
         legend: { display:false },
         tooltip: {
-          backgroundColor:'#1A1916',
+          backgroundColor:chartColors().tooltip,
           titleColor:'rgba(255,255,255,0.55)',
           bodyColor:'#fff',
           padding:12, cornerRadius:10,
@@ -3370,13 +3440,13 @@ function renderRxDChart(){
       },
       scales: {
         x:{
-          grid:{ color:'rgba(0,0,0,0.04)', drawBorder:false },
-          ticks:{ font:{ family:'DM Sans', size:11 }, color:'#A8A59E' }
+          grid:{ color:chartColors().grid, drawBorder:false },
+          ticks:{ font:{ family:'DM Sans', size:11 }, color:chartColors().ticks }
         },
         y:{
-          grid:{ color:'rgba(0,0,0,0.05)', drawBorder:false },
+          grid:{ color:chartColors().grid, drawBorder:false },
           ticks:{
-            font:{ family:'DM Mono', size:10 }, color:'#A8A59E',
+            font:{ family:'DM Mono', size:10 }, color:chartColors().ticks,
             callback: v => Math.abs(v)>=1000 ? (v/1000).toFixed(0)+'k' : v
           }
         }
@@ -5935,6 +6005,31 @@ const _origNavTo=typeof navTo==='function'?navTo:null;
     const el = document.getElementById(id);
     if (el) el.innerHTML = opts;
   });
+})();
+
+// ============================================================
+// TEMA CLARO / ESCURO
+// ============================================================
+function toggleTema(){
+  const dark = document.body.classList.toggle('dark-mode');
+  localStorage.setItem('movi_tema', dark ? 'dark' : 'light');
+  showToast(dark ? '🌙 Modo escuro ativado.' : '☀️ Modo claro ativado.');
+  // Re-renderiza os gráficos para atualizar cores
+  setTimeout(()=>{
+    const paginaAtiva = document.querySelector('.page.active')?.id?.replace('page-','');
+    if(paginaAtiva==='painel') renderPainel();
+    else if(paginaAtiva==='fluxo') renderFluxo();
+    else if(paginaAtiva==='analises') renderAnalises();
+    else if(paginaAtiva==='planejamento') renderPlan();
+  }, 50);
+}
+
+(function initTema(){
+  const salvo = localStorage.getItem('movi_tema');
+  const prefereDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+  if(salvo === 'dark' || (!salvo && prefereDark)){
+    document.body.classList.add('dark-mode');
+  }
 })();
 
 // ============================================================
