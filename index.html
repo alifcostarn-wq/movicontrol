@@ -3408,12 +3408,13 @@ function renderDiario(){
   const hj = hoje();
 
   // KPI do dia
-  const lancHoje = lc.filter(l => l.data === hj);
+  const lancHoje     = lc.filter(l => l.data === hj);
+  const lancEfetHoje = lc.filter(l => l.dataEfetivacao === hj);
   const aRHoje   = lancHoje.reduce((s,l)=>s+(l.aReceber||0),0);
-  const recHoje  = lancHoje.reduce((s,l)=>s+(l.recebido||0),0);
+  const recHoje  = lancEfetHoje.reduce((s,l)=>s+(l.recebido||0),0);
   const aPHoje   = lancHoje.reduce((s,l)=>s+(l.aPagar||0),0);
-  const pagoHoje = lancHoje.reduce((s,l)=>s+(l.pago||0),0);
-  // Resultado do dia = apenas o que foi efetivamente recebido e pago
+  const pagoHoje = lancEfetHoje.reduce((s,l)=>s+(l.pago||0),0);
+  // Resultado do dia = apenas o que foi efetivamente recebido e pago (pela data de efetivação)
   const saldoHoje = recHoje - pagoHoje;
   const dataFmt = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   const dataEl = document.getElementById('diario-data-hoje');
@@ -3433,7 +3434,7 @@ function renderDiario(){
       <div class="dkpi-label">Recebido Hoje</div>
       <div class="dkpi-val">${brl(recHoje,true)}</div>
       <div class="dkpi-divider"></div>
-      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>${lancHoje.filter(l=>l.recebido).length} lançamento(s) confirmado(s)</div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>${lancEfetHoje.filter(l=>l.recebido).length} lançamento(s) confirmado(s)</div>
     </div>
     <div class="dkpi dkpi-apagar">
       <div class="dkpi-tag">Vence hoje</div>
@@ -3449,7 +3450,7 @@ function renderDiario(){
       <div class="dkpi-label">Pago Hoje</div>
       <div class="dkpi-val">${brl(pagoHoje,true)}</div>
       <div class="dkpi-divider"></div>
-      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>${lancHoje.filter(l=>l.pago).length} pagamento(s) efetuado(s)</div>
+      <div class="dkpi-sub"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>${lancEfetHoje.filter(l=>l.pago).length} pagamento(s) efetuado(s)</div>
     </div>
     <div class="dkpi ${saldoHoje>0?'dkpi-resultado-pos':saldoHoje<0?'dkpi-resultado-neg':'dkpi-resultado-zero'}">
       <div class="dkpi-tag">${saldoHoje>=0?'Positivo':'Negativo'}</div>
