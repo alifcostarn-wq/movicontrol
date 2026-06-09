@@ -2455,6 +2455,7 @@ function gd(k){return JSON.parse(localStorage.getItem(k)||'[]')}
 function sd(k,v){localStorage.setItem(k,JSON.stringify(v))}
 function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';const txt='R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function brlN(v){const txt=parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
+function brlTxt(v){return'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function hoje(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fmtData(d){return d?d.split('-').reverse().join('/'):'—'}
 function initials(n){if(!n)return'?';const p=n.trim().split(' ');return(p[0][0]+(p[1]?.[0]||'')).toUpperCase()}
@@ -3232,7 +3233,7 @@ function renderCaixaChart(dreData){
             label: ctx => {
               const v = ctx.parsed.y;
               const prefixo = ctx.dataset.label === 'Saldo Acumulado' ? '💰 Acumulado: ' : '📊 Mensal: ';
-              return prefixo + (v >= 0 ? '+' : '') + brl(v, true);
+              return prefixo + (v >= 0 ? '+' : '') + brlTxt(v);
             }
           }
         },
@@ -3483,7 +3484,7 @@ function renderRxDChart(){
           titleFont:{ family:'DM Sans', size:11 },
           bodyFont:{ family:'DM Mono', size:12 },
           callbacks:{
-            label: ctx => `${ctx.dataset.label}: ${brl(ctx.parsed.y, true)}`
+            label: ctx => `${ctx.dataset.label}: ${brlTxt(ctx.parsed.y)}`
           }
         }
       },
@@ -4047,7 +4048,7 @@ function renderScoreGeracao(lc) {
   document.getElementById('gc-badge').className = 'ds-badge ' + badgeCls;
   document.getElementById('gc-gauge').style.width = score + '%';
   document.getElementById('gc-gauge').style.background = gaugeColor;
-  document.getElementById('gc-gauge-label').textContent = (variacao >= 0 ? '+' : '') + brl(variacao,true) + ' vs mês anterior';
+  document.getElementById('gc-gauge-label').textContent = (variacao >= 0 ? '+' : '') + brlTxt(variacao) + ' vs mês anterior';
   document.getElementById('gc-tip').textContent = tip;
 
   document.getElementById('gc-kpis').innerHTML =
