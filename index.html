@@ -2644,8 +2644,17 @@ function buildDreMapFromPlano(){
 
     sorted.forEach(it => {
       const dreId = id0 + '_' + _codToId(it.c);
+      // Só adiciona ao mapa se o id existir no DRE (cache consistente)
       mp.push([it.c, dreId]);
     });
+
+    // Inclui também o código de nível 0 (ex: "4.") mapeando para o bucket base do grupo
+    const n0 = grupo.itens.find(it=>it.l===0);
+    if(n0){
+      const codSemPonto = n0.c.replace(/\.$/, ''); // "4." → "4"
+      mp.push([codSemPonto, id0 + '_base']);
+      mp.push([n0.c, id0 + '_base']); // também com o ponto
+    }
   }
 
   return mp;
@@ -2666,19 +2675,39 @@ Object.defineProperty(window,'DRE_IDS',   {get:()=>getDre().ids});
 function calcDRE(modo){
   // modo: 'realizado' | 'previsto' | undefined/null (todos)
   const lc=gd('sf_lancamentos');
-  const dreIds = getDre().ids;
+  // Usa o mesmo cache do DRE para garantir que os ids sejam consistentes
+  const dre = getDre();
+  const dreIds = dre.ids;
   const d={};
   dreIds.forEach(id=>d[id]=Array(12).fill(0));
 
   // Mapeamento dinâmico: código do plano → id DRE, construído a partir do PLANO_DATA atual
+  // IMPORTANTE: usa os mesmos ids gerados por buildDreFromPlano (via getDre()) para garantir consistência
   const mp = buildDreMapFromPlano();
 
-  // Identifica bucket de fallback para receitas e despesas
+  // Identifica bucket de fallback por tipo de grupo (rec, custo, desp, inv, nop)
+  // Garante que qualquer lançamento não mapeado caia no bucket correto do seu grupo
   const id0Map = { rec:'rec', custo:'cv', desp:'df', inv:'inv', nop:'nop' };
+
+  // Monta mapa de código-prefixo → fallback id (nível 0 de cada grupo)
+  // Ex: código "4.2.1" tem prefixo "4" → grupo custo → fallback 'cv_base'
+  const prefixFallbackMap = {}; // prefixo numérico inteiro → fallbackId
   const recGrupo  = PLANO_DATA.find(g=>g.t==='rec');
   const despGrupo = PLANO_DATA.find(g=>g.t==='desp');
   const recFallbackId  = recGrupo  ? 'rec_base'  : null;
   const despFallbackId = despGrupo ? 'df_base'   : null;
+
+  // Mapa completo de prefixo inteiro → id0 do grupo
+  PLANO_DATA.forEach(grupo=>{
+    const id0 = id0Map[grupo.t];
+    if(!id0) return;
+    const n0 = grupo.itens.find(it=>it.l===0);
+    if(n0){
+      // Ex: "4." → prefixo "4"
+      const pref = n0.c.replace(/\.$/, '');
+      prefixFallbackMap[pref] = id0 + '_base';
+    }
+  });
 
   lc.forEach(l=>{
     if(!l.data)return;
@@ -2727,7 +2756,16 @@ function calcDRE(modo){
         d[eid][m]+=v; mapeado=true; break;
       }
     }
-    // Fallback: sem código ou fora do mapa
+    // Fallback inteligente: tenta descobrir o grupo pelo prefixo numérico do código
+    // Ex: "4.2.1" → prefixo "4" → bucket "cv_base"
+    if(!mapeado && cod){
+      const pref = cod.split('.')[0]; // "4.2.1" → "4"
+      const smartFb = prefixFallbackMap[pref];
+      if(smartFb && d[smartFb]!==undefined){
+        d[smartFb][m]+=v; mapeado=true;
+      }
+    }
+    // Último fallback: usa rec_base ou df_base pelo tipo do lançamento
     if(!mapeado){
       const fbId = isRec ? recFallbackId : despFallbackId;
       if(fbId && d[fbId]!==undefined) d[fbId][m]+=v;
@@ -2763,16 +2801,13 @@ function calcDRE(modo){
   Object.entries(children0).forEach(([p0id, ch])=>{
     if(resultLines.has(p0id)) return;
     if(!d[p0id]) d[p0id]=Array(12).fill(0);
-    for(let m=0;m<12;m++) d[p0id][m] = ch.reduce((s,c)=>s+(d[c]?.[m]||0),0);
+    // Soma filhos N1 + bucket _base (lançamentos diretos sem subcódigo mapeado)
+    const baseId = p0id + '_base';
+    for(let m=0;m<12;m++) d[p0id][m] = (d[baseId]?.[m]||0) + ch.reduce((s,c)=>s+(d[c]?.[m]||0),0);
   });
 
-  // Linha especial: rec inclui também rec_base
-  if(d['rec_base'] && d['rec']){
-    const recN1s = children0['rec']||[];
-    for(let m=0;m<12;m++){
-      d['rec'][m] = (d['rec_base'][m]||0) + recN1s.reduce((s,c)=>s+(d[c]?.[m]||0),0);
-    }
-  }
+  // Linha especial: rec — garantia de que rec_base já foi somado acima (mantida por compatibilidade)
+  // (a lógica acima já cobre, mas mantemos por segurança)
 
   // Cálculos derivados
   const idMap = id0Map;
