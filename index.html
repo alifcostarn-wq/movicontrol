@@ -3521,13 +3521,13 @@ function efetivarLancamento(idx){
   if(!l)return;
   if(l.status==='A Receber'){
     const val=l.aReceber||0;
-    lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,valorLiquido:val,dataEfetivacao:hoje()};
+    lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,_valorOriginal:val,valorLiquido:val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
     renderDiario();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Recebimento efetivado: '+brl(val,true));
   } else if(l.status==='A Pagar'){
     const val=l.aPagar||0;
-    lc[idx]={...l,status:'Pago',pago:val,aPagar:0,valorLiquido:-val,dataEfetivacao:hoje()};
+    lc[idx]={...l,status:'Pago',pago:val,aPagar:0,_valorOriginal:val,valorLiquido:-val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
     renderDiario();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Pagamento efetivado: '+brl(val,true));
@@ -4408,16 +4408,16 @@ function estornarLancamento(idx){
   const l=lc[idx];
   if(!l)return;
   const nome=l.status==='Pago'?'pagamento':'recebimento';
-  if(!confirm(`Estornar ${nome}?
-
-O lançamento voltará ao status anterior (A Pagar / A Receber).`))return;
+  if(!confirm(`Estornar ${nome}?\n\nO lançamento voltará ao status anterior (A Pagar / A Receber).`))return;
   if(l.status==='Pago'){
-    lc[idx]={...l,status:'A Pagar',aPagar:l.pago||l.aPagar||0,pago:0,valorLiquido:0,dataEfetivacao:null};
+    const val=l._valorOriginal||l.pago||l.aPagar||0;
+    lc[idx]={...l,status:'A Pagar',aPagar:val,pago:0,valorLiquido:0,dataEfetivacao:null,_valorOriginal:undefined};
   } else if(l.status==='Recebido'){
-    lc[idx]={...l,status:'A Receber',aReceber:l.recebido||l.aReceber||0,recebido:0,valorLiquido:0,dataEfetivacao:null};
+    const val=l._valorOriginal||l.recebido||l.aReceber||0;
+    lc[idx]={...l,status:'A Receber',aReceber:val,recebido:0,valorLiquido:0,dataEfetivacao:null,_valorOriginal:undefined};
   }
   sd('sf_lancamentos',lc);
-  renderContas();atualizarBadges();renderPainel&&renderPainel();
+  renderDiario();renderContas();atualizarBadges();renderPainel&&renderPainel();
   showToast('↩ Estorno realizado com sucesso.');
 }
 
