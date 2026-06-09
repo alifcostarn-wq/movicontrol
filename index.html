@@ -22,21 +22,23 @@
 
 /* ======== DARK MODE ======== */
 body.dark-mode{
-  --bg:#0F1117;--surface:#181C23;--surface2:#1E2330;--border:#2A2F3D;
-  --text:#E8E6E1;--text2:#9A97A0;--text3:#5C5A63;
-  --accent:#3CB371;--accent2:#1A2E22;--accent3:#1F3D2C;
-  --danger:#E05445;--danger-bg:#2A1A18;
-  --warn:#D4A027;--warn-bg:#271F0D;
-  --info:#4A90D9;--info-bg:#0D1C2E;
-  --chart-grid:rgba(255,255,255,0.07);
+  --bg:#111318;--surface:#1A1D26;--surface2:#20242F;--border:#2C3040;
+  --text:#E2E0DB;--text2:#8A8799;--text3:#4E4C58;
+  --accent:#3CB371;--accent2:#162A1E;--accent3:#1C3829;
+  --danger:#E05445;--danger-bg:#28160F;
+  --warn:#D4A027;--warn-bg:#271E0A;
+  --info:#4A8FD9;--info-bg:#0D1825;
+  --sidebar-bg:#0D0F14;
 }
-body.dark-mode .row-parc td{background:#0D1C2E!important}
-body.dark-mode .row-rec td{background:#271F0D!important}
-body.dark-mode .km-areceber-sem{background:#1A2E22}
-body.dark-mode .km-apagar-hoje,body.dark-mode .km-areceber-hoje{background:#0D1C2E}
-body.dark-mode .km-apagar-sem{background:#271F0D}
-body.dark-mode .saldo-card.total-card{background:#0A0D13;border-color:#2A2F3D}
-body.dark-mode .kpi-card.dark{background:#0A0D13;border-color:#2A2F3D}
+/* Sidebar cor fixa no dark — independente de --text */
+body.dark-mode .sidebar{background:var(--sidebar-bg,#0D0F14)}
+body.dark-mode .row-parc td{background:#0D1825!important}
+body.dark-mode .row-rec td{background:#271E0A!important}
+body.dark-mode .km-areceber-sem{background:#162A1E}
+body.dark-mode .km-apagar-hoje,body.dark-mode .km-areceber-hoje{background:#0D1825}
+body.dark-mode .km-apagar-sem{background:#271E0A}
+body.dark-mode .saldo-card.total-card{background:#080A0E;border-color:var(--border)}
+body.dark-mode .kpi-card.dark{background:#080A0E;border-color:var(--border)}
 body.dark-mode select,
 body.dark-mode input[type=text],
 body.dark-mode input[type=date],
@@ -47,7 +49,15 @@ body.dark-mode input[type=url],
 body.dark-mode input[type=password],
 body.dark-mode textarea{background:var(--surface2);color:var(--text);border-color:var(--border);color-scheme:dark}
 body.dark-mode select:focus,body.dark-mode input:focus,body.dark-mode textarea:focus{border-color:var(--accent)}
-body.dark-mode .modal-overlay{background:rgba(0,0,0,0.65)}
+body.dark-mode .modal-overlay{background:rgba(0,0,0,0.7)}
+body.dark-mode .main-tab.active{background:var(--border);color:var(--text)}
+body.dark-mode .rxd-tipo-tab.active{background:var(--border);color:var(--text)}
+body.dark-mode .painel-modo-tab.active{background:var(--border);color:var(--text)}
+body.dark-mode .painel-modo-tab#btn-painel-todos.active{background:var(--border)}
+body.dark-mode .extrato-kpi.dark{background:#080A0E;border-color:var(--border)}
+body.dark-mode .toast{background:var(--surface2);border:1px solid var(--border)}
+body.dark-mode .kpi-card.dark::before{background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.04) 50%,transparent 60%);background-size:400px 100%;}
+body.dark-mode .saldo-card.total-card::before{background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.04) 50%,transparent 60%);background-size:400px 100%;}
 
 /* Botão tema */
 .btn-tema{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;transition:all 0.15s;flex-shrink:0}
@@ -62,8 +72,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 /* ======== SIDEBAR ======== */
 /* ---- Sidebar collapsed state ---- */
-:root{--sidebar-collapsed:64px}
-.sidebar{width:var(--sidebar);background:var(--text);height:100vh;display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.22s cubic-bezier(.4,0,.2,1)}
+:root{--sidebar-collapsed:64px;--sidebar-bg:#1A1916}
+.sidebar{width:var(--sidebar);background:var(--sidebar-bg);height:100vh;display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.22s cubic-bezier(.4,0,.2,1)}
 .sidebar.collapsed{width:var(--sidebar-collapsed)}
 .main{transition:margin-left 0.22s cubic-bezier(.4,0,.2,1)}
 .sidebar.collapsed~.main{margin-left:var(--sidebar-collapsed)}
@@ -3076,9 +3086,9 @@ function renderPainel(){
 function chartColors(){
   const dark = document.body.classList.contains('dark-mode');
   return {
-    grid: dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
-    ticks: dark ? '#5C5A63' : '#A8A59E',
-    tooltip: dark ? '#1E2330' : '#1A1916',
+    grid: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+    ticks: dark ? '#4E4C58' : '#A8A59E',
+    tooltip: dark ? '#20242F' : '#1A1916',
   };
 }
 
