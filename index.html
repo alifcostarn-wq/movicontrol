@@ -1056,6 +1056,30 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
 .modo-badge-todos{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
 .toast{position:fixed;bottom:22px;right:22px;background:var(--text);color:#fff;font-size:12.5px;font-weight:500;padding:11px 18px;border-radius:10px;z-index:999;transform:translateY(80px);opacity:0;transition:all 0.28s;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,0.18)}
 .toast.show{transform:translateY(0);opacity:1}
+
+/* ======== BOTÃO OCULTAR VALORES ======== */
+.btn-ocultar-vals{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 12px;border-radius:7px;
+  border:1px solid var(--border);background:var(--surface);
+  color:var(--text2);font-family:'DM Sans',sans-serif;
+  font-size:12px;font-weight:500;cursor:pointer;
+  transition:all 0.15s;white-space:nowrap;flex-shrink:0;
+}
+.btn-ocultar-vals:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
+.btn-ocultar-vals.oculto{background:var(--warn-bg);border-color:#E8C96A;color:var(--warn)}
+.btn-ocultar-vals svg{width:14px;height:14px;flex-shrink:0;transition:opacity 0.15s}
+
+/* Valores monetários ocultos */
+body.valores-ocultos .val-monetario{
+  filter:blur(7px);
+  user-select:none;
+  pointer-events:none;
+  transition:filter 0.25s ease;
+}
+body:not(.valores-ocultos) .val-monetario{
+  transition:filter 0.25s ease;
+}
 .toast svg{width:15px;height:15px;color:#2D8C57}
 
 /* ======== CONTAS BANCÁRIAS ======== */
@@ -1430,7 +1454,16 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
       <div class="page-title" id="page-title">Painel de Controle</div>
       <div class="page-sub" id="page-sub">Visão geral financeira da empresa</div>
     </div>
-    <div class="topbar-right" id="topbar-right">
+    <div class="topbar-right" id="topbar-right" style="display:flex;align-items:center;gap:9px">
+      <button class="btn-ocultar-vals" id="btn-ocultar-vals" onclick="toggleOcultarValores()" title="Ocultar/mostrar valores">
+        <svg id="ico-olho-aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+        <svg id="ico-olho-fechado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+        <span id="txt-ocultar-vals">Ocultar</span>
+      </button>
       <button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>
     </div>
   </div>
@@ -1563,14 +1596,14 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
       <div class="mid-grid">
         <div class="card">
           <div class="card-header"><span class="card-title">Receita / Faturamento</span><span class="card-action" onclick="navTo('fluxo',null)">Ver DRE →</span></div>
-          <div class="big-val-g" id="p-receita">R$ 0,00</div>
+          <div class="big-val-g" id="p-receita"><span class="val-monetario">R$ 0,00</span></div>
           <div class="big-sub">Acumulado no ano</div>
           <div class="bar-track"><div class="bar-fill" id="p-bfr" style="width:0%;background:#2D8C57"></div></div>
           <div class="month-rows" id="p-rec-rows"></div>
         </div>
         <div class="card">
           <div class="card-header"><span class="card-title">Despesas Operacionais</span><span class="card-action" onclick="navTo('fluxo',null)">Ver DRE →</span></div>
-          <div class="big-val-r" id="p-desp">R$ 0,00</div>
+          <div class="big-val-r" id="p-desp"><span class="val-monetario">R$ 0,00</span></div>
           <div class="big-sub">Acumulado no ano</div>
           <div class="bar-track"><div class="bar-fill" id="p-bfd" style="width:0%;background:var(--danger)"></div></div>
           <div class="month-rows" id="p-desp-rows"></div>
@@ -1767,7 +1800,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
             <span class="pdot pdot-red" style="width:9px;height:9px"></span>
             Contas a Pagar
             <span style="font-size:11px;font-weight:400;color:var(--text3)" id="ct-info-pagar">0 contas</span>
-            <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--danger);margin-left:4px" id="ct-pagar">R$ 0,00</span>
+            <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--danger);margin-left:4px" id="ct-pagar"><span class="val-monetario">R$ 0,00</span></span>
           </div>
           <div style="display:flex;gap:8px;margin-left:auto">
             <button class="btn" onclick="exportarContasPagarCSV()">↓ Exportar CSV</button>
@@ -1823,7 +1856,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
             <span class="pdot pdot-green" style="width:9px;height:9px"></span>
             Contas a Receber
             <span style="font-size:11px;font-weight:400;color:var(--text3)" id="ct-info-receber">0 contas</span>
-            <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent);margin-left:4px" id="ct-receber">R$ 0,00</span>
+            <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent);margin-left:4px" id="ct-receber"><span class="val-monetario">R$ 0,00</span></span>
           </div>
           <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:auto" onclick="abrirModalLancamento('receber')">+ A Receber</button>
         </div>
@@ -2296,7 +2329,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
     <div class="modal-body">
       <div style="background:var(--surface2);border-radius:10px;padding:14px 16px;margin-bottom:16px">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Saldo atual</div>
-        <div class="td-mono" style="font-size:20px;font-weight:600" id="ajuste-saldo-atual">R$ 0,00</div>
+        <div class="td-mono" style="font-size:20px;font-weight:600" id="ajuste-saldo-atual"><span class="val-monetario">R$ 0,00</span></div>
       </div>
       <div class="form-grid">
         <div class="form-group full">
@@ -2362,8 +2395,8 @@ const POR_PAG=15;
 
 function gd(k){return JSON.parse(localStorage.getItem(k)||'[]')}
 function sd(k,v){localStorage.setItem(k,JSON.stringify(v))}
-function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';return'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function brlN(v){return parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';const txt='R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
+function brlN(v){const txt=parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function hoje(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fmtData(d){return d?d.split('-').reverse().join('/'):'—'}
 function initials(n){if(!n)return'?';const p=n.trim().split(' ');return(p[0][0]+(p[1]?.[0]||'')).toUpperCase()}
@@ -2418,12 +2451,21 @@ function navTo(page,btn){
   document.getElementById('page-sub').textContent=m.sub||'';
   // Botão topbar
   const tr=document.getElementById('topbar-right');
-  if(page==='painel'||page==='diario') tr.innerHTML='<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
-  else if(page==='contas') tr.innerHTML='<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
-  else if(page==='clientes') tr.innerHTML='<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
-  else if(page==='fornecedores') tr.innerHTML='<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
-  else if(page==='bancos') tr.innerHTML='<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
-  else tr.innerHTML='';
+  const btnOcultar = `<button class="btn-ocultar-vals" id="btn-ocultar-vals" onclick="toggleOcultarValores()" title="Ocultar/mostrar valores">
+    <svg id="ico-olho-aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${document.body.classList.contains('valores-ocultos')?'style="display:none"':''}>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+    </svg>
+    <svg id="ico-olho-fechado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${document.body.classList.contains('valores-ocultos')?'':'style="display:none"'}>
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+    <span id="txt-ocultar-vals">${document.body.classList.contains('valores-ocultos')?'Mostrar':'Ocultar'}</span>
+  </button>`;
+  if(page==='painel'||page==='diario') tr.innerHTML=btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
+  else if(page==='contas') tr.innerHTML=btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
+  else if(page==='clientes') tr.innerHTML=btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
+  else if(page==='fornecedores') tr.innerHTML=btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
+  else if(page==='bancos') tr.innerHTML=btnOcultar+'<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
+  else tr.innerHTML=btnOcultar;
   // Render da página
   const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios};
   renders[page]?.();
@@ -2904,7 +2946,7 @@ function renderPainel(){
   if(bancos.length===0){
     sg.innerHTML=`<div class="saldo-card total-card" style="grid-column:1/-1;cursor:pointer" onclick="navTo('bancos',null)">
       <div class="saldo-label">Saldo Total (Contas Bancárias)</div>
-      <div class="saldo-val">R$ 0,00</div>
+      <div class="saldo-val"><span class="val-monetario">R$ 0,00</span></div>
       <div style="font-size:10.5px;color:rgba(255,255,255,0.45);margin-top:6px">▸ Clique para cadastrar contas</div>
     </div>`;
   } else {
@@ -2934,8 +2976,8 @@ function renderPainel(){
   const totalRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
   const maxR=Math.max(...MESES.map((_,i)=>d['rec'][i]||0),1);
   const maxDe=Math.max(...MESES.map((_,i)=>(d['cv'][i]||0)+(d['desp_op'][i]||0)),1);
-  document.getElementById('p-receita').textContent=brl(totalRec,true);
-  document.getElementById('p-desp').textContent=brl(MESES.reduce((s,_,i)=>s+(d['cv'][i]||0)+(d['desp_op'][i]||0),0),true);
+  document.getElementById('p-receita').innerHTML=brl(totalRec,true);
+  document.getElementById('p-desp').innerHTML=brl(MESES.reduce((s,_,i)=>s+(d['cv'][i]||0)+(d['desp_op'][i]||0),0),true);
   document.getElementById('p-bfr').style.width=(totalRec/Math.max(totalRec,1)*100)+'%';
   document.getElementById('p-bfd').style.width='100%';
   document.getElementById('p-rec-rows').innerHTML=MESES.slice(0,6).map((m,i)=>`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${(d['rec'][i]||0)/maxR*100}%;background:#2D8C57"></div></div><span class="month-val">${d['rec'][i]?brlN(d['rec'][i]):'—'}</span></div>`).join('');
@@ -2991,7 +3033,7 @@ function renderCaixaChart(dreData){
   const saldoFinal = acumulado[acumulado.length - 1];
   const sfEl = document.getElementById('caixa-saldo-final');
   if(sfEl){
-    sfEl.textContent = brl(saldoFinal, true);
+    sfEl.innerHTML = brl(saldoFinal, true);
     sfEl.style.color = saldoFinal >= 0 ? 'var(--accent)' : 'var(--danger)';
   }
 
@@ -4262,7 +4304,7 @@ function renderContas(){
     return cpSort.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
   });
 
-  document.getElementById('ct-pagar').textContent=brl(pagar.reduce((s,l)=>s+(l.aPagar||l.pago||0),0),true);
+  document.getElementById('ct-pagar').innerHTML=brl(pagar.reduce((s,l)=>s+(l.aPagar||l.pago||0),0),true);
   document.getElementById('ct-info-pagar').textContent=`${pagar.length} conta${pagar.length!==1?'s':''}`;
 
   // Paginação
@@ -4306,7 +4348,7 @@ function renderContas(){
 
   // Contas a receber (mantém tabela simples)
   const receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido)&&dentroP(l.data,contasPeriodo));
-  document.getElementById('ct-receber').textContent=brl(receber.reduce((s,l)=>s+(l.aReceber||l.recebido||0),0),true);
+  document.getElementById('ct-receber').innerHTML=brl(receber.reduce((s,l)=>s+(l.aReceber||l.recebido||0),0),true);
   document.getElementById('ct-info-receber').textContent=`${receber.length} conta${receber.length!==1?'s':''}`;
   document.getElementById('ct-empty-receber').style.display=receber.length===0?'':'none';
   const rowR=(l)=>{
@@ -5611,7 +5653,7 @@ function abrirModalAjuste(idx=null,tipoInicial='entrada'){
   ajusteContaIdx=contaReal;
   const saldoAtual=calcSaldoConta(contaReal);
   document.getElementById('ajuste-titulo').textContent=(bancos[contaReal]?.nome||'Conta')+' — Movimentação';
-  document.getElementById('ajuste-saldo-atual').textContent=brl(saldoAtual,true);
+  document.getElementById('ajuste-saldo-atual').innerHTML=brl(saldoAtual,true);
   document.getElementById('aj-valor').value='';
   document.getElementById('aj-novosal').value='';
   document.getElementById('aj-data').value=hoje();
@@ -5680,7 +5722,7 @@ function abrirModalTransferencia(){
 function atualizarSaldoOrigem(){
   const idx=parseInt(document.getElementById('tr-origem').value);
   const saldo=calcSaldoConta(idx);
-  document.getElementById('tr-saldo-origem').textContent=brl(saldo,true);
+  document.getElementById('tr-saldo-origem').innerHTML=brl(saldo,true);
 }
 
 function salvarTransferencia(){
@@ -5893,6 +5935,33 @@ const _origNavTo=typeof navTo==='function'?navTo:null;
     const el = document.getElementById(id);
     if (el) el.innerHTML = opts;
   });
+})();
+
+// ============================================================
+// OCULTAR / MOSTRAR VALORES MONETÁRIOS
+// ============================================================
+function toggleOcultarValores(){
+  const oculto = document.body.classList.toggle('valores-ocultos');
+  localStorage.setItem('movi_ocultar_vals', oculto ? '1' : '0');
+  _atualizarBtnOcultar(oculto);
+  showToast(oculto ? '🙈 Valores ocultados.' : '👁 Valores visíveis.');
+}
+
+function _atualizarBtnOcultar(oculto){
+  document.querySelectorAll('#btn-ocultar-vals').forEach(btn=>{
+    btn.classList.toggle('oculto', oculto);
+  });
+  document.querySelectorAll('#ico-olho-aberto').forEach(el=>el.style.display = oculto ? 'none' : '');
+  document.querySelectorAll('#ico-olho-fechado').forEach(el=>el.style.display = oculto ? '' : 'none');
+  document.querySelectorAll('#txt-ocultar-vals').forEach(el=>el.textContent = oculto ? 'Mostrar' : 'Ocultar');
+}
+
+(function initOcultarValores(){
+  const salvo = localStorage.getItem('movi_ocultar_vals');
+  if(salvo === '1'){
+    document.body.classList.add('valores-ocultos');
+    setTimeout(()=>_atualizarBtnOcultar(true), 50);
+  }
 })();
 
 renderPainel();
