@@ -3592,7 +3592,13 @@ function renderDiario(){
   const fate = document.getElementById('d-fate')?.value || '';
   const mesStr = String(_diarioAno)+'-'+String(_diarioMes+1).padStart(2,'0');
   let lista=getLancFiltrados();
-  if(!fde && !fate){ lista = lista.filter(l=>(l.data||'').startsWith(mesStr)); }
+  if(!fde && !fate){
+    lista = lista.filter(l => {
+      const dataRef = (l.status==='Pago'||l.status==='Recebido') && l.dataEfetivacao
+        ? l.dataEfetivacao : (l.data||'');
+      return dataRef.startsWith(mesStr);
+    });
+  }
   lista.sort((a,b)=>{
     let va=a[sortDiarState.col]??'',vb=b[sortDiarState.col]??'';
     if(typeof va==='number')return sortDiarState.dir==='asc'?va-vb:vb-va;
@@ -3870,12 +3876,11 @@ function diagSetTab(tab) {
 // ── Score de Equilíbrio Receita × Despesa ─────────────────────
 function renderScoreEquilibrio(lc) {
   const mesStr = hoje().slice(0,7);
-  const mesLanc = lc.filter(l => (l.data||'').startsWith(mesStr));
-
-  const recebido  = mesLanc.filter(l => l.status==='Recebido').reduce((s,l) => s+(l.recebido||0), 0);
-  const aReceber  = mesLanc.filter(l => l.status==='A Receber').reduce((s,l) => s+(l.aReceber||0), 0);
-  const pago      = mesLanc.filter(l => l.status==='Pago').reduce((s,l) => s+(l.pago||0), 0);
-  const aPagar    = mesLanc.filter(l => l.status==='A Pagar').reduce((s,l) => s+(l.aPagar||0), 0);
+  // Para efetivados usa dataEfetivacao; para pendentes usa data de vencimento
+  const recebido  = lc.filter(l => l.status==='Recebido' && (l.dataEfetivacao||l.data||'').startsWith(mesStr)).reduce((s,l) => s+(l.recebido||0), 0);
+  const aReceber  = lc.filter(l => l.status==='A Receber' && (l.data||'').startsWith(mesStr)).reduce((s,l) => s+(l.aReceber||0), 0);
+  const pago      = lc.filter(l => l.status==='Pago'      && (l.dataEfetivacao||l.data||'').startsWith(mesStr)).reduce((s,l) => s+(l.pago||0), 0);
+  const aPagar    = lc.filter(l => l.status==='A Pagar'   && (l.data||'').startsWith(mesStr)).reduce((s,l) => s+(l.aPagar||0), 0);
 
   const totalRec  = recebido + aReceber;
   const totalDesp = pago + aPagar;
@@ -3967,9 +3972,8 @@ function renderScoreGeracao(lc) {
   const pctVar    = saldoMesAnt !== 0 ? (variacao / Math.abs(saldoMesAnt)) * 100 : (saldoAtual > 0 ? 100 : 0);
 
   // Entradas e saídas efetivadas do mês atual
-  const mesLanc   = lc.filter(l => (l.data||'').startsWith(mesStr));
-  const entradas  = mesLanc.filter(l => l.status==='Recebido').reduce((s,l) => s+(l.recebido||0), 0);
-  const saidas    = mesLanc.filter(l => l.status==='Pago').reduce((s,l) => s+(l.pago||0), 0);
+  const entradas  = lc.filter(l => l.status==='Recebido' && (l.dataEfetivacao||l.data||'').startsWith(mesStr)).reduce((s,l) => s+(l.recebido||0), 0);
+  const saidas    = lc.filter(l => l.status==='Pago'     && (l.dataEfetivacao||l.data||'').startsWith(mesStr)).reduce((s,l) => s+(l.pago||0), 0);
   const fluxoLiq  = entradas - saidas;
 
   // Score: baseado em variação % do caixa e se fluxo líquido é positivo
@@ -4048,7 +4052,7 @@ function renderPainelEndividamentoDiag(lc){
   const atrasadas=pendentes.filter(l=>(l.data||'')<h);
   const hoje_list=pendentes.filter(l=>l.data===h);
   const semana_list=pendentes.filter(l=>{const d=new Date((l.data||h)+'T00:00:00'),hd=new Date(h+'T00:00:00');return d>hd&&(d-hd)/86400000<=7;});
-  const pagas_mes=lc.filter(l=>l.status==='Pago'&&l.pago>0&&(l.data||'').startsWith(h.slice(0,7)));
+  const pagas_mes=lc.filter(l=>l.status==='Pago'&&l.pago>0&&(l.dataEfetivacao||l.data||'').startsWith(h.slice(0,7)));
   const totPend=pendentes.reduce((s,l)=>s+(l.aPagar||0),0);
   const totAtras=atrasadas.reduce((s,l)=>s+(l.aPagar||0),0);
   const totPagMes=pagas_mes.reduce((s,l)=>s+(l.pago||0),0);
@@ -4104,19 +4108,17 @@ function renderScoreSaude(lc){
   const mesStr=hoje().slice(0,7);
 
   // ---- Dados do mês atual ----
-  const mesLanc=lc.filter(l=>(l.data||'').startsWith(mesStr));
-
-  // Receita realizada no mês (status Recebido)
-  const recMes=mesLanc.filter(l=>l.status==='Recebido').reduce((s,l)=>s+(l.recebido||0),0);
-  // A Receber previsto no mês
-  const aRecMes=mesLanc.filter(l=>l.status==='A Receber').reduce((s,l)=>s+(l.aReceber||0),0);
+  // Receita realizada no mês (status Recebido) — usa dataEfetivacao
+  const recMes=lc.filter(l=>l.status==='Recebido'&&(l.dataEfetivacao||l.data||'').startsWith(mesStr)).reduce((s,l)=>s+(l.recebido||0),0);
+  // A Receber previsto no mês — usa data de vencimento
+  const aRecMes=lc.filter(l=>l.status==='A Receber'&&(l.data||'').startsWith(mesStr)).reduce((s,l)=>s+(l.aReceber||0),0);
   // Total receita (recebido + a receber no mês)
   const totEntradaMes=recMes+aRecMes;
 
-  // Despesas pagas no mês
-  const despPagas=mesLanc.filter(l=>l.status==='Pago').reduce((s,l)=>s+(l.pago||0),0);
-  // Despesas a pagar no mês
-  const despAPagar=mesLanc.filter(l=>l.status==='A Pagar').reduce((s,l)=>s+(l.aPagar||0),0);
+  // Despesas pagas no mês — usa dataEfetivacao
+  const despPagas=lc.filter(l=>l.status==='Pago'&&(l.dataEfetivacao||l.data||'').startsWith(mesStr)).reduce((s,l)=>s+(l.pago||0),0);
+  // Despesas a pagar no mês — usa data de vencimento
+  const despAPagar=lc.filter(l=>l.status==='A Pagar'&&(l.data||'').startsWith(mesStr)).reduce((s,l)=>s+(l.aPagar||0),0);
   const totDespMes=despPagas+despAPagar;
 
   // Contas atrasadas (total geral, não só do mês)
@@ -4277,7 +4279,7 @@ function renderPainelEndividamento(lc){
   const atrasadas=pendentes.filter(l=>(l.data||'')<h);
   const hoje_list=pendentes.filter(l=>l.data===h);
   const semana_list=pendentes.filter(l=>{const d=new Date((l.data||h)+'T00:00:00'),hd=new Date(h+'T00:00:00');return d>hd&&(d-hd)/86400000<=7;});
-  const pagas_mes=lc.filter(l=>l.status==='Pago'&&l.pago>0&&(l.data||'').startsWith(h.slice(0,7)));
+  const pagas_mes=lc.filter(l=>l.status==='Pago'&&l.pago>0&&(l.dataEfetivacao||l.data||'').startsWith(h.slice(0,7)));
   const totPend=pendentes.reduce((s,l)=>s+(l.aPagar||0),0);
   const totAtras=atrasadas.reduce((s,l)=>s+(l.aPagar||0),0);
   const totPagMes=pagas_mes.reduce((s,l)=>s+(l.pago||0),0);
