@@ -1303,6 +1303,7 @@ body:not(.valores-ocultos) .val-monetario{
 #page-usuarios{display:none}
 #page-usuarios.active{display:block}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -1408,7 +1409,7 @@ body:not(.valores-ocultos) .val-monetario{
 
         <div id="cad-error" class="auth-error"></div>
 
-        <button class="auth-btn" onclick="cadastrarUsuario()">
+        <button class="auth-btn" onclick="showToast('Cadastro de usuários é feito pelo administrador.',true)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
           Criar conta
         </button>
@@ -2229,35 +2230,22 @@ body:not(.valores-ocultos) .val-monetario{
 
 <!-- ========== MODAL LANÇAMENTO ========== -->
 <div class="modal-overlay" id="modal-lanc" onclick="if(event.target===this)fecharModal('modal-lanc')">
-  <div class="modal md" style="overflow:visible">
-    <div class="modal-header">
-      <span class="modal-title" id="lanc-titulo">Novo Lançamento</span>
-      <button class="modal-close" onclick="fecharModal('modal-lanc')">✕</button>
-    </div>
-    <div id="lanc-tipo-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 22px 0">
-      <div id="lt-card-rec" onclick="setLancTipo('receber')" style="border-radius:11px;padding:13px 14px;cursor:pointer;border:2px solid var(--accent);background:var(--accent2);display:flex;align-items:center;gap:11px;transition:all .15s">
-        <div style="width:38px;height:38px;border-radius:9px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📥</div>
-        <div>
-          <div style="font-size:13px;font-weight:700;color:var(--accent)">A Receber / Recebido</div>
-          <div style="font-size:11px;color:var(--accent);opacity:.75;margin-top:2px">entrada de caixa</div>
-        </div>
+  <div class="modal md">
+    <div class="modal-header"><span class="modal-title" id="lanc-titulo">Novo Lançamento</span><button class="modal-close" onclick="fecharModal('modal-lanc')">✕</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">
+        <div class="form-label" style="margin-bottom:5px">Tipo<span>*</span></div>
+        <div class="tipo-toggle"><button class="tipo-btn at-rec" id="lt-rec" onclick="setLancTipo('receber')">↓ A Receber / Recebido</button><button class="tipo-btn" id="lt-pag" onclick="setLancTipo('pagar')">↑ A Pagar / Pago</button></div>
       </div>
-      <div id="lt-card-pag" onclick="setLancTipo('pagar')" style="border-radius:11px;padding:13px 14px;cursor:pointer;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:11px;transition:all .15s">
-        <div style="width:38px;height:38px;border-radius:9px;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📤</div>
-        <div>
-          <div style="font-size:13px;font-weight:700;color:var(--text2)">A Pagar / Pago</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">saída de caixa</div>
-        </div>
-      </div>
-    </div>
-    <div id="lanc-status-pills" style="display:flex;gap:7px;flex-wrap:wrap;padding:12px 22px 0"></div>
-    <div class="modal-body" style="padding-top:12px">
       <div class="form-grid">
         <div class="form-group"><label class="form-label">Vencimento<span>*</span></label><input type="date" id="l-data" style="width:100%"></div>
-        <div class="form-group"><label class="form-label">Conta<span>*</span></label><select id="l-conta" style="width:100%"></select></div>
-        <div class="form-group full"><label class="form-label">Plano de Contas<span>*</span></label><select id="l-plano" style="width:100%"></select></div>
+        <div class="form-group"><label class="form-label">Status<span>*</span></label><select id="l-status" style="width:100%"><option value="A Receber">A Receber</option><option value="Recebido">Recebido</option></select></div>
+        <div class="form-group full"><label class="form-label">Plano de Contas<span>*</span></label>
+          <select id="l-plano" style="width:100%"></select>
+        </div>
         <div class="form-group" id="lg-cli"><label class="form-label">Cliente</label><input type="text" id="l-cliente" placeholder="Nome do cliente" style="width:100%"></div>
         <div class="form-group" id="lg-for" style="display:none"><label class="form-label">Fornecedor</label><input type="text" id="l-fornecedor" placeholder="Nome do fornecedor" style="width:100%"></div>
+        <div class="form-group"><label class="form-label">Conta<span>*</span></label><select id="l-conta" style="width:100%"></select></div>
         <div class="form-group" id="lg-ar"><label class="form-label">A Receber (R$)</label><input type="number" id="l-ar" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
         <div class="form-group" id="lg-rec"><label class="form-label">Recebido (R$)</label><input type="number" id="l-rec" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
         <div class="form-group" id="lg-ap" style="display:none"><label class="form-label">A Pagar (R$)</label><input type="number" id="l-ap" step="0.01" min="0" placeholder="0,00" style="width:100%"></div>
@@ -2265,6 +2253,8 @@ body:not(.valores-ocultos) .val-monetario{
         <div class="form-group full"><label class="form-label">Histórico / Descrição</label><input type="text" id="l-hist" placeholder="Descrição do lançamento..." style="width:100%"></div>
         <div class="form-group"><label class="form-label">Data Original</label><input type="date" id="l-dorig" style="width:100%"></div>
         <div class="form-group"><label class="form-label">Reg. Cheque</label><input type="text" id="l-cheque" placeholder="Nº cheque" style="width:100%"></div>
+
+        <!-- PARCELAMENTO / RECORRÊNCIA -->
         <div class="form-group full" id="lg-repeticao">
           <label class="form-label">Repetição</label>
           <div class="repeticao-toggle">
@@ -2275,31 +2265,45 @@ body:not(.valores-ocultos) .val-monetario{
           <div id="rep-panel-parc" class="rep-panel" style="display:none">
             <div class="rep-panel-title">📑 Parcelamento</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-              <div class="form-group" style="margin:0"><label class="form-label">Nº de Parcelas<span>*</span></label><input type="number" id="parc-num" min="2" max="360" placeholder="Ex: 12" style="width:100%" oninput="atualizarPreviewParc()"></div>
-              <div class="form-group" style="margin:0"><label class="form-label">Periodicidade</label><select id="parc-periodo" style="width:100%" onchange="atualizarPreviewParc()"><option value="mensal">Mensal</option><option value="quinzenal">Quinzenal</option><option value="semanal">Semanal</option><option value="anual">Anual</option></select></div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Nº de Parcelas<span>*</span></label>
+                <input type="number" id="parc-num" min="2" max="360" placeholder="Ex: 12" style="width:100%" oninput="atualizarPreviewParc()">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Periodicidade</label>
+                <select id="parc-periodo" style="width:100%" onchange="atualizarPreviewParc()">
+                  <option value="mensal">Mensal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
             </div>
             <div id="parc-preview" style="margin-top:10px;font-size:11px;color:var(--text3);padding:8px 10px;background:var(--surface);border-radius:7px;border:1px solid var(--border)"></div>
           </div>
           <div id="rep-panel-rec" class="rep-panel" style="display:none">
             <div class="rep-panel-title">🔁 Recorrência</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-              <div class="form-group" style="margin:0"><label class="form-label">Repetir por (meses)<span>*</span></label><input type="number" id="rec-meses" min="1" max="360" placeholder="Ex: 12" style="width:100%" oninput="atualizarPreviewRec()"></div>
-              <div class="form-group" style="margin:0"><label class="form-label">Periodicidade</label><select id="rec-periodo" style="width:100%" onchange="atualizarPreviewRec()"><option value="mensal">Mensal</option><option value="quinzenal">Quinzenal</option><option value="semanal">Semanal</option><option value="anual">Anual</option></select></div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Repetir por (meses)<span>*</span></label>
+                <input type="number" id="rec-meses" min="1" max="360" placeholder="Ex: 12" style="width:100%" oninput="atualizarPreviewRec()">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="form-label">Periodicidade</label>
+                <select id="rec-periodo" style="width:100%" onchange="atualizarPreviewRec()">
+                  <option value="mensal">Mensal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
             </div>
             <div id="rec-preview" style="margin-top:10px;font-size:11px;color:var(--text3);padding:8px 10px;background:var(--surface);border-radius:7px;border:1px solid var(--border)"></div>
           </div>
         </div>
       </div>
     </div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;padding:10px 22px;background:var(--surface2);border-top:1px solid var(--border)">
-      <button onclick="setRepTipo('parcelado')" style="padding:6px 13px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid var(--info);color:var(--info);background:var(--info-bg)">📑 Parcelar</button>
-      <button onclick="setRepTipo('recorrente')" style="padding:6px 13px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid var(--warn);color:var(--warn);background:var(--warn-bg)">🔁 Recorrente</button>
-      <button onclick="duplicarUltimoLancamento()" style="padding:6px 13px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid #8B5CF6;color:#8B5CF6;background:#EEEDFE">⧉ Duplicar último</button>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="fecharModal('modal-lanc')">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarLancamento()">✓ Salvar Lançamento</button>
-    </div>
+    <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-lanc')">Cancelar</button><button class="btn btn-primary" onclick="salvarLancamento()">Salvar Lançamento</button></div>
   </div>
 </div>
 
@@ -2448,8 +2452,296 @@ let lancEditIdx=null;
 let fluxoView='mensal';
 const POR_PAG=15;
 
-function gd(k){return JSON.parse(localStorage.getItem(k)||'[]')}
-function sd(k,v){localStorage.setItem(k,JSON.stringify(v))}
+// ============================================================
+// SUPABASE - CONFIG E CAMADA DE SINCRONIZAÇÃO
+// ============================================================
+const SUPABASE_URL = 'https://mgtetsmcswdtvsgewcen.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
+const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Cache em memória: mesma chave usada antigamente no localStorage
+const _cache = {
+  sf_lancamentos: [],
+  sf_clientes: [],
+  sf_fornecedores: [],
+  sf_bancos: [],
+  sf_mov_bancarias: [],
+  sf_metas: {},
+  sf_plano: null,
+};
+
+// Mapa: chave local -> { table, toRow, fromRow }
+// toRow: converte objeto JS (camelCase) -> linha Supabase (snake_case)
+// fromRow: converte linha Supabase -> objeto JS (camelCase)
+const _SYNC_MAP = {
+  sf_lancamentos: {
+    table: 'lancamentos',
+    toRow: (l) => ({
+      id: l.id,
+      tipo: l.tipo || null,
+      data: l.data || null,
+      data_original: l.dataOriginal || null,
+      data_efetivacao: l.dataEfetivacao || null,
+      status: l.status || null,
+      plano: l.plano || null,
+      cliente: l.cliente || null,
+      fornecedor: l.fornecedor || null,
+      conta: l.conta || null,
+      a_receber: l.aReceber || 0,
+      recebido: l.recebido || 0,
+      a_pagar: l.aPagar || 0,
+      pago: l.pago || 0,
+      cheque: l.cheque || null,
+      historico: l.historico || null,
+      valor_liquido: l.valorLiquido || 0,
+      lin: l.lin ?? null,
+      parc_group_id: l.parcGroupId || null,
+      parc_num: l.parcNum ?? null,
+      parc_total: l.parcTotal ?? null,
+      rec_group_id: l.recGroupId || null,
+      rec_num: l.recNum ?? null,
+      rec_total: l.recTotal ?? null,
+    }),
+    fromRow: (r) => ({
+      id: r.id,
+      tipo: r.tipo,
+      data: r.data,
+      dataOriginal: r.data_original,
+      dataEfetivacao: r.data_efetivacao,
+      status: r.status,
+      plano: r.plano,
+      cliente: r.cliente,
+      fornecedor: r.fornecedor,
+      conta: r.conta,
+      aReceber: r.a_receber,
+      recebido: r.recebido,
+      aPagar: r.a_pagar,
+      pago: r.pago,
+      cheque: r.cheque,
+      historico: r.historico,
+      valorLiquido: r.valor_liquido,
+      lin: r.lin,
+      parcGroupId: r.parc_group_id,
+      parcNum: r.parc_num,
+      parcTotal: r.parc_total,
+      recGroupId: r.rec_group_id,
+      recNum: r.rec_num,
+      recTotal: r.rec_total,
+    }),
+  },
+  sf_clientes: {
+    table: 'clientes',
+    toRow: (c) => ({
+      id: c.id,
+      nome: c.nome || '',
+      razao: c.razao || null,
+      cnpj: c.cnpj || null,
+      ie: c.ie || null,
+      contato: c.contato || null,
+      datacad: c.datacad || null,
+      tel1: c.tel1 || null,
+      tel2: c.tel2 || null,
+      email: c.email || null,
+      site: c.site || null,
+      endereco: c.end || null,
+      bairro: c.bairro || null,
+      cep: c.cep || null,
+      cidade: c.cidade || null,
+      obs: c.obs || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id, nome: r.nome, razao: r.razao, cnpj: r.cnpj, ie: r.ie,
+      contato: r.contato, datacad: r.datacad, tel1: r.tel1, tel2: r.tel2,
+      email: r.email, site: r.site, end: r.endereco, bairro: r.bairro,
+      cep: r.cep, cidade: r.cidade, obs: r.obs,
+    }),
+  },
+  sf_fornecedores: {
+    table: 'fornecedores',
+    toRow: (c) => ({
+      id: c.id,
+      nome: c.nome || '',
+      razao: c.razao || null,
+      cnpj: c.cnpj || null,
+      ie: c.ie || null,
+      contato: c.contato || null,
+      datacad: c.datacad || null,
+      tel1: c.tel1 || null,
+      tel2: c.tel2 || null,
+      email: c.email || null,
+      site: c.site || null,
+      endereco: c.end || null,
+      bairro: c.bairro || null,
+      cep: c.cep || null,
+      cidade: c.cidade || null,
+      obs: c.obs || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id, nome: r.nome, razao: r.razao, cnpj: r.cnpj, ie: r.ie,
+      contato: r.contato, datacad: r.datacad, tel1: r.tel1, tel2: r.tel2,
+      email: r.email, site: r.site, end: r.endereco, bairro: r.bairro,
+      cep: r.cep, cidade: r.cidade, obs: r.obs,
+    }),
+  },
+  sf_bancos: {
+    table: 'bancos',
+    toRow: (b) => ({
+      id: b.id,
+      nome: b.nome || null,
+      tipo: b.tipo || null,
+      banco: b.banco || null,
+      agencia: b.agencia || null,
+      conta: b.conta || null,
+      saldo_inicial: b.saldoInicial || 0,
+      data_saldo_inicial: b.dataSaldoInicial || null,
+      cor: b.cor || null,
+      obs: b.obs || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id, nome: r.nome, tipo: r.tipo, banco: r.banco,
+      agencia: r.agencia, conta: r.conta, saldoInicial: r.saldo_inicial,
+      dataSaldoInicial: r.data_saldo_inicial, cor: r.cor, obs: r.obs,
+    }),
+  },
+  sf_mov_bancarias: {
+    table: 'mov_bancarias',
+    toRow: (m) => ({
+      id: m.id,
+      conta_id: (m.contaId ?? (_cache.sf_bancos[m.contaIdx]?.id)) ?? null,
+      conta_nome: m.contaNome || null,
+      data: m.data || null,
+      cat: m.cat || null,
+      descricao: m.descricao || null,
+      valor: m.valor || 0,
+      pair_id: m.pairId || null,
+      ts: m.ts ?? null,
+      conta_dest_nome: m.contaDestNome || null,
+      conta_orig_nome: m.contaOrigNome || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id, contaId: r.conta_id, contaIdx: m_findBancoIdxById(r.conta_id),
+      contaNome: r.conta_nome, data: r.data, cat: r.cat,
+      descricao: r.descricao, valor: r.valor,
+      pairId: r.pair_id, ts: r.ts,
+      contaDestNome: r.conta_dest_nome, contaOrigNome: r.conta_orig_nome,
+    }),
+  },
+};
+
+// Helper: encontra o índice (posição no array sf_bancos) de uma conta pelo id do Supabase
+function m_findBancoIdxById(contaId){
+  if(contaId==null) return null;
+  const idx = _cache.sf_bancos.findIndex(b=>b.id===contaId);
+  return idx>=0?idx:null;
+}
+
+// ---------- gd / sd: agora leem/escrevem no cache em memória ----------
+function gd(k){
+  if(k==='sf_metas') return JSON.parse(JSON.stringify(_cache.sf_metas||{}));
+  if(k in _cache) return JSON.parse(JSON.stringify(_cache[k]));
+  return JSON.parse(localStorage.getItem(k)||'[]');
+}
+
+function sd(k,v){
+  if(k==='sf_metas'){
+    const old = _cache.sf_metas||{};
+    _cache.sf_metas = v;
+    // diff: detecta chaves removidas/alteradas e sincroniza
+    const allKeys = new Set([...Object.keys(old), ...Object.keys(v)]);
+    allKeys.forEach(chave=>{
+      if(old[chave]!==v[chave]) _salvarMetaSupabase(chave, v[chave]);
+    });
+    return;
+  }
+  if(k in _cache){
+    const oldArr = _cache[k] || [];
+    _cache[k] = v;
+    if(_SYNC_MAP[k]){
+      _syncDiff(k, oldArr, v);
+    }
+    return;
+  }
+  localStorage.setItem(k,JSON.stringify(v));
+}
+
+// ---------- Sincronização incremental com Supabase ----------
+// Compara array antigo x novo e aplica inserts/updates/deletes no Supabase
+async function _syncDiff(key, oldArr, newArr){
+  const map = _SYNC_MAP[key];
+  if(!map) return;
+  const { table, toRow } = map;
+
+  const oldIds = new Set(oldArr.filter(x=>x.id!=null).map(x=>x.id));
+  const newIds = new Set(newArr.filter(x=>x.id!=null).map(x=>x.id));
+
+  // Deletados: estavam no old, não estão no new
+  const deletedIds = [...oldIds].filter(id=>!newIds.has(id));
+  if(deletedIds.length){
+    await sbClient.from(table).delete().in('id', deletedIds);
+  }
+
+  // Itens sem id => inserir (novos)
+  const toInsert = newArr.filter(x=>x.id==null);
+  for(const item of toInsert){
+    const row = toRow(item);
+    delete row.id;
+    const { data, error } = await sbClient.from(table).insert(row).select().single();
+    if(!error && data){
+      item.id = data.id; // atualiza o objeto no cache com o id gerado
+    }
+  }
+
+  // Itens com id => verifica se mudou e faz update (upsert simplificado)
+  const toUpdate = newArr.filter(x=>x.id!=null);
+  for(const item of toUpdate){
+    const row = toRow(item);
+    await sbClient.from(table).update(row).eq('id', item.id);
+  }
+}
+
+// ---------- Carrega todas as tabelas do Supabase para o cache ----------
+async function loadAllFromSupabase(){
+  for(const key of Object.keys(_SYNC_MAP)){
+    const { table, fromRow } = _SYNC_MAP[key];
+    const { data, error } = await sbClient.from(table).select('*').order('id', { ascending: true });
+    if(!error && data){
+      _cache[key] = data.map(fromRow);
+    }
+  }
+  // Pós-processamento: contaIdx das movimentações depende de sf_bancos já carregado
+  _cache.sf_mov_bancarias = _cache.sf_mov_bancarias.map(m=>({
+    ...m,
+    contaIdx: m_findBancoIdxById(m.contaId),
+  }));
+
+  // ---- metas (chave-valor) ----
+  const { data: metasData, error: metasErr } = await sbClient.from('metas').select('*');
+  if(!metasErr && metasData){
+    const metasObj = {};
+    metasData.forEach(r=>{ metasObj[r.chave] = r.valor; });
+    _cache.sf_metas = metasObj;
+  }
+
+  // ---- plano (jsonb singleton) ----
+  const { data: planoData, error: planoErr } = await sbClient.from('plano').select('*').eq('id',1).maybeSingle();
+  if(!planoErr && planoData){
+    _cache.sf_plano = planoData.dados;
+  }
+}
+
+// ---------- metas: salvar uma chave no Supabase ----------
+async function _salvarMetaSupabase(chave, valor){
+  if(valor===undefined || valor===null || valor===0){
+    await sbClient.from('metas').delete().eq('chave', chave);
+  } else {
+    await sbClient.from('metas').upsert({ chave, valor, updated_at: new Date().toISOString() });
+  }
+}
+
+// ---------- plano: salvar no Supabase ----------
+async function _salvarPlanoSupabase(dados){
+  await sbClient.from('plano').upsert({ id: 1, dados, updated_at: new Date().toISOString() });
+}
 function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';const txt='R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function brlN(v){const txt=parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function brlTxt(v){return'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
@@ -2461,7 +2753,7 @@ function initials(n){if(!n)return'?';const p=n.trim().split(' ');return(p[0][0]+
 function popularSelectContas(selectId, valorAtual=''){
   const el=document.getElementById(selectId);
   if(!el)return;
-  const bancos=JSON.parse(localStorage.getItem('sf_bancos')||'[]');
+  const bancos=gd('sf_bancos');
   if(bancos.length===0){
     el.innerHTML='<option value="">— Nenhuma conta cadastrada —</option>';
     return;
@@ -2474,7 +2766,7 @@ function popularFiltroContas(){
   const el=document.getElementById('d-fconta');
   if(!el)return;
   const val=el.value;
-  const bancos=JSON.parse(localStorage.getItem('sf_bancos')||'[]');
+  const bancos=gd('sf_bancos');
   el.innerHTML='<option value="">Todas as contas</option>'
     +bancos.map(b=>`<option value="${b.nome}" ${b.nome===val?'selected':''}>${b.nome}</option>`).join('');
 }
@@ -4709,7 +5001,7 @@ function exportarCadastroCSV(tipo){
 // Nível 1 = Grupo        (ex: 3.1 Receita de Vendas)
 // Nível 2 = Subgrupo     (ex: 3.1.1 Vendas em Dinheiro)
 // ============================================================
-const _planoSalvo = JSON.parse(localStorage.getItem('sf_plano') || 'null');
+const _planoSalvo = _cache.sf_plano;
 let PLANO_DATA = (_planoSalvo && _planoSalvo.length > 0) ? _planoSalvo : [
   {g:'RECEITAS', cls:'pb-rec', t:'rec', itens:[
     {c:'3.',   n:'RECEITA / FATURAMENTO',               l:0},
@@ -4834,7 +5126,7 @@ let PLANO_DATA = (_planoSalvo && _planoSalvo.length > 0) ? _planoSalvo : [
   ]},
 ];
 
-function savePlano() { sd('sf_plano', PLANO_DATA); }
+function savePlano() { _cache.sf_plano = PLANO_DATA; _salvarPlanoSupabase(PLANO_DATA); }
 
 // SVG icons
 const _icoEdit = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11.5 2.5l2 2-8 8-2.5.5.5-2.5 8-8z"/></svg>`;
@@ -5213,95 +5505,12 @@ function atualizarPreviewRec(){
 
 function setLancTipo(t){
   lancTipo=t;
-
-  // Cards visuais — destaca o selecionado
-  const cr=document.getElementById('lt-card-rec');
-  const cp=document.getElementById('lt-card-pag');
-  if(cr&&cp){
-    if(t==='receber'){
-      cr.style.cssText='border-radius:11px;padding:13px 14px;cursor:pointer;border:2px solid var(--accent);background:var(--accent2);display:flex;align-items:center;gap:11px;transition:all .15s';
-      cp.style.cssText='border-radius:11px;padding:13px 14px;cursor:pointer;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:11px;transition:all .15s';
-    } else {
-      cp.style.cssText='border-radius:11px;padding:13px 14px;cursor:pointer;border:2px solid var(--danger);background:var(--danger-bg);display:flex;align-items:center;gap:11px;transition:all .15s';
-      cr.style.cssText='border-radius:11px;padding:13px 14px;cursor:pointer;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:11px;transition:all .15s';
-    }
-  }
-
-  // Pills de status dinâmicas
-  const pillsEl=document.getElementById('lanc-status-pills');
-  if(pillsEl){
-    const ps=(active,color,bg,border,lbl)=>`<button onclick="setStatusPill(this,'${lbl}')" data-status="${lbl}" style="padding:7px 15px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ${active?border:'var(--border)'};background:${active?bg:'transparent'};color:${active?color:'var(--text3)'};transition:all .13s">${lbl}</button>`;
-    if(t==='receber'){
-      pillsEl.innerHTML=ps(true,'#8A6200','#FDF6E3','#C9850A','📅 A Receber')+ps(false,'#1A5C3A','#E8F2ED','var(--accent)','✅ Recebido');
-      _syncStatusSelect('A Receber');
-    } else {
-      pillsEl.innerHTML=ps(true,'#8B2218','#FBF0EE','var(--danger)','⚠️ A Pagar')+ps(false,'#1A5C3A','#E8F2ED','var(--accent)','✅ Pago');
-      _syncStatusSelect('A Pagar');
-    }
-  }
-
-  // Campos de valor e pessoa
-  ['lg-cli','lg-ar','lg-rec'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=t==='receber'?'':'none';});
-  ['lg-for','lg-ap','lg-pag'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=t==='pagar'?'':'none';});
-
-  // Cor do botão salvar
-  const btn=document.getElementById('lanc-btn-salvar');
-  if(btn){btn.style.background=t==='pagar'?'var(--danger)':'';btn.style.borderColor=t==='pagar'?'var(--danger)':'';}
-}
-
-function setStatusPill(btn,status){
-  const pillsEl=document.getElementById('lanc-status-pills');
-  if(!pillsEl)return;
-  // Extrai o valor limpo do status (sem emoji)
-  const rawStatus=status.replace(/[^\w\s]/gu,'').trim();
-  pillsEl.querySelectorAll('button').forEach(b=>{
-    const bs=b.dataset.status||'';
-    const rawBs=bs.replace(/[^\w\s]/gu,'').trim();
-    const isRec=lancTipo==='receber';
-    const active=b===btn;
-    let color,bg,border;
-    if(isRec){color=rawBs==='Recebido'?'#1A5C3A':'#8A6200';bg=rawBs==='Recebido'?'#E8F2ED':'#FDF6E3';border=rawBs==='Recebido'?'var(--accent)':'#C9850A';}
-    else{color=rawBs==='Pago'?'#1A5C3A':'#8B2218';bg=rawBs==='Pago'?'#E8F2ED':'#FBF0EE';border=rawBs==='Pago'?'var(--accent)':'var(--danger)';}
-    b.style.cssText=`padding:7px 15px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ${active?border:'var(--border)'};background:${active?bg:'transparent'};color:${active?color:'var(--text3)'};transition:all .13s`;
-  });
-  // Extrai status limpo para salvar
-  const cleanStatus = rawStatus === 'A Receber' ? 'A Receber' : rawStatus === 'Recebido' ? 'Recebido' : rawStatus === 'A Pagar' ? 'A Pagar' : rawStatus === 'Pago' ? 'Pago' : rawStatus;
-  _syncStatusSelect(cleanStatus);
-  // Alterna campos de valor conforme status
-  if(lancTipo==='receber'){
-    const isPago=cleanStatus==='Recebido';
-    const arEl=document.getElementById('lg-ar');const recEl=document.getElementById('lg-rec');
-    if(arEl)arEl.style.display=isPago?'none':'';
-    if(recEl)recEl.style.display=isPago?'':'none';
-  } else {
-    const isPago=cleanStatus==='Pago';
-    const apEl=document.getElementById('lg-ap');const pagEl=document.getElementById('lg-pag');
-    if(apEl)apEl.style.display=isPago?'none':'';
-    if(pagEl)pagEl.style.display=isPago?'':'none';
-  }
-}
-
-function _syncStatusSelect(status){
-  let st=document.getElementById('l-status');
-  if(!st){st=document.createElement('select');st.id='l-status';st.style.display='none';const ml=document.getElementById('modal-lanc');if(ml)ml.appendChild(st);}
-  st.innerHTML=`<option value="${status}" selected>${status}</option>`;
-}
-
-function duplicarUltimoLancamento(){
-  const lc=gd('sf_lancamentos');
-  if(!lc||!lc.length){alert('Nenhum lançamento anterior encontrado.');return;}
-  const u=lc[lc.length-1];
-  setLancTipo(u.tipo||'receber');
-  popularSelectContas('l-conta',u.conta||'');
-  const de=document.getElementById('l-data');if(de)de.value=hoje();
-  const pe=document.getElementById('l-plano');if(pe)pe.value=u.plano||'';
-  const ce=document.getElementById('l-cliente');if(ce)ce.value=u.cliente||'';
-  const fe=document.getElementById('l-fornecedor');if(fe)fe.value=u.fornecedor||'';
-  const are=document.getElementById('l-ar');if(are)are.value=u.aReceber||'';
-  const re=document.getElementById('l-rec');if(re)re.value=u.recebido||'';
-  const ape=document.getElementById('l-ap');if(ape)ape.value=u.aPagar||'';
-  const pge=document.getElementById('l-pago');if(pge)pge.value=u.pago||'';
-  const he=document.getElementById('l-hist');if(he)he.value=u.historico||'';
+  document.getElementById('lt-rec').className='tipo-btn'+(t==='receber'?' at-rec':'');
+  document.getElementById('lt-pag').className='tipo-btn'+(t==='pagar'?' at-pag':'');
+  const st=document.getElementById('l-status');
+  st.innerHTML=t==='receber'?'<option value="A Receber">A Receber</option><option value="Recebido">Recebido</option>':'<option value="A Pagar">A Pagar</option><option value="Pago">Pago</option>';
+  ['lg-cli','lg-ar','lg-rec'].forEach(id=>document.getElementById(id).style.display=t==='receber'?'':'none');
+  ['lg-for','lg-ap','lg-pag'].forEach(id=>document.getElementById(id).style.display=t==='pagar'?'':'none');
 }
 
 function abrirModalLancamento(tipo=null,idx=null){
@@ -5317,13 +5526,7 @@ function abrirModalLancamento(tipo=null,idx=null){
       setLancTipo(l.tipo||'receber');
       popularSelectContas('l-conta', l.conta||'');
       document.getElementById('l-data').value=l.data||'';
-      // Sincroniza pill de status com o valor do lançamento
-      _syncStatusSelect(l.status||'A Receber');
-      // Ativa visualmente a pill correta
-      setTimeout(()=>{
-        const pillsEl=document.getElementById('lanc-status-pills');
-        if(pillsEl){const target=Array.from(pillsEl.querySelectorAll('button')).find(b=>b.dataset.status&&b.dataset.status.replace(/[^\w\s]/gu,'').trim()===(l.status||'A Receber').replace(/[^\w\s]/gu,'').trim());if(target)setStatusPill(target,target.dataset.status);}
-      },50);
+      document.getElementById('l-status').value=l.status||'A Receber';
       document.getElementById('l-plano').value=l.plano||'3.1 Receita de Vendas';
       document.getElementById('l-cliente').value=l.cliente||'';
       document.getElementById('l-fornecedor').value=l.fornecedor||'';
@@ -5381,7 +5584,7 @@ function salvarLancamento(){
   // --- Edição simples ---
   if(lancEditIdx!==null){
     const liquido=isRec?(rec||aR):-(pg||aP);
-    lc[lancEditIdx]={...baseItem,data,valorLiquido:liquido};
+    lc[lancEditIdx]={...lc[lancEditIdx],...baseItem,data,valorLiquido:liquido};
     sd('sf_lancamentos',lc);
     fecharModal('modal-lanc');
     atualizarBadges();
@@ -5485,7 +5688,7 @@ function salvarCadastro(){
   if(!nome){showToast('Informe o nome.',true);return;}
   const item={nome,razao:document.getElementById('c-razao').value,cnpj:document.getElementById('c-cnpj').value,ie:document.getElementById('c-ie').value,contato:document.getElementById('c-contato').value,datacad:document.getElementById('c-datacad').value,tel1:document.getElementById('c-tel1').value,tel2:document.getElementById('c-tel2').value,email:document.getElementById('c-email').value,site:document.getElementById('c-site').value,end:document.getElementById('c-end').value,bairro:document.getElementById('c-bairro').value,cep:document.getElementById('c-cep').value,cidade:document.getElementById('c-cidade').value,obs:document.getElementById('c-obs').value};
   const lista=gd('sf_'+cadTipo);
-  if(cadEditIdx!==null)lista[cadEditIdx]=item;else lista.push(item);
+  if(cadEditIdx!==null)lista[cadEditIdx]={...lista[cadEditIdx],...item};else lista.push(item);
   sd('sf_'+cadTipo,lista);
   fecharModal('modal-cad');
   renderCadastro(cadTipo);
@@ -5523,10 +5726,10 @@ let extratoPagina=1;
 const EXTRATO_POR_PAG=20;
 
 // ---------- helpers ----------
-function gdBancos(){return JSON.parse(localStorage.getItem('sf_bancos')||'[]');}
-function sdBancos(v){localStorage.setItem('sf_bancos',JSON.stringify(v));}
-function gdMov(){return JSON.parse(localStorage.getItem('sf_mov_bancarias')||'[]');}
-function sdMov(v){localStorage.setItem('sf_mov_bancarias',JSON.stringify(v));}
+function gdBancos(){return gd('sf_bancos');}
+function sdBancos(v){sd('sf_bancos',v);}
+function gdMov(){return gd('sf_mov_bancarias');}
+function sdMov(v){sd('sf_mov_bancarias',v);}
 
 function calcSaldoConta(idx){
   const bancos=gdBancos();
@@ -5894,7 +6097,6 @@ function salvarMovimento(){
   }
   const mov=gdMov();
   mov.push({
-    id:'mov_'+Date.now()+'_'+Math.random().toString(36).slice(2),
     contaIdx:ajusteContaIdx,
     contaNome:bancos[ajusteContaIdx]?.nome||'',
     cat:ajusteTipoAtual==='ajuste'?'ajuste':ajusteTipoAtual,
@@ -5950,12 +6152,12 @@ function salvarTransferencia(){
   const pairId='tr_'+Date.now();
   const mov=gdMov();
   mov.push({
-    id:pairId+'_s',contaIdx:origIdx,contaNome:bancos[origIdx]?.nome||'',
+    contaIdx:origIdx,contaNome:bancos[origIdx]?.nome||'',
     cat:'transferencia_saida',data,descricao:desc,valor:-valor,
     contaDestNome:bancos[destIdx]?.nome||'',ts:Date.now(),pairId,
   });
   mov.push({
-    id:pairId+'_e',contaIdx:destIdx,contaNome:bancos[destIdx]?.nome||'',
+    contaIdx:destIdx,contaNome:bancos[destIdx]?.nome||'',
     cat:'transferencia_entrada',data,descricao:desc,valor:valor,
     contaOrigNome:bancos[origIdx]?.nome||'',ts:Date.now(),pairId,
   });
@@ -5981,21 +6183,8 @@ function exportarExtratoCSV(){
 }
 
 // ============================================================
-// AUTH — LOGIN, CADASTRO, USUÁRIOS
+// AUTH — LOGIN E PERFIS (Supabase Auth)
 // ============================================================
-
-(function initAuth(){
-  // Seed do primeiro usuário admin
-  const SEED=[{nome:'Alif Costa',email:'alifcostarn@gmail.com',senha:'netmais1010',perfil:'admin',criadoEm:new Date().toISOString()}];
-  if(!localStorage.getItem('movi_usuarios')){
-    localStorage.setItem('movi_usuarios',JSON.stringify(SEED));
-  }
-})();
-
-function gdUsuarios(){try{return JSON.parse(localStorage.getItem('movi_usuarios')||'[]')}catch(e){return[]}}
-function sdUsuarios(u){localStorage.setItem('movi_usuarios',JSON.stringify(u))}
-function gdSessao(){try{return JSON.parse(sessionStorage.getItem('movi_sessao')||'null')}catch(e){return null}}
-function sdSessao(s){sessionStorage.setItem('movi_sessao',JSON.stringify(s))}
 
 function showAuthPage(page){
   document.getElementById('auth-login-page').classList.toggle('active',page==='login');
@@ -6004,27 +6193,46 @@ function showAuthPage(page){
   document.getElementById('cad-error').classList.remove('show');
 }
 
-function fazerLogin(){
+async function fazerLogin(){
   const email=document.getElementById('login-email').value.trim().toLowerCase();
   const senha=document.getElementById('login-senha').value;
-  const usuarios=gdUsuarios();
-  const user=usuarios.find(u=>u.email.toLowerCase()===email&&u.senha===senha);
-  if(!user){
-    document.getElementById('login-error').classList.add('show');
+  const errEl=document.getElementById('login-error');
+  errEl.classList.remove('show');
+
+  const { data, error } = await sbClient.auth.signInWithPassword({ email, password: senha });
+  if(error || !data.user){
+    errEl.textContent='E-mail ou senha incorretos. Tente novamente.';
+    errEl.classList.add('show');
     return;
   }
-  sdSessao({nome:user.nome,email:user.email,perfil:user.perfil});
-  entrarNoSistema(user);
+
+  const { data: perfil } = await sbClient.from('perfis').select('*').eq('id', data.user.id).maybeSingle();
+  const user = {
+    id: data.user.id,
+    nome: perfil?.nome || data.user.email,
+    email: data.user.email,
+    perfil: perfil?.perfil || 'user',
+  };
+  await entrarNoSistema(user);
 }
 
-function entrarNoSistema(user){
+async function entrarNoSistema(user){
+  // Carrega todos os dados financeiros do Supabase para o cache em memória
+  await loadAllFromSupabase();
+
+  // Reconstrói PLANO_DATA com os dados carregados (se houver plano salvo)
+  if(_cache.sf_plano && _cache.sf_plano.length>0){
+    PLANO_DATA.length = 0;
+    PLANO_DATA.push(..._cache.sf_plano);
+  }
+
   // Esconde tela de auth
   document.getElementById('auth-screen').classList.remove('visible');
   // Atualiza sidebar
   const ini=user.nome.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
   document.getElementById('sidebar-ava').textContent=ini;
   document.getElementById('sidebar-nome').textContent=user.nome;
-  const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador'};
+  const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador',user:'Usuário'};
   document.getElementById('sidebar-perfil').textContent=perfilLabel[user.perfil]||user.perfil;
   // Mostra menu de usuários só para admin
   if(user.perfil==='admin'){
@@ -6037,33 +6245,15 @@ function entrarNoSistema(user){
   iniciarMonitorInatividade();
 }
 
-function fazerLogout(semConfirm){
+async function fazerLogout(semConfirm){
   if(!semConfirm && !confirm('Deseja sair do sistema?'))return;
   pararMonitorInatividade();
-  sessionStorage.removeItem('movi_sessao');
+  await sbClient.auth.signOut();
   sessionStorage.removeItem('movi_lastActivity');
   location.reload();
 }
 
-function cadastrarUsuario(){
-  const nome=document.getElementById('cad-nome').value.trim();
-  const email=document.getElementById('cad-email').value.trim().toLowerCase();
-  const senha=document.getElementById('cad-senha').value;
-  const perfil=document.getElementById('cad-perfil').value;
-  const errEl=document.getElementById('cad-error');
-  if(!nome){errEl.textContent='Informe o nome completo.';errEl.classList.add('show');return;}
-  if(!email||!email.includes('@')){errEl.textContent='Informe um e-mail válido.';errEl.classList.add('show');return;}
-  if(senha.length<6){errEl.textContent='A senha precisa ter pelo menos 6 caracteres.';errEl.classList.add('show');return;}
-  const usuarios=gdUsuarios();
-  if(usuarios.find(u=>u.email.toLowerCase()===email)){errEl.textContent='Este e-mail já está cadastrado.';errEl.classList.add('show');return;}
-  usuarios.push({nome,email,senha,perfil,criadoEm:new Date().toISOString()});
-  sdUsuarios(usuarios);
-  // Faz login automático com o novo usuário
-  sdSessao({nome,email,perfil});
-  entrarNoSistema({nome,email,perfil});
-}
-
-// Cadastro de usuário dentro do sistema (admin)
+// Cadastro de usuário (apenas pelo admin, cria via Supabase Auth)
 function abrirCadastroUsuario(){
   document.getElementById('mu-nome').value='';
   document.getElementById('mu-email').value='';
@@ -6072,64 +6262,80 @@ function abrirCadastroUsuario(){
   abrirModal('modal-novo-usuario');
 }
 
-function salvarNovoUsuario(){
+async function salvarNovoUsuario(){
   const nome=document.getElementById('mu-nome').value.trim();
   const email=document.getElementById('mu-email').value.trim().toLowerCase();
   const senha=document.getElementById('mu-senha').value;
   const perfil=document.getElementById('mu-perfil').value;
   if(!nome||!email||!senha){showToast('Preencha todos os campos.',true);return;}
   if(senha.length<6){showToast('Senha precisa ter pelo menos 6 caracteres.',true);return;}
-  const usuarios=gdUsuarios();
-  if(usuarios.find(u=>u.email.toLowerCase()===email)){showToast('E-mail já cadastrado.',true);return;}
-  usuarios.push({nome,email,senha,perfil,criadoEm:new Date().toISOString()});
-  sdUsuarios(usuarios);
+
+  const { data, error } = await sbClient.auth.signUp({
+    email, password: senha,
+    options: { data: { nome } }
+  });
+  if(error){showToast('Erro: '+error.message,true);return;}
+
+  // Atualiza o perfil (criado automaticamente via trigger) com nome/perfil corretos
+  if(data.user){
+    await sbClient.from('perfis').update({ nome, perfil }).eq('id', data.user.id);
+  }
+
   fecharModal('modal-novo-usuario');
   renderUsuarios();
   showToast('Usuário criado com sucesso!');
 }
 
-function excluirUsuario(email){
-  const sessao=gdSessao();
-  if(sessao&&sessao.email===email){showToast('Você não pode excluir sua própria conta.',true);return;}
+async function excluirUsuario(id){
+  const { data: { user } } = await sbClient.auth.getUser();
+  if(user && user.id===id){showToast('Você não pode excluir sua própria conta.',true);return;}
   if(!confirm('Excluir este usuário?'))return;
-  sdUsuarios(gdUsuarios().filter(u=>u.email!==email));
+  // Remove o perfil (o usuário do Auth deve ser removido pelo painel do Supabase)
+  await sbClient.from('perfis').delete().eq('id', id);
   renderUsuarios();
-  showToast('Usuário excluído.');
+  showToast('Perfil excluído. Para remover o login, exclua o usuário também no painel do Supabase (Authentication > Users).');
 }
 
-function renderUsuarios(){
-  const usuarios=gdUsuarios();
-  const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador'};
-  const perfilCor={admin:'s-recebido',operador:'s-a-receber',visualizador:'s-a-pagar'};
+async function renderUsuarios(){
+  const { data: usuarios, error } = await sbClient.from('perfis').select('*').order('criado_em',{ascending:true});
+  const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador',user:'Usuário'};
+  const perfilCor={admin:'s-recebido',operador:'s-a-receber',visualizador:'s-a-pagar',user:'s-a-pagar'};
   const tb=document.getElementById('tbody-usuarios');
   if(!tb)return;
+  if(error||!usuarios){tb.innerHTML='';return;}
   tb.innerHTML=usuarios.map(u=>`
     <tr>
-      <td><b>${u.nome}</b></td>
-      <td class="td-muted">${u.email}</td>
+      <td><b>${u.nome||'-'}</b></td>
+      <td class="td-muted">${u.id}</td>
       <td><span class="status-badge ${perfilCor[u.perfil]||''}">${perfilLabel[u.perfil]||u.perfil}</span></td>
-      <td class="td-muted td-mono">${u.criadoEm?new Date(u.criadoEm).toLocaleDateString('pt-BR'):'-'}</td>
+      <td class="td-muted td-mono">${u.criado_em?new Date(u.criado_em).toLocaleDateString('pt-BR'):'-'}</td>
       <td><div class="action-btns">
-        <button class="action-btn del" title="Excluir" onclick="excluirUsuario('${u.email}')">
+        <button class="action-btn del" title="Excluir" onclick="excluirUsuario('${u.id}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         </button>
       </div></td>
     </tr>`).join('');
 }
 
-// Verifica sessão ao carregar
-(function checkSessao(){
-  const sessao=gdSessao();
-  if(sessao){
-    const usuarios=gdUsuarios();
-    const user=usuarios.find(u=>u.email===sessao.email);
-    if(user){entrarNoSistema(user);return;}
+// Verifica sessão ao carregar (Supabase Auth mantém a sessão automaticamente)
+(async function checkSessao(){
+  const { data } = await sbClient.auth.getSession();
+  if(data.session && data.session.user){
+    const authUser = data.session.user;
+    const { data: perfil } = await sbClient.from('perfis').select('*').eq('id', authUser.id).maybeSingle();
+    const user = {
+      id: authUser.id,
+      nome: perfil?.nome || authUser.email,
+      email: authUser.email,
+      perfil: perfil?.perfil || 'user',
+    };
+    await entrarNoSistema(user);
+    return;
   }
   document.getElementById('auth-screen').classList.add('visible');
 })();
 
-// Hook navTo para renderizar usuários
-const _origNavTo=typeof navTo==='function'?navTo:null;
+// (fim do bloco de auth)
 
 // ============================================================
 // INIT
@@ -6260,11 +6466,12 @@ function renovarSessao(){
 function fazerLogoutInatividade(){
   clearInterval(_inativCountdown);
   document.getElementById('modal-inatividade').classList.remove('open');
-  sessionStorage.removeItem('movi_sessao');
   sessionStorage.removeItem('movi_lastActivity');
-  // Mostra mensagem antes de recarregar
-  alert('Sua sessão foi encerrada por inatividade (2 horas sem uso).');
-  location.reload();
+  sbClient.auth.signOut().then(()=>{
+    // Mostra mensagem antes de recarregar
+    alert('Sua sessão foi encerrada por inatividade (2 horas sem uso).');
+    location.reload();
+  });
 }
 
 function iniciarMonitorInatividade(){
