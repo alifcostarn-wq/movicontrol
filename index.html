@@ -1304,6 +1304,25 @@ body:not(.valores-ocultos) .val-monetario{
 #page-usuarios.active{display:block}
 #page-config{display:none}
 #page-config.active{display:block}
+
+/* ---------- Permissões por perfil ---------- */
+/* Visualizador: somente leitura - sem criar/editar/excluir */
+body.perfil-visualizador .action-btn,
+body.perfil-visualizador .btn-primary,
+body.perfil-visualizador .perm-edit,
+body.perfil-visualizador .plano-act-btn,
+body.perfil-visualizador .plano-add-row,
+body.perfil-visualizador .plano-add-l1,
+body.perfil-visualizador .plano-add-btn,
+body.perfil-visualizador #nav-usuarios,
+body.perfil-visualizador #nav-config,
+body.perfil-visualizador #nav-sec-admin{display:none !important}
+
+/* Operador: sem excluir, sem usuários/configurações */
+body.perfil-operador .action-btn.del,
+body.perfil-operador #nav-usuarios,
+body.perfil-operador #nav-config,
+body.perfil-operador #nav-sec-admin{display:none !important}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -2867,7 +2886,7 @@ function navTo(page,btn){
   else if(page==='contas') tr.innerHTML=btnTema+btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
   else if(page==='clientes') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
   else if(page==='fornecedores') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
-  else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
+  else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
   const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios};
@@ -6270,6 +6289,11 @@ async function entrarNoSistema(user){
     PLANO_DATA.length = 0;
     PLANO_DATA.push(..._cache.sf_plano);
   }
+
+  // Aplica classe de perfil no body (controla permissões via CSS)
+  document.body.classList.remove('perfil-admin','perfil-operador','perfil-visualizador');
+  const perfilClasse = ['admin','operador','visualizador'].includes(user.perfil) ? user.perfil : 'visualizador';
+  document.body.classList.add('perfil-'+perfilClasse);
 
   // Esconde tela de auth
   document.getElementById('auth-screen').classList.remove('visible');
