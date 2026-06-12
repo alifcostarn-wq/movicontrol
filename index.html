@@ -1302,6 +1302,8 @@ body:not(.valores-ocultos) .val-monetario{
 /* Tabela de usuários */
 #page-usuarios{display:none}
 #page-usuarios.active{display:block}
+#page-config{display:none}
+#page-config.active{display:block}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1486,6 +1488,10 @@ body:not(.valores-ocultos) .val-monetario{
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span class="nav-label">Usuários</span>
     </button>
+    <button class="nav-item" id="nav-config" data-page="config" data-tooltip="Configurações" onclick="navTo('config',this)" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="nav-label">Configurações</span>
+    </button>
   </nav>
   <div class="sidebar-footer">
     <div class="user-pill" style="cursor:pointer" onclick="fazerLogout()" title="Sair do sistema">
@@ -1547,6 +1553,22 @@ body:not(.valores-ocultos) .val-monetario{
             </tr></thead>
             <tbody id="tbody-usuarios"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== CONFIGURAÇÕES ====== -->
+    <div class="page" id="page-config">
+      <div class="table-wrap">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:600">Backup de dados</div>
+          <div class="td-muted" style="font-size:12px;margin-top:4px">Baixe um arquivo JSON com todos os dados do sistema (lançamentos, clientes, fornecedores, bancos, movimentações, metas e plano de contas).</div>
+        </div>
+        <div style="padding:18px">
+          <button class="btn btn-primary" onclick="baixarBackupCompleto()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Baixar backup completo (JSON)
+          </button>
         </div>
       </div>
     </div>
@@ -2729,6 +2751,28 @@ async function loadAllFromSupabase(){
   }
 }
 
+// ---------- Backup completo: baixa JSON com todos os dados ----------
+async function baixarBackupCompleto(){
+  showToast('Gerando backup...');
+  const backup = {
+    geradoEm: new Date().toISOString(),
+    sf_lancamentos: gd('sf_lancamentos'),
+    sf_clientes: gd('sf_clientes'),
+    sf_fornecedores: gd('sf_fornecedores'),
+    sf_bancos: gd('sf_bancos'),
+    sf_mov_bancarias: gd('sf_mov_bancarias'),
+    sf_metas: gd('sf_metas'),
+    sf_plano: PLANO_DATA,
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.download = `movicontrol_backup_${ts}.json`;
+  a.click();
+  showToast('Backup baixado com sucesso!');
+}
+
 // ---------- metas: salvar uma chave no Supabase ----------
 async function _salvarMetaSupabase(chave, valor){
   if(valor===undefined || valor===null || valor===0){
@@ -2786,6 +2830,7 @@ const PAGE_META={
   bancos:{title:'Contas Bancárias',sub:'Gestão de contas, extratos e transferências'},
   plano:{title:'Plano de Contas',sub:'Estrutura hierárquica de contas'},
   usuarios:{title:'Usuários do Sistema',sub:'Gerenciar acessos e permissões'},
+  config:{title:'Configurações',sub:'Backup e preferências do sistema'},
 };
 
 function navTo(page,btn){
@@ -6239,6 +6284,8 @@ async function entrarNoSistema(user){
     document.getElementById('nav-sec-admin').style.display='';
     document.getElementById('nav-usuarios').style.display='';
   }
+  // Menu de configurações (backup) visível para todos
+  document.getElementById('nav-config').style.display='';
   renderPainel();
   atualizarBadges();
   // Inicia monitor de inatividade
