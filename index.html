@@ -6593,6 +6593,15 @@ async function fazerLogin(){
   }
 
   const { data: perfil } = await sbClient.from('perfis').select('*').eq('id', data.user.id).maybeSingle();
+
+  // BLOQUEIO DE SEGURANÇA: técnicos não podem acessar o sistema financeiro
+  if(perfil?.perfil === 'tecnico'){
+    await sbClient.auth.signOut();
+    errEl.textContent='Acesso não permitido por este painel. Técnicos devem acessar campo.html.';
+    errEl.classList.add('show');
+    return;
+  }
+
   const user = {
     id: data.user.id,
     nome: perfil?.nome || data.user.email,
@@ -6719,6 +6728,16 @@ async function renderUsuarios(){
   if(data.session && data.session.user){
     const authUser = data.session.user;
     const { data: perfil } = await sbClient.from('perfis').select('*').eq('id', authUser.id).maybeSingle();
+
+    // BLOQUEIO DE SEGURANÇA: técnicos não podem acessar o sistema financeiro
+    if(perfil?.perfil === 'tecnico'){
+      await sbClient.auth.signOut();
+      document.getElementById('auth-screen').classList.add('visible');
+      const errEl=document.getElementById('login-error');
+      if(errEl){ errEl.textContent='Acesso não permitido por este painel. Técnicos devem acessar campo.html.'; errEl.classList.add('show'); }
+      return;
+    }
+
     const user = {
       id: authUser.id,
       nome: perfil?.nome || authUser.email,
@@ -7118,15 +7137,48 @@ async function salvarChamado(){
   const id = document.getElementById('ch-id').value;
   const tecId = document.getElementById('ch-tecnico').value || null;
   const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '' : '';
-  const obj = { cliente, telefone:document.getElementById('ch-telefone').value.trim(), endereco:document.getElementById('ch-endereco').value.trim(), descricao, prioridade:document.getElementById('ch-prioridade').value, tecnico_id:tecId, tecnico_nome:tecNome, status:document.getElementById('ch-status').value };
-  const { error } = id
-    ? await sbClient.from('campo_chamados').update(obj).eq('id', id)
-    : await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() });
+  const telefone = document.getElementById('ch-telefone').value.trim();
+  const endereco = document.getElementById('ch-endereco').value.trim();
+  const prioridade = document.getElementById('ch-prioridade').value;
+  let status = document.getElementById('ch-status').value;
+
+  // Detecta se é um chamado existente que ainda não tem OS, e está recebendo um técnico agora
+  let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
+  const vaiCriarOS = !!tecId && (!chamadoExistente || !chamadoExistente.os_id);
+
+  // Se um técnico está sendo atribuído e o chamado estava "novo", avança para "atribuido"
+  if(tecId && status==='novo') status = 'atribuido';
+
+  const obj = { cliente, telefone, endereco, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
+
+  let chamadoId = id;
+  let error;
+  if(id){
+    ({ error } = await sbClient.from('campo_chamados').update(obj).eq('id', id));
+  } else {
+    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() }).select().single();
+    error = insErr;
+    if(data) chamadoId = data.id;
+  }
   if(error){ showToast('Erro: '+error.message, true); return; }
+
+  // Gera OS automaticamente quando o chamado recebe técnico e ainda não tem OS
+  if(vaiCriarOS && chamadoId){
+    const numeroOS = cpProximoNumOS();
+    const { data: osData, error: osErr } = await sbClient.from('campo_os').insert({
+      numero: numeroOS, cliente, telefone, endereco, descricao,
+      tecnico_id: tecId, tecnico_nome: tecNome, prioridade,
+      status: 'aberta', data: cpHoje(), chamado_id: chamadoId,
+    }).select().single();
+    if(!osErr && osData){
+      await sbClient.from('campo_chamados').update({ os_id: osData.id }).eq('id', chamadoId);
+    }
+  }
+
   fecharModal('modal-chamado');
   await carregarCampo();
   renderChamados();
-  showToast(id?'Chamado atualizado!':'Chamado registrado!');
+  showToast(id?'Chamado atualizado!':(vaiCriarOS?'Chamado registrado e OS gerada automaticamente!':'Chamado registrado!'));
 }
 
 async function excluirChamado(id){
@@ -7167,7 +7219,7 @@ function renderChamados(){
     const [stCl,stLb] = stMap[c.status]||['cp-st-novo','Novo'];
     return `<tr>
       <td style="font-size:11px;color:var(--text3);font-weight:600">#${String(c.id).slice(-5).toUpperCase()}</td>
-      <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}</div></td>
+      <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}${c.os_id?` · <span style="color:var(--accent);font-weight:600">${(()=>{const o=_cpOS.find(x=>x.id===c.os_id);return o?'OS #'+String(o.numero||0).padStart(4,'0'):'OS vinculada';})()}</span>`:''}</div></td>
       <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${c.descricao}">${c.descricao}</td>
       <td><span class="cp-prio ${prMap[c.prioridade]||'cp-prio-media'}">${(c.prioridade||'media').charAt(0).toUpperCase()+(c.prioridade||'media').slice(1)}</span></td>
       <td style="font-size:12px">${c.tecnico_nome||'<span style="color:var(--text3)">—</span>'}</td>
@@ -7224,12 +7276,22 @@ async function salvarOS(){
   const id = document.getElementById('os-id').value;
   const tecId = document.getElementById('os-tecnico').value || null;
   const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome||'' : '';
-  const obj = { cliente, telefone:document.getElementById('os-telefone').value.trim(), endereco:document.getElementById('os-endereco').value.trim(), descricao, tecnico_id:tecId, tecnico_nome:tecNome, prioridade:document.getElementById('os-prioridade').value, status:document.getElementById('os-status').value, data:document.getElementById('os-data').value||cpHoje(), pecas:document.getElementById('os-pecas').value.trim(), obs:document.getElementById('os-obs').value.trim() };
+  const novoStatus = document.getElementById('os-status').value;
+  const obj = { cliente, telefone:document.getElementById('os-telefone').value.trim(), endereco:document.getElementById('os-endereco').value.trim(), descricao, tecnico_id:tecId, tecnico_nome:tecNome, prioridade:document.getElementById('os-prioridade').value, status:novoStatus, data:document.getElementById('os-data').value||cpHoje(), pecas:document.getElementById('os-pecas').value.trim(), obs:document.getElementById('os-obs').value.trim() };
   if(!id) obj.numero = cpProximoNumOS();
   const { error } = id
     ? await sbClient.from('campo_os').update(obj).eq('id', id)
     : await sbClient.from('campo_os').insert(obj);
   if(error){ showToast('Erro: '+error.message, true); return; }
+
+  // Sincroniza o chamado vinculado quando a OS é concluída
+  if(id && novoStatus==='concluida'){
+    const osAtual = _cpOS.find(x=>x.id==id);
+    if(osAtual && osAtual.chamado_id){
+      await sbClient.from('campo_chamados').update({ status:'concluido' }).eq('id', osAtual.chamado_id);
+    }
+  }
+
   fecharModal('modal-os');
   await carregarCampo();
   renderOS();
