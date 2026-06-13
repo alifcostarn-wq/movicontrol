@@ -149,11 +149,6 @@ body.dark-mode .st-andamento{background:rgba(155,95,235,0.15);color:#9B5FEB}
       <div class="kpi"><div class="kpi-num" id="kpi-concluidas" style="color:var(--accent)">—</div><div class="kpi-lbl">Concluídas Hoje</div></div>
     </div>
 
-    <div class="tabs">
-      <button class="tab-btn active" id="tab-chamados" onclick="trocarAba('chamados')">📞 Chamados<span class="tab-badge" id="badge-chamados" style="display:none">0</span></button>
-      <button class="tab-btn" id="tab-os" onclick="trocarAba('os')">🔧 Ordens de Serviço</button>
-    </div>
-
     <div class="list" id="lista-itens"></div>
   </div>
 </div>
@@ -190,9 +185,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let _meuTecnico = null;
-let _chamados = [];
 let _os = [];
-let _abaAtiva = 'chamados';
 let _itemDetalheAberto = null;
 
 function hoje(){ return new Date().toISOString().slice(0,10); }
@@ -270,39 +263,20 @@ async function entrarApp(){
 
 async function carregarDados(){
   if(!_meuTecnico) return;
-  const [{data:chs},{data:oss}] = await Promise.all([
-    sb.from('campo_chamados').select('*').eq('tecnico_id', _meuTecnico.id).order('created_at',{ascending:false}),
-    sb.from('campo_os').select('*').eq('tecnico_id', _meuTecnico.id).order('numero',{ascending:false}),
-  ]);
-  _chamados = chs || [];
+  const { data: oss } = await sb.from('campo_os').select('*').eq('tecnico_id', _meuTecnico.id).order('numero',{ascending:false});
   _os = oss || [];
   atualizarKPIs();
 }
 
 function atualizarKPIs(){
   const hoje_ = hoje();
-  const pendChamados = _chamados.filter(c=>!['concluido','cancelado'].includes(c.status)).length;
   const pendOS = _os.filter(o=>!['concluida','cancelada'].includes(o.status)).length;
-  const andamentoChamados = _chamados.filter(c=>c.status==='andamento').length;
   const andamentoOS = _os.filter(o=>o.status==='andamento').length;
-  const concChamados = _chamados.filter(c=>c.status==='concluido' && c.data===hoje_).length;
   const concOS = _os.filter(o=>o.status==='concluida' && o.data===hoje_).length;
 
-  document.getElementById('kpi-pendentes').textContent = pendChamados + pendOS;
-  document.getElementById('kpi-andamento').textContent = andamentoChamados + andamentoOS;
-  document.getElementById('kpi-concluidas').textContent = concChamados + concOS;
-
-  const badge = document.getElementById('badge-chamados');
-  const novos = _chamados.filter(c=>['novo','atribuido'].includes(c.status)).length;
-  badge.style.display = novos>0?'':'none';
-  badge.textContent = novos;
-}
-
-function trocarAba(aba){
-  _abaAtiva = aba;
-  document.getElementById('tab-chamados').classList.toggle('active', aba==='chamados');
-  document.getElementById('tab-os').classList.toggle('active', aba==='os');
-  renderLista();
+  document.getElementById('kpi-pendentes').textContent = pendOS;
+  document.getElementById('kpi-andamento').textContent = andamentoOS;
+  document.getElementById('kpi-concluidas').textContent = concOS;
 }
 
 const STATUS_LABEL = {
@@ -314,10 +288,10 @@ const PRIO_LABEL = { alta:'Alta', media:'Média', baixa:'Baixa' };
 
 function renderLista(){
   const cont = document.getElementById('lista-itens');
-  const lista = _abaAtiva==='chamados' ? _chamados : _os;
+  const lista = _os;
 
   if(!lista.length){
-    cont.innerHTML = `<div class="empty-row"><div class="empty-ico">${_abaAtiva==='chamados'?'📭':'📋'}</div>Nenhum ${_abaAtiva==='chamados'?'chamado':'OS'} atribuído a você no momento.</div>`;
+    cont.innerHTML = `<div class="empty-row"><div class="empty-ico">📋</div>Nenhuma OS atribuída a você no momento.</div>`;
     return;
   }
 
@@ -326,8 +300,8 @@ function renderLista(){
     const stLb = STATUS_LABEL[item.status]||item.status;
     const prCl = 'prio-'+(item.prioridade||'media');
     const prLb = PRIO_LABEL[item.prioridade]||item.prioridade;
-    const numero = _abaAtiva==='os' ? `<span style="color:var(--accent);font-weight:700">#${String(item.numero||0).padStart(4,'0')}</span> ` : '';
-    return `<div class="item-card" onclick="abrirDetalhe('${_abaAtiva==='chamados'?'chamado':'os'}',${item.id})">
+    const numero = `<span style="color:var(--accent);font-weight:700">#${String(item.numero||0).padStart(4,'0')}</span> `;
+    return `<div class="item-card" onclick="abrirDetalhe('os',${item.id})">
       <div class="item-top">
         <div>
           <div class="item-title">${numero}${item.cliente}</div>
@@ -346,13 +320,6 @@ function renderLista(){
 }
 
 const STATUS_OPCOES = {
-  chamado: [
-    {v:'novo',label:'Novo'},
-    {v:'atribuido',label:'Atribuído'},
-    {v:'andamento',label:'Em andamento'},
-    {v:'concluido',label:'Concluído'},
-    {v:'cancelado',label:'Cancelado'},
-  ],
   os: [
     {v:'aberta',label:'Aberta'},
     {v:'andamento',label:'Em andamento'},
@@ -362,11 +329,11 @@ const STATUS_OPCOES = {
 };
 
 function abrirDetalhe(tipo,id){
-  const item = (tipo==='chamado' ? _chamados : _os).find(x=>x.id==id);
+  const item = _os.find(x=>x.id==id);
   if(!item) return;
-  _itemDetalheAberto = { tipo, id };
+  _itemDetalheAberto = { tipo:'os', id };
 
-  document.getElementById('det-titulo').textContent = tipo==='os' ? `OS #${String(item.numero||0).padStart(4,'0')} — ${item.cliente}` : `Chamado — ${item.cliente}`;
+  document.getElementById('det-titulo').textContent = `OS #${String(item.numero||0).padStart(4,'0')} — ${item.cliente}`;
   document.getElementById('det-cliente').textContent = item.cliente||'—';
   document.getElementById('det-telefone').textContent = item.telefone||'—';
   document.getElementById('det-endereco').textContent = item.endereco||'—';
@@ -376,11 +343,11 @@ function abrirDetalhe(tipo,id){
 
   const pecasRow = document.getElementById('det-pecas-row');
   const obsRow = document.getElementById('det-obs-row');
-  if(tipo==='os' && item.pecas){ pecasRow.style.display=''; document.getElementById('det-pecas').textContent=item.pecas; } else pecasRow.style.display='none';
-  if(tipo==='os' && item.obs){ obsRow.style.display=''; document.getElementById('det-obs').textContent=item.obs; } else obsRow.style.display='none';
+  if(item.pecas){ pecasRow.style.display=''; document.getElementById('det-pecas').textContent=item.pecas; } else pecasRow.style.display='none';
+  if(item.obs){ obsRow.style.display=''; document.getElementById('det-obs').textContent=item.obs; } else obsRow.style.display='none';
 
   const sel = document.getElementById('det-status-select');
-  sel.innerHTML = STATUS_OPCOES[tipo].map(o=>`<option value="${o.v}" ${o.v===item.status?'selected':''}>${o.label}</option>`).join('');
+  sel.innerHTML = STATUS_OPCOES.os.map(o=>`<option value="${o.v}" ${o.v===item.status?'selected':''}>${o.label}</option>`).join('');
 
   document.getElementById('modal-detalhe').classList.add('open');
 }
@@ -392,12 +359,11 @@ function fecharDetalhe(){
 
 async function salvarStatusDetalhe(){
   if(!_itemDetalheAberto) return;
-  const { tipo, id } = _itemDetalheAberto;
+  const { id } = _itemDetalheAberto;
   const novoStatus = document.getElementById('det-status-select').value;
-  const table = tipo==='chamado' ? 'campo_chamados' : 'campo_os';
 
   loading(true);
-  const { error } = await sb.from(table).update({ status: novoStatus }).eq('id', id);
+  const { error } = await sb.from('campo_os').update({ status: novoStatus }).eq('id', id);
   loading(false);
 
   if(error){ toast('Erro: '+error.message); return; }
