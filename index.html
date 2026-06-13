@@ -115,6 +115,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .sidebar.collapsed .nav-item .nav-label{opacity:0;max-width:0}
 .sidebar.collapsed .nav-item{justify-content:center;padding:10px 0}
 .nav-item .nav-badge{margin-left:auto;font-size:9px;font-weight:700;background:rgba(255,255,255,0.15);padding:2px 6px;border-radius:10px;flex-shrink:0;transition:opacity 0.18s}
+.nav-item .nav-badge.warn{background:var(--warn)}
 .nav-item.active .nav-badge{background:rgba(255,255,255,0.25)}
 .sidebar.collapsed .nav-item .nav-badge{opacity:0;width:0;overflow:hidden;padding:0;margin:0}
 
@@ -1304,6 +1305,8 @@ body:not(.valores-ocultos) .val-monetario{
 #page-usuarios.active{display:block}
 #page-config{display:none}
 #page-config.active{display:block}
+#page-cp-chamados,#page-cp-os,#page-cp-tecnicos,#page-cp-estoque{display:none}
+#page-cp-chamados.active,#page-cp-os.active,#page-cp-tecnicos.active,#page-cp-estoque.active{display:block}
 
 /* ---------- Permissões por perfil ---------- */
 /* Visualizador: somente leitura - sem criar/editar/excluir */
@@ -1323,6 +1326,81 @@ body.perfil-operador .action-btn.del,
 body.perfil-operador #nav-usuarios,
 body.perfil-operador #nav-config,
 body.perfil-operador #nav-sec-admin{display:none !important}
+
+/* ============================================================
+   MÓDULO CAMPO (Chamados/OS/Técnicos/Estoque)
+   ============================================================ */
+.cp-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.cp-kpi-grid.trio{grid-template-columns:repeat(3,1fr)}
+@media(max-width:1000px){.cp-kpi-grid{grid-template-columns:1fr 1fr}.cp-kpi-grid.trio{grid-template-columns:1fr 1fr}}
+.cp-kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden}
+.cp-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:12px 12px 0 0}
+.cp-kpi.azul::before{background:linear-gradient(90deg,#1A5CA0,#4A8FD9)}
+.cp-kpi.verde::before{background:linear-gradient(90deg,var(--accent),#43C47A)}
+.cp-kpi.laranja::before{background:linear-gradient(90deg,#C25A00,#E07A20)}
+.cp-kpi.vermelho::before{background:linear-gradient(90deg,var(--danger),#E07060)}
+.cp-kpi.roxo::before{background:linear-gradient(90deg,#6B2FBB,#9B5FEB)}
+.cp-kpi-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.cp-kpi-ico{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.cp-kpi-num{font-size:28px;font-weight:700;color:var(--text);line-height:1}
+.cp-kpi-lbl{font-size:11px;color:var(--text3);margin-top:3px}
+.cp-kpi-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px}
+.cp-kb-ok{background:var(--accent2);color:var(--accent)}
+.cp-kb-warn{background:var(--warn-bg);color:var(--warn)}
+.cp-kb-danger{background:var(--danger-bg);color:var(--danger)}
+.cp-kb-info{background:var(--info-bg);color:var(--info)}
+
+.cp-card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.cp-card-title{font-size:13px;font-weight:600;color:var(--text)}
+
+.cp-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.cp-tbl th{padding:9px 14px;text-align:left;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);background:var(--surface2);white-space:nowrap}
+.cp-tbl td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+.cp-tbl tr:last-child td{border-bottom:none}
+.cp-tbl tbody tr:hover td{background:var(--surface2)}
+.cp-tbl-wrap{overflow-x:auto}
+.cp-empty-row{text-align:center;padding:36px 20px;color:var(--text3);font-size:13px}
+.cp-empty-ico{font-size:28px;margin-bottom:6px}
+
+.cp-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.cp-status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.cp-st-novo{background:var(--info-bg);color:var(--info)}
+.cp-st-atribuido{background:var(--warn-bg);color:var(--warn)}
+.cp-st-andamento{background:rgba(107,47,187,0.1);color:#6B2FBB}
+.cp-st-concluido{background:var(--accent2);color:var(--accent)}
+.cp-st-cancelado{background:var(--danger-bg);color:var(--danger)}
+body.dark-mode .cp-st-andamento{background:rgba(155,95,235,0.15);color:#9B5FEB}
+.cp-prio{display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px}
+.cp-prio-alta{background:var(--danger-bg);color:var(--danger)}
+.cp-prio-media{background:var(--warn-bg);color:var(--warn)}
+.cp-prio-baixa{background:var(--accent2);color:var(--accent)}
+
+.cp-ebar-wrap{width:70px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
+.cp-ebar{height:100%;border-radius:3px}
+.cp-ebar-ok{background:var(--accent)}
+.cp-ebar-low{background:var(--warn)}
+.cp-ebar-out{background:var(--danger)}
+
+.cp-avatar-sm{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+
+.cp-form-input,.cp-form-select{padding:7px 10px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;transition:border-color .13s;width:100%}
+.cp-form-input:focus,.cp-form-select:focus{outline:none;border-color:var(--accent)}
+textarea.cp-form-input{resize:vertical}
+
+.cp-search-input{padding:6px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-family:inherit;width:200px}
+.cp-search-input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.cp-filter-select{padding:5px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit}
+.cp-filter-select:focus{outline:none;border-color:var(--accent)}
+
+.cp-info-box{border-radius:8px;padding:10px 13px;font-size:12px;margin-top:4px}
+.cp-info-box.info{background:var(--info-bg);color:var(--info);border:1px solid rgba(26,92,160,.15)}
+.cp-info-box.warn{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(138,98,0,.15)}
+.cp-info-box.danger{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(194,59,42,.15)}
+
+.btn-sm{padding:4px 10px;font-size:11px;border-radius:6px}
+.btn-danger{border-color:var(--danger);color:var(--danger)}
+.btn-danger:hover{background:var(--danger-bg)}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1502,6 +1580,25 @@ body.perfil-operador #nav-sec-admin{display:none !important}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
       <span class="nav-label">Plano de Contas</span>
     </button>
+    <div class="nav-section">Campo</div>
+    <button class="nav-item" data-page="cp-chamados" data-tooltip="Chamados" onclick="navTo('cp-chamados',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      <span class="nav-label">Chamados</span>
+      <span class="nav-badge" id="badge-cp-chamados" style="display:none">0</span>
+    </button>
+    <button class="nav-item" data-page="cp-os" data-tooltip="Ordens de Serviço" onclick="navTo('cp-os',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span class="nav-label">Ordens de Serviço</span>
+    </button>
+    <button class="nav-item" data-page="cp-tecnicos" data-tooltip="Técnicos" onclick="navTo('cp-tecnicos',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="nav-label">Técnicos</span>
+    </button>
+    <button class="nav-item" data-page="cp-estoque" data-tooltip="Estoque" onclick="navTo('cp-estoque',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+      <span class="nav-label">Estoque</span>
+      <span class="nav-badge warn" id="badge-cp-estoque" style="display:none">!</span>
+    </button>
     <div class="nav-section" id="nav-sec-admin" style="display:none">Sistema</div>
     <button class="nav-item" id="nav-usuarios" data-page="usuarios" data-tooltip="Usuários" onclick="navTo('usuarios',this)" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -1591,6 +1688,227 @@ body.perfil-operador #nav-sec-admin{display:none !important}
         </div>
       </div>
     </div>
+
+    <!-- ====== CAMPO: CHAMADOS ====== -->
+    <div class="page" id="page-cp-chamados">
+      <div class="cp-kpi-grid">
+        <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📞</div><span class="cp-kpi-badge cp-kb-info">Novos</span></div><div class="cp-kpi-num" id="kpi-ch-novos">—</div><div class="cp-kpi-lbl">Chamados Novos</div></div>
+        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">⏳</div><span class="cp-kpi-badge cp-kb-warn">Sem técnico</span></div><div class="cp-kpi-num" id="kpi-ch-aguard">—</div><div class="cp-kpi-lbl">Aguardando</div></div>
+        <div class="cp-kpi roxo"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:rgba(107,47,187,.1)">🔧</div></div><div class="cp-kpi-num" id="kpi-ch-andamento">—</div><div class="cp-kpi-lbl">Em Andamento</div></div>
+        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">✅</div><span class="cp-kpi-badge cp-kb-ok">Hoje</span></div><div class="cp-kpi-num" id="kpi-ch-hoje">—</div><div class="cp-kpi-lbl">Concluídos Hoje</div></div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="cp-card-header">
+          <span class="cp-card-title">📋 Todos os Chamados</span>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+            <input class="cp-search-input" type="text" placeholder="Buscar…" oninput="renderChamados()" id="ch-search">
+            <select class="cp-filter-select" onchange="renderChamados()" id="ch-fil-status">
+              <option value="">Todos status</option>
+              <option value="novo">Novo</option>
+              <option value="atribuido">Atribuído</option>
+              <option value="andamento">Em andamento</option>
+              <option value="concluido">Concluído</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            <button class="btn btn-primary perm-edit" onclick="abrirModalChamado()">+ Novo Chamado</button>
+          </div>
+        </div>
+        <div class="cp-tbl-wrap">
+          <table class="cp-tbl">
+            <thead><tr><th>#</th><th>Cliente</th><th>Problema</th><th>Prioridade</th><th>Técnico</th><th>Status</th><th>Data</th><th>Ações</th></tr></thead>
+            <tbody id="tb-chamados"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== CAMPO: ORDENS DE SERVIÇO ====== -->
+    <div class="page" id="page-cp-os">
+      <div class="cp-kpi-grid">
+        <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📋</div></div><div class="cp-kpi-num" id="kpi-os-abertas">—</div><div class="cp-kpi-lbl">OS Abertas</div></div>
+        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">🔧</div></div><div class="cp-kpi-num" id="kpi-os-andamento">—</div><div class="cp-kpi-lbl">Em Andamento</div></div>
+        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">✅</div></div><div class="cp-kpi-num" id="kpi-os-concluidas">—</div><div class="cp-kpi-lbl">Concluídas</div></div>
+        <div class="cp-kpi roxo"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:rgba(107,47,187,.1)">📅</div></div><div class="cp-kpi-num" id="kpi-os-hoje">—</div><div class="cp-kpi-lbl">Abertas Hoje</div></div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="cp-card-header">
+          <span class="cp-card-title">🔧 Ordens de Serviço</span>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+            <input class="cp-search-input" type="text" placeholder="Buscar OS, cliente…" oninput="renderOS()" id="os-search">
+            <select class="cp-filter-select" onchange="renderOS()" id="os-fil-status">
+              <option value="">Todos status</option>
+              <option value="aberta">Aberta</option>
+              <option value="andamento">Em andamento</option>
+              <option value="concluida">Concluída</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+            <select class="cp-filter-select" onchange="renderOS()" id="os-fil-tec">
+              <option value="">Todos técnicos</option>
+            </select>
+            <button class="btn btn-primary perm-edit" onclick="abrirModalOS()">+ Nova OS</button>
+          </div>
+        </div>
+        <div class="cp-tbl-wrap">
+          <table class="cp-tbl">
+            <thead><tr><th>Nº</th><th>Cliente</th><th>Endereço</th><th>Serviço</th><th>Técnico</th><th>Prioridade</th><th>Status</th><th>Data</th><th>Ações</th></tr></thead>
+            <tbody id="tb-os"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== CAMPO: TÉCNICOS ====== -->
+    <div class="page" id="page-cp-tecnicos">
+      <div class="cp-kpi-grid trio">
+        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">👷</div><span class="cp-kpi-badge cp-kb-ok">Ativos</span></div><div class="cp-kpi-num" id="kpi-tec-total">—</div><div class="cp-kpi-lbl">Técnicos Cadastrados</div></div>
+        <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📋</div></div><div class="cp-kpi-num" id="kpi-tec-os">—</div><div class="cp-kpi-lbl">OS em Aberto</div></div>
+        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">⚠️</div></div><div class="cp-kpi-num" id="kpi-tec-ociosos">—</div><div class="cp-kpi-lbl">Sem OS Hoje</div></div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="cp-card-header">
+          <span class="cp-card-title">👥 Técnicos de Campo</span>
+          <button class="btn btn-primary perm-edit" onclick="abrirModalTecnico()">+ Novo Técnico</button>
+        </div>
+        <div class="cp-tbl-wrap">
+          <table class="cp-tbl">
+            <thead><tr><th>Técnico</th><th>E-mail (login)</th><th>Telefone</th><th>OS Abertas</th><th>OS Concluídas</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="tb-tecnicos"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== CAMPO: ESTOQUE ====== -->
+    <div class="page" id="page-cp-estoque">
+      <div class="cp-kpi-grid">
+        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">📦</div></div><div class="cp-kpi-num" id="kpi-est-total">—</div><div class="cp-kpi-lbl">Itens Cadastrados</div></div>
+        <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">✅</div></div><div class="cp-kpi-num" id="kpi-est-ok">—</div><div class="cp-kpi-lbl">Itens OK</div></div>
+        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">⚠️</div></div><div class="cp-kpi-num" id="kpi-est-baixo">—</div><div class="cp-kpi-lbl">Estoque Baixo</div></div>
+        <div class="cp-kpi vermelho"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--danger-bg)">🚨</div></div><div class="cp-kpi-num" id="kpi-est-zero" style="color:var(--danger)">—</div><div class="cp-kpi-lbl">Zerados</div></div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="cp-card-header">
+          <span class="cp-card-title">📦 Estoque de Peças</span>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+            <input class="cp-search-input" type="text" placeholder="Buscar peça ou código…" oninput="renderEstoque()" id="est-search">
+            <select class="cp-filter-select" onchange="renderEstoque()" id="est-fil">
+              <option value="">Todos</option>
+              <option value="ok">OK</option>
+              <option value="baixo">Estoque baixo</option>
+              <option value="zero">Zerado</option>
+            </select>
+            <button class="btn btn-primary perm-edit" onclick="abrirModalPeca()">+ Nova Peça</button>
+          </div>
+        </div>
+        <div class="cp-tbl-wrap">
+          <table class="cp-tbl">
+            <thead><tr><th>Peça</th><th>Código</th><th>Categoria</th><th>Qtd Atual</th><th>Mínimo</th><th>Nível</th><th>Ações</th></tr></thead>
+            <tbody id="tb-estoque"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAIS CAMPO -->
+    <div class="modal-overlay" id="modal-chamado">
+      <div class="modal md">
+        <div class="modal-header">
+          <span class="modal-title" id="tit-chamado">Novo Chamado</span>
+          <button class="modal-close" onclick="fecharModal('modal-chamado')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="ch-id">
+          <div class="form-grid"><div class="form-group"><label class="form-label">Cliente<span>*</span></label><input class="cp-form-input" id="ch-cliente" placeholder="Nome do cliente"></div><div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="ch-telefone" placeholder="(xx) xxxxx-xxxx"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Endereço</label><input class="cp-form-input" id="ch-endereco" placeholder="Rua, número, bairro"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Problema<span>*</span></label><textarea class="cp-form-input" id="ch-descricao" rows="3" placeholder="Descreva o problema…"></textarea></div></div>
+          <div class="form-grid trio">
+            <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="ch-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
+            <div class="form-group"><label class="form-label">Técnico</label><select class="cp-form-select" id="ch-tecnico"><option value="">Sem técnico</option></select></div>
+            <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="ch-status"><option value="novo">Novo</option><option value="atribuido">Atribuído</option><option value="andamento">Em andamento</option><option value="concluido">Concluído</option><option value="cancelado">Cancelado</option></select></div>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-chamado')">Cancelar</button><button class="btn btn-primary" onclick="salvarChamado()">Salvar</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-os">
+      <div class="modal md">
+        <div class="modal-header">
+          <span class="modal-title" id="tit-os">Nova Ordem de Serviço</span>
+          <button class="modal-close" onclick="fecharModal('modal-os')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="os-id">
+          <div class="form-grid"><div class="form-group"><label class="form-label">Cliente<span>*</span></label><input class="cp-form-input" id="os-cliente" placeholder="Nome do cliente"></div><div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="os-telefone" placeholder="(xx) xxxxx-xxxx"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Endereço<span>*</span></label><input class="cp-form-input" id="os-endereco" placeholder="Rua, número, bairro, complemento"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Serviço<span>*</span></label><textarea class="cp-form-input" id="os-descricao" rows="3" placeholder="Descreva o serviço…"></textarea></div></div>
+          <div class="form-grid trio">
+            <div class="form-group"><label class="form-label">Técnico<span>*</span></label><select class="cp-form-select" id="os-tecnico"><option value="">Selecione…</option></select></div>
+            <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="os-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
+            <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="os-status"><option value="aberta">Aberta</option><option value="andamento">Em andamento</option><option value="concluida">Concluída</option><option value="cancelada">Cancelada</option></select></div>
+          </div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Data</label><input class="cp-form-input" type="date" id="os-data"></div><div class="form-group"><label class="form-label">Peças Utilizadas</label><input class="cp-form-input" id="os-pecas" placeholder="Ex: Cabo UTP 10m, ONU…"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Observações</label><textarea class="cp-form-input" id="os-obs" rows="2" placeholder="Observações adicionais…"></textarea></div></div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-os')">Cancelar</button><button class="btn btn-primary" onclick="salvarOS()">Salvar</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-tecnico">
+      <div class="modal md">
+        <div class="modal-header">
+          <span class="modal-title" id="tit-tecnico">Novo Técnico</span>
+          <button class="modal-close" onclick="fecharModal('modal-tecnico')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="tec-id">
+          <input type="hidden" id="tec-user-id">
+          <div class="form-grid"><div class="form-group"><label class="form-label">Nome Completo<span>*</span></label><input class="cp-form-input" id="tec-nome" placeholder="Nome do técnico"></div><div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="tec-telefone" placeholder="(xx) xxxxx-xxxx"></div></div>
+          <div class="form-grid"><div class="form-group" id="tec-email-group"><label class="form-label">E-mail (login)<span>*</span></label><input class="cp-form-input" type="email" id="tec-email" placeholder="tecnico@email.com"></div><div class="form-group" id="tec-senha-group"><label class="form-label">Senha<span>*</span></label><input class="cp-form-input" type="password" id="tec-senha" placeholder="Senha de acesso"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="tec-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></div></div>
+          <div class="cp-info-box info" id="tec-info-box">ℹ️ O técnico usará este e-mail e senha para acessar a área dele em campo.html.</div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-tecnico')">Cancelar</button><button class="btn btn-primary" onclick="salvarTecnico()">Salvar</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-peca">
+      <div class="modal sm">
+        <div class="modal-header">
+          <span class="modal-title" id="tit-peca">Nova Peça</span>
+          <button class="modal-close" onclick="fecharModal('modal-peca')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="peca-id">
+          <div class="form-grid"><div class="form-group"><label class="form-label">Nome<span>*</span></label><input class="cp-form-input" id="peca-nome" placeholder="Ex: ONU GPON 1 porta"></div><div class="form-group"><label class="form-label">Código (SKU)</label><input class="cp-form-input" id="peca-sku" placeholder="Ex: ONU-GP1P"></div></div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Categoria</label><input class="cp-form-input" id="peca-categoria" placeholder="Ex: ONUs, Cabos…"></div><div class="form-group"><label class="form-label">Unidade</label><select class="cp-form-select" id="peca-unidade"><option>unid.</option><option>metro</option><option>rolo</option><option>par</option><option>cx</option></select></div></div>
+          <div class="form-grid trio">
+            <div class="form-group"><label class="form-label">Qtd Atual<span>*</span></label><input class="cp-form-input" type="number" id="peca-qtd" placeholder="0" min="0"></div>
+            <div class="form-group"><label class="form-label">Qtd Mínima</label><input class="cp-form-input" type="number" id="peca-min" placeholder="0" min="0"></div>
+            <div class="form-group"><label class="form-label">Valor Unit. R$</label><input class="cp-form-input" type="number" id="peca-valor" placeholder="0.00" step="0.01" min="0"></div>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-peca')">Cancelar</button><button class="btn btn-primary" onclick="salvarPeca()">Salvar</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-mov">
+      <div class="modal sm">
+        <div class="modal-header">
+          <span class="modal-title">Movimentar Estoque</span>
+          <button class="modal-close" onclick="fecharModal('modal-mov')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="mov-id">
+          <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:14px" id="mov-nome">—</div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Tipo</label><select class="cp-form-select" id="mov-tipo"><option value="entrada">📥 Entrada (adicionar)</option><option value="saida">📤 Saída (retirar)</option></select></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Quantidade<span>*</span></label><input class="cp-form-input" type="number" id="mov-qtd" placeholder="0" min="1"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo / OS</label><input class="cp-form-input" id="mov-motivo" placeholder="Ex: OS #0001, compra fornecedor…"></div></div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-mov')">Cancelar</button><button class="btn btn-primary" onclick="salvarMov()">Confirmar</button></div>
+      </div>
+    </div>
+
 
     <!-- MODAL NOVO USUÁRIO (dentro do sistema) -->
     <div class="modal-overlay" id="modal-novo-usuario">
@@ -1830,7 +2148,7 @@ body.perfil-operador #nav-sec-admin{display:none !important}
         <div class="table-scroll">
           <table class="t" style="min-width:1050px">
             <thead><tr>
-              <th onclick="sortDiario('lin')">#</th><th onclick="sortDiario('status')">Status</th><th onclick="sortDiario('data')">Vencimento</th><th onclick="sortDiario('dataEfetivacao')">Efetivação</th>
+              <th onclick="sortDiario('lin')">#</th><th onclick="sortDiario('status')">Status</th><th onclick="sortDiario('data')">Vencimento</th><th onclick="sortDiario('dataEfetivacao')">Data Pagamento</th>
               <th>Plano de Contas</th><th>Cliente</th><th>Fornecedor</th><th>Histórico</th>
               <th onclick="sortDiario('aReceber')">A Receber</th><th onclick="sortDiario('recebido')">Recebido</th>
               <th onclick="sortDiario('aPagar')">A Pagar</th><th onclick="sortDiario('pago')">Pago</th>
@@ -2850,6 +3168,10 @@ const PAGE_META={
   plano:{title:'Plano de Contas',sub:'Estrutura hierárquica de contas'},
   usuarios:{title:'Usuários do Sistema',sub:'Gerenciar acessos e permissões'},
   config:{title:'Configurações',sub:'Backup e preferências do sistema'},
+  'cp-chamados':{title:'Chamados',sub:'Gerenciar e distribuir chamados de suporte'},
+  'cp-os':{title:'Ordens de Serviço',sub:'Controle de OS por técnico'},
+  'cp-tecnicos':{title:'Técnicos',sub:'Cadastro e gestão de técnicos de campo'},
+  'cp-estoque':{title:'Estoque de Peças',sub:'Controle de peças e materiais'},
 };
 
 function navTo(page,btn){
@@ -2889,7 +3211,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
-  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios};
+  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque};
   renders[page]?.();
   atualizarBadges();
 }
@@ -6313,6 +6635,8 @@ async function entrarNoSistema(user){
   document.getElementById('nav-config').style.display='';
   renderPainel();
   atualizarBadges();
+  // Carrega dados do módulo de campo (chamados/OS/técnicos/estoque)
+  carregarCampo();
   // Inicia monitor de inatividade
   iniciarMonitorInatividade();
 }
@@ -6582,6 +6906,513 @@ function toggleSidebar(){
     }
   }
 })();
+
+// ============================================================
+// MÓDULO CAMPO — Chamados / Ordens de Serviço / Técnicos / Estoque
+// ============================================================
+let _cpTecnicos = [];
+let _cpChamados = [];
+let _cpOS       = [];
+let _cpEstoque  = [];
+
+function cpHoje(){ return new Date().toISOString().slice(0,10); }
+function cpFmtData(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
+function cpIniciais(n){ return (n||'?').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
+const CP_CORES = ['#1A5C3A','#1A5CA0','#8A6200','#6B2FBB','#C25A00','#1A6C8A'];
+function cpCor(i){ return CP_CORES[i % CP_CORES.length]; }
+
+// ---------- Carregamento ----------
+async function carregarCampo(){
+  try{
+    const [{data:tecs},{data:chs},{data:oss},{data:est}] = await Promise.all([
+      sbClient.from('campo_tecnicos').select('*').order('nome'),
+      sbClient.from('campo_chamados').select('*').order('created_at',{ascending:false}),
+      sbClient.from('campo_os').select('*').order('numero',{ascending:false}),
+      sbClient.from('campo_estoque').select('*').order('nome'),
+    ]);
+    _cpTecnicos = tecs || [];
+    _cpChamados = chs  || [];
+    _cpOS       = oss  || [];
+    _cpEstoque  = est  || [];
+    atualizarBadgesCampo();
+  }catch(e){
+    console.error('Erro ao carregar módulo campo:', e);
+  }
+}
+
+function atualizarBadgesCampo(){
+  const novos = _cpChamados.filter(c=>c.status==='novo').length;
+  const bdCh = document.getElementById('badge-cp-chamados');
+  if(bdCh){ bdCh.style.display = novos>0?'':'none'; bdCh.textContent = novos; }
+  const alertas = _cpEstoque.filter(p=>p.qtd_atual<=p.qtd_minima).length;
+  const bdEst = document.getElementById('badge-cp-estoque');
+  if(bdEst) bdEst.style.display = alertas>0?'':'none';
+}
+
+function popularSelectsTecnicosCampo(){
+  const ativos = _cpTecnicos.filter(t=>t.status==='ativo');
+  ['ch-tecnico','os-tecnico','os-fil-tec'].forEach(selId=>{
+    const sel = document.getElementById(selId);
+    if(!sel) return;
+    const val = sel.value;
+    const primeiro = selId==='os-fil-tec' ? '<option value="">Todos técnicos</option>'
+      : selId==='ch-tecnico' ? '<option value="">Sem técnico</option>'
+      : '<option value="">Selecione…</option>';
+    sel.innerHTML = primeiro + ativos.map(t=>`<option value="${t.id}" ${t.id==val?'selected':''}>${t.nome}</option>`).join('');
+  });
+}
+
+// ============================================================
+// TÉCNICOS
+// ============================================================
+function abrirModalTecnico(id){
+  document.getElementById('tec-id').value = id || '';
+  document.getElementById('tec-user-id').value = '';
+  document.getElementById('tit-tecnico').textContent = id ? 'Editar Técnico' : 'Novo Técnico';
+  const emailGroup = document.getElementById('tec-email-group');
+  const senhaGroup = document.getElementById('tec-senha-group');
+  const infoBox = document.getElementById('tec-info-box');
+  if(id){
+    const t = _cpTecnicos.find(x=>x.id==id);
+    if(t){
+      document.getElementById('tec-nome').value = t.nome;
+      document.getElementById('tec-telefone').value = t.telefone||'';
+      document.getElementById('tec-status').value = t.status;
+      document.getElementById('tec-user-id').value = t.user_id||'';
+      document.getElementById('tec-email').value = '';
+      document.getElementById('tec-senha').value = '';
+    }
+    // Ao editar, login já existe — esconde campos de criação de login
+    emailGroup.style.display='none';
+    senhaGroup.style.display='none';
+    infoBox.style.display='none';
+  } else {
+    ['tec-nome','tec-telefone','tec-email','tec-senha'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('tec-status').value='ativo';
+    emailGroup.style.display='';
+    senhaGroup.style.display='';
+    infoBox.style.display='';
+  }
+  abrirModal('modal-tecnico');
+}
+
+async function salvarTecnico(){
+  const nome = document.getElementById('tec-nome').value.trim();
+  const telefone = document.getElementById('tec-telefone').value.trim();
+  const status = document.getElementById('tec-status').value;
+  const id = document.getElementById('tec-id').value;
+
+  if(!nome){ showToast('Informe o nome do técnico.', true); return; }
+
+  if(id){
+    // Edição: apenas atualiza dados do técnico (sem alterar login)
+    const { error } = await sbClient.from('campo_tecnicos').update({ nome, telefone, status }).eq('id', id);
+    if(error){ showToast('Erro: '+error.message, true); return; }
+    fecharModal('modal-tecnico');
+    await carregarCampo();
+    renderTecnicos();
+    showToast('Técnico atualizado!');
+    return;
+  }
+
+  // Novo técnico: cria login no Supabase Auth (perfil 'tecnico') + registro em campo_tecnicos
+  const email = document.getElementById('tec-email').value.trim().toLowerCase();
+  const senha = document.getElementById('tec-senha').value;
+  if(!email||!senha){ showToast('Informe e-mail e senha de acesso.', true); return; }
+  if(senha.length<6){ showToast('A senha precisa ter pelo menos 6 caracteres.', true); return; }
+
+  const { data, error: signErr } = await sbClient.auth.signUp({
+    email, password: senha,
+    options: { data: { nome } }
+  });
+  if(signErr){ showToast('Erro ao criar login: '+signErr.message, true); return; }
+
+  if(data.user){
+    await sbClient.from('perfis').update({ nome, perfil:'tecnico' }).eq('id', data.user.id);
+  }
+
+  const { error } = await sbClient.from('campo_tecnicos').insert({
+    nome, telefone, status, user_id: data.user?.id || null,
+  });
+  if(error){ showToast('Erro: '+error.message, true); return; }
+
+  fecharModal('modal-tecnico');
+  await carregarCampo();
+  renderTecnicos();
+  showToast('Técnico cadastrado! Ele já pode acessar campo.html com o e-mail/senha informados.');
+}
+
+async function excluirTecnico(id){
+  if(!confirm('Excluir este técnico? O login dele não será removido automaticamente — exclua também em Authentication > Users no Supabase, se necessário.'))return;
+  const { error } = await sbClient.from('campo_tecnicos').delete().eq('id', id);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  await carregarCampo();
+  renderTecnicos();
+  showToast('Técnico removido.');
+}
+
+function renderTecnicos(){
+  const tb = document.getElementById('tb-tecnicos');
+  if(!tb) return;
+  const hoje_ = cpHoje();
+  document.getElementById('kpi-tec-total').textContent = _cpTecnicos.filter(t=>t.status==='ativo').length;
+  document.getElementById('kpi-tec-os').textContent = _cpOS.filter(o=>['aberta','andamento'].includes(o.status)).length;
+  document.getElementById('kpi-tec-ociosos').textContent = _cpTecnicos.filter(t=>t.status==='ativo' && !_cpOS.some(o=>o.tecnico_id==t.id && o.data===hoje_)).length;
+
+  if(!_cpTecnicos.length){ tb.innerHTML=`<tr><td colspan="7" class="cp-empty-row"><div class="cp-empty-ico">👷</div>Nenhum técnico cadastrado</td></tr>`; return; }
+
+  tb.innerHTML = _cpTecnicos.map((t,i)=>{
+    const osAb = _cpOS.filter(o=>o.tecnico_id==t.id && ['aberta','andamento'].includes(o.status)).length;
+    const osCo = _cpOS.filter(o=>o.tecnico_id==t.id && o.status==='concluida').length;
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:9px">
+        <div class="cp-avatar-sm" style="background:${cpCor(i)}">${cpIniciais(t.nome)}</div>
+        <div><div style="font-weight:600">${t.nome}</div><div style="font-size:11px;color:var(--text3)">${t.telefone||'—'}</div></div>
+      </div></td>
+      <td><code style="font-size:12px;background:var(--surface2);padding:2px 7px;border-radius:5px">${t.user_id?'vinculado':'—'}</code></td>
+      <td style="font-size:12px">${t.telefone||'—'}</td>
+      <td><span style="font-weight:600;color:${osAb>0?'var(--warn)':'var(--text3)'}">${osAb}</span></td>
+      <td><span style="font-weight:600;color:var(--accent)">${osCo}</span></td>
+      <td>${t.status==='ativo'
+        ?'<span class="cp-status cp-st-concluido"><span class="cp-status-dot"></span>Ativo</span>'
+        :'<span class="cp-status cp-st-cancelado"><span class="cp-status-dot"></span>Inativo</span>'}</td>
+      <td><div class="action-btns">
+        <button class="action-btn" onclick="abrirModalTecnico(${t.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="action-btn del" onclick="excluirTecnico(${t.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// CHAMADOS
+// ============================================================
+function abrirModalChamado(id){
+  popularSelectsTecnicosCampo();
+  document.getElementById('ch-id').value = id || '';
+  document.getElementById('tit-chamado').textContent = id ? 'Editar Chamado' : 'Novo Chamado';
+  if(id){
+    const c = _cpChamados.find(x=>x.id==id);
+    if(c){
+      document.getElementById('ch-cliente').value = c.cliente;
+      document.getElementById('ch-telefone').value = c.telefone||'';
+      document.getElementById('ch-endereco').value = c.endereco||'';
+      document.getElementById('ch-descricao').value = c.descricao;
+      document.getElementById('ch-prioridade').value = c.prioridade;
+      document.getElementById('ch-tecnico').value = c.tecnico_id||'';
+      document.getElementById('ch-status').value = c.status;
+    }
+  } else {
+    ['ch-cliente','ch-telefone','ch-endereco','ch-descricao'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('ch-prioridade').value='media';
+    document.getElementById('ch-tecnico').value='';
+    document.getElementById('ch-status').value='novo';
+  }
+  abrirModal('modal-chamado');
+}
+
+async function salvarChamado(){
+  const cliente = document.getElementById('ch-cliente').value.trim();
+  const descricao = document.getElementById('ch-descricao').value.trim();
+  if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return; }
+  const id = document.getElementById('ch-id').value;
+  const tecId = document.getElementById('ch-tecnico').value || null;
+  const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '' : '';
+  const obj = { cliente, telefone:document.getElementById('ch-telefone').value.trim(), endereco:document.getElementById('ch-endereco').value.trim(), descricao, prioridade:document.getElementById('ch-prioridade').value, tecnico_id:tecId, tecnico_nome:tecNome, status:document.getElementById('ch-status').value };
+  const { error } = id
+    ? await sbClient.from('campo_chamados').update(obj).eq('id', id)
+    : await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() });
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  fecharModal('modal-chamado');
+  await carregarCampo();
+  renderChamados();
+  showToast(id?'Chamado atualizado!':'Chamado registrado!');
+}
+
+async function excluirChamado(id){
+  if(!confirm('Excluir este chamado?'))return;
+  const { error } = await sbClient.from('campo_chamados').delete().eq('id', id);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  await carregarCampo();
+  renderChamados();
+  showToast('Chamado removido.');
+}
+
+function renderChamados(){
+  const tb = document.getElementById('tb-chamados');
+  if(!tb) return;
+  const busca = (document.getElementById('ch-search')?.value||'').toLowerCase();
+  const filSt = document.getElementById('ch-fil-status')?.value||'';
+  const hoje_ = cpHoje();
+
+  popularSelectsTecnicosCampo();
+
+  document.getElementById('kpi-ch-novos').textContent = _cpChamados.filter(c=>c.status==='novo').length;
+  document.getElementById('kpi-ch-aguard').textContent = _cpChamados.filter(c=>!c.tecnico_id && !['concluido','cancelado'].includes(c.status)).length;
+  document.getElementById('kpi-ch-andamento').textContent = _cpChamados.filter(c=>c.status==='andamento').length;
+  document.getElementById('kpi-ch-hoje').textContent = _cpChamados.filter(c=>c.status==='concluido' && c.data===hoje_).length;
+
+  const lista = _cpChamados.filter(c=>{
+    const mb = !busca || c.cliente.toLowerCase().includes(busca) || c.descricao.toLowerCase().includes(busca);
+    const ms = !filSt || c.status===filSt;
+    return mb && ms;
+  });
+
+  if(!lista.length){ tb.innerHTML=`<tr><td colspan="8" class="cp-empty-row"><div class="cp-empty-ico">📭</div>Nenhum chamado encontrado</td></tr>`; return; }
+
+  const stMap = { novo:['cp-st-novo','Novo'], atribuido:['cp-st-atribuido','Atribuído'], andamento:['cp-st-andamento','Em andamento'], concluido:['cp-st-concluido','Concluído'], cancelado:['cp-st-cancelado','Cancelado'] };
+  const prMap = { alta:'cp-prio-alta', media:'cp-prio-media', baixa:'cp-prio-baixa' };
+
+  tb.innerHTML = lista.map(c=>{
+    const [stCl,stLb] = stMap[c.status]||['cp-st-novo','Novo'];
+    return `<tr>
+      <td style="font-size:11px;color:var(--text3);font-weight:600">#${String(c.id).slice(-5).toUpperCase()}</td>
+      <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}</div></td>
+      <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${c.descricao}">${c.descricao}</td>
+      <td><span class="cp-prio ${prMap[c.prioridade]||'cp-prio-media'}">${(c.prioridade||'media').charAt(0).toUpperCase()+(c.prioridade||'media').slice(1)}</span></td>
+      <td style="font-size:12px">${c.tecnico_nome||'<span style="color:var(--text3)">—</span>'}</td>
+      <td><span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span></td>
+      <td style="font-size:12px;color:var(--text3)">${cpFmtData(c.data)}</td>
+      <td><div class="action-btns">
+        <button class="action-btn" onclick="abrirModalChamado(${c.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="action-btn del" onclick="excluirChamado(${c.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// ORDENS DE SERVIÇO
+// ============================================================
+function cpProximoNumOS(){
+  const nums = _cpOS.map(o=>parseInt(o.numero)||0);
+  return (nums.length ? Math.max(...nums) : 0) + 1;
+}
+
+function abrirModalOS(id){
+  popularSelectsTecnicosCampo();
+  document.getElementById('os-id').value = id || '';
+  document.getElementById('tit-os').textContent = id ? 'Editar OS' : 'Nova Ordem de Serviço';
+  if(id){
+    const o = _cpOS.find(x=>x.id==id);
+    if(o){
+      document.getElementById('os-cliente').value = o.cliente;
+      document.getElementById('os-telefone').value = o.telefone||'';
+      document.getElementById('os-endereco').value = o.endereco||'';
+      document.getElementById('os-descricao').value = o.descricao;
+      document.getElementById('os-tecnico').value = o.tecnico_id||'';
+      document.getElementById('os-prioridade').value = o.prioridade;
+      document.getElementById('os-status').value = o.status;
+      document.getElementById('os-data').value = o.data||'';
+      document.getElementById('os-pecas').value = o.pecas||'';
+      document.getElementById('os-obs').value = o.obs||'';
+    }
+  } else {
+    ['os-cliente','os-telefone','os-endereco','os-descricao','os-pecas','os-obs'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('os-tecnico').value='';
+    document.getElementById('os-prioridade').value='media';
+    document.getElementById('os-status').value='aberta';
+    document.getElementById('os-data').value=cpHoje();
+  }
+  abrirModal('modal-os');
+}
+
+async function salvarOS(){
+  const cliente = document.getElementById('os-cliente').value.trim();
+  const descricao = document.getElementById('os-descricao').value.trim();
+  if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return; }
+  const id = document.getElementById('os-id').value;
+  const tecId = document.getElementById('os-tecnico').value || null;
+  const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome||'' : '';
+  const obj = { cliente, telefone:document.getElementById('os-telefone').value.trim(), endereco:document.getElementById('os-endereco').value.trim(), descricao, tecnico_id:tecId, tecnico_nome:tecNome, prioridade:document.getElementById('os-prioridade').value, status:document.getElementById('os-status').value, data:document.getElementById('os-data').value||cpHoje(), pecas:document.getElementById('os-pecas').value.trim(), obs:document.getElementById('os-obs').value.trim() };
+  if(!id) obj.numero = cpProximoNumOS();
+  const { error } = id
+    ? await sbClient.from('campo_os').update(obj).eq('id', id)
+    : await sbClient.from('campo_os').insert(obj);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  fecharModal('modal-os');
+  await carregarCampo();
+  renderOS();
+  showToast(id?'OS atualizada!':'OS criada!');
+}
+
+async function excluirOS(id){
+  if(!confirm('Excluir esta OS?'))return;
+  const { error } = await sbClient.from('campo_os').delete().eq('id', id);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  await carregarCampo();
+  renderOS();
+  showToast('OS removida.');
+}
+
+function renderOS(){
+  const tb = document.getElementById('tb-os');
+  if(!tb) return;
+  const busca = (document.getElementById('os-search')?.value||'').toLowerCase();
+  const filSt = document.getElementById('os-fil-status')?.value||'';
+  const filTec = document.getElementById('os-fil-tec')?.value||'';
+  const hoje_ = cpHoje();
+
+  popularSelectsTecnicosCampo();
+
+  document.getElementById('kpi-os-abertas').textContent = _cpOS.filter(o=>o.status==='aberta').length;
+  document.getElementById('kpi-os-andamento').textContent = _cpOS.filter(o=>o.status==='andamento').length;
+  document.getElementById('kpi-os-concluidas').textContent = _cpOS.filter(o=>o.status==='concluida').length;
+  document.getElementById('kpi-os-hoje').textContent = _cpOS.filter(o=>o.data===hoje_).length;
+
+  const lista = _cpOS.filter(o=>{
+    const mb = !busca || o.cliente.toLowerCase().includes(busca) || String(o.numero).includes(busca);
+    const ms = !filSt || o.status===filSt;
+    const mt = !filTec || String(o.tecnico_id)===filTec;
+    return mb && ms && mt;
+  });
+
+  if(!lista.length){ tb.innerHTML=`<tr><td colspan="9" class="cp-empty-row"><div class="cp-empty-ico">📋</div>Nenhuma OS encontrada</td></tr>`; return; }
+
+  const stMap = { aberta:['cp-st-novo','Aberta'], andamento:['cp-st-andamento','Em andamento'], concluida:['cp-st-concluido','Concluída'], cancelada:['cp-st-cancelado','Cancelada'] };
+  const prMap = { alta:'cp-prio-alta', media:'cp-prio-media', baixa:'cp-prio-baixa' };
+
+  tb.innerHTML = lista.map(o=>{
+    const [stCl,stLb] = stMap[o.status]||['cp-st-novo','Aberta'];
+    return `<tr>
+      <td style="font-weight:700;color:var(--accent)">#${String(o.numero||0).padStart(4,'0')}</td>
+      <td><div style="font-weight:600">${o.cliente}</div><div style="font-size:11px;color:var(--text3)">${o.telefone||''}</div></td>
+      <td style="font-size:12px;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.endereco||'—'}</td>
+      <td style="font-size:12px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${o.descricao}">${o.descricao}</td>
+      <td style="font-size:12px">${o.tecnico_nome||'<span style="color:var(--text3)">—</span>'}</td>
+      <td><span class="cp-prio ${prMap[o.prioridade]||'cp-prio-media'}">${(o.prioridade||'media').charAt(0).toUpperCase()+(o.prioridade||'media').slice(1)}</span></td>
+      <td><span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span></td>
+      <td style="font-size:12px;color:var(--text3)">${cpFmtData(o.data)}</td>
+      <td><div class="action-btns">
+        <button class="action-btn" onclick="abrirModalOS(${o.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="action-btn del" onclick="excluirOS(${o.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// ESTOQUE
+// ============================================================
+function abrirModalPeca(id){
+  document.getElementById('peca-id').value = id || '';
+  document.getElementById('tit-peca').textContent = id ? 'Editar Peça' : 'Nova Peça';
+  if(id){
+    const p = _cpEstoque.find(x=>x.id==id);
+    if(p){
+      document.getElementById('peca-nome').value = p.nome;
+      document.getElementById('peca-sku').value = p.sku||'';
+      document.getElementById('peca-categoria').value = p.categoria||'';
+      document.getElementById('peca-unidade').value = p.unidade||'unid.';
+      document.getElementById('peca-qtd').value = p.qtd_atual;
+      document.getElementById('peca-min').value = p.qtd_minima||0;
+      document.getElementById('peca-valor').value = p.valor_unitario||0;
+    }
+  } else {
+    ['peca-nome','peca-sku','peca-categoria','peca-qtd','peca-min','peca-valor'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('peca-unidade').value='unid.';
+  }
+  abrirModal('modal-peca');
+}
+
+async function salvarPeca(){
+  const nome = document.getElementById('peca-nome').value.trim();
+  if(!nome){ showToast('Informe o nome da peça.', true); return; }
+  const id = document.getElementById('peca-id').value;
+  const obj = { nome, sku:document.getElementById('peca-sku').value.trim(), categoria:document.getElementById('peca-categoria').value.trim(), unidade:document.getElementById('peca-unidade').value, qtd_atual:parseInt(document.getElementById('peca-qtd').value)||0, qtd_minima:parseInt(document.getElementById('peca-min').value)||0, valor_unitario:parseFloat(document.getElementById('peca-valor').value)||0 };
+  const { error } = id
+    ? await sbClient.from('campo_estoque').update(obj).eq('id', id)
+    : await sbClient.from('campo_estoque').insert(obj);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  fecharModal('modal-peca');
+  await carregarCampo();
+  renderEstoque();
+  showToast(id?'Peça atualizada!':'Peça cadastrada!');
+}
+
+async function excluirPeca(id){
+  if(!confirm('Excluir esta peça?'))return;
+  const { error } = await sbClient.from('campo_estoque').delete().eq('id', id);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  await carregarCampo();
+  renderEstoque();
+  showToast('Peça removida.');
+}
+
+function abrirMovEstoque(id){
+  const p = _cpEstoque.find(x=>x.id==id);
+  if(!p) return;
+  document.getElementById('mov-id').value = id;
+  document.getElementById('mov-nome').textContent = `${p.nome} — Estoque atual: ${p.qtd_atual} ${p.unidade}`;
+  document.getElementById('mov-tipo').value = 'entrada';
+  document.getElementById('mov-qtd').value = '';
+  document.getElementById('mov-motivo').value = '';
+  abrirModal('modal-mov');
+}
+
+async function salvarMov(){
+  const id = document.getElementById('mov-id').value;
+  const tipo = document.getElementById('mov-tipo').value;
+  const qtd = parseInt(document.getElementById('mov-qtd').value)||0;
+  if(qtd<=0){ showToast('Informe uma quantidade válida.', true); return; }
+  const p = _cpEstoque.find(x=>x.id==id);
+  if(!p) return;
+  if(tipo==='saida' && p.qtd_atual<qtd){ showToast('Quantidade insuficiente no estoque!', true); return; }
+  const nova_qtd = tipo==='entrada' ? p.qtd_atual+qtd : p.qtd_atual-qtd;
+  const { error } = await sbClient.from('campo_estoque').update({ qtd_atual: nova_qtd }).eq('id', id);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  fecharModal('modal-mov');
+  await carregarCampo();
+  renderEstoque();
+  showToast(tipo==='entrada'?`+${qtd} adicionado ao estoque!`:`${qtd} retirado do estoque!`);
+}
+
+function renderEstoque(){
+  const tb = document.getElementById('tb-estoque');
+  if(!tb) return;
+  const busca = (document.getElementById('est-search')?.value||'').toLowerCase();
+  const fil = document.getElementById('est-fil')?.value||'';
+
+  document.getElementById('kpi-est-total').textContent = _cpEstoque.length;
+  document.getElementById('kpi-est-ok').textContent = _cpEstoque.filter(p=>p.qtd_atual>p.qtd_minima).length;
+  document.getElementById('kpi-est-baixo').textContent = _cpEstoque.filter(p=>p.qtd_atual>0 && p.qtd_atual<=p.qtd_minima).length;
+  document.getElementById('kpi-est-zero').textContent = _cpEstoque.filter(p=>p.qtd_atual<=0).length;
+
+  const lista = _cpEstoque.filter(p=>{
+    const mb = !busca || p.nome.toLowerCase().includes(busca) || (p.sku||'').toLowerCase().includes(busca);
+    let ms = true;
+    if(fil==='ok') ms = p.qtd_atual>p.qtd_minima;
+    if(fil==='baixo') ms = p.qtd_atual>0 && p.qtd_atual<=p.qtd_minima;
+    if(fil==='zero') ms = p.qtd_atual<=0;
+    return mb && ms;
+  });
+
+  if(!lista.length){ tb.innerHTML=`<tr><td colspan="7" class="cp-empty-row"><div class="cp-empty-ico">📦</div>Nenhum item encontrado</td></tr>`; return; }
+
+  tb.innerHTML = lista.map(p=>{
+    const pct = p.qtd_minima>0 ? Math.min(100,Math.round((p.qtd_atual/(p.qtd_minima*2))*100)) : (p.qtd_atual>0?100:0);
+    const niv = p.qtd_atual<=0 ? 'out' : p.qtd_atual<=p.qtd_minima ? 'low' : 'ok';
+    const barC = niv==='out'?'cp-ebar-out':niv==='low'?'cp-ebar-low':'cp-ebar-ok';
+    const qtdC = niv==='out'?'var(--danger)':niv==='low'?'var(--warn)':'var(--accent)';
+    return `<tr>
+      <td><div style="font-weight:600">${p.nome}</div><div style="font-size:11px;color:var(--text3)">${p.categoria||''}</div></td>
+      <td><code style="font-size:11px;background:var(--surface2);padding:2px 7px;border-radius:5px">${p.sku||'—'}</code></td>
+      <td style="font-size:12px;color:var(--text3)">${p.categoria||'—'}</td>
+      <td><span style="font-weight:700;font-size:16px;color:${qtdC}">${p.qtd_atual}</span> <span style="font-size:11px;color:var(--text3)">${p.unidade}</span></td>
+      <td style="font-size:12px;color:var(--text3)">${p.qtd_minima} ${p.unidade}</td>
+      <td><div style="display:flex;align-items:center;gap:7px">
+        <div class="cp-ebar-wrap"><div class="cp-ebar ${barC}" style="width:${pct}%"></div></div>
+        ${niv==='out'?'<span class="cp-status cp-st-cancelado" style="font-size:10px">ZERADO</span>':niv==='low'?'<span class="cp-status cp-st-atribuido" style="font-size:10px">BAIXO</span>':'<span class="cp-status cp-st-concluido" style="font-size:10px">OK</span>'}
+      </div></td>
+      <td><div class="action-btns">
+        <button class="action-btn perm-edit" onclick="abrirMovEstoque(${p.id})" title="Movimentar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button>
+        <button class="action-btn" onclick="abrirModalPeca(${p.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="action-btn del" onclick="excluirPeca(${p.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
 </script>
 </body>
 </html>
