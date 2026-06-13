@@ -1369,6 +1369,7 @@ body.perfil-operador #nav-sec-admin{display:none !important}
 .cp-st-andamento{background:rgba(107,47,187,0.1);color:#6B2FBB}
 .cp-st-concluido{background:var(--accent2);color:var(--accent)}
 .cp-st-cancelado{background:var(--danger-bg);color:var(--danger)}
+.cp-st-aberto{background:rgba(107,47,187,0.1);color:#6B2FBB}
 body.dark-mode .cp-st-andamento{background:rgba(155,95,235,0.15);color:#9B5FEB}
 .cp-prio{display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px}
 .cp-prio-alta{background:var(--danger-bg);color:var(--danger)}
@@ -1709,12 +1710,14 @@ textarea.cp-form-input{resize:vertical}
           <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
             <input class="cp-search-input" type="text" placeholder="Buscar…" oninput="renderChamados()" id="ch-search">
             <select class="cp-filter-select" onchange="renderChamados()" id="ch-fil-status">
-              <option value="">Todos status</option>
+              <option value="">Pendentes (todos exceto Aberto)</option>
               <option value="novo">Novo</option>
               <option value="atribuido">Atribuído</option>
               <option value="andamento">Em andamento</option>
               <option value="concluido">Concluído</option>
               <option value="cancelado">Cancelado</option>
+              <option value="aberto">Aberto (em OS)</option>
+              <option value="__todos__">Todos (incluindo Abertos)</option>
             </select>
             <button class="btn btn-primary perm-edit" onclick="abrirModalChamado()">+ Novo Chamado</button>
           </div>
@@ -1825,7 +1828,8 @@ textarea.cp-form-input{resize:vertical}
         <div class="modal-body">
           <input type="hidden" id="ch-id">
           <div class="form-grid"><div class="form-group"><label class="form-label">Cliente<span>*</span></label><input class="cp-form-input" id="ch-cliente" placeholder="Nome do cliente"></div><div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="ch-telefone" placeholder="(xx) xxxxx-xxxx"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Endereço</label><input class="cp-form-input" id="ch-endereco" placeholder="Rua, número, bairro"></div></div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Endereço</label><input class="cp-form-input" id="ch-endereco" placeholder="Rua, número, bairro"></div><div class="form-group"><label class="form-label">Localização</label><input class="cp-form-input" id="ch-localizacao" placeholder="Ponto de referência / complemento"></div></div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Login</label><input class="cp-form-input" id="ch-login-cliente" placeholder="Login de acesso do cliente"></div><div class="form-group"><label class="form-label">Senha</label><input class="cp-form-input" id="ch-senha-cliente" placeholder="Senha de acesso do cliente"></div></div>
           <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Problema<span>*</span></label><textarea class="cp-form-input" id="ch-descricao" rows="3" placeholder="Descreva o problema…"></textarea></div></div>
           <div class="form-grid trio">
             <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="ch-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
@@ -1833,7 +1837,11 @@ textarea.cp-form-input{resize:vertical}
             <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="ch-status"><option value="novo">Novo</option><option value="atribuido">Atribuído</option><option value="andamento">Em andamento</option><option value="concluido">Concluído</option><option value="cancelado">Cancelado</option></select></div>
           </div>
         </div>
-        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-chamado')">Cancelar</button><button class="btn btn-primary" onclick="salvarChamado()">Salvar</button></div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-chamado')">Cancelar</button>
+          <button class="btn perm-edit" id="btn-abrir-chamado" style="color:var(--accent);border-color:var(--accent)" onclick="abrirChamadoParaOS()">📤 Abrir Chamado</button>
+          <button class="btn btn-primary" onclick="salvarChamado()">Salvar</button>
+        </div>
       </div>
     </div>
 
@@ -7132,22 +7140,29 @@ function abrirModalChamado(id){
   popularSelectsTecnicosCampo();
   document.getElementById('ch-id').value = id || '';
   document.getElementById('tit-chamado').textContent = id ? 'Editar Chamado' : 'Novo Chamado';
+  const btnAbrir = document.getElementById('btn-abrir-chamado');
   if(id){
     const c = _cpChamados.find(x=>x.id==id);
     if(c){
       document.getElementById('ch-cliente').value = c.cliente;
       document.getElementById('ch-telefone').value = c.telefone||'';
       document.getElementById('ch-endereco').value = c.endereco||'';
+      document.getElementById('ch-localizacao').value = c.localizacao||'';
+      document.getElementById('ch-login-cliente').value = c.login_cliente||'';
+      document.getElementById('ch-senha-cliente').value = c.senha_cliente||'';
       document.getElementById('ch-descricao').value = c.descricao;
       document.getElementById('ch-prioridade').value = c.prioridade;
       document.getElementById('ch-tecnico').value = c.tecnico_id||'';
       document.getElementById('ch-status').value = c.status;
     }
+    // Esconde o botão "Abrir Chamado" se o chamado já foi aberto (virou OS)
+    btnAbrir.style.display = (c && c.status==='aberto') ? 'none' : '';
   } else {
-    ['ch-cliente','ch-telefone','ch-endereco','ch-descricao'].forEach(f=>document.getElementById(f).value='');
+    ['ch-cliente','ch-telefone','ch-endereco','ch-localizacao','ch-login-cliente','ch-senha-cliente','ch-descricao'].forEach(f=>document.getElementById(f).value='');
     document.getElementById('ch-prioridade').value='media';
     document.getElementById('ch-tecnico').value='';
     document.getElementById('ch-status').value='novo';
+    btnAbrir.style.display='';
   }
   abrirModal('modal-chamado');
 }
@@ -7161,26 +7176,25 @@ async function salvarChamado(){
   const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '' : '';
   const telefone = document.getElementById('ch-telefone').value.trim();
   const endereco = document.getElementById('ch-endereco').value.trim();
+  const localizacao = document.getElementById('ch-localizacao').value.trim();
+  const loginCliente = document.getElementById('ch-login-cliente').value.trim();
+  const senhaCliente = document.getElementById('ch-senha-cliente').value.trim();
   const prioridade = document.getElementById('ch-prioridade').value;
   let status = document.getElementById('ch-status').value;
 
-  // Detecta se é um chamado existente que ainda não tem OS, e está recebendo um técnico agora
   let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
-  const vaiCriarOS = !!tecId && (!chamadoExistente || !chamadoExistente.os_id);
-
-  // Se um técnico está sendo atribuído e o chamado estava "novo", avança para "atribuido"
-  if(tecId && status==='novo') status = 'atribuido';
 
   // Se o status mudou para "concluido" e ainda não havia sido concluído, pede o fechamento
   if(status==='concluido' && (!chamadoExistente || chamadoExistente.status!=='concluido')){
     fecharModal('modal-chamado');
     abrirModalFechamentoChamado({
-      id, cliente, telefone, endereco, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome,
+      id, cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:senhaCliente,
+      descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome,
     });
     return;
   }
 
-  const obj = { cliente, telefone, endereco, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
+  const obj = { cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:senhaCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
 
   let chamadoId = id;
   let error;
@@ -7198,13 +7212,68 @@ async function salvarChamado(){
     await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status });
   }
 
-  // Gera OS automaticamente quando o chamado recebe técnico e ainda não tem OS
-  if(vaiCriarOS && chamadoId){
+  fecharModal('modal-chamado');
+  await carregarCampo();
+  renderChamados();
+  showToast(id?'Chamado atualizado!':'Chamado registrado!');
+}
+
+// ============================================================
+// ABRIR CHAMADO -> gera/atualiza OS e move para a aba de OS
+// ============================================================
+async function abrirChamadoParaOS(){
+  const cliente = document.getElementById('ch-cliente').value.trim();
+  const descricao = document.getElementById('ch-descricao').value.trim();
+  if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return; }
+
+  const tecId = document.getElementById('ch-tecnico').value || null;
+  if(!tecId){ showToast('Selecione um técnico antes de abrir o chamado.', true); return; }
+  const tecNome = (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '';
+
+  const id = document.getElementById('ch-id').value;
+  const telefone = document.getElementById('ch-telefone').value.trim();
+  const endereco = document.getElementById('ch-endereco').value.trim();
+  const localizacao = document.getElementById('ch-localizacao').value.trim();
+  const loginCliente = document.getElementById('ch-login-cliente').value.trim();
+  const senhaCliente = document.getElementById('ch-senha-cliente').value.trim();
+  const prioridade = document.getElementById('ch-prioridade').value;
+
+  const obj = { cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:senhaCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status:'aberto' };
+
+  let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
+  let chamadoId = id;
+  let error;
+  if(id){
+    ({ error } = await sbClient.from('campo_chamados').update(obj).eq('id', id));
+  } else {
+    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() }).select().single();
+    error = insErr;
+    if(data) chamadoId = data.id;
+  }
+  if(error){ showToast('Erro: '+error.message, true); return; }
+
+  // Registra no histórico
+  if(chamadoId){
+    await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status:'aberto' });
+  }
+
+  // Cria a OS (se ainda não existir) ou atualiza a existente
+  const obsCompl = [
+    localizacao ? `Localização: ${localizacao}` : '',
+    loginCliente ? `Login: ${loginCliente}` : '',
+    senhaCliente ? `Senha: ${senhaCliente}` : '',
+  ].filter(Boolean).join(' | ');
+
+  if(chamadoExistente && chamadoExistente.os_id){
+    await sbClient.from('campo_os').update({
+      cliente, telefone, endereco, descricao, tecnico_id:tecId, tecnico_nome:tecNome, prioridade, obs: obsCompl,
+    }).eq('id', chamadoExistente.os_id);
+  } else if(chamadoId){
     const numeroOS = cpProximoNumOS();
     const { data: osData, error: osErr } = await sbClient.from('campo_os').insert({
       numero: numeroOS, cliente, telefone, endereco, descricao,
       tecnico_id: tecId, tecnico_nome: tecNome, prioridade,
-      status: 'aberta', data: cpHoje(), chamado_id: chamadoId,
+      status: 'aberta', data: cpHoje(), chamado_id: chamadoId, obs: obsCompl,
     }).select().single();
     if(!osErr && osData){
       await sbClient.from('campo_chamados').update({ os_id: osData.id }).eq('id', chamadoId);
@@ -7214,7 +7283,8 @@ async function salvarChamado(){
   fecharModal('modal-chamado');
   await carregarCampo();
   renderChamados();
-  showToast(id?'Chamado atualizado!':(vaiCriarOS?'Chamado registrado e OS gerada automaticamente!':'Chamado registrado!'));
+  renderOS();
+  showToast('Chamado aberto! Agora disponível na aba Ordens de Serviço.');
 }
 
 // ============================================================
@@ -7324,18 +7394,22 @@ function renderChamados(){
 
   const lista = _cpChamados.filter(c=>{
     const mb = !busca || c.cliente.toLowerCase().includes(busca) || c.descricao.toLowerCase().includes(busca);
-    const ms = !filSt || c.status===filSt;
+    let ms;
+    if(filSt==='__todos__') ms = true;
+    else if(filSt==='') ms = c.status!=='aberto';
+    else ms = c.status===filSt;
     return mb && ms;
   });
 
   if(!lista.length){ tb.innerHTML=`<tr><td colspan="8" class="cp-empty-row"><div class="cp-empty-ico">📭</div>Nenhum chamado encontrado</td></tr>`; return; }
 
-  const stMap = { novo:['cp-st-novo','Novo'], atribuido:['cp-st-atribuido','Atribuído'], andamento:['cp-st-andamento','Em andamento'], concluido:['cp-st-concluido','Concluído'], cancelado:['cp-st-cancelado','Cancelado'] };
+  const stMap = { novo:['cp-st-novo','Novo'], atribuido:['cp-st-atribuido','Atribuído'], andamento:['cp-st-andamento','Em andamento'], aberto:['cp-st-aberto','Aberto (em OS)'], concluido:['cp-st-concluido','Concluído'], cancelado:['cp-st-cancelado','Cancelado'] };
   const prMap = { alta:'cp-prio-alta', media:'cp-prio-media', baixa:'cp-prio-baixa' };
 
   tb.innerHTML = lista.map(c=>{
     const [stCl,stLb] = stMap[c.status]||['cp-st-novo','Novo'];
     const prioRowCl = 'cp-row-prio-'+(c.prioridade||'media');
+    const isAberto = c.status==='aberto';
     return `<tr class="${prioRowCl}">
       <td style="font-size:11px;color:var(--text3);font-weight:600">#${String(c.id).slice(-5).toUpperCase()}</td>
       <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}${c.os_id?` · <span style="color:var(--accent);font-weight:600">${(()=>{const o=_cpOS.find(x=>x.id===c.os_id);return o?'OS #'+String(o.numero||0).padStart(4,'0'):'OS vinculada';})()}</span>`:''}</div></td>
@@ -7345,8 +7419,8 @@ function renderChamados(){
       <td><span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span></td>
       <td style="font-size:12px;color:var(--text3)">${cpFmtData(c.data)}</td>
       <td><div class="action-btns">
-        <button class="action-btn" onclick="abrirModalChamado(${c.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="excluirChamado(${c.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+        <button class="action-btn" onclick="abrirModalChamado(${c.id})" title="${isAberto?'Visualizar':'Editar'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        ${isAberto?'':`<button class="action-btn del" onclick="excluirChamado(${c.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>`}
       </div></td>
     </tr>`;
   }).join('');
