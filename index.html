@@ -1375,6 +1375,12 @@ body.dark-mode .cp-st-andamento{background:rgba(155,95,235,0.15);color:#9B5FEB}
 .cp-prio-media{background:var(--warn-bg);color:var(--warn)}
 .cp-prio-baixa{background:var(--accent2);color:var(--accent)}
 
+/* Linhas da tabela coloridas conforme prioridade do chamado/OS */
+.cp-row-prio-alta{border-left:3px solid var(--danger);background:var(--danger-bg)}
+.cp-row-prio-media{border-left:3px solid var(--warn);background:var(--warn-bg)}
+.cp-row-prio-baixa{border-left:3px solid var(--accent);background:var(--accent2)}
+.cp-row-prio-alta td,.cp-row-prio-media td,.cp-row-prio-baixa td{background:transparent}
+
 .cp-ebar-wrap{width:70px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
 .cp-ebar{height:100%;border-radius:3px}
 .cp-ebar-ok{background:var(--accent)}
@@ -1906,6 +1912,22 @@ textarea.cp-form-input{resize:vertical}
           <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo / OS</label><input class="cp-form-input" id="mov-motivo" placeholder="Ex: OS #0001, compra fornecedor…"></div></div>
         </div>
         <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-mov')">Cancelar</button><button class="btn btn-primary" onclick="salvarMov()">Confirmar</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-fechamento-chamado">
+      <div class="modal md">
+        <div class="modal-header">
+          <span class="modal-title">Concluir Chamado</span>
+          <button class="modal-close" onclick="fecharModal('modal-fechamento-chamado')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="cp-info-box info" style="margin-bottom:14px">Preencha as informações do atendimento para concluir o chamado.</div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Solução Técnica<span>*</span></label><select class="cp-form-select" id="fc-solucao"></select></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Sinal Fibra / Rádio<span>*</span></label><select class="cp-form-select" id="fc-sinal"></select></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Teste de Velocidade<span>*</span></label><select class="cp-form-select" id="fc-velocidade"></select></div></div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-fechamento-chamado')">Cancelar</button><button class="btn btn-primary" onclick="confirmarFechamentoChamado()">Concluir Chamado</button></div>
       </div>
     </div>
 
@@ -7149,6 +7171,15 @@ async function salvarChamado(){
   // Se um técnico está sendo atribuído e o chamado estava "novo", avança para "atribuido"
   if(tecId && status==='novo') status = 'atribuido';
 
+  // Se o status mudou para "concluido" e ainda não havia sido concluído, pede o fechamento
+  if(status==='concluido' && (!chamadoExistente || chamadoExistente.status!=='concluido')){
+    fecharModal('modal-chamado');
+    abrirModalFechamentoChamado({
+      id, cliente, telefone, endereco, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome,
+    });
+    return;
+  }
+
   const obj = { cliente, telefone, endereco, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
 
   let chamadoId = id;
@@ -7161,6 +7192,11 @@ async function salvarChamado(){
     if(data) chamadoId = data.id;
   }
   if(error){ showToast('Erro: '+error.message, true); return; }
+
+  // Registra no histórico se o status mudou
+  if(chamadoId && (!chamadoExistente || chamadoExistente.status!==status)){
+    await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status });
+  }
 
   // Gera OS automaticamente quando o chamado recebe técnico e ainda não tem OS
   if(vaiCriarOS && chamadoId){
@@ -7179,6 +7215,88 @@ async function salvarChamado(){
   await carregarCampo();
   renderChamados();
   showToast(id?'Chamado atualizado!':(vaiCriarOS?'Chamado registrado e OS gerada automaticamente!':'Chamado registrado!'));
+}
+
+// ============================================================
+// FECHAMENTO DE CHAMADO (Solução Técnica / Sinal / Velocidade)
+// ============================================================
+const OPCOES_SOLUCAO_TECNICA = [
+  'Reset/Reconfiguração de equipamento (ONU/Roteador)',
+  'Substituição de equipamento (ONU/Roteador)',
+  'Reparo/Emenda de fibra',
+  'Troca de cabo/conector (drop, patch cord)',
+  'Realinhamento de antena (rádio)',
+  'Limpeza de conector óptico',
+  'Ajuste de configuração de rede (VLAN, PPPoE, etc.)',
+  'Atualização de firmware',
+  'Problema resolvido sem intervenção física (orientação ao cliente)',
+  'Encaminhado para outro setor/fornecedor',
+];
+const OPCOES_SINAL_FIBRA_RADIO = [
+  'Sinal ótico normal (dentro do padrão)',
+  'Sinal ótico baixo (atenuação alta)',
+  'Sinal ótico crítico (sem sinal)',
+  'Sinal de rádio bom (boa intensidade/SNR)',
+  'Sinal de rádio fraco',
+  'Sinal de rádio instável (oscilando)',
+  'Sem sinal / rompimento de enlace',
+];
+const OPCOES_TESTE_VELOCIDADE = [
+  'Dentro do contratado',
+  'Abaixo do contratado (parcial)',
+  'Muito abaixo do contratado (crítico)',
+  'Não foi possível testar (cliente sem dispositivo/local)',
+  'Teste não aplicável (visita não relacionada à velocidade)',
+];
+
+let _fechamentoChamadoData = null;
+
+function abrirModalFechamentoChamado(dadosChamado){
+  _fechamentoChamadoData = dadosChamado;
+  const sel1 = document.getElementById('fc-solucao');
+  const sel2 = document.getElementById('fc-sinal');
+  const sel3 = document.getElementById('fc-velocidade');
+  sel1.innerHTML = '<option value="">Selecione…</option>' + OPCOES_SOLUCAO_TECNICA.map(o=>`<option value="${o}">${o}</option>`).join('');
+  sel2.innerHTML = '<option value="">Selecione…</option>' + OPCOES_SINAL_FIBRA_RADIO.map(o=>`<option value="${o}">${o}</option>`).join('');
+  sel3.innerHTML = '<option value="">Selecione…</option>' + OPCOES_TESTE_VELOCIDADE.map(o=>`<option value="${o}">${o}</option>`).join('');
+  abrirModal('modal-fechamento-chamado');
+}
+
+async function confirmarFechamentoChamado(){
+  if(!_fechamentoChamadoData) return;
+  const solucao = document.getElementById('fc-solucao').value;
+  const sinal = document.getElementById('fc-sinal').value;
+  const velocidade = document.getElementById('fc-velocidade').value;
+  if(!solucao||!sinal||!velocidade){ showToast('Preencha os 3 campos de fechamento.', true); return; }
+
+  const { id, ...rest } = _fechamentoChamadoData;
+  const obj = { ...rest, status:'concluido', solucao_tecnica:solucao, sinal_fibra_radio:sinal, teste_velocidade:velocidade, concluido_em: new Date().toISOString() };
+
+  let chamadoId = id;
+  let error;
+  if(id){
+    ({ error } = await sbClient.from('campo_chamados').update(obj).eq('id', id));
+  } else {
+    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() }).select().single();
+    error = insErr;
+    if(data) chamadoId = data.id;
+  }
+  if(error){ showToast('Erro: '+error.message, true); return; }
+
+  if(chamadoId){
+    await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status:'concluido' });
+    // Sincroniza a OS vinculada para "concluida" também
+    const chamadoAtual = _cpChamados.find(x=>x.id==chamadoId);
+    if(chamadoAtual && chamadoAtual.os_id){
+      await sbClient.from('campo_os').update({ status:'concluida' }).eq('id', chamadoAtual.os_id);
+    }
+  }
+
+  fecharModal('modal-fechamento-chamado');
+  _fechamentoChamadoData = null;
+  await carregarCampo();
+  renderChamados();
+  showToast('Chamado concluído!');
 }
 
 async function excluirChamado(id){
@@ -7217,7 +7335,8 @@ function renderChamados(){
 
   tb.innerHTML = lista.map(c=>{
     const [stCl,stLb] = stMap[c.status]||['cp-st-novo','Novo'];
-    return `<tr>
+    const prioRowCl = 'cp-row-prio-'+(c.prioridade||'media');
+    return `<tr class="${prioRowCl}">
       <td style="font-size:11px;color:var(--text3);font-weight:600">#${String(c.id).slice(-5).toUpperCase()}</td>
       <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}${c.os_id?` · <span style="color:var(--accent);font-weight:600">${(()=>{const o=_cpOS.find(x=>x.id===c.os_id);return o?'OS #'+String(o.numero||0).padStart(4,'0'):'OS vinculada';})()}</span>`:''}</div></td>
       <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${c.descricao}">${c.descricao}</td>
@@ -7336,7 +7455,8 @@ function renderOS(){
 
   tb.innerHTML = lista.map(o=>{
     const [stCl,stLb] = stMap[o.status]||['cp-st-novo','Aberta'];
-    return `<tr>
+    const prioRowCl = 'cp-row-prio-'+(o.prioridade||'media');
+    return `<tr class="${prioRowCl}">
       <td style="font-weight:700;color:var(--accent)">#${String(o.numero||0).padStart(4,'0')}</td>
       <td><div style="font-weight:600">${o.cliente}</div><div style="font-size:11px;color:var(--text3)">${o.telefone||''}</div></td>
       <td style="font-size:12px;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.endereco||'—'}</td>
