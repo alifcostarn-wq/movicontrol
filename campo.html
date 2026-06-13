@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetField — Área do Técnico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#F4F3EF;--surface:#FFF;--surface2:#F9F8F6;--border:#E4E2DC;
+  --text:#1A1916;--text2:#6B6861;--text3:#A8A59E;
+  --accent:#1A5C3A;--accent2:#E8F2ED;--accent3:#D0E8DA;
+  --danger:#C23B2A;--danger-bg:#FBF0EE;
+  --warn:#8A6200;--warn-bg:#FDF6E3;
+  --info:#1A5CA0;--info-bg:#EDF3FB;
+}
+body.dark-mode{
+  --bg:#111318;--surface:#1A1D26;--surface2:#20242F;--border:#2C3040;
+  --text:#E2E0DB;--text2:#8A8799;--text3:#4E4C58;
+  --accent:#3CB371;--accent2:#162A1E;--accent3:#1C3829;
+  --danger:#E05445;--danger-bg:#28160F;
+  --warn:#D4A027;--warn-bg:#271E0A;
+  --info:#4A8FD9;--info-bg:#0D1825;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+#login-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:50}
+#login-screen.hidden{display:none}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px;width:340px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,.1)}
+.login-logo{font-family:'Nunito',sans-serif;font-weight:900;font-size:24px;color:var(--accent);text-align:center;margin-bottom:4px}
+.login-sub{text-align:center;font-size:12px;color:var(--text3);margin-bottom:24px}
+.login-field{margin-bottom:14px}
+.login-label{font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:5px}
+.login-input{width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-family:inherit}
+.login-input:focus{outline:none;border-color:var(--accent)}
+.login-btn{width:100%;padding:11px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer;margin-top:8px;font-family:inherit}
+.login-btn:hover{opacity:.9}
+.login-error{background:var(--danger-bg);color:var(--danger);font-size:12px;padding:8px 10px;border-radius:7px;margin-top:10px;display:none}
+.login-error.show{display:block}
+
+#app{display:none}
+#app.visible{display:block}
+.topbar{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;z-index:10}
+.topbar-brand{font-family:'Nunito',sans-serif;font-weight:800;font-size:16px;color:var(--accent)}
+.topbar-user{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+.icon-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.icon-btn:hover{background:var(--surface2)}
+
+.content{padding:16px;max-width:720px;margin:0 auto}
+
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tab-btn{flex:1;padding:9px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;position:relative}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab-badge{position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:2px 6px;min-width:16px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.kpi-num{font-size:22px;font-weight:700}
+.kpi-lbl{font-size:10.5px;color:var(--text3);margin-top:2px}
+
+.list{display:flex;flex-direction:column;gap:10px}
+.item-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:border-color .15s}
+.item-card:hover{border-color:var(--accent)}
+.item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.item-title{font-weight:600;font-size:14px}
+.item-sub{font-size:12px;color:var(--text2);margin-top:2px}
+.item-desc{font-size:12.5px;color:var(--text2);margin:8px 0;line-height:1.5}
+.item-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+.status{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.st-novo{background:var(--info-bg);color:var(--info)}
+.st-atribuido{background:var(--warn-bg);color:var(--warn)}
+.st-andamento{background:rgba(107,47,187,0.1);color:#6B2FBB}
+.st-concluido,.st-concluida{background:var(--accent2);color:var(--accent)}
+.st-aberta{background:var(--info-bg);color:var(--info)}
+.st-cancelado,.st-cancelada{background:var(--danger-bg);color:var(--danger)}
+body.dark-mode .st-andamento{background:rgba(155,95,235,0.15);color:#9B5FEB}
+.prio{display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px}
+.prio-alta{background:var(--danger-bg);color:var(--danger)}
+.prio-media{background:var(--warn-bg);color:var(--warn)}
+.prio-baixa{background:var(--accent2);color:var(--accent)}
+
+.empty-row{text-align:center;padding:50px 20px;color:var(--text3);font-size:13px}
+.empty-ico{font-size:32px;margin-bottom:8px}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:none;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-sheet{background:var(--surface);border-radius:16px 16px 0 0;width:100%;max-width:520px;max-height:85vh;overflow-y:auto;padding:20px;animation:slideUp .2s ease;position:relative}
+@keyframes slideUp{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.modal-close{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.detail-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.detail-row:last-child{border-bottom:none}
+.detail-label{color:var(--text3)}
+.detail-val{font-weight:600;text-align:right;max-width:60%}
+.status-select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-family:inherit;margin-top:10px}
+.status-select:focus{outline:none;border-color:var(--accent)}
+.confirm-btn{width:100%;padding:12px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer;margin-top:14px;font-family:inherit}
+.confirm-btn:disabled{opacity:.5;cursor:not-allowed}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--text);color:var(--bg);padding:11px 22px;border-radius:24px;font-size:13px;font-weight:500;opacity:0;transition:all .25s;z-index:300;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+#loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:400;align-items:center;justify-content:center}
+#loading.show{display:flex}
+.spinner{width:36px;height:36px;border:3px solid var(--accent2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">📡 NetField</div>
+    <div class="login-sub">Área do Técnico — acesse seus chamados e OS</div>
+    <div class="login-field">
+      <label class="login-label">E-mail</label>
+      <input class="login-input" type="email" id="login-email" placeholder="seu@email.com" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label class="login-label">Senha</label>
+      <input class="login-input" type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="login-btn" onclick="fazerLogin()">Entrar</button>
+    <div class="login-error" id="login-error">E-mail ou senha incorretos.</div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">📡 NetField</div>
+    <div class="topbar-actions">
+      <div class="topbar-user" id="topbar-user">—</div>
+      <button class="icon-btn" onclick="toggleTema()" title="Tema">🌓</button>
+      <button class="icon-btn" onclick="fazerLogout()" title="Sair">⏻</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-num" id="kpi-pendentes" style="color:var(--warn)">—</div><div class="kpi-lbl">Pendentes</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpi-andamento" style="color:#6B2FBB">—</div><div class="kpi-lbl">Em Andamento</div></div>
+      <div class="kpi"><div class="kpi-num" id="kpi-concluidas" style="color:var(--accent)">—</div><div class="kpi-lbl">Concluídas Hoje</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-chamados" onclick="trocarAba('chamados')">📞 Chamados<span class="tab-badge" id="badge-chamados" style="display:none">0</span></button>
+      <button class="tab-btn" id="tab-os" onclick="trocarAba('os')">🔧 Ordens de Serviço</button>
+    </div>
+
+    <div class="list" id="lista-itens"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-detalhe" onclick="if(event.target===this)fecharDetalhe()">
+  <div class="modal-sheet">
+    <button class="modal-close" onclick="fecharDetalhe()">✕</button>
+    <div class="modal-title" id="det-titulo">—</div>
+    <div class="detail-row"><span class="detail-label">Cliente</span><span class="detail-val" id="det-cliente">—</span></div>
+    <div class="detail-row"><span class="detail-label">Telefone</span><span class="detail-val" id="det-telefone">—</span></div>
+    <div class="detail-row"><span class="detail-label">Endereço</span><span class="detail-val" id="det-endereco">—</span></div>
+    <div class="detail-row"><span class="detail-label">Prioridade</span><span class="detail-val" id="det-prioridade">—</span></div>
+    <div class="detail-row"><span class="detail-label">Data</span><span class="detail-val" id="det-data">—</span></div>
+    <div class="detail-row" id="det-pecas-row" style="display:none"><span class="detail-label">Peças</span><span class="detail-val" id="det-pecas">—</span></div>
+    <div class="detail-row" id="det-obs-row" style="display:none"><span class="detail-label">Observações</span><span class="detail-val" id="det-obs">—</span></div>
+    <div style="margin-top:10px">
+      <div class="detail-label" style="margin-bottom:6px;font-size:12px">Descrição</div>
+      <div style="font-size:13px;line-height:1.6" id="det-descricao">—</div>
+    </div>
+    <div style="margin-top:14px">
+      <label class="login-label">Atualizar status</label>
+      <select class="status-select" id="det-status-select"></select>
+    </div>
+    <button class="confirm-btn" id="det-btn-salvar" onclick="salvarStatusDetalhe()">Atualizar Status</button>
+  </div>
+</div>
+
+<div id="loading"><div class="spinner"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://mgtetsmcswdtvsgewcen.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let _meuTecnico = null;
+let _chamados = [];
+let _os = [];
+let _abaAtiva = 'chamados';
+let _itemDetalheAberto = null;
+
+function hoje(){ return new Date().toISOString().slice(0,10); }
+function fmtData(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
+function loading(show){ document.getElementById('loading').classList.toggle('show', show); }
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2800);
+}
+function toggleTema(){
+  document.body.classList.toggle('dark-mode');
+  localStorage.setItem('campo_tema', document.body.classList.contains('dark-mode')?'dark':'light');
+}
+if(localStorage.getItem('campo_tema')==='dark') document.body.classList.add('dark-mode');
+
+async function fazerLogin(){
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const senha = document.getElementById('login-senha').value;
+  const errEl = document.getElementById('login-error');
+  errEl.classList.remove('show');
+  if(!email||!senha){ errEl.textContent='Informe e-mail e senha.'; errEl.classList.add('show'); return; }
+
+  loading(true);
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
+  if(error || !data.user){
+    loading(false);
+    errEl.textContent='E-mail ou senha incorretos.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  const { data: tec } = await sb.from('campo_tecnicos').select('*').eq('user_id', data.user.id).maybeSingle();
+  if(!tec){
+    loading(false);
+    await sb.auth.signOut();
+    errEl.textContent='Este usuário não está cadastrado como técnico.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  _meuTecnico = tec;
+  await entrarApp();
+  loading(false);
+}
+
+async function fazerLogout(){
+  if(!confirm('Deseja sair?')) return;
+  await sb.auth.signOut();
+  location.reload();
+}
+
+async function entrarApp(){
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  document.getElementById('topbar-user').textContent = _meuTecnico.nome;
+  await carregarDados();
+  renderLista();
+}
+
+(async function checkSessao(){
+  const { data } = await sb.auth.getSession();
+  if(data.session && data.session.user){
+    loading(true);
+    const { data: tec } = await sb.from('campo_tecnicos').select('*').eq('user_id', data.session.user.id).maybeSingle();
+    if(tec){
+      _meuTecnico = tec;
+      await entrarApp();
+    } else {
+      await sb.auth.signOut();
+    }
+    loading(false);
+  }
+})();
+
+async function carregarDados(){
+  if(!_meuTecnico) return;
+  const [{data:chs},{data:oss}] = await Promise.all([
+    sb.from('campo_chamados').select('*').eq('tecnico_id', _meuTecnico.id).order('created_at',{ascending:false}),
+    sb.from('campo_os').select('*').eq('tecnico_id', _meuTecnico.id).order('numero',{ascending:false}),
+  ]);
+  _chamados = chs || [];
+  _os = oss || [];
+  atualizarKPIs();
+}
+
+function atualizarKPIs(){
+  const hoje_ = hoje();
+  const pendChamados = _chamados.filter(c=>!['concluido','cancelado'].includes(c.status)).length;
+  const pendOS = _os.filter(o=>!['concluida','cancelada'].includes(o.status)).length;
+  const andamentoChamados = _chamados.filter(c=>c.status==='andamento').length;
+  const andamentoOS = _os.filter(o=>o.status==='andamento').length;
+  const concChamados = _chamados.filter(c=>c.status==='concluido' && c.data===hoje_).length;
+  const concOS = _os.filter(o=>o.status==='concluida' && o.data===hoje_).length;
+
+  document.getElementById('kpi-pendentes').textContent = pendChamados + pendOS;
+  document.getElementById('kpi-andamento').textContent = andamentoChamados + andamentoOS;
+  document.getElementById('kpi-concluidas').textContent = concChamados + concOS;
+
+  const badge = document.getElementById('badge-chamados');
+  const novos = _chamados.filter(c=>['novo','atribuido'].includes(c.status)).length;
+  badge.style.display = novos>0?'':'none';
+  badge.textContent = novos;
+}
+
+function trocarAba(aba){
+  _abaAtiva = aba;
+  document.getElementById('tab-chamados').classList.toggle('active', aba==='chamados');
+  document.getElementById('tab-os').classList.toggle('active', aba==='os');
+  renderLista();
+}
+
+const STATUS_LABEL = {
+  novo:'Novo', atribuido:'Atribuído', andamento:'Em andamento',
+  concluido:'Concluído', concluida:'Concluída', cancelado:'Cancelado', cancelada:'Cancelada',
+  aberta:'Aberta',
+};
+const PRIO_LABEL = { alta:'Alta', media:'Média', baixa:'Baixa' };
+
+function renderLista(){
+  const cont = document.getElementById('lista-itens');
+  const lista = _abaAtiva==='chamados' ? _chamados : _os;
+
+  if(!lista.length){
+    cont.innerHTML = `<div class="empty-row"><div class="empty-ico">${_abaAtiva==='chamados'?'📭':'📋'}</div>Nenhum ${_abaAtiva==='chamados'?'chamado':'OS'} atribuído a você no momento.</div>`;
+    return;
+  }
+
+  cont.innerHTML = lista.map(item=>{
+    const stCl = 'st-'+(item.status||'novo');
+    const stLb = STATUS_LABEL[item.status]||item.status;
+    const prCl = 'prio-'+(item.prioridade||'media');
+    const prLb = PRIO_LABEL[item.prioridade]||item.prioridade;
+    const numero = _abaAtiva==='os' ? `<span style="color:var(--accent);font-weight:700">#${String(item.numero||0).padStart(4,'0')}</span> ` : '';
+    return `<div class="item-card" onclick="abrirDetalhe('${_abaAtiva==='chamados'?'chamado':'os'}',${item.id})">
+      <div class="item-top">
+        <div>
+          <div class="item-title">${numero}${item.cliente}</div>
+          <div class="item-sub">${item.telefone||'Sem telefone'}</div>
+        </div>
+        <span class="status ${stCl}"><span class="status-dot"></span>${stLb}</span>
+      </div>
+      <div class="item-desc">${(item.descricao||'').length>100?item.descricao.slice(0,100)+'…':item.descricao}</div>
+      <div class="item-meta">
+        <span class="prio ${prCl}">${prLb}</span>
+        <span style="font-size:11px;color:var(--text3)">📅 ${fmtData(item.data)}</span>
+        ${item.endereco?`<span style="font-size:11px;color:var(--text3)">📍 ${item.endereco}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+const STATUS_OPCOES = {
+  chamado: [
+    {v:'novo',label:'Novo'},
+    {v:'atribuido',label:'Atribuído'},
+    {v:'andamento',label:'Em andamento'},
+    {v:'concluido',label:'Concluído'},
+    {v:'cancelado',label:'Cancelado'},
+  ],
+  os: [
+    {v:'aberta',label:'Aberta'},
+    {v:'andamento',label:'Em andamento'},
+    {v:'concluida',label:'Concluída'},
+    {v:'cancelada',label:'Cancelada'},
+  ],
+};
+
+function abrirDetalhe(tipo,id){
+  const item = (tipo==='chamado' ? _chamados : _os).find(x=>x.id==id);
+  if(!item) return;
+  _itemDetalheAberto = { tipo, id };
+
+  document.getElementById('det-titulo').textContent = tipo==='os' ? `OS #${String(item.numero||0).padStart(4,'0')} — ${item.cliente}` : `Chamado — ${item.cliente}`;
+  document.getElementById('det-cliente').textContent = item.cliente||'—';
+  document.getElementById('det-telefone').textContent = item.telefone||'—';
+  document.getElementById('det-endereco').textContent = item.endereco||'—';
+  document.getElementById('det-prioridade').textContent = PRIO_LABEL[item.prioridade]||'—';
+  document.getElementById('det-data').textContent = fmtData(item.data);
+  document.getElementById('det-descricao').textContent = item.descricao||'—';
+
+  const pecasRow = document.getElementById('det-pecas-row');
+  const obsRow = document.getElementById('det-obs-row');
+  if(tipo==='os' && item.pecas){ pecasRow.style.display=''; document.getElementById('det-pecas').textContent=item.pecas; } else pecasRow.style.display='none';
+  if(tipo==='os' && item.obs){ obsRow.style.display=''; document.getElementById('det-obs').textContent=item.obs; } else obsRow.style.display='none';
+
+  const sel = document.getElementById('det-status-select');
+  sel.innerHTML = STATUS_OPCOES[tipo].map(o=>`<option value="${o.v}" ${o.v===item.status?'selected':''}>${o.label}</option>`).join('');
+
+  document.getElementById('modal-detalhe').classList.add('open');
+}
+
+function fecharDetalhe(){
+  document.getElementById('modal-detalhe').classList.remove('open');
+  _itemDetalheAberto = null;
+}
+
+async function salvarStatusDetalhe(){
+  if(!_itemDetalheAberto) return;
+  const { tipo, id } = _itemDetalheAberto;
+  const novoStatus = document.getElementById('det-status-select').value;
+  const table = tipo==='chamado' ? 'campo_chamados' : 'campo_os';
+
+  loading(true);
+  const { error } = await sb.from(table).update({ status: novoStatus }).eq('id', id);
+  loading(false);
+
+  if(error){ toast('Erro: '+error.message); return; }
+
+  fecharDetalhe();
+  await carregarDados();
+  renderLista();
+  toast('Status atualizado!');
+}
+</script>
+</body>
+</html>
