@@ -1,4 +1,4 @@
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-secret');
@@ -81,4 +81,4 @@ module.exports = async function handler(req, res) {
     : results.find(r => !r.isHtml)?.preview || 'Nenhum endpoint respondeu como API.';
 
   return res.status(401).json({ error: 'Autenticação falhou.', hint, results });
-};
+}
