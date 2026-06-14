@@ -2387,7 +2387,7 @@ textarea.cp-form-input{resize:vertical}
         <button class="btn" onclick="exportarCadastroCSV('clientes')" style="margin-left:auto">↓ CSV</button>
       </div>
       <div class="table-wrap">
-        <div class="table-scroll"><table class="t" style="min-width:900px"><thead><tr><th style="width:36px"></th><th>Nome Fantasia</th><th>CNPJ / CPF</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>Contato</th><th>A Receber</th><th>Recebido</th><th>Data Cad.</th><th>Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
+        <div class="table-scroll"><table class="t" style="min-width:1100px"><thead><tr><th style="width:36px"></th><th>Nome Fantasia</th><th>CNPJ / CPF</th><th>Login IXC</th><th>Status</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>A Receber</th><th>Recebido</th><th>Data Cad.</th><th>Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
         <div id="cli-empty" class="empty-state" style="display:none"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="empty-title">Nenhum cliente cadastrado</div><div class="empty-sub">Clique em "+ Novo Cliente" para começar.</div><button class="btn btn-primary" onclick="abrirModalCadastro('clientes')">+ Novo Cliente</button></div>
         <div class="paginacao"><span class="pag-info" id="cli-pinfo">0 clientes</span><div class="pag-btns" id="cli-pbtn"></div></div>
       </div>
@@ -3236,13 +3236,15 @@ function navTo(page,btn){
   </button>`;
   if(page==='painel'||page==='diario') tr.innerHTML=btnTema+btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
   else if(page==='contas') tr.innerHTML=btnTema+btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
-  else if(page==='clientes') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
+  else if(page==='clientes') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="abrirModalIXC()" title="Configurar integração IXC"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>IXC</button><button class="btn" onclick="syncIXC()" id="btn-sync-ixc" title="Sincronizar agora">⟳ Sync</button><button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
   else if(page==='fornecedores') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
   const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque};
   renders[page]?.();
+  // Auto-sync IXC ao abrir a aba clientes (se configurado)
+  if(page==='clientes' && typeof autoSyncIXC==='function') autoSyncIXC();
   atualizarBadges();
 }
 
@@ -5380,15 +5382,50 @@ function renderCadastro(tipo){
   document.getElementById(prefix+'-empty').style.display=fil.length===0?'':'none';
   document.getElementById(prefix+'-tbody').innerHTML=pag.map(i=>{
     const t=tot(i.nome||'');
+    if(isCli){
+      const ixcOrigem = i.origem === 'ixc';
+      const statusMap = {
+        'A':{txt:'Ativo',bg:'rgba(99,153,34,0.15)',cor:'#639922'},
+        'D':{txt:'Desativado',bg:'rgba(194,59,42,0.15)',cor:'#c23b2a'},
+        'CM':{txt:'Cliente em montagem',bg:'rgba(186,117,23,0.15)',cor:'#ba7517'},
+        'AB':{txt:'Aberto',bg:'rgba(186,117,23,0.15)',cor:'#ba7517'},
+        'I':{txt:'Inativo',bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'},
+        'N':{txt:'Novo',bg:'rgba(55,138,221,0.15)',cor:'#378add'},
+      };
+      const st = statusMap[i.ixcStatus] || (ixcOrigem ? {txt:i.ixcStatus||'—',bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'} : null);
+      const statusCell = st
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${st.bg};color:${st.cor};font-size:10.5px;font-weight:600">${st.txt}</span>`
+        : '<span class="td-muted">—</span>';
+      const badgeIXC = ixcOrigem
+        ? `<span title="Importado do IXC" style="display:inline-block;padding:1px 6px;border-radius:8px;background:rgba(55,138,221,0.18);color:#185fa5;font-size:9px;font-weight:700;margin-left:6px;vertical-align:middle">IXC</span>`
+        : '';
+      return`<tr>
+        <td><div style="width:30px;height:30px;border-radius:8px;background:var(--accent2);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials(i.nome)}</div></td>
+        <td><div style="font-weight:500">${i.nome||'—'}${badgeIXC}</div><div style="font-size:10.5px;color:var(--text3)">${i.razao||''}</div></td>
+        <td class="td-mono td-muted">${i.cnpj||'—'}</td>
+        <td class="td-mono" style="font-size:11px">${i.ixcLogin||'<span class="td-muted">—</span>'}</td>
+        <td>${statusCell}</td>
+        <td class="td-muted">${i.cidade||'—'}</td>
+        <td class="td-muted">${i.tel1||'—'}</td>
+        <td style="font-size:11px">${i.email||'<span class="td-muted">—</span>'}</td>
+        <td class="td-mono ${t.a?'td-green':''}">${t.a?brl(t.a,true):'—'}</td>
+        <td class="td-mono ${t.r?'td-green':''}">${t.r?brl(t.r,true):'—'}</td>
+        <td class="td-mono td-muted">${fmtData(i.datacad)}</td>
+        <td><div class="action-btns">
+          <button class="action-btn" onclick="abrirModalCadastro('${tipo}',${i._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="action-btn del" onclick="deletarCad('${tipo}',${i._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+        </div></td>
+      </tr>`;
+    }
     return`<tr>
-      <td><div style="width:30px;height:30px;border-radius:8px;background:${isCli?'var(--accent2)':'var(--warn-bg)'};color:${isCli?'var(--accent)':'var(--warn)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials(i.nome)}</div></td>
+      <td><div style="width:30px;height:30px;border-radius:8px;background:var(--warn-bg);color:var(--warn);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials(i.nome)}</div></td>
       <td><div style="font-weight:500">${i.nome||'—'}</div><div style="font-size:10.5px;color:var(--text3)">${i.razao||''}</div></td>
       <td class="td-mono td-muted">${i.cnpj||'—'}</td>
       <td class="td-muted">${i.cidade||'—'}</td>
       <td class="td-muted">${i.tel1||'—'}</td>
       <td style="font-size:11px">${i.email||'<span class="td-muted">—</span>'}</td>
       <td>${i.contato||'<span class="td-muted">—</span>'}</td>
-      <td class="td-mono ${t.a?isCli?'td-green':'td-red':''}">${t.a?brl(t.a,true):'—'}</td>
+      <td class="td-mono ${t.a?'td-red':''}">${t.a?brl(t.a,true):'—'}</td>
       <td class="td-mono ${t.r?'td-green':''}">${t.r?brl(t.r,true):'—'}</td>
       <td class="td-mono td-muted">${fmtData(i.datacad)}</td>
       <td><div class="action-btns">
@@ -7667,6 +7704,258 @@ function renderEstoque(){
       </div></td>
     </tr>`;
   }).join('');
+}
+
+// ============================================================
+// INTEGRAÇÃO IXC SOFT — Sincronização de clientes via proxy
+// ============================================================
+const IXC_CFG_KEY = 'sf_ixc_config';
+const IXC_LAST_SYNC_KEY = 'sf_ixc_last_sync';
+const IXC_AUTO_SYNC_INTERVAL_MIN = 30; // não re-sincronizar se foi há menos de X min
+
+function getIXCConfig(){
+  try { return JSON.parse(localStorage.getItem(IXC_CFG_KEY) || '{}'); } catch { return {}; }
+}
+function setIXCConfig(cfg){ localStorage.setItem(IXC_CFG_KEY, JSON.stringify(cfg)); }
+
+function abrirModalIXC(){
+  const cfg = getIXCConfig();
+  const lastSync = localStorage.getItem(IXC_LAST_SYNC_KEY);
+  const lastSyncTxt = lastSync ? new Date(parseInt(lastSync)).toLocaleString('pt-BR') : 'Nunca';
+  const html = `
+    <div class="modal-overlay" id="modal-ixc" style="display:flex">
+      <div class="modal" style="max-width:600px">
+        <div class="modal-header">
+          <span class="modal-title">⚙ Configuração IXC Soft</span>
+          <button class="modal-close" onclick="fecharModal('modal-ixc')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="background:rgba(55,138,221,0.08);border-left:3px solid #378add;padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+            ℹ Os dados ficam salvos apenas no seu navegador (localStorage). A sincronização puxa cadastro, login, status do contrato e contato dos clientes do IXC.
+          </div>
+          <div class="form-group">
+            <label class="form-label">URL do Proxy (Vercel)</label>
+            <input type="text" id="ixc-proxy-url" class="cp-form-input" placeholder="https://seu-proxy.vercel.app/api/ixc-proxy" value="${cfg.proxyUrl||''}">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">URL onde o arquivo ixc-proxy.js está deployado</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">URL do servidor IXC</label>
+            <input type="text" id="ixc-server-url" class="cp-form-input" placeholder="https://seuixc.com.br" value="${cfg.ixcUrl||''}">
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Usuário (ID do token)</label>
+              <input type="text" id="ixc-user" class="cp-form-input" placeholder="ex: 1" value="${cfg.ixcUser||''}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Token / Hash</label>
+              <input type="password" id="ixc-token" class="cp-form-input" placeholder="token de API" value="${cfg.ixcToken||''}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="ixc-auto-sync" ${cfg.autoSync!==false?'checked':''}>
+              <span>Sincronizar automaticamente ao abrir a aba Clientes</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Limite por sincronização</label>
+            <input type="number" id="ixc-rp" class="cp-form-input" value="${cfg.rp||500}" min="50" max="5000">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Quantidade máxima de clientes a buscar por sync</div>
+          </div>
+          <div style="background:var(--bg2);padding:10px 12px;border-radius:6px;font-size:12px;color:var(--text2);margin-top:8px">
+            <strong>Última sincronização:</strong> ${lastSyncTxt}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="testarIXC()">🔌 Testar conexão</button>
+          <button class="btn" onclick="fecharModal('modal-ixc')">Cancelar</button>
+          <button class="btn btn-primary" onclick="salvarIXCConfig()">Salvar</button>
+        </div>
+      </div>
+    </div>`;
+  const existing = document.getElementById('modal-ixc');
+  if(existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function salvarIXCConfig(){
+  const cfg = {
+    proxyUrl: document.getElementById('ixc-proxy-url').value.trim(),
+    ixcUrl:   document.getElementById('ixc-server-url').value.trim(),
+    ixcUser:  document.getElementById('ixc-user').value.trim(),
+    ixcToken: document.getElementById('ixc-token').value.trim(),
+    autoSync: document.getElementById('ixc-auto-sync').checked,
+    rp:       parseInt(document.getElementById('ixc-rp').value) || 500,
+  };
+  if(!cfg.proxyUrl || !cfg.ixcUrl || !cfg.ixcToken){
+    showToast('Preencha URL do proxy, do IXC e o token.', true); return;
+  }
+  setIXCConfig(cfg);
+  showToast('Configuração IXC salva!');
+  fecharModal('modal-ixc');
+}
+
+async function testarIXC(){
+  const cfg = {
+    proxyUrl: document.getElementById('ixc-proxy-url').value.trim(),
+    ixcUrl:   document.getElementById('ixc-server-url').value.trim(),
+    ixcUser:  document.getElementById('ixc-user').value.trim(),
+    ixcToken: document.getElementById('ixc-token').value.trim(),
+  };
+  if(!cfg.proxyUrl || !cfg.ixcUrl || !cfg.ixcToken){
+    showToast('Preencha URL do proxy, do IXC e o token.', true); return;
+  }
+  showToast('Testando conexão...');
+  try {
+    const r = await chamarIXC(cfg, 'cliente', { rp: '1' });
+    if(r && (r.registros || r.total !== undefined)){
+      showToast('✓ Conexão IXC OK! Total: '+(r.total||r.registros?.length||0)+' clientes', false);
+    } else {
+      showToast('Resposta inesperada do IXC.', true);
+      console.log('IXC resposta:', r);
+    }
+  } catch(e){
+    showToast('Falhou: '+e.message, true);
+    console.error('IXC erro:', e);
+  }
+}
+
+async function chamarIXC(cfg, endpoint, params){
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-ixc-url': cfg.ixcUrl,
+    'x-ixc-token': cfg.ixcToken,
+    'x-ixc-endpoint': endpoint,
+  };
+  if(cfg.ixcUser) headers['x-ixc-user'] = cfg.ixcUser;
+  const resp = await fetch(cfg.proxyUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ params: params||{}, rp: params?.rp || '500' }),
+  });
+  const text = await resp.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('Resposta inválida do proxy: '+text.slice(0,120)); }
+  if(!resp.ok){
+    const hint = data.hint || data.error || 'erro HTTP '+resp.status;
+    throw new Error(hint);
+  }
+  return data;
+}
+
+// Mapeia status do IXC para nosso formato curto
+function mapStatusIXC(ativo){
+  // IXC normalmente usa 'A' (ativo), 'D' (desativado), 'I' (inativo), 'N' (novo), 'CM' (cliente em montagem), 'AB' (aberto)
+  if(!ativo) return 'I';
+  const v = String(ativo).toUpperCase();
+  return v;
+}
+
+// Normaliza CPF/CNPJ para comparação (só dígitos)
+function normDoc(s){ return String(s||'').replace(/\D+/g,''); }
+
+async function syncIXC(silent){
+  const cfg = getIXCConfig();
+  if(!cfg.proxyUrl || !cfg.ixcUrl || !cfg.ixcToken){
+    if(!silent){ showToast('Configure a integração IXC primeiro.', true); abrirModalIXC(); }
+    return;
+  }
+  const btn = document.getElementById('btn-sync-ixc');
+  if(btn){ btn.disabled = true; btn.innerHTML = '⟳ Sincronizando...'; }
+  if(!silent) showToast('Buscando clientes do IXC...');
+
+  try {
+    // Busca clientes do IXC
+    const resp = await chamarIXC(cfg, 'cliente', { rp: String(cfg.rp||500), sortname:'id', sortorder:'asc' });
+    const registros = resp.registros || [];
+    if(!Array.isArray(registros)){
+      throw new Error('Resposta sem campo "registros"');
+    }
+
+    // Carrega clientes atuais e indexa
+    const clientes = gd('sf_clientes');
+    const byIxcId = new Map();
+    const byDoc = new Map();
+    clientes.forEach((c,idx)=>{
+      if(c.ixcId) byIxcId.set(String(c.ixcId), idx);
+      const d = normDoc(c.cnpj);
+      if(d) byDoc.set(d, idx);
+    });
+
+    let novos = 0, atualizados = 0;
+    const hoje = new Date().toISOString().slice(0,10);
+
+    registros.forEach(r => {
+      // Campos comuns do IXC: id, razao, fantasia, cnpj_cpf, ie, contato, telefone_celular, telefone, email, endereco, bairro, cep, cidade, ativo, login, senha
+      const ixcId = String(r.id||'');
+      const nome = r.fantasia || r.razao || '';
+      const cnpjcpf = r.cnpj_cpf || '';
+      const docNorm = normDoc(cnpjcpf);
+
+      // Encontra cliente existente — primeiro por ixcId, depois por documento
+      let idx = byIxcId.get(ixcId);
+      if(idx===undefined && docNorm) idx = byDoc.get(docNorm);
+
+      const dados = {
+        ixcId: ixcId,
+        origem: 'ixc',
+        ixcStatus: mapStatusIXC(r.ativo),
+        ixcLogin: r.login || '',
+        ixcSenha: r.senha || '',
+        nome: nome || (r.razao||''),
+        razao: r.razao || '',
+        cnpj: cnpjcpf,
+        ie: r.ie || '',
+        contato: r.contato || '',
+        tel1: r.telefone_celular || r.telefone || '',
+        tel2: r.telefone || '',
+        email: r.email || '',
+        end: r.endereco ? `${r.endereco}${r.numero?', '+r.numero:''}` : '',
+        bairro: r.bairro || '',
+        cep: r.cep || '',
+        cidade: r.cidade || '',
+        obs: r.obs || '',
+      };
+
+      if(idx!==undefined){
+        // Atualiza preservando id local e datacad
+        const existente = clientes[idx];
+        clientes[idx] = { ...existente, ...dados, id: existente.id, datacad: existente.datacad || hoje };
+        atualizados++;
+      } else {
+        // Novo cliente
+        clientes.push({ ...dados, id: Date.now()+Math.random(), datacad: hoje });
+        novos++;
+      }
+    });
+
+    sd('sf_clientes', clientes);
+    localStorage.setItem(IXC_LAST_SYNC_KEY, Date.now().toString());
+
+    // Re-render se estamos na aba clientes
+    if(document.querySelector('.nav-item.active')?.dataset.page==='clientes'){
+      renderCadastro('clientes');
+    }
+
+    showToast(`✓ IXC sincronizado: ${novos} novo(s), ${atualizados} atualizado(s)`);
+  } catch(e){
+    showToast('Erro IXC: '+e.message, true);
+    console.error('IXC sync erro:', e);
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = '⟳ Sync'; }
+  }
+}
+
+// Auto-sync ao abrir aba Clientes — só se passou tempo suficiente
+function autoSyncIXC(){
+  const cfg = getIXCConfig();
+  if(!cfg.proxyUrl || !cfg.ixcToken || cfg.autoSync===false) return;
+  const last = parseInt(localStorage.getItem(IXC_LAST_SYNC_KEY) || '0');
+  const minutosDesde = (Date.now() - last) / 60000;
+  if(minutosDesde < IXC_AUTO_SYNC_INTERVAL_MIN) return; // recente demais
+  // Pequeno delay para não bloquear a renderização da aba
+  setTimeout(() => syncIXC(true), 400);
 }
 
 </script>
