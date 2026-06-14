@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-secret');
@@ -37,4 +37,48 @@ export default async function handler(req, res) {
 
   const authCandidates = [];
   if (ixcUser) authCandidates.push({ label: 'Basic user:token',   value: `Basic ${Buffer.from(`${ixcUser}:${ixcToken}`).toString('base64')}` });
-  authCandidates.push({
+  authCandidates.push({             label: 'Basic token:',        value: `Basic ${Buffer.from(`${ixcToken}:`).toString('base64')}` });
+  if (ixcUser && ixcSecret) authCandidates.push({ label: 'Basic user:secret', value: `Basic ${Buffer.from(`${ixcUser}:${ixcSecret}`).toString('base64')}` });
+
+  const results = [];
+
+  for (const rawUrl of urlCandidates) {
+    const url = rawUrl;
+
+    for (const { label, value } of authCandidates) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': value,
+            'Content-Type': 'application/json',
+            'ixcsoft': 'listar',
+          },
+          body: apiBody,
+        });
+
+        const text   = await response.text();
+        const isHtml = text.trim().startsWith('<');
+
+        results.push({ url, auth: label, status: response.status, isHtml, preview: text.slice(0, 200) });
+
+        if (!isHtml && response.status >= 200 && response.status < 400) {
+          try {
+            const data = JSON.parse(text);
+            return res.status(200).json({ ...data, _workingUrl: url, _auth: label });
+          } catch { /* not valid JSON */ }
+        }
+
+      } catch (e) {
+        results.push({ url, auth: label, error: e.message });
+      }
+    }
+  }
+
+  const got401 = results.find(r => r.status === 401 && !r.isHtml);
+  const hint = got401
+    ? `Endpoint correto (${got401.url}) mas credenciais inválidas. Verifique o token.`
+    : results.find(r => !r.isHtml)?.preview || 'Nenhum endpoint respondeu como API.';
+
+  return res.status(401).json({ error: 'Autenticação falhou.', hint, results });
+};
