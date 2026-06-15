@@ -6615,11 +6615,11 @@ function abrirEditContrato(idx){
   if(!c) return;
   window._editContratoIdx = idx;
   const html = `
-    <div class="modal-overlay" id="modal-edit-contrato" onclick="if(event.target===this)fecharModal('modal-edit-contrato')" style="display:flex;z-index:3000">
+    <div class="modal-overlay" id="modal-edit-contrato" onclick="if(event.target===this)this.remove()" style="display:flex;z-index:3000">
       <div class="modal" style="max-width:640px">
         <div class="modal-header">
           <span class="modal-title">Editar Contrato ${c.ixcId ? '#'+c.ixcId : ''}</span>
-          <button class="modal-close" onclick="fecharModal('modal-edit-contrato')">✕</button>
+          <button class="modal-close" onclick="document.getElementById('modal-edit-contrato').remove()">✕</button>
         </div>
         <div class="modal-body">
           <div style="background:rgba(55,138,221,0.08);border-left:3px solid #378add;padding:8px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--text2)">
@@ -6647,7 +6647,7 @@ function abrirEditContrato(idx){
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" onclick="fecharModal('modal-edit-contrato')">Cancelar</button>
+          <button class="btn" onclick="document.getElementById('modal-edit-contrato').remove()">Cancelar</button>
           <button class="btn btn-primary" onclick="salvarEditContrato()">Salvar</button>
         </div>
       </div>
@@ -6672,7 +6672,7 @@ async function salvarEditContrato(){
     const { error } = await sbClient.from('clientes_contratos').update(row).eq('id', c.id);
     if(error) { showToast('Erro ao salvar: '+error.message, true); return; }
   }
-  fecharModal('modal-edit-contrato');
+  document.getElementById('modal-edit-contrato')?.remove();
   // Re-render aba contratos
   if(window._cliAtual) renderCliContratos(window._cliAtual);
   showToast('Contrato atualizado!');
@@ -6684,11 +6684,11 @@ function abrirEditLogin(idx){
   if(!l) return;
   window._editLoginIdx = idx;
   const html = `
-    <div class="modal-overlay" id="modal-edit-login" onclick="if(event.target===this)fecharModal('modal-edit-login')" style="display:flex;z-index:3000">
+    <div class="modal-overlay" id="modal-edit-login" onclick="if(event.target===this)this.remove()" style="display:flex;z-index:3000">
       <div class="modal" style="max-width:640px">
         <div class="modal-header">
           <span class="modal-title">Editar Login ${l.login ? '"'+l.login+'"' : ''}</span>
-          <button class="modal-close" onclick="fecharModal('modal-edit-login')">✕</button>
+          <button class="modal-close" onclick="document.getElementById('modal-edit-login').remove()">✕</button>
         </div>
         <div class="modal-body">
           <div style="background:rgba(55,138,221,0.08);border-left:3px solid #378add;padding:8px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--text2)">
@@ -6723,7 +6723,7 @@ function abrirEditLogin(idx){
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" onclick="fecharModal('modal-edit-login')">Cancelar</button>
+          <button class="btn" onclick="document.getElementById('modal-edit-login').remove()">Cancelar</button>
           <button class="btn btn-primary" onclick="salvarEditLogin()">Salvar</button>
         </div>
       </div>
@@ -6748,7 +6748,7 @@ async function salvarEditLogin(){
     const { error } = await sbClient.from('clientes_logins').update(row).eq('id', l.id);
     if(error){ showToast('Erro ao salvar: '+error.message, true); return; }
   }
-  fecharModal('modal-edit-login');
+  document.getElementById('modal-edit-login')?.remove();
   if(window._cliAtual) renderCliLogins(window._cliAtual);
   showToast('Login atualizado!');
 }
