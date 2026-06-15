@@ -3165,13 +3165,14 @@ const _SYNC_MAP = {
       plano: l.plano || null,
       ssid: l.ssid || null,
       senha_wifi: l.senhaWifi || null,
+      obs: l.obs || null,
     }),
     fromRow: (r) => ({
       id: r.id, clienteId: r.cliente_id, contratoId: r.contrato_id,
       ixcId: r.ixc_id, ixcClienteId: r.ixc_cliente_id, ixcContratoId: r.ixc_contrato_id,
       login: r.login, senha: r.senha, autenticacao: r.autenticacao,
       tipoConexao: r.tipo_conexao, ativo: r.ativo, online: r.online,
-      plano: r.plano, ssid: r.ssid, senhaWifi: r.senha_wifi,
+      plano: r.plano, ssid: r.ssid, senhaWifi: r.senha_wifi, obs: r.obs,
     }),
   },
   sf_fornecedores: {
@@ -6511,6 +6512,8 @@ function renderCliContratos(cli){
   const ixcCid = cli.ixcId;
   const todos = gd('sf_clientes_contratos');
   const contratos = todos.filter(c => (cidLocal && c.clienteId==cidLocal) || (ixcCid && c.ixcClienteId==ixcCid));
+  // salva referência do cliente atual para usar no salvar
+  window._cliAtual = cli;
 
   const badge = document.getElementById('cli-tab-ctr-badge');
   if(contratos.length){ badge.style.display=''; badge.textContent=contratos.length; }
@@ -6522,29 +6525,45 @@ function renderCliContratos(cli){
   }
   const statusMap = {
     'A':{txt:'Ativo',bg:'rgba(99,153,34,0.2)',cor:'#3B6D11'},
-    'D':{txt:'Desativado',bg:'rgba(194,59,42,0.2)',cor:'#A32D2D'},
+    'D':{txt:'Cancelado',bg:'rgba(194,59,42,0.2)',cor:'#A32D2D'},
     'I':{txt:'Inativo',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'},
     'N':{txt:'Negativado',bg:'rgba(194,59,42,0.2)',cor:'#A32D2D'},
     'AB':{txt:'Aberto',bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
     'CM':{txt:'Em montagem',bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
     'DS':{txt:'Desistiu',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'},
+    'PC':{txt:'Pré-contrato',bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
   };
-  function pill(s){const m=statusMap[s]||{txt:s||'—',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'};return `<span class="cli-status-pill" style="background:${m.bg};color:${m.cor}">${m.txt}</span>`;}
+  const statusAcessoMap = {
+    'A' :{txt:'Ativo',             bg:'rgba(99,153,34,0.2)', cor:'#3B6D11'},
+    'D' :{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.2)', cor:'#A32D2D'},
+    'DM':{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.2)', cor:'#A32D2D'},
+    'FA':{txt:'Bloqueio Automático',bg:'rgba(232,109,33,0.2)',cor:'#C45A13'},
+    'AA':{txt:'Ag. Assinatura',    bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
+  };
+  function pill(s, map){ const m=map[s]||{txt:s||'—',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'}; return `<span class="cli-status-pill" style="background:${m.bg};color:${m.cor}">${m.txt}</span>`; }
   target.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;padding:0 0 10px">
+      <span style="font-size:11px;color:var(--text3)">Clique em ✏ para editar campos locais. Dados do IXC atualizam via sync.</span>
+    </div>
     <table class="cli-mini-table">
-      <thead><tr><th>ID</th><th>Tipo</th><th>Plano</th><th>Status</th><th>Acesso</th><th>Valor</th><th>Ativação</th><th>Renovação</th><th>Pago até</th></tr></thead>
-      <tbody>${contratos.map(c=>`
-        <tr>
+      <thead><tr><th>ID</th><th>Tipo</th><th>Plano</th><th>Status</th><th>Acesso</th><th>Valor</th><th>Ativação</th><th>Renovação</th><th>Pago até</th><th></th></tr></thead>
+      <tbody>${contratos.map((c,ci)=>{
+        const globalIdx = todos.indexOf(c);
+        return`<tr>
           <td class="td-mono">${c.ixcId||c.id||'—'}</td>
           <td>${(c.tipo||'').toUpperCase()||'—'}</td>
           <td><div style="font-weight:500">${c.plano||'—'}</div><div style="font-size:10.5px;color:var(--text3)">${c.descricao||''}</div></td>
-          <td>${pill(c.statusContrato)}</td>
-          <td>${pill(c.statusAcesso)}</td>
+          <td>${pill(c.statusContrato, statusMap)}</td>
+          <td>${pill(c.statusAcesso, statusAcessoMap)}</td>
           <td class="td-mono">${c.valor?brl(c.valor,true):'—'}</td>
           <td class="td-mono td-muted">${fmtData(c.dataAtivacao)}</td>
           <td class="td-mono td-muted">${fmtData(c.dataRenovacao)}</td>
           <td class="td-mono td-muted">${fmtData(c.pagoAte)}</td>
-        </tr>`).join('')}</tbody>
+          <td><button class="action-btn" title="Editar" onclick="abrirEditContrato(${globalIdx})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button></td>
+        </tr>`;
+      }).join('')}</tbody>
     </table>`;
 }
 
@@ -6554,6 +6573,7 @@ function renderCliLogins(cli){
   const ixcCid = cli.ixcId;
   const todos = gd('sf_clientes_logins');
   const logins = todos.filter(l => (cidLocal && l.clienteId==cidLocal) || (ixcCid && l.ixcClienteId==ixcCid));
+  window._cliAtual = cli;
 
   const badge = document.getElementById('cli-tab-log-badge');
   if(logins.length){ badge.style.display=''; badge.textContent=logins.length; }
@@ -6564,19 +6584,173 @@ function renderCliLogins(cli){
     return;
   }
   target.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;padding:0 0 10px">
+      <span style="font-size:11px;color:var(--text3)">Clique em ✏ para editar campos locais.</span>
+    </div>
     <table class="cli-mini-table">
-      <thead><tr><th>Login</th><th>Senha</th><th>Autenticação</th><th>Conexão</th><th>Plano</th><th>Ativo</th><th>Online</th></tr></thead>
-      <tbody>${logins.map(l=>`
-        <tr>
+      <thead><tr><th>Login</th><th>Senha</th><th>SSID Wi-Fi</th><th>Senha Wi-Fi</th><th>Autenticação</th><th>Conexão</th><th>Plano</th><th>Ativo</th><th>Online</th><th></th></tr></thead>
+      <tbody>${logins.map(l=>{
+        const globalIdx = todos.indexOf(l);
+        return`<tr>
           <td class="td-mono" style="font-weight:500">${l.login||'—'}</td>
           <td class="td-mono">${l.senha||'—'}</td>
+          <td class="td-mono">${l.ssid||'—'}</td>
+          <td class="td-mono">${l.senhaWifi||'—'}</td>
           <td>${l.autenticacao||'—'}</td>
           <td>${l.tipoConexao||'—'}</td>
           <td>${l.plano||'—'}</td>
           <td>${l.ativo?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">Sim</span>':'<span class="cli-status-pill" style="background:rgba(95,94,90,0.2);color:#5F5E5A">Não</span>'}</td>
           <td>${l.online?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">● Online</span>':'<span class="td-muted">—</span>'}</td>
-        </tr>`).join('')}</tbody>
+          <td><button class="action-btn" title="Editar" onclick="abrirEditLogin(${globalIdx})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button></td>
+        </tr>`;
+      }).join('')}</tbody>
     </table>`;
+}
+
+// ====== EDITAR CONTRATO ======
+function abrirEditContrato(idx){
+  const c = gd('sf_clientes_contratos')[idx];
+  if(!c) return;
+  window._editContratoIdx = idx;
+  const html = `
+    <div class="modal-overlay" id="modal-edit-contrato" onclick="if(event.target===this)fecharModal('modal-edit-contrato')" style="display:flex;z-index:3000">
+      <div class="modal" style="max-width:640px">
+        <div class="modal-header">
+          <span class="modal-title">Editar Contrato ${c.ixcId ? '#'+c.ixcId : ''}</span>
+          <button class="modal-close" onclick="fecharModal('modal-edit-contrato')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="background:rgba(55,138,221,0.08);border-left:3px solid #378add;padding:8px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+            ℹ Campos marcados com 🔒 são sincronizados do IXC. Edite apenas dados complementares locais.
+          </div>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">Tipo <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-tipo" value="${c.tipo||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Plano <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-plano" value="${c.plano||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group full"><label class="form-label">Descrição</label>
+              <input class="cp-form-input" id="ec-descricao" value="${c.descricao||''}" placeholder="Descrição do contrato"></div>
+            <div class="form-group"><label class="form-label">Status Contrato <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-statusContrato" value="${c.statusContrato||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Status Acesso <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-statusAcesso" value="${c.statusAcesso||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Valor mensal (R$)</label>
+              <input class="cp-form-input" id="ec-valor" type="number" step="0.01" value="${c.valor||''}" placeholder="0,00"></div>
+            <div class="form-group"><label class="form-label">Data Ativação <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-dataAtivacao" type="date" value="${c.dataAtivacao||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Data Renovação <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-dataRenovacao" type="date" value="${c.dataRenovacao||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Pago até <span style="font-size:9px;color:var(--accent)">🔒 IXC</span></label>
+              <input class="cp-form-input" id="ec-pagoAte" type="date" value="${c.pagoAte||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-edit-contrato')">Cancelar</button>
+          <button class="btn btn-primary" onclick="salvarEditContrato()">Salvar</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('modal-edit-contrato')?.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function salvarEditContrato(){
+  const idx = window._editContratoIdx;
+  const lista = gd('sf_clientes_contratos');
+  const c = lista[idx];
+  if(!c) return;
+  c.descricao = document.getElementById('ec-descricao').value;
+  c.valor = parseFloat(document.getElementById('ec-valor').value) || c.valor;
+  lista[idx] = c;
+  // Salva cache + Supabase
+  _cache.sf_clientes_contratos = lista;
+  localStorage.setItem('sf_clientes_contratos', JSON.stringify(lista));
+  if(c.id){
+    const row = _SYNC_MAP.sf_clientes_contratos.toRow(c);
+    const { error } = await sbClient.from('clientes_contratos').update(row).eq('id', c.id);
+    if(error) { showToast('Erro ao salvar: '+error.message, true); return; }
+  }
+  fecharModal('modal-edit-contrato');
+  // Re-render aba contratos
+  if(window._cliAtual) renderCliContratos(window._cliAtual);
+  showToast('Contrato atualizado!');
+}
+
+// ====== EDITAR LOGIN ======
+function abrirEditLogin(idx){
+  const l = gd('sf_clientes_logins')[idx];
+  if(!l) return;
+  window._editLoginIdx = idx;
+  const html = `
+    <div class="modal-overlay" id="modal-edit-login" onclick="if(event.target===this)fecharModal('modal-edit-login')" style="display:flex;z-index:3000">
+      <div class="modal" style="max-width:640px">
+        <div class="modal-header">
+          <span class="modal-title">Editar Login ${l.login ? '"'+l.login+'"' : ''}</span>
+          <button class="modal-close" onclick="fecharModal('modal-edit-login')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="background:rgba(55,138,221,0.08);border-left:3px solid #378add;padding:8px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--text2)">
+            ℹ Login, senha PPPoE e status vêm do IXC. Você pode editar SSID, senha Wi-Fi e observações localmente.
+          </div>
+          <div class="form-section">Autenticação PPPoE <span style="font-size:10px;color:var(--accent);font-weight:400">🔒 IXC</span></div>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">Login PPPoE</label>
+              <input class="cp-form-input" id="el-login" value="${l.login||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Senha PPPoE</label>
+              <input class="cp-form-input" id="el-senha" value="${l.senha||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Autenticação</label>
+              <input class="cp-form-input" id="el-autenticacao" value="${l.autenticacao||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Tipo conexão</label>
+              <input class="cp-form-input" id="el-tipoConexao" value="${l.tipoConexao||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Plano</label>
+              <input class="cp-form-input" id="el-plano" value="${l.plano||''}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+            <div class="form-group"><label class="form-label">Ativo</label>
+              <input class="cp-form-input" value="${l.ativo?'Sim':'Não'}" disabled style="background:var(--bg2);color:var(--text2)"></div>
+          </div>
+          <div class="form-section">Wi-Fi / Roteador <span style="font-size:10px;color:var(--text2);font-weight:400">editável</span></div>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">SSID (nome da rede Wi-Fi)</label>
+              <input class="cp-form-input" id="el-ssid" value="${l.ssid||''}" placeholder="Nome da rede Wi-Fi"></div>
+            <div class="form-group"><label class="form-label">Senha Wi-Fi</label>
+              <input class="cp-form-input" id="el-senhaWifi" value="${l.senhaWifi||''}" placeholder="Senha do Wi-Fi"></div>
+          </div>
+          <div class="form-section">Observações</div>
+          <div class="form-grid">
+            <div class="form-group full"><label class="form-label">Observações internas</label>
+              <textarea class="cp-form-input" id="el-obs" style="width:100%;min-height:60px" placeholder="Endereço MAC, ONU, observações técnicas...">${l.obs||''}</textarea></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-edit-login')">Cancelar</button>
+          <button class="btn btn-primary" onclick="salvarEditLogin()">Salvar</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('modal-edit-login')?.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function salvarEditLogin(){
+  const idx = window._editLoginIdx;
+  const lista = gd('sf_clientes_logins');
+  const l = lista[idx];
+  if(!l) return;
+  l.ssid     = document.getElementById('el-ssid').value.trim();
+  l.senhaWifi = document.getElementById('el-senhaWifi').value.trim();
+  l.obs       = document.getElementById('el-obs').value.trim();
+  lista[idx] = l;
+  _cache.sf_clientes_logins = lista;
+  localStorage.setItem('sf_clientes_logins', JSON.stringify(lista));
+  if(l.id){
+    const row = _SYNC_MAP.sf_clientes_logins.toRow(l);
+    const { error } = await sbClient.from('clientes_logins').update(row).eq('id', l.id);
+    if(error){ showToast('Erro ao salvar: '+error.message, true); return; }
+  }
+  fecharModal('modal-edit-login');
+  if(window._cliAtual) renderCliLogins(window._cliAtual);
+  showToast('Login atualizado!');
 }
 
 function renderCliFinanceiro(cli){
