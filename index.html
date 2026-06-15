@@ -8405,7 +8405,7 @@ async function confirmarAbrirOS(){
       // Vincula OS ao chamado + muda status para "aberto"
       if(osId){
         await sbClient.from('campo_chamados').update({ os_id: osId, status: 'aberto' }).eq('id', chamadoId);
-        await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status: 'aberto' }).catch(()=>{});
+        try{ await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status: 'aberto' }); }catch(_){}
       }
     }
 
