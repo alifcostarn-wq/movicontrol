@@ -3068,8 +3068,8 @@ const _SYNC_MAP = {
   },
   sf_clientes: {
     table: 'clientes',
-    toRow: (c) => ({
-      id: c.id,
+    toRow: (c) => {
+      const row = {
       nome: c.nome || '',
       razao: c.razao || null,
       cnpj: c.cnpj || null,
@@ -3111,7 +3111,11 @@ const _SYNC_MAP = {
       referencia: c.referencia || null,
       moradia: c.moradia || null,
       uf: c.uf || null,
-    }),
+      };
+      // Só inclui id se tiver valor válido (evita erro "cannot insert non-DEFAULT value into id")
+      if(c.id != null) row.id = c.id;
+      return row;
+    },
     fromRow: (r) => ({
       id: r.id, nome: r.nome, razao: r.razao, cnpj: r.cnpj, ie: r.ie,
       contato: r.contato, datacad: r.datacad, tel1: r.tel1, tel2: r.tel2,
@@ -5606,7 +5610,7 @@ function renderCadastro(tipo){
   const busca=(document.getElementById(prefix+'-busca')?.value||'').toLowerCase();
   const statusFiltro = isCli ? (window._cliStatusFiltro || 'Todos') : 'Todos';
   // Helper para resolver o status visível de um cliente (usa statusContrato ou legacy ixcStatus)
-  const statusLegacy = {'A':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado'};
+  const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado'};
   function statusDe(c){ return c.statusContrato || statusLegacy[c.ixcStatus] || null; }
   const fil=lista.map((i,idx)=>({...i,_idx:idx}))
     .filter(i=>!busca||[(i.nome||''),(i.razao||''),(i.cnpj||''),(i.cidade||''),(i.ixcLogin||'')].join(' ').toLowerCase().includes(busca))
@@ -5662,10 +5666,11 @@ function renderCadastro(tipo){
         'Cancelado':            {bg:'rgba(95,94,90,0.15)',   cor:'#5f5e5a'},
       };
       const statusLegacy = {
-        'A':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado',
+        'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato',
+        'I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado',
       };
       // Prioridade: statusContrato calculado > legacy ixcStatus do cliente
-      const txt = i.statusContrato || statusLegacy[i.ixcStatus] || (ixcOrigem ? i.ixcStatus : null);
+      const txt = i.statusContrato || statusLegacy[i.ixcStatus] || null;
       const st = txt ? (statusMap[txt] || {bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'}) : null;
       const statusCell = st
         ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${st.bg};color:${st.cor};font-size:10.5px;font-weight:600;white-space:nowrap">${txt}</span>`
@@ -6488,8 +6493,8 @@ function abrirModalCliente(idx=null){
       'Inativo':              {bg:'rgba(95,94,90,0.2)',  cor:'#5F5E5A'},
       'Cancelado':            {bg:'rgba(95,94,90,0.2)',  cor:'#5F5E5A'},
     };
-    const statusLegacy = {'A':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado'};
-    const txt = cli.statusContrato || statusLegacy[cli.ixcStatus] || cli.ixcStatus || '—';
+    const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado'};
+    const txt = cli.statusContrato || statusLegacy[cli.ixcStatus] || '—';
     const st = statusMap[txt] || {bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'};
     const elStatus = document.getElementById('cli-ixc-status');
     elStatus.textContent = txt; elStatus.style.background = st.bg; elStatus.style.color = st.cor;
@@ -8679,20 +8684,19 @@ async function syncIXC(silent){
       }
     });
 
-    // === Upsert batch CLIENTES no Supabase ===
+    // === Upsert batch CLIENTES no Supabase por ixc_id ===
+    // Usa ixc_id como chave de conflito (mais robusto que id local)
     const mapCli = _SYNC_MAP.sf_clientes;
-    const comId = clientes.filter(c => c.origem==='ixc' && c.id!=null);
-    const semId = clientes.filter(c => c.origem==='ixc' && c.id==null);
-    if(comId.length){
-      const rows = comId.map(c => mapCli.toRow(c));
-      const { error } = await sbClient.from('clientes').upsert(rows, { onConflict: 'id' });
+    const clientesIxc = clientes.filter(c => c.origem==='ixc' && c.ixcId);
+    if(clientesIxc.length){
+      const rows = clientesIxc.map(c => { const r = mapCli.toRow(c); if(!c.id) delete r.id; return r; });
+      const { data, error } = await sbClient.from('clientes').upsert(rows, { onConflict: 'ixc_id' }).select('id, ixc_id');
       if(error) throw new Error('Supabase clientes upsert: '+error.message);
-    }
-    if(semId.length){
-      const rows = semId.map(c => { const r = mapCli.toRow(c); delete r.id; return r; });
-      const { data, error } = await sbClient.from('clientes').insert(rows).select();
-      if(error) throw new Error('Supabase clientes insert: '+error.message);
-      if(data) data.forEach((row, i) => { semId[i].id = row.id; });
+      // Atribui ids gerados de volta por ixc_id
+      if(data){
+        const idMap = new Map(data.map(d => [String(d.ixc_id), d.id]));
+        clientesIxc.forEach(c => { if(c.ixcId && idMap.has(String(c.ixcId))) c.id = idMap.get(String(c.ixcId)); });
+      }
     }
 
     // Re-indexa byIxcId após inserts para mapear ixc_id -> id local
