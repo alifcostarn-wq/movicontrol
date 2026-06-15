@@ -8528,8 +8528,13 @@ async function chamarIXC(cfg, endpoint, params){
 
 // Mapeia status do IXC para nosso formato curto
 function mapStatusIXC(ativo){
+  // No IXC o campo 'ativo' do cliente retorna: 'S'=Sim(ativo), 'N'=Não(inativo)
+  // Outros possíveis: 'A'(ativo), 'I'(inativo), 'D'(desativado)
   if(!ativo) return 'I';
-  return String(ativo).toUpperCase();
+  const v = String(ativo).toUpperCase();
+  if(v === 'S' || v === '1' || v === 'TRUE') return 'A'; // Sim = Ativo
+  if(v === 'N' || v === '0' || v === 'FALSE') return 'I'; // Não = Inativo
+  return v; // A, D, I, CM, AB passam como estão
 }
 
 // Calcula label legível do status do CONTRATO combinando status do contrato + status de acesso (internet).
@@ -8540,12 +8545,16 @@ function calcStatusContrato(statusContrato, statusAcesso){
   if(sc === 'N') return 'Negativado';
   if(sc === 'I') return 'Inativo';
   if(sc === 'PC' || sc === 'CM' || sc === 'AB') return 'Pré-contrato';
-  if(sc === 'A'){
-    if(sa === 'D' || sa === 'DM') return 'Bloqueio Manual';
-    if(sa === 'FA') return 'Bloqueio Automático';
+  if(sc === 'A' || sc === 'AT'){
+    if(sa === 'S'  || sa === 'SU') return 'Bloqueio Manual';   // Suspenso manual
+    if(sa === 'D'  || sa === 'DM') return 'Bloqueio Manual';   // Desativado manual
+    if(sa === 'FA' || sa === 'BL') return 'Bloqueio Automático'; // Financeiro/auto
     if(sa === 'AA') return 'Aguardando Assinatura';
+    if(sa === 'A'  || sa === '')   return 'Ativo';
     return 'Ativo';
   }
+  // Fallback: status do cliente (campo ativo do IXC pode vir como S=sim, N=não)
+  if(sc === 'S') return 'Ativo';   // ativo='S' significa Sim no cliente IXC
   return sc || '—';
 }
 
@@ -8562,17 +8571,21 @@ function agregarStatusCliente(contratosCliente){
 
 // Busca paginada — repete chamadas até trazer todos os registros (até 50 páginas)
 async function buscarTudoIXC(cfg, endpoint, baseParams={}){
-  const rp = String(baseParams.rp || cfg.rp || 500);
+  const rp = String(baseParams.rp || cfg.rp || 1000); // rp maior = menos páginas
   let pagina = 1, todos = [], total = null;
   while(pagina <= 50){
     const resp = await chamarIXC(cfg, endpoint, { ...baseParams, page: String(pagina), rp });
     const registros = resp.registros || [];
     todos = todos.concat(registros);
-    if(total === null) total = parseInt(resp.total || '0') || registros.length;
-    if(registros.length < parseInt(rp) || todos.length >= total) break;
+    if(total === null){
+      // IXC retorna 'total' como string com o total de registros
+      total = parseInt(resp.total || '0') || 0;
+    }
+    // Para se: veio menos registros do que o rp (última página) OU já atingiu o total
+    if(registros.length < parseInt(rp) || (total > 0 && todos.length >= total)) break;
     pagina++;
   }
-  return { registros: todos, total };
+  return { registros: todos, total: total || todos.length };
 }
 
 // Normaliza CPF/CNPJ para comparação (só dígitos)
@@ -8696,16 +8709,21 @@ async function syncIXC(silent){
     regCtr.forEach(r => {
       const ixcId = String(r.id||'');
       const ixcCliId = String(r.id_cliente||'');
+      // Nome do plano: usa descricao_aux_plano_venda > nome_plano > descricao > descricao_aux
+      const nomePlano = r.descricao_aux_plano_venda || r.nome_plano || r.descricao_aux || r.descricao || r.id_vd_contrato || '';
+      // Velocidade no nome do plano (ex: "FIBRA 300MB", "INTERNET 100MEGA")
       const dados = {
         ixcId,
         ixcClienteId: ixcCliId,
         clienteId: ixcToLocalId.get(ixcCliId) || null,
         tipo: r.tipo || '',
-        plano: r.id_vd_contrato || r.descricao || '',
+        plano: nomePlano,
         descricao: r.descricao || r.descricao_aux || '',
+        // status do contrato: campo "status" do IXC (A=ativo, I=inativo, D=cancelado, N=negativado, CM, DS, AB, PC)
         statusContrato: r.status || '',
-        statusAcesso: r.status_internet || '',
-        valor: parseFloat(String(r.valor_servico||r.valor||'0').replace(',','.')) || null,
+        // status de acesso/internet: campo "status_internet" (A=ativo, S=suspenso, FA=bloqueio financeiro, DM=bloqueio manual, D=desativado, AA=ag.assinatura)
+        statusAcesso: r.status_internet || r.status_acesso || '',
+        valor: parseFloat(String(r.valor_servico||r.valor||r.mensalidade||'0').replace(',','.')) || null,
         dataAtivacao: r.data_ativacao && r.data_ativacao !== '0000-00-00' ? r.data_ativacao : null,
         dataRenovacao: r.data_renovacao && r.data_renovacao !== '0000-00-00' ? r.data_renovacao : null,
         pagoAte: r.pago_ate && r.pago_ate !== '0000-00-00' ? r.pago_ate : null,
@@ -8934,7 +8952,16 @@ function initDiagnostico(){
   const logins=gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
   if(!logins.length){ document.getElementById('cli-diag-content').innerHTML='<div class="cli-empty-pane">Nenhum login IXC vinculado.<br><span style="font-size:11px;color:var(--text3)">Faça a sync IXC para carregar os logins.</span></div>'; return; }
   const contratos=gd('sf_clientes_contratos').filter(c=>(cli.id&&c.clienteId==cli.id)||(cli.ixcId&&c.ixcClienteId==cli.ixcId));
-  if(contratos.length){ const p=contratos[0].plano||contratos[0].descricao||''; const m=p.match(/(\d+)\s*m/i)||p.match(/(\d+)/); if(m) _diagMaxMbps=parseInt(m[1]); }
+  if(contratos.length){
+    // Tenta extrair velocidade de vários campos: "300MB", "FIBRA 100MEGA", "500M", etc.
+    const textos = [contratos[0].plano, contratos[0].descricao].filter(Boolean).join(' ');
+    const m = textos.match(/(\d+)\s*(g(?:iga)?|m(?:ega|b(?:ps)?)?)/i);
+    if(m){
+      const vel = parseInt(m[1]);
+      const unidade = m[2].toLowerCase();
+      _diagMaxMbps = unidade.startsWith('g') ? vel * 1000 : vel;
+    }
+  }
   const loginAtivo=logins.find(l=>l.online)||logins[0];
   _diagLoginId=loginAtivo.ixcId;
   renderDiagBase(loginAtivo, logins);
@@ -9112,7 +9139,7 @@ function toggleDiagPoll(){ _diagTimer?stopDiagPoll():startDiagPoll(); }
 function mudaLoginDiag(id){ _diagLoginId=id; _diagPrevBytes=null; _diagHistory=[]; lerVelocidade(); }
 
 const _origFecharModal=fecharModal;
-function fecharModal(id){ if(id==='modal-cli') stopDiagPoll(); _origFecharModal(id); }
+window.fecharModal=function(id){ if(id==='modal-cli') stopDiagPoll(); _origFecharModal(id); };
 
 async function executarPing(){
   const cfg=getIXCConfig();
