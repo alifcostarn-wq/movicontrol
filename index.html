@@ -1883,7 +1883,7 @@ textarea.cp-form-input{resize:vertical}
     </div>
 
     <div class="modal-overlay" id="modal-os">
-      <div class="modal md">
+      <div class="modal" style="max-width:900px;width:95vw">
         <div class="modal-header">
           <span class="modal-title" id="tit-os">Nova Ordem de Serviço</span>
           <button class="modal-close" onclick="fecharModal('modal-os')">✕</button>
@@ -1892,24 +1892,23 @@ textarea.cp-form-input{resize:vertical}
           <input type="hidden" id="os-id">
           <input type="hidden" id="os-cliente-id">
 
-          <!-- Busca de cliente na OS -->
-          <div class="form-group full" style="margin-bottom:12px;position:relative">
-            <label class="form-label">Buscar cliente<span>*</span>
-              <span id="os-cliente-badge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:10px;background:rgba(55,138,221,0.15);color:#185fa5;font-size:10px;font-weight:600">✓ Vinculado</span>
-            </label>
-            <input class="cp-form-input" id="os-cliente" placeholder="Digite o nome ou CPF do cliente..." autocomplete="off"
-              oninput="buscarClienteOS(this.value)" onfocus="buscarClienteOS(this.value)">
-            <div id="os-cliente-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.12)"></div>
-          </div>
-
-          <!-- Abas: Serviço | Diagnóstico -->
+          <!-- Abas -->
           <div style="display:flex;border-bottom:1px solid var(--border);margin:-4px -16px 14px;padding:0 16px" id="os-tabs">
-            <div id="os-tab-servico" onclick="osTab('servico')" style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">🔧 Serviço</div>
-            <div id="os-tab-diag"    onclick="osTab('diag')"    style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)" id="os-tab-diag">📊 Diagnóstico IXC</div>
+            <div id="os-tab-servico"  onclick="osTab('servico')"  style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">🔧 Serviço</div>
+            <div id="os-tab-cliente" onclick="osTab('cliente')"  style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">👤 Cliente</div>
+            <div id="os-tab-diag"    onclick="osTab('diag')"     style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">📊 Diagnóstico IXC</div>
           </div>
 
           <!-- Pane: Serviço -->
           <div id="os-pane-servico">
+            <div class="form-group full" style="margin-bottom:12px;position:relative">
+              <label class="form-label">Buscar cliente<span>*</span>
+                <span id="os-cliente-badge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:10px;background:rgba(55,138,221,0.15);color:#185fa5;font-size:10px;font-weight:600">✓ Vinculado</span>
+              </label>
+              <input class="cp-form-input" id="os-cliente" placeholder="Digite o nome ou CPF do cliente..." autocomplete="off"
+                oninput="buscarClienteOS(this.value)" onfocus="buscarClienteOS(this.value)">
+              <div id="os-cliente-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.12)"></div>
+            </div>
             <div class="form-grid">
               <div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="os-telefone" placeholder="(xx) xxxxx-xxxx"></div>
               <div class="form-group"><label class="form-label">Login PPPoE</label><input class="cp-form-input" id="os-login-cliente" placeholder="login do cliente"></div>
@@ -1918,14 +1917,35 @@ textarea.cp-form-input{resize:vertical}
             <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Serviço<span>*</span></label><textarea class="cp-form-input" id="os-descricao" rows="3" placeholder="Descreva o serviço a ser realizado…"></textarea></div></div>
             <div class="form-grid trio">
               <div class="form-group"><label class="form-label">Técnico<span>*</span></label><select class="cp-form-select" id="os-tecnico"><option value="">Selecione…</option></select></div>
-              <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="os-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
-              <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="os-status"><option value="aberta">Aberta</option><option value="andamento">Em andamento</option><option value="concluida">Concluída</option><option value="cancelada">Cancelada</option></select></div>
+              <div class="form-group"><label class="form-label">Prioridade</label>
+                <select class="cp-form-select" id="os-prioridade"><option value="baixa">🟢 Baixa</option><option value="media" selected>🟡 Média</option><option value="alta">🔴 Alta</option></select></div>
+              <div class="form-group"><label class="form-label">Status</label>
+                <select class="cp-form-select" id="os-status">
+                  <option value="aberta">📋 Aberta</option>
+                  <option value="assumida">✋ Assumida</option>
+                  <option value="executando">🔧 Executando</option>
+                  <option value="finalizada">✅ Finalizada</option>
+                  <option value="cancelada">❌ Cancelada</option>
+                </select></div>
             </div>
             <div class="form-grid">
               <div class="form-group"><label class="form-label">Data</label><input class="cp-form-input" type="date" id="os-data"></div>
               <div class="form-group"><label class="form-label">Peças Utilizadas</label><input class="cp-form-input" id="os-pecas" placeholder="Ex: Cabo UTP 10m, ONU…"></div>
             </div>
             <div class="form-grid full"><div class="form-group"><label class="form-label">Observações</label><textarea class="cp-form-input" id="os-obs" rows="2" placeholder="Observações adicionais…"></textarea></div></div>
+          </div>
+
+          <!-- Pane: Cliente -->
+          <div id="os-pane-cliente" style="display:none">
+            <div id="os-cli-aviso" style="padding:32px 0;text-align:center;color:var(--text3);font-size:13px">
+              <div style="font-size:28px;margin-bottom:8px">👤</div>
+              Vincule um cliente na aba Serviço para ver os dados aqui.
+            </div>
+            <div id="os-cli-dados" style="display:none">
+              <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+                <div id="os-cli-rows"></div>
+              </div>
+            </div>
           </div>
 
           <!-- Pane: Diagnóstico IXC -->
@@ -1938,7 +1958,75 @@ textarea.cp-form-input{resize:vertical}
           </div>
 
         </div>
-        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-os')">Cancelar</button><button class="btn btn-primary" onclick="salvarOS()">Salvar OS</button></div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-os')">Cancelar</button>
+          <button class="btn" id="os-btn-finalizar" style="display:none;color:#639922;border-color:#639922" onclick="abrirModalFinalizarOS()">
+            ✅ Finalizar OS
+          </button>
+          <button class="btn btn-primary" onclick="salvarOS()">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Finalizar OS -->
+    <div class="modal-overlay" id="modal-finalizar-os" onclick="if(event.target===this)fecharModal('modal-finalizar-os')">
+      <div class="modal" style="max-width:580px">
+        <div class="modal-header">
+          <span class="modal-title">✅ Finalizar Ordem de Serviço</span>
+          <button class="modal-close" onclick="fecharModal('modal-finalizar-os')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="background:rgba(99,153,34,0.08);border-left:3px solid #639922;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text2)">
+            Preencha o relatório técnico antes de finalizar. Essas informações ficam registradas na OS.
+          </div>
+
+          <div class="form-group full">
+            <label class="form-label">✏️ O que foi feito (Solução técnica)<span>*</span></label>
+            <textarea class="cp-form-input" id="fin-solucao" rows="4"
+              placeholder="Ex: Substituída ONU com defeito. Sinal óptico normalizado após troca do conector SC/APC..."></textarea>
+          </div>
+
+          <div class="form-group full">
+            <label class="form-label">📶 Sinal da Fibra / Rádio</label>
+            <select class="cp-form-select" id="fin-sinal">
+              <option value="">— Selecione o resultado —</option>
+              <option value="Sinal óptico normal (dentro do padrão)">✅ Sinal óptico normal (dentro do padrão)</option>
+              <option value="Sinal óptico baixo (atenuação alta)">⚠️ Sinal óptico baixo (atenuação alta)</option>
+              <option value="Sinal óptico crítico (sem sinal)">❌ Sinal óptico crítico (sem sinal)</option>
+              <option value="Sinal de rádio bom (boa intensidade/SNR)">✅ Sinal de rádio bom (boa intensidade/SNR)</option>
+              <option value="Sinal de rádio fraco">⚠️ Sinal de rádio fraco</option>
+              <option value="Sinal de rádio instável (oscilando)">⚠️ Sinal de rádio instável (oscilando)</option>
+              <option value="Não se aplica (sem fibra/rádio)">— Não se aplica</option>
+            </select>
+          </div>
+
+          <div class="form-section">📡 Resultado do Speedtest</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Download (Mbps)</label>
+              <input class="cp-form-input" type="number" id="fin-speed-down" placeholder="Ex: 487" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Upload (Mbps)</label>
+              <input class="cp-form-input" type="number" id="fin-speed-up" placeholder="Ex: 95" min="0">
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:12px">
+            Deixe em branco se não foi possível realizar o teste.
+          </div>
+
+          <div class="form-group full">
+            <label class="form-label">📝 Observações finais (opcional)</label>
+            <textarea class="cp-form-input" id="fin-obs" rows="2"
+              placeholder="Orientações passadas ao cliente, pendências, etc..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-finalizar-os')">Cancelar</button>
+          <button class="btn btn-primary" onclick="confirmarFinalizarOS()" style="background:#639922;border-color:#639922">
+            ✅ Confirmar Finalização
+          </button>
+        </div>
       </div>
     </div>
 
@@ -8435,6 +8523,88 @@ function irParaOS(osId){
   setTimeout(()=>abrirModalOS(osId), 300);
 }
 
+function renderOsClienteTab(){
+  const cli = window._osClienteAtual;
+  const aviso = document.getElementById('os-cli-aviso');
+  const dados = document.getElementById('os-cli-dados');
+  const rows  = document.getElementById('os-cli-rows');
+  if(!cli){ if(aviso)aviso.style.display=''; if(dados)dados.style.display='none'; return; }
+  if(aviso)aviso.style.display='none'; if(dados)dados.style.display='';
+  const login = _getLoginCliente(cli);
+  const contrato = _getContratoAtivo(cli);
+  const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','I':'Inativo','N':'Negativado'};
+  const st = cli.statusContrato || statusLegacy[cli.ixcStatus] || '—';
+  const stCor = {'Ativo':'#3B6D11','Bloqueio Manual':'#A32D2D','Bloqueio Automático':'#C45A13','Negativado':'#5F5E5A','Cancelado':'#5F5E5A'}[st]||'var(--text2)';
+  const endereco = [cli.end,cli.numero,cli.complemento,cli.bairro,cli.cidade,cli.uf].filter(Boolean).join(', ');
+  const item=(label,val,mono=false)=>val?`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--text2)">${label}</span><span style="font-size:12.5px;font-weight:500${mono?';font-family:monospace':''}">${val}</span></div>`:'';
+  rows.innerHTML=`
+    <div style="padding:10px 14px;background:rgba(55,138,221,0.06);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:600;font-size:14px">${escHtml(cli.nome||'—')}</span>
+      <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:10px;background:${stCor}22;color:${stCor}">${st}</span>
+    </div>
+    ${item('CPF / CNPJ',cli.cnpj)}
+    ${item('Endereço',endereco)}
+    ${item('Telefone',cli.tel1||cli.whatsapp)}
+    ${item('E-mail',cli.email)}
+    ${item('Plano',contrato?.plano||'—')}
+    <div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text2)">Login PPPoE</span>
+      <span style="font-size:12.5px;font-weight:600;font-family:monospace;color:#185fa5">${escHtml(login?.login||cli.ixcLogin||'—')}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:9px 14px">
+      <span style="font-size:12px;color:var(--text2)">Senha PPPoE</span>
+      <span style="font-size:12.5px;font-weight:600;font-family:monospace">${escHtml(login?.senha||cli.ixcSenha||'—')}</span>
+    </div>`;
+}
+
+function abrirModalFinalizarOS(){
+  const id=document.getElementById('os-id').value;
+  if(!id){showToast('Salve a OS primeiro.',true);return;}
+  ['fin-solucao','fin-obs'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
+  ['fin-speed-down','fin-speed-up'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
+  document.getElementById('fin-sinal').value='';
+  abrirModal('modal-finalizar-os');
+}
+
+async function confirmarFinalizarOS(){
+  const id=document.getElementById('os-id').value;
+  const solucao=document.getElementById('fin-solucao').value.trim();
+  if(!solucao){showToast('Descreva o que foi feito antes de finalizar.',true);return;}
+  const sinal=document.getElementById('fin-sinal').value;
+  const down=parseFloat(document.getElementById('fin-speed-down').value)||null;
+  const up=parseFloat(document.getElementById('fin-speed-up').value)||null;
+  const obs=document.getElementById('fin-obs').value.trim();
+  const btn=document.querySelector('#modal-finalizar-os .btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Finalizando...';}
+  try{
+    const {error}=await sbClient.from('campo_os').update({
+      status:'finalizada',solucao,sinal_fibra:sinal||null,
+      speedtest_down:down,speedtest_up:up,
+      obs:obs||document.getElementById('os-obs')?.value||'',
+      finalizado_em:new Date().toISOString(),
+    }).eq('id',id);
+    if(error){showToast('Erro: '+error.message,true);return;}
+    const os=_cpOS.find(x=>x.id==id);
+    if(os?.chamado_id){
+      await sbClient.from('campo_chamados').update({status:'concluido',concluido_em:new Date().toISOString()}).eq('id',os.chamado_id);
+    }
+    fecharModal('modal-finalizar-os');fecharModal('modal-os');
+    await carregarCampo();renderOS();renderChamados();
+    showToast('✅ OS finalizada!');
+  }catch(e){showToast('Erro: '+e.message,true);}
+  finally{if(btn){btn.disabled=false;btn.textContent='✅ Confirmar Finalização';}}
+}
+
+async function atualizarStatusOS(id, novoStatus){
+  const campo = novoStatus==='assumida' ? {status:'assumida',assumido_em:new Date().toISOString()} :
+                novoStatus==='executando'? {status:'executando',executando_em:new Date().toISOString()} : {status:novoStatus};
+  const {error}=await sbClient.from('campo_os').update(campo).eq('id',id);
+  if(error){showToast('Erro: '+error.message,true);return;}
+  await carregarCampo();renderOS();
+  const msgs={assumida:'✋ OS assumida!',executando:'🔧 Executando!',finalizada:'✅ Finalizada!'};
+  showToast(msgs[novoStatus]||'Status atualizado.');
+}
+
 function cpProximoNumOS(){
   const nums = _cpOS.map(o=>parseInt(o.numero)||0);
   return (nums.length ? Math.max(...nums) : 0) + 1;
@@ -8444,27 +8614,45 @@ function abrirModalOS(id){
   popularSelectsTecnicosCampo();
   document.getElementById('os-id').value = id || '';
   document.getElementById('tit-os').textContent = id ? 'Editar OS' : 'Nova Ordem de Serviço';
+  const btnFin = document.getElementById('os-btn-finalizar');
+
+  // Limpa estado autocomplete
+  const badge = document.getElementById('os-cliente-badge');
+  if(badge) badge.style.display='none';
+  document.getElementById('os-cliente-id').value='';
+  window._osClienteAtual = null;
+
   if(id){
     const o = _cpOS.find(x=>x.id==id);
     if(o){
-      document.getElementById('os-cliente').value = o.cliente;
-      document.getElementById('os-telefone').value = o.telefone||'';
-      document.getElementById('os-endereco').value = o.endereco||'';
-      document.getElementById('os-descricao').value = o.descricao;
-      document.getElementById('os-tecnico').value = o.tecnico_id||'';
-      document.getElementById('os-prioridade').value = o.prioridade;
-      document.getElementById('os-status').value = o.status;
-      document.getElementById('os-data').value = o.data||'';
-      document.getElementById('os-pecas').value = o.pecas||'';
-      document.getElementById('os-obs').value = o.obs||'';
+      document.getElementById('os-cliente').value     = o.cliente||'';
+      document.getElementById('os-telefone').value    = o.telefone||'';
+      document.getElementById('os-endereco').value    = o.endereco||'';
+      document.getElementById('os-descricao').value   = o.descricao||'';
+      document.getElementById('os-login-cliente').value = o.login_cliente||'';
+      document.getElementById('os-tecnico').value     = o.tecnico_id||'';
+      document.getElementById('os-prioridade').value  = o.prioridade||'media';
+      document.getElementById('os-status').value      = o.status||'aberta';
+      document.getElementById('os-data').value        = o.data||'';
+      document.getElementById('os-pecas').value       = o.pecas||'';
+      document.getElementById('os-obs').value         = o.obs||'';
+      // Recarrega cliente vinculado
+      if(o.cliente_id){
+        const cli = gd('sf_clientes').find(x=>String(x.id)===String(o.cliente_id));
+        if(cli){ window._osClienteAtual=cli; document.getElementById('os-cliente-id').value=cli.id||''; if(badge)badge.style.display=''; }
+      }
+      // Botão Finalizar: mostra só se não está ainda finalizada/cancelada
+      if(btnFin) btnFin.style.display = ['aberta','assumida','executando'].includes(o.status) ? '' : 'none';
     }
   } else {
-    ['os-cliente','os-telefone','os-endereco','os-descricao','os-pecas','os-obs'].forEach(f=>document.getElementById(f).value='');
+    ['os-cliente','os-telefone','os-endereco','os-descricao','os-login-cliente','os-pecas','os-obs'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
     document.getElementById('os-tecnico').value='';
     document.getElementById('os-prioridade').value='media';
     document.getElementById('os-status').value='aberta';
     document.getElementById('os-data').value=cpHoje();
+    if(btnFin) btnFin.style.display='none';
   }
+  osTab('servico');
   abrirModal('modal-os');
 }
 
@@ -8476,15 +8664,28 @@ async function salvarOS(){
   const tecId = document.getElementById('os-tecnico').value || null;
   const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome||'' : '';
   const novoStatus = document.getElementById('os-status').value;
-  const obj = { cliente, telefone:document.getElementById('os-telefone').value.trim(), endereco:document.getElementById('os-endereco').value.trim(), descricao, tecnico_id:tecId, tecnico_nome:tecNome, prioridade:document.getElementById('os-prioridade').value, status:novoStatus, data:document.getElementById('os-data').value||cpHoje(), pecas:document.getElementById('os-pecas').value.trim(), obs:document.getElementById('os-obs').value.trim() };
+  const clienteId  = document.getElementById('os-cliente-id').value.trim() || null;
+  const obj = {
+    cliente: document.getElementById('os-cliente').value.trim(),
+    cliente_id: clienteId,
+    telefone: document.getElementById('os-telefone').value.trim(),
+    endereco: document.getElementById('os-endereco').value.trim(),
+    login_cliente: document.getElementById('os-login-cliente').value.trim(),
+    descricao, tecnico_id:tecId, tecnico_nome:tecNome,
+    prioridade:document.getElementById('os-prioridade').value,
+    status:novoStatus,
+    data:document.getElementById('os-data').value||cpHoje(),
+    pecas:document.getElementById('os-pecas').value.trim(),
+    obs:document.getElementById('os-obs').value.trim(),
+  };
   if(!id) obj.numero = cpProximoNumOS();
   const { error } = id
     ? await sbClient.from('campo_os').update(obj).eq('id', id)
     : await sbClient.from('campo_os').insert(obj);
   if(error){ showToast('Erro: '+error.message, true); return; }
 
-  // Sincroniza o chamado vinculado quando a OS é concluída
-  if(id && novoStatus==='concluida'){
+  // Sincroniza o chamado vinculado quando a OS é finalizada/concluída
+  if(id && ['finalizada','concluida'].includes(novoStatus)){
     const osAtual = _cpOS.find(x=>x.id==id);
     if(osAtual && osAtual.chamado_id){
       await sbClient.from('campo_chamados').update({ status:'concluido' }).eq('id', osAtual.chamado_id);
@@ -8530,15 +8731,30 @@ function renderOS(){
 
   if(!lista.length){ tb.innerHTML=`<tr><td colspan="9" class="cp-empty-row"><div class="cp-empty-ico">📋</div>Nenhuma OS encontrada</td></tr>`; return; }
 
-  const stMap = { aberta:['cp-st-novo','Aberta'], andamento:['cp-st-andamento','Em andamento'], concluida:['cp-st-concluido','Concluída'], cancelada:['cp-st-cancelado','Cancelada'] };
+  const stMap = {
+    aberta:     ['cp-st-novo',      '📋 Aberta'],
+    assumida:   ['cp-st-atribuido', '✋ Assumida'],
+    executando: ['cp-st-andamento', '🔧 Executando'],
+    finalizada: ['cp-st-concluido', '✅ Finalizada'],
+    cancelada:  ['cp-st-cancelado', '❌ Cancelada'],
+    // legados
+    andamento:  ['cp-st-andamento', '🔧 Em andamento'],
+    concluida:  ['cp-st-concluido', '✅ Concluída'],
+  };
   const prMap = { alta:'cp-prio-alta', media:'cp-prio-media', baixa:'cp-prio-baixa' };
 
   tb.innerHTML = lista.map(o=>{
     const [stCl,stLb] = stMap[o.status]||['cp-st-novo','Aberta'];
     const prioRowCl = 'cp-row-prio-'+(o.prioridade||'media');
+    const ativa = ['aberta','assumida','executando','andamento'].includes(o.status);
+    // Botão de próximo status
+    let btnStatus = '';
+    if(o.status==='aberta')      btnStatus=`<button class="action-btn" onclick="atualizarStatusOS(${o.id},'assumida')" title="Assumir OS" style="color:#185fa5;border-color:#185fa5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>`;
+    else if(o.status==='assumida') btnStatus=`<button class="action-btn" onclick="atualizarStatusOS(${o.id},'executando')" title="Iniciar execução" style="color:#BA7517;border-color:#BA7517"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>`;
+    else if(['executando','andamento'].includes(o.status)) btnStatus=`<button class="action-btn" onclick="abrirModalOS(${o.id});setTimeout(()=>abrirModalFinalizarOS(),200)" title="Finalizar OS" style="color:#639922;border-color:#639922"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg></button>`;
     return `<tr class="${prioRowCl}">
       <td style="font-weight:700;color:var(--accent)">#${String(o.numero||0).padStart(4,'0')}</td>
-      <td><div style="font-weight:600">${o.cliente}</div><div style="font-size:11px;color:var(--text3)">${o.telefone||''}</div></td>
+      <td><div style="font-weight:600">${o.cliente}</div><div style="font-size:11px;color:var(--text3)">${o.telefone||''}${o.login_cliente?` · <span style="font-family:monospace">${o.login_cliente}</span>`:''}</div></td>
       <td style="font-size:12px;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.endereco||'—'}</td>
       <td style="font-size:12px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${o.descricao}">${o.descricao}</td>
       <td style="font-size:12px">${o.tecnico_nome||'<span style="color:var(--text3)">—</span>'}</td>
@@ -8546,8 +8762,9 @@ function renderOS(){
       <td><span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span></td>
       <td style="font-size:12px;color:var(--text3)">${cpFmtData(o.data)}</td>
       <td><div class="action-btns">
+        ${btnStatus}
         <button class="action-btn" onclick="abrirModalOS(${o.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="excluirOS(${o.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+        ${ativa?`<button class="action-btn del" onclick="excluirOS(${o.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>`:''}
       </div></td>
     </tr>`;
   }).join('');
@@ -9818,12 +10035,13 @@ function preencherClienteOS(cli){
 
 // Abas da OS
 function osTab(nome){
-  ['servico','diag'].forEach(t=>{
+  ['servico','cliente','diag'].forEach(t=>{
     const tab = document.getElementById('os-tab-'+t);
     const pane = document.getElementById('os-pane-'+t);
     if(tab){ tab.style.borderBottomColor = t===nome ? 'var(--accent)' : 'transparent'; tab.style.color = t===nome ? 'var(--accent)' : 'var(--text2)'; }
     if(pane) pane.style.display = t===nome ? '' : 'none';
   });
+  if(nome === 'cliente') renderOsClienteTab();
   if(nome === 'diag') carregarDiagOS();
 }
 
