@@ -1997,6 +1997,57 @@ textarea.cp-form-input{resize:vertical}
       </div>
     </div>
 
+    <!-- Modal: Selecionar Técnico para abrir OS -->
+    <div class="modal-overlay" id="modal-selecionar-tecnico" onclick="if(event.target===this)fecharModal('modal-selecionar-tecnico')">
+      <div class="modal" style="max-width:480px">
+        <div class="modal-header">
+          <span class="modal-title">📋 Abrir Ordem de Serviço</span>
+          <button class="modal-close" onclick="fecharModal('modal-selecionar-tecnico')">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="st-chamado-id">
+
+          <!-- Card resumo do chamado -->
+          <div id="st-resumo-chamado" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+            <div style="font-weight:600;margin-bottom:6px" id="st-resumo-cliente">—</div>
+            <div style="font-size:12px;color:var(--text2)" id="st-resumo-problema">—</div>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:4px" id="st-resumo-endereco">—</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Selecionar Técnico<span>*</span></label>
+            <select class="cp-form-select" id="st-tecnico">
+              <option value="">— Selecione o técnico responsável —</option>
+            </select>
+          </div>
+
+          <!-- Grid de técnicos disponíveis -->
+          <div id="st-tecnicos-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px"></div>
+
+          <div class="form-group" style="margin-top:14px">
+            <label class="form-label">Prioridade da OS</label>
+            <select class="cp-form-select" id="st-prioridade">
+              <option value="baixa">🟢 Baixa</option>
+              <option value="media" selected>🟡 Média</option>
+              <option value="alta">🔴 Alta</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Observação para o técnico (opcional)</label>
+            <textarea class="cp-form-input" id="st-obs" rows="2" placeholder="Instrução específica, acesso ao local, etc..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-selecionar-tecnico')">Cancelar</button>
+          <button class="btn btn-primary" onclick="confirmarAbrirOS()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Criar Ordem de Serviço
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="modal-fechamento-chamado">
       <div class="modal md">
         <div class="modal-header">
@@ -8241,6 +8292,7 @@ function renderChamados(){
       <td style="font-size:12px;color:var(--text3)">${cpFmtData(c.data)}</td>
       <td><div class="action-btns">
         <button class="action-btn" onclick="abrirModalChamado(${c.id})" title="${isAberto?'Visualizar':'Editar'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        ${!isAberto ? `<button class="action-btn" onclick="abrirModalSelecionarTecnico(${c.id})" title="Abrir Ordem de Serviço" style="color:#185fa5;border-color:#185fa5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></button>` : `<button class="action-btn" onclick="irParaOS(${c.os_id})" title="Ver Ordem de Serviço vinculada" style="color:#639922;border-color:#639922"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 11 12 14 15 11"/></svg></button>`}
         ${isAberto?'':`<button class="action-btn del" onclick="excluirChamado(${c.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>`}
       </div></td>
     </tr>`;
@@ -8248,8 +8300,141 @@ function renderChamados(){
 }
 
 // ============================================================
-// ORDENS DE SERVIÇO
+// ABRIR OS A PARTIR DO CHAMADO (seleção de técnico)
 // ============================================================
+function abrirModalSelecionarTecnico(chamadoId){
+  const c = _cpChamados.find(x=>x.id==chamadoId);
+  if(!c){ showToast('Chamado não encontrado.',true); return; }
+
+  document.getElementById('st-chamado-id').value = chamadoId;
+
+  // Resumo do chamado
+  document.getElementById('st-resumo-cliente').textContent  = c.cliente || '—';
+  document.getElementById('st-resumo-problema').textContent = c.descricao || '—';
+  document.getElementById('st-resumo-endereco').textContent = [c.endereco, c.localizacao].filter(Boolean).join(' · ') || '—';
+
+  // Popula select de técnicos
+  const sel = document.getElementById('st-tecnico');
+  const ativos = _cpTecnicos.filter(t=>t.status==='ativo');
+  sel.innerHTML = '<option value="">— Selecione o técnico —</option>' +
+    ativos.map(t=>`<option value="${t.id}" data-nome="${t.nome}">${t.nome}${t.telefone?' · '+t.telefone:''}</option>`).join('');
+
+  // Pré-seleciona técnico se já tinha no chamado
+  if(c.tecnico_id) sel.value = c.tecnico_id;
+
+  // Grid visual de técnicos com OS abertas
+  const grid = document.getElementById('st-tecnicos-grid');
+  if(ativos.length){
+    grid.innerHTML = ativos.map(t=>{
+      const osAbertas = _cpOS.filter(o=>o.tecnico_id==t.id && !['concluida','cancelada'].includes(o.status)).length;
+      const cor = osAbertas === 0 ? '#3B6D11' : osAbertas <= 2 ? '#633806' : '#791F1F';
+      const bg  = osAbertas === 0 ? 'rgba(99,153,34,0.1)' : osAbertas <= 2 ? 'rgba(186,117,23,0.1)' : 'rgba(163,45,45,0.1)';
+      return `<div onclick="document.getElementById('st-tecnico').value='${t.id}';document.querySelectorAll('.st-tec-card').forEach(el=>el.style.outline='none');this.style.outline='2px solid var(--accent)'"
+        class="st-tec-card" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:.15s">
+        <div style="font-weight:500;font-size:13px">${t.nome}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${t.telefone||''}</div>
+        <div style="margin-top:6px;font-size:11px;font-weight:600;color:${cor};background:${bg};padding:2px 8px;border-radius:8px;display:inline-block">
+          ${osAbertas} OS ${osAbertas===1?'aberta':'abertas'}
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    grid.innerHTML = '<div style="grid-column:1/-1;font-size:12px;color:var(--text3);text-align:center;padding:8px">Nenhum técnico ativo cadastrado.</div>';
+  }
+
+  // Prioridade herdada do chamado
+  document.getElementById('st-prioridade').value = c.prioridade || 'media';
+  document.getElementById('st-obs').value = '';
+
+  abrirModal('modal-selecionar-tecnico');
+}
+
+async function confirmarAbrirOS(){
+  const chamadoId = document.getElementById('st-chamado-id').value;
+  const tecId     = document.getElementById('st-tecnico').value;
+  const prioridade= document.getElementById('st-prioridade').value;
+  const obs       = document.getElementById('st-obs').value.trim();
+
+  if(!tecId){ showToast('Selecione o técnico antes de continuar.', true); return; }
+
+  const c = _cpChamados.find(x=>x.id==chamadoId);
+  if(!c){ showToast('Chamado não encontrado.',true); return; }
+
+  const tecNome = (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '';
+
+  const btn = document.querySelector('#modal-selecionar-tecnico .btn-primary');
+  if(btn){ btn.disabled=true; btn.textContent='Criando...'; }
+
+  try {
+    // Salva técnico no chamado e muda status para "atribuido"
+    await sbClient.from('campo_chamados').update({
+      tecnico_id: tecId, tecnico_nome: tecNome, status: 'atribuido'
+    }).eq('id', chamadoId);
+
+    // Cria (ou atualiza) a OS
+    const loginCliente = c.login_cliente || '';
+    const obsCompl = [
+      c.localizacao ? `Referência: ${c.localizacao}` : '',
+      loginCliente  ? `Login PPPoE: ${loginCliente}` : '',
+      obs           ? `Obs: ${obs}` : '',
+    ].filter(Boolean).join(' | ');
+
+    let osId = c.os_id;
+    if(c.os_id){
+      // Já tem OS — apenas atualiza o técnico
+      await sbClient.from('campo_os').update({
+        tecnico_id: tecId, tecnico_nome: tecNome, prioridade, obs: obsCompl,
+      }).eq('id', c.os_id);
+    } else {
+      // Cria nova OS com todos os dados do chamado
+      const numeroOS = cpProximoNumOS();
+      const { data: osData, error: osErr } = await sbClient.from('campo_os').insert({
+        numero: numeroOS,
+        cliente: c.cliente, cliente_id: c.cliente_id,
+        telefone: c.telefone, endereco: c.endereco,
+        login_cliente: loginCliente,
+        descricao: c.descricao,
+        tecnico_id: tecId, tecnico_nome: tecNome,
+        prioridade, status: 'aberta',
+        data: cpHoje(), chamado_id: chamadoId, obs: obsCompl,
+      }).select().single();
+
+      if(osErr){ showToast('Erro ao criar OS: '+osErr.message, true); return; }
+      osId = osData?.id;
+
+      // Vincula OS ao chamado + muda status para "aberto"
+      if(osId){
+        await sbClient.from('campo_chamados').update({ os_id: osId, status: 'aberto' }).eq('id', chamadoId);
+        await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status: 'aberto' }).catch(()=>{});
+      }
+    }
+
+    fecharModal('modal-selecionar-tecnico');
+    await carregarCampo();
+    renderChamados();
+    renderOS();
+
+    // Vai direto para a aba OS e abre a nova OS
+    const osNum = _cpOS.find(o=>o.id==osId);
+    navTo('cp-os', document.querySelector('[data-page="cp-os"]'));
+    showToast(`✅ OS #${String(osNum?.numero||0).padStart(4,'0')} criada para ${tecNome}!`);
+
+    // Abre a OS para visualizar
+    if(osId) setTimeout(()=>abrirModalOS(osId), 400);
+
+  } catch(e){
+    showToast('Erro: '+e.message, true);
+  } finally {
+    if(btn){ btn.disabled=false; btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Criar Ordem de Serviço'; }
+  }
+}
+
+function irParaOS(osId){
+  if(!osId) return;
+  navTo('cp-os', document.querySelector('[data-page="cp-os"]'));
+  setTimeout(()=>abrirModalOS(osId), 300);
+}
+
 function cpProximoNumOS(){
   const nums = _cpOS.map(o=>parseInt(o.numero)||0);
   return (nums.length ? Math.max(...nums) : 0) + 1;
