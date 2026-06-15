@@ -2384,6 +2384,7 @@ textarea.cp-form-input{resize:vertical}
       <div class="kpi-strip" id="kpi-clientes"></div>
       <div class="filtros-bar">
         <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="cli-busca" placeholder="Buscar cliente..." oninput="renderCadastro('clientes')" style="width:260px"></div>
+        <div id="cli-filtros-status" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:12px"></div>
         <button class="btn" onclick="exportarCadastroCSV('clientes')" style="margin-left:auto">↓ CSV</button>
       </div>
       <div class="table-wrap">
@@ -2730,6 +2731,143 @@ textarea.cp-form-input{resize:vertical}
   </div>
 </div>
 
+<!-- ========== MODAL CLIENTE EXPANDIDO (com abas IXC) ========== -->
+<style>
+  #modal-cli .modal { max-width: 1100px; width: 95vw; }
+  .cli-tabs { display:flex; gap:0; background:var(--bg2); border-bottom:1px solid var(--border); overflow-x:auto; margin:-16px -16px 16px; padding:0 16px; }
+  .cli-tab { padding:10px 16px; font-size:13px; color:var(--text2); cursor:pointer; white-space:nowrap; border-bottom:2px solid transparent; display:flex; align-items:center; gap:6px; }
+  .cli-tab:hover { color:var(--text); }
+  .cli-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:500; }
+  .cli-tab-badge { background:var(--accent); color:#fff; font-size:10px; padding:1px 7px; border-radius:10px; font-weight:600; }
+  .cli-pane { display:none; }
+  .cli-pane.active { display:block; }
+  .cli-locked input, .cli-locked select, .cli-locked textarea {
+    background: var(--bg2) !important; color: var(--text2) !important;
+    cursor: not-allowed; opacity: .85;
+  }
+  .cli-lock-badge { font-size:9.5px; color:var(--accent); margin-left:4px; font-weight:600; letter-spacing:.04em; }
+  .cli-mini-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .cli-mini-table th { text-align:left; padding:8px 10px; background:var(--bg2); color:var(--text2); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .cli-mini-table td { padding:8px 10px; border-bottom:1px solid var(--border); }
+  .cli-status-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10.5px; font-weight:600; }
+  .cli-empty-pane { padding:40px 20px; text-align:center; color:var(--text3); font-size:13px; }
+  .cli-ixc-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:rgba(55,138,221,0.08); border-left:3px solid #378add; margin:-16px -16px 16px; }
+  .cli-ixc-header .ix-id { font-family:'DM Mono',monospace; font-size:12px; color:#185fa5; font-weight:600; }
+</style>
+<div class="modal-overlay" id="modal-cli" onclick="if(event.target===this)fecharModal('modal-cli')">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="cli-titulo">Editar Cliente</span>
+      <div style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn" id="cli-resync-btn" onclick="resyncClienteIXC()" style="display:none">↻ Re-sync IXC</button>
+        <button class="modal-close" onclick="fecharModal('modal-cli')">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="cli-ixc-info" style="display:none" class="cli-ixc-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:#185fa5"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+        <span style="font-size:12px;color:#185fa5">Cliente importado do IXC</span>
+        <span class="ix-id" id="cli-ixc-id">#—</span>
+        <span id="cli-ixc-status" class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">—</span>
+      </div>
+      <div class="cli-tabs">
+        <div class="cli-tab active" data-pane="dados" onclick="cliTab('dados')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Cliente</div>
+        <div class="cli-tab" data-pane="endereco" onclick="cliTab('endereco')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Endereço</div>
+        <div class="cli-tab" data-pane="contato" onclick="cliTab('contato')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Contato</div>
+        <div class="cli-tab" data-pane="contratos" onclick="cliTab('contratos')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Contratos<span class="cli-tab-badge" id="cli-tab-ctr-badge" style="display:none">0</span></div>
+        <div class="cli-tab" data-pane="logins" onclick="cliTab('logins')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>Logins<span class="cli-tab-badge" id="cli-tab-log-badge" style="display:none">0</span></div>
+        <div class="cli-tab" data-pane="financeiro" onclick="cliTab('financeiro')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Financeiro</div>
+      </div>
+
+      <!-- PANE: Dados Pessoais -->
+      <div class="cli-pane active" id="cli-pane-dados">
+        <div class="form-section">Identificação</div>
+        <div class="form-grid">
+          <div class="form-group" id="cli-fg-tipoPessoa"><label class="form-label">Tipo pessoa</label>
+            <select id="cli-tipoPessoa" style="width:100%"><option value="">—</option><option value="F">Física</option><option value="J">Jurídica</option><option value="E">Estrangeiro</option></select>
+          </div>
+          <div class="form-group" id="cli-fg-ativo"><label class="form-label">Ativo</label>
+            <select id="cli-ativo" style="width:100%"><option value="true">Sim</option><option value="false">Não</option></select>
+          </div>
+          <div class="form-group" id="cli-fg-cnpj"><label class="form-label">CPF / CNPJ</label><input type="text" id="cli-cnpj" style="width:100%" placeholder="000.000.000-00"></div>
+          <div class="form-group"><label class="form-label">IE / RG</label><input type="text" id="cli-ie" style="width:100%"></div>
+          <div class="form-group full" id="cli-fg-nome"><label class="form-label">Razão social / Nome<span>*</span></label><input type="text" id="cli-nome" style="width:100%" placeholder="Nome completo"></div>
+          <div class="form-group full"><label class="form-label">Nome social / Fantasia</label><input type="text" id="cli-nomeSocial" style="width:100%"></div>
+        </div>
+        <div class="form-section">Dados pessoais</div>
+        <div class="form-grid">
+          <div class="form-group" id="cli-fg-dataNasc"><label class="form-label">Data nascimento</label><input type="date" id="cli-dataNasc" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">Gênero</label><select id="cli-genero" style="width:100%"><option value="">—</option><option>Masculino</option><option>Feminino</option><option>Não binário</option><option>Outro</option><option>Prefiro não dizer</option></select></div>
+          <div class="form-group"><label class="form-label">Estado civil</label><select id="cli-estadoCivil" style="width:100%"><option value="">—</option><option>Solteiro(a)</option><option>Casado(a)</option><option>Divorciado(a)</option><option>Viúvo(a)</option><option>União estável</option></select></div>
+          <div class="form-group"><label class="form-label">Nacionalidade</label><input type="text" id="cli-nacionalidade" style="width:100%" placeholder="Brasileiro"></div>
+          <div class="form-group"><label class="form-label">Naturalidade</label><input type="text" id="cli-naturalidade" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">Profissão</label><input type="text" id="cli-profissao" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">RG órgão emissor</label><input type="text" id="cli-rgEmissor" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">Data de Cadastro</label><input type="date" id="cli-datacad" style="width:100%"></div>
+        </div>
+        <div class="form-section">Observações</div>
+        <div class="form-grid">
+          <div class="form-group full"><label class="form-label">Observações internas</label><textarea id="cli-obs" style="width:100%;min-height:60px" placeholder="Notas, histórico, particularidades..."></textarea></div>
+        </div>
+      </div>
+
+      <!-- PANE: Endereço -->
+      <div class="cli-pane" id="cli-pane-endereco">
+        <div class="form-section">Endereço</div>
+        <div class="form-grid">
+          <div class="form-group" id="cli-fg-cep"><label class="form-label">CEP</label><input type="text" id="cli-cep" style="width:100%" placeholder="00000-000"></div>
+          <div class="form-group full" id="cli-fg-end"><label class="form-label">Endereço (rua)</label><input type="text" id="cli-end" style="width:100%"></div>
+          <div class="form-group" id="cli-fg-numero"><label class="form-label">Número</label><input type="text" id="cli-numero" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">Complemento</label><input type="text" id="cli-complemento" style="width:100%" placeholder="Apto, bloco, etc"></div>
+          <div class="form-group" id="cli-fg-bairro"><label class="form-label">Bairro</label><input type="text" id="cli-bairro" style="width:100%"></div>
+          <div class="form-group" id="cli-fg-cidade"><label class="form-label">Cidade</label><input type="text" id="cli-cidade" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">UF</label><input type="text" id="cli-uf" style="width:100%" maxlength="2" placeholder="CE"></div>
+          <div class="form-group"><label class="form-label">Referência</label><input type="text" id="cli-referencia" style="width:100%" placeholder="Próximo a..."></div>
+          <div class="form-group"><label class="form-label">Moradia</label><select id="cli-moradia" style="width:100%"><option value="">—</option><option>Própria</option><option>Alugada</option><option>Financiada</option><option>Cedida</option></select></div>
+        </div>
+      </div>
+
+      <!-- PANE: Contato -->
+      <div class="cli-pane" id="cli-pane-contato">
+        <div class="form-section">Telefones</div>
+        <div class="form-grid">
+          <div class="form-group" id="cli-fg-tel1"><label class="form-label">Telefone celular</label><input type="tel" id="cli-tel1" style="width:100%" placeholder="(00) 00000-0000"></div>
+          <div class="form-group" id="cli-fg-whatsapp"><label class="form-label">WhatsApp</label><input type="tel" id="cli-whatsapp" style="width:100%" placeholder="(00) 00000-0000"></div>
+          <div class="form-group"><label class="form-label">Telefone residencial</label><input type="tel" id="cli-telResidencial" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">Telefone comercial</label><input type="tel" id="cli-telComercial" style="width:100%"></div>
+          <div class="form-group"><label class="form-label">Telefone secundário</label><input type="tel" id="cli-tel2" style="width:100%"></div>
+        </div>
+        <div class="form-section">E-mail e Web</div>
+        <div class="form-grid">
+          <div class="form-group full" id="cli-fg-email"><label class="form-label">E-mail principal</label><input type="email" id="cli-email" style="width:100%" placeholder="cliente@email.com"></div>
+          <div class="form-group"><label class="form-label">Website</label><input type="url" id="cli-website" style="width:100%" placeholder="https://"></div>
+          <div class="form-group"><label class="form-label">Contato (nome do responsável)</label><input type="text" id="cli-contato" style="width:100%"></div>
+        </div>
+      </div>
+
+      <!-- PANE: Contratos -->
+      <div class="cli-pane" id="cli-pane-contratos">
+        <div id="cli-contratos-content"></div>
+      </div>
+
+      <!-- PANE: Logins -->
+      <div class="cli-pane" id="cli-pane-logins">
+        <div id="cli-logins-content"></div>
+      </div>
+
+      <!-- PANE: Financeiro -->
+      <div class="cli-pane" id="cli-pane-financeiro">
+        <div id="cli-financ-content"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="fecharModal('modal-cli')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarCliente()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ========== MODAL CONTA BANCÁRIA ========== -->
 <div class="modal-overlay" id="modal-banco" onclick="if(event.target===this)fecharModal('modal-banco')">
   <div class="modal md">
@@ -2852,6 +2990,8 @@ const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const _cache = {
   sf_lancamentos: [],
   sf_clientes: [],
+  sf_clientes_contratos: [],
+  sf_clientes_logins: [],
   sf_fornecedores: [],
   sf_bancos: [],
   sf_mov_bancarias: [],
@@ -2937,12 +3077,101 @@ const _SYNC_MAP = {
       cep: c.cep || null,
       cidade: c.cidade || null,
       obs: c.obs || null,
+      ixc_id: c.ixcId || null,
+      ixc_status: c.ixcStatus || null,
+      ixc_login: c.ixcLogin || null,
+      ixc_senha: c.ixcSenha || null,
+      origem: c.origem || null,
+      status_contrato: c.statusContrato || null,
+      tipo_pessoa: c.tipoPessoa || null,
+      nome_social: c.nomeSocial || null,
+      data_nasc: c.dataNasc || null,
+      genero: c.genero || null,
+      estado_civil: c.estadoCivil || null,
+      nacionalidade: c.nacionalidade || null,
+      naturalidade: c.naturalidade || null,
+      profissao: c.profissao || null,
+      rg_emissor: c.rgEmissor || null,
+      ativo: c.ativo == null ? null : !!c.ativo,
+      whatsapp: c.whatsapp || null,
+      tel_residencial: c.telResidencial || null,
+      tel_comercial: c.telComercial || null,
+      website: c.website || null,
+      cep_full: c.cepFull || null,
+      numero: c.numero || null,
+      complemento: c.complemento || null,
+      referencia: c.referencia || null,
+      moradia: c.moradia || null,
+      uf: c.uf || null,
     }),
     fromRow: (r) => ({
       id: r.id, nome: r.nome, razao: r.razao, cnpj: r.cnpj, ie: r.ie,
       contato: r.contato, datacad: r.datacad, tel1: r.tel1, tel2: r.tel2,
       email: r.email, site: r.site, end: r.endereco, bairro: r.bairro,
       cep: r.cep, cidade: r.cidade, obs: r.obs,
+      ixcId: r.ixc_id, ixcStatus: r.ixc_status, ixcLogin: r.ixc_login,
+      ixcSenha: r.ixc_senha, origem: r.origem,
+      statusContrato: r.status_contrato,
+      tipoPessoa: r.tipo_pessoa, nomeSocial: r.nome_social, dataNasc: r.data_nasc,
+      genero: r.genero, estadoCivil: r.estado_civil, nacionalidade: r.nacionalidade,
+      naturalidade: r.naturalidade, profissao: r.profissao, rgEmissor: r.rg_emissor,
+      ativo: r.ativo, whatsapp: r.whatsapp, telResidencial: r.tel_residencial,
+      telComercial: r.tel_comercial, website: r.website, cepFull: r.cep_full,
+      numero: r.numero, complemento: r.complemento, referencia: r.referencia,
+      moradia: r.moradia, uf: r.uf,
+    }),
+  },
+  sf_clientes_contratos: {
+    table: 'clientes_contratos',
+    toRow: (c) => ({
+      id: c.id,
+      cliente_id: c.clienteId || null,
+      ixc_id: c.ixcId || null,
+      ixc_cliente_id: c.ixcClienteId || null,
+      tipo: c.tipo || null,
+      plano: c.plano || null,
+      descricao: c.descricao || null,
+      status_contrato: c.statusContrato || null,
+      status_acesso: c.statusAcesso || null,
+      valor: c.valor == null ? null : Number(c.valor),
+      data_ativacao: c.dataAtivacao || null,
+      data_renovacao: c.dataRenovacao || null,
+      pago_ate: c.pagoAte || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id, clienteId: r.cliente_id,
+      ixcId: r.ixc_id, ixcClienteId: r.ixc_cliente_id,
+      tipo: r.tipo, plano: r.plano, descricao: r.descricao,
+      statusContrato: r.status_contrato, statusAcesso: r.status_acesso,
+      valor: r.valor, dataAtivacao: r.data_ativacao,
+      dataRenovacao: r.data_renovacao, pagoAte: r.pago_ate,
+    }),
+  },
+  sf_clientes_logins: {
+    table: 'clientes_logins',
+    toRow: (l) => ({
+      id: l.id,
+      cliente_id: l.clienteId || null,
+      contrato_id: l.contratoId || null,
+      ixc_id: l.ixcId || null,
+      ixc_cliente_id: l.ixcClienteId || null,
+      ixc_contrato_id: l.ixcContratoId || null,
+      login: l.login || null,
+      senha: l.senha || null,
+      autenticacao: l.autenticacao || null,
+      tipo_conexao: l.tipoConexao || null,
+      ativo: l.ativo == null ? null : !!l.ativo,
+      online: l.online == null ? null : !!l.online,
+      plano: l.plano || null,
+      ssid: l.ssid || null,
+      senha_wifi: l.senhaWifi || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id, clienteId: r.cliente_id, contratoId: r.contrato_id,
+      ixcId: r.ixc_id, ixcClienteId: r.ixc_cliente_id, ixcContratoId: r.ixc_contrato_id,
+      login: r.login, senha: r.senha, autenticacao: r.autenticacao,
+      tipoConexao: r.tipo_conexao, ativo: r.ativo, online: r.online,
+      plano: r.plano, ssid: r.ssid, senhaWifi: r.senha_wifi,
     }),
   },
   sf_fornecedores: {
@@ -5366,7 +5595,35 @@ function renderCadastro(tipo){
   const lista=gd(key);
   const prefix=isCli?'cli':'for';
   const busca=(document.getElementById(prefix+'-busca')?.value||'').toLowerCase();
-  const fil=lista.map((i,idx)=>({...i,_idx:idx})).filter(i=>!busca||[(i.nome||''),(i.razao||''),(i.cnpj||''),(i.cidade||'')].join(' ').toLowerCase().includes(busca));
+  const statusFiltro = isCli ? (window._cliStatusFiltro || 'Todos') : 'Todos';
+  // Helper para resolver o status visível de um cliente (usa statusContrato ou legacy ixcStatus)
+  const statusLegacy = {'A':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado'};
+  function statusDe(c){ return c.statusContrato || statusLegacy[c.ixcStatus] || null; }
+  const fil=lista.map((i,idx)=>({...i,_idx:idx}))
+    .filter(i=>!busca||[(i.nome||''),(i.razao||''),(i.cnpj||''),(i.cidade||''),(i.ixcLogin||'')].join(' ').toLowerCase().includes(busca))
+    .filter(i=>{
+      if(!isCli || statusFiltro==='Todos') return true;
+      return statusDe(i) === statusFiltro;
+    });
+  // Render dos chips de filtro de status (só clientes)
+  if(isCli){
+    const filtrosEl = document.getElementById('cli-filtros-status');
+    if(filtrosEl){
+      const contagem = { 'Todos': lista.length };
+      lista.forEach(c => { const s = statusDe(c); if(s) contagem[s] = (contagem[s]||0)+1; });
+      const chips = ['Todos','Ativo','Bloqueio Manual','Bloqueio Automático','Negativado','Cancelado'];
+      const cores = {
+        'Ativo':'#639922','Bloqueio Manual':'#c23b2a','Bloqueio Automático':'#c45a13',
+        'Negativado':'#5f5e5a','Cancelado':'#5f5e5a','Todos':'var(--accent)',
+      };
+      filtrosEl.innerHTML = chips.map(c => {
+        const ativo = c === statusFiltro;
+        const cor = cores[c] || '#5f5e5a';
+        const n = contagem[c] || 0;
+        return `<span onclick="setCliStatusFiltro('${c.replace(/'/g,"\\'")}')" style="cursor:pointer;font-size:11px;padding:4px 10px;border-radius:14px;border:1px solid ${ativo?cor:'var(--border)'};background:${ativo?cor:'transparent'};color:${ativo?'#fff':'var(--text2)'};font-weight:${ativo?600:500};white-space:nowrap">${c} <span style="opacity:.7">${n}</span></span>`;
+      }).join('');
+    }
+  }
   const lc=gd('sf_lancamentos');
   function tot(nome){let a=0,r=0;lc.forEach(l=>{const n=isCli?(l.cliente||''):(l.fornecedor||'');if(n.toLowerCase()===nome.toLowerCase()){a+=isCli?(l.aReceber||0):(l.aPagar||0);r+=isCli?(l.recebido||0):(l.pago||0);}});return{a,r};}
   const tp=Math.max(1,Math.ceil(fil.length/POR_PAG));
@@ -5384,17 +5641,25 @@ function renderCadastro(tipo){
     const t=tot(i.nome||'');
     if(isCli){
       const ixcOrigem = i.origem === 'ixc';
+      // Mapeamento de status do CONTRATO (preferencial). Fallback para ixcStatus do cliente.
       const statusMap = {
-        'A':{txt:'Ativo',bg:'rgba(99,153,34,0.15)',cor:'#639922'},
-        'D':{txt:'Desativado',bg:'rgba(194,59,42,0.15)',cor:'#c23b2a'},
-        'CM':{txt:'Cliente em montagem',bg:'rgba(186,117,23,0.15)',cor:'#ba7517'},
-        'AB':{txt:'Aberto',bg:'rgba(186,117,23,0.15)',cor:'#ba7517'},
-        'I':{txt:'Inativo',bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'},
-        'N':{txt:'Novo',bg:'rgba(55,138,221,0.15)',cor:'#378add'},
+        'Ativo':                {bg:'rgba(99,153,34,0.15)',  cor:'#639922'},
+        'Bloqueio Manual':      {bg:'rgba(194,59,42,0.15)',  cor:'#c23b2a'},
+        'Bloqueio Automático':  {bg:'rgba(232,109,33,0.15)', cor:'#c45a13'},
+        'Aguardando Assinatura':{bg:'rgba(186,117,23,0.15)', cor:'#ba7517'},
+        'Pré-contrato':         {bg:'rgba(186,117,23,0.15)', cor:'#ba7517'},
+        'Negativado':           {bg:'rgba(95,94,90,0.15)',   cor:'#5f5e5a'},
+        'Inativo':              {bg:'rgba(95,94,90,0.15)',   cor:'#5f5e5a'},
+        'Cancelado':            {bg:'rgba(95,94,90,0.15)',   cor:'#5f5e5a'},
       };
-      const st = statusMap[i.ixcStatus] || (ixcOrigem ? {txt:i.ixcStatus||'—',bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'} : null);
+      const statusLegacy = {
+        'A':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado',
+      };
+      // Prioridade: statusContrato calculado > legacy ixcStatus do cliente
+      const txt = i.statusContrato || statusLegacy[i.ixcStatus] || (ixcOrigem ? i.ixcStatus : null);
+      const st = txt ? (statusMap[txt] || {bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'}) : null;
       const statusCell = st
-        ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${st.bg};color:${st.cor};font-size:10.5px;font-weight:600">${st.txt}</span>`
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${st.bg};color:${st.cor};font-size:10.5px;font-weight:600;white-space:nowrap">${txt}</span>`
         : '<span class="td-muted">—</span>';
       const badgeIXC = ixcOrigem
         ? `<span title="Importado do IXC" style="display:inline-block;padding:1px 6px;border-radius:8px;background:rgba(55,138,221,0.18);color:#185fa5;font-size:9px;font-weight:700;margin-left:6px;vertical-align:middle">IXC</span>`
@@ -6127,9 +6392,9 @@ function salvarLancamento(){
 // MODAL CADASTRO
 // ============================================================
 function abrirModalCadastro(tipo,idx=null){
+  if(tipo==='clientes'){ abrirModalCliente(idx); return; }
   cadTipo=tipo;cadEditIdx=idx;
-  const isCli=tipo==='clientes';
-  document.getElementById('cad-titulo').textContent=idx!==null?(isCli?'Editar Cliente':'Editar Fornecedor'):(isCli?'Novo Cliente':'Novo Fornecedor');
+  document.getElementById('cad-titulo').textContent=idx!==null?'Editar Fornecedor':'Novo Fornecedor';
   const campos=['nome','razao','cnpj','ie','contato','datacad','tel1','tel2','email','site','end','bairro','cep','cidade','obs'];
   if(idx!==null){const item=gd('sf_'+tipo)[idx];if(item)campos.forEach(c=>{const el=document.getElementById('c-'+c);if(el)el.value=item[c]||'';});}
   else{campos.forEach(c=>{const el=document.getElementById('c-'+c);if(el)el.value='';});document.getElementById('c-datacad').value=hoje();}
@@ -6146,6 +6411,235 @@ function salvarCadastro(){
   fecharModal('modal-cad');
   renderCadastro(cadTipo);
   showToast(cadEditIdx!==null?'Atualizado!':'Salvo com sucesso!');
+}
+
+// ============================================================
+// MODAL CLIENTE EXPANDIDO (com abas IXC)
+// ============================================================
+let _cliEditIdx = null;
+const CLI_CAMPOS = ['nome','nomeSocial','razao','cnpj','ie','tipoPessoa','ativo','datacad',
+  'dataNasc','genero','estadoCivil','nacionalidade','naturalidade','profissao','rgEmissor',
+  'cep','end','numero','complemento','bairro','cidade','uf','referencia','moradia',
+  'tel1','tel2','whatsapp','telResidencial','telComercial','email','website','contato','obs'];
+const CLI_TRAVAR_SE_IXC = new Set(['nome','cnpj','tipoPessoa','dataNasc','cep','end','numero','bairro','cidade','uf','tel1','whatsapp','email','ativo']);
+
+function abrirModalCliente(idx=null){
+  _cliEditIdx = idx;
+  const cli = idx!==null ? gd('sf_clientes')[idx] : {};
+  const isIxc = cli.origem === 'ixc';
+
+  document.getElementById('cli-titulo').textContent = idx!==null ? 'Editar Cliente' : 'Novo Cliente';
+
+  // Preenche campos
+  CLI_CAMPOS.forEach(k => {
+    const el = document.getElementById('cli-'+k);
+    if(!el) return;
+    let v = cli[k];
+    if(k === 'ativo' && v != null) v = v ? 'true' : 'false';
+    if(k === 'datacad' && !v && idx===null) v = hoje();
+    el.value = v == null ? '' : v;
+  });
+
+  // Trava campos vindos do IXC
+  CLI_CAMPOS.forEach(k => {
+    const fg = document.getElementById('cli-fg-'+k);
+    const el = document.getElementById('cli-'+k);
+    if(!el) return;
+    const lock = isIxc && CLI_TRAVAR_SE_IXC.has(k);
+    el.disabled = lock;
+    if(fg){
+      fg.classList.toggle('cli-locked', lock);
+      // Remove badge existente
+      fg.querySelectorAll('.cli-lock-badge').forEach(b=>b.remove());
+      if(lock){
+        const label = fg.querySelector('.form-label');
+        if(label && !label.querySelector('.cli-lock-badge')){
+          const badge = document.createElement('span');
+          badge.className = 'cli-lock-badge';
+          badge.innerHTML = '🔒 IXC';
+          label.appendChild(badge);
+        }
+      }
+    }
+  });
+
+  // Header IXC
+  const ixcInfo = document.getElementById('cli-ixc-info');
+  const resyncBtn = document.getElementById('cli-resync-btn');
+  if(isIxc){
+    ixcInfo.style.display = '';
+    document.getElementById('cli-ixc-id').textContent = '#'+(cli.ixcId||'—');
+    const statusMap = {
+      'Ativo':                {bg:'rgba(99,153,34,0.2)', cor:'#3B6D11'},
+      'Bloqueio Manual':      {bg:'rgba(194,59,42,0.2)', cor:'#A32D2D'},
+      'Bloqueio Automático':  {bg:'rgba(232,109,33,0.2)',cor:'#C45A13'},
+      'Aguardando Assinatura':{bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
+      'Pré-contrato':         {bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
+      'Negativado':           {bg:'rgba(95,94,90,0.2)',  cor:'#5F5E5A'},
+      'Inativo':              {bg:'rgba(95,94,90,0.2)',  cor:'#5F5E5A'},
+      'Cancelado':            {bg:'rgba(95,94,90,0.2)',  cor:'#5F5E5A'},
+    };
+    const statusLegacy = {'A':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado'};
+    const txt = cli.statusContrato || statusLegacy[cli.ixcStatus] || cli.ixcStatus || '—';
+    const st = statusMap[txt] || {bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'};
+    const elStatus = document.getElementById('cli-ixc-status');
+    elStatus.textContent = txt; elStatus.style.background = st.bg; elStatus.style.color = st.cor;
+    resyncBtn.style.display = '';
+  } else {
+    ixcInfo.style.display = 'none';
+    resyncBtn.style.display = 'none';
+  }
+
+  // Pré-render Contratos / Logins / Financeiro
+  renderCliContratos(cli);
+  renderCliLogins(cli);
+  renderCliFinanceiro(cli);
+
+  // Volta para aba "dados"
+  cliTab('dados');
+  abrirModal('modal-cli');
+}
+
+function cliTab(name){
+  document.querySelectorAll('.cli-tab').forEach(t => t.classList.toggle('active', t.dataset.pane===name));
+  document.querySelectorAll('.cli-pane').forEach(p => p.classList.toggle('active', p.id==='cli-pane-'+name));
+}
+
+function renderCliContratos(cli){
+  const target = document.getElementById('cli-contratos-content');
+  const cidLocal = cli.id;
+  const ixcCid = cli.ixcId;
+  const todos = gd('sf_clientes_contratos');
+  const contratos = todos.filter(c => (cidLocal && c.clienteId==cidLocal) || (ixcCid && c.ixcClienteId==ixcCid));
+
+  const badge = document.getElementById('cli-tab-ctr-badge');
+  if(contratos.length){ badge.style.display=''; badge.textContent=contratos.length; }
+  else badge.style.display='none';
+
+  if(!contratos.length){
+    target.innerHTML = '<div class="cli-empty-pane">Nenhum contrato vinculado.<br><span style="font-size:11px;color:var(--text3)">Contratos são sincronizados automaticamente do IXC.</span></div>';
+    return;
+  }
+  const statusMap = {
+    'A':{txt:'Ativo',bg:'rgba(99,153,34,0.2)',cor:'#3B6D11'},
+    'D':{txt:'Desativado',bg:'rgba(194,59,42,0.2)',cor:'#A32D2D'},
+    'I':{txt:'Inativo',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'},
+    'N':{txt:'Negativado',bg:'rgba(194,59,42,0.2)',cor:'#A32D2D'},
+    'AB':{txt:'Aberto',bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
+    'CM':{txt:'Em montagem',bg:'rgba(186,117,23,0.2)',cor:'#854F0B'},
+    'DS':{txt:'Desistiu',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'},
+  };
+  function pill(s){const m=statusMap[s]||{txt:s||'—',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'};return `<span class="cli-status-pill" style="background:${m.bg};color:${m.cor}">${m.txt}</span>`;}
+  target.innerHTML = `
+    <table class="cli-mini-table">
+      <thead><tr><th>ID</th><th>Tipo</th><th>Plano</th><th>Status</th><th>Acesso</th><th>Valor</th><th>Ativação</th><th>Renovação</th><th>Pago até</th></tr></thead>
+      <tbody>${contratos.map(c=>`
+        <tr>
+          <td class="td-mono">${c.ixcId||c.id||'—'}</td>
+          <td>${(c.tipo||'').toUpperCase()||'—'}</td>
+          <td><div style="font-weight:500">${c.plano||'—'}</div><div style="font-size:10.5px;color:var(--text3)">${c.descricao||''}</div></td>
+          <td>${pill(c.statusContrato)}</td>
+          <td>${pill(c.statusAcesso)}</td>
+          <td class="td-mono">${c.valor?brl(c.valor,true):'—'}</td>
+          <td class="td-mono td-muted">${fmtData(c.dataAtivacao)}</td>
+          <td class="td-mono td-muted">${fmtData(c.dataRenovacao)}</td>
+          <td class="td-mono td-muted">${fmtData(c.pagoAte)}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+function renderCliLogins(cli){
+  const target = document.getElementById('cli-logins-content');
+  const cidLocal = cli.id;
+  const ixcCid = cli.ixcId;
+  const todos = gd('sf_clientes_logins');
+  const logins = todos.filter(l => (cidLocal && l.clienteId==cidLocal) || (ixcCid && l.ixcClienteId==ixcCid));
+
+  const badge = document.getElementById('cli-tab-log-badge');
+  if(logins.length){ badge.style.display=''; badge.textContent=logins.length; }
+  else badge.style.display='none';
+
+  if(!logins.length){
+    target.innerHTML = '<div class="cli-empty-pane">Nenhum login vinculado.<br><span style="font-size:11px;color:var(--text3)">Logins PPPoE/Hotspot vêm do IXC após sync.</span></div>';
+    return;
+  }
+  target.innerHTML = `
+    <table class="cli-mini-table">
+      <thead><tr><th>Login</th><th>Senha</th><th>Autenticação</th><th>Conexão</th><th>Plano</th><th>Ativo</th><th>Online</th></tr></thead>
+      <tbody>${logins.map(l=>`
+        <tr>
+          <td class="td-mono" style="font-weight:500">${l.login||'—'}</td>
+          <td class="td-mono">${l.senha||'—'}</td>
+          <td>${l.autenticacao||'—'}</td>
+          <td>${l.tipoConexao||'—'}</td>
+          <td>${l.plano||'—'}</td>
+          <td>${l.ativo?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">Sim</span>':'<span class="cli-status-pill" style="background:rgba(95,94,90,0.2);color:#5F5E5A">Não</span>'}</td>
+          <td>${l.online?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">● Online</span>':'<span class="td-muted">—</span>'}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+function renderCliFinanceiro(cli){
+  const target = document.getElementById('cli-financ-content');
+  const nome = (cli.nome||'').toLowerCase();
+  const lc = gd('sf_lancamentos').filter(l => (l.cliente||'').toLowerCase()===nome);
+  if(!lc.length){
+    target.innerHTML = '<div class="cli-empty-pane">Nenhum lançamento financeiro encontrado para este cliente.</div>';
+    return;
+  }
+  const aReceber = lc.reduce((s,l)=>s+(l.aReceber||0),0);
+  const recebido = lc.reduce((s,l)=>s+(l.recebido||0),0);
+  const atrasados = lc.filter(l=>l.status==='A Receber' && (l.data||'')<hoje());
+  target.innerHTML = `
+    <div class="form-grid" style="margin-bottom:12px">
+      <div class="kpi-card"><div class="kpi-label">A Receber</div><div class="kpi-val warn">${brl(aReceber,true)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Recebido</div><div class="kpi-val green">${brl(recebido,true)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Atrasados</div><div class="kpi-val ${atrasados.length?'red':''}">${atrasados.length}</div></div>
+    </div>
+    <table class="cli-mini-table">
+      <thead><tr><th>Vencimento</th><th>Status</th><th>Histórico</th><th>A Receber</th><th>Recebido</th></tr></thead>
+      <tbody>${lc.slice(0,20).map(l=>`
+        <tr>
+          <td class="td-mono">${fmtData(l.data)}</td>
+          <td>${l.status||'—'}</td>
+          <td>${l.historico||'—'}</td>
+          <td class="td-mono">${l.aReceber?brl(l.aReceber,true):'—'}</td>
+          <td class="td-mono">${l.recebido?brl(l.recebido,true):'—'}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+function salvarCliente(){
+  const nome = document.getElementById('cli-nome').value.trim();
+  if(!nome){ showToast('Informe o nome.',true); return; }
+  const dados = {};
+  CLI_CAMPOS.forEach(k => {
+    const el = document.getElementById('cli-'+k);
+    if(!el) return;
+    let v = el.value;
+    if(k === 'ativo') v = v==='true' ? true : v==='false' ? false : null;
+    dados[k] = v;
+  });
+  const lista = gd('sf_clientes');
+  if(_cliEditIdx!==null){
+    lista[_cliEditIdx] = { ...lista[_cliEditIdx], ...dados };
+  } else {
+    lista.push({ ...dados, datacad: dados.datacad || hoje() });
+  }
+  sd('sf_clientes', lista);
+  fecharModal('modal-cli');
+  renderCadastro('clientes');
+  showToast(_cliEditIdx!==null?'Cliente atualizado!':'Cliente salvo!');
+}
+
+async function resyncClienteIXC(){
+  const cli = gd('sf_clientes')[_cliEditIdx];
+  if(!cli || !cli.ixcId){ showToast('Cliente sem ID IXC.', true); return; }
+  showToast('Re-sincronizando com IXC...');
+  await syncIXC(true);
+  // Re-abre o modal com os dados atualizados
+  const novoIdx = gd('sf_clientes').findIndex(c => c.ixcId === cli.ixcId);
+  if(novoIdx>=0) abrirModalCliente(novoIdx);
 }
 
 // ============================================================
@@ -7718,6 +8212,12 @@ function getIXCConfig(){
 }
 function setIXCConfig(cfg){ localStorage.setItem(IXC_CFG_KEY, JSON.stringify(cfg)); }
 
+function setCliStatusFiltro(s){
+  window._cliStatusFiltro = s;
+  paginaAtual['clientes'] = 1;
+  renderCadastro('clientes');
+}
+
 function abrirModalIXC(){
   const cfg = getIXCConfig();
   const lastSync = localStorage.getItem(IXC_LAST_SYNC_KEY);
@@ -7846,10 +8346,51 @@ async function chamarIXC(cfg, endpoint, params){
 
 // Mapeia status do IXC para nosso formato curto
 function mapStatusIXC(ativo){
-  // IXC normalmente usa 'A' (ativo), 'D' (desativado), 'I' (inativo), 'N' (novo), 'CM' (cliente em montagem), 'AB' (aberto)
   if(!ativo) return 'I';
-  const v = String(ativo).toUpperCase();
-  return v;
+  return String(ativo).toUpperCase();
+}
+
+// Calcula label legível do status do CONTRATO combinando status do contrato + status de acesso (internet).
+function calcStatusContrato(statusContrato, statusAcesso){
+  const sc = (statusContrato||'').toUpperCase();
+  const sa = (statusAcesso||'').toUpperCase();
+  if(sc === 'D' || sc === 'DS' || sc === 'C' || sc === 'EC') return 'Cancelado';
+  if(sc === 'N') return 'Negativado';
+  if(sc === 'I') return 'Inativo';
+  if(sc === 'PC' || sc === 'CM' || sc === 'AB') return 'Pré-contrato';
+  if(sc === 'A'){
+    if(sa === 'D' || sa === 'DM') return 'Bloqueio Manual';
+    if(sa === 'FA') return 'Bloqueio Automático';
+    if(sa === 'AA') return 'Aguardando Assinatura';
+    return 'Ativo';
+  }
+  return sc || '—';
+}
+
+// Status agregado do cliente baseado em todos os seus contratos
+function agregarStatusCliente(contratosCliente){
+  if(!contratosCliente || !contratosCliente.length) return null;
+  const statusList = contratosCliente.map(c => calcStatusContrato(c.statusContrato, c.statusAcesso));
+  const prioridade = ['Ativo','Bloqueio Manual','Bloqueio Automático','Aguardando Assinatura','Pré-contrato','Negativado','Inativo','Cancelado'];
+  for(const p of prioridade){
+    if(statusList.includes(p)) return p;
+  }
+  return statusList[0];
+}
+
+// Busca paginada — repete chamadas até trazer todos os registros (até 50 páginas)
+async function buscarTudoIXC(cfg, endpoint, baseParams={}){
+  const rp = String(baseParams.rp || cfg.rp || 500);
+  let pagina = 1, todos = [], total = null;
+  while(pagina <= 50){
+    const resp = await chamarIXC(cfg, endpoint, { ...baseParams, page: String(pagina), rp });
+    const registros = resp.registros || [];
+    todos = todos.concat(registros);
+    if(total === null) total = parseInt(resp.total || '0') || registros.length;
+    if(registros.length < parseInt(rp) || todos.length >= total) break;
+    pagina++;
+  }
+  return { registros: todos, total };
 }
 
 // Normaliza CPF/CNPJ para comparação (só dígitos)
@@ -7863,17 +8404,21 @@ async function syncIXC(silent){
   }
   const btn = document.getElementById('btn-sync-ixc');
   if(btn){ btn.disabled = true; btn.innerHTML = '⟳ Sincronizando...'; }
-  if(!silent) showToast('Buscando clientes do IXC...');
+  if(!silent) showToast('Buscando dados do IXC (clientes, contratos, logins)...');
 
   try {
-    // Busca clientes do IXC
-    const resp = await chamarIXC(cfg, 'cliente', { rp: String(cfg.rp||500), sortname:'id', sortorder:'asc' });
-    const registros = resp.registros || [];
-    if(!Array.isArray(registros)){
-      throw new Error('Resposta sem campo "registros"');
-    }
+    // Busca paginada de clientes, contratos e logins em paralelo
+    const rp = String(cfg.rp||500);
+    const [respCli, respCtr, respLog] = await Promise.all([
+      buscarTudoIXC(cfg, 'cliente',          { rp, sortname:'id', sortorder:'asc' }),
+      buscarTudoIXC(cfg, 'cliente_contrato', { rp, sortname:'id', sortorder:'asc' }).catch(e=>({registros:[],_err:e.message})),
+      buscarTudoIXC(cfg, 'radusuarios',      { rp, sortname:'id', sortorder:'asc' }).catch(e=>({registros:[],_err:e.message})),
+    ]);
+    const regCli = respCli.registros || [];
+    const regCtr = respCtr.registros || [];
+    const regLog = respLog.registros || [];
 
-    // Carrega clientes atuais e indexa
+    // === 1) Processar CLIENTES ===
     const clientes = gd('sf_clientes');
     const byIxcId = new Map();
     const byDoc = new Map();
@@ -7882,63 +8427,231 @@ async function syncIXC(silent){
       const d = normDoc(c.cnpj);
       if(d) byDoc.set(d, idx);
     });
+    let novosCli = 0, atualizadosCli = 0;
+    const hoje_ = new Date().toISOString().slice(0,10);
 
-    let novos = 0, atualizados = 0;
-    const hoje = new Date().toISOString().slice(0,10);
-
-    registros.forEach(r => {
-      // Campos comuns do IXC: id, razao, fantasia, cnpj_cpf, ie, contato, telefone_celular, telefone, email, endereco, bairro, cep, cidade, ativo, login, senha
+    regCli.forEach(r => {
       const ixcId = String(r.id||'');
-      const nome = r.fantasia || r.razao || '';
       const cnpjcpf = r.cnpj_cpf || '';
       const docNorm = normDoc(cnpjcpf);
-
-      // Encontra cliente existente — primeiro por ixcId, depois por documento
       let idx = byIxcId.get(ixcId);
       if(idx===undefined && docNorm) idx = byDoc.get(docNorm);
-
       const dados = {
-        ixcId: ixcId,
-        origem: 'ixc',
+        ixcId, origem: 'ixc',
         ixcStatus: mapStatusIXC(r.ativo),
-        ixcLogin: r.login || '',
-        ixcSenha: r.senha || '',
-        nome: nome || (r.razao||''),
+        ixcLogin: r.login || '', ixcSenha: r.senha || '',
+        nome: r.fantasia || r.razao || '',
         razao: r.razao || '',
+        nomeSocial: r.fantasia || '',
         cnpj: cnpjcpf,
         ie: r.ie || '',
+        tipoPessoa: r.tipo_pessoa || '',
         contato: r.contato || '',
         tel1: r.telefone_celular || r.telefone || '',
         tel2: r.telefone || '',
+        whatsapp: r.whatsapp || r.telefone_celular || '',
+        telResidencial: r.fone1 || r.telefone || '',
+        telComercial: r.fone2 || r.telefone_comercial || '',
         email: r.email || '',
-        end: r.endereco ? `${r.endereco}${r.numero?', '+r.numero:''}` : '',
+        website: r.url || '',
+        end: r.endereco || '',
+        numero: r.numero || '',
+        complemento: r.complemento || '',
         bairro: r.bairro || '',
         cep: r.cep || '',
+        cepFull: r.cep || '',
         cidade: r.cidade || '',
+        uf: r.uf || '',
+        referencia: r.referencia || '',
+        dataNasc: r.data_nascimento && r.data_nascimento !== '0000-00-00' ? r.data_nascimento : null,
+        genero: r.sexo === 'M' ? 'Masculino' : r.sexo === 'F' ? 'Feminino' : '',
+        estadoCivil: r.estado_civil || '',
+        nacionalidade: r.nacionalidade || '',
+        naturalidade: r.naturalidade || '',
+        profissao: r.profissao || '',
+        rgEmissor: r.orgao_emissor || '',
+        ativo: r.ativo === 'S',
+        moradia: r.tipo_moradia || '',
         obs: r.obs || '',
       };
-
       if(idx!==undefined){
-        // Atualiza preservando id local e datacad
         const existente = clientes[idx];
-        clientes[idx] = { ...existente, ...dados, id: existente.id, datacad: existente.datacad || hoje };
-        atualizados++;
+        clientes[idx] = { ...existente, ...dados, id: existente.id, datacad: existente.datacad || hoje_ };
+        atualizadosCli++;
       } else {
-        // Novo cliente
-        clientes.push({ ...dados, id: Date.now()+Math.random(), datacad: hoje });
-        novos++;
+        clientes.push({ ...dados, datacad: hoje_ });
+        novosCli++;
       }
     });
 
-    sd('sf_clientes', clientes);
+    // === Upsert batch CLIENTES no Supabase ===
+    const mapCli = _SYNC_MAP.sf_clientes;
+    const comId = clientes.filter(c => c.origem==='ixc' && c.id!=null);
+    const semId = clientes.filter(c => c.origem==='ixc' && c.id==null);
+    if(comId.length){
+      const rows = comId.map(c => mapCli.toRow(c));
+      const { error } = await sbClient.from('clientes').upsert(rows, { onConflict: 'id' });
+      if(error) throw new Error('Supabase clientes upsert: '+error.message);
+    }
+    if(semId.length){
+      const rows = semId.map(c => { const r = mapCli.toRow(c); delete r.id; return r; });
+      const { data, error } = await sbClient.from('clientes').insert(rows).select();
+      if(error) throw new Error('Supabase clientes insert: '+error.message);
+      if(data) data.forEach((row, i) => { semId[i].id = row.id; });
+    }
+
+    // Re-indexa byIxcId após inserts para mapear ixc_id -> id local
+    const ixcToLocalId = new Map();
+    clientes.forEach(c => { if(c.ixcId && c.id) ixcToLocalId.set(String(c.ixcId), c.id); });
+
+    // === 2) Processar CONTRATOS ===
+    let contratos = gd('sf_clientes_contratos');
+    const ctrByIxcId = new Map();
+    contratos.forEach((c,idx)=>{ if(c.ixcId) ctrByIxcId.set(String(c.ixcId), idx); });
+    let novosCtr=0, atualizadosCtr=0;
+    const ixcCtrToLocalId = new Map(); // ixc_contrato_id -> local contrato.id (depois do upsert)
+
+    regCtr.forEach(r => {
+      const ixcId = String(r.id||'');
+      const ixcCliId = String(r.id_cliente||'');
+      const dados = {
+        ixcId,
+        ixcClienteId: ixcCliId,
+        clienteId: ixcToLocalId.get(ixcCliId) || null,
+        tipo: r.tipo || '',
+        plano: r.id_vd_contrato || r.descricao || '',
+        descricao: r.descricao || r.descricao_aux || '',
+        statusContrato: r.status || '',
+        statusAcesso: r.status_internet || '',
+        valor: parseFloat(String(r.valor_servico||r.valor||'0').replace(',','.')) || null,
+        dataAtivacao: r.data_ativacao && r.data_ativacao !== '0000-00-00' ? r.data_ativacao : null,
+        dataRenovacao: r.data_renovacao && r.data_renovacao !== '0000-00-00' ? r.data_renovacao : null,
+        pagoAte: r.pago_ate && r.pago_ate !== '0000-00-00' ? r.pago_ate : null,
+      };
+      const idx = ctrByIxcId.get(ixcId);
+      if(idx!==undefined){
+        contratos[idx] = { ...contratos[idx], ...dados };
+        atualizadosCtr++;
+      } else {
+        contratos.push(dados);
+        novosCtr++;
+      }
+    });
+
+    // Upsert batch CONTRATOS — usa ixc_id como conflito (mais estável que id local)
+    if(contratos.length){
+      const mapCtr = _SYNC_MAP.sf_clientes_contratos;
+      const comIxc = contratos.filter(c => c.ixcId);
+      const rows = comIxc.map(c => { const r = mapCtr.toRow(c); if(c.id==null) delete r.id; return r; });
+      const { data, error } = await sbClient.from('clientes_contratos').upsert(rows, { onConflict: 'ixc_id' }).select();
+      if(error) throw new Error('Supabase contratos: '+error.message);
+      // Mapeia ids gerados de volta + monta ixcCtr->localId
+      if(data){
+        const dataByIxc = new Map(data.map(d => [String(d.ixc_id), d]));
+        contratos.forEach(c => {
+          if(c.ixcId){
+            const d = dataByIxc.get(String(c.ixcId));
+            if(d){ c.id = d.id; ixcCtrToLocalId.set(String(c.ixcId), d.id); }
+          }
+        });
+      }
+    }
+
+    // === 3) Processar LOGINS (radusuarios) ===
+    let logins = gd('sf_clientes_logins');
+    const logByIxcId = new Map();
+    logins.forEach((l,idx)=>{ if(l.ixcId) logByIxcId.set(String(l.ixcId), idx); });
+    let novosLog=0, atualizadosLog=0;
+
+    regLog.forEach(r => {
+      const ixcId = String(r.id||'');
+      const ixcCliId = String(r.id_cliente||'');
+      const ixcCtrId = String(r.id_contrato||'');
+      const dados = {
+        ixcId,
+        ixcClienteId: ixcCliId,
+        ixcContratoId: ixcCtrId,
+        clienteId: ixcToLocalId.get(ixcCliId) || null,
+        contratoId: ixcCtrToLocalId.get(ixcCtrId) || null,
+        login: r.login || '',
+        senha: r.senha || '',
+        autenticacao: r.tipo_login || r.autenticacao || 'PPPoE',
+        tipoConexao: r.tipo_conexao || '',
+        ativo: r.ativo === 'S',
+        online: r.online === 'S',
+        plano: r.id_plano || '',
+        ssid: r.ssid_router || '',
+        senhaWifi: r.senha_router || '',
+      };
+      const idx = logByIxcId.get(ixcId);
+      if(idx!==undefined){
+        logins[idx] = { ...logins[idx], ...dados };
+        atualizadosLog++;
+      } else {
+        logins.push(dados);
+        novosLog++;
+      }
+    });
+
+    if(logins.length){
+      const mapLog = _SYNC_MAP.sf_clientes_logins;
+      const comIxc = logins.filter(l => l.ixcId);
+      const rows = comIxc.map(l => { const r = mapLog.toRow(l); if(l.id==null) delete r.id; return r; });
+      const { data, error } = await sbClient.from('clientes_logins').upsert(rows, { onConflict: 'ixc_id' }).select();
+      if(error) throw new Error('Supabase logins: '+error.message);
+      if(data){
+        const dataByIxc = new Map(data.map(d => [String(d.ixc_id), d]));
+        logins.forEach(l => {
+          if(l.ixcId){
+            const d = dataByIxc.get(String(l.ixcId));
+            if(d) l.id = d.id;
+          }
+        });
+      }
+    }
+
+    // === 4) Calcular status agregado de cada cliente baseado nos contratos ===
+    const contratosPorCliente = new Map();
+    contratos.forEach(c => {
+      const cid = c.ixcClienteId;
+      if(!cid) return;
+      if(!contratosPorCliente.has(cid)) contratosPorCliente.set(cid, []);
+      contratosPorCliente.get(cid).push(c);
+    });
+    const clientesAlteradosStatus = [];
+    clientes.forEach(c => {
+      if(c.origem !== 'ixc' || !c.ixcId) return;
+      const ctrs = contratosPorCliente.get(c.ixcId) || [];
+      const novoStatus = agregarStatusCliente(ctrs);
+      if(novoStatus !== c.statusContrato){
+        c.statusContrato = novoStatus;
+        clientesAlteradosStatus.push(c);
+      }
+    });
+    // Upsert apenas dos clientes que tiveram status atualizado
+    if(clientesAlteradosStatus.length){
+      const rows = clientesAlteradosStatus.map(c => mapCli.toRow(c));
+      const { error } = await sbClient.from('clientes').upsert(rows, { onConflict: 'id' });
+      if(error) console.warn('Atualização de status_contrato:', error.message);
+    }
+
+    // === Atualiza cache local SEM disparar _syncDiff ===
+    _cache.sf_clientes = clientes;
+    _cache.sf_clientes_contratos = contratos;
+    _cache.sf_clientes_logins = logins;
+    localStorage.setItem('sf_clientes', JSON.stringify(clientes));
+    localStorage.setItem('sf_clientes_contratos', JSON.stringify(contratos));
+    localStorage.setItem('sf_clientes_logins', JSON.stringify(logins));
     localStorage.setItem(IXC_LAST_SYNC_KEY, Date.now().toString());
 
-    // Re-render se estamos na aba clientes
     if(document.querySelector('.nav-item.active')?.dataset.page==='clientes'){
       renderCadastro('clientes');
     }
 
-    showToast(`✓ IXC sincronizado: ${novos} novo(s), ${atualizados} atualizado(s)`);
+    const erros = [respCtr._err, respLog._err].filter(Boolean);
+    const msg = `✓ IXC: ${novosCli+atualizadosCli} clientes, ${novosCtr+atualizadosCtr} contratos, ${novosLog+atualizadosLog} logins`;
+    showToast(erros.length ? msg + ' ('+erros.length+' avisos)' : msg);
+    if(erros.length) console.warn('IXC sync warnings:', erros);
   } catch(e){
     showToast('Erro IXC: '+e.message, true);
     console.error('IXC sync erro:', e);
