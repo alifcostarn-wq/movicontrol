@@ -8853,368 +8853,311 @@ function autoSyncIXC(){
   setTimeout(() => syncIXC(true), 400);
 }
 
+
 // ============================================================
-// DIAGNÓSTICO — TX/RX em tempo real via API IXC
+// DIAGNÓSTICO — Velocidade TX/RX em tempo real via API IXC
 // ============================================================
 
-// CSS injetado uma vez
 (function injetarCssDiag(){
   if(document.getElementById('css-diag')) return;
   const s = document.createElement('style');
   s.id = 'css-diag';
   s.textContent = `
-    .diag-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-    .diag-card {
-      background:var(--bg2); border:1px solid var(--border); border-radius:10px;
-      padding:14px 16px; display:flex; flex-direction:column; gap:4px;
-    }
-    .diag-card-label { font-size:11px; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
-    .diag-card-val { font-size:22px; font-weight:700; color:var(--text); font-family:'DM Mono',monospace; }
-    .diag-card-sub { font-size:11px; color:var(--text3); }
-    .diag-card.green .diag-card-val { color:#639922; }
-    .diag-card.red .diag-card-val { color:#c23b2a; }
-    .diag-card.blue .diag-card-val { color:#185fa5; }
-    .diag-card.orange .diag-card-val { color:#c45a13; }
-    .diag-rxbar { height:6px; border-radius:3px; background:rgba(55,138,221,0.2); margin-top:6px; overflow:hidden; }
-    .diag-rxbar-fill { height:100%; border-radius:3px; background:#378add; transition:width .4s; }
-    .diag-txbar { height:6px; border-radius:3px; background:rgba(99,153,34,0.2); margin-top:4px; overflow:hidden; }
-    .diag-txbar-fill { height:100%; border-radius:3px; background:#639922; transition:width .4s; }
-    .diag-section { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text2); font-weight:500; margin:12px 0 8px; border-bottom:1px solid var(--border); padding-bottom:4px; }
-    .diag-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; }
-    .diag-row:last-child { border-bottom:none; }
-    .diag-row-label { color:var(--text2); }
-    .diag-row-val { font-family:'DM Mono',monospace; font-weight:500; }
-    .diag-ping-output { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-family:'DM Mono',monospace; font-size:11.5px; line-height:1.7; color:var(--text); white-space:pre-wrap; max-height:220px; overflow-y:auto; margin-top:8px; }
-    .diag-ping-ok { color:#639922; }
+    .diag-wrap { display:flex; flex-direction:column; gap:14px; }
+    .diag-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .diag-btn { font-size:12px; padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg2); color:var(--text); cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:500; white-space:nowrap; }
+    .diag-btn:hover { background:var(--bg3); }
+    .diag-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .diag-btn.active { background:#c23b2a; color:#fff; border-color:#c23b2a; }
+    .diag-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .diag-speed-cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .diag-speed-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+    .diag-speed-label { font-size:10.5px; color:var(--text2); text-transform:uppercase; letter-spacing:.07em; font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+    .diag-speed-val { font-size:32px; font-weight:700; font-family:'DM Mono',monospace; line-height:1; }
+    .diag-speed-unit { font-size:14px; font-weight:500; color:var(--text2); margin-left:3px; }
+    .diag-speed-sub { font-size:11px; color:var(--text3); margin-top:4px; }
+    .diag-speed-bar-wrap { height:6px; border-radius:3px; margin-top:10px; overflow:hidden; }
+    .diag-speed-bar-fill { height:100%; border-radius:3px; transition:width .5s ease; }
+    .diag-rx-color { color:#185fa5; }
+    .diag-tx-color { color:#639922; }
+    .diag-rx-bar-wrap { background:rgba(55,138,221,0.15); }
+    .diag-rx-bar-fill { background:linear-gradient(90deg,#378add,#185fa5); }
+    .diag-tx-bar-wrap { background:rgba(99,153,34,0.15); }
+    .diag-tx-bar-fill { background:linear-gradient(90deg,#7cbf2e,#639922); }
+    .diag-chart-wrap { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+    .diag-chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .diag-chart-title { font-size:12px; font-weight:500; color:var(--text2); }
+    .diag-chart-legend { display:flex; gap:12px; font-size:11px; color:var(--text2); }
+    .diag-legend-dot { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:4px; }
+    .diag-canvas-wrap { position:relative; height:140px; }
+    canvas#diag-canvas { width:100%; height:100%; }
+    .diag-status-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .diag-status-pill { display:flex; align-items:center; gap:6px; background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:6px 12px; font-size:12px; }
+    .diag-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .diag-dot.on { background:#639922; box-shadow:0 0 0 3px rgba(99,153,34,0.25); animation:pulse-green 2s infinite; }
+    .diag-dot.off { background:#c23b2a; }
+    @keyframes pulse-green { 0%,100%{box-shadow:0 0 0 3px rgba(99,153,34,.25)} 50%{box-shadow:0 0 0 5px rgba(99,153,34,.1)} }
+    .diag-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; background:var(--bg2); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .diag-detail-item { padding:9px 14px; border-bottom:1px solid var(--border); border-right:1px solid var(--border); }
+    .diag-detail-item:nth-child(2n) { border-right:none; }
+    .diag-detail-item:nth-last-child(-n+2) { border-bottom:none; }
+    .diag-detail-label { font-size:10.5px; color:var(--text3); margin-bottom:2px; }
+    .diag-detail-val { font-size:12px; font-weight:500; font-family:'DM Mono',monospace; color:var(--text); }
+    .diag-ping-output { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-family:'DM Mono',monospace; font-size:11.5px; line-height:1.7; color:var(--text); white-space:pre-wrap; max-height:200px; overflow-y:auto; margin-top:8px; }
+    .diag-ping-ok  { color:#639922; }
     .diag-ping-err { color:#c23b2a; }
     .diag-ping-hdr { color:#378add; }
-    .diag-actions { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-    .diag-btn { font-size:12px; padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg2); color:var(--text); cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:500; }
-    .diag-btn:hover { background:var(--bg3); }
-    .diag-btn:disabled { opacity:.5; cursor:not-allowed; }
-    .diag-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-    .diag-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
-    .diag-online { display:inline-flex; align-items:center; gap:6px; }
-    .diag-dot { width:9px; height:9px; border-radius:50%; }
-    .diag-dot.on { background:#639922; box-shadow:0 0 0 3px rgba(99,153,34,0.25); }
-    .diag-dot.off { background:#c23b2a; }
-    .diag-refresh-info { font-size:11px; color:var(--text3); margin-left:auto; }
+    .diag-spinner { display:inline-block;width:11px;height:11px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite; }
+    .diag-refresh-ts { font-size:11px; color:var(--text3); margin-left:auto; }
   `;
   document.head.appendChild(s);
 })();
 
-let _diagTimer = null;
-let _diagLoginId = null;
-let _diagMaxVel = 100; // Mbps do plano para barras de progresso
+let _diagTimer     = null;
+let _diagLoginId   = null;
+let _diagMaxMbps   = 100;
+let _diagPrevBytes = null;
+let _diagHistory   = [];
+const DIAG_MAX_POINTS = 60;
+const DIAG_INTERVAL   = 3000;
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function formatMbps(v){ if(!v||isNaN(v))return'0.00'; v=parseFloat(v); return v>=1000?(v/1000).toFixed(2):v.toFixed(2); }
+function unitMbps(v){ return parseFloat(v||0)>=1000?'Gbps':'Mbps'; }
+function formatBytes(b){ b=parseFloat(b||0); if(b>=1e9)return(b/1e9).toFixed(2)+' GB'; if(b>=1e6)return(b/1e6).toFixed(1)+' MB'; if(b>=1e3)return(b/1e3).toFixed(0)+' KB'; return b+' B'; }
 
 function initDiagnostico(){
-  // Para o poll anterior se existir
-  if(_diagTimer){ clearInterval(_diagTimer); _diagTimer = null; }
-
-  const cli = window._cliAtual;
-  if(!cli){ document.getElementById('cli-diag-content').innerHTML = '<div class="cli-empty-pane">Nenhum cliente carregado.</div>'; return; }
-
-  // Pega o primeiro login IXC deste cliente
-  const logins = gd('sf_clientes_logins').filter(l =>
-    (cli.id && l.clienteId == cli.id) || (cli.ixcId && l.ixcClienteId == cli.ixcId)
-  );
-
-  if(!logins.length || !logins[0].ixcId){
-    document.getElementById('cli-diag-content').innerHTML = '<div class="cli-empty-pane">Nenhum login IXC vinculado.<br><span style="font-size:11px;color:var(--text3)">Faça a sync IXC para carregar os logins.</span></div>';
-    return;
-  }
-
-  // Pega velocidade do plano para barra de progresso
-  const contrato = gd('sf_clientes_contratos').find(c =>
-    (cli.id && c.clienteId == cli.id) || (cli.ixcId && c.ixcClienteId == cli.ixcId)
-  );
-  if(contrato && contrato.plano){
-    const m = String(contrato.plano).match(/(\d+)/);
-    if(m) _diagMaxVel = parseInt(m[1]);
-  }
-
-  // Usa o login mais recente online, ou o primeiro
-  const loginOnline = logins.find(l => l.online) || logins[0];
-  _diagLoginId = loginOnline.ixcId;
-
-  renderDiagBase(cli, loginOnline, logins);
-  buscarDadosRadusuario(); // primeira carga imediata
+  stopDiagPoll();
+  _diagPrevBytes=null; _diagHistory=[];
+  const cli=window._cliAtual;
+  if(!cli){ document.getElementById('cli-diag-content').innerHTML='<div class="cli-empty-pane">Nenhum cliente carregado.</div>'; return; }
+  const logins=gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
+  if(!logins.length){ document.getElementById('cli-diag-content').innerHTML='<div class="cli-empty-pane">Nenhum login IXC vinculado.<br><span style="font-size:11px;color:var(--text3)">Faça a sync IXC para carregar os logins.</span></div>'; return; }
+  const contratos=gd('sf_clientes_contratos').filter(c=>(cli.id&&c.clienteId==cli.id)||(cli.ixcId&&c.ixcClienteId==cli.ixcId));
+  if(contratos.length){ const p=contratos[0].plano||contratos[0].descricao||''; const m=p.match(/(\d+)\s*m/i)||p.match(/(\d+)/); if(m) _diagMaxMbps=parseInt(m[1]); }
+  const loginAtivo=logins.find(l=>l.online)||logins[0];
+  _diagLoginId=loginAtivo.ixcId;
+  renderDiagBase(loginAtivo, logins);
+  startDiagPoll();
 }
 
-function renderDiagBase(cli, loginAtivo, todosLogins){
-  const selectorHtml = todosLogins.length > 1
-    ? `<select id="diag-login-sel" onchange="_diagLoginId=this.value;buscarDadosRadusuario()" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">
-        ${todosLogins.map(l=>`<option value="${l.ixcId}" ${l.ixcId==_diagLoginId?'selected':''}>${l.login||l.ixcId}</option>`).join('')}
-       </select>`
-    : `<span style="font-family:'DM Mono',monospace;font-size:12px;font-weight:600">${loginAtivo.login||'—'}</span>`;
-
-  document.getElementById('cli-diag-content').innerHTML = `
+function renderDiagBase(loginAtivo, todosLogins){
+  const sel = todosLogins.length>1
+    ? `<select id="diag-login-sel" onchange="mudaLoginDiag(this.value)" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">${todosLogins.map(l=>`<option value="${l.ixcId}" ${l.ixcId==_diagLoginId?'selected':''}>${l.login||l.ixcId}</option>`).join('')}</select>`
+    : `<strong style="font-family:'DM Mono',monospace;font-size:12px">${loginAtivo.login||'—'}</strong>`;
+  document.getElementById('cli-diag-content').innerHTML=`
+  <div class="diag-wrap">
     <div class="diag-actions">
-      <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px">
-        Login: ${selectorHtml}
-      </span>
-      <button class="diag-btn primary" onclick="buscarDadosRadusuario()" id="diag-btn-refresh">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-        Atualizar
-      </button>
-      <button class="diag-btn" onclick="executarPing()" id="diag-btn-ping">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Ping
-      </button>
-      <button class="diag-btn" onclick="executarTraceroute()" id="diag-btn-trace">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>
-        Traceroute
-      </button>
-      <button class="diag-btn" id="diag-btn-poll" onclick="togglePollDiag()" title="Atualizar automaticamente a cada 5s">
-        ▶ Auto (5s)
-      </button>
-      <span class="diag-refresh-info" id="diag-last-update"></span>
+      <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px">Login: ${sel}</span>
+      <button class="diag-btn active" id="diag-btn-poll" onclick="toggleDiagPoll()">⏸ Pausar</button>
+      <button class="diag-btn" onclick="executarPing()" id="diag-btn-ping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Ping</button>
+      <button class="diag-btn" onclick="executarTraceroute()" id="diag-btn-trace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>Traceroute</button>
+      <span class="diag-refresh-ts" id="diag-last-update">—</span>
     </div>
-
-    <!-- KPIs TX/RX -->
-    <div class="diag-grid" id="diag-kpis">
-      <div class="diag-card blue">
-        <span class="diag-card-label">⬇ Download atual</span>
-        <span class="diag-card-val" id="diag-rx">—</span>
-        <span class="diag-card-sub" id="diag-rx-sub">aguardando dados</span>
-        <div class="diag-rxbar"><div class="diag-rxbar-fill" id="diag-rx-bar" style="width:0%"></div></div>
+    <div class="diag-status-row">
+      <div class="diag-status-pill"><span class="diag-dot off" id="diag-dot"></span><span id="diag-status-txt">—</span></div>
+      <div class="diag-status-pill">🕐 <span id="diag-tempo">—</span></div>
+      <div class="diag-status-pill">🌐 <span id="diag-ip">—</span></div>
+      <div class="diag-status-pill">📶 Plano: <strong>${_diagMaxMbps} Mbps</strong></div>
+    </div>
+    <div class="diag-speed-cards">
+      <div class="diag-speed-card">
+        <div class="diag-speed-label"><span style="width:10px;height:10px;border-radius:2px;background:#185fa5;display:inline-block"></span>⬇ Download</div>
+        <div><span class="diag-speed-val diag-rx-color" id="diag-rx-val">0.00</span><span class="diag-speed-unit" id="diag-rx-unit">Mbps</span></div>
+        <div class="diag-speed-sub">de ${_diagMaxMbps} Mbps contratados · <span id="diag-rx-pct">0%</span></div>
+        <div class="diag-speed-bar-wrap diag-rx-bar-wrap"><div class="diag-speed-bar-fill diag-rx-bar-fill" id="diag-rx-bar" style="width:0%"></div></div>
       </div>
-      <div class="diag-card green">
-        <span class="diag-card-label">⬆ Upload atual</span>
-        <span class="diag-card-val" id="diag-tx">—</span>
-        <span class="diag-card-sub" id="diag-tx-sub">aguardando dados</span>
-        <div class="diag-txbar"><div class="diag-txbar-fill" id="diag-tx-bar" style="width:0%"></div></div>
-      </div>
-      <div class="diag-card" id="diag-card-status">
-        <span class="diag-card-label">Status conexão</span>
-        <span class="diag-card-val" id="diag-status-val">—</span>
-        <span class="diag-card-sub" id="diag-status-sub"></span>
-      </div>
-      <div class="diag-card" id="diag-card-tempo">
-        <span class="diag-card-label">Tempo conectado</span>
-        <span class="diag-card-val" id="diag-tempo">—</span>
-        <span class="diag-card-sub" id="diag-tempo-sub"></span>
+      <div class="diag-speed-card">
+        <div class="diag-speed-label"><span style="width:10px;height:10px;border-radius:2px;background:#639922;display:inline-block"></span>⬆ Upload</div>
+        <div><span class="diag-speed-val diag-tx-color" id="diag-tx-val">0.00</span><span class="diag-speed-unit" id="diag-tx-unit">Mbps</span></div>
+        <div class="diag-speed-sub">de ${_diagMaxMbps} Mbps contratados · <span id="diag-tx-pct">0%</span></div>
+        <div class="diag-speed-bar-wrap diag-tx-bar-wrap"><div class="diag-speed-bar-fill diag-tx-bar-fill" id="diag-tx-bar" style="width:0%"></div></div>
       </div>
     </div>
-
-    <!-- Detalhes técnicos -->
-    <div class="diag-section">Detalhes da sessão</div>
-    <div id="diag-detalhes">
-      <div class="diag-row"><span class="diag-row-label">IP atual</span><span class="diag-row-val" id="diag-ip">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">IP concentrador</span><span class="diag-row-val" id="diag-ip-conc">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">Última conexão</span><span class="diag-row-val" id="diag-ultima-con">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">Última desconexão</span><span class="diag-row-val" id="diag-ultima-desc">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">Causa da desconexão</span><span class="diag-row-val" id="diag-causa-desc">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">Quedas hoje</span><span class="diag-row-val" id="diag-quedas">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">Download acumulado</span><span class="diag-row-val" id="diag-dl-total">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">Upload acumulado</span><span class="diag-row-val" id="diag-ul-total">—</span></div>
-      <div class="diag-row"><span class="diag-row-label">MAC address</span><span class="diag-row-val" id="diag-mac">—</span></div>
+    <div class="diag-chart-wrap">
+      <div class="diag-chart-header">
+        <span class="diag-chart-title">Velocidade em tempo real (últimos ${DIAG_MAX_POINTS*DIAG_INTERVAL/1000}s)</span>
+        <div class="diag-chart-legend">
+          <span><span class="diag-legend-dot" style="background:#185fa5"></span>Download</span>
+          <span><span class="diag-legend-dot" style="background:#639922"></span>Upload</span>
+        </div>
+      </div>
+      <div class="diag-canvas-wrap"><canvas id="diag-canvas"></canvas></div>
     </div>
-
-    <!-- Output ping/traceroute -->
+    <div class="diag-detail-grid">
+      <div class="diag-detail-item"><div class="diag-detail-label">Download acumulado</div><div class="diag-detail-val" id="diag-dl-total">—</div></div>
+      <div class="diag-detail-item"><div class="diag-detail-label">Upload acumulado</div><div class="diag-detail-val" id="diag-ul-total">—</div></div>
+      <div class="diag-detail-item"><div class="diag-detail-label">Última conexão</div><div class="diag-detail-val" id="diag-ultima-con">—</div></div>
+      <div class="diag-detail-item"><div class="diag-detail-label">Quedas hoje</div><div class="diag-detail-val" id="diag-quedas">—</div></div>
+      <div class="diag-detail-item"><div class="diag-detail-label">MAC address</div><div class="diag-detail-val" id="diag-mac">—</div></div>
+      <div class="diag-detail-item"><div class="diag-detail-label">IP concentrador</div><div class="diag-detail-val" id="diag-ip-conc">—</div></div>
+    </div>
     <div id="diag-ping-area" style="display:none">
-      <div class="diag-section" id="diag-ping-titulo">Ping</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:6px" id="diag-ping-titulo">Ping</div>
       <div class="diag-ping-output" id="diag-ping-output"></div>
     </div>
-  `;
+  </div>`;
 }
 
-function formatBytes(bytes){
-  if(!bytes || isNaN(bytes)) return '0 B';
-  bytes = parseFloat(bytes);
-  if(bytes >= 1073741824) return (bytes/1073741824).toFixed(2)+' GB';
-  if(bytes >= 1048576)    return (bytes/1048576).toFixed(2)+' MB';
-  if(bytes >= 1024)       return (bytes/1024).toFixed(1)+' KB';
-  return bytes+' B';
-}
-
-function formatBps(bps){
-  if(!bps || isNaN(bps)) return '0 bps';
-  bps = parseFloat(bps);
-  if(bps >= 1000000) return (bps/1000000).toFixed(2)+' Mbps';
-  if(bps >= 1000)    return (bps/1000).toFixed(1)+' Kbps';
-  return bps.toFixed(0)+' bps';
-}
-
-async function buscarDadosRadusuario(){
-  const cfg = getIXCConfig();
-  if(!cfg.proxyUrl || !_diagLoginId){
-    document.getElementById('cli-diag-content').innerHTML = '<div class="cli-empty-pane">Configure o IXC antes de usar o diagnóstico.</div>';
-    return;
-  }
-  const btn = document.getElementById('diag-btn-refresh');
-  if(btn){ btn.disabled = true; btn.innerHTML = '<span class="diag-spinner"></span> Buscando...'; }
-
+async function lerVelocidade(){
+  const cfg=getIXCConfig();
+  if(!cfg.proxyUrl||!_diagLoginId) return;
   try {
-    // Busca dados do radusuarios pelo ID do login IXC
-    const resp = await chamarIXC(cfg, 'radusuarios', {
-      qtype: 'radusuarios.id',
-      query: String(_diagLoginId),
-      oper: '=',
-      rp: '1',
-    });
-
-    const r = (resp.registros || [])[0];
-    if(!r){
-      showToast('Login não encontrado no IXC.', true);
-      return;
+    const resp=await chamarIXC(cfg,'radusuarios',{qtype:'radusuarios.id',query:String(_diagLoginId),oper:'=',rp:'1'});
+    const r=(resp.registros||[])[0];
+    if(!r) return;
+    const tsAgora=Date.now();
+    const rxBytes=parseFloat(r.download_atual||r.rx_bytes||r.acctinputoctets||0);
+    const txBytes=parseFloat(r.upload_atual||r.tx_bytes||r.acctoutputoctets||0);
+    let rxMbps=0,txMbps=0;
+    if(_diagPrevBytes){
+      const dt=(tsAgora-_diagPrevBytes.ts)/1000;
+      if(dt>0){
+        const dRx=rxBytes-_diagPrevBytes.rx; const dTx=txBytes-_diagPrevBytes.tx;
+        rxMbps=dRx>0?(dRx*8)/dt/1e6:0;
+        txMbps=dTx>0?(dTx*8)/dt/1e6:0;
+      }
     }
-
-    // Atualiza status online
-    const online = r.online === 'S' || r.online === '1' || r.online === true;
-    const statusEl = document.getElementById('diag-status-val');
-    const statusCard = document.getElementById('diag-card-status');
-    if(statusEl){
-      statusEl.innerHTML = `<span class="diag-online"><span class="diag-dot ${online?'on':'off'}"></span>${online?'Online':'Offline'}</span>`;
-      statusCard.classList.toggle('green', online);
-      statusCard.classList.toggle('red', !online);
-    }
-
-    // Download / Upload atual (em bytes — IXC retorna acumulado da sessão)
-    const dlAtual = parseFloat(r.download_atual || r.rx_bytes || 0);
-    const ulAtual = parseFloat(r.upload_atual  || r.tx_bytes || 0);
-    const dlEl = document.getElementById('diag-rx');
-    const ulEl = document.getElementById('diag-tx');
-    if(dlEl) dlEl.textContent = formatBytes(dlAtual);
-    if(ulEl) ulEl.textContent = formatBytes(ulAtual);
-    const dlSub = document.getElementById('diag-rx-sub');
-    const ulSub = document.getElementById('diag-tx-sub');
-    if(dlSub) dlSub.textContent = 'acumulado na sessão atual';
-    if(ulSub) ulSub.textContent = 'acumulado na sessão atual';
-
-    // Barras de progresso (usa plano em MB para referência)
-    const maxBytes = _diagMaxVel * 1024 * 1024; // Mbps → bytes (aprox por minuto)
-    const rxBar = document.getElementById('diag-rx-bar');
-    const txBar = document.getElementById('diag-tx-bar');
-    if(rxBar) rxBar.style.width = Math.min(100, (dlAtual/maxBytes)*100)+'%';
-    if(txBar) txBar.style.width = Math.min(100, (ulAtual/maxBytes)*100)+'%';
-
-    // Tempo conectado
-    const tempoEl = document.getElementById('diag-tempo');
-    const tempoCard = document.getElementById('diag-card-tempo');
-    const tempo = r.tempo_conectado || r.session_time || '—';
-    if(tempoEl){
-      tempoEl.textContent = tempo && tempo !== '—' ? tempo.slice(0,8) : '—';
-      tempoCard.classList.toggle('orange', !online);
-    }
-    const tempoSub = document.getElementById('diag-tempo-sub');
-    if(tempoSub) tempoSub.textContent = online ? 'sessão atual' : 'última sessão';
-
-    // Detalhes
-    const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val || '—'; };
-    set('diag-ip',          r.ip || r.framedipaddress || r.ip_address);
-    set('diag-ip-conc',     r.ip_concentrador || r.nas_ip_address || r.nasipaddress);
-    set('diag-ultima-con',  r.ultima_conexao_inicial || r.acctstarttime);
-    set('diag-ultima-desc', r.ultima_conexao_final   || r.acctstoptime);
-    set('diag-causa-desc',  r.causa_desconexao       || r.acctterminatecause);
-    set('diag-quedas',      r.quantidade_desconexao_hoje != null ? String(r.quantidade_desconexao_hoje)+' hoje' : null);
-    set('diag-dl-total',    r.acctinputoctets  ? formatBytes(r.acctinputoctets)  : formatBytes(dlAtual));
-    set('diag-ul-total',    r.acctoutputoctets ? formatBytes(r.acctoutputoctets) : formatBytes(ulAtual));
-    set('diag-mac',         r.callingstationid || r.mac_address || r.mac);
-
-    // Timestamp da última atualização
-    const lu = document.getElementById('diag-last-update');
-    if(lu) lu.textContent = 'Atualizado: '+new Date().toLocaleTimeString('pt-BR');
-
-  } catch(e){
-    showToast('Erro diagnóstico: '+e.message, true);
-    console.error('Diagnóstico erro:', e);
-  } finally {
-    if(btn){ btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Atualizar'; }
-  }
+    _diagPrevBytes={rx:rxBytes,tx:txBytes,ts:tsAgora};
+    _diagHistory.push({ts:tsAgora,rx:rxMbps,tx:txMbps});
+    if(_diagHistory.length>DIAG_MAX_POINTS) _diagHistory.shift();
+    atualizarUIDiag(r,rxMbps,txMbps,rxBytes,txBytes);
+    desenharGrafico();
+  } catch(e){ console.warn('Diag:',e.message); }
 }
+
+function atualizarUIDiag(r,rxMbps,txMbps,rxBytes,txBytes){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v||'—';};
+  const online=r.online==='S'||r.online==='1'||r.online===true;
+  const dot=document.getElementById('diag-dot');
+  if(dot) dot.className='diag-dot '+(online?'on':'off');
+  set('diag-status-txt',online?'Online':'Offline');
+  set('diag-ip',r.ip||r.framedipaddress||'—');
+  set('diag-tempo',r.tempo_conectado?r.tempo_conectado.slice(0,8):'—');
+  const rxPct=Math.min(100,(rxMbps/_diagMaxMbps)*100);
+  set('diag-rx-val',formatMbps(rxMbps)); set('diag-rx-unit',unitMbps(rxMbps)); set('diag-rx-pct',rxPct.toFixed(1)+'%');
+  const rxBar=document.getElementById('diag-rx-bar'); if(rxBar) rxBar.style.width=rxPct+'%';
+  const txPct=Math.min(100,(txMbps/_diagMaxMbps)*100);
+  set('diag-tx-val',formatMbps(txMbps)); set('diag-tx-unit',unitMbps(txMbps)); set('diag-tx-pct',txPct.toFixed(1)+'%');
+  const txBar=document.getElementById('diag-tx-bar'); if(txBar) txBar.style.width=txPct+'%';
+  set('diag-dl-total',formatBytes(rxBytes)); set('diag-ul-total',formatBytes(txBytes));
+  set('diag-ultima-con',r.ultima_conexao_inicial||r.acctstarttime);
+  set('diag-quedas',r.quantidade_desconexao_hoje!=null?r.quantidade_desconexao_hoje+' hoje':null);
+  set('diag-mac',r.callingstationid||r.mac_address);
+  set('diag-ip-conc',r.ip_concentrador||r.nasipaddress);
+  const lu=document.getElementById('diag-last-update'); if(lu) lu.textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+}
+
+function desenharGrafico(){
+  const canvas=document.getElementById('diag-canvas'); if(!canvas) return;
+  const wrap=canvas.parentElement;
+  canvas.width=wrap.offsetWidth||600; canvas.height=wrap.offsetHeight||140;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  const PAD={top:8,right:8,bottom:24,left:50};
+  const cW=W-PAD.left-PAD.right, cH=H-PAD.top-PAD.bottom;
+  ctx.clearRect(0,0,W,H);
+  const isDark=document.documentElement.getAttribute('data-theme')==='dark'||document.documentElement.classList.contains('dark');
+  const gridColor=isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)';
+  const textColor=isDark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
+  const allVals=_diagHistory.flatMap(p=>[p.rx,p.tx]);
+  const maxVal=Math.max(_diagMaxMbps*0.1,...allVals)*1.2;
+  ctx.strokeStyle=gridColor; ctx.lineWidth=1;
+  [0,.25,.5,.75,1].forEach(f=>{
+    const y=PAD.top+cH*(1-f);
+    ctx.beginPath(); ctx.moveTo(PAD.left,y); ctx.lineTo(PAD.left+cW,y); ctx.stroke();
+    ctx.fillStyle=textColor; ctx.font='10px system-ui,sans-serif'; ctx.textAlign='right';
+    ctx.fillText((maxVal*f).toFixed(0)+'M',PAD.left-4,y+3);
+  });
+  if(_diagHistory.length<2) return;
+  const pts=Array(DIAG_MAX_POINTS).fill(null);
+  const off=DIAG_MAX_POINTS-_diagHistory.length;
+  _diagHistory.forEach((p,i)=>{pts[off+i]=p;});
+  const xOf=i=>PAD.left+(i/(DIAG_MAX_POINTS-1))*cW;
+  const yOf=v=>PAD.top+cH*(1-Math.min(1,v/maxVal));
+  function linha(cor,getter,alpha){
+    ctx.beginPath(); let first=true;
+    pts.forEach((p,i)=>{ if(!p)return; const x=xOf(i),y=yOf(getter(p)); first?(ctx.moveTo(x,y),first=false):ctx.lineTo(x,y); });
+    ctx.strokeStyle=cor; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+    if(alpha>0){
+      const li=pts.reduce((a,p,i)=>p?i:a,0);
+      const fi=pts.findIndex(p=>p);
+      ctx.lineTo(xOf(li),PAD.top+cH); ctx.lineTo(xOf(fi),PAD.top+cH); ctx.closePath();
+      ctx.fillStyle=cor.replace('rgb(','rgba(').replace(')',`,${alpha})`);
+      ctx.fill();
+    }
+  }
+  linha('rgb(24,95,165)',p=>p.rx,0.12);
+  linha('rgb(99,153,34)',p=>p.tx,0.10);
+  ctx.fillStyle=textColor; ctx.font='10px system-ui,sans-serif'; ctx.textAlign='center';
+  [0,Math.floor(DIAG_MAX_POINTS/2),DIAG_MAX_POINTS-1].forEach(i=>{
+    const p=pts[i]; if(!p) return;
+    ctx.fillText(new Date(p.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),xOf(i),H-6);
+  });
+}
+
+function startDiagPoll(){
+  if(_diagTimer) return;
+  lerVelocidade();
+  _diagTimer=setInterval(lerVelocidade,DIAG_INTERVAL);
+  const btn=document.getElementById('diag-btn-poll');
+  if(btn){btn.className='diag-btn active';btn.textContent='⏸ Pausar';}
+}
+function stopDiagPoll(){
+  if(_diagTimer){clearInterval(_diagTimer);_diagTimer=null;}
+  const btn=document.getElementById('diag-btn-poll');
+  if(btn){btn.className='diag-btn';btn.textContent='▶ Iniciar';}
+}
+function toggleDiagPoll(){ _diagTimer?stopDiagPoll():startDiagPoll(); }
+function mudaLoginDiag(id){ _diagLoginId=id; _diagPrevBytes=null; _diagHistory=[]; lerVelocidade(); }
+
+const _origFecharModal=fecharModal;
+function fecharModal(id){ if(id==='modal-cli') stopDiagPoll(); _origFecharModal(id); }
 
 async function executarPing(){
-  const cfg = getIXCConfig();
-  if(!cfg.proxyUrl || !_diagLoginId){ showToast('Configure o IXC primeiro.', true); return; }
-
-  const btn = document.getElementById('diag-btn-ping');
-  const area = document.getElementById('diag-ping-area');
-  const out  = document.getElementById('diag-ping-output');
-  const tit  = document.getElementById('diag-ping-titulo');
-  if(btn)  btn.disabled = true;
-  if(area) area.style.display = '';
-  if(tit)  tit.textContent = 'Ping';
-  if(out)  out.innerHTML = '<span class="diag-spinner"></span> Executando ping...';
-
-  try {
-    // Endpoint de ping do IXC: radusuarios/{id}/ping
-    const resp = await chamarIXC(cfg, `radusuarios/${_diagLoginId}/ping`, { rp:'1' });
-    const linhas = resp.resultado || resp.result || resp.output || JSON.stringify(resp, null, 2);
-    if(out){
-      out.innerHTML = String(linhas).split('\n').map(l => {
-        if(l.includes('bytes from') || l.includes('time=')) return `<span class="diag-ping-ok">${escHtml(l)}</span>`;
-        if(l.includes('error') || l.includes('unreachable') || l.includes('failed')) return `<span class="diag-ping-err">${escHtml(l)}</span>`;
-        if(l.startsWith('PING') || l.includes('statistics')) return `<span class="diag-ping-hdr">${escHtml(l)}</span>`;
-        return escHtml(l);
-      }).join('\n');
-    }
-  } catch(e){
-    if(out) out.innerHTML = `<span class="diag-ping-err">Erro: ${escHtml(e.message)}</span>`;
-  } finally {
-    if(btn){ btn.disabled = false; }
-  }
+  const cfg=getIXCConfig();
+  if(!cfg.proxyUrl||!_diagLoginId){showToast('Configure o IXC primeiro.',true);return;}
+  const btn=document.getElementById('diag-btn-ping');
+  const area=document.getElementById('diag-ping-area');
+  const out=document.getElementById('diag-ping-output');
+  const tit=document.getElementById('diag-ping-titulo');
+  if(btn)btn.disabled=true; if(area)area.style.display=''; if(tit)tit.textContent='Ping';
+  if(out)out.innerHTML='<span class="diag-spinner"></span> Executando ping...';
+  try{
+    const resp=await chamarIXC(cfg,`radusuarios/${_diagLoginId}/ping`,{rp:'1'});
+    const linhas=resp.resultado||resp.result||resp.output||JSON.stringify(resp,null,2);
+    if(out)out.innerHTML=String(linhas).split('\n').map(l=>{
+      if(l.includes('bytes from')||l.includes('time='))return`<span class="diag-ping-ok">${escHtml(l)}</span>`;
+      if(l.includes('error')||l.includes('unreachable')||l.includes('failed'))return`<span class="diag-ping-err">${escHtml(l)}</span>`;
+      if(l.startsWith('PING')||l.includes('statistics'))return`<span class="diag-ping-hdr">${escHtml(l)}</span>`;
+      return escHtml(l);
+    }).join('\n');
+  }catch(e){if(out)out.innerHTML=`<span class="diag-ping-err">Erro: ${escHtml(e.message)}</span>`;}
+  finally{if(btn)btn.disabled=false;}
 }
 
 async function executarTraceroute(){
-  const cfg = getIXCConfig();
-  if(!cfg.proxyUrl || !_diagLoginId){ showToast('Configure o IXC primeiro.', true); return; }
-
-  const btn  = document.getElementById('diag-btn-trace');
-  const area = document.getElementById('diag-ping-area');
-  const out  = document.getElementById('diag-ping-output');
-  const tit  = document.getElementById('diag-ping-titulo');
-  if(btn)  btn.disabled = true;
-  if(area) area.style.display = '';
-  if(tit)  tit.textContent = 'Traceroute';
-  if(out)  out.innerHTML = '<span class="diag-spinner"></span> Executando traceroute (pode levar alguns segundos)...';
-
-  try {
-    const resp = await chamarIXC(cfg, `radusuarios/${_diagLoginId}/traceroute`, { rp:'1' });
-    const linhas = resp.resultado || resp.result || resp.output || JSON.stringify(resp, null, 2);
-    if(out){
-      out.innerHTML = String(linhas).split('\n').map((l,i) => {
-        if(i===0) return `<span class="diag-ping-hdr">${escHtml(l)}</span>`;
-        if(l.includes('*')) return `<span class="diag-ping-err">${escHtml(l)}</span>`;
-        if(/\d ms/.test(l)) return `<span class="diag-ping-ok">${escHtml(l)}</span>`;
-        return escHtml(l);
-      }).join('\n');
-    }
-  } catch(e){
-    if(out) out.innerHTML = `<span class="diag-ping-err">Erro: ${escHtml(e.message)}</span>`;
-  } finally {
-    if(btn){ btn.disabled = false; }
-  }
+  const cfg=getIXCConfig();
+  if(!cfg.proxyUrl||!_diagLoginId){showToast('Configure o IXC primeiro.',true);return;}
+  const btn=document.getElementById('diag-btn-trace');
+  const area=document.getElementById('diag-ping-area');
+  const out=document.getElementById('diag-ping-output');
+  const tit=document.getElementById('diag-ping-titulo');
+  if(btn)btn.disabled=true; if(area)area.style.display=''; if(tit)tit.textContent='Traceroute';
+  if(out)out.innerHTML='<span class="diag-spinner"></span> Executando traceroute...';
+  try{
+    const resp=await chamarIXC(cfg,`radusuarios/${_diagLoginId}/traceroute`,{rp:'1'});
+    const linhas=resp.resultado||resp.result||resp.output||JSON.stringify(resp,null,2);
+    if(out)out.innerHTML=String(linhas).split('\n').map((l,i)=>{
+      if(i===0)return`<span class="diag-ping-hdr">${escHtml(l)}</span>`;
+      if(l.includes('*'))return`<span class="diag-ping-err">${escHtml(l)}</span>`;
+      if(/\d ms/.test(l))return`<span class="diag-ping-ok">${escHtml(l)}</span>`;
+      return escHtml(l);
+    }).join('\n');
+  }catch(e){if(out)out.innerHTML=`<span class="diag-ping-err">Erro: ${escHtml(e.message)}</span>`;}
+  finally{if(btn)btn.disabled=false;}
 }
 
-function togglePollDiag(){
-  const btn = document.getElementById('diag-btn-poll');
-  if(_diagTimer){
-    clearInterval(_diagTimer);
-    _diagTimer = null;
-    if(btn) btn.innerHTML = '▶ Auto (5s)';
-    showToast('Auto-refresh pausado.');
-  } else {
-    _diagTimer = setInterval(buscarDadosRadusuario, 5000);
-    if(btn) btn.innerHTML = '⏸ Pausar';
-    showToast('Auto-refresh a cada 5s ativo.');
-    buscarDadosRadusuario();
-  }
-}
-
-// Para o poll quando o modal fechar
-const _origFecharModal = fecharModal;
-function fecharModal(id){
-  if(id === 'modal-cli' && _diagTimer){
-    clearInterval(_diagTimer);
-    _diagTimer = null;
-  }
-  _origFecharModal(id);
-}
-
-function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
--e 
 </script>
 </body>
 </html>
