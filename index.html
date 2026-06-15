@@ -8985,6 +8985,10 @@ function salvarIXCConfig(){
     showToast('Preencha URL do proxy, do IXC e o token.', true); return;
   }
   setIXCConfig(cfg);
+  // Salva proxyUrl no Supabase para o campo.html acessar
+  if(sbClient && cfg.proxyUrl){
+    sbClient.from('app_config').upsert({chave:'ixc_proxy_url', valor:cfg.proxyUrl},{onConflict:'chave'}).then(()=>{});
+  }
   showToast('Configuração IXC salva!');
   fecharModal('modal-ixc');
 }
