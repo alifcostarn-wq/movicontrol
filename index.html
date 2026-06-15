@@ -3178,6 +3178,7 @@ const _SYNC_MAP = {
       ssid: l.ssid || null,
       senha_wifi: l.senhaWifi || null,
       obs: l.obs || null,
+      velocidade_mbps: l.velocidadeMbps || null,
     }),
     fromRow: (r) => ({
       id: r.id, clienteId: r.cliente_id, contratoId: r.contrato_id,
@@ -3185,6 +3186,7 @@ const _SYNC_MAP = {
       login: r.login, senha: r.senha, autenticacao: r.autenticacao,
       tipoConexao: r.tipo_conexao, ativo: r.ativo, online: r.online,
       plano: r.plano, ssid: r.ssid, senhaWifi: r.senha_wifi, obs: r.obs,
+      velocidadeMbps: r.velocidade_mbps,
     }),
   },
   sf_fornecedores: {
@@ -6559,18 +6561,21 @@ function renderCliContratos(cli){
       <span style="font-size:11px;color:var(--text3)">Clique em ✏ para editar campos locais. Dados do IXC atualizam via sync.</span>
     </div>
     <table class="cli-mini-table">
-      <thead><tr><th>ID</th><th>Tipo</th><th>Plano</th><th>Status</th><th>Acesso</th><th>Valor</th><th>Ativação</th><th>Renovação</th><th>Pago até</th><th></th></tr></thead>
+      <thead><tr><th>ID IXC</th><th>Tipo</th><th>Plano / Velocidade</th><th>Status Contrato</th><th>Status Acesso</th><th>Valor</th><th>Ativação</th><th>Pago até</th><th></th></tr></thead>
       <tbody>${contratos.map((c,ci)=>{
         const globalIdx = todos.indexOf(c);
+        const velBadge = c.velocidadeMbps
+          ? `<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:8px;background:rgba(55,138,221,0.15);color:#185fa5;font-size:10px;font-weight:600">${c.velocidadeMbps>=1000?(c.velocidadeMbps/1000)+'Gbps':c.velocidadeMbps+'Mbps'}</span>`
+          : '';
+        const tipoTxt = {'I':'Internet','T':'Telefonia','S':'Serviços','SVA':'SVA'}[(c.tipo||'').toUpperCase()] || c.tipo || '—';
         return`<tr>
-          <td class="td-mono">${c.ixcId||c.id||'—'}</td>
-          <td>${(c.tipo||'').toUpperCase()||'—'}</td>
-          <td><div style="font-weight:500">${c.plano||'—'}</div><div style="font-size:10.5px;color:var(--text3)">${c.descricao||''}</div></td>
+          <td class="td-mono td-muted">${c.ixcId||'—'}</td>
+          <td>${tipoTxt}</td>
+          <td><div style="font-weight:500;display:flex;align-items:center;flex-wrap:wrap;gap:4px">${c.plano||'—'}${velBadge}</div></td>
           <td>${pill(c.statusContrato, statusMap)}</td>
           <td>${pill(c.statusAcesso, statusAcessoMap)}</td>
           <td class="td-mono">${c.valor?brl(c.valor,true):'—'}</td>
           <td class="td-mono td-muted">${fmtData(c.dataAtivacao)}</td>
-          <td class="td-mono td-muted">${fmtData(c.dataRenovacao)}</td>
           <td class="td-mono td-muted">${fmtData(c.pagoAte)}</td>
           <td><button class="action-btn" title="Editar" onclick="abrirEditContrato(${globalIdx})">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -6601,19 +6606,21 @@ function renderCliLogins(cli){
       <span style="font-size:11px;color:var(--text3)">Clique em ✏ para editar campos locais.</span>
     </div>
     <table class="cli-mini-table">
-      <thead><tr><th>Login</th><th>Senha</th><th>SSID Wi-Fi</th><th>Senha Wi-Fi</th><th>Autenticação</th><th>Conexão</th><th>Plano</th><th>Ativo</th><th>Online</th><th></th></tr></thead>
+      <thead><tr><th>Login</th><th>Senha</th><th>Plano / Velocidade</th><th>Autenticação</th><th>SSID Wi-Fi</th><th>Senha Wi-Fi</th><th>Ativo</th><th>Online</th><th></th></tr></thead>
       <tbody>${logins.map(l=>{
         const globalIdx = todos.indexOf(l);
+        const velBadge = l.velocidadeMbps
+          ? `<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:8px;background:rgba(55,138,221,0.15);color:#185fa5;font-size:10px;font-weight:600">${l.velocidadeMbps>=1000?(l.velocidadeMbps/1000)+'Gbps':l.velocidadeMbps+'Mbps'}</span>`
+          : '';
         return`<tr>
           <td class="td-mono" style="font-weight:500">${l.login||'—'}</td>
           <td class="td-mono">${l.senha||'—'}</td>
-          <td class="td-mono">${l.ssid||'—'}</td>
-          <td class="td-mono">${l.senhaWifi||'—'}</td>
-          <td>${l.autenticacao||'—'}</td>
-          <td>${l.tipoConexao||'—'}</td>
-          <td>${l.plano||'—'}</td>
+          <td><div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">${l.plano||'—'}${velBadge}</div></td>
+          <td>${l.autenticacao||'—'} ${l.tipoConexao?`<span style="font-size:10px;color:var(--text3)">(${l.tipoConexao})</span>`:''}</td>
+          <td class="td-mono">${l.ssid||'<span class="td-muted">—</span>'}</td>
+          <td class="td-mono">${l.senhaWifi||'<span class="td-muted">—</span>'}</td>
           <td>${l.ativo?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">Sim</span>':'<span class="cli-status-pill" style="background:rgba(95,94,90,0.2);color:#5F5E5A">Não</span>'}</td>
-          <td>${l.online?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">● Online</span>':'<span class="td-muted">—</span>'}</td>
+          <td>${l.online?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">● Online</span>':'<span class="td-muted">Offline</span>'}</td>
           <td><button class="action-btn" title="Editar" onclick="abrirEditLogin(${globalIdx})">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button></td>
@@ -8685,17 +8692,17 @@ async function syncIXC(silent){
     });
 
     // === Upsert batch CLIENTES no Supabase por ixc_id ===
-    // Usa ixc_id como chave de conflito (mais robusto que id local)
     const mapCli = _SYNC_MAP.sf_clientes;
     const clientesIxc = clientes.filter(c => c.origem==='ixc' && c.ixcId);
     if(clientesIxc.length){
-      const rows = clientesIxc.map(c => { const r = mapCli.toRow(c); if(!c.id) delete r.id; return r; });
+      // NUNCA manda id — deixa o Postgres gerenciar pelo GENERATED BY DEFAULT
+      const rows = clientesIxc.map(c => { const r = mapCli.toRow(c); delete r.id; return r; });
       const { data, error } = await sbClient.from('clientes').upsert(rows, { onConflict: 'ixc_id' }).select('id, ixc_id');
       if(error) throw new Error('Supabase clientes upsert: '+error.message);
-      // Atribui ids gerados de volta por ixc_id
+      // Atribui ids gerados/existentes de volta por ixc_id
       if(data){
         const idMap = new Map(data.map(d => [String(d.ixc_id), d.id]));
-        clientesIxc.forEach(c => { if(c.ixcId && idMap.has(String(c.ixcId))) c.id = idMap.get(String(c.ixcId)); });
+        clientes.forEach(c => { if(c.ixcId && idMap.has(String(c.ixcId))) c.id = idMap.get(String(c.ixcId)); });
       }
     }
 
@@ -8713,19 +8720,32 @@ async function syncIXC(silent){
     regCtr.forEach(r => {
       const ixcId = String(r.id||'');
       const ixcCliId = String(r.id_cliente||'');
-      // Nome do plano: usa descricao_aux_plano_venda > nome_plano > descricao > descricao_aux
-      const nomePlano = r.descricao_aux_plano_venda || r.nome_plano || r.descricao_aux || r.descricao || r.id_vd_contrato || '';
-      // Velocidade no nome do plano (ex: "FIBRA 300MB", "INTERNET 100MEGA")
+
+      // Nome do plano: "Descrição auxiliar do plano" > "Descrição auxiliar" > "Descrição" > id do plano
+      const nomePlano = r.descricao_aux_plano_venda || r.descricao_aux || r.descricao || String(r.id_vd_contrato||'');
+      // ID numérico do plano de venda (ex: "36" → "500MB")
+      const idPlanoVenda = String(r.id_vd_contrato||'');
+
+      // Extrai velocidade em Mbps do nome do plano (ex: "PROMOÇÃO 500MEGA" → 500, "1GB" → 1000)
+      let velocidadeMbps = null;
+      const velMatch = nomePlano.match(/(\d+)\s*(g(?:iga)?|m(?:ega|b(?:ps?)?)?)/i);
+      if(velMatch){
+        const n = parseInt(velMatch[1]);
+        velocidadeMbps = velMatch[2].toLowerCase().startsWith('g') ? n*1000 : n;
+      }
+
       const dados = {
         ixcId,
         ixcClienteId: ixcCliId,
         clienteId: ixcToLocalId.get(ixcCliId) || null,
         tipo: r.tipo || '',
-        plano: nomePlano,
-        descricao: r.descricao || r.descricao_aux || '',
-        // status do contrato: campo "status" do IXC (A=ativo, I=inativo, D=cancelado, N=negativado, CM, DS, AB, PC)
+        plano: nomePlano,             // texto legível: "PROMOÇÃO 500MEGA"
+        idPlanoVenda: idPlanoVenda,   // id numérico: "36"
+        velocidadeMbps,               // 500 (Mbps)
+        descricao: r.descricao || '',
+        // status do contrato: A=ativo, I=inativo, D=cancelado, N=negativado, CM, DS, AB, PC
         statusContrato: r.status || '',
-        // status de acesso/internet: campo "status_internet" (A=ativo, S=suspenso, FA=bloqueio financeiro, DM=bloqueio manual, D=desativado, AA=ag.assinatura)
+        // status de acesso: A=ativo, S=suspenso(bloqueio manual), FA=bloqueio financeiro, DM=desativado manual, AA=ag.assinatura
         statusAcesso: r.status_internet || r.status_acesso || '',
         valor: parseFloat(String(r.valor_servico||r.valor||r.mensalidade||'0').replace(',','.')) || null,
         dataAtivacao: r.data_ativacao && r.data_ativacao !== '0000-00-00' ? r.data_ativacao : null,
@@ -8771,6 +8791,12 @@ async function syncIXC(silent){
       const ixcId = String(r.id||'');
       const ixcCliId = String(r.id_cliente||'');
       const ixcCtrId = String(r.id_contrato||'');
+
+      // Busca velocidade do contrato vinculado a este login
+      const contratoVinculado = contratos.find(c => c.ixcId === ixcCtrId);
+      const velocidadeMbps = contratoVinculado?.velocidadeMbps || null;
+      const planoNome = contratoVinculado?.plano || r.id_plano || '';
+
       const dados = {
         ixcId,
         ixcClienteId: ixcCliId,
@@ -8783,13 +8809,15 @@ async function syncIXC(silent){
         tipoConexao: r.tipo_conexao || '',
         ativo: r.ativo === 'S',
         online: r.online === 'S',
-        plano: r.id_plano || '',
+        plano: planoNome,               // nome do plano vindo do contrato
+        velocidadeMbps,                 // velocidade em Mbps extraída do plano do contrato
         ssid: r.ssid_router || '',
         senhaWifi: r.senha_router || '',
       };
       const idx = logByIxcId.get(ixcId);
       if(idx!==undefined){
-        logins[idx] = { ...logins[idx], ...dados };
+        // Preserva campos editados localmente (ssid, senhaWifi, obs)
+        logins[idx] = { ssid: logins[idx].ssid, senhaWifi: logins[idx].senhaWifi, obs: logins[idx].obs, ...logins[idx], ...dados };
         atualizadosLog++;
       } else {
         logins.push(dados);
@@ -8956,17 +8984,11 @@ function initDiagnostico(){
   const logins=gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
   if(!logins.length){ document.getElementById('cli-diag-content').innerHTML='<div class="cli-empty-pane">Nenhum login IXC vinculado.<br><span style="font-size:11px;color:var(--text3)">Faça a sync IXC para carregar os logins.</span></div>'; return; }
   const contratos=gd('sf_clientes_contratos').filter(c=>(cli.id&&c.clienteId==cli.id)||(cli.ixcId&&c.ixcClienteId==cli.ixcId));
-  if(contratos.length){
-    // Tenta extrair velocidade de vários campos: "300MB", "FIBRA 100MEGA", "500M", etc.
-    const textos = [contratos[0].plano, contratos[0].descricao].filter(Boolean).join(' ');
-    const m = textos.match(/(\d+)\s*(g(?:iga)?|m(?:ega|b(?:ps)?)?)/i);
-    if(m){
-      const vel = parseInt(m[1]);
-      const unidade = m[2].toLowerCase();
-      _diagMaxMbps = unidade.startsWith('g') ? vel * 1000 : vel;
-    }
-  }
+  // Usa login online primeiro, depois o primeiro login
   const loginAtivo=logins.find(l=>l.online)||logins[0];
+  // Velocidade: 1) do login (herdado do contrato via sync), 2) contrato ativo, 3) qualquer contrato, 4) fallback 100
+  const contratoAtivo = contratos.find(c=>calcStatusContrato(c.statusContrato,c.statusAcesso)==='Ativo') || contratos[0];
+  _diagMaxMbps = loginAtivo?.velocidadeMbps || contratoAtivo?.velocidadeMbps || 100;
   _diagLoginId=loginAtivo.ixcId;
   renderDiagBase(loginAtivo, logins);
   startDiagPoll();
