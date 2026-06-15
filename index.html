@@ -1827,10 +1827,47 @@ textarea.cp-form-input{resize:vertical}
         </div>
         <div class="modal-body">
           <input type="hidden" id="ch-id">
-          <div class="form-grid"><div class="form-group"><label class="form-label">Cliente<span>*</span></label><input class="cp-form-input" id="ch-cliente" placeholder="Nome do cliente"></div><div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="ch-telefone" placeholder="(xx) xxxxx-xxxx"></div></div>
-          <div class="form-grid"><div class="form-group"><label class="form-label">Endereço</label><input class="cp-form-input" id="ch-endereco" placeholder="Rua, número, bairro"></div><div class="form-group"><label class="form-label">Localização</label><input class="cp-form-input" id="ch-localizacao" placeholder="Ponto de referência / complemento"></div></div>
-          <div class="form-grid"><div class="form-group"><label class="form-label">Login</label><input class="cp-form-input" id="ch-login-cliente" placeholder="Login de acesso do cliente"></div><div class="form-group"><label class="form-label">Senha</label><input class="cp-form-input" id="ch-senha-cliente" placeholder="Senha de acesso do cliente"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Problema<span>*</span></label><textarea class="cp-form-input" id="ch-descricao" rows="3" placeholder="Descreva o problema…"></textarea></div></div>
+          <input type="hidden" id="ch-cliente-id">
+
+          <!-- Busca de cliente com autocomplete -->
+          <div class="form-group full" style="margin-bottom:12px;position:relative">
+            <label class="form-label">Buscar cliente<span>*</span>
+              <span id="ch-cliente-badge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:10px;background:rgba(55,138,221,0.15);color:#185fa5;font-size:10px;font-weight:600">✓ Vinculado do cadastro</span>
+            </label>
+            <input class="cp-form-input" id="ch-cliente" placeholder="Digite o nome ou CPF do cliente..." autocomplete="off"
+              oninput="buscarClienteChamado(this.value)" onfocus="buscarClienteChamado(this.value)">
+            <div id="ch-cliente-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.12)"></div>
+          </div>
+
+          <!-- Dados preenchidos automaticamente -->
+          <div id="ch-dados-cliente" style="display:none;background:rgba(55,138,221,0.06);border-left:3px solid #378add;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;font-size:12.5px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div><span style="color:var(--text2)">📍 Endereço:</span> <span id="ch-dados-end" style="font-weight:500"></span></div>
+              <div><span style="color:var(--text2)">📞 Telefone:</span> <span id="ch-dados-tel" style="font-weight:500"></span></div>
+              <div><span style="color:var(--text2)">🌐 Login PPPoE:</span> <span id="ch-dados-login" style="font-weight:500;font-family:monospace"></span></div>
+              <div><span style="color:var(--text2)">🔑 Senha PPPoE:</span> <span id="ch-dados-senha" style="font-weight:500;font-family:monospace"></span></div>
+              <div><span style="color:var(--text2)">📋 Status:</span> <span id="ch-dados-status" style="font-weight:500"></span></div>
+              <div><span style="color:var(--text2)">📡 Plano:</span> <span id="ch-dados-plano" style="font-weight:500"></span></div>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:6px">
+              <button onclick="verDiagnosticoChamado()" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid #378add;background:transparent;color:#185fa5;cursor:pointer">
+                📊 Ver diagnóstico do cliente
+              </button>
+              <button onclick="document.getElementById('ch-cliente-id').value='';document.getElementById('ch-dados-cliente').style.display='none';document.getElementById('ch-cliente-badge').style.display='none';document.getElementById('ch-cliente').value=''" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">
+                ✕ Desvincular
+              </button>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">Endereço (editar se necessário)</label><input class="cp-form-input" id="ch-endereco" placeholder="Rua, número, bairro"></div>
+            <div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="ch-telefone" placeholder="(xx) xxxxx-xxxx"></div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">Login PPPoE</label><input class="cp-form-input" id="ch-login-cliente" placeholder="Login de acesso do cliente"></div>
+            <div class="form-group"><label class="form-label">Localização / Referência</label><input class="cp-form-input" id="ch-localizacao" placeholder="Ponto de referência / complemento"></div>
+          </div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Problema<span>*</span></label><textarea class="cp-form-input" id="ch-descricao" rows="3" placeholder="Descreva o problema reportado pelo cliente…"></textarea></div></div>
           <div class="form-grid trio">
             <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="ch-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
             <div class="form-group"><label class="form-label">Técnico</label><select class="cp-form-select" id="ch-tecnico"><option value="">Sem técnico</option></select></div>
@@ -1853,18 +1890,55 @@ textarea.cp-form-input{resize:vertical}
         </div>
         <div class="modal-body">
           <input type="hidden" id="os-id">
-          <div class="form-grid"><div class="form-group"><label class="form-label">Cliente<span>*</span></label><input class="cp-form-input" id="os-cliente" placeholder="Nome do cliente"></div><div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="os-telefone" placeholder="(xx) xxxxx-xxxx"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Endereço<span>*</span></label><input class="cp-form-input" id="os-endereco" placeholder="Rua, número, bairro, complemento"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Serviço<span>*</span></label><textarea class="cp-form-input" id="os-descricao" rows="3" placeholder="Descreva o serviço…"></textarea></div></div>
-          <div class="form-grid trio">
-            <div class="form-group"><label class="form-label">Técnico<span>*</span></label><select class="cp-form-select" id="os-tecnico"><option value="">Selecione…</option></select></div>
-            <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="os-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
-            <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="os-status"><option value="aberta">Aberta</option><option value="andamento">Em andamento</option><option value="concluida">Concluída</option><option value="cancelada">Cancelada</option></select></div>
+          <input type="hidden" id="os-cliente-id">
+
+          <!-- Busca de cliente na OS -->
+          <div class="form-group full" style="margin-bottom:12px;position:relative">
+            <label class="form-label">Buscar cliente<span>*</span>
+              <span id="os-cliente-badge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:10px;background:rgba(55,138,221,0.15);color:#185fa5;font-size:10px;font-weight:600">✓ Vinculado</span>
+            </label>
+            <input class="cp-form-input" id="os-cliente" placeholder="Digite o nome ou CPF do cliente..." autocomplete="off"
+              oninput="buscarClienteOS(this.value)" onfocus="buscarClienteOS(this.value)">
+            <div id="os-cliente-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.12)"></div>
           </div>
-          <div class="form-grid"><div class="form-group"><label class="form-label">Data</label><input class="cp-form-input" type="date" id="os-data"></div><div class="form-group"><label class="form-label">Peças Utilizadas</label><input class="cp-form-input" id="os-pecas" placeholder="Ex: Cabo UTP 10m, ONU…"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Observações</label><textarea class="cp-form-input" id="os-obs" rows="2" placeholder="Observações adicionais…"></textarea></div></div>
+
+          <!-- Abas: Serviço | Diagnóstico -->
+          <div style="display:flex;border-bottom:1px solid var(--border);margin:-4px -16px 14px;padding:0 16px" id="os-tabs">
+            <div id="os-tab-servico" onclick="osTab('servico')" style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">🔧 Serviço</div>
+            <div id="os-tab-diag"    onclick="osTab('diag')"    style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)" id="os-tab-diag">📊 Diagnóstico IXC</div>
+          </div>
+
+          <!-- Pane: Serviço -->
+          <div id="os-pane-servico">
+            <div class="form-grid">
+              <div class="form-group"><label class="form-label">Telefone</label><input class="cp-form-input" id="os-telefone" placeholder="(xx) xxxxx-xxxx"></div>
+              <div class="form-group"><label class="form-label">Login PPPoE</label><input class="cp-form-input" id="os-login-cliente" placeholder="login do cliente"></div>
+            </div>
+            <div class="form-grid full"><div class="form-group"><label class="form-label">Endereço<span>*</span></label><input class="cp-form-input" id="os-endereco" placeholder="Rua, número, bairro, complemento"></div></div>
+            <div class="form-grid full"><div class="form-group"><label class="form-label">Descrição do Serviço<span>*</span></label><textarea class="cp-form-input" id="os-descricao" rows="3" placeholder="Descreva o serviço a ser realizado…"></textarea></div></div>
+            <div class="form-grid trio">
+              <div class="form-group"><label class="form-label">Técnico<span>*</span></label><select class="cp-form-select" id="os-tecnico"><option value="">Selecione…</option></select></div>
+              <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="os-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
+              <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="os-status"><option value="aberta">Aberta</option><option value="andamento">Em andamento</option><option value="concluida">Concluída</option><option value="cancelada">Cancelada</option></select></div>
+            </div>
+            <div class="form-grid">
+              <div class="form-group"><label class="form-label">Data</label><input class="cp-form-input" type="date" id="os-data"></div>
+              <div class="form-group"><label class="form-label">Peças Utilizadas</label><input class="cp-form-input" id="os-pecas" placeholder="Ex: Cabo UTP 10m, ONU…"></div>
+            </div>
+            <div class="form-grid full"><div class="form-group"><label class="form-label">Observações</label><textarea class="cp-form-input" id="os-obs" rows="2" placeholder="Observações adicionais…"></textarea></div></div>
+          </div>
+
+          <!-- Pane: Diagnóstico IXC -->
+          <div id="os-pane-diag" style="display:none">
+            <div id="os-diag-aviso" style="padding:32px 0;text-align:center;color:var(--text3);font-size:13px">
+              <div style="font-size:32px;margin-bottom:8px">📊</div>
+              Vincule um cliente com login IXC para acessar o diagnóstico.
+            </div>
+            <div id="os-diag-content" style="display:none"></div>
+          </div>
+
         </div>
-        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-os')">Cancelar</button><button class="btn btn-primary" onclick="salvarOS()">Salvar</button></div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-os')">Cancelar</button><button class="btn btn-primary" onclick="salvarOS()">Salvar OS</button></div>
       </div>
     </div>
 
@@ -9403,6 +9477,289 @@ async function executarTraceroute(){
     }).join('\n');
   }catch(e){if(out)out.innerHTML=`<span class="diag-ping-err">Erro: ${escHtml(e.message)}</span>`;}
   finally{if(btn)btn.disabled=false;}
+}
+
+// ============================================================
+// INTEGRAÇÃO CLIENTE → CHAMADOS / OS
+// ============================================================
+
+// Busca cliente para chamado com autocomplete
+function buscarClienteChamado(q){
+  _buscarClienteDropdown(q, 'ch-cliente-dropdown', (cli) => preencherClienteChamado(cli));
+}
+
+function buscarClienteOS(q){
+  _buscarClienteDropdown(q, 'os-cliente-dropdown', (cli) => preencherClienteOS(cli));
+}
+
+function _buscarClienteDropdown(q, dropId, onSelect){
+  const drop = document.getElementById(dropId);
+  if(!drop) return;
+  if(!q || q.length < 2){ drop.style.display='none'; return; }
+  const q2 = q.toLowerCase();
+  const lista = gd('sf_clientes').filter(c =>
+    (c.nome||'').toLowerCase().includes(q2) ||
+    (c.razao||'').toLowerCase().includes(q2) ||
+    (c.cnpj||'').includes(q2) ||
+    (c.ixcLogin||'').toLowerCase().includes(q2)
+  ).slice(0,8);
+  if(!lista.length){ drop.style.display='none'; return; }
+  drop.style.display = 'block';
+  drop.innerHTML = lista.map((c,i) => {
+    const statusMap = {'Ativo':'#639922','Bloqueio Manual':'#c23b2a','Bloqueio Automático':'#c45a13','Negativado':'#5f5e5a','Cancelado':'#5f5e5a'};
+    const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','I':'Inativo','N':'Negativado'};
+    const st = c.statusContrato || statusLegacy[c.ixcStatus] || '';
+    const stCor = statusMap[st] || 'var(--text2)';
+    const login = gd('sf_clientes_logins').find(l => (c.id&&l.clienteId==c.id)||(c.ixcId&&l.ixcClienteId==c.ixcId));
+    return `<div onclick="_selecionarClienteDropdown(${JSON.stringify(c.id||'').replace(/"/g,"'")},'${dropId}',arguments[0])" data-idx="${i}"
+      style="padding:10px 14px;cursor:pointer;border-bottom:0.5px solid var(--border);transition:background .1s"
+      onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:500;font-size:13px">${escHtml(c.nome||'—')}</div>
+          <div style="font-size:11px;color:var(--text2)">${escHtml(c.cnpj||'')} ${login?'· Login: '+escHtml(login.login||''):''}</div>
+          <div style="font-size:11px;color:var(--text3)">${escHtml([c.end,c.numero,c.bairro,c.cidade].filter(Boolean).join(', '))}</div>
+        </div>
+        ${st?`<span style="font-size:10px;font-weight:600;color:${stCor};white-space:nowrap;padding:2px 7px;border-radius:8px;background:${stCor}22">${st}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Fecha ao clicar fora
+  setTimeout(()=>{
+    const handler = (e)=>{
+      if(!drop.contains(e.target)){ drop.style.display='none'; document.removeEventListener('click',handler); }
+    };
+    document.addEventListener('click', handler);
+  }, 100);
+}
+
+function _selecionarClienteDropdown(clienteId, dropId, e){
+  e?.stopPropagation();
+  const drop = document.getElementById(dropId);
+  if(drop) drop.style.display='none';
+  const cli = gd('sf_clientes').find(c => String(c.id) === String(clienteId));
+  if(!cli) return;
+  if(dropId.startsWith('ch')) preencherClienteChamado(cli);
+  else preencherClienteOS(cli);
+}
+
+function _getLoginCliente(cli){
+  return gd('sf_clientes_logins').find(l => (cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId)) || null;
+}
+
+function _getContratoAtivo(cli){
+  return gd('sf_clientes_contratos').find(c =>
+    ((cli.id&&c.clienteId==cli.id)||(cli.ixcId&&c.ixcClienteId==cli.ixcId)) &&
+    calcStatusContrato(c.statusContrato, c.statusAcesso)==='Ativo'
+  ) || gd('sf_clientes_contratos').find(c => (cli.id&&c.clienteId==cli.id)||(cli.ixcId&&c.ixcClienteId==cli.ixcId)) || null;
+}
+
+function preencherClienteChamado(cli){
+  if(!cli) return;
+  const login = _getLoginCliente(cli);
+  const contrato = _getContratoAtivo(cli);
+  const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','I':'Inativo','N':'Negativado'};
+  const st = cli.statusContrato || statusLegacy[cli.ixcStatus] || '—';
+
+  // Preenche input nome
+  document.getElementById('ch-cliente').value = cli.nome || '';
+  document.getElementById('ch-cliente-id').value = cli.id || cli.ixcId || '';
+  document.getElementById('ch-cliente-dropdown').style.display = 'none';
+
+  // Preenche campos do formulário
+  const end = [cli.end, cli.numero, cli.complemento, cli.bairro, cli.cidade, cli.uf].filter(Boolean).join(', ');
+  document.getElementById('ch-endereco').value = end;
+  document.getElementById('ch-telefone').value = cli.tel1 || cli.whatsapp || '';
+  document.getElementById('ch-login-cliente').value = login?.login || cli.ixcLogin || '';
+  document.getElementById('ch-localizacao').value = cli.referencia || '';
+
+  // Mostra card com dados
+  const badge = document.getElementById('ch-cliente-badge');
+  if(badge) badge.style.display='';
+  const dadosDiv = document.getElementById('ch-dados-cliente');
+  if(dadosDiv){
+    dadosDiv.style.display='';
+    const s = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v||'—'; };
+    s('ch-dados-end', end);
+    s('ch-dados-tel', cli.tel1 || cli.whatsapp || '—');
+    s('ch-dados-login', login?.login || cli.ixcLogin || '—');
+    s('ch-dados-senha', login?.senha || cli.ixcSenha || '—');
+    s('ch-dados-status', st);
+    s('ch-dados-plano', contrato?.plano || '—');
+  }
+
+  // Salva referência para diagnóstico
+  window._chamadoClienteAtual = cli;
+}
+
+function preencherClienteOS(cli){
+  if(!cli) return;
+  const login = _getLoginCliente(cli);
+
+  document.getElementById('os-cliente').value = cli.nome || '';
+  document.getElementById('os-cliente-id').value = cli.id || cli.ixcId || '';
+  document.getElementById('os-cliente-dropdown').style.display = 'none';
+
+  const end = [cli.end, cli.numero, cli.complemento, cli.bairro, cli.cidade, cli.uf].filter(Boolean).join(', ');
+  document.getElementById('os-endereco').value = end;
+  document.getElementById('os-telefone').value = cli.tel1 || cli.whatsapp || '';
+  document.getElementById('os-login-cliente').value = login?.login || cli.ixcLogin || '';
+
+  const badge = document.getElementById('os-cliente-badge');
+  if(badge) badge.style.display='';
+
+  // Salva referência para diagnóstico da OS
+  window._osClienteAtual = cli;
+
+  // Se já estiver na aba diagnóstico, carrega automaticamente
+  const paneAtiva = document.getElementById('os-pane-diag');
+  if(paneAtiva && paneAtiva.style.display !== 'none') carregarDiagOS();
+}
+
+// Abas da OS
+function osTab(nome){
+  ['servico','diag'].forEach(t=>{
+    const tab = document.getElementById('os-tab-'+t);
+    const pane = document.getElementById('os-pane-'+t);
+    if(tab){ tab.style.borderBottomColor = t===nome ? 'var(--accent)' : 'transparent'; tab.style.color = t===nome ? 'var(--accent)' : 'var(--text2)'; }
+    if(pane) pane.style.display = t===nome ? '' : 'none';
+  });
+  if(nome === 'diag') carregarDiagOS();
+}
+
+// Diagnóstico embutido na OS
+async function carregarDiagOS(){
+  const cli = window._osClienteAtual;
+  const aviso = document.getElementById('os-diag-aviso');
+  const content = document.getElementById('os-diag-content');
+  if(!aviso || !content) return;
+
+  if(!cli){
+    aviso.style.display=''; content.style.display='none';
+    aviso.innerHTML = '<div style="padding:32px 0;text-align:center;color:var(--text3);font-size:13px"><div style="font-size:32px;margin-bottom:8px">📊</div>Vincule um cliente com login IXC para acessar o diagnóstico.</div>';
+    return;
+  }
+
+  const logins = gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
+  if(!logins.length){
+    aviso.style.display=''; content.style.display='none';
+    aviso.innerHTML = `<div style="padding:24px 0;text-align:center;color:var(--text3);font-size:13px"><div style="font-size:28px;margin-bottom:8px">⚠️</div>Cliente <strong>${escHtml(cli.nome)}</strong> não tem login IXC vinculado.<br>Faça a sync IXC na aba Clientes.</div>`;
+    return;
+  }
+
+  aviso.style.display='none'; content.style.display='';
+  content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)"><span class="diag-spinner"></span> Carregando diagnóstico...</div>';
+
+  // Reutiliza o módulo de diagnóstico existente
+  window._cliAtual = cli;
+  window._osClienteAtual = cli;
+  const loginAtivo = logins.find(l=>l.online) || logins[0];
+  const contratoAtivo = _getContratoAtivo(cli);
+  _diagLoginId = loginAtivo.ixcId;
+  _diagMaxMbps = loginAtivo?.velocidadeMbps || contratoAtivo?.velocidadeMbps || 100;
+
+  // Monta painel de diagnóstico dentro da OS
+  content.innerHTML = `<div id="os-diag-inner"></div>`;
+  const inner = document.getElementById('os-diag-inner');
+
+  const cfg = getIXCConfig();
+  if(!cfg.proxyUrl || !cfg.ixcToken){
+    inner.innerHTML = '<div style="padding:16px;text-align:center;font-size:13px;color:var(--text3)">⚙️ Configure a integração IXC (botão IXC na aba Clientes) para usar o diagnóstico.</div>';
+    return;
+  }
+
+  inner.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)"><span class="diag-spinner"></span> Buscando dados do IXC...</div>';
+
+  try {
+    const [respSessao, respHist] = await Promise.all([
+      chamarIXC(cfg, 'radusuarios', { qtype:'radusuarios.id', query:String(_diagLoginId), oper:'=', rp:'1' }),
+      chamarIXC(cfg, 'log_acesso',  { qtype:'log_acesso.id_login', query:String(_diagLoginId), oper:'=', rp:'100', sortname:'id', sortorder:'desc' }).catch(()=>({registros:[]})),
+    ]);
+    const r    = (respSessao.registros||[])[0];
+    const hist = respHist.registros || [];
+    if(!r){ inner.innerHTML='<div style="padding:16px;text-align:center;font-size:13px;color:var(--text3)">Login não encontrado no IXC. Verifique a sincronização.</div>'; return; }
+
+    const online = r.online==='S'||r.online===true;
+    const quedas = parseInt(r.quantidade_desconexao_hoje||0);
+
+    // Card resumido para a OS
+    const descon5 = hist.filter(h=>h.acctterminatecause||h.causa_desconexao).slice(0,5);
+    const fisico7 = hist.filter(h=>{ const c=causaInfo(h.acctterminatecause||h.causa_desconexao||''); return c.tipo==='fisico'; }).length;
+    const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','I':'Inativo','N':'Negativado'};
+    const st = cli.statusContrato || statusLegacy[cli.ixcStatus] || '—';
+
+    inner.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);margin-bottom:4px">Conexão</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="width:8px;height:8px;border-radius:50%;background:${online?'#639922':'#A32D2D'};flex-shrink:0"></span>
+            <span style="font-weight:600;font-size:15px">${online?'Online':'Offline'}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${r.tempo_conectado?'Há '+r.tempo_conectado.slice(0,8):'—'}</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);margin-bottom:4px">Quedas hoje</div>
+          <div style="font-weight:600;font-size:15px;color:${quedas>=3?'#791F1F':quedas>=1?'#633806':'#3B6D11'}">${quedas}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">IP: ${r.ip||r.framedipaddress||'—'}</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);margin-bottom:4px">Plano</div>
+          <div style="font-weight:600;font-size:13px">${escHtml(loginAtivo.plano||contratoAtivo?.plano||'—')}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">Login: ${escHtml(loginAtivo.login||'—')}</div>
+        </div>
+      </div>
+
+      ${descon5.length ? `
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:6px">Últimas desconexões</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px">
+        ${descon5.map(h=>{
+          const causa=h.acctterminatecause||h.causa_desconexao||'';
+          const info=causaInfo(causa);
+          const dt=(h.acctstoptime||h.data_hora||'').slice(0,16).replace('T',' ');
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:0.5px solid var(--border)">
+            <span style="font-size:12px;color:var(--text2)">${escHtml(dt||'—')}</span>
+            <div style="text-align:right">
+              <div style="font-size:11.5px;font-weight:500">${escHtml(info.txt)}</div>
+              <div style="font-size:10px;color:var(--text3)">${escHtml(info.desc)}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      ${fisico7 >= 2 ? `<div style="background:rgba(163,45,45,0.1);border-left:3px solid #A32D2D;border-radius:0 6px 6px 0;padding:9px 12px;font-size:12px;color:#4A1B0C;margin-bottom:8px">
+        ⚠️ <strong>${fisico7}x sinal perdido</strong> nos últimos registros — verificar cabo, ONU e potência óptica.
+      </div>` : (!online ? `<div style="background:rgba(163,45,45,0.1);border-left:3px solid #A32D2D;border-radius:0 6px 6px 0;padding:9px 12px;font-size:12px;color:#4A1B0C;margin-bottom:8px">
+        ❌ Cliente offline no momento. Verificar ONU, roteador e cabo.
+      </div>` : `<div style="background:rgba(99,153,34,0.1);border-left:3px solid #639922;border-radius:0 6px 6px 0;padding:9px 12px;font-size:12px;color:#27500A;margin-bottom:8px">
+        ✓ Cliente online e estável.
+      </div>`)}
+
+      <div style="display:flex;gap:8px">
+        <button onclick="executarPing()" style="flex:1;padding:8px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;font-size:12px;font-weight:500">📡 Ping</button>
+        <button onclick="executarTraceroute()" style="flex:1;padding:8px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;font-size:12px;font-weight:500">🗺 Traceroute</button>
+      </div>
+      <div id="diag-ping-area" style="display:none;margin-top:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px" id="diag-ping-titulo">Resultado</div>
+        <div class="diag-ping-output" id="diag-ping-output"></div>
+      </div>`;
+
+  } catch(e){
+    inner.innerHTML = `<div style="padding:16px;text-align:center;font-size:13px;color:#791F1F">Erro ao carregar diagnóstico: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function verDiagnosticoChamado(){
+  // Abre o modal do cliente na aba diagnóstico
+  const cli = window._chamadoClienteAtual;
+  if(!cli){ showToast('Selecione um cliente primeiro.', true); return; }
+  fecharModal('modal-chamado');
+  const idx = gd('sf_clientes').findIndex(c => String(c.id)===String(cli.id) || c.ixcId===cli.ixcId);
+  if(idx >= 0){
+    abrirModalCliente(idx);
+    setTimeout(() => { cliTab('diagnostico'); initDiagnostico(); }, 300);
+  }
 }
 
 </script>
