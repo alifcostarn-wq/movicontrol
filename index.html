@@ -3135,21 +3135,26 @@ const _SYNC_MAP = {
   },
   sf_clientes_contratos: {
     table: 'clientes_contratos',
-    toRow: (c) => ({
-      id: c.id,
-      cliente_id: c.clienteId || null,
-      ixc_id: c.ixcId || null,
-      ixc_cliente_id: c.ixcClienteId || null,
-      tipo: c.tipo || null,
-      plano: c.plano || null,
-      descricao: c.descricao || null,
-      status_contrato: c.statusContrato || null,
-      status_acesso: c.statusAcesso || null,
-      valor: c.valor == null ? null : Number(c.valor),
-      data_ativacao: c.dataAtivacao || null,
-      data_renovacao: c.dataRenovacao || null,
-      pago_ate: c.pagoAte || null,
-    }),
+    toRow: (c) => {
+      const row = {
+        cliente_id: c.clienteId || null,
+        ixc_id: c.ixcId || null,
+        ixc_cliente_id: c.ixcClienteId || null,
+        tipo: c.tipo || null,
+        plano: c.plano || null,
+        descricao: c.descricao || null,
+        status_contrato: c.statusContrato || null,
+        status_acesso: c.statusAcesso || null,
+        valor: c.valor == null ? null : Number(c.valor),
+        data_ativacao: c.dataAtivacao || null,
+        data_renovacao: c.dataRenovacao || null,
+        pago_ate: c.pagoAte || null,
+        velocidade_mbps: c.velocidadeMbps || null,
+        id_plano_venda: c.idPlanoVenda || null,
+      };
+      if(c.id != null) row.id = c.id;
+      return row;
+    },
     fromRow: (r) => ({
       id: r.id, clienteId: r.cliente_id,
       ixcId: r.ixc_id, ixcClienteId: r.ixc_cliente_id,
@@ -3161,25 +3166,28 @@ const _SYNC_MAP = {
   },
   sf_clientes_logins: {
     table: 'clientes_logins',
-    toRow: (l) => ({
-      id: l.id,
-      cliente_id: l.clienteId || null,
-      contrato_id: l.contratoId || null,
-      ixc_id: l.ixcId || null,
-      ixc_cliente_id: l.ixcClienteId || null,
-      ixc_contrato_id: l.ixcContratoId || null,
-      login: l.login || null,
-      senha: l.senha || null,
-      autenticacao: l.autenticacao || null,
-      tipo_conexao: l.tipoConexao || null,
-      ativo: l.ativo == null ? null : !!l.ativo,
-      online: l.online == null ? null : !!l.online,
-      plano: l.plano || null,
-      ssid: l.ssid || null,
-      senha_wifi: l.senhaWifi || null,
-      obs: l.obs || null,
-      velocidade_mbps: l.velocidadeMbps || null,
-    }),
+    toRow: (l) => {
+      const row = {
+        cliente_id: l.clienteId || null,
+        contrato_id: l.contratoId || null,
+        ixc_id: l.ixcId || null,
+        ixc_cliente_id: l.ixcClienteId || null,
+        ixc_contrato_id: l.ixcContratoId || null,
+        login: l.login || null,
+        senha: l.senha || null,
+        autenticacao: l.autenticacao || null,
+        tipo_conexao: l.tipoConexao || null,
+        ativo: l.ativo == null ? null : !!l.ativo,
+        online: l.online == null ? null : !!l.online,
+        plano: l.plano || null,
+        ssid: l.ssid || null,
+        senha_wifi: l.senhaWifi || null,
+        obs: l.obs || null,
+        velocidade_mbps: l.velocidadeMbps || null,
+      };
+      if(l.id != null) row.id = l.id;
+      return row;
+    },
     fromRow: (r) => ({
       id: r.id, clienteId: r.cliente_id, contratoId: r.contrato_id,
       ixcId: r.ixc_id, ixcClienteId: r.ixc_cliente_id, ixcContratoId: r.ixc_contrato_id,
@@ -8766,7 +8774,7 @@ async function syncIXC(silent){
     if(contratos.length){
       const mapCtr = _SYNC_MAP.sf_clientes_contratos;
       const comIxc = contratos.filter(c => c.ixcId);
-      const rows = comIxc.map(c => { const r = mapCtr.toRow(c); if(c.id==null) delete r.id; return r; });
+      const rows = comIxc.map(c => { const r = mapCtr.toRow(c); delete r.id; return r; });
       const { data, error } = await sbClient.from('clientes_contratos').upsert(rows, { onConflict: 'ixc_id' }).select();
       if(error) throw new Error('Supabase contratos: '+error.message);
       // Mapeia ids gerados de volta + monta ixcCtr->localId
@@ -8828,7 +8836,7 @@ async function syncIXC(silent){
     if(logins.length){
       const mapLog = _SYNC_MAP.sf_clientes_logins;
       const comIxc = logins.filter(l => l.ixcId);
-      const rows = comIxc.map(l => { const r = mapLog.toRow(l); if(l.id==null) delete r.id; return r; });
+      const rows = comIxc.map(l => { const r = mapLog.toRow(l); delete r.id; return r; });
       const { data, error } = await sbClient.from('clientes_logins').upsert(rows, { onConflict: 'ixc_id' }).select();
       if(error) throw new Error('Supabase logins: '+error.message);
       if(data){
