@@ -7948,24 +7948,37 @@ function abrirModalChamado(id){
   document.getElementById('ch-id').value = id || '';
   document.getElementById('tit-chamado').textContent = id ? 'Editar Chamado' : 'Novo Chamado';
   const btnAbrir = document.getElementById('btn-abrir-chamado');
+
+  // Limpa estado do autocomplete
+  const dadosDiv = document.getElementById('ch-dados-cliente');
+  const badge = document.getElementById('ch-cliente-badge');
+  if(dadosDiv) dadosDiv.style.display='none';
+  if(badge) badge.style.display='none';
+  document.getElementById('ch-cliente-id').value = '';
+  window._chamadoClienteAtual = null;
+
   if(id){
     const c = _cpChamados.find(x=>x.id==id);
     if(c){
-      document.getElementById('ch-cliente').value = c.cliente;
-      document.getElementById('ch-telefone').value = c.telefone||'';
-      document.getElementById('ch-endereco').value = c.endereco||'';
+      document.getElementById('ch-cliente').value     = c.cliente||'';
+      document.getElementById('ch-telefone').value    = c.telefone||'';
+      document.getElementById('ch-endereco').value    = c.endereco||'';
       document.getElementById('ch-localizacao').value = c.localizacao||'';
       document.getElementById('ch-login-cliente').value = c.login_cliente||'';
-      document.getElementById('ch-senha-cliente').value = c.senha_cliente||'';
-      document.getElementById('ch-descricao').value = c.descricao;
-      document.getElementById('ch-prioridade').value = c.prioridade;
-      document.getElementById('ch-tecnico').value = c.tecnico_id||'';
-      document.getElementById('ch-status').value = c.status;
+      document.getElementById('ch-descricao').value   = c.descricao||'';
+      document.getElementById('ch-prioridade').value  = c.prioridade||'media';
+      document.getElementById('ch-tecnico').value     = c.tecnico_id||'';
+      document.getElementById('ch-status').value      = c.status||'novo';
+      // Recarrega cliente vinculado se tiver cliente_id salvo
+      if(c.cliente_id){
+        const cli = gd('sf_clientes').find(x=>String(x.id)===String(c.cliente_id)||x.ixcId===c.cliente_id);
+        if(cli){ preencherClienteChamado(cli); }
+      }
     }
-    // Esconde o botão "Abrir Chamado" se o chamado já foi aberto (virou OS)
     btnAbrir.style.display = (c && c.status==='aberto') ? 'none' : '';
   } else {
-    ['ch-cliente','ch-telefone','ch-endereco','ch-localizacao','ch-login-cliente','ch-senha-cliente','ch-descricao'].forEach(f=>document.getElementById(f).value='');
+    ['ch-cliente','ch-telefone','ch-endereco','ch-localizacao','ch-login-cliente','ch-descricao']
+      .forEach(f=>{ const el=document.getElementById(f); if(el) el.value=''; });
     document.getElementById('ch-prioridade').value='media';
     document.getElementById('ch-tecnico').value='';
     document.getElementById('ch-status').value='novo';
@@ -7985,7 +7998,8 @@ async function salvarChamado(){
   const endereco = document.getElementById('ch-endereco').value.trim();
   const localizacao = document.getElementById('ch-localizacao').value.trim();
   const loginCliente = document.getElementById('ch-login-cliente').value.trim();
-  const senhaCliente = document.getElementById('ch-senha-cliente').value.trim();
+  const senhaCliente = '';
+  const clienteId = document.getElementById('ch-cliente-id').value.trim() || null;
   const prioridade = document.getElementById('ch-prioridade').value;
   let status = document.getElementById('ch-status').value;
 
@@ -7995,13 +8009,13 @@ async function salvarChamado(){
   if(status==='concluido' && (!chamadoExistente || chamadoExistente.status!=='concluido')){
     fecharModal('modal-chamado');
     abrirModalFechamentoChamado({
-      id, cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:senhaCliente,
+      id, cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:'',
       descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome,
     });
     return;
   }
 
-  const obj = { cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:senhaCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
+  const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao, login_cliente:loginCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
 
   let chamadoId = id;
   let error;
@@ -8031,21 +8045,21 @@ async function salvarChamado(){
 async function abrirChamadoParaOS(){
   const cliente = document.getElementById('ch-cliente').value.trim();
   const descricao = document.getElementById('ch-descricao').value.trim();
-  if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return; }
+  if(!cliente||!descricao){ showToast('Preencha o cliente e a descrição do problema.', true); return; }
 
-  const tecId = document.getElementById('ch-tecnico').value || null;
-  if(!tecId){ showToast('Selecione um técnico antes de abrir o chamado.', true); return; }
-  const tecNome = (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '';
-
-  const id = document.getElementById('ch-id').value;
+  const tecId    = document.getElementById('ch-tecnico').value || null;
+  const tecNome  = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome||'' : '';
+  const id       = document.getElementById('ch-id').value;
+  const clienteId= document.getElementById('ch-cliente-id').value.trim() || null;
   const telefone = document.getElementById('ch-telefone').value.trim();
   const endereco = document.getElementById('ch-endereco').value.trim();
-  const localizacao = document.getElementById('ch-localizacao').value.trim();
-  const loginCliente = document.getElementById('ch-login-cliente').value.trim();
-  const senhaCliente = document.getElementById('ch-senha-cliente').value.trim();
-  const prioridade = document.getElementById('ch-prioridade').value;
+  const localizacao   = document.getElementById('ch-localizacao').value.trim();
+  const loginCliente  = document.getElementById('ch-login-cliente').value.trim();
+  const prioridade    = document.getElementById('ch-prioridade').value;
 
-  const obj = { cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:senhaCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status:'aberto' };
+  const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao,
+    login_cliente:loginCliente, descricao, prioridade,
+    tecnico_id:tecId, tecnico_nome:tecNome, status:'aberto' };
 
   let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
   let chamadoId = id;
@@ -8057,41 +8071,41 @@ async function abrirChamadoParaOS(){
     error = insErr;
     if(data) chamadoId = data.id;
   }
-  if(error){ showToast('Erro: '+error.message, true); return; }
+  if(error){ showToast('Erro ao salvar: '+error.message, true); return; }
 
-  // Registra no histórico
   if(chamadoId){
     await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status:'aberto' });
   }
 
-  // Cria a OS (se ainda não existir) ou atualiza a existente
   const obsCompl = [
-    localizacao ? `Localização: ${localizacao}` : '',
-    loginCliente ? `Login: ${loginCliente}` : '',
-    senhaCliente ? `Senha: ${senhaCliente}` : '',
+    localizacao  ? `Localização: ${localizacao}` : '',
+    loginCliente ? `Login PPPoE: ${loginCliente}` : '',
   ].filter(Boolean).join(' | ');
 
   if(chamadoExistente && chamadoExistente.os_id){
     await sbClient.from('campo_os').update({
-      cliente, telefone, endereco, descricao, tecnico_id:tecId, tecnico_nome:tecNome, prioridade, obs: obsCompl,
+      cliente, cliente_id:clienteId, telefone, endereco, descricao,
+      login_cliente:loginCliente, tecnico_id:tecId, tecnico_nome:tecNome,
+      prioridade, obs: obsCompl,
     }).eq('id', chamadoExistente.os_id);
   } else if(chamadoId){
     const numeroOS = cpProximoNumOS();
     const { data: osData, error: osErr } = await sbClient.from('campo_os').insert({
-      numero: numeroOS, cliente, telefone, endereco, descricao,
-      tecnico_id: tecId, tecnico_nome: tecNome, prioridade,
-      status: 'aberta', data: cpHoje(), chamado_id: chamadoId, obs: obsCompl,
+      numero: numeroOS, cliente, cliente_id:clienteId, telefone, endereco,
+      login_cliente:loginCliente, descricao, tecnico_id:tecId, tecnico_nome:tecNome,
+      prioridade, status:'aberta', data:cpHoje(), chamado_id:chamadoId, obs:obsCompl,
     }).select().single();
     if(!osErr && osData){
       await sbClient.from('campo_chamados').update({ os_id: osData.id }).eq('id', chamadoId);
     }
+    if(osErr) console.warn('Erro ao criar OS:', osErr.message);
   }
 
   fecharModal('modal-chamado');
   await carregarCampo();
   renderChamados();
   renderOS();
-  showToast('Chamado aberto! Agora disponível na aba Ordens de Serviço.');
+  showToast('✅ Chamado aberto! OS criada e disponível na aba Ordens de Serviço.');
 }
 
 // ============================================================
