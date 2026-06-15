@@ -8462,9 +8462,14 @@ async function confirmarAbrirOS(){
 
     // Cria (ou atualiza) a OS
     const loginCliente = c.login_cliente || '';
+    // Busca senha do login PPPoE pelo cliente vinculado
+    let senhaCliente = '';
+    if(c.cliente_id){
+      const logins = gd('sf_clientes_logins').filter(l=>String(l.clienteId)===String(c.cliente_id)||String(l.ixcClienteId)===String(c.cliente_id));
+      senhaCliente = logins.find(l=>l.login===loginCliente)?.senha || logins[0]?.senha || '';
+    }
     const obsCompl = [
       c.localizacao ? `Referência: ${c.localizacao}` : '',
-      loginCliente  ? `Login PPPoE: ${loginCliente}` : '',
       obs           ? `Obs: ${obs}` : '',
     ].filter(Boolean).join(' | ');
 
@@ -8473,6 +8478,7 @@ async function confirmarAbrirOS(){
       // Já tem OS — apenas atualiza o técnico
       await sbClient.from('campo_os').update({
         tecnico_id: tecId, tecnico_nome: tecNome, prioridade, obs: obsCompl,
+        login_cliente: loginCliente, senha_cliente: senhaCliente,
       }).eq('id', c.os_id);
     } else {
       // Cria nova OS com todos os dados do chamado
@@ -8482,6 +8488,7 @@ async function confirmarAbrirOS(){
         cliente: c.cliente, cliente_id: c.cliente_id,
         telefone: c.telefone, endereco: c.endereco,
         login_cliente: loginCliente,
+        senha_cliente: senhaCliente,
         descricao: c.descricao,
         tecnico_id: tecId, tecnico_nome: tecNome,
         prioridade, status: 'aberta',
@@ -8985,9 +8992,14 @@ function salvarIXCConfig(){
     showToast('Preencha URL do proxy, do IXC e o token.', true); return;
   }
   setIXCConfig(cfg);
-  // Salva proxyUrl no Supabase para o campo.html acessar
-  if(sbClient && cfg.proxyUrl){
-    sbClient.from('app_config').upsert({chave:'ixc_proxy_url', valor:cfg.proxyUrl},{onConflict:'chave'}).then(()=>{});
+  // Salva config IXC completa no Supabase para o campo.html acessar
+  if(sbClient){
+    const upserts = [
+      {chave:'ixc_proxy_url', valor:cfg.proxyUrl||''},
+      {chave:'ixc_url',       valor:cfg.ixcUrl||''},
+      {chave:'ixc_token',     valor:cfg.ixcToken||''},
+    ];
+    upserts.forEach(row => sbClient.from('app_config').upsert(row,{onConflict:'chave'}).then(()=>{}));
   }
   showToast('Configuração IXC salva!');
   fecharModal('modal-ixc');
