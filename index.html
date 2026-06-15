@@ -8912,8 +8912,9 @@ function autoSyncIXC(){
 }
 
 
+
 // ============================================================
-// DIAGNÓSTICO — Velocidade TX/RX em tempo real via API IXC
+// DIAGNÓSTICO — Painel do Técnico de Campo
 // ============================================================
 
 (function injetarCssDiag(){
@@ -8921,256 +8922,441 @@ function autoSyncIXC(){
   const s = document.createElement('style');
   s.id = 'css-diag';
   s.textContent = `
-    .diag-wrap { display:flex; flex-direction:column; gap:14px; }
-    .diag-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .diag-btn { font-size:12px; padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg2); color:var(--text); cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:500; white-space:nowrap; }
-    .diag-btn:hover { background:var(--bg3); }
-    .diag-btn:disabled { opacity:.4; cursor:not-allowed; }
-    .diag-btn.active { background:#c23b2a; color:#fff; border-color:#c23b2a; }
-    .diag-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-    .diag-speed-cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    .diag-speed-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
-    .diag-speed-label { font-size:10.5px; color:var(--text2); text-transform:uppercase; letter-spacing:.07em; font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
-    .diag-speed-val { font-size:32px; font-weight:700; font-family:'DM Mono',monospace; line-height:1; }
-    .diag-speed-unit { font-size:14px; font-weight:500; color:var(--text2); margin-left:3px; }
-    .diag-speed-sub { font-size:11px; color:var(--text3); margin-top:4px; }
-    .diag-speed-bar-wrap { height:6px; border-radius:3px; margin-top:10px; overflow:hidden; }
-    .diag-speed-bar-fill { height:100%; border-radius:3px; transition:width .5s ease; }
-    .diag-rx-color { color:#185fa5; }
-    .diag-tx-color { color:#639922; }
-    .diag-rx-bar-wrap { background:rgba(55,138,221,0.15); }
-    .diag-rx-bar-fill { background:linear-gradient(90deg,#378add,#185fa5); }
-    .diag-tx-bar-wrap { background:rgba(99,153,34,0.15); }
-    .diag-tx-bar-fill { background:linear-gradient(90deg,#7cbf2e,#639922); }
-    .diag-chart-wrap { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
-    .diag-chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-    .diag-chart-title { font-size:12px; font-weight:500; color:var(--text2); }
-    .diag-chart-legend { display:flex; gap:12px; font-size:11px; color:var(--text2); }
-    .diag-legend-dot { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:4px; }
-    .diag-canvas-wrap { position:relative; height:140px; }
-    canvas#diag-canvas { width:100%; height:100%; }
-    .diag-status-row { display:flex; gap:10px; flex-wrap:wrap; }
-    .diag-status-pill { display:flex; align-items:center; gap:6px; background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:6px 12px; font-size:12px; }
-    .diag-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-    .diag-dot.on { background:#639922; box-shadow:0 0 0 3px rgba(99,153,34,0.25); animation:pulse-green 2s infinite; }
-    .diag-dot.off { background:#c23b2a; }
-    @keyframes pulse-green { 0%,100%{box-shadow:0 0 0 3px rgba(99,153,34,.25)} 50%{box-shadow:0 0 0 5px rgba(99,153,34,.1)} }
-    .diag-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; background:var(--bg2); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
-    .diag-detail-item { padding:9px 14px; border-bottom:1px solid var(--border); border-right:1px solid var(--border); }
-    .diag-detail-item:nth-child(2n) { border-right:none; }
-    .diag-detail-item:nth-last-child(-n+2) { border-bottom:none; }
-    .diag-detail-label { font-size:10.5px; color:var(--text3); margin-bottom:2px; }
-    .diag-detail-val { font-size:12px; font-weight:500; font-family:'DM Mono',monospace; color:var(--text); }
-    .diag-ping-output { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-family:'DM Mono',monospace; font-size:11.5px; line-height:1.7; color:var(--text); white-space:pre-wrap; max-height:200px; overflow-y:auto; margin-top:8px; }
-    .diag-ping-ok  { color:#639922; }
-    .diag-ping-err { color:#c23b2a; }
-    .diag-ping-hdr { color:#378add; }
-    .diag-spinner { display:inline-block;width:11px;height:11px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite; }
-    .diag-refresh-ts { font-size:11px; color:var(--text3); margin-left:auto; }
+    .diag-wrap{display:flex;flex-direction:column;gap:12px}
+    .diag-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .diag-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+    .diag-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+    .diag-card-title{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+    .diag-stat-val{font-size:24px;font-weight:700;line-height:1;color:var(--text)}
+    .diag-stat-sub{font-size:11px;color:var(--text3);margin-top:3px}
+    .diag-row-item{display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px;gap:8px}
+    .diag-row-item:last-child{border-bottom:none}
+    .diag-row-label{color:var(--text2);flex-shrink:0}
+    .diag-row-val{font-weight:500;font-family:'DM Mono',monospace;font-size:12px;text-align:right}
+    .diag-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:600;white-space:nowrap}
+    .diag-pill-green{background:rgba(99,153,34,0.18);color:#3B6D11}
+    .diag-pill-amber{background:rgba(186,117,23,0.18);color:#633806}
+    .diag-pill-red{background:rgba(163,45,45,0.18);color:#791F1F}
+    .diag-pill-gray{background:rgba(95,94,90,0.15);color:#444441}
+    .diag-pill-blue{background:rgba(55,138,221,0.15);color:#0C447C}
+    .diag-online-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;animation:pulseg 2s infinite}
+    .diag-offline-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;background:#A32D2D}
+    @keyframes pulseg{0%,100%{background:#639922;box-shadow:0 0 0 3px rgba(99,153,34,.25)}50%{background:#639922;box-shadow:0 0 0 5px rgba(99,153,34,.1)}}
+    .diag-hist-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+    .diag-hist-day{font-size:10.5px;color:var(--text2);width:30px;text-align:right}
+    .diag-hist-track{flex:1;height:12px;background:var(--bg3,rgba(0,0,0,0.06));border-radius:3px;overflow:hidden;position:relative}
+    .diag-hist-fill{height:100%;border-radius:3px;transition:width .4s}
+    .diag-hist-ok{background:#C0DD97}
+    .diag-hist-warn{background:#FAC775}
+    .diag-hist-err{background:#F09595}
+    .diag-hist-n{font-size:10.5px;color:var(--text2);width:18px;text-align:right}
+    .diag-alert{display:flex;align-items:flex-start;gap:9px;padding:9px 12px;border-radius:8px;font-size:12px;margin-bottom:6px}
+    .diag-alert:last-child{margin-bottom:0}
+    .diag-alert-ok{background:rgba(99,153,34,0.12);color:#27500A}
+    .diag-alert-warn{background:rgba(186,117,23,0.14);color:#412402}
+    .diag-alert-err{background:rgba(163,45,45,0.12);color:#4A1B0C}
+    .diag-alert-info{background:rgba(55,138,221,0.12);color:#042C53}
+    .diag-alert i{font-size:15px;flex-shrink:0;margin-top:1px}
+    .diag-action{display:flex;align-items:center;gap:10px;padding:9px 13px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;color:var(--text);width:100%;margin-bottom:6px;text-align:left}
+    .diag-action:hover{background:var(--bg3,rgba(0,0,0,0.04))}
+    .diag-action:disabled{opacity:.5;cursor:not-allowed}
+    .diag-action i{font-size:16px;color:var(--text2)}
+    .diag-action:last-child{margin-bottom:0}
+    .diag-ping-output{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-family:'DM Mono',monospace;font-size:11.5px;line-height:1.7;white-space:pre-wrap;max-height:180px;overflow-y:auto;margin-top:8px;color:var(--text)}
+    .diag-ping-ok{color:#3B6D11}.diag-ping-err{color:#791F1F}.diag-ping-hdr{color:#185FA5}
+    .diag-spinner{display:inline-block;width:11px;height:11px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+    .diag-ts{font-size:11px;color:var(--text3);margin-left:auto}
+    .diag-actions-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+    .diag-actions-bar button{font-size:12px;padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);color:var(--text);cursor:pointer;display:flex;align-items:center;gap:5px;font-weight:500}
+    .diag-actions-bar button:hover{background:var(--bg3,rgba(0,0,0,0.04))}
+    .diag-actions-bar button:disabled{opacity:.4;cursor:not-allowed}
+    .diag-causa-txt{font-weight:500}
+    .diag-causa-desc{font-size:10.5px;color:var(--text3);margin-top:1px}
   `;
   document.head.appendChild(s);
 })();
 
-let _diagTimer     = null;
-let _diagLoginId   = null;
-let _diagMaxMbps   = 100;
-let _diagPrevBytes = null;
-let _diagHistory   = [];
-const DIAG_MAX_POINTS = 60;
-const DIAG_INTERVAL   = 3000;
+// Mapa de causas de desconexão RADIUS → texto humano
+const DIAG_CAUSAS = {
+  'Lost-Carrier':             { txt:'Sinal perdido',            desc:'Cabo rompido, ONU sem sinal ou conector solto',           cls:'diag-pill-red',  tipo:'fisico'       },
+  'Lost-Service':             { txt:'Serviço interrompido',     desc:'Possível queda de energia ou falha na OLT/splitter',      cls:'diag-pill-red',  tipo:'fisico'       },
+  'Port-Error':               { txt:'Erro na porta',            desc:'Verificar ONU, cabo UTP ou interface do concentrador',    cls:'diag-pill-red',  tipo:'fisico'       },
+  'NAS-Error':                { txt:'Erro no concentrador',     desc:'Problema no Mikrotik (BRAS) ou servidor RADIUS',          cls:'diag-pill-red',  tipo:'concentrador' },
+  'Reauthentication-Failure': { txt:'Falha na autenticação',    desc:'Senha incorreta ou usuário bloqueado no sistema',         cls:'diag-pill-red',  tipo:'auth'         },
+  'Service-Unavailable':      { txt:'Serviço fora do ar',       desc:'Servidor RADIUS indisponível no momento da conexão',      cls:'diag-pill-red',  tipo:'concentrador' },
+  'Admin-Reset':              { txt:'Reiniciado pelo sistema',  desc:'Um operador forçou a reconexão no IXC',                  cls:'diag-pill-amber',tipo:'admin'        },
+  'NAS-Request':              { txt:'Reiniciado pelo concentrador', desc:'O Mikrotik forçou a reconexão (manutenção ou regra)', cls:'diag-pill-amber',tipo:'concentrador' },
+  'Port-Preempted':           { txt:'Porta redirecionada',      desc:'A porta foi tomada por outra sessão',                    cls:'diag-pill-amber',tipo:'concentrador' },
+  'Idle-Timeout':             { txt:'Sem uso por muito tempo',  desc:'Roteador ficou sem tráfego — normal em alguns planos',   cls:'diag-pill-gray', tipo:'normal'       },
+  'Supplicant-Restart':       { txt:'Roteador reconectou',      desc:'O roteador do cliente reiniciou a conexão PPPoE',        cls:'diag-pill-gray', tipo:'normal'       },
+  'Session-Timeout':          { txt:'Renovação automática',     desc:'Limite de tempo da sessão atingido — reconecta sozinho', cls:'diag-pill-gray', tipo:'normal'       },
+  'User-Request':             { txt:'Cliente desligou',         desc:'O próprio cliente desligou o roteador',                  cls:'diag-pill-green',tipo:'normal'       },
+  'Port-Unneeded':            { txt:'Porta desativada',         desc:'A porta foi desativada pelo sistema',                    cls:'diag-pill-gray', tipo:'admin'        },
+  'Port-Suspended':           { txt:'Porta suspensa',           desc:'Porta temporariamente suspensa no concentrador',         cls:'diag-pill-amber',tipo:'admin'        },
+};
+function causaInfo(c){ return DIAG_CAUSAS[c] || { txt: c||'Desconhecido', desc:'Causa não identificada', cls:'diag-pill-gray', tipo:'outro' }; }
 
 function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function formatMbps(v){ if(!v||isNaN(v))return'0.00'; v=parseFloat(v); return v>=1000?(v/1000).toFixed(2):v.toFixed(2); }
-function unitMbps(v){ return parseFloat(v||0)>=1000?'Gbps':'Mbps'; }
-function formatBytes(b){ b=parseFloat(b||0); if(b>=1e9)return(b/1e9).toFixed(2)+' GB'; if(b>=1e6)return(b/1e6).toFixed(1)+' MB'; if(b>=1e3)return(b/1e3).toFixed(0)+' KB'; return b+' B'; }
+
+let _diagTimer   = null;
+let _diagLoginId = null;
+let _diagCli     = null;
 
 function initDiagnostico(){
   stopDiagPoll();
-  _diagPrevBytes=null; _diagHistory=[];
-  const cli=window._cliAtual;
+  const cli = window._cliAtual;
   if(!cli){ document.getElementById('cli-diag-content').innerHTML='<div class="cli-empty-pane">Nenhum cliente carregado.</div>'; return; }
-  const logins=gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
+  _diagCli = cli;
+  const logins = gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
   if(!logins.length){ document.getElementById('cli-diag-content').innerHTML='<div class="cli-empty-pane">Nenhum login IXC vinculado.<br><span style="font-size:11px;color:var(--text3)">Faça a sync IXC para carregar os logins.</span></div>'; return; }
-  const contratos=gd('sf_clientes_contratos').filter(c=>(cli.id&&c.clienteId==cli.id)||(cli.ixcId&&c.ixcClienteId==cli.ixcId));
-  // Usa login online primeiro, depois o primeiro login
-  const loginAtivo=logins.find(l=>l.online)||logins[0];
-  // Velocidade: 1) do login (herdado do contrato via sync), 2) contrato ativo, 3) qualquer contrato, 4) fallback 100
-  const contratoAtivo = contratos.find(c=>calcStatusContrato(c.statusContrato,c.statusAcesso)==='Ativo') || contratos[0];
-  _diagMaxMbps = loginAtivo?.velocidadeMbps || contratoAtivo?.velocidadeMbps || 100;
-  _diagLoginId=loginAtivo.ixcId;
-  renderDiagBase(loginAtivo, logins);
-  startDiagPoll();
+  const loginAtivo = logins.find(l=>l.online) || logins[0];
+  _diagLoginId = loginAtivo.ixcId;
+  renderDiagLayout(loginAtivo, logins);
+  carregarDiagnostico();
 }
 
-function renderDiagBase(loginAtivo, todosLogins){
-  const sel = todosLogins.length>1
-    ? `<select id="diag-login-sel" onchange="mudaLoginDiag(this.value)" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">${todosLogins.map(l=>`<option value="${l.ixcId}" ${l.ixcId==_diagLoginId?'selected':''}>${l.login||l.ixcId}</option>`).join('')}</select>`
+function renderDiagLayout(loginAtivo, todosLogins){
+  const sel = todosLogins.length > 1
+    ? `<select onchange="mudaLoginDiag(this.value)" style="font-size:12px;padding:3px 7px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">${todosLogins.map(l=>`<option value="${l.ixcId}" ${l.ixcId==_diagLoginId?'selected':''}>${l.login||l.ixcId}</option>`).join('')}</select>`
     : `<strong style="font-family:'DM Mono',monospace;font-size:12px">${loginAtivo.login||'—'}</strong>`;
-  document.getElementById('cli-diag-content').innerHTML=`
+
+  document.getElementById('cli-diag-content').innerHTML = `
   <div class="diag-wrap">
-    <div class="diag-actions">
-      <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px">Login: ${sel}</span>
-      <button class="diag-btn active" id="diag-btn-poll" onclick="toggleDiagPoll()">⏸ Pausar</button>
-      <button class="diag-btn" onclick="executarPing()" id="diag-btn-ping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Ping</button>
-      <button class="diag-btn" onclick="executarTraceroute()" id="diag-btn-trace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>Traceroute</button>
-      <span class="diag-refresh-ts" id="diag-last-update">—</span>
+    <div class="diag-actions-bar">
+      <span style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:7px">Login: ${sel}</span>
+      <button onclick="carregarDiagnostico()" id="diag-btn-refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Atualizar</button>
+      <button onclick="startDiagPoll()" id="diag-btn-poll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Auto (30s)</button>
+      <span class="diag-ts" id="diag-last-ts">—</span>
     </div>
-    <div class="diag-status-row">
-      <div class="diag-status-pill"><span class="diag-dot off" id="diag-dot"></span><span id="diag-status-txt">—</span></div>
-      <div class="diag-status-pill">🕐 <span id="diag-tempo">—</span></div>
-      <div class="diag-status-pill">🌐 <span id="diag-ip">—</span></div>
-      <div class="diag-status-pill">📶 Plano: <strong>${_diagMaxMbps} Mbps</strong></div>
-    </div>
-    <div class="diag-speed-cards">
-      <div class="diag-speed-card">
-        <div class="diag-speed-label"><span style="width:10px;height:10px;border-radius:2px;background:#185fa5;display:inline-block"></span>⬇ Download</div>
-        <div><span class="diag-speed-val diag-rx-color" id="diag-rx-val">0.00</span><span class="diag-speed-unit" id="diag-rx-unit">Mbps</span></div>
-        <div class="diag-speed-sub">de ${_diagMaxMbps} Mbps contratados · <span id="diag-rx-pct">0%</span></div>
-        <div class="diag-speed-bar-wrap diag-rx-bar-wrap"><div class="diag-speed-bar-fill diag-rx-bar-fill" id="diag-rx-bar" style="width:0%"></div></div>
+
+    <!-- Status + sessão -->
+    <div class="diag-row3">
+      <div class="diag-card">
+        <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg> Conexão</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span class="diag-online-dot" id="diag-dot" style="background:#ccc;animation:none"></span>
+          <span class="diag-stat-val" style="font-size:18px" id="diag-status-txt">—</span>
+        </div>
+        <div class="diag-stat-sub" id="diag-tempo-sub">—</div>
       </div>
-      <div class="diag-speed-card">
-        <div class="diag-speed-label"><span style="width:10px;height:10px;border-radius:2px;background:#639922;display:inline-block"></span>⬆ Upload</div>
-        <div><span class="diag-speed-val diag-tx-color" id="diag-tx-val">0.00</span><span class="diag-speed-unit" id="diag-tx-unit">Mbps</span></div>
-        <div class="diag-speed-sub">de ${_diagMaxMbps} Mbps contratados · <span id="diag-tx-pct">0%</span></div>
-        <div class="diag-speed-bar-wrap diag-tx-bar-wrap"><div class="diag-speed-bar-fill diag-tx-bar-fill" id="diag-tx-bar" style="width:0%"></div></div>
+      <div class="diag-card">
+        <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Quedas hoje</div>
+        <div class="diag-stat-val" id="diag-quedas-hoje" style="color:#633806">—</div>
+        <div class="diag-stat-sub" id="diag-ultima-queda-sub">—</div>
+      </div>
+      <div class="diag-card">
+        <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Quedas 7 dias</div>
+        <div class="diag-stat-val" id="diag-quedas-semana">—</div>
+        <div class="diag-stat-sub" id="diag-media-sub">—</div>
       </div>
     </div>
-    <div class="diag-chart-wrap">
-      <div class="diag-chart-header">
-        <span class="diag-chart-title">Velocidade em tempo real (últimos ${DIAG_MAX_POINTS*DIAG_INTERVAL/1000}s)</span>
-        <div class="diag-chart-legend">
-          <span><span class="diag-legend-dot" style="background:#185fa5"></span>Download</span>
-          <span><span class="diag-legend-dot" style="background:#639922"></span>Upload</span>
+
+    <!-- Sessão + histórico -->
+    <div class="diag-row">
+      <div class="diag-card">
+        <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Dados da sessão</div>
+        <div class="diag-row-item"><span class="diag-row-label">IP atual</span><span class="diag-row-val" id="diag-ip">—</span></div>
+        <div class="diag-row-item"><span class="diag-row-label">MAC</span><span class="diag-row-val" id="diag-mac">—</span></div>
+        <div class="diag-row-item"><span class="diag-row-label">Concentrador</span><span class="diag-row-val" id="diag-conc">—</span></div>
+        <div class="diag-row-item"><span class="diag-row-label">Interface</span><span class="diag-row-val" id="diag-iface">—</span></div>
+        <div class="diag-row-item"><span class="diag-row-label">Autenticação</span><span class="diag-row-val" id="diag-auth">—</span></div>
+        <div class="diag-row-item"><span class="diag-row-label">Download sessão</span><span class="diag-row-val" id="diag-dl" style="color:#0C447C">—</span></div>
+        <div class="diag-row-item"><span class="diag-row-label">Upload sessão</span><span class="diag-row-val" id="diag-ul" style="color:#3B6D11">—</span></div>
+      </div>
+
+      <div class="diag-card">
+        <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Últimas desconexões</div>
+        <div id="diag-hist-descon"><div style="font-size:12px;color:var(--text3);padding:8px 0">Carregando...</div></div>
+      </div>
+    </div>
+
+    <!-- Estabilidade semanal -->
+    <div class="diag-card">
+      <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Estabilidade — últimos 7 dias</div>
+      <div style="display:flex;gap:20px">
+        <div style="flex:1" id="diag-stability-bars"><div style="font-size:12px;color:var(--text3)">Carregando...</div></div>
+        <div style="width:200px;flex-shrink:0">
+          <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:8px">O que significa cada cor</div>
+          <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px">
+            <div style="display:flex;align-items:center;gap:7px"><span style="width:12px;height:12px;border-radius:2px;background:#C0DD97;flex-shrink:0"></span> <span style="color:var(--text2)">Sem quedas — dia estável</span></div>
+            <div style="display:flex;align-items:center;gap:7px"><span style="width:12px;height:12px;border-radius:2px;background:#FAC775;flex-shrink:0"></span> <span style="color:var(--text2)">1–2 quedas — atenção</span></div>
+            <div style="display:flex;align-items:center;gap:7px"><span style="width:12px;height:12px;border-radius:2px;background:#F09595;flex-shrink:0"></span> <span style="color:var(--text2)">3+ quedas — instável</span></div>
+          </div>
+          <div style="margin-top:12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:6px">Causas comuns</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
+            <div><span style="color:#791F1F;font-weight:600">Sinal perdido</span> <span style="color:var(--text3)">→ cabo / ONU</span></div>
+            <div><span style="color:#633806;font-weight:600">Reiniciado sistema</span> <span style="color:var(--text3)">→ IXC / concentrador</span></div>
+            <div><span style="color:#3B6D11;font-weight:600">Cliente desligou</span> <span style="color:var(--text3)">→ normal</span></div>
+            <div><span style="color:#444441;font-weight:600">Renovação automática</span> <span style="color:var(--text3)">→ normal</span></div>
+          </div>
         </div>
       </div>
-      <div class="diag-canvas-wrap"><canvas id="diag-canvas"></canvas></div>
     </div>
-    <div class="diag-detail-grid">
-      <div class="diag-detail-item"><div class="diag-detail-label">Download acumulado</div><div class="diag-detail-val" id="diag-dl-total">—</div></div>
-      <div class="diag-detail-item"><div class="diag-detail-label">Upload acumulado</div><div class="diag-detail-val" id="diag-ul-total">—</div></div>
-      <div class="diag-detail-item"><div class="diag-detail-label">Última conexão</div><div class="diag-detail-val" id="diag-ultima-con">—</div></div>
-      <div class="diag-detail-item"><div class="diag-detail-label">Quedas hoje</div><div class="diag-detail-val" id="diag-quedas">—</div></div>
-      <div class="diag-detail-item"><div class="diag-detail-label">MAC address</div><div class="diag-detail-val" id="diag-mac">—</div></div>
-      <div class="diag-detail-item"><div class="diag-detail-label">IP concentrador</div><div class="diag-detail-val" id="diag-ip-conc">—</div></div>
+
+    <!-- Diagnóstico automático -->
+    <div class="diag-card">
+      <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Diagnóstico automático</div>
+      <div id="diag-auto">
+        <div class="diag-alert diag-alert-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg> Aguardando dados do cliente...</div>
+      </div>
     </div>
-    <div id="diag-ping-area" style="display:none">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600;margin-bottom:6px" id="diag-ping-titulo">Ping</div>
-      <div class="diag-ping-output" id="diag-ping-output"></div>
+
+    <!-- Ferramentas de campo -->
+    <div class="diag-card">
+      <div class="diag-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Ferramentas de campo</div>
+      <button class="diag-action" onclick="executarPing()" id="diag-btn-ping">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <div><div style="font-weight:500">Ping no cliente</div><div style="font-size:10.5px;font-weight:400;color:var(--text3)">Testa se o IP do cliente está respondendo</div></div>
+      </button>
+      <button class="diag-action" onclick="executarTraceroute()" id="diag-btn-trace">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>
+        <div><div style="font-weight:500">Traceroute</div><div style="font-size:10.5px;font-weight:400;color:var(--text3)">Mostra o caminho até o cliente e onde há lentidão</div></div>
+      </button>
+      <div id="diag-ping-area" style="display:none">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin:8px 0 4px" id="diag-ping-titulo">Resultado</div>
+        <div class="diag-ping-output" id="diag-ping-output"></div>
+      </div>
     </div>
   </div>`;
 }
 
-async function lerVelocidade(){
-  const cfg=getIXCConfig();
-  if(!cfg.proxyUrl||!_diagLoginId) return;
+function formatBytes(b){ b=parseFloat(b||0); if(b>=1e9)return(b/1e9).toFixed(2)+' GB'; if(b>=1e6)return(b/1e6).toFixed(1)+' MB'; if(b>=1e3)return(b/1e3).toFixed(0)+' KB'; return b+' B'; }
+function set$(id,v){ const el=document.getElementById(id); if(el) el.textContent=(v==null||v==='')?'—':v; }
+
+async function carregarDiagnostico(){
+  const cfg = getIXCConfig();
+  if(!cfg.proxyUrl || !_diagLoginId) return;
+  const btn = document.getElementById('diag-btn-refresh');
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="diag-spinner"></span> Buscando...'; }
   try {
-    const resp=await chamarIXC(cfg,'radusuarios',{qtype:'radusuarios.id',query:String(_diagLoginId),oper:'=',rp:'1'});
-    const r=(resp.registros||[])[0];
-    if(!r) return;
-    const tsAgora=Date.now();
-    const rxBytes=parseFloat(r.download_atual||r.rx_bytes||r.acctinputoctets||0);
-    const txBytes=parseFloat(r.upload_atual||r.tx_bytes||r.acctoutputoctets||0);
-    let rxMbps=0,txMbps=0;
-    if(_diagPrevBytes){
-      const dt=(tsAgora-_diagPrevBytes.ts)/1000;
-      if(dt>0){
-        const dRx=rxBytes-_diagPrevBytes.rx; const dTx=txBytes-_diagPrevBytes.tx;
-        rxMbps=dRx>0?(dRx*8)/dt/1e6:0;
-        txMbps=dTx>0?(dTx*8)/dt/1e6:0;
-      }
-    }
-    _diagPrevBytes={rx:rxBytes,tx:txBytes,ts:tsAgora};
-    _diagHistory.push({ts:tsAgora,rx:rxMbps,tx:txMbps});
-    if(_diagHistory.length>DIAG_MAX_POINTS) _diagHistory.shift();
-    atualizarUIDiag(r,rxMbps,txMbps,rxBytes,txBytes);
-    desenharGrafico();
-  } catch(e){ console.warn('Diag:',e.message); }
+    // Busca sessão atual + histórico de 7 dias em paralelo
+    const [respSessao, respHist] = await Promise.all([
+      chamarIXC(cfg, 'radusuarios', { qtype:'radusuarios.id', query:String(_diagLoginId), oper:'=', rp:'1' }),
+      chamarIXC(cfg, 'log_acesso', {
+        qtype:'log_acesso.id_login', query:String(_diagLoginId), oper:'=',
+        rp:'200', sortname:'id', sortorder:'desc'
+      }).catch(()=>({registros:[]})),
+    ]);
+
+    const r = (respSessao.registros||[])[0];
+    if(r) atualizarSessao(r);
+
+    const hist = respHist.registros || [];
+    if(hist.length) atualizarHistorico(hist, r);
+    else atualizarHistoricoVazio();
+
+    const ts = document.getElementById('diag-last-ts');
+    if(ts) ts.textContent = 'Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+  } catch(e){
+    showToast('Erro diagnóstico: '+e.message, true);
+  } finally {
+    if(btn){ btn.disabled=false; btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Atualizar'; }
+  }
 }
 
-function atualizarUIDiag(r,rxMbps,txMbps,rxBytes,txBytes){
-  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v||'—';};
-  const online=r.online==='S'||r.online==='1'||r.online===true;
-  const dot=document.getElementById('diag-dot');
-  if(dot) dot.className='diag-dot '+(online?'on':'off');
-  set('diag-status-txt',online?'Online':'Offline');
-  set('diag-ip',r.ip||r.framedipaddress||'—');
-  set('diag-tempo',r.tempo_conectado?r.tempo_conectado.slice(0,8):'—');
-  const rxPct=Math.min(100,(rxMbps/_diagMaxMbps)*100);
-  set('diag-rx-val',formatMbps(rxMbps)); set('diag-rx-unit',unitMbps(rxMbps)); set('diag-rx-pct',rxPct.toFixed(1)+'%');
-  const rxBar=document.getElementById('diag-rx-bar'); if(rxBar) rxBar.style.width=rxPct+'%';
-  const txPct=Math.min(100,(txMbps/_diagMaxMbps)*100);
-  set('diag-tx-val',formatMbps(txMbps)); set('diag-tx-unit',unitMbps(txMbps)); set('diag-tx-pct',txPct.toFixed(1)+'%');
-  const txBar=document.getElementById('diag-tx-bar'); if(txBar) txBar.style.width=txPct+'%';
-  set('diag-dl-total',formatBytes(rxBytes)); set('diag-ul-total',formatBytes(txBytes));
-  set('diag-ultima-con',r.ultima_conexao_inicial||r.acctstarttime);
-  set('diag-quedas',r.quantidade_desconexao_hoje!=null?r.quantidade_desconexao_hoje+' hoje':null);
-  set('diag-mac',r.callingstationid||r.mac_address);
-  set('diag-ip-conc',r.ip_concentrador||r.nasipaddress);
-  const lu=document.getElementById('diag-last-update'); if(lu) lu.textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+function atualizarSessao(r){
+  const online = r.online==='S'||r.online==='1'||r.online===true;
+  const dot = document.getElementById('diag-dot');
+  if(dot){
+    dot.style.background = online ? '#639922' : '#A32D2D';
+    dot.style.animation  = online ? '' : 'none';
+  }
+  set$('diag-status-txt', online ? 'Online' : 'Offline');
+  const tempo = r.tempo_conectado || r.session_time || '';
+  set$('diag-tempo-sub', tempo ? 'Conectado há '+tempo.slice(0,8) : (online ? 'Sessão ativa' : 'Sem sessão ativa'));
+  set$('diag-ip',   r.ip || r.framedipaddress);
+  set$('diag-mac',  r.callingstationid || r.mac_address);
+  set$('diag-conc', r.ip_concentrador || r.nasipaddress || r.concentrador);
+  set$('diag-iface',r.interface_conexao || r.interface || r.nas_port_id);
+  set$('diag-auth', [r.tipo_login||r.autenticacao||'PPPoE', r.tipo_conexao||''].filter(Boolean).join(' / '));
+  set$('diag-dl',   formatBytes(r.download_atual || r.acctinputoctets));
+  set$('diag-ul',   formatBytes(r.upload_atual   || r.acctoutputoctets));
+  const quedas = parseInt(r.quantidade_desconexao_hoje||0);
+  set$('diag-quedas-hoje', String(quedas));
+  const elQ = document.getElementById('diag-quedas-hoje');
+  if(elQ) elQ.style.color = quedas >= 3 ? '#791F1F' : quedas >= 1 ? '#633806' : '#3B6D11';
+  const ultimaCon = r.ultima_conexao_inicial || r.acctstarttime || '';
+  set$('diag-ultima-queda-sub', ultimaCon ? 'Última conexão: '+ultimaCon.slice(0,16) : '');
 }
 
-function desenharGrafico(){
-  const canvas=document.getElementById('diag-canvas'); if(!canvas) return;
-  const wrap=canvas.parentElement;
-  canvas.width=wrap.offsetWidth||600; canvas.height=wrap.offsetHeight||140;
-  const ctx=canvas.getContext('2d');
-  const W=canvas.width,H=canvas.height;
-  const PAD={top:8,right:8,bottom:24,left:50};
-  const cW=W-PAD.left-PAD.right, cH=H-PAD.top-PAD.bottom;
-  ctx.clearRect(0,0,W,H);
-  const isDark=document.documentElement.getAttribute('data-theme')==='dark'||document.documentElement.classList.contains('dark');
-  const gridColor=isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)';
-  const textColor=isDark?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.4)';
-  const allVals=_diagHistory.flatMap(p=>[p.rx,p.tx]);
-  const maxVal=Math.max(_diagMaxMbps*0.1,...allVals)*1.2;
-  ctx.strokeStyle=gridColor; ctx.lineWidth=1;
-  [0,.25,.5,.75,1].forEach(f=>{
-    const y=PAD.top+cH*(1-f);
-    ctx.beginPath(); ctx.moveTo(PAD.left,y); ctx.lineTo(PAD.left+cW,y); ctx.stroke();
-    ctx.fillStyle=textColor; ctx.font='10px system-ui,sans-serif'; ctx.textAlign='right';
-    ctx.fillText((maxVal*f).toFixed(0)+'M',PAD.left-4,y+3);
-  });
-  if(_diagHistory.length<2) return;
-  const pts=Array(DIAG_MAX_POINTS).fill(null);
-  const off=DIAG_MAX_POINTS-_diagHistory.length;
-  _diagHistory.forEach((p,i)=>{pts[off+i]=p;});
-  const xOf=i=>PAD.left+(i/(DIAG_MAX_POINTS-1))*cW;
-  const yOf=v=>PAD.top+cH*(1-Math.min(1,v/maxVal));
-  function linha(cor,getter,alpha){
-    ctx.beginPath(); let first=true;
-    pts.forEach((p,i)=>{ if(!p)return; const x=xOf(i),y=yOf(getter(p)); first?(ctx.moveTo(x,y),first=false):ctx.lineTo(x,y); });
-    ctx.strokeStyle=cor; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
-    if(alpha>0){
-      const li=pts.reduce((a,p,i)=>p?i:a,0);
-      const fi=pts.findIndex(p=>p);
-      ctx.lineTo(xOf(li),PAD.top+cH); ctx.lineTo(xOf(fi),PAD.top+cH); ctx.closePath();
-      ctx.fillStyle=cor.replace('rgb(','rgba(').replace(')',`,${alpha})`);
-      ctx.fill();
+function atualizarHistorico(hist, sessaoAtual){
+  // Últimas 5 desconexões
+  const descon = hist.filter(h => h.acctterminatecause || h.causa_desconexao).slice(0,5);
+  const elDesc = document.getElementById('diag-hist-descon');
+  if(elDesc){
+    if(!descon.length){
+      elDesc.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0">Nenhum histórico de desconexão disponível.</div>';
+    } else {
+      elDesc.innerHTML = descon.map(h => {
+        const causa = h.acctterminatecause || h.causa_desconexao || '';
+        const info = causaInfo(causa);
+        const dt = (h.acctstoptime || h.data_hora || '').slice(0,16).replace('T',' ');
+        return `<div class="diag-row-item">
+          <div>
+            <div class="diag-causa-txt">${escHtml(dt||'—')}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="diag-pill ${info.cls}">${escHtml(info.txt)}</span>
+            <div class="diag-causa-desc">${escHtml(info.desc)}</div>
+          </div>
+        </div>`;
+      }).join('');
     }
   }
-  linha('rgb(24,95,165)',p=>p.rx,0.12);
-  linha('rgb(99,153,34)',p=>p.tx,0.10);
-  ctx.fillStyle=textColor; ctx.font='10px system-ui,sans-serif'; ctx.textAlign='center';
-  [0,Math.floor(DIAG_MAX_POINTS/2),DIAG_MAX_POINTS-1].forEach(i=>{
-    const p=pts[i]; if(!p) return;
-    ctx.fillText(new Date(p.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),xOf(i),H-6);
+
+  // Estabilidade 7 dias
+  const hoje = new Date();
+  const dias = Array.from({length:7},(_,i)=>{
+    const d = new Date(hoje); d.setDate(d.getDate()-i);
+    return d.toISOString().slice(0,10);
+  }).reverse();
+
+  const contPorDia = {};
+  const errPorDia = {};
+  dias.forEach(d=>{ contPorDia[d]=0; errPorDia[d]=0; });
+
+  hist.forEach(h => {
+    const dt = (h.acctstoptime || h.data_hora || '').slice(0,10);
+    if(contPorDia[dt] !== undefined){
+      contPorDia[dt]++;
+      const c = causaInfo(h.acctterminatecause || h.causa_desconexao || '');
+      if(c.tipo === 'fisico' || c.tipo === 'concentrador' || c.tipo === 'auth') errPorDia[dt]++;
+    }
   });
+
+  const maxQuedas = Math.max(1, ...Object.values(contPorDia));
+  const totalSemana = Object.values(contPorDia).reduce((a,b)=>a+b,0);
+  set$('diag-quedas-semana', String(totalSemana));
+  set$('diag-media-sub', 'Média: '+(totalSemana/7).toFixed(1)+' por dia');
+
+  const nomesDia = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const elBars = document.getElementById('diag-stability-bars');
+  if(elBars){
+    elBars.innerHTML = dias.map(d => {
+      const n = contPorDia[d] || 0;
+      const e = errPorDia[d] || 0;
+      const pct = Math.max(n>0?15:0, Math.round((n/maxQuedas)*100));
+      const cls = n === 0 ? 'diag-hist-ok' : n <= 2 ? 'diag-hist-warn' : 'diag-hist-err';
+      const dt = new Date(d+'T12:00:00');
+      const nomeDia = nomesDia[dt.getDay()];
+      const dataFmt = dt.getDate()+'/'+(dt.getMonth()+1);
+      return `<div class="diag-hist-row">
+        <span class="diag-hist-day" title="${d}">${nomeDia}<br><span style="font-size:9px">${dataFmt}</span></span>
+        <div class="diag-hist-track">
+          <div class="diag-hist-fill ${cls}" style="width:${n===0?'100%':pct+'%'}"></div>
+        </div>
+        <span class="diag-hist-n">${n===0?'✓':n}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Diagnóstico automático
+  gerarDiagAutomatico(hist, contPorDia, errPorDia, sessaoAtual);
+}
+
+function atualizarHistoricoVazio(){
+  const elDesc = document.getElementById('diag-hist-descon');
+  if(elDesc) elDesc.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0">Histórico não disponível via API (endpoint log_acesso).</div>';
+  const elBars = document.getElementById('diag-stability-bars');
+  if(elBars) elBars.innerHTML = '<div style="font-size:12px;color:var(--text3)">Dados históricos indisponíveis.</div>';
+  const quedas = parseInt(document.getElementById('diag-quedas-hoje')?.textContent || '0');
+  gerarDiagSimples(quedas);
+}
+
+function gerarDiagAutomatico(hist, contPorDia, errPorDia, sessaoAtual){
+  const el = document.getElementById('diag-auto');
+  if(!el) return;
+  const alertas = [];
+  const online = sessaoAtual?.online === 'S' || sessaoAtual?.online === true;
+  const quedas7 = Object.values(contPorDia).reduce((a,b)=>a+b,0);
+  const erros7  = Object.values(errPorDia).reduce((a,b)=>a+b,0);
+
+  // Analisa causas dos últimos 7 dias
+  const causTotais = {};
+  hist.forEach(h=>{
+    const c = h.acctterminatecause || h.causa_desconexao || 'Desconhecido';
+    causTotais[c] = (causTotais[c]||0)+1;
+  });
+  const fisico = (causTotais['Lost-Carrier']||0) + (causTotais['Lost-Service']||0) + (causTotais['Port-Error']||0);
+  const conc   = (causTotais['NAS-Error']||0)   + (causTotais['NAS-Request']||0);
+  const normal = (causTotais['Session-Timeout']||0) + (causTotais['User-Request']||0) + (causTotais['Idle-Timeout']||0);
+
+  // Status da conexão
+  if(online){
+    alertas.push({ cls:'diag-alert-ok', ico:'check', txt:'Cliente está online e conectado no momento.' });
+  } else {
+    alertas.push({ cls:'diag-alert-err', ico:'alert-circle', txt:'Cliente está offline. Verifique a ONU, cabo e roteador.' });
+  }
+
+  // Problema físico recorrente
+  if(fisico >= 3){
+    alertas.push({ cls:'diag-alert-err', ico:'alert-triangle', txt:`${fisico}x "Sinal perdido" nos últimos 7 dias — provável problema físico: verifique cabo coaxial da ONU, conector SC/APC e potência óptica no splitter.` });
+  } else if(fisico >= 1){
+    alertas.push({ cls:'diag-alert-warn', ico:'alert-triangle', txt:`${fisico}x queda por sinal perdido. Peça o cliente para verificar se a ONU tem luz vermelha ou se o cabo está bem encaixado.` });
+  }
+
+  // Problema no concentrador
+  if(conc >= 2){
+    alertas.push({ cls:'diag-alert-warn', ico:'server', txt:`${conc}x quedas causadas pelo concentrador (${sessaoAtual?.concentrador||'BRAS'}). Pode indicar instabilidade no equipamento do provedor.` });
+  }
+
+  // Estabilidade geral
+  if(quedas7 === 0){
+    alertas.push({ cls:'diag-alert-ok', ico:'check', txt:'Conexão estável nos últimos 7 dias. Nenhuma queda registrada.' });
+  } else if(quedas7 <= 3 && erros7 === 0){
+    alertas.push({ cls:'diag-alert-ok', ico:'info', txt:`${quedas7} queda(s) em 7 dias, todas por causas normais (renovação automática ou cliente desligou). Conexão considerada estável.` });
+  } else if(quedas7 > 7){
+    alertas.push({ cls:'diag-alert-err', ico:'alert-octagon', txt:`${quedas7} quedas em 7 dias é acima do normal. Investigar se há problema na OLT, na ONU ou no roteador do cliente.` });
+  }
+
+  // Verifica se só quedas normais
+  if(hist.length > 0 && fisico === 0 && conc === 0 && normal > 0){
+    alertas.push({ cls:'diag-alert-info', ico:'info', txt:'Todas as desconexões foram por causas normais (renovação automática de sessão ou o cliente desligou o roteador). Não há indicação de problema técnico.' });
+  }
+
+  const icoMap = {
+    'check':'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3',
+    'alert-triangle':'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
+    'info':'M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zM12 8v4M12 16h.01',
+    'alert-circle':'M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zM12 8v4M12 16h.01',
+    'server':'M2 3h20v7H2zM2 14h20v7H2zM6 8h.01M6 19h.01',
+    'alert-octagon':'M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2zM12 8v4M12 16h.01',
+  };
+
+  el.innerHTML = alertas.map(a => `
+    <div class="diag-alert ${a.cls}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0;margin-top:1px"><path d="${icoMap[a.ico]||icoMap.info}"/></svg>
+      <span>${escHtml(a.txt)}</span>
+    </div>`).join('');
+}
+
+function gerarDiagSimples(quedas){
+  const el = document.getElementById('diag-auto');
+  if(!el) return;
+  const online = document.getElementById('diag-status-txt')?.textContent === 'Online';
+  const alertas = [];
+  if(online) alertas.push({ cls:'diag-alert-ok', txt:'Cliente está online.' });
+  else alertas.push({ cls:'diag-alert-err', txt:'Cliente está offline. Verifique cabo, ONU e roteador.' });
+  if(quedas >= 3) alertas.push({ cls:'diag-alert-err', txt:`${quedas} quedas hoje — verificar instalação física.` });
+  else if(quedas >= 1) alertas.push({ cls:'diag-alert-warn', txt:`${quedas} queda(s) hoje. Monitorar.` });
+  el.innerHTML = alertas.map(a => `<div class="diag-alert ${a.cls}"><span>${escHtml(a.txt)}</span></div>`).join('');
 }
 
 function startDiagPoll(){
-  if(_diagTimer) return;
-  lerVelocidade();
-  _diagTimer=setInterval(lerVelocidade,DIAG_INTERVAL);
-  const btn=document.getElementById('diag-btn-poll');
-  if(btn){btn.className='diag-btn active';btn.textContent='⏸ Pausar';}
+  if(_diagTimer){ clearInterval(_diagTimer); _diagTimer=null; }
+  _diagTimer = setInterval(carregarDiagnostico, 30000);
+  const btn = document.getElementById('diag-btn-poll');
+  if(btn){ btn.style.background='#c23b2a'; btn.style.color='#fff'; btn.style.borderColor='#c23b2a'; btn.innerHTML='⏸ Pausar'; }
+  carregarDiagnostico();
 }
+
 function stopDiagPoll(){
-  if(_diagTimer){clearInterval(_diagTimer);_diagTimer=null;}
-  const btn=document.getElementById('diag-btn-poll');
-  if(btn){btn.className='diag-btn';btn.textContent='▶ Iniciar';}
+  if(_diagTimer){ clearInterval(_diagTimer); _diagTimer=null; }
+  const btn = document.getElementById('diag-btn-poll');
+  if(btn){ btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Auto (30s)'; }
 }
-function toggleDiagPoll(){ _diagTimer?stopDiagPoll():startDiagPoll(); }
-function mudaLoginDiag(id){ _diagLoginId=id; _diagPrevBytes=null; _diagHistory=[]; lerVelocidade(); }
+
+function mudaLoginDiag(id){ _diagLoginId=id; carregarDiagnostico(); }
 
 const _origFecharModal=fecharModal;
 window.fecharModal=function(id){ if(id==='modal-cli') stopDiagPoll(); _origFecharModal(id); };
@@ -9182,8 +9368,8 @@ async function executarPing(){
   const area=document.getElementById('diag-ping-area');
   const out=document.getElementById('diag-ping-output');
   const tit=document.getElementById('diag-ping-titulo');
-  if(btn)btn.disabled=true; if(area)area.style.display=''; if(tit)tit.textContent='Ping';
-  if(out)out.innerHTML='<span class="diag-spinner"></span> Executando ping...';
+  if(btn)btn.disabled=true; if(area)area.style.display=''; if(tit)tit.textContent='Resultado do Ping';
+  if(out)out.innerHTML='<span class="diag-spinner"></span> Enviando ping até o IP do cliente...';
   try{
     const resp=await chamarIXC(cfg,`radusuarios/${_diagLoginId}/ping`,{rp:'1'});
     const linhas=resp.resultado||resp.result||resp.output||JSON.stringify(resp,null,2);
@@ -9204,8 +9390,8 @@ async function executarTraceroute(){
   const area=document.getElementById('diag-ping-area');
   const out=document.getElementById('diag-ping-output');
   const tit=document.getElementById('diag-ping-titulo');
-  if(btn)btn.disabled=true; if(area)area.style.display=''; if(tit)tit.textContent='Traceroute';
-  if(out)out.innerHTML='<span class="diag-spinner"></span> Executando traceroute...';
+  if(btn)btn.disabled=true; if(area)area.style.display=''; if(tit)tit.textContent='Resultado do Traceroute';
+  if(out)out.innerHTML='<span class="diag-spinner"></span> Executando traceroute (pode levar alguns segundos)...';
   try{
     const resp=await chamarIXC(cfg,`radusuarios/${_diagLoginId}/traceroute`,{rp:'1'});
     const linhas=resp.resultado||resp.result||resp.output||JSON.stringify(resp,null,2);
