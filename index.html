@@ -1735,8 +1735,8 @@ textarea.cp-form-input{resize:vertical}
     <div class="page" id="page-cp-os">
       <div class="cp-kpi-grid">
         <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📋</div></div><div class="cp-kpi-num" id="kpi-os-abertas">—</div><div class="cp-kpi-lbl">OS Abertas</div></div>
-        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">🔧</div></div><div class="cp-kpi-num" id="kpi-os-andamento">—</div><div class="cp-kpi-lbl">Em Andamento</div></div>
-        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">✅</div></div><div class="cp-kpi-num" id="kpi-os-concluidas">—</div><div class="cp-kpi-lbl">Concluídas</div></div>
+        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">🔧</div></div><div class="cp-kpi-num" id="kpi-os-andamento">—</div><div class="cp-kpi-lbl">Assumidas / Executando</div></div>
+        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">✅</div></div><div class="cp-kpi-num" id="kpi-os-concluidas">—</div><div class="cp-kpi-lbl">Finalizadas</div></div>
         <div class="cp-kpi roxo"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:rgba(107,47,187,.1)">📅</div></div><div class="cp-kpi-num" id="kpi-os-hoje">—</div><div class="cp-kpi-lbl">Abertas Hoje</div></div>
       </div>
       <div class="card" style="padding:0">
@@ -1746,10 +1746,11 @@ textarea.cp-form-input{resize:vertical}
             <input class="cp-search-input" type="text" placeholder="Buscar OS, cliente…" oninput="renderOS()" id="os-search">
             <select class="cp-filter-select" onchange="renderOS()" id="os-fil-status">
               <option value="">Todos status</option>
-              <option value="aberta">Aberta</option>
-              <option value="andamento">Em andamento</option>
-              <option value="concluida">Concluída</option>
-              <option value="cancelada">Cancelada</option>
+              <option value="aberta">📋 Aberta</option>
+              <option value="assumida">✋ Assumida</option>
+              <option value="executando">🔧 Executando</option>
+              <option value="finalizada">✅ Finalizada</option>
+              <option value="cancelada">❌ Cancelada</option>
             </select>
             <select class="cp-filter-select" onchange="renderOS()" id="os-fil-tec">
               <option value="">Todos técnicos</option>
@@ -8051,14 +8052,14 @@ function renderTecnicos(){
   if(!tb) return;
   const hoje_ = cpHoje();
   document.getElementById('kpi-tec-total').textContent = _cpTecnicos.filter(t=>t.status==='ativo').length;
-  document.getElementById('kpi-tec-os').textContent = _cpOS.filter(o=>['aberta','andamento'].includes(o.status)).length;
+  document.getElementById('kpi-tec-os').textContent = _cpOS.filter(o=>['aberta','assumida','executando','andamento'].includes(o.status)).length;
   document.getElementById('kpi-tec-ociosos').textContent = _cpTecnicos.filter(t=>t.status==='ativo' && !_cpOS.some(o=>o.tecnico_id==t.id && o.data===hoje_)).length;
 
   if(!_cpTecnicos.length){ tb.innerHTML=`<tr><td colspan="7" class="cp-empty-row"><div class="cp-empty-ico">👷</div>Nenhum técnico cadastrado</td></tr>`; return; }
 
   tb.innerHTML = _cpTecnicos.map((t,i)=>{
-    const osAb = _cpOS.filter(o=>o.tecnico_id==t.id && ['aberta','andamento'].includes(o.status)).length;
-    const osCo = _cpOS.filter(o=>o.tecnico_id==t.id && o.status==='concluida').length;
+    const osAb = _cpOS.filter(o=>o.tecnico_id==t.id && ['aberta','assumida','executando','andamento'].includes(o.status)).length;
+    const osCo = _cpOS.filter(o=>o.tecnico_id==t.id && ['finalizada','concluida'].includes(o.status)).length;
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:9px">
         <div class="cp-avatar-sm" style="background:${cpCor(i)}">${cpIniciais(t.nome)}</div>
@@ -8414,7 +8415,7 @@ function abrirModalSelecionarTecnico(chamadoId){
   const grid = document.getElementById('st-tecnicos-grid');
   if(ativos.length){
     grid.innerHTML = ativos.map(t=>{
-      const osAbertas = _cpOS.filter(o=>o.tecnico_id==t.id && !['concluida','cancelada'].includes(o.status)).length;
+      const osAbertas = _cpOS.filter(o=>o.tecnico_id==t.id && !['finalizada','concluida','cancelada'].includes(o.status)).length;
       const cor = osAbertas === 0 ? '#3B6D11' : osAbertas <= 2 ? '#633806' : '#791F1F';
       const bg  = osAbertas === 0 ? 'rgba(99,153,34,0.1)' : osAbertas <= 2 ? 'rgba(186,117,23,0.1)' : 'rgba(163,45,45,0.1)';
       return `<div onclick="document.getElementById('st-tecnico').value='${t.id}';document.querySelectorAll('.st-tec-card').forEach(el=>el.style.outline='none');this.style.outline='2px solid var(--accent)'"
@@ -8717,9 +8718,9 @@ function renderOS(){
 
   popularSelectsTecnicosCampo();
 
-  document.getElementById('kpi-os-abertas').textContent = _cpOS.filter(o=>o.status==='aberta').length;
-  document.getElementById('kpi-os-andamento').textContent = _cpOS.filter(o=>o.status==='andamento').length;
-  document.getElementById('kpi-os-concluidas').textContent = _cpOS.filter(o=>o.status==='concluida').length;
+  document.getElementById('kpi-os-abertas').textContent    = _cpOS.filter(o=>o.status==='aberta').length;
+  document.getElementById('kpi-os-andamento').textContent  = _cpOS.filter(o=>['assumida','executando','andamento'].includes(o.status)).length;
+  document.getElementById('kpi-os-concluidas').textContent = _cpOS.filter(o=>['finalizada','concluida'].includes(o.status)).length;
   document.getElementById('kpi-os-hoje').textContent = _cpOS.filter(o=>o.data===hoje_).length;
 
   const lista = _cpOS.filter(o=>{
