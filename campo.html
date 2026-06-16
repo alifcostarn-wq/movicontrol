@@ -495,10 +495,25 @@ async function rapido(evt, id, status){
 }
 
 /* ---- DETALHE DA OS ---- */
-function abrirDet(id){
+async function abrirDet(id){
   const os = _os.find(x=>x.id==id);
   if(!os) return;
-  _aberta = os;
+  _aberta = {...os};
+
+  // Busca senha e ixc_id do login via Supabase (mais confiável que guardar na OS)
+  if(os.login_cliente){
+    const { data: loginData } = await sb
+      .from('clientes_logins')
+      .select('ixc_id, senha, velocidade_mbps, plano')
+      .eq('login', os.login_cliente)
+      .maybeSingle();
+    if(loginData){
+      _aberta._ixcLoginId  = loginData.ixc_id   || null;
+      _aberta._senhaLogin  = loginData.senha     || os.senha_cliente || null;
+      _aberta._velMbps     = loginData.velocidade_mbps || null;
+      _aberta._plano       = loginData.plano     || null;
+    }
+  }
 
   const stCl = ST_CL[os.status]||'s-aberta';
   const stLb = ST_LB[os.status]||os.status;
@@ -518,10 +533,14 @@ function abrirDet(id){
 
   // Acesso PPPoE
   if(os.login_cliente){
+    const senha = _aberta._senhaLogin || os.senha_cliente;
+    const plano = _aberta._plano || '';
+    const vel   = _aberta._velMbps;
     html += `<div class="row-sec">
       <div class="row-sec-title">🌐 Acesso PPPoE</div>
       <div class="drow"><span class="dlab">Login</span><span class="dval mono">${os.login_cliente}</span></div>
-      <div class="drow"><span class="dlab">Senha</span><span class="dval mono">${os.senha_cliente||'—'}</span></div>
+      <div class="drow"><span class="dlab">Senha</span><span class="dval mono">${senha||'—'}</span></div>
+      ${plano?`<div class="drow"><span class="dlab">Plano</span><span class="dval">${plano}${vel?` — <b>${vel>=1000?(vel/1000)+'Gbps':vel+'Mbps'}</b>`:''}</span></div>`:''}
     </div>`;
   }
 
@@ -586,44 +605,65 @@ async function rapidoDet(status){
 async function carregarDiag(){
   if(!_aberta?.login_cliente) return;
   if(!_proxyUrl || !_ixcUrl || !_ixcToken){
-    const wrap=$('diag-wrap'); if(wrap) wrap.innerHTML='<div style="padding:8px 0;color:var(--tx3);font-size:12.5px">Configure a integração IXC no MoviOne para usar o diagnóstico.</div>';
+    const wrap=$('diag-wrap');
+    if(wrap) wrap.innerHTML='<div style="padding:8px 0;color:var(--tx3);font-size:12.5px">⚙️ Configure a integração IXC no MoviOne e salve novamente.</div>';
     return;
   }
+
   const wrap = $('diag-wrap');
-  wrap.innerHTML='<div style="text-align:center;padding:14px;color:var(--tx3)"><span class="spin-sm"></span> Buscando dados...</div>';
+  wrap.innerHTML='<div style="text-align:center;padding:14px;color:var(--tx3)"><span class="spin-sm"></span> Buscando dados no IXC...</div>';
 
   function ixcPost(endpoint, params={}){
-    return fetch(_proxyUrl,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({endpoint, params, ixcUrl:_ixcUrl, ixcToken:_ixcToken})}).then(r=>r.json());
+    return fetch(_proxyUrl,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({endpoint, params, ixcUrl:_ixcUrl, ixcToken:_ixcToken})
+    }).then(r=>r.json());
   }
 
   try {
-    const d1 = await ixcPost('radusuarios',{qtype:'radusuarios.login',query:_aberta.login_cliente,oper:'=',rp:'1'});
-    const r  = (d1.registros||[])[0];
+    // Usa o ixc_id que já buscamos do Supabase (mais confiável que buscar por nome)
+    const loginIxcId = _aberta._ixcLoginId;
+    if(!loginIxcId){
+      wrap.innerHTML='<div style="padding:10px 12px;color:var(--tx3);font-size:13px">Login IXC não vinculado. Faça a sync no MoviOne.</div>';
+      return;
+    }
 
-    if(!r){ wrap.innerHTML='<div style="padding:10px 12px;color:var(--tx3);font-size:13px">Login não encontrado no IXC.</div>'; return; }
+    // Busca por ID — igual ao diagnóstico do MoviOne
+    const d = await ixcPost('radusuarios', {
+      qtype:'radusuarios.id', query:String(loginIxcId), oper:'=', rp:'1'
+    });
+    const r = (d.registros||[])[0];
 
-    const on = r.online==='S'||r.online===true;
-    const q  = parseInt(r.quantidade_desconexao_hoje||0);
+    if(!r){
+      wrap.innerHTML='<div style="padding:10px 12px;color:var(--tx3);font-size:13px">Sem sessão ativa encontrada para este login.</div>';
+      return;
+    }
+
+    const on  = r.online==='S'||r.online===true;
+    const q   = parseInt(r.quantidade_desconexao_hoje||0);
+    const vel = _aberta._velMbps;
     const qcor = q>=3?'var(--red)':q>=1?'var(--amb)':'var(--ac)';
 
     wrap.innerHTML=`
       <div class="diag-stat">
         <span class="dg-dot ${on?'on':'off'}"></span>
-        <div>
+        <div style="flex:1">
           <div style="font-weight:600;font-size:14px">${on?'🟢 Online':'🔴 Offline'}</div>
           ${r.tempo_conectado?`<div style="font-size:11px;color:var(--tx3)">Conectado há ${r.tempo_conectado.slice(0,8)}</div>`:''}
         </div>
+        ${vel?`<div style="font-size:11px;font-weight:700;color:var(--ac);background:var(--ac2);padding:3px 8px;border-radius:8px">${vel>=1000?(vel/1000)+'Gbps':vel+'Mbps'}</div>`:''}
       </div>
       <div class="diag-grid">
-        <div class="diag-cell"><div class="diag-cell-l">IP atual</div><div class="diag-cell-v">${r.ip||r.framedipaddress||'—'}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">IP atual</div><div class="diag-cell-v" style="font-size:12px">${r.ip||r.framedipaddress||'—'}</div></div>
         <div class="diag-cell"><div class="diag-cell-l">Quedas hoje</div><div class="diag-cell-v" style="color:${qcor}">${q}</div></div>
-        <div class="diag-cell" style="grid-column:span 2"><div class="diag-cell-l">Concentrador / Interface</div><div class="diag-cell-v" style="font-size:11px">${r.ip_concentrador||r.nasipaddress||'—'} · ${r.interface_conexao||r.nas_port_id||'—'}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">MAC</div><div class="diag-cell-v" style="font-size:11px">${r.callingstationid||r.mac_address||'—'}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">Concentrador</div><div class="diag-cell-v" style="font-size:11px">${r.ip_concentrador||r.nasipaddress||'—'}</div></div>
       </div>
       ${q>=2?`<div class="alert warn">⚠️ ${q} quedas hoje — verificar cabo, ONU e potência óptica.</div>`:''}
-      ${!on?`<div class="alert red">❌ Cliente offline. Verificar ONU, roteador e cabo.</div>`:''}
-      <button onclick="executarPing(${r.id})" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:0">📡 Executar Ping</button>
+      ${!on?`<div class="alert red">❌ Cliente offline — verificar ONU, roteador e cabo.</div>`:`<div class="alert">✅ Cliente online e conectado.</div>`}
+      <button onclick="executarPing(${loginIxcId})" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:4px">📡 Executar Ping</button>
       <div id="ping-out"></div>`;
+
   } catch(e){
     wrap.innerHTML=`<div style="padding:10px 12px;color:var(--red);font-size:13px">Erro: ${e.message}</div>`;
   }
