@@ -336,6 +336,12 @@ const $  = id => document.getElementById(id);
 const ld = v  => $('ld').classList.toggle('show', v);
 function hoje(){ return new Date().toISOString().slice(0,10); }
 function fmtD(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
+function fmtDH(dt){
+  if(!dt) return '—';
+  const d = new Date(dt);
+  if(isNaN(d)) return String(dt).slice(0,16);
+  return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
 function toast(msg, dur=2500){
   const el=$('toast'); el.textContent=msg; el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'), dur);
@@ -553,6 +559,23 @@ async function abrirDet(id){
     ${os.pecas?`<div class="drow"><span class="dlab">Peças</span><span class="dval">${os.pecas}</span></div>`:''}
     ${os.obs?`<div class="drow"><span class="dlab">Obs.</span><span class="dval">${os.obs}</span></div>`:''}
   </div>`;
+
+  // Histórico de status
+  const histItems = [
+    {ico:'📋', label:'Aberta',    ts: os.data ? os.data+'T00:00:00' : null},
+    {ico:'✋', label:'Assumida',   ts: os.assumido_em},
+    {ico:'🔧', label:'Executando', ts: os.executando_em},
+    {ico:'✅', label:'Finalizada', ts: os.finalizado_em},
+  ].filter(h=>h.ts);
+  if(histItems.length){
+    html += `<div class="row-sec">
+      <div class="row-sec-title">⏱ Histórico de Status</div>
+      ${histItems.map((h,i)=>`<div class="drow" style="${i===histItems.length-1?'border-bottom:none':''}">
+        <span class="dlab" style="display:flex;align-items:center;gap:5px">${h.ico} ${h.label}</span>
+        <span class="dval" style="font-family:monospace;font-size:12px">${fmtDH(h.ts)}</span>
+      </div>`).join('')}
+    </div>`;
+  }
 
   // Diagnóstico IXC (se tiver login)
   if(os.login_cliente){
