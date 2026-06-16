@@ -2176,10 +2176,11 @@ textarea.cp-form-input{resize:vertical}
     <div class="modal-overlay" id="modal-novo-usuario">
       <div class="modal md">
         <div class="modal-header">
-          <div class="modal-title">Novo usuário</div>
+          <div class="modal-title" id="mu-titulo">Novo usuário</div>
           <button class="modal-close" onclick="fecharModal('modal-novo-usuario')">✕</button>
         </div>
         <div class="modal-body">
+          <input type="hidden" id="mu-id">
           <div class="form-grid">
             <div class="form-group full">
               <label class="form-label">Nome completo <span>*</span></label>
@@ -2190,8 +2191,9 @@ textarea.cp-form-input{resize:vertical}
               <input type="email" class="full" id="mu-email" placeholder="email@empresa.com"/>
             </div>
             <div class="form-group">
-              <label class="form-label">Senha <span>*</span></label>
+              <label class="form-label" id="mu-senha-label">Senha <span>*</span></label>
               <input type="password" class="full" id="mu-senha" placeholder="Mínimo 6 caracteres"/>
+              <div id="mu-senha-hint" style="display:none;font-size:11px;color:var(--text3);margin-top:4px">Deixe em branco para não alterar a senha</div>
             </div>
             <div class="form-group">
               <label class="form-label">Perfil de acesso <span>*</span></label>
@@ -2199,13 +2201,14 @@ textarea.cp-form-input{resize:vertical}
                 <option value="admin">Administrador</option>
                 <option value="operador">Operador</option>
                 <option value="visualizador" selected>Visualizador</option>
+                <option value="user">Usuário</option>
               </select>
             </div>
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn" onclick="fecharModal('modal-novo-usuario')">Cancelar</button>
-          <button class="btn btn-primary" onclick="salvarNovoUsuario()">Criar usuário</button>
+          <button class="btn btn-primary" id="mu-btn-salvar" onclick="salvarNovoUsuario()">Criar usuário</button>
         </div>
       </div>
     </div>
@@ -7671,30 +7674,64 @@ async function fazerLogout(semConfirm){
   location.reload();
 }
 
-// Cadastro de usuário (apenas pelo admin, cria via Supabase Auth)
+// Cadastro e edição de usuário (apenas pelo admin)
 function abrirCadastroUsuario(){
+  document.getElementById('mu-id').value='';
+  document.getElementById('mu-titulo').textContent='Novo usuário';
   document.getElementById('mu-nome').value='';
   document.getElementById('mu-email').value='';
+  document.getElementById('mu-email').disabled=false;
   document.getElementById('mu-senha').value='';
+  document.getElementById('mu-senha-label').innerHTML='Senha <span>*</span>';
+  document.getElementById('mu-senha-hint').style.display='none';
   document.getElementById('mu-perfil').value='visualizador';
+  document.getElementById('mu-btn-salvar').textContent='Criar usuário';
+  abrirModal('modal-novo-usuario');
+}
+
+function editarUsuario(id, nome, email, perfil){
+  document.getElementById('mu-id').value=id;
+  document.getElementById('mu-titulo').textContent='Editar usuário';
+  document.getElementById('mu-nome').value=nome;
+  document.getElementById('mu-email').value=email;
+  document.getElementById('mu-email').disabled=true;
+  document.getElementById('mu-senha').value='';
+  document.getElementById('mu-senha-label').innerHTML='Nova senha <span style="color:var(--text3);font-weight:400">(opcional)</span>';
+  document.getElementById('mu-senha-hint').style.display='';
+  document.getElementById('mu-perfil').value=perfil||'user';
+  document.getElementById('mu-btn-salvar').textContent='Salvar alterações';
   abrirModal('modal-novo-usuario');
 }
 
 async function salvarNovoUsuario(){
+  const id=document.getElementById('mu-id').value;
   const nome=document.getElementById('mu-nome').value.trim();
   const email=document.getElementById('mu-email').value.trim().toLowerCase();
   const senha=document.getElementById('mu-senha').value;
   const perfil=document.getElementById('mu-perfil').value;
-  if(!nome||!email||!senha){showToast('Preencha todos os campos.',true);return;}
-  if(senha.length<6){showToast('Senha precisa ter pelo menos 6 caracteres.',true);return;}
 
+  if(!nome){showToast('Preencha o nome.',true);return;}
+  if(!id && !email){showToast('Informe o e-mail.',true);return;}
+  if(!id && !senha){showToast('Informe uma senha para o novo usuário.',true);return;}
+  if(senha && senha.length<6){showToast('Senha precisa ter pelo menos 6 caracteres.',true);return;}
+
+  if(id){
+    // EDIÇÃO — atualiza nome e perfil no banco
+    const { error } = await sbClient.from('perfis').update({ nome, perfil }).eq('id', id);
+    if(error){showToast('Erro ao salvar: '+error.message,true);return;}
+    fecharModal('modal-novo-usuario');
+    await renderUsuarios();
+    showToast(`✅ Usuário "${nome}" atualizado!`);
+    return;
+  }
+
+  // CRIAÇÃO — cria login no Supabase Auth
   const { data, error } = await sbClient.auth.signUp({
     email, password: senha,
     options: { data: { nome } }
   });
   if(error){showToast('Erro: '+error.message,true);return;}
 
-  // Atualiza o perfil com nome/perfil corretos
   if(data.user){
     await sbClient.from('perfis').upsert({
       id: data.user.id, nome, perfil, email,
@@ -7703,7 +7740,7 @@ async function salvarNovoUsuario(){
 
   fecharModal('modal-novo-usuario');
   await renderUsuarios();
-  showToast(`✅ Usuário "${nome}" criado! Já pode fazer login em movicontrol.vercel.app`);
+  showToast(`✅ Usuário "${nome}" criado! Já pode fazer login.`);
 }
 
 async function excluirUsuario(id){
@@ -7722,17 +7759,21 @@ async function renderUsuarios(){
   const perfilCor={admin:'s-recebido',operador:'s-a-receber',visualizador:'s-a-pagar',user:'s-a-pagar'};
   const tb=document.getElementById('tbody-usuarios');
   if(!tb)return;
-  if(error||!usuarios){tb.innerHTML='';return;}
+  if(error||!usuarios){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Erro ao carregar usuários.</td></tr>';return;}
+  const eu = (await sbClient.auth.getUser()).data?.user?.id;
   tb.innerHTML=usuarios.map(u=>`
     <tr>
-      <td><b>${u.nome||'-'}</b></td>
-      <td class="td-muted">${u.email||'-'}</td>
+      <td><b>${u.nome||'—'}</b></td>
+      <td class="td-muted">${u.email||'—'}</td>
       <td><span class="status-badge ${perfilCor[u.perfil]||''}">${perfilLabel[u.perfil]||u.perfil}</span></td>
-      <td class="td-muted td-mono">${u.criado_em?new Date(u.criado_em).toLocaleDateString('pt-BR'):'-'}</td>
+      <td class="td-muted td-mono">${u.criado_em?new Date(u.criado_em).toLocaleDateString('pt-BR'):'—'}</td>
       <td><div class="action-btns">
-        <button class="action-btn del" title="Excluir" onclick="excluirUsuario('${u.id}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        <button class="action-btn" title="Editar" onclick="editarUsuario('${u.id}','${(u.nome||'').replace(/'/g,"\\'")}','${u.email||''}','${u.perfil||''}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
+        ${u.id!==eu?`<button class="action-btn del" title="Excluir" onclick="excluirUsuario('${u.id}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>`:'<span style="font-size:10px;color:var(--text3);padding:4px">você</span>'}
       </div></td>
     </tr>`).join('');
 }
