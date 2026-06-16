@@ -1720,6 +1720,9 @@ textarea.cp-form-input{resize:vertical}
               <option value="__todos__">Todos (incluindo Abertos)</option>
             </select>
             <button class="btn btn-primary perm-edit" onclick="abrirModalChamado()">+ Novo Chamado</button>
+            <button class="btn" onclick="refreshChamados(this)" title="Atualizar chamados" style="padding:6px 10px">
+              <svg id="icon-refresh-ch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;display:block"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
           </div>
         </div>
         <div class="cp-tbl-wrap">
@@ -1756,6 +1759,9 @@ textarea.cp-form-input{resize:vertical}
               <option value="">Todos técnicos</option>
             </select>
             <button class="btn btn-primary perm-edit" onclick="abrirModalOS()">+ Nova OS</button>
+            <button class="btn" onclick="refreshOS(this)" title="Atualizar ordens de serviço" style="padding:6px 10px">
+              <svg id="icon-refresh-os" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;display:block"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
           </div>
         </div>
         <div class="cp-tbl-wrap">
@@ -8109,6 +8115,22 @@ function renderTecnicos(){
       </div></td>
     </tr>`;
   }).join('');
+}
+
+async function refreshChamados(btn){
+  if(btn){ btn.disabled=true; const ico=document.getElementById('icon-refresh-ch'); if(ico) ico.style.animation='spin .7s linear infinite'; }
+  await carregarCampo();
+  renderChamados();
+  if(btn){ btn.disabled=false; const ico=document.getElementById('icon-refresh-ch'); if(ico) ico.style.animation=''; }
+  showToast('Chamados atualizados!');
+}
+
+async function refreshOS(btn){
+  if(btn){ btn.disabled=true; const ico=document.getElementById('icon-refresh-os'); if(ico) ico.style.animation='spin .7s linear infinite'; }
+  await carregarCampo();
+  renderOS();
+  if(btn){ btn.disabled=false; const ico=document.getElementById('icon-refresh-os'); if(ico) ico.style.animation=''; }
+  showToast('OS atualizadas!');
 }
 
 // ============================================================
