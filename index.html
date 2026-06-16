@@ -1901,9 +1901,10 @@ textarea.cp-form-input{resize:vertical}
 
           <!-- Abas -->
           <div style="display:flex;border-bottom:1px solid var(--border);margin:-4px -16px 14px;padding:0 16px" id="os-tabs">
-            <div id="os-tab-servico"  onclick="osTab('servico')"  style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">🔧 Serviço</div>
-            <div id="os-tab-cliente" onclick="osTab('cliente')"  style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">👤 Cliente</div>
-            <div id="os-tab-diag"    onclick="osTab('diag')"     style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">📊 Diagnóstico IXC</div>
+            <div id="os-tab-servico"  onclick="osTab('servico')"   style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">🔧 Serviço</div>
+            <div id="os-tab-cliente"  onclick="osTab('cliente')"   style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">👤 Cliente</div>
+            <div id="os-tab-diag"     onclick="osTab('diag')"      style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">📊 Diagnóstico IXC</div>
+            <div id="os-tab-relatorio" onclick="osTab('relatorio')" style="display:none;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)">📋 Relatório</div>
           </div>
 
           <!-- Pane: Serviço -->
@@ -1968,6 +1969,11 @@ textarea.cp-form-input{resize:vertical}
               Vincule um cliente com login IXC para acessar o diagnóstico.
             </div>
             <div id="os-diag-content" style="display:none"></div>
+          </div>
+
+          <!-- Pane: Relatório de Atendimento -->
+          <div id="os-pane-relatorio" style="display:none">
+            <div id="os-relatorio-content"></div>
           </div>
 
         </div>
@@ -8456,6 +8462,7 @@ function renderChamados(){
       <td><div class="action-btns">
         <button class="action-btn" onclick="abrirModalChamado(${c.id})" title="${isAberto?'Visualizar':'Editar'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         ${!isAberto ? `<button class="action-btn" onclick="abrirModalSelecionarTecnico(${c.id})" title="Abrir Ordem de Serviço" style="color:#185fa5;border-color:#185fa5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></button>` : `<button class="action-btn" onclick="irParaOS(${c.os_id})" title="Ver Ordem de Serviço vinculada" style="color:#639922;border-color:#639922"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 11 12 14 15 11"/></svg></button>`}
+        ${c.status==='concluido' && c.os_id ? `<button class="action-btn" onclick="verRelatorioOS(${c.os_id})" title="Ver Relatório de Atendimento" style="color:#639922;border-color:#639922;font-size:11px;padding:4px 8px;font-weight:600">📋 Relatório</button>` : ''}
         ${isAberto?'':`<button class="action-btn del" onclick="excluirChamado(${c.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>`}
       </div></td>
     </tr>`;
@@ -8599,10 +8606,108 @@ async function confirmarAbrirOS(){
   }
 }
 
+function verRelatorioOS(osId){
+  abrirModalOS(osId);
+  // osTab('relatorio') já é chamado pelo abrirModalOS quando status é finalizada
+}
+
 function irParaOS(osId){
   if(!osId) return;
   navTo('cp-os', document.querySelector('[data-page="cp-os"]'));
   setTimeout(()=>abrirModalOS(osId), 300);
+}
+
+function renderOsRelatorio(){
+  const el = document.getElementById('os-relatorio-content');
+  if(!el) return;
+  const id = document.getElementById('os-id').value;
+  const o  = _cpOS.find(x=>x.id==id);
+  if(!o){ el.innerHTML='<div style="text-align:center;padding:32px;color:var(--text3)">OS não encontrada.</div>'; return; }
+
+  const cli = window._osClienteAtual;
+  const fmtDH = dt=>{ if(!dt)return '—'; const d=new Date(dt); return isNaN(d)?dt:d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); };
+  const row = (l,v,mono=false) => `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:9px 14px;border-bottom:1px solid var(--border);font-size:13px;gap:12px">
+    <span style="color:var(--text2);flex-shrink:0">${l}</span>
+    <span style="font-weight:500;text-align:right${mono?';font-family:monospace':''}${!v||v==='—'?';color:var(--text3)':''}">${v||'—'}</span>
+  </div>`;
+  const sec = (title,body) => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">${title}</div>
+    ${body}
+  </div>`;
+
+  // Cabeçalho com identificação da OS
+  let html = `<div style="background:rgba(99,153,34,0.08);border:1px solid rgba(99,153,34,0.3);border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">
+    <div style="font-size:28px">✅</div>
+    <div>
+      <div style="font-weight:700;font-size:15px">Relatório de Atendimento — OS #${String(o.numero||0).padStart(4,'0')}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px">Finalizado em ${fmtDH(o.finalizado_em)} · Técnico: <strong>${o.tecnico_nome||'—'}</strong></div>
+    </div>
+  </div>`;
+
+  // Dados do cliente
+  html += sec('👤 Cliente',
+    row('Nome', o.cliente) +
+    row('Telefone', o.telefone) +
+    row('Endereço', o.endereco) +
+    (o.login_cliente ? row('Login PPPoE', o.login_cliente, true) : '')
+  );
+
+  // O que foi feito — destaque principal
+  html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px">
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:10px">✏️ Solução / O que foi feito</div>
+    <div style="font-size:14px;line-height:1.7;color:var(--text);${!o.solucao?'color:var(--text3);font-style:italic':''}">
+      ${o.solucao || 'Nenhuma solução registrada.'}
+    </div>
+  </div>`;
+
+  // Resultado técnico
+  const temSinal = o.sinal_fibra && o.sinal_fibra !== 'Não se aplica';
+  const temSpeed = o.speedtest_down || o.speedtest_up;
+  if(temSinal || temSpeed){
+    let tecBody = '';
+    if(temSinal) tecBody += row('📶 Sinal fibra/rádio', o.sinal_fibra);
+    if(temSpeed){
+      const down = o.speedtest_down ? o.speedtest_down+' Mbps' : '—';
+      const up   = o.speedtest_up   ? o.speedtest_up+' Mbps'   : '—';
+      tecBody += row('📡 Speedtest download', down);
+      tecBody += row('📡 Speedtest upload', up);
+    }
+    html += sec('📊 Resultado Técnico', tecBody);
+  }
+
+  // Observações
+  if(o.obs) html += sec('📝 Observações', `<div style="padding:12px 14px;font-size:13px;line-height:1.6">${o.obs}</div>`);
+
+  // Peças utilizadas
+  if(o.pecas) html += sec('🔩 Peças Utilizadas', `<div style="padding:12px 14px;font-size:13px">${o.pecas}</div>`);
+
+  // Histórico de status
+  const histItems = [
+    {ico:'📋', label:'Aberta',     ts: o.data ? o.data+'T00:00:00' : null},
+    {ico:'✋', label:'Assumida',    ts: o.assumido_em},
+    {ico:'🔧', label:'Executando',  ts: o.executando_em},
+    {ico:'✅', label:'Finalizada',  ts: o.finalizado_em},
+  ].filter(h=>h.ts);
+
+  if(histItems.length){
+    const corpo = histItems.map((h,i)=>
+      `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;${i<histItems.length-1?'border-bottom:1px solid var(--border)':''}">
+        <span style="font-size:18px">${h.ico}</span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${h.label}</div></div>
+        <span style="font-family:monospace;font-size:12px;color:var(--text2)">${fmtDH(h.ts)}</span>
+      </div>`
+    ).join('');
+    html += sec('⏱ Histórico de Status', corpo);
+
+    // Calcula duração total se tiver início e fim
+    if(o.assumido_em && o.finalizado_em){
+      const min = Math.round((new Date(o.finalizado_em)-new Date(o.assumido_em))/60000);
+      const dur = min < 60 ? `${min} min` : `${Math.floor(min/60)}h ${min%60}min`;
+      html += `<div style="text-align:center;font-size:12px;color:var(--text2);margin-bottom:12px">⏳ Duração total do atendimento: <strong>${dur}</strong></div>`;
+    }
+  }
+
+  el.innerHTML = html;
 }
 
 function renderOsClienteTab(){
@@ -8725,6 +8830,15 @@ function abrirModalOS(id){
       }
       // Botão Finalizar: mostra só se não está ainda finalizada/cancelada
       if(btnFin) btnFin.style.display = ['aberta','assumida','executando'].includes(o.status) ? '' : 'none';
+
+      // Aba Relatório: aparece só quando finalizada
+      const tabRel = document.getElementById('os-tab-relatorio');
+      if(tabRel){
+        const finalizada = ['finalizada','concluida'].includes(o.status);
+        tabRel.style.display = finalizada ? '' : 'none';
+        // Abre direto no relatório se já estiver finalizada
+        if(finalizada){ setTimeout(()=>osTab('relatorio'), 50); return; }
+      }
 
       // Histórico de status
       const hist = document.getElementById('os-historico-status');
@@ -8879,6 +8993,7 @@ function renderOS(){
       <td><div class="action-btns">
         ${btnStatus}
         <button class="action-btn" onclick="abrirModalOS(${o.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        ${['finalizada','concluida'].includes(o.status)?`<button class="action-btn" onclick="verRelatorioOS(${o.id})" title="Ver Relatório de Atendimento" style="color:#639922;border-color:#639922;font-size:11px;padding:4px 8px;font-weight:600">📋 Relatório</button>`:''}
         ${ativa?`<button class="action-btn del" onclick="excluirOS(${o.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>`:''}
       </div></td>
     </tr>`;
@@ -10159,14 +10274,15 @@ function preencherClienteOS(cli){
 
 // Abas da OS
 function osTab(nome){
-  ['servico','cliente','diag'].forEach(t=>{
-    const tab = document.getElementById('os-tab-'+t);
+  ['servico','cliente','diag','relatorio'].forEach(t=>{
+    const tab  = document.getElementById('os-tab-'+t);
     const pane = document.getElementById('os-pane-'+t);
     if(tab){ tab.style.borderBottomColor = t===nome ? 'var(--accent)' : 'transparent'; tab.style.color = t===nome ? 'var(--accent)' : 'var(--text2)'; }
     if(pane) pane.style.display = t===nome ? '' : 'none';
   });
-  if(nome === 'cliente') renderOsClienteTab();
-  if(nome === 'diag') carregarDiagOS();
+  if(nome === 'cliente')   renderOsClienteTab();
+  if(nome === 'diag')      carregarDiagOS();
+  if(nome === 'relatorio') renderOsRelatorio();
 }
 
 // Diagnóstico embutido na OS
