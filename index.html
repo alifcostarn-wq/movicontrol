@@ -1934,7 +1934,12 @@ textarea.cp-form-input{resize:vertical}
               <div class="form-group"><label class="form-label">Peças Utilizadas</label><input class="cp-form-input" id="os-pecas" placeholder="Ex: Cabo UTP 10m, ONU…"></div>
             </div>
             <div class="form-grid full"><div class="form-group"><label class="form-label">Observações</label><textarea class="cp-form-input" id="os-obs" rows="2" placeholder="Observações adicionais…"></textarea></div></div>
-          </div>
+
+            <!-- Histórico de status (só exibe quando editando OS existente) -->
+            <div id="os-historico-status" style="display:none;margin-top:4px">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:8px">⏱ Histórico de Status</div>
+              <div id="os-historico-linhas" style="display:flex;flex-direction:column;gap:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden"></div>
+            </div>
 
           <!-- Pane: Cliente -->
           <div id="os-pane-cliente" style="display:none">
@@ -7931,6 +7936,13 @@ let _cpEstoque  = [];
 
 function cpHoje(){ return new Date().toISOString().slice(0,10); }
 function cpFmtData(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
+function cpFmtDataHora(dt){
+  if(!dt) return '—';
+  // Suporta ISO string "2026-06-16T14:23:05Z" ou "2026-06-16T14:23:05.000Z"
+  const d = new Date(dt);
+  if(isNaN(d)) return String(dt).slice(0,16);
+  return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
 function cpIniciais(n){ return (n||'?').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
 const CP_CORES = ['#1A5C3A','#1A5CA0','#8A6200','#6B2FBB','#C25A00','#1A6C8A'];
 function cpCor(i){ return CP_CORES[i % CP_CORES.length]; }
@@ -8690,6 +8702,32 @@ function abrirModalOS(id){
       }
       // Botão Finalizar: mostra só se não está ainda finalizada/cancelada
       if(btnFin) btnFin.style.display = ['aberta','assumida','executando'].includes(o.status) ? '' : 'none';
+
+      // Histórico de status
+      const hist = document.getElementById('os-historico-status');
+      const histLinhas = document.getElementById('os-historico-linhas');
+      if(hist && histLinhas){
+        const linhas = [
+          { ico:'📋', label:'Aberta',     ts: o.data ? o.data+'T00:00:00' : null },
+          { ico:'✋', label:'Assumida',    ts: o.assumido_em },
+          { ico:'🔧', label:'Executando',  ts: o.executando_em },
+          { ico:'✅', label:'Finalizada',  ts: o.finalizado_em },
+        ].filter(l => l.ts);
+        if(linhas.length){
+          hist.style.display='';
+          histLinhas.innerHTML = linhas.map((l,i)=>`
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;${i<linhas.length-1?'border-bottom:1px solid var(--border)':''}">
+              <span style="font-size:16px">${l.ico}</span>
+              <div>
+                <div style="font-size:12.5px;font-weight:500">${l.label}</div>
+                <div style="font-size:11px;color:var(--text3)">${cpFmtDataHora(l.ts)}</div>
+              </div>
+              ${i===linhas.length-1?'<span style="margin-left:auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(99,153,34,0.15);color:#3B6D11">Atual</span>':''}
+            </div>`).join('');
+        } else {
+          hist.style.display='none';
+        }
+      }
     }
   } else {
     ['os-cliente','os-telefone','os-endereco','os-descricao','os-login-cliente','os-pecas','os-obs'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
@@ -8806,7 +8844,14 @@ function renderOS(){
       <td style="font-size:12px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${o.descricao}">${o.descricao}</td>
       <td style="font-size:12px">${o.tecnico_nome||'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="cp-prio ${prMap[o.prioridade]||'cp-prio-media'}">${(o.prioridade||'media').charAt(0).toUpperCase()+(o.prioridade||'media').slice(1)}</span></td>
-      <td><span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span></td>
+      <td>
+        <span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span>
+        <div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">
+          ${o.assumido_em   ?`<span style="font-size:10px;color:var(--text3)">✋ ${cpFmtDataHora(o.assumido_em)}</span>`:''}
+          ${o.executando_em ?`<span style="font-size:10px;color:var(--text3)">🔧 ${cpFmtDataHora(o.executando_em)}</span>`:''}
+          ${o.finalizado_em ?`<span style="font-size:10px;color:var(--text3)">✅ ${cpFmtDataHora(o.finalizado_em)}</span>`:''}
+        </div>
+      </td>
       <td style="font-size:12px;color:var(--text3)">${cpFmtData(o.data)}</td>
       <td><div class="action-btns">
         ${btnStatus}
