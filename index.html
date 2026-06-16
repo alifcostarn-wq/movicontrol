@@ -3376,6 +3376,8 @@ const _SYNC_MAP = {
       statusContrato: r.status_contrato, statusAcesso: r.status_acesso,
       valor: r.valor, dataAtivacao: r.data_ativacao,
       dataRenovacao: r.data_renovacao, pagoAte: r.pago_ate,
+      velocidadeMbps: r.velocidade_mbps,
+      idPlanoVenda: r.id_plano_venda,
     }),
   },
   sf_clientes_logins: {
@@ -3555,13 +3557,29 @@ async function _syncDiff(key, oldArr, newArr){
 }
 
 // ---------- Carrega todas as tabelas do Supabase para o cache ----------
+// Busca todos os registros de uma tabela paginando em blocos de 1000
+async function sbSelectAll(table, orderCol='id'){
+  const PAGE = 1000;
+  let todos = [], pagina = 0, continua = true;
+  while(continua){
+    const from = pagina * PAGE;
+    const { data, error } = await sbClient
+      .from(table).select('*')
+      .order(orderCol, { ascending: true })
+      .range(from, from + PAGE - 1);
+    if(error || !data?.length) break;
+    todos = todos.concat(data);
+    continua = data.length === PAGE;
+    pagina++;
+  }
+  return todos;
+}
+
 async function loadAllFromSupabase(){
   for(const key of Object.keys(_SYNC_MAP)){
     const { table, fromRow } = _SYNC_MAP[key];
-    const { data, error } = await sbClient.from(table).select('*').order('id', { ascending: true });
-    if(!error && data){
-      _cache[key] = data.map(fromRow);
-    }
+    const data = await sbSelectAll(table);
+    _cache[key] = data.map(fromRow);
   }
   // Pós-processamento: contaIdx das movimentações depende de sf_bancos já carregado
   _cache.sf_mov_bancarias = _cache.sf_mov_bancarias.map(m=>({
