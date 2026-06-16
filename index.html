@@ -7694,14 +7694,16 @@ async function salvarNovoUsuario(){
   });
   if(error){showToast('Erro: '+error.message,true);return;}
 
-  // Atualiza o perfil (criado automaticamente via trigger) com nome/perfil corretos
+  // Atualiza o perfil com nome/perfil corretos
   if(data.user){
-    await sbClient.from('perfis').update({ nome, perfil }).eq('id', data.user.id);
+    await sbClient.from('perfis').upsert({
+      id: data.user.id, nome, perfil, email,
+    }, { onConflict:'id' });
   }
 
   fecharModal('modal-novo-usuario');
-  renderUsuarios();
-  showToast('Usuário criado com sucesso!');
+  await renderUsuarios();
+  showToast(`✅ Usuário "${nome}" criado! Já pode fazer login em movicontrol.vercel.app`);
 }
 
 async function excluirUsuario(id){
@@ -8067,7 +8069,9 @@ async function salvarTecnico(){
   if(signErr){ showToast('Erro ao criar login: '+signErr.message, true); return; }
 
   if(data.user){
-    await sbClient.from('perfis').update({ nome, perfil:'tecnico' }).eq('id', data.user.id);
+    await sbClient.from('perfis').upsert({
+      id: data.user.id, nome, perfil:'tecnico', email,
+    }, { onConflict:'id' });
   }
 
   const { error } = await sbClient.from('campo_tecnicos').insert({
