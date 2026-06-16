@@ -8118,19 +8118,40 @@ function abrirModalChamado(id){
   if(id){
     const c = _cpChamados.find(x=>x.id==id);
     if(c){
-      document.getElementById('ch-cliente').value     = c.cliente||'';
-      document.getElementById('ch-telefone').value    = c.telefone||'';
-      document.getElementById('ch-endereco').value    = c.endereco||'';
-      document.getElementById('ch-localizacao').value = c.localizacao||'';
+      document.getElementById('ch-cliente').value       = c.cliente||'';
+      document.getElementById('ch-telefone').value      = c.telefone||'';
+      document.getElementById('ch-endereco').value      = c.endereco||'';
+      document.getElementById('ch-localizacao').value   = c.localizacao||'';
       document.getElementById('ch-login-cliente').value = c.login_cliente||'';
-      document.getElementById('ch-descricao').value   = c.descricao||'';
-      document.getElementById('ch-prioridade').value  = c.prioridade||'media';
-      document.getElementById('ch-tecnico').value     = c.tecnico_id||'';
-      document.getElementById('ch-status').value      = c.status||'novo';
-      // Recarrega cliente vinculado se tiver cliente_id salvo
+      document.getElementById('ch-descricao').value     = c.descricao||'';
+      document.getElementById('ch-prioridade').value    = c.prioridade||'media';
+      document.getElementById('ch-tecnico').value       = c.tecnico_id||'';
+      document.getElementById('ch-status').value        = c.status||'novo';
+      // Recarrega dados do cliente vinculado SEM sobrescrever o nome já salvo no chamado
       if(c.cliente_id){
         const cli = gd('sf_clientes').find(x=>String(x.id)===String(c.cliente_id)||x.ixcId===c.cliente_id);
-        if(cli){ preencherClienteChamado(cli); }
+        if(cli){
+          window._chamadoClienteAtual = cli;
+          document.getElementById('ch-cliente-id').value = cli.id||'';
+          if(badge) badge.style.display='';
+          // Preenche card de dados do cliente sem alterar o campo ch-cliente
+          const logins = gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
+          const login = logins.find(l=>l.login===c.login_cliente)||logins[0]||null;
+          const contrato = _getContratoAtivo(cli);
+          const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','I':'Inativo','N':'Negativado'};
+          const st = cli.statusContrato || statusLegacy[cli.ixcStatus] || '—';
+          const end = [cli.end,cli.numero,cli.complemento,cli.bairro,cli.cidade,cli.uf].filter(Boolean).join(', ');
+          if(dadosDiv){
+            dadosDiv.style.display='';
+            const s=(id2,v)=>{const el=document.getElementById(id2);if(el)el.textContent=v||'—';};
+            s('ch-dados-end', end);
+            s('ch-dados-tel', cli.tel1||cli.whatsapp||'—');
+            s('ch-dados-login', login?.login||cli.ixcLogin||'—');
+            s('ch-dados-senha', login?.senha||cli.ixcSenha||'—');
+            s('ch-dados-status', st);
+            s('ch-dados-plano', contrato?.plano||'—');
+          }
+        }
       }
     }
     btnAbrir.style.display = (c && c.status==='aberto') ? 'none' : '';
