@@ -2198,10 +2198,9 @@ textarea.cp-form-input{resize:vertical}
             <div class="form-group">
               <label class="form-label">Perfil de acesso <span>*</span></label>
               <select class="full" id="mu-perfil">
-                <option value="admin">Administrador</option>
-                <option value="operador">Operador</option>
-                <option value="visualizador" selected>Visualizador</option>
-                <option value="user">Usuário</option>
+                <option value="admin">Administrador — acesso total</option>
+                <option value="operador">Operador — pode lançar e editar</option>
+                <option value="visualizador" selected>Visualizador — somente leitura</option>
               </select>
             </div>
           </div>
@@ -7674,7 +7673,7 @@ async function fazerLogout(semConfirm){
   location.reload();
 }
 
-// Cadastro e edição de usuário (apenas pelo admin)
+// Cadastro e edição de usuário (admin — usa funções administrativas do banco)
 function abrirCadastroUsuario(){
   document.getElementById('mu-id').value='';
   document.getElementById('mu-titulo').textContent='Novo usuário';
@@ -7694,11 +7693,13 @@ function editarUsuario(id, nome, email, perfil){
   document.getElementById('mu-titulo').textContent='Editar usuário';
   document.getElementById('mu-nome').value=nome;
   document.getElementById('mu-email').value=email;
-  document.getElementById('mu-email').disabled=true;
+  document.getElementById('mu-email').disabled=false; // admin pode alterar e-mail
   document.getElementById('mu-senha').value='';
   document.getElementById('mu-senha-label').innerHTML='Nova senha <span style="color:var(--text3);font-weight:400">(opcional)</span>';
   document.getElementById('mu-senha-hint').style.display='';
-  document.getElementById('mu-perfil').value=perfil||'user';
+  // Perfis legados (user) caem em visualizador
+  const perfilFixo = ['admin','operador','visualizador'].includes(perfil) ? perfil : 'visualizador';
+  document.getElementById('mu-perfil').value=perfilFixo;
   document.getElementById('mu-btn-salvar').textContent='Salvar alterações';
   abrirModal('modal-novo-usuario');
 }
@@ -7709,57 +7710,65 @@ async function salvarNovoUsuario(){
   const email=document.getElementById('mu-email').value.trim().toLowerCase();
   const senha=document.getElementById('mu-senha').value;
   const perfil=document.getElementById('mu-perfil').value;
+  const btn=document.getElementById('mu-btn-salvar');
 
   if(!nome){showToast('Preencha o nome.',true);return;}
-  if(!id && !email){showToast('Informe o e-mail.',true);return;}
+  if(!email){showToast('Informe o e-mail.',true);return;}
   if(!id && !senha){showToast('Informe uma senha para o novo usuário.',true);return;}
-  if(senha && senha.length<6){showToast('Senha precisa ter pelo menos 6 caracteres.',true);return;}
+  if(senha && senha.length<6){showToast('A senha precisa ter pelo menos 6 caracteres.',true);return;}
 
-  if(id){
-    // EDIÇÃO — atualiza nome e perfil no banco
-    const { error } = await sbClient.from('perfis').update({ nome, perfil }).eq('id', id);
-    if(error){showToast('Erro ao salvar: '+error.message,true);return;}
-    fecharModal('modal-novo-usuario');
-    await renderUsuarios();
-    showToast(`✅ Usuário "${nome}" atualizado!`);
-    return;
+  if(btn){ btn.disabled=true; btn.textContent= id ? 'Salvando...' : 'Criando...'; }
+
+  try {
+    if(id){
+      // EDIÇÃO — função do banco altera nome, e-mail, senha e perfil de uma vez
+      const { error } = await sbClient.rpc('admin_atualizar_usuario', {
+        p_id: id,
+        p_email: email || null,
+        p_senha: senha || null,
+        p_nome: nome || null,
+        p_perfil: perfil || null,
+      });
+      if(error){ showToast('Erro ao salvar: '+error.message, true); return; }
+      fecharModal('modal-novo-usuario');
+      await renderUsuarios();
+      showToast(`✅ Usuário "${nome}" atualizado!`);
+    } else {
+      // CRIAÇÃO — função do banco cria login + perfil, já confirmado
+      const { error } = await sbClient.rpc('admin_criar_usuario', {
+        p_email: email, p_senha: senha, p_nome: nome, p_perfil: perfil,
+      });
+      if(error){ showToast('Erro ao criar: '+error.message, true); return; }
+      fecharModal('modal-novo-usuario');
+      await renderUsuarios();
+      showToast(`✅ Usuário "${nome}" criado! Já pode fazer login.`);
+    }
+  } catch(e){
+    showToast('Erro: '+e.message, true);
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent = id ? 'Salvar alterações' : 'Criar usuário'; }
   }
-
-  // CRIAÇÃO — cria login no Supabase Auth
-  const { data, error } = await sbClient.auth.signUp({
-    email, password: senha,
-    options: { data: { nome } }
-  });
-  if(error){showToast('Erro: '+error.message,true);return;}
-
-  if(data.user){
-    await sbClient.from('perfis').upsert({
-      id: data.user.id, nome, perfil, email,
-    }, { onConflict:'id' });
-  }
-
-  fecharModal('modal-novo-usuario');
-  await renderUsuarios();
-  showToast(`✅ Usuário "${nome}" criado! Já pode fazer login.`);
 }
 
 async function excluirUsuario(id){
   const { data: { user } } = await sbClient.auth.getUser();
   if(user && user.id===id){showToast('Você não pode excluir sua própria conta.',true);return;}
-  if(!confirm('Excluir este usuário?'))return;
-  // Remove o perfil (o usuário do Auth deve ser removido pelo painel do Supabase)
-  await sbClient.from('perfis').delete().eq('id', id);
-  renderUsuarios();
-  showToast('Perfil excluído. Para remover o login, exclua o usuário também no painel do Supabase (Authentication > Users).');
+  if(!confirm('Excluir este usuário definitivamente? O login e o acesso serão removidos.'))return;
+  const { error } = await sbClient.rpc('admin_excluir_usuario', { p_id: id });
+  if(error){ showToast('Erro ao excluir: '+error.message, true); return; }
+  await renderUsuarios();
+  showToast('Usuário excluído com sucesso.');
 }
 
 async function renderUsuarios(){
-  const { data: usuarios, error } = await sbClient.from('perfis').select('*').order('criado_em',{ascending:true});
-  const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador',user:'Usuário'};
+  const { data: usuariosRaw, error } = await sbClient.from('perfis').select('*').order('criado_em',{ascending:true});
+  // Esconde técnicos da lista do sistema financeiro (gerenciados na aba Técnicos)
+  const usuarios = (usuariosRaw||[]).filter(u => u.perfil !== 'tecnico');
+  const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador',user:'Visualizador'};
   const perfilCor={admin:'s-recebido',operador:'s-a-receber',visualizador:'s-a-pagar',user:'s-a-pagar'};
   const tb=document.getElementById('tbody-usuarios');
   if(!tb)return;
-  if(error||!usuarios){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Erro ao carregar usuários.</td></tr>';return;}
+  if(error){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Erro ao carregar usuários.</td></tr>';return;}
   const eu = (await sbClient.auth.getUser()).data?.user?.id;
   tb.innerHTML=usuarios.map(u=>`
     <tr>
