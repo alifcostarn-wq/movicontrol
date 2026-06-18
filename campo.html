@@ -805,6 +805,32 @@ async function rapidoDet(status){
 }
 
 /* ---- DIAGNÓSTICO IXC ---- */
+// Mesma "assinatura" de chamada usada no MoviOne: URL/token/endpoint vão em cabeçalhos.
+async function ixcCall(endpoint, params={}){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), 20000);
+  try {
+    const resp = await fetch(_proxyUrl, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-ixc-url': _ixcUrl,
+        'x-ixc-token': _ixcToken,
+        'x-ixc-endpoint': endpoint,
+      },
+      body: JSON.stringify({ params: params||{}, rp: params?.rp || '1' }),
+      signal: ctrl.signal,
+    });
+    const text = await resp.text();
+    let data; try{ data = JSON.parse(text); }catch{ throw new Error('Resposta inválida do proxy: '+text.slice(0,100)); }
+    if(!resp.ok) throw new Error(data.hint||data.error||('erro HTTP '+resp.status));
+    return data;
+  } catch(e){
+    if(e.name==='AbortError') throw new Error('Proxy IXC não respondeu (timeout). Verifique o proxy/CORS.');
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
 async function carregarDiag(){
   if(!_aberta?.login_cliente) return;
   if(!_proxyUrl || !_ixcUrl || !_ixcToken){
@@ -816,13 +842,6 @@ async function carregarDiag(){
   const wrap = $('diag-wrap');
   wrap.innerHTML='<div style="text-align:center;padding:14px;color:var(--tx3)"><span class="spin-sm"></span> Buscando dados no IXC...</div>';
 
-  function ixcPost(endpoint, params={}){
-    return fetch(_proxyUrl,{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({endpoint, params, ixcUrl:_ixcUrl, ixcToken:_ixcToken})
-    }).then(r=>r.json());
-  }
-
   try {
     // Usa o ixc_id que já buscamos do Supabase (mais confiável que buscar por nome)
     const loginIxcId = _aberta._ixcLoginId;
@@ -831,8 +850,8 @@ async function carregarDiag(){
       return;
     }
 
-    // Busca por ID — igual ao diagnóstico do MoviOne
-    const d = await ixcPost('radusuarios', {
+    // Busca por ID — mesmo contrato do diagnóstico do MoviOne
+    const d = await ixcCall('radusuarios', {
       qtype:'radusuarios.id', query:String(loginIxcId), oper:'=', rp:'1'
     });
     const r = (d.registros||[])[0];
@@ -876,9 +895,7 @@ async function executarPing(loginId){
   const out=$('ping-out'); if(!out) return;
   out.innerHTML='<div class="ping-out"><span class="spin-sm"></span> Pingando...</div>';
   try {
-    const r = await fetch(_proxyUrl,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({endpoint:`radusuarios/${loginId}/ping`,params:{},ixcUrl:_ixcUrl,ixcToken:_ixcToken})});
-    const d = await r.json();
+    const d = await ixcCall(`radusuarios/${loginId}/ping`, { rp:'1' });
     const txt = d.resultado||d.result||d.output||JSON.stringify(d,null,2);
     out.innerHTML='<div class="ping-out">'+String(txt).split('\n').map(l=>{
       if(l.includes('bytes from')||l.includes('time=')) return`<span class="p-ok">${l}</span>`;
