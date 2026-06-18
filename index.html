@@ -1806,6 +1806,7 @@ textarea.cp-form-input{resize:vertical}
         <div class="cp-card-header">
           <span class="cp-card-title">📦 Estoque de Peças</span>
           <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+            <select class="cp-filter-select" onchange="selecionarSubEstoque(this.value)" id="est-sub-sel" style="font-weight:600"></select>
             <input class="cp-search-input" type="text" placeholder="Buscar peça ou código…" oninput="renderEstoque()" id="est-search">
             <select class="cp-filter-select" onchange="renderEstoque()" id="est-fil">
               <option value="">Todos</option>
@@ -1813,12 +1814,15 @@ textarea.cp-form-input{resize:vertical}
               <option value="baixo">Estoque baixo</option>
               <option value="zero">Zerado</option>
             </select>
+            <button class="btn perm-edit" onclick="abrirModalEntrada()" title="Entrada no Estoque Principal">📥 Entrada</button>
+            <button class="btn perm-edit" onclick="abrirModalTransfer()" title="Transferir para um técnico">🔄 Transferir</button>
+            <button class="btn perm-edit" onclick="abrirModalSubEstoques()" title="Gerenciar sub-estoques">🗂 Sub-estoques</button>
             <button class="btn btn-primary perm-edit" onclick="abrirModalPeca()">+ Nova Peça</button>
           </div>
         </div>
         <div class="cp-tbl-wrap">
           <table class="cp-tbl">
-            <thead><tr><th>Peça</th><th>Código</th><th>Categoria</th><th>Qtd Atual</th><th>Mínimo</th><th>Nível</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Peça</th><th>Código</th><th>Categoria</th><th>Saldo (local)</th><th>Mínimo</th><th>Nível</th><th>Ações</th></tr></thead>
             <tbody id="tb-estoque"></tbody>
           </table>
         </div>
@@ -2078,7 +2082,7 @@ textarea.cp-form-input{resize:vertical}
           <div class="form-grid"><div class="form-group"><label class="form-label">Nome<span>*</span></label><input class="cp-form-input" id="peca-nome" placeholder="Ex: ONU GPON 1 porta"></div><div class="form-group"><label class="form-label">Código (SKU)</label><input class="cp-form-input" id="peca-sku" placeholder="Ex: ONU-GP1P"></div></div>
           <div class="form-grid"><div class="form-group"><label class="form-label">Categoria</label><input class="cp-form-input" id="peca-categoria" placeholder="Ex: ONUs, Cabos…"></div><div class="form-group"><label class="form-label">Unidade</label><select class="cp-form-select" id="peca-unidade"><option>unid.</option><option>metro</option><option>rolo</option><option>par</option><option>cx</option></select></div></div>
           <div class="form-grid trio">
-            <div class="form-group"><label class="form-label">Qtd Atual<span>*</span></label><input class="cp-form-input" type="number" id="peca-qtd" placeholder="0" min="0"></div>
+            <div class="form-group" id="peca-qtd-group"><label class="form-label" id="peca-qtd-lbl">Qtd inicial (Principal)</label><input class="cp-form-input" type="number" id="peca-qtd" placeholder="0" min="0"></div>
             <div class="form-group"><label class="form-label">Qtd Mínima</label><input class="cp-form-input" type="number" id="peca-min" placeholder="0" min="0"></div>
             <div class="form-group"><label class="form-label">Valor Unit. R$</label><input class="cp-form-input" type="number" id="peca-valor" placeholder="0.00" step="0.01" min="0"></div>
           </div>
@@ -2087,20 +2091,57 @@ textarea.cp-form-input{resize:vertical}
       </div>
     </div>
 
-    <div class="modal-overlay" id="modal-mov">
+    <!-- Modal: Entrada no estoque -->
+    <div class="modal-overlay" id="modal-entrada">
       <div class="modal sm">
         <div class="modal-header">
-          <span class="modal-title">Movimentar Estoque</span>
-          <button class="modal-close" onclick="fecharModal('modal-mov')">✕</button>
+          <span class="modal-title">📥 Entrada de Estoque</span>
+          <button class="modal-close" onclick="fecharModal('modal-entrada')">✕</button>
         </div>
         <div class="modal-body">
-          <input type="hidden" id="mov-id">
-          <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:14px" id="mov-nome">—</div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Tipo</label><select class="cp-form-select" id="mov-tipo"><option value="entrada">📥 Entrada (adicionar)</option><option value="saida">📤 Saída (retirar)</option></select></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Quantidade<span>*</span></label><input class="cp-form-input" type="number" id="mov-qtd" placeholder="0" min="1"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo / OS</label><input class="cp-form-input" id="mov-motivo" placeholder="Ex: OS #0001, compra fornecedor…"></div></div>
+          <div class="cp-info-box info">Registra recebimento/compra de peças num sub-estoque (normalmente o Principal).</div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Peça<span>*</span></label><select class="cp-form-select" id="ent-peca"></select></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Sub-estoque destino<span>*</span></label><select class="cp-form-select" id="ent-sub"></select></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Quantidade<span>*</span></label><input class="cp-form-input" type="number" id="ent-qtd" placeholder="0" min="1"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo</label><input class="cp-form-input" id="ent-motivo" placeholder="Ex: Compra NF 1234, ajuste inicial…"></div></div>
         </div>
-        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-mov')">Cancelar</button><button class="btn btn-primary" onclick="salvarMov()">Confirmar</button></div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-entrada')">Cancelar</button><button class="btn btn-primary" onclick="salvarEntrada()">Confirmar Entrada</button></div>
+      </div>
+    </div>
+
+    <!-- Modal: Transferência entre sub-estoques -->
+    <div class="modal-overlay" id="modal-transfer">
+      <div class="modal sm">
+        <div class="modal-header">
+          <span class="modal-title">🔄 Transferir Estoque</span>
+          <button class="modal-close" onclick="fecharModal('modal-transfer')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="cp-info-box info">Move peças do Principal para o estoque de um técnico (ou entre locais).</div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Peça<span>*</span></label><select class="cp-form-select" id="tr-peca" onchange="trAtualizaSaldo()"></select></div></div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Origem<span>*</span></label><select class="cp-form-select" id="tr-origem" onchange="trAtualizaSaldo()"></select></div><div class="form-group"><label class="form-label">Destino<span>*</span></label><select class="cp-form-select" id="tr-destino"></select></div></div>
+          <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px" id="tr-saldo">Saldo na origem: —</div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Quantidade<span>*</span></label><input class="cp-form-input" type="number" id="tr-qtd" placeholder="0" min="1"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo</label><input class="cp-form-input" id="tr-motivo" placeholder="Ex: Abastecimento do técnico…"></div></div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-transfer')">Cancelar</button><button class="btn btn-primary" onclick="salvarTransfer()">Confirmar Transferência</button></div>
+      </div>
+    </div>
+
+    <!-- Modal: Gerenciar sub-estoques -->
+    <div class="modal-overlay" id="modal-sub-estoques">
+      <div class="modal md">
+        <div class="modal-header">
+          <span class="modal-title">🗂 Sub-estoques</span>
+          <button class="modal-close" onclick="fecharModal('modal-sub-estoques')">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="cp-info-box info">Cada técnico só enxerga o próprio sub-estoque no app de campo. O Principal nunca fica visível para ele.</div>
+          <div id="sub-est-lista" style="margin-bottom:16px"></div>
+          <div class="form-section">➕ Novo sub-estoque de técnico</div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Técnico<span>*</span></label><select class="cp-form-select" id="sub-tec"></select></div><div class="form-group"><label class="form-label">Nome (opcional)</label><input class="cp-form-input" id="sub-nome" placeholder="Ex: Mochila João"></div></div>
+        </div>
+        <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-sub-estoques')">Fechar</button><button class="btn btn-primary" onclick="criarSubEstoque()">Criar sub-estoque</button></div>
       </div>
     </div>
 
@@ -7998,6 +8039,9 @@ let _cpTecnicos = [];
 let _cpChamados = [];
 let _cpOS       = [];
 let _cpEstoque  = [];
+let _cpSubEstoques = [];
+let _cpSaldos      = [];   // {peca_id, sub_estoque_id, qtd}
+let _estSubSel     = null; // sub-estoque selecionado na visão de estoque
 
 function cpHoje(){ return new Date().toISOString().slice(0,10); }
 function cpFmtData(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
@@ -8015,27 +8059,46 @@ function cpCor(i){ return CP_CORES[i % CP_CORES.length]; }
 // ---------- Carregamento ----------
 async function carregarCampo(){
   try{
-    const [{data:tecs},{data:chs},{data:oss},{data:est}] = await Promise.all([
+    const [{data:tecs},{data:chs},{data:oss},{data:est},{data:subs},{data:sal}] = await Promise.all([
       sbClient.from('campo_tecnicos').select('*').order('nome'),
       sbClient.from('campo_chamados').select('*').order('created_at',{ascending:false}),
       sbClient.from('campo_os').select('*').order('numero',{ascending:false}),
       sbClient.from('campo_estoque').select('*').order('nome'),
+      sbClient.from('campo_sub_estoques').select('*').order('tipo'),
+      sbClient.from('campo_estoque_saldo').select('peca_id,sub_estoque_id,qtd'),
     ]);
     _cpTecnicos = tecs || [];
     _cpChamados = chs  || [];
     _cpOS       = oss  || [];
     _cpEstoque  = est  || [];
+    _cpSubEstoques = subs || [];
+    _cpSaldos      = sal  || [];
+    if(!_estSubSel){ const pr=_cpSubEstoques.find(s=>s.tipo==='principal'); _estSubSel = pr?pr.id:(_cpSubEstoques[0]?.id||null); }
     atualizarBadgesCampo();
   }catch(e){
     console.error('Erro ao carregar módulo campo:', e);
   }
 }
 
+// Saldo de uma peça em um sub-estoque
+function cpSaldo(pecaId, subId){
+  const r = _cpSaldos.find(s=>s.peca_id==pecaId && s.sub_estoque_id==subId);
+  return r ? r.qtd : 0;
+}
+function cpSubNome(subId){
+  const s = _cpSubEstoques.find(x=>x.id==subId);
+  if(!s) return '—';
+  if(s.tipo==='principal') return '🏢 '+s.nome;
+  const t = _cpTecnicos.find(t=>t.id==s.tecnico_id);
+  return '🧰 '+(s.nome||(t?t.nome:'Técnico'));
+}
+
 function atualizarBadgesCampo(){
   const novos = _cpChamados.filter(c=>c.status==='novo').length;
   const bdCh = document.getElementById('badge-cp-chamados');
   if(bdCh){ bdCh.style.display = novos>0?'':'none'; bdCh.textContent = novos; }
-  const alertas = _cpEstoque.filter(p=>p.qtd_atual<=p.qtd_minima).length;
+  const princ = _cpSubEstoques.find(s=>s.tipo==='principal');
+  const alertas = princ ? _cpEstoque.filter(p=>cpSaldo(p.id,princ.id) <= (p.qtd_minima||0)).length : 0;
   const bdEst = document.getElementById('badge-cp-estoque');
   if(bdEst) bdEst.style.display = alertas>0?'':'none';
 }
@@ -8735,6 +8798,9 @@ function renderOsRelatorio(){
   // Peças utilizadas
   if(o.pecas) html += sec('🔩 Peças Utilizadas', `<div style="padding:12px 14px;font-size:13px">${o.pecas}</div>`);
 
+  // Equipamentos registrados (MAC / Nº de série) — carregados do banco
+  html += `<div id="os-rel-equip"></div>`;
+
   // Histórico de status
   const histItems = [
     {ico:'📋', label:'Aberta',     ts: o.data ? o.data+'T00:00:00' : null},
@@ -8762,6 +8828,27 @@ function renderOsRelatorio(){
   }
 
   el.innerHTML = html;
+  carregarOsEquipamentos(o.id);
+}
+
+// Carrega equipamentos (MAC/série) registrados na OS e injeta no relatório
+async function carregarOsEquipamentos(osId){
+  const alvo = document.getElementById('os-rel-equip');
+  if(!alvo) return;
+  const { data, error } = await sbClient.from('campo_os_equipamentos')
+    .select('mac,serial,modelo,created_at').eq('os_id', osId).order('id');
+  if(error || !data || !data.length) return;
+  const linhas = data.map(e=>`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px">
+    <div>
+      ${e.mac?`<div style="font-family:monospace;font-weight:700;color:var(--accent)">${e.mac}</div>`:''}
+      ${e.serial?`<div style="font-size:12px;color:var(--text2)">SN: <span style="font-family:monospace">${e.serial}</span></div>`:''}
+      ${e.modelo?`<div style="font-size:11px;color:var(--text3)">${e.modelo}</div>`:''}
+    </div>
+  </div>`).join('');
+  alvo.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">📡 Equipamentos Instalados (${data.length})</div>
+    ${linhas}
+  </div>`;
 }
 
 function renderOsClienteTab(){
@@ -9057,9 +9144,18 @@ function renderOS(){
 // ============================================================
 // ESTOQUE
 // ============================================================
+function popularSubEstoqueSel(){
+  const sel = document.getElementById('est-sub-sel');
+  if(!sel) return;
+  sel.innerHTML = _cpSubEstoques.map(s=>`<option value="${s.id}" ${s.id==_estSubSel?'selected':''}>${cpSubNome(s.id)}</option>`).join('');
+}
+function selecionarSubEstoque(id){ _estSubSel = parseInt(id); renderEstoque(); }
+function subEstPrincipalId(){ const p=_cpSubEstoques.find(s=>s.tipo==='principal'); return p?p.id:null; }
+
 function abrirModalPeca(id){
   document.getElementById('peca-id').value = id || '';
   document.getElementById('tit-peca').textContent = id ? 'Editar Peça' : 'Nova Peça';
+  const grp = document.getElementById('peca-qtd-group');
   if(id){
     const p = _cpEstoque.find(x=>x.id==id);
     if(p){
@@ -9067,13 +9163,14 @@ function abrirModalPeca(id){
       document.getElementById('peca-sku').value = p.sku||'';
       document.getElementById('peca-categoria').value = p.categoria||'';
       document.getElementById('peca-unidade').value = p.unidade||'unid.';
-      document.getElementById('peca-qtd').value = p.qtd_atual;
       document.getElementById('peca-min').value = p.qtd_minima||0;
       document.getElementById('peca-valor').value = p.valor_unitario||0;
     }
+    if(grp) grp.style.display='none';   // saldo não se edita aqui (use Entrada)
   } else {
     ['peca-nome','peca-sku','peca-categoria','peca-qtd','peca-min','peca-valor'].forEach(f=>document.getElementById(f).value='');
     document.getElementById('peca-unidade').value='unid.';
+    if(grp) grp.style.display='';
   }
   abrirModal('modal-peca');
 }
@@ -9082,11 +9179,20 @@ async function salvarPeca(){
   const nome = document.getElementById('peca-nome').value.trim();
   if(!nome){ showToast('Informe o nome da peça.', true); return; }
   const id = document.getElementById('peca-id').value;
-  const obj = { nome, sku:document.getElementById('peca-sku').value.trim(), categoria:document.getElementById('peca-categoria').value.trim(), unidade:document.getElementById('peca-unidade').value, qtd_atual:parseInt(document.getElementById('peca-qtd').value)||0, qtd_minima:parseInt(document.getElementById('peca-min').value)||0, valor_unitario:parseFloat(document.getElementById('peca-valor').value)||0 };
-  const { error } = id
-    ? await sbClient.from('campo_estoque').update(obj).eq('id', id)
-    : await sbClient.from('campo_estoque').insert(obj);
-  if(error){ showToast('Erro: '+error.message, true); return; }
+  const obj = { nome, sku:document.getElementById('peca-sku').value.trim(), categoria:document.getElementById('peca-categoria').value.trim(), unidade:document.getElementById('peca-unidade').value, qtd_minima:parseInt(document.getElementById('peca-min').value)||0, valor_unitario:parseFloat(document.getElementById('peca-valor').value)||0 };
+  if(id){
+    const { error } = await sbClient.from('campo_estoque').update(obj).eq('id', id);
+    if(error){ showToast('Erro: '+error.message, true); return; }
+  } else {
+    const qtdIni = parseInt(document.getElementById('peca-qtd').value)||0;
+    const { data: nova, error } = await sbClient.from('campo_estoque').insert(obj).select('id').single();
+    if(error){ showToast('Erro: '+error.message, true); return; }
+    if(qtdIni>0){
+      const princ = subEstPrincipalId();
+      const { error: eEnt } = await sbClient.rpc('entrada_estoque', { p_peca_id: nova.id, p_sub_estoque_id: princ, p_qtd: qtdIni, p_motivo: 'Cadastro inicial' });
+      if(eEnt){ showToast('Peça criada, mas falhou a entrada inicial: '+eEnt.message, true); }
+    }
+  }
   fecharModal('modal-peca');
   await carregarCampo();
   renderEstoque();
@@ -9094,7 +9200,7 @@ async function salvarPeca(){
 }
 
 async function excluirPeca(id){
-  if(!confirm('Excluir esta peça?'))return;
+  if(!confirm('Excluir esta peça? Os saldos e o histórico dela serão removidos.'))return;
   const { error } = await sbClient.from('campo_estoque').delete().eq('id', id);
   if(error){ showToast('Erro: '+error.message, true); return; }
   await carregarCampo();
@@ -9102,73 +9208,177 @@ async function excluirPeca(id){
   showToast('Peça removida.');
 }
 
-function abrirMovEstoque(id){
-  const p = _cpEstoque.find(x=>x.id==id);
-  if(!p) return;
-  document.getElementById('mov-id').value = id;
-  document.getElementById('mov-nome').textContent = `${p.nome} — Estoque atual: ${p.qtd_atual} ${p.unidade}`;
-  document.getElementById('mov-tipo').value = 'entrada';
-  document.getElementById('mov-qtd').value = '';
-  document.getElementById('mov-motivo').value = '';
-  abrirModal('modal-mov');
+// ---------- ENTRADA ----------
+function popularPecaSelect(selId){
+  const sel = document.getElementById(selId);
+  if(!sel) return;
+  sel.innerHTML = `<option value="">— Selecione a peça —</option>` +
+    _cpEstoque.map(p=>`<option value="${p.id}">${p.nome}${p.sku?' ('+p.sku+')':''}</option>`).join('');
+}
+function popularSubSelect(selId, opts){
+  const sel = document.getElementById(selId);
+  if(!sel) return;
+  let lista = _cpSubEstoques.slice();
+  if(opts?.somenteTecnico) lista = lista.filter(s=>s.tipo==='tecnico');
+  sel.innerHTML = lista.map(s=>`<option value="${s.id}" ${opts?.def==s.id?'selected':''}>${cpSubNome(s.id)}</option>`).join('');
 }
 
-async function salvarMov(){
-  const id = document.getElementById('mov-id').value;
-  const tipo = document.getElementById('mov-tipo').value;
-  const qtd = parseInt(document.getElementById('mov-qtd').value)||0;
+function abrirModalEntrada(pecaId){
+  popularPecaSelect('ent-peca');
+  popularSubSelect('ent-sub', { def: subEstPrincipalId() });
+  if(pecaId) document.getElementById('ent-peca').value = pecaId;
+  document.getElementById('ent-qtd').value='';
+  document.getElementById('ent-motivo').value='';
+  abrirModal('modal-entrada');
+}
+async function salvarEntrada(){
+  const peca = parseInt(document.getElementById('ent-peca').value);
+  const sub  = parseInt(document.getElementById('ent-sub').value);
+  const qtd  = parseInt(document.getElementById('ent-qtd').value)||0;
+  if(!peca){ showToast('Selecione a peça.', true); return; }
+  if(!sub){ showToast('Selecione o sub-estoque.', true); return; }
   if(qtd<=0){ showToast('Informe uma quantidade válida.', true); return; }
-  const p = _cpEstoque.find(x=>x.id==id);
-  if(!p) return;
-  if(tipo==='saida' && p.qtd_atual<qtd){ showToast('Quantidade insuficiente no estoque!', true); return; }
-  const nova_qtd = tipo==='entrada' ? p.qtd_atual+qtd : p.qtd_atual-qtd;
-  const { error } = await sbClient.from('campo_estoque').update({ qtd_atual: nova_qtd }).eq('id', id);
+  const { error } = await sbClient.rpc('entrada_estoque', { p_peca_id:peca, p_sub_estoque_id:sub, p_qtd:qtd, p_motivo:document.getElementById('ent-motivo').value.trim()||null });
   if(error){ showToast('Erro: '+error.message, true); return; }
-  fecharModal('modal-mov');
+  fecharModal('modal-entrada');
   await carregarCampo();
   renderEstoque();
-  showToast(tipo==='entrada'?`+${qtd} adicionado ao estoque!`:`${qtd} retirado do estoque!`);
+  showToast(`+${qtd} em ${cpSubNome(sub)}!`);
+}
+
+// ---------- TRANSFERÊNCIA ----------
+function abrirModalTransfer(pecaId){
+  popularPecaSelect('tr-peca');
+  popularSubSelect('tr-origem', { def: subEstPrincipalId() });
+  popularSubSelect('tr-destino', { somenteTecnico:true });
+  if(pecaId) document.getElementById('tr-peca').value = pecaId;
+  document.getElementById('tr-qtd').value='';
+  document.getElementById('tr-motivo').value='';
+  trAtualizaSaldo();
+  abrirModal('modal-transfer');
+}
+function trAtualizaSaldo(){
+  const peca = parseInt(document.getElementById('tr-peca').value);
+  const orig = parseInt(document.getElementById('tr-origem').value);
+  const el = document.getElementById('tr-saldo');
+  if(peca && orig){ el.textContent = `Saldo na origem: ${cpSaldo(peca,orig)}`; }
+  else el.textContent = 'Saldo na origem: —';
+}
+async function salvarTransfer(){
+  const peca = parseInt(document.getElementById('tr-peca').value);
+  const orig = parseInt(document.getElementById('tr-origem').value);
+  const dest = parseInt(document.getElementById('tr-destino').value);
+  const qtd  = parseInt(document.getElementById('tr-qtd').value)||0;
+  if(!peca){ showToast('Selecione a peça.', true); return; }
+  if(!orig||!dest){ showToast('Selecione origem e destino.', true); return; }
+  if(orig===dest){ showToast('Origem e destino não podem ser iguais.', true); return; }
+  if(qtd<=0){ showToast('Informe uma quantidade válida.', true); return; }
+  const { error } = await sbClient.rpc('transferir_estoque', { p_peca_id:peca, p_sub_origem:orig, p_sub_destino:dest, p_qtd:qtd, p_motivo:document.getElementById('tr-motivo').value.trim()||null });
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  fecharModal('modal-transfer');
+  await carregarCampo();
+  renderEstoque();
+  showToast(`${qtd} transferido para ${cpSubNome(dest)}!`);
+}
+
+// ---------- SUB-ESTOQUES ----------
+function abrirModalSubEstoques(){
+  renderSubEstoquesLista();
+  const tecsSemEst = _cpTecnicos.filter(t=>t.status==='ativo' && !_cpSubEstoques.some(s=>s.tecnico_id==t.id));
+  const sel = document.getElementById('sub-tec');
+  sel.innerHTML = tecsSemEst.length
+    ? tecsSemEst.map(t=>`<option value="${t.id}">${t.nome}</option>`).join('')
+    : '<option value="">Todos os técnicos já têm estoque</option>';
+  document.getElementById('sub-nome').value='';
+  abrirModal('modal-sub-estoques');
+}
+function renderSubEstoquesLista(){
+  const el = document.getElementById('sub-est-lista');
+  el.innerHTML = _cpSubEstoques.map(s=>{
+    const itens = _cpSaldos.filter(x=>x.sub_estoque_id==s.id && x.qtd>0).length;
+    const fixo = s.tipo==='principal';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;margin-bottom:7px">
+      <div><div style="font-weight:600">${cpSubNome(s.id)}</div><div style="font-size:11px;color:var(--text3)">${itens} ${itens===1?'item':'itens'} com saldo${s.ativo?'':' · inativo'}</div></div>
+      ${fixo?'<span style="font-size:11px;color:var(--text3)">fixo</span>':`<button class="action-btn del" onclick="excluirSubEstoque(${s.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>`}
+    </div>`;
+  }).join('');
+}
+async function criarSubEstoque(){
+  const tecId = parseInt(document.getElementById('sub-tec').value);
+  if(!tecId){ showToast('Selecione um técnico.', true); return; }
+  const tec = _cpTecnicos.find(t=>t.id==tecId);
+  const nome = document.getElementById('sub-nome').value.trim() || ('Estoque '+(tec?tec.nome:'Técnico'));
+  const { error } = await sbClient.from('campo_sub_estoques').insert({ nome, tipo:'tecnico', tecnico_id:tecId, ativo:true });
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  await carregarCampo();
+  popularSubEstoqueSel();
+  abrirModalSubEstoques();
+  showToast('Sub-estoque criado!');
+}
+async function excluirSubEstoque(id){
+  const temSaldo = _cpSaldos.some(x=>x.sub_estoque_id==id && x.qtd>0);
+  if(temSaldo){ showToast('Há saldo neste sub-estoque. Transfira de volta antes de excluir.', true); return; }
+  if(!confirm('Excluir este sub-estoque?'))return;
+  const { error } = await sbClient.from('campo_sub_estoques').delete().eq('id', id);
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  if(_estSubSel==id) _estSubSel = subEstPrincipalId();
+  await carregarCampo();
+  popularSubEstoqueSel();
+  renderSubEstoquesLista();
+  renderEstoque();
+  showToast('Sub-estoque removido.');
 }
 
 function renderEstoque(){
   const tb = document.getElementById('tb-estoque');
   if(!tb) return;
+  popularSubEstoqueSel();
+  const subId = _estSubSel || subEstPrincipalId();
   const busca = (document.getElementById('est-search')?.value||'').toLowerCase();
   const fil = document.getElementById('est-fil')?.value||'';
 
+  const saldoDe = p => cpSaldo(p.id, subId);
   document.getElementById('kpi-est-total').textContent = _cpEstoque.length;
-  document.getElementById('kpi-est-ok').textContent = _cpEstoque.filter(p=>p.qtd_atual>p.qtd_minima).length;
-  document.getElementById('kpi-est-baixo').textContent = _cpEstoque.filter(p=>p.qtd_atual>0 && p.qtd_atual<=p.qtd_minima).length;
-  document.getElementById('kpi-est-zero').textContent = _cpEstoque.filter(p=>p.qtd_atual<=0).length;
+  document.getElementById('kpi-est-ok').textContent = _cpEstoque.filter(p=>saldoDe(p)>p.qtd_minima).length;
+  document.getElementById('kpi-est-baixo').textContent = _cpEstoque.filter(p=>saldoDe(p)>0 && saldoDe(p)<=p.qtd_minima).length;
+  document.getElementById('kpi-est-zero').textContent = _cpEstoque.filter(p=>saldoDe(p)<=0).length;
+
+  const ehPrincipal = _cpSubEstoques.find(s=>s.id==subId)?.tipo==='principal';
 
   const lista = _cpEstoque.filter(p=>{
+    const q = saldoDe(p);
     const mb = !busca || p.nome.toLowerCase().includes(busca) || (p.sku||'').toLowerCase().includes(busca);
     let ms = true;
-    if(fil==='ok') ms = p.qtd_atual>p.qtd_minima;
-    if(fil==='baixo') ms = p.qtd_atual>0 && p.qtd_atual<=p.qtd_minima;
-    if(fil==='zero') ms = p.qtd_atual<=0;
+    if(fil==='ok') ms = q>p.qtd_minima;
+    if(fil==='baixo') ms = q>0 && q<=p.qtd_minima;
+    if(fil==='zero') ms = q<=0;
     return mb && ms;
   });
 
   if(!lista.length){ tb.innerHTML=`<tr><td colspan="7" class="cp-empty-row"><div class="cp-empty-ico">📦</div>Nenhum item encontrado</td></tr>`; return; }
 
   tb.innerHTML = lista.map(p=>{
-    const pct = p.qtd_minima>0 ? Math.min(100,Math.round((p.qtd_atual/(p.qtd_minima*2))*100)) : (p.qtd_atual>0?100:0);
-    const niv = p.qtd_atual<=0 ? 'out' : p.qtd_atual<=p.qtd_minima ? 'low' : 'ok';
+    const q = saldoDe(p);
+    const pct = p.qtd_minima>0 ? Math.min(100,Math.round((q/(p.qtd_minima*2))*100)) : (q>0?100:0);
+    const niv = q<=0 ? 'out' : q<=p.qtd_minima ? 'low' : 'ok';
     const barC = niv==='out'?'cp-ebar-out':niv==='low'?'cp-ebar-low':'cp-ebar-ok';
     const qtdC = niv==='out'?'var(--danger)':niv==='low'?'var(--warn)':'var(--accent)';
+    const acoes = ehPrincipal
+      ? `<button class="action-btn perm-edit" onclick="abrirModalEntrada(${p.id})" title="Entrada"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+         <button class="action-btn perm-edit" onclick="abrirModalTransfer(${p.id})" title="Transferir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>`
+      : `<button class="action-btn perm-edit" onclick="abrirModalEntrada(${p.id})" title="Entrada neste local"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>`;
     return `<tr>
       <td><div style="font-weight:600">${p.nome}</div><div style="font-size:11px;color:var(--text3)">${p.categoria||''}</div></td>
       <td><code style="font-size:11px;background:var(--surface2);padding:2px 7px;border-radius:5px">${p.sku||'—'}</code></td>
       <td style="font-size:12px;color:var(--text3)">${p.categoria||'—'}</td>
-      <td><span style="font-weight:700;font-size:16px;color:${qtdC}">${p.qtd_atual}</span> <span style="font-size:11px;color:var(--text3)">${p.unidade}</span></td>
+      <td><span style="font-weight:700;font-size:16px;color:${qtdC}">${q}</span> <span style="font-size:11px;color:var(--text3)">${p.unidade}</span></td>
       <td style="font-size:12px;color:var(--text3)">${p.qtd_minima} ${p.unidade}</td>
       <td><div style="display:flex;align-items:center;gap:7px">
         <div class="cp-ebar-wrap"><div class="cp-ebar ${barC}" style="width:${pct}%"></div></div>
         ${niv==='out'?'<span class="cp-status cp-st-cancelado" style="font-size:10px">ZERADO</span>':niv==='low'?'<span class="cp-status cp-st-atribuido" style="font-size:10px">BAIXO</span>':'<span class="cp-status cp-st-concluido" style="font-size:10px">OK</span>'}
       </div></td>
       <td><div class="action-btns">
-        <button class="action-btn perm-edit" onclick="abrirMovEstoque(${p.id})" title="Movimentar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button>
+        ${acoes}
         <button class="action-btn" onclick="abrirModalPeca(${p.id})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="excluirPeca(${p.id})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
       </div></td>
