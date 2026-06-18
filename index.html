@@ -3620,37 +3620,58 @@ function sd(k,v){
 }
 
 // ---------- Sincronização incremental com Supabase ----------
-// Compara array antigo x novo e aplica inserts/updates/deletes no Supabase
+// Contador de gravações em andamento (evita perder dados ao recarregar no meio da gravação)
+let _pendingSync = 0;
+window.addEventListener('beforeunload', (e)=>{
+  if(_pendingSync > 0){ e.preventDefault(); e.returnValue = ''; return ''; }
+});
+
+// Compara array antigo x novo e aplica APENAS as diferenças (inserts/updates/deletes).
+// Agora: trata erros (avisa o usuário em vez de reverter em silêncio) e só atualiza o que mudou.
 async function _syncDiff(key, oldArr, newArr){
   const map = _SYNC_MAP[key];
   if(!map) return;
   const { table, toRow } = map;
 
-  const oldIds = new Set(oldArr.filter(x=>x.id!=null).map(x=>x.id));
-  const newIds = new Set(newArr.filter(x=>x.id!=null).map(x=>x.id));
+  _pendingSync++;
+  try {
+    const oldById = new Map(oldArr.filter(x=>x.id!=null).map(x=>[x.id, x]));
+    const newById = new Map(newArr.filter(x=>x.id!=null).map(x=>[x.id, x]));
 
-  // Deletados: estavam no old, não estão no new
-  const deletedIds = [...oldIds].filter(id=>!newIds.has(id));
-  if(deletedIds.length){
-    await sbClient.from(table).delete().in('id', deletedIds);
-  }
-
-  // Itens sem id => inserir (novos)
-  const toInsert = newArr.filter(x=>x.id==null);
-  for(const item of toInsert){
-    const row = toRow(item);
-    delete row.id;
-    const { data, error } = await sbClient.from(table).insert(row).select().single();
-    if(!error && data){
-      item.id = data.id; // atualiza o objeto no cache com o id gerado
+    // Deletados: estavam no old, não estão no new
+    const deletedIds = [...oldById.keys()].filter(id=>!newById.has(id));
+    if(deletedIds.length){
+      const { error } = await sbClient.from(table).delete().in('id', deletedIds);
+      if(error) throw error;
     }
-  }
 
-  // Itens com id => verifica se mudou e faz update (upsert simplificado)
-  const toUpdate = newArr.filter(x=>x.id!=null);
-  for(const item of toUpdate){
-    const row = toRow(item);
-    await sbClient.from(table).update(row).eq('id', item.id);
+    // Itens sem id => inserir (novos)
+    const toInsert = newArr.filter(x=>x.id==null);
+    for(const item of toInsert){
+      const row = toRow(item);
+      delete row.id;
+      const { data, error } = await sbClient.from(table).insert(row).select().single();
+      if(error) throw error;
+      if(data) item.id = data.id; // atualiza o objeto no cache com o id gerado
+    }
+
+    // Atualizados => SOMENTE os registros que realmente mudaram (diff por conteúdo)
+    for(const [id, item] of newById){
+      const oldItem = oldById.get(id);
+      const novoRow = toRow(item);
+      const mudou = !oldItem || JSON.stringify(toRow(oldItem)) !== JSON.stringify(novoRow);
+      if(mudou){
+        const { error } = await sbClient.from(table).update(novoRow).eq('id', id);
+        if(error) throw error;
+      }
+    }
+  } catch(err){
+    console.error('[sync] Falha ao gravar em', table, err);
+    if(typeof showToast === 'function'){
+      showToast('⚠️ Falha ao salvar no servidor. Verifique a conexão e recarregue para conferir.', true);
+    }
+  } finally {
+    _pendingSync--;
   }
 }
 
