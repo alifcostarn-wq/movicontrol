@@ -1305,8 +1305,8 @@ body:not(.valores-ocultos) .val-monetario{
 #page-usuarios.active{display:block}
 #page-config{display:none}
 #page-config.active{display:block}
-#page-cp-chamados,#page-cp-os,#page-cp-tecnicos,#page-cp-estoque{display:none}
-#page-cp-chamados.active,#page-cp-os.active,#page-cp-tecnicos.active,#page-cp-estoque.active{display:block}
+#page-cp-chamados,#page-cp-os,#page-cp-tecnicos,#page-cp-estoque,#page-cp-movimentacoes{display:none}
+#page-cp-chamados.active,#page-cp-os.active,#page-cp-tecnicos.active,#page-cp-estoque.active,#page-cp-movimentacoes.active{display:block}
 
 /* ---------- Permissões por perfil ---------- */
 /* Visualizador: somente leitura - sem criar/editar/excluir */
@@ -1606,6 +1606,10 @@ textarea.cp-form-input{resize:vertical}
       <span class="nav-label">Estoque</span>
       <span class="nav-badge warn" id="badge-cp-estoque" style="display:none">!</span>
     </button>
+    <button class="nav-item" data-page="cp-movimentacoes" data-tooltip="Movimentações" onclick="navTo('cp-movimentacoes',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      <span class="nav-label">Movimentações</span>
+    </button>
     <div class="nav-section" id="nav-sec-admin" style="display:none">Sistema</div>
     <button class="nav-item" id="nav-usuarios" data-page="usuarios" data-tooltip="Usuários" onclick="navTo('usuarios',this)" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -1824,6 +1828,39 @@ textarea.cp-form-input{resize:vertical}
           <table class="cp-tbl">
             <thead><tr><th>Peça</th><th>Código</th><th>Categoria</th><th>Saldo (local)</th><th>Mínimo</th><th>Nível</th><th>Ações</th></tr></thead>
             <tbody id="tb-estoque"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== CAMPO: MOVIMENTAÇÕES ====== -->
+    <div class="page" id="page-cp-movimentacoes">
+      <div class="cp-kpi-grid">
+        <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📥</div></div><div class="cp-kpi-num" id="kpi-mov-entrada">—</div><div class="cp-kpi-lbl">Entradas</div></div>
+        <div class="cp-kpi roxo"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--surface2)">🔄</div></div><div class="cp-kpi-num" id="kpi-mov-transf">—</div><div class="cp-kpi-lbl">Transferências</div></div>
+        <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">🔧</div></div><div class="cp-kpi-num" id="kpi-mov-consumo">—</div><div class="cp-kpi-lbl">Consumos em OS</div></div>
+        <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">📊</div></div><div class="cp-kpi-num" id="kpi-mov-total">—</div><div class="cp-kpi-lbl">Total no período</div></div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="cp-card-header">
+          <span class="cp-card-title">🔄 Histórico de Movimentações</span>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+            <input class="cp-search-input" type="text" placeholder="Buscar peça, motivo, OS…" oninput="renderMovimentacoes()" id="mov-search">
+            <select class="cp-filter-select" onchange="renderMovimentacoes()" id="mov-fil-tipo">
+              <option value="">Todos os tipos</option>
+              <option value="entrada">📥 Entrada</option>
+              <option value="transferencia">🔄 Transferência</option>
+              <option value="consumo_os">🔧 Consumo em OS</option>
+              <option value="ajuste">⚙️ Ajuste</option>
+            </select>
+            <select class="cp-filter-select" onchange="renderMovimentacoes()" id="mov-fil-sub"><option value="">Todos os locais</option></select>
+            <button class="btn perm-edit" onclick="carregarMovimentacoes(true)" title="Recarregar">↻ Atualizar</button>
+          </div>
+        </div>
+        <div class="cp-tbl-wrap">
+          <table class="cp-tbl">
+            <thead><tr><th>Data/Hora</th><th>Tipo</th><th>Peça</th><th>Qtd</th><th>Origem → Destino</th><th>OS</th><th>Responsável</th><th>Motivo</th></tr></thead>
+            <tbody id="tb-movimentacoes"></tbody>
           </table>
         </div>
       </div>
@@ -3747,6 +3784,7 @@ const PAGE_META={
   'cp-os':{title:'Ordens de Serviço',sub:'Controle de OS por técnico'},
   'cp-tecnicos':{title:'Técnicos',sub:'Cadastro e gestão de técnicos de campo'},
   'cp-estoque':{title:'Estoque de Peças',sub:'Controle de peças e materiais'},
+  'cp-movimentacoes':{title:'Movimentações de Estoque',sub:'Histórico de entradas, transferências e consumos'},
 };
 
 function navTo(page,btn){
@@ -3786,7 +3824,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
-  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque};
+  const renders={painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-movimentacoes':renderMovimentacoes};
   renders[page]?.();
   // Auto-sync IXC ao abrir a aba clientes (se configurado)
   if(page==='clientes' && typeof autoSyncIXC==='function') autoSyncIXC();
@@ -8042,6 +8080,8 @@ let _cpEstoque  = [];
 let _cpSubEstoques = [];
 let _cpSaldos      = [];   // {peca_id, sub_estoque_id, qtd}
 let _estSubSel     = null; // sub-estoque selecionado na visão de estoque
+let _cpMovs        = [];   // histórico de movimentações
+let _movCarregado  = false;
 
 function cpHoje(){ return new Date().toISOString().slice(0,10); }
 function cpFmtData(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
@@ -8074,6 +8114,7 @@ async function carregarCampo(){
     _cpSubEstoques = subs || [];
     _cpSaldos      = sal  || [];
     if(!_estSubSel){ const pr=_cpSubEstoques.find(s=>s.tipo==='principal'); _estSubSel = pr?pr.id:(_cpSubEstoques[0]?.id||null); }
+    _movCarregado = false; // força recarregar o histórico na próxima visita à aba
     atualizarBadgesCampo();
   }catch(e){
     console.error('Erro ao carregar módulo campo:', e);
@@ -9387,8 +9428,82 @@ function renderEstoque(){
 }
 
 // ============================================================
-// INTEGRAÇÃO IXC SOFT — Sincronização de clientes via proxy
+// MOVIMENTAÇÕES DE ESTOQUE (livro-razão campo_estoque_mov)
 // ============================================================
+const MOV_LB = { entrada:'📥 Entrada', transferencia:'🔄 Transferência', consumo_os:'🔧 Consumo OS', saida:'📤 Saída', ajuste:'⚙️ Ajuste' };
+const MOV_CL = { entrada:'cp-st-concluido', transferencia:'cp-st-atribuido', consumo_os:'cp-st-andamento', saida:'cp-st-cancelado', ajuste:'cp-st-novo' };
+
+async function carregarMovimentacoes(force){
+  if(_movCarregado && !force){ renderMovimentacoes(); return; }
+  const tb = document.getElementById('tb-movimentacoes');
+  if(tb) tb.innerHTML = `<tr><td colspan="8" class="cp-empty-row">Carregando…</td></tr>`;
+  const { data, error } = await sbClient.from('campo_estoque_mov')
+    .select('*, campo_estoque(nome,sku,unidade)')
+    .order('created_at',{ascending:false})
+    .limit(500);
+  if(error){ if(tb) tb.innerHTML = `<tr><td colspan="8" class="cp-empty-row">Erro: ${error.message}</td></tr>`; return; }
+  _cpMovs = data || [];
+  _movCarregado = true;
+  // popula filtro de sub-estoques
+  const sel = document.getElementById('mov-fil-sub');
+  if(sel){
+    const atual = sel.value;
+    sel.innerHTML = `<option value="">Todos os locais</option>` +
+      _cpSubEstoques.map(s=>`<option value="${s.id}">${cpSubNome(s.id)}</option>`).join('');
+    sel.value = atual;
+  }
+  renderMovimentacoes();
+}
+
+function renderMovimentacoes(){
+  const tb = document.getElementById('tb-movimentacoes');
+  if(!tb) return;
+  if(!_movCarregado){ carregarMovimentacoes(); return; }
+
+  const busca = (document.getElementById('mov-search')?.value||'').toLowerCase();
+  const fTipo = document.getElementById('mov-fil-tipo')?.value||'';
+  const fSub  = document.getElementById('mov-fil-sub')?.value||'';
+  const fmtDH = dt=>{ if(!dt)return '—'; const d=new Date(dt); return isNaN(d)?String(dt).slice(0,16):d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); };
+  const osNum = id=>{ const o=_cpOS.find(x=>x.id==id); return o?('#'+String(o.numero||0).padStart(4,'0')):('#'+id); };
+  const tecNome = id=>{ const t=_cpTecnicos.find(x=>x.id==id); return t?t.nome:'—'; };
+
+  const lista = _cpMovs.filter(m=>{
+    const nome = m.campo_estoque?.nome || '';
+    const mb = !busca || nome.toLowerCase().includes(busca) || (m.motivo||'').toLowerCase().includes(busca) || (m.os_id&&osNum(m.os_id).toLowerCase().includes(busca));
+    const mt = !fTipo || m.tipo===fTipo;
+    const ms = !fSub || String(m.sub_origem_id)===fSub || String(m.sub_destino_id)===fSub;
+    return mb && mt && ms;
+  });
+
+  // KPIs (sobre a lista filtrada)
+  document.getElementById('kpi-mov-entrada').textContent = lista.filter(m=>m.tipo==='entrada').length;
+  document.getElementById('kpi-mov-transf').textContent  = lista.filter(m=>m.tipo==='transferencia').length;
+  document.getElementById('kpi-mov-consumo').textContent = lista.filter(m=>m.tipo==='consumo_os').length;
+  document.getElementById('kpi-mov-total').textContent   = lista.length;
+
+  if(!lista.length){ tb.innerHTML=`<tr><td colspan="8" class="cp-empty-row"><div class="cp-empty-ico">🔄</div>Nenhuma movimentação encontrada</td></tr>`; return; }
+
+  tb.innerHTML = lista.map(m=>{
+    const nome = m.campo_estoque?.nome || 'Peça removida';
+    const un = m.campo_estoque?.unidade || '';
+    const seta = m.tipo==='entrada' ? `→ ${cpSubNome(m.sub_destino_id)}`
+              : m.tipo==='consumo_os' ? `${cpSubNome(m.sub_origem_id)} →`
+              : `${cpSubNome(m.sub_origem_id)} → ${cpSubNome(m.sub_destino_id)}`;
+    const sinal = (m.tipo==='consumo_os'||m.tipo==='saida') ? '−' : '+';
+    const cor = (m.tipo==='consumo_os'||m.tipo==='saida') ? 'var(--danger)' : 'var(--accent)';
+    const resp = m.tecnico_id ? tecNome(m.tecnico_id) : 'Admin/Operador';
+    return `<tr>
+      <td style="font-family:monospace;font-size:12px;color:var(--text2);white-space:nowrap">${fmtDH(m.created_at)}</td>
+      <td><span class="cp-status ${MOV_CL[m.tipo]||'cp-st-novo'}" style="font-size:10px;white-space:nowrap">${MOV_LB[m.tipo]||m.tipo}</span></td>
+      <td><div style="font-weight:600">${nome}</div></td>
+      <td><span style="font-weight:700;color:${cor}">${sinal}${m.qtd}</span> <span style="font-size:11px;color:var(--text3)">${un}</span></td>
+      <td style="font-size:12px;color:var(--text2);white-space:nowrap">${seta}</td>
+      <td style="font-size:12px">${m.os_id?`<a href="#" onclick="irParaOS(${m.os_id});return false" style="color:var(--info);font-weight:600;text-decoration:none">${osNum(m.os_id)}</a>`:'—'}</td>
+      <td style="font-size:12px;color:var(--text2)">${resp}</td>
+      <td style="font-size:12px;color:var(--text3)">${m.motivo||'—'}</td>
+    </tr>`;
+  }).join('');
+}
 const IXC_CFG_KEY = 'sf_ixc_config';
 const IXC_LAST_SYNC_KEY = 'sf_ixc_last_sync';
 const IXC_AUTO_SYNC_INTERVAL_MIN = 30; // não re-sincronizar se foi há menos de X min
