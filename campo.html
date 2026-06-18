@@ -226,6 +226,13 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 .scan-top .t{font-weight:700;font-size:15px}
 .scan-ico{width:40px;height:40px;border-radius:11px;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:18px;cursor:pointer}
 .scan-hint{position:absolute;bottom:calc(var(--safe-bot) + 26px);left:0;right:0;text-align:center;color:#fff;font-size:13px;padding:0 24px;z-index:2;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+
+/* ---- GEOLOCALIZAÇÃO ---- */
+.geo-box{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:11px 13px;margin-top:6px}
+.geo-status{font-size:13px;color:var(--tx2)}
+.geo-status.ok{color:var(--ac);font-weight:600}
+.geo-status.err{color:var(--amb)}
+.geo-retry{flex-shrink:0;padding:7px 12px;border-radius:9px;border:1px solid var(--ac);background:var(--ac2);color:var(--ac);font-weight:600;font-size:12px;cursor:pointer;font-family:inherit}
 </style>
 </head>
 <body>
@@ -287,7 +294,7 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
     <!-- FILTROS -->
     <div class="filtros">
-      <button class="fil on" data-f="" onclick="filtrar(this,'')">Todas</button>
+      <button class="fil on" data-f="ativas" onclick="filtrar(this,'ativas')">🗂 Ativas</button>
       <button class="fil" data-f="aberta" onclick="filtrar(this,'aberta')">📋 Abertas</button>
       <button class="fil" data-f="assumida" onclick="filtrar(this,'assumida')">✋ Assumidas</button>
       <button class="fil" data-f="executando" onclick="filtrar(this,'executando')">🔧 Executando</button>
@@ -385,6 +392,13 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
       <button class="btn-full btn-ghost" type="button" onclick="addEquipFin()" style="margin-top:8px">➕ Adicionar equipamento</button>
       <div class="chip-list" id="fin-equip-list"></div>
 
+      <!-- LOCALIZAÇÃO DA FINALIZAÇÃO -->
+      <label class="flabel">📍 Local da finalização</label>
+      <div class="geo-box" id="fin-geo-box">
+        <div class="geo-status" id="fin-geo-status">📡 Obtendo localização…</div>
+        <button class="geo-retry" type="button" id="fin-geo-retry" onclick="capturarLocalizacao()" style="display:none">↻ Tentar novamente</button>
+      </div>
+
       <button class="btn-full btn-green" id="btn-fin" onclick="confirmarFin()">✅ Confirmar Finalização</button>
       <button class="btn-full btn-ghost" onclick="fecharFin()" style="margin-top:6px">Cancelar</button>
     </div>
@@ -414,7 +428,7 @@ const SB_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 
 let _tec = null, _os = [], _fil = '', _aberta = null, _proxyUrl = '', _ixcUrl = '', _ixcToken = '';
-let _subEstoqueId = null, _meuEstoque = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os';
+let _subEstoqueId = null, _meuEstoque = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os', _finGeo = null;
 
 /* ---- UTILS ---- */
 const $  = id => document.getElementById(id);
@@ -481,7 +495,7 @@ async function entrar(){
   _proxyUrl  = cfgMap['ixc_proxy_url'] || '';
   _ixcUrl    = cfgMap['ixc_url']       || '';
   _ixcToken  = cfgMap['ixc_token']     || '';
-  await atualizar();
+  await atualizar(false, true);
 }
 
 // Verifica sessão ao carregar
@@ -494,14 +508,16 @@ async function entrar(){
 })();
 
 /* ---- DADOS ---- */
-async function atualizar(manual=false){
+async function atualizar(manual=false, smart=false){
   if(!_tec) return;
   if(manual){ $('ptr').classList.add('show'); }
   const { data } = await sb.from('campo_os').select('*').eq('tecnico_id', _tec.id).order('id',{ascending:false});
   _os = data||[];
   await carregarMeuEstoque();
   if(manual){ setTimeout(()=>$('ptr').classList.remove('show'), 500); }
-  kpis(); render(); renderMeuEstoque();
+  kpis();
+  if(smart) filtroInteligente(); else render();
+  renderMeuEstoque();
 }
 
 /* ---- MEU ESTOQUE (sub-estoque do técnico) ---- */
@@ -569,12 +585,41 @@ function filtrar(btn, f){
   render();
 }
 
+// Seleciona um filtro por código (sincroniza o botão ativo)
+function selecionarFiltro(f){
+  _fil = f;
+  document.querySelectorAll('.fil').forEach(b=>b.classList.toggle('on', b.dataset.f===f));
+  render();
+}
+
+// Define a aba inicial automaticamente: fixa "Executando" se houver OS em execução,
+// senão "Abertas"; nunca abre em finalizadas.
+function filtroInteligente(){
+  const emExec = _os.some(o=>['executando','andamento'].includes(o.status));
+  const temAberta = _os.some(o=>o.status==='aberta');
+  const temAssumida = _os.some(o=>o.status==='assumida');
+  const f = emExec ? 'executando' : temAberta ? 'aberta' : temAssumida ? 'assumida' : 'aberta';
+  selecionarFiltro(f);
+}
+
 /* ---- RENDER ---- */
+const ST_ATIVAS = ['aberta','assumida','executando','andamento'];
 function render(){
   const el = $('lista');
-  const lista = _fil ? _os.filter(o=>o.status===_fil) : _os;
+  let lista;
+  if(_fil==='ativas')           lista = _os.filter(o=>ST_ATIVAS.includes(o.status));
+  else if(_fil==='executando')  lista = _os.filter(o=>['executando','andamento'].includes(o.status));
+  else if(_fil==='finalizada')  lista = _os.filter(o=>['finalizada','concluida'].includes(o.status));
+  else if(_fil)                 lista = _os.filter(o=>o.status===_fil);
+  else                          lista = _os.filter(o=>ST_ATIVAS.includes(o.status)); // padrão nunca mostra finalizadas
+
   if(!lista.length){
-    el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div>Nenhuma OS${_fil?' nesse status':' atribuída'}.</div>`;
+    const msg = _fil==='finalizada' ? 'Nenhuma OS finalizada.'
+              : _fil==='executando' ? 'Nenhuma OS em execução.'
+              : _fil==='aberta'     ? 'Nenhuma OS aberta. 🎉'
+              : _fil==='assumida'   ? 'Nenhuma OS assumida.'
+              : 'Nenhuma OS ativa no momento. 🎉';
+    el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div>${msg}</div>`;
     return;
   }
 
@@ -631,7 +676,7 @@ async function rapido(evt, id, status){
   const {error} = await sb.from('campo_os').update(campos).eq('id',id);
   ld(false);
   if(error){ toast('Erro: '+error.message); return; }
-  await atualizar();
+  await atualizar(false, true);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Executando!'}[status]||'Atualizado!');
 }
 
@@ -857,6 +902,35 @@ function abrirFin(evt, id){
   $('fin-peca-qtd').value=''; $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value='';
   popularPecaSelect(); renderFinPecas(); renderFinEquip();
   $('ov-fin').classList.add('open');
+  capturarLocalizacao();
+}
+
+/* ---- GEOLOCALIZAÇÃO ---- */
+function capturarLocalizacao(){
+  _finGeo = null;
+  const st = $('fin-geo-status'), rt = $('fin-geo-retry');
+  if(rt) rt.style.display='none';
+  if(!('geolocation' in navigator)){
+    if(st){ st.className='geo-status err'; st.textContent='📍 GPS indisponível neste aparelho.'; }
+    return;
+  }
+  if(st){ st.className='geo-status'; st.textContent='📡 Obtendo localização…'; }
+  navigator.geolocation.getCurrentPosition(
+    (pos)=>{
+      const { latitude, longitude, accuracy } = pos.coords;
+      _finGeo = { lat: latitude, lng: longitude, acc: Math.round(accuracy||0) };
+      if(st){ st.className='geo-status ok'; st.textContent=`📍 Localização capturada (±${_finGeo.acc} m)`; }
+      if(rt) rt.style.display='';
+    },
+    (err)=>{
+      const msg = err.code===1 ? '📍 Permissão negada. Toque para tentar de novo.'
+                : err.code===3 ? '📍 Tempo esgotado. Toque para tentar de novo.'
+                : '📍 Não foi possível obter a localização.';
+      if(st){ st.className='geo-status err'; st.textContent=msg; }
+      if(rt) rt.style.display='';
+    },
+    { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
+  );
 }
 
 function abrirFinDet(){
@@ -996,12 +1070,15 @@ async function confirmarFin(){
       speedtest_up:   parseFloat($('fin-up').value)||null,
       obs: $('fin-obs').value.trim()||null,
       pecas: resumoPecas,
+      fin_lat: _finGeo?_finGeo.lat:null,
+      fin_lng: _finGeo?_finGeo.lng:null,
+      fin_precisao: _finGeo?_finGeo.acc:null,
       finalizado_em: new Date().toISOString(),
     }).eq('id',_aberta.id);
 
     if(error){ toast('Erro: '+error.message); return; }
     fecharFin(); _aberta=null;
-    await atualizar();
+    await atualizar(false, true);
     toast('✅ OS finalizada!', 3000);
   } catch(e){ toast('Erro: '+e.message); }
   finally { btn.disabled=false; btn.innerHTML='✅ Confirmar Finalização'; }
