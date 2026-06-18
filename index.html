@@ -2155,11 +2155,11 @@ textarea.cp-form-input{resize:vertical}
         </div>
         <div class="modal-body">
           <div class="cp-info-box info">Move peças do Principal para o estoque de um técnico (ou entre locais).</div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Peça<span>*</span></label><select class="cp-form-select" id="tr-peca" onchange="trAtualizaSaldo()"></select></div></div>
-          <div class="form-grid"><div class="form-group"><label class="form-label">Origem<span>*</span></label><select class="cp-form-select" id="tr-origem" onchange="trAtualizaSaldo()"></select></div><div class="form-group"><label class="form-label">Destino<span>*</span></label><select class="cp-form-select" id="tr-destino"></select></div></div>
-          <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px" id="tr-saldo">Saldo na origem: —</div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Quantidade<span>*</span></label><input class="cp-form-input" type="number" id="tr-qtd" placeholder="0" min="1"></div></div>
-          <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo</label><input class="cp-form-input" id="tr-motivo" placeholder="Ex: Abastecimento do técnico…"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Peça<span>*</span></label><select class="cp-form-select" id="etr-peca" onchange="trAtualizaSaldo()"></select></div></div>
+          <div class="form-grid"><div class="form-group"><label class="form-label">Origem<span>*</span></label><select class="cp-form-select" id="etr-origem" onchange="trAtualizaSaldo()"></select></div><div class="form-group"><label class="form-label">Destino<span>*</span></label><select class="cp-form-select" id="etr-destino"></select></div></div>
+          <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px" id="etr-saldo">Saldo na origem: —</div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Quantidade<span>*</span></label><input class="cp-form-input" type="number" id="etr-qtd" placeholder="0" min="1"></div></div>
+          <div class="form-grid full"><div class="form-group"><label class="form-label">Motivo</label><input class="cp-form-input" id="etr-motivo" placeholder="Ex: Abastecimento do técnico…"></div></div>
         </div>
         <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-transfer')">Cancelar</button><button class="btn btn-primary" onclick="salvarTransfer()">Confirmar Transferência</button></div>
       </div>
@@ -9303,32 +9303,32 @@ async function salvarEntrada(){
 
 // ---------- TRANSFERÊNCIA ----------
 function abrirModalTransfer(pecaId){
-  popularPecaSelect('tr-peca');
-  popularSubSelect('tr-origem', { def: subEstPrincipalId() });
-  popularSubSelect('tr-destino', { somenteTecnico:true });
-  if(pecaId) document.getElementById('tr-peca').value = pecaId;
-  document.getElementById('tr-qtd').value='';
-  document.getElementById('tr-motivo').value='';
+  popularPecaSelect('etr-peca');
+  popularSubSelect('etr-origem', { def: subEstPrincipalId() });
+  popularSubSelect('etr-destino', { somenteTecnico:true });
+  if(pecaId) document.getElementById('etr-peca').value = pecaId;
+  document.getElementById('etr-qtd').value='';
+  document.getElementById('etr-motivo').value='';
   trAtualizaSaldo();
   abrirModal('modal-transfer');
 }
 function trAtualizaSaldo(){
-  const peca = parseInt(document.getElementById('tr-peca').value);
-  const orig = parseInt(document.getElementById('tr-origem').value);
-  const el = document.getElementById('tr-saldo');
+  const peca = parseInt(document.getElementById('etr-peca').value);
+  const orig = parseInt(document.getElementById('etr-origem').value);
+  const el = document.getElementById('etr-saldo');
   if(peca && orig){ el.textContent = `Saldo na origem: ${cpSaldo(peca,orig)}`; }
   else el.textContent = 'Saldo na origem: —';
 }
 async function salvarTransfer(){
-  const peca = parseInt(document.getElementById('tr-peca').value);
-  const orig = parseInt(document.getElementById('tr-origem').value);
-  const dest = parseInt(document.getElementById('tr-destino').value);
-  const qtd  = parseInt(document.getElementById('tr-qtd').value)||0;
+  const peca = parseInt(document.getElementById('etr-peca').value);
+  const orig = parseInt(document.getElementById('etr-origem').value);
+  const dest = parseInt(document.getElementById('etr-destino').value);
+  const qtd  = parseInt(document.getElementById('etr-qtd').value)||0;
   if(!peca){ showToast('Selecione a peça.', true); return; }
   if(!orig||!dest){ showToast('Selecione origem e destino.', true); return; }
   if(orig===dest){ showToast('Origem e destino não podem ser iguais.', true); return; }
   if(qtd<=0){ showToast('Informe uma quantidade válida.', true); return; }
-  const { error } = await sbClient.rpc('transferir_estoque', { p_peca_id:peca, p_sub_origem:orig, p_sub_destino:dest, p_qtd:qtd, p_motivo:document.getElementById('tr-motivo').value.trim()||null });
+  const { error } = await sbClient.rpc('transferir_estoque', { p_peca_id:peca, p_sub_origem:orig, p_sub_destino:dest, p_qtd:qtd, p_motivo:document.getElementById('etr-motivo').value.trim()||null });
   if(error){ showToast('Erro: '+error.message, true); return; }
   fecharModal('modal-transfer');
   await carregarCampo();
