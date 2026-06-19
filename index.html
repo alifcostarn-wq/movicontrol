@@ -2663,6 +2663,36 @@ textarea.cp-form-input{resize:vertical}
       </div>
     </div>
 
+    <!-- ====== MODAL ESTORNO ====== -->
+    <div class="modal-quitar-overlay" id="modal-estorno" onclick="if(event.target===this)fecharModalEstorno()">
+      <div class="modal-quitar">
+        <div class="mq-header">
+          <span class="mq-title" id="est-title">Estornar Recebimento</span>
+          <button class="modal-close" onclick="fecharModalEstorno()">✕</button>
+        </div>
+        <div class="mq-body">
+          <div class="mq-desc" id="est-desc"></div>
+          <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--text2);margin-bottom:12px">
+            ⚠️ O lançamento original é <strong>preservado no histórico</strong> (marcado como estornado) e uma <strong>reversão</strong> é gerada. Selecione a conta de onde o valor deve sair — se o dinheiro foi <strong>transferido</strong> para outra conta, escolha a conta atual.
+          </div>
+          <div class="form-grid">
+            <div class="form-group full">
+              <label class="form-label">Conta do estorno<span style="color:var(--danger)">*</span></label>
+              <select id="est-conta" style="width:100%"></select>
+            </div>
+            <div class="form-group full">
+              <label class="form-label">Motivo / Observação</label>
+              <input type="text" id="est-obs" placeholder="Opcional..." style="width:100%">
+            </div>
+          </div>
+        </div>
+        <div class="mq-footer">
+          <button class="btn" onclick="fecharModalEstorno()">Cancelar</button>
+          <button class="btn btn-primary" id="est-btn-confirmar" onclick="confirmarEstorno()" style="background:#C23B2A;border-color:#C23B2A">↩ Confirmar Estorno</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ====== MODAL INATIVIDADE ====== -->
     <div class="inativ-overlay" id="modal-inatividade">
       <div class="inativ-box">
@@ -3355,6 +3385,10 @@ const _SYNC_MAP = {
       rec_group_id: l.recGroupId || null,
       rec_num: l.recNum ?? null,
       rec_total: l.recTotal ?? null,
+      estornado: l.estornado || false,
+      estornado_em: l.estornadoEm || null,
+      estornado_por: l.estornadoPor || null,
+      estorno_de: l.estornoDe ?? null,
     }),
     fromRow: (r) => ({
       id: r.id,
@@ -3382,6 +3416,10 @@ const _SYNC_MAP = {
       recGroupId: r.rec_group_id,
       recNum: r.rec_num,
       recTotal: r.rec_total,
+      estornado: r.estornado || false,
+      estornadoEm: r.estornado_em,
+      estornadoPor: r.estornado_por,
+      estornoDe: r.estorno_de,
     }),
   },
   sf_clientes: {
@@ -5007,7 +5045,9 @@ function renderDiario(){
       <td><div class="action-btns">
         ${l.status==='A Receber'?`<button class="btn-efetivar ef-rec" onclick="efetivarLancamento(${l._idx})" title="Marcar como Recebido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
         ${l.status==='A Pagar'?`<button class="btn-efetivar ef-pag" onclick="efetivarLancamento(${l._idx})" title="Marcar como Pago"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
-        ${(l.status==='Pago'||l.status==='Recebido')?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}
+        ${(l.status==='Pago'||l.status==='Recebido') && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}
+        ${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px;white-space:nowrap">Estornado</span>`:''}
+        ${l.estornoDe?`<span style="font-size:10px;color:var(--text3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;white-space:nowrap">Reversão</span>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
@@ -5805,7 +5845,7 @@ function renderContas(){
       <td>
         <div class="action-btns">
           ${l.status==='A Pagar'?`<button class="btn-quitar" onclick="abrirModalQuitar(${l._idx})">✓ Quitar</button>`:''}
-          ${l.status==='Pago'?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar pagamento">↩ Estornar</button>`:''}
+          ${l.status==='Pago' && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar pagamento">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
           <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
           <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
         </div>
@@ -5840,7 +5880,7 @@ function renderContas(){
       <td class="td-green" style="font-family:'DM Mono',monospace;font-size:11px">${brl(v,true)}</td>
       <td><div class="action-btns">
         ${l.status==='A Receber'?`<button class="btn-quitar" style="border-color:var(--accent);color:var(--accent)" onclick="abrirModalReceber(${l._idx})">✓ Receber</button>`:''}
-        ${l.status==='Recebido'?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar recebimento">↩ Estornar</button>`:''}
+        ${l.status==='Recebido' && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar recebimento">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="deletarLanc(${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
@@ -5948,27 +5988,82 @@ function salvarQuitar(){
   }
 }
 
+let _estornoIdx=null;
 function estornarLancamento(idx){
   const lc=gd('sf_lancamentos');
   const l=lc[idx];
   if(!l)return;
-  const nome=l.status==='Pago'?'pagamento':'recebimento';
-  if(!confirm(`Estornar ${nome}?\n\nO lançamento voltará ao status anterior (A Pagar / A Receber).`))return;
-  if(l.status==='Pago'){
-    const val=l._valorOriginal||l.pago||0;
-    const novo={...l,status:'A Pagar',aPagar:val,pago:0,valorLiquido:0,dataEfetivacao:null};
-    delete novo._valorOriginal;
-    lc[idx]=novo;
-  } else if(l.status==='Recebido'){
-    const val=l._valorOriginal||l.recebido||0;
-    const novo={...l,status:'A Receber',aReceber:val,recebido:0,valorLiquido:0,dataEfetivacao:null};
-    delete novo._valorOriginal;
-    lc[idx]=novo;
+  if(l.estornado){ showToast('Este lançamento já foi estornado.',true); return; }
+  if(l.estornoDe){ showToast('Este é um lançamento de reversão — não pode ser estornado.',true); return; }
+  if(l.status!=='Pago' && l.status!=='Recebido'){ showToast('Só é possível estornar lançamentos efetivados (Pago/Recebido).',true); return; }
+  _estornoIdx=idx;
+  const isRec = l.status==='Recebido';
+  const valor = isRec ? (l._valorOriginal||l.recebido||0) : (l._valorOriginal||l.pago||0);
+  document.getElementById('est-title').textContent='Estornar '+(isRec?'Recebimento':'Pagamento');
+  document.getElementById('est-desc').className='mq-desc'+(isRec?' mq-rec':'');
+  document.getElementById('est-desc').innerHTML=`<strong>${(isRec?l.cliente:l.fornecedor)||'—'}</strong><br>${l.historico||''}<br><span style="font-family:'DM Mono',monospace;font-size:13px">${brl(valor,true)}</span> — ${isRec?'entrou em':'saiu de'} <strong>${l.conta||'(sem conta)'}</strong>`;
+  const bancos=gdBancos();
+  const sel=document.getElementById('est-conta');
+  if(!bancos.length){ sel.innerHTML='<option value="">Cadastre uma conta bancária</option>'; }
+  else {
+    sel.innerHTML=bancos.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
+    let ci=-1;
+    if(l.contaId!=null) ci=bancos.findIndex(b=>b.id===l.contaId);
+    if(ci<0 && l.conta) ci=bancos.findIndex(b=>(b.nome||'')===l.conta);
+    sel.value = ci>=0?String(ci):'0';
   }
+  document.getElementById('est-obs').value='';
+  document.getElementById('modal-estorno').classList.add('open');
+}
+
+function fecharModalEstorno(){ document.getElementById('modal-estorno').classList.remove('open'); _estornoIdx=null; }
+
+function confirmarEstorno(){
+  if(_estornoIdx===null)return;
+  const lc=gd('sf_lancamentos');
+  const l=lc[_estornoIdx];
+  if(!l)return;
+  const bancos=gdBancos();
+  const ci=parseInt(document.getElementById('est-conta').value);
+  const bancoSel=bancos[ci];
+  if(!bancoSel){ showToast('Selecione a conta do estorno.',true); return; }
+  const obs=document.getElementById('est-obs').value.trim();
+  const isRec = l.status==='Recebido';
+  const valor = isRec ? (l._valorOriginal||l.recebido||0) : (l._valorOriginal||l.pago||0);
+  const u = window._usuario||{};
+
+  // 1) Original preservado, apenas marcado como estornado (mantém valores e histórico)
+  const orig={...l, estornado:true, estornadoEm:new Date().toISOString(), estornadoPor:(u.email||u.nome||'sistema')};
+  delete orig._valorOriginal;
+  lc[_estornoIdx]=orig;
+
+  // 2) Lançamento de REVERSÃO com efeito oposto, na conta onde o dinheiro está hoje
+  const reversao={
+    tipo: l.tipo || (isRec?'receber':'pagar'),
+    data: hoje(),
+    dataOriginal: l.data||null,
+    dataEfetivacao: hoje(),
+    status: isRec?'Recebido':'Pago',
+    plano: l.plano||null,
+    cliente: l.cliente||null,
+    fornecedor: l.fornecedor||null,
+    conta: bancoSel.nome,
+    contaId: bancoSel.id ?? null,
+    aReceber:0, aPagar:0,
+    recebido: isRec ? -valor : 0,
+    pago:     isRec ? 0 : -valor,
+    valorLiquido: isRec ? -valor : valor,
+    historico: 'ESTORNO — '+(l.historico||(isRec?l.cliente:l.fornecedor)||'')+(obs?(' ('+obs+')'):''),
+    lin: lc.length+10,
+    estornoDe: l.id ?? null,
+  };
+  lc.push(reversao);
+
   sd('sf_lancamentos',lc);
-  registrarAuditoria('estorno','Livro Diário','lancamentos', l.id, nome+' estornado — '+(l.cliente||l.fornecedor||''));
+  registrarAuditoria('estorno', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', l.id, `${brl(valor,true)} estornado em ${bancoSel.nome}`+(obs?(' — '+obs):''));
+  fecharModalEstorno();
   refreshFinanceiro();
-  showToast('↩ Estorno realizado com sucesso.');
+  showToast('↩ Estorno realizado — reversão gerada em '+bancoSel.nome+'.');
 }
 
 // ---- Exportar Contas a Pagar CSV ----
