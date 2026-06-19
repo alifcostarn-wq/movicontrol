@@ -2645,6 +2645,7 @@ textarea.cp-form-input{resize:vertical}
             <div class="form-group full">
               <label class="form-label" id="mq-valor-label">Valor Pago (R$)<span style="color:var(--danger)">*</span></label>
               <input type="number" id="mq-valor" step="0.01" min="0" placeholder="0,00" style="width:100%">
+              <div style="font-size:11px;color:var(--text3);margin-top:4px">💡 Valor menor que o total em aberto = baixa parcial (o restante continua em aberto).</div>
             </div>
             <div class="form-group full">
               <label class="form-label">Conta bancária<span style="color:var(--danger)">*</span></label>
@@ -3359,6 +3360,10 @@ const _SYNC_MAP = {
       estornado_em: l.estornadoEm || null,
       estornado_por: l.estornadoPor || null,
       estorno_de: l.estornoDe ?? null,
+      parcial_de: l.parcialDe ?? null,
+      cancelado: l.cancelado || false,
+      cancelado_em: l.canceladoEm || null,
+      cancelado_por: l.canceladoPor || null,
     }),
     fromRow: (r) => ({
       id: r.id,
@@ -3390,6 +3395,10 @@ const _SYNC_MAP = {
       estornadoEm: r.estornado_em,
       estornadoPor: r.estornado_por,
       estornoDe: r.estorno_de,
+      parcialDe: r.parcial_de,
+      cancelado: r.cancelado || false,
+      canceladoEm: r.cancelado_em,
+      canceladoPor: r.cancelado_por,
     }),
   },
   sf_clientes: {
@@ -5067,7 +5076,7 @@ function renderDiario(){
     const sdot=l.status==='Recebido'||l.status==='Pago'?'dot-green':l.status==='A Receber'?'dot-warn':'dot-red';
     return`<tr>
       <td class="td-muted td-mono">${l.lin||'—'}</td>
-      <td><span class="status-badge ${sb}"><span class="status-dot ${sdot}"></span>${l.status||'—'}</span></td>
+      <td><span class="status-badge ${sb}" ${l.status==='Cancelado'?'style="background:rgba(130,130,130,.15);color:var(--text3);text-decoration:line-through"':''}><span class="status-dot ${sdot}" ${l.status==='Cancelado'?'style="background:var(--text3)"':''}></span>${l.status||'—'}</span></td>
       <td class="td-mono td-muted">${fmtData(l.data)}</td>
       <td class="td-mono ${l.dataEfetivacao?'td-green':'td-muted'}">${l.dataEfetivacao?fmtData(l.dataEfetivacao):'—'}</td>
       <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${l.plano||'—'}</td>
@@ -5085,6 +5094,7 @@ function renderDiario(){
         ${(l.status==='Pago'||l.status==='Recebido') && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}
         ${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px;white-space:nowrap">Estornado</span>`:''}
         ${l.estornoDe?`<span style="font-size:10px;color:var(--text3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;white-space:nowrap">Reversão</span>`:''}
+        ${(l.status==='A Receber'||l.status==='A Pagar')?`<button class="action-btn" onclick="cancelarLancamento(${l._idx})" title="Cancelar título"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
@@ -5882,6 +5892,7 @@ function renderContas(){
       <td>
         <div class="action-btns">
           ${l.status==='A Pagar'?`<button class="btn-quitar" onclick="abrirModalQuitar(${l._idx})">✓ Quitar</button>`:''}
+          ${l.status==='A Pagar'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx})" title="Cancelar título"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
           ${l.status==='Pago' && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar pagamento">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
           <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
           <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
@@ -5917,6 +5928,7 @@ function renderContas(){
       <td class="td-green" style="font-family:'DM Mono',monospace;font-size:11px">${brl(v,true)}</td>
       <td><div class="action-btns">
         ${l.status==='A Receber'?`<button class="btn-quitar" style="border-color:var(--accent);color:var(--accent)" onclick="abrirModalReceber(${l._idx})">✓ Receber</button>`:''}
+        ${l.status==='A Receber'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx})" title="Cancelar título"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
         ${l.status==='Recebido' && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar recebimento">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="action-btn del" onclick="deletarLanc(${l._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
@@ -6010,7 +6022,42 @@ function salvarQuitar(){
   const l=lc[_quitarIdx];
   if(!l)return;
   const obs=document.getElementById('mq-obs').value.trim();
-  if(_quitarTipo==='receber'){
+  const isRec=_quitarTipo==='receber';
+  const aberto=isRec?(l.aReceber||0):(l.aPagar||0);
+  if(valor > aberto + 0.001){ showToast('O valor não pode ser maior que o saldo em aberto ('+brl(aberto,true)+').',true); return; }
+  const parcial = valor < aberto - 0.001;
+
+  if(parcial){
+    // BAIXA PARCIAL: título original continua aberto com o restante + registro efetivado pelo valor pago
+    const restante=+(aberto-valor).toFixed(2);
+    const orig={...l};
+    if(isRec){ orig.aReceber=restante; } else { orig.aPagar=restante; }
+    orig.valorLiquido = isRec?restante:-restante;
+    lc[_quitarIdx]=orig;
+    const baixa={
+      tipo:l.tipo||(isRec?'receber':'pagar'),
+      data:dataEfet, dataOriginal:l.data||null,
+      status:isRec?'Recebido':'Pago',
+      plano:l.plano||null, cliente:l.cliente||null, fornecedor:l.fornecedor||null,
+      conta:contaNome, contaId:contaId,
+      aReceber:0, aPagar:0,
+      recebido:isRec?valor:0, pago:isRec?0:valor,
+      valorLiquido:isRec?valor:-valor,
+      dataEfetivacao:dataEfet,
+      historico:(l.historico?l.historico+' — ':'')+`Baixa parcial ${brl(valor,true)} de ${brl(aberto,true)}`+(obs?(' ('+obs+')'):''),
+      lin:lc.length+10, parcialDe:l.id ?? null,
+    };
+    lc.push(baixa);
+    sd('sf_lancamentos',lc);
+    registrarAuditoria(isRec?'recebimento_parcial':'pagamento_parcial', isRec?'Contas a Receber':'Contas a Pagar','lancamentos', l.id, `${brl(valor,true)} de ${brl(aberto,true)} → ${contaNome} (restam ${brl(restante,true)})`);
+    fecharModalQuitar();
+    refreshFinanceiro();
+    showToast(`✓ Baixa parcial de ${brl(valor,true)} — restam ${brl(restante,true)} em aberto.`);
+    return;
+  }
+
+  // QUITAÇÃO TOTAL
+  if(isRec){
     lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
@@ -6027,6 +6074,30 @@ function salvarQuitar(){
     refreshFinanceiro();
     showToast('✓ Pagamento confirmado: '+brl(valor,true));
   }
+}
+
+async function cancelarLancamento(idx){
+  const lc=gd('sf_lancamentos');
+  const l=lc[idx];
+  if(!l)return;
+  if(l.status!=='A Receber' && l.status!=='A Pagar'){
+    showToast('Só é possível cancelar títulos em aberto (A Receber / A Pagar). Para efetivados, use Estornar.',true); return;
+  }
+  const valor = (l.aReceber||0)+(l.aPagar||0);
+  if(!confirm(`Cancelar este título de ${brl(valor,true)}?\n\nFica registrado como "Cancelado" (não é excluído) e sai dos totais de A Receber/A Pagar e do DRE previsto.`))return;
+  const u=window._usuario||{};
+  const isRec = l.tipo==='receber' || l.status==='A Receber';
+  const novo={...l,
+    status:'Cancelado', cancelado:true,
+    canceladoEm:new Date().toISOString(), canceladoPor:(u.email||u.nome||'sistema'),
+    aReceber:0, aPagar:0, valorLiquido:0,
+    historico:(l.historico||'')+` [CANCELADO ${fmtData(hoje())} — era ${brl(valor,true)}]`,
+  };
+  lc[idx]=novo;
+  sd('sf_lancamentos',lc);
+  registrarAuditoria('cancelamento', isRec?'Contas a Receber':'Contas a Pagar','lancamentos', l.id, (l.cliente||l.fornecedor||'')+' — '+brl(valor,true));
+  refreshFinanceiro();
+  showToast('Título cancelado (mantido no histórico).');
 }
 
 function estornarLancamento(idx){
