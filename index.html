@@ -2647,6 +2647,10 @@ textarea.cp-form-input{resize:vertical}
               <input type="number" id="mq-valor" step="0.01" min="0" placeholder="0,00" style="width:100%">
             </div>
             <div class="form-group full">
+              <label class="form-label">Conta bancária<span style="color:var(--danger)">*</span></label>
+              <select id="mq-conta" style="width:100%"></select>
+            </div>
+            <div class="form-group full">
               <label class="form-label">Observação</label>
               <input type="text" id="mq-obs" placeholder="Opcional..." style="width:100%">
             </div>
@@ -3336,6 +3340,7 @@ const _SYNC_MAP = {
       cliente: l.cliente || null,
       fornecedor: l.fornecedor || null,
       conta: l.conta || null,
+      conta_id: l.contaId ?? null,
       a_receber: l.aReceber || 0,
       recebido: l.recebido || 0,
       a_pagar: l.aPagar || 0,
@@ -3362,6 +3367,7 @@ const _SYNC_MAP = {
       cliente: r.cliente,
       fornecedor: r.fornecedor,
       conta: r.conta,
+      contaId: r.conta_id,
       aReceber: r.a_receber,
       recebido: r.recebido,
       aPagar: r.a_pagar,
@@ -5044,24 +5050,12 @@ async function deletarLanc(idx){
 }
 
 function efetivarLancamento(idx){
+  // Unifica a efetivação no modal de quitação (captura a conta bancária)
   const lc=gd('sf_lancamentos');
   const l=lc[idx];
   if(!l)return;
-  if(l.status==='A Receber'){
-    const val=l.aReceber||0;
-    lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,_valorOriginal:val,valorLiquido:val,dataEfetivacao:hoje()};
-    sd('sf_lancamentos',lc);
-    registrarAuditoria('recebimento','Livro Diário','lancamentos', l.id, (l.cliente||'')+' — '+brl(val,true));
-    refreshFinanceiro();
-    showToast('✓ Recebimento efetivado: '+brl(val,true));
-  } else if(l.status==='A Pagar'){
-    const val=l.aPagar||0;
-    lc[idx]={...l,status:'Pago',pago:val,aPagar:0,_valorOriginal:val,valorLiquido:-val,dataEfetivacao:hoje()};
-    sd('sf_lancamentos',lc);
-    registrarAuditoria('pagamento','Livro Diário','lancamentos', l.id, (l.fornecedor||'')+' — '+brl(val,true));
-    refreshFinanceiro();
-    showToast('✓ Pagamento efetivado: '+brl(val,true));
-  }
+  if(l.status==='A Receber') abrirModalReceber(idx);
+  else if(l.status==='A Pagar') abrirModalQuitar(idx);
 }
 function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showToast('Sem dados.',true);return;}const h='Vencimento;Efetivação;Status;Plano;Cliente;Fornecedor;Histórico;A Receber;Recebido;A Pagar;Pago;Conta;Val.Líquido';const r=lc.map(l=>[l.data||'',l.dataEfetivacao||'',l.status||'',l.plano||'',l.cliente||'',l.fornecedor||'',(l.historico||'').replace(/;/g,' '),l.aReceber||0,l.recebido||0,l.aPagar||0,l.pago||0,l.conta||'',l.valorLiquido||0].join(';'));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n'),{type:'text/csv'}]));a.download='livro-diario.csv';a.click();showToast('CSV exportado!');}
 
@@ -5862,6 +5856,21 @@ let _quitarIdx=null;
 // abrirModalQuitar e fecharModalQuitar definidos junto com salvarQuitar
 let _quitarTipo='pagar'; // 'pagar' ou 'receber'
 
+function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;}
+
+// Preenche o seletor de conta bancária do modal de quitação (default: a conta já vinculada ao lançamento)
+function preencherContasQuitar(contaNomeAtual, contaIdAtual){
+  const bancos = gdBancos();
+  const sel = document.getElementById('mq-conta');
+  if(!sel) return;
+  if(!bancos.length){ sel.innerHTML='<option value="">Cadastre uma conta bancária primeiro</option>'; return; }
+  sel.innerHTML = bancos.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
+  let idxAtual = -1;
+  if(contaIdAtual!=null) idxAtual = bancos.findIndex(b=>b.id===contaIdAtual);
+  if(idxAtual<0 && contaNomeAtual) idxAtual = bancos.findIndex(b=>(b.nome||'')===contaNomeAtual);
+  sel.value = idxAtual>=0 ? String(idxAtual) : '0';
+}
+
 function abrirModalReceber(idx){
   _quitarIdx=idx;
   _quitarTipo='receber';
@@ -5876,6 +5885,7 @@ function abrirModalReceber(idx){
   document.getElementById('mq-data').value=hoje();
   document.getElementById('mq-valor').value=(l.aReceber||0).toFixed(2);
   document.getElementById('mq-obs').value='';
+  preencherContasQuitar(l.conta, l.contaId);
   document.getElementById('mq-btn-confirmar').textContent='✓ Confirmar Recebimento';
   document.getElementById('mq-btn-confirmar').style.background='#2D8C57';
   document.getElementById('modal-quitar').classList.add('open');
@@ -5895,6 +5905,7 @@ function abrirModalQuitar(idx){
   document.getElementById('mq-data').value=hoje();
   document.getElementById('mq-valor').value=(l.aPagar||0).toFixed(2);
   document.getElementById('mq-obs').value='';
+  preencherContasQuitar(l.conta, l.contaId);
   document.getElementById('mq-btn-confirmar').textContent='✓ Confirmar Pagamento';
   document.getElementById('mq-btn-confirmar').style.background='#2D8C57';
   document.getElementById('modal-quitar').classList.add('open');
@@ -5908,23 +5919,29 @@ function salvarQuitar(){
   const valor=parseFloat(document.getElementById('mq-valor').value);
   if(!dataEfet){showToast('Informe a data.',true);return;}
   if(!valor||valor<=0){showToast('Informe o valor.',true);return;}
+  const bancos=gdBancos();
+  const ci=parseInt(document.getElementById('mq-conta').value);
+  const bancoSel=bancos[ci];
+  if(!bancoSel){showToast('Selecione a conta bancária.',true);return;}
+  const contaNome=bancoSel.nome;
+  const contaId=bancoSel.id ?? null;
   const lc=gd('sf_lancamentos');
   const l=lc[_quitarIdx];
   if(!l)return;
   const obs=document.getElementById('mq-obs').value.trim();
   if(_quitarTipo==='receber'){
-    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet};
+    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
-    registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' — '+brl(valor,true));
+    registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' → '+contaNome+' — '+brl(valor,true));
     fecharModalQuitar();
     refreshFinanceiro();
     showToast('✓ Recebimento confirmado: '+brl(valor,true));
   } else {
-    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet};
+    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
-    registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' — '+brl(valor,true));
+    registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' ← '+contaNome+' — '+brl(valor,true));
     fecharModalQuitar();
     refreshFinanceiro();
     showToast('✓ Pagamento confirmado: '+brl(valor,true));
@@ -7288,18 +7305,24 @@ function sdBancos(v){sd('sf_bancos',v);}
 function gdMov(){return gd('sf_mov_bancarias');}
 function sdMov(v){sd('sf_mov_bancarias',v);}
 
+// Vínculo lançamento↔conta: por id quando existir, senão por nome (fallback p/ histórico antigo)
+function _lancNaConta(l, banco){
+  if(!banco) return false;
+  if(l.contaId!=null && banco.id!=null) return l.contaId===banco.id;
+  return (l.conta||'')===(banco.nome||'');
+}
+
 function calcSaldoConta(idx){
   const bancos=gdBancos();
   if(!bancos[idx])return 0;
-  const nomeConta=bancos[idx].nome||'';
   // Saldo inicial da conta
   const saldoInicial=parseFloat(bancos[idx].saldoInicial)||0;
   // Movimentações manuais (entradas/saídas/transferências/ajustes)
   const mov=gdMov().filter(m=>m.contaIdx===idx);
   const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
-  // Lançamentos do Livro Diário vinculados a esta conta (por nome)
+  // Lançamentos do Livro Diário vinculados a esta conta (por id, fallback nome)
   const lc=gd('sf_lancamentos');
-  const lancTotal=lc.filter(l=>(l.conta||'')=== nomeConta)
+  const lancTotal=lc.filter(l=>_lancNaConta(l, bancos[idx]))
     .reduce((s,l)=>s+(l.valorLiquido||0),0);
   return saldoInicial+movTotal+lancTotal;
 }
@@ -7307,12 +7330,11 @@ function calcSaldoConta(idx){
 function calcSaldoContaAteData(idx,dataLimite){
   const bancos=gdBancos();
   if(!bancos[idx])return 0;
-  const nomeConta=bancos[idx].nome||'';
   const mov=gdMov().filter(m=>m.contaIdx===idx&&(m.data||'')<=dataLimite);
   const saldoInicial=parseFloat(bancos[idx].saldoInicial)||0;
   const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
   const lc=gd('sf_lancamentos');
-  const lancTotal=lc.filter(l=>(l.conta||'')===nomeConta&&(l.data||'')<=dataLimite)
+  const lancTotal=lc.filter(l=>_lancNaConta(l, bancos[idx])&&(l.data||'')<=dataLimite)
     .reduce((s,l)=>s+(l.valorLiquido||0),0);
   return saldoInicial+movTotal+lancTotal;
 }
@@ -7436,7 +7458,7 @@ function renderExtrato(){
   // Converter lançamentos do Livro Diário em movimentações para o extrato
   const lancComoMov=[];
   bancos.forEach((b,i)=>{
-    allLanc.filter(l=>(l.conta||'')===b.nome).forEach(l=>{
+    allLanc.filter(l=>_lancNaConta(l, b)).forEach(l=>{
       const v=l.valorLiquido||0;
       if(v===0)return;
       lancComoMov.push({
