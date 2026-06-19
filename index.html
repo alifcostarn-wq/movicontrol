@@ -3586,6 +3586,7 @@ const _SYNC_MAP = {
       ts: m.ts ?? null,
       conta_dest_nome: m.contaDestNome || null,
       conta_orig_nome: m.contaOrigNome || null,
+      usuario_nome: m.usuarioNome || null,
     }),
     fromRow: (r) => ({
       id: r.id, contaId: r.conta_id, contaIdx: m_findBancoIdxById(r.conta_id),
@@ -3593,6 +3594,7 @@ const _SYNC_MAP = {
       descricao: r.descricao, valor: r.valor,
       pairId: r.pair_id, ts: r.ts,
       contaDestNome: r.conta_dest_nome, contaOrigNome: r.conta_orig_nome,
+      usuarioNome: r.usuario_nome,
     }),
   },
 };
@@ -4912,6 +4914,51 @@ function diarioAtualizarMesLabel(){
   if(btn) btn.classList.toggle('visible', !(_diarioMes===d.getMonth() && _diarioAno===d.getFullYear()));
 }
 
+// Monta as transferências como linhas de exibição do Livro Diário (NÃO são lançamentos; não afetam DRE/receita/despesa)
+function getTransferenciasDiario(){
+  const fst=document.getElementById('d-fstatus')?.value||'';
+  if(fst) return []; // se há filtro de status (A Receber/Pago/etc.), transferências não se aplicam
+  const busca=(document.getElementById('d-busca')?.value||'').toLowerCase();
+  const fco=document.getElementById('d-fconta')?.value||'';
+  const fde=document.getElementById('d-fde')?.value||'';
+  const fat=document.getElementById('d-fate')?.value||'';
+  const movs=gdMov();
+  const rows=[];
+  movs.filter(m=>m.cat==='transferencia_saida').forEach(s=>{
+    const entrada=movs.find(m=>m.pairId===s.pairId&&m.cat==='transferencia_entrada');
+    const origem=s.contaNome||'';
+    const destino=(entrada?entrada.contaNome:s.contaDestNome)||'';
+    const valor=Math.abs(s.valor||0);
+    const usuario=s.usuarioNome||'';
+    if(fco&&origem!==fco&&destino!==fco)return;
+    if(fde&&(s.data||'')<fde)return;
+    if(fat&&(s.data||'')>fat)return;
+    const hist=`${brl(valor,true)} — ${s.descricao||'Transferência entre contas'}${usuario?(' · '+usuario):''}`;
+    if(busca&&![hist,origem,destino].join(' ').toLowerCase().includes(busca))return;
+    rows.push({
+      _transf:true, _pairId:s.pairId, _valor:valor, _origem:origem, _destino:destino, _usuario:usuario,
+      status:'Transferência', data:s.data||'', dataEfetivacao:s.data||'',
+      plano:'Transferência', cliente:'', fornecedor:'', historico:hist, descricao:s.descricao||'',
+      aReceber:0, recebido:0, aPagar:0, pago:0, conta:origem+' → '+destino, lin:'⇄',
+    });
+  });
+  return rows;
+}
+
+async function cancelarTransferencia(pairId){
+  if(!pairId)return;
+  if(!confirm('Cancelar esta transferência?\n\nAs DUAS movimentações (origem e destino) serão revertidas. O registro é mantido no histórico (auditoria).'))return;
+  const u=window._usuario||{};
+  const { error } = await sbClient.from('mov_bancarias').update({
+    deletado:true, deletado_em:new Date().toISOString(), deletado_por:u.email||u.nome||'sistema'
+  }).eq('pair_id', pairId);
+  if(error){ showToast('Falha ao cancelar: '+error.message, true); return; }
+  registrarAuditoria('cancelamento','Transferências','mov_bancarias', pairId, 'Transferência cancelada — origem e destino revertidas');
+  _cache.sf_mov_bancarias = _cache.sf_mov_bancarias.filter(m=>m.pairId!==pairId); // remove ambas as pontas do cache
+  refreshFinanceiro();
+  showToast('Transferência cancelada — ambas as movimentações revertidas.');
+}
+
 function renderDiario(){
   popularFiltroContas();
   diarioAtualizarMesLabel();
@@ -4976,7 +5023,7 @@ function renderDiario(){
   const fde  = document.getElementById('d-fde')?.value  || '';
   const fate = document.getElementById('d-fate')?.value || '';
   const mesStr = String(_diarioAno)+'-'+String(_diarioMes+1).padStart(2,'0');
-  let lista=getLancFiltrados();
+  let lista=[...getLancFiltrados(), ...getTransferenciasDiario()];
   if(!fde && !fate){
     lista = lista.filter(l => {
       const dataRef = (l.status==='Pago'||l.status==='Recebido') && l.dataEfetivacao
@@ -4996,6 +5043,26 @@ function renderDiario(){
   const emp=document.getElementById('d-empty');
   emp.style.display=total===0?'':'none';
   tbody.innerHTML=pag.map(l=>{
+    if(l._transf){
+      return`<tr style="background:rgba(59,130,246,0.045)">
+        <td class="td-mono" style="color:#3B82F6;font-weight:700">⇄</td>
+        <td><span class="status-badge" style="background:rgba(59,130,246,.12);color:#3B82F6"><span class="status-dot" style="background:#3B82F6"></span>Transferência</span></td>
+        <td class="td-mono td-muted">${fmtData(l.data)}</td>
+        <td class="td-mono td-muted">—</td>
+        <td style="font-size:11px;color:var(--text2)">Transferência</td>
+        <td class="td-muted">—</td>
+        <td class="td-muted">—</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text2);font-size:11px">${l.historico}</td>
+        <td class="td-mono td-muted">—</td>
+        <td class="td-mono td-muted">—</td>
+        <td class="td-mono td-muted">—</td>
+        <td class="td-mono td-muted">—</td>
+        <td style="font-size:11px;color:#3B82F6">${l._origem} → ${l._destino}</td>
+        <td><div class="action-btns">
+          <button class="action-btn del" onclick="cancelarTransferencia('${l._pairId}')" title="Cancelar transferência (reverte as duas pontas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+        </div></td>
+      </tr>`;
+    }
     const sb=l.status==='Recebido'||l.status==='Pago'?'s-recebido':'s-a-'+(l.status==='A Receber'?'receber':'pagar');
     const sdot=l.status==='Recebido'||l.status==='Pago'?'dot-green':l.status==='A Receber'?'dot-warn':'dot-red';
     return`<tr>
@@ -7761,21 +7828,22 @@ function salvarTransferencia(){
   if(!data){showToast('Informe a data.',true);return;}
   const desc=document.getElementById('tr-desc').value.trim()||'Transferência entre contas';
   const pairId='tr_'+Date.now();
+  const _un=(window._usuario&&(window._usuario.nome||window._usuario.email))||'sistema';
   const mov=gdMov();
   mov.push({
     contaIdx:origIdx,contaNome:bancos[origIdx]?.nome||'',
     cat:'transferencia_saida',data,descricao:desc,valor:-valor,
-    contaDestNome:bancos[destIdx]?.nome||'',ts:Date.now(),pairId,
+    contaDestNome:bancos[destIdx]?.nome||'',ts:Date.now(),pairId,usuarioNome:_un,
   });
   mov.push({
     contaIdx:destIdx,contaNome:bancos[destIdx]?.nome||'',
     cat:'transferencia_entrada',data,descricao:desc,valor:valor,
-    contaOrigNome:bancos[origIdx]?.nome||'',ts:Date.now(),pairId,
+    contaOrigNome:bancos[origIdx]?.nome||'',ts:Date.now(),pairId,usuarioNome:_un,
   });
   sdMov(mov);
-  registrarAuditoria('transferencia','Transferências','mov_bancarias', pairId, `${bancos[origIdx]?.nome||''} → ${bancos[destIdx]?.nome||''} — ${brl(valor,true)}`);
+  registrarAuditoria('transferencia','Transferências','mov_bancarias', pairId, `${bancos[origIdx]?.nome||''} → ${bancos[destIdx]?.nome||''} — ${brl(valor,true)} — ${_un}`);
   fecharModal('modal-transf');
-  renderBancos();
+  refreshFinanceiro();
   showToast(`Transferência de ${brl(valor,true)} realizada!`);
 }
 
