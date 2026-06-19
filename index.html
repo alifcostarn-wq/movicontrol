@@ -2663,36 +2663,6 @@ textarea.cp-form-input{resize:vertical}
       </div>
     </div>
 
-    <!-- ====== MODAL ESTORNO ====== -->
-    <div class="modal-quitar-overlay" id="modal-estorno" onclick="if(event.target===this)fecharModalEstorno()">
-      <div class="modal-quitar">
-        <div class="mq-header">
-          <span class="mq-title" id="est-title">Estornar Recebimento</span>
-          <button class="modal-close" onclick="fecharModalEstorno()">✕</button>
-        </div>
-        <div class="mq-body">
-          <div class="mq-desc" id="est-desc"></div>
-          <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--text2);margin-bottom:12px">
-            ⚠️ O lançamento original é <strong>preservado no histórico</strong> (marcado como estornado) e uma <strong>reversão</strong> é gerada. Selecione a conta de onde o valor deve sair — se o dinheiro foi <strong>transferido</strong> para outra conta, escolha a conta atual.
-          </div>
-          <div class="form-grid">
-            <div class="form-group full">
-              <label class="form-label">Conta do estorno<span style="color:var(--danger)">*</span></label>
-              <select id="est-conta" style="width:100%"></select>
-            </div>
-            <div class="form-group full">
-              <label class="form-label">Motivo / Observação</label>
-              <input type="text" id="est-obs" placeholder="Opcional..." style="width:100%">
-            </div>
-          </div>
-        </div>
-        <div class="mq-footer">
-          <button class="btn" onclick="fecharModalEstorno()">Cancelar</button>
-          <button class="btn btn-primary" id="est-btn-confirmar" onclick="confirmarEstorno()" style="background:#C23B2A;border-color:#C23B2A">↩ Confirmar Estorno</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ====== MODAL INATIVIDADE ====== -->
     <div class="inativ-overlay" id="modal-inatividade">
       <div class="inativ-box">
@@ -5926,6 +5896,8 @@ function abrirModalReceber(idx){
   document.getElementById('mq-valor').value=(l.aReceber||0).toFixed(2);
   document.getElementById('mq-obs').value='';
   preencherContasQuitar(l.conta, l.contaId);
+  // título estornado: novo recebimento obrigatoriamente na mesma conta original
+  const _mqcR=document.getElementById('mq-conta'); if(_mqcR) _mqcR.disabled = !!l.estornadoEm;
   document.getElementById('mq-btn-confirmar').textContent='✓ Confirmar Recebimento';
   document.getElementById('mq-btn-confirmar').style.background='#2D8C57';
   document.getElementById('modal-quitar').classList.add('open');
@@ -5946,6 +5918,8 @@ function abrirModalQuitar(idx){
   document.getElementById('mq-valor').value=(l.aPagar||0).toFixed(2);
   document.getElementById('mq-obs').value='';
   preencherContasQuitar(l.conta, l.contaId);
+  // título estornado: novo pagamento obrigatoriamente na mesma conta original
+  const _mqcP=document.getElementById('mq-conta'); if(_mqcP) _mqcP.disabled = !!l.estornadoEm;
   document.getElementById('mq-btn-confirmar').textContent='✓ Confirmar Pagamento';
   document.getElementById('mq-btn-confirmar').style.background='#2D8C57';
   document.getElementById('modal-quitar').classList.add('open');
@@ -5988,82 +5962,37 @@ function salvarQuitar(){
   }
 }
 
-let _estornoIdx=null;
 function estornarLancamento(idx){
   const lc=gd('sf_lancamentos');
   const l=lc[idx];
   if(!l)return;
-  if(l.estornado){ showToast('Este lançamento já foi estornado.',true); return; }
-  if(l.estornoDe){ showToast('Este é um lançamento de reversão — não pode ser estornado.',true); return; }
   if(l.status!=='Pago' && l.status!=='Recebido'){ showToast('Só é possível estornar lançamentos efetivados (Pago/Recebido).',true); return; }
-  _estornoIdx=idx;
   const isRec = l.status==='Recebido';
   const valor = isRec ? (l._valorOriginal||l.recebido||0) : (l._valorOriginal||l.pago||0);
-  document.getElementById('est-title').textContent='Estornar '+(isRec?'Recebimento':'Pagamento');
-  document.getElementById('est-desc').className='mq-desc'+(isRec?' mq-rec':'');
-  document.getElementById('est-desc').innerHTML=`<strong>${(isRec?l.cliente:l.fornecedor)||'—'}</strong><br>${l.historico||''}<br><span style="font-family:'DM Mono',monospace;font-size:13px">${brl(valor,true)}</span> — ${isRec?'entrou em':'saiu de'} <strong>${l.conta||'(sem conta)'}</strong>`;
-  const bancos=gdBancos();
-  const sel=document.getElementById('est-conta');
-  if(!bancos.length){ sel.innerHTML='<option value="">Cadastre uma conta bancária</option>'; }
-  else {
-    sel.innerHTML=bancos.map((b,i)=>`<option value="${i}">${b.nome}</option>`).join('');
-    let ci=-1;
-    if(l.contaId!=null) ci=bancos.findIndex(b=>b.id===l.contaId);
-    if(ci<0 && l.conta) ci=bancos.findIndex(b=>(b.nome||'')===l.conta);
-    sel.value = ci>=0?String(ci):'0';
-  }
-  document.getElementById('est-obs').value='';
-  document.getElementById('modal-estorno').classList.add('open');
-}
-
-function fecharModalEstorno(){ document.getElementById('modal-estorno').classList.remove('open'); _estornoIdx=null; }
-
-function confirmarEstorno(){
-  if(_estornoIdx===null)return;
-  const lc=gd('sf_lancamentos');
-  const l=lc[_estornoIdx];
-  if(!l)return;
-  const bancos=gdBancos();
-  const ci=parseInt(document.getElementById('est-conta').value);
-  const bancoSel=bancos[ci];
-  if(!bancoSel){ showToast('Selecione a conta do estorno.',true); return; }
-  const obs=document.getElementById('est-obs').value.trim();
-  const isRec = l.status==='Recebido';
-  const valor = isRec ? (l._valorOriginal||l.recebido||0) : (l._valorOriginal||l.pago||0);
+  const contaNome = l.conta || '(conta original)';
+  const msg = `Estornar este ${isRec?'recebimento':'pagamento'} de ${brl(valor,true)}?\n\n`
+    + `• O estorno ocorre na conta ORIGINAL: ${contaNome}\n`
+    + `• O título volta para "${isRec?'A Receber':'A Pagar'}"\n`
+    + `• Transferências posteriores NÃO são alteradas. Se o valor já foi transferido, a conta original ficará negativa — isso é esperado.`;
+  if(!confirm(msg))return;
   const u = window._usuario||{};
-
-  // 1) Original preservado, apenas marcado como estornado (mantém valores e histórico)
-  const orig={...l, estornado:true, estornadoEm:new Date().toISOString(), estornadoPor:(u.email||u.nome||'sistema')};
-  delete orig._valorOriginal;
-  lc[_estornoIdx]=orig;
-
-  // 2) Lançamento de REVERSÃO com efeito oposto, na conta onde o dinheiro está hoje
-  const reversao={
-    tipo: l.tipo || (isRec?'receber':'pagar'),
-    data: hoje(),
-    dataOriginal: l.data||null,
-    dataEfetivacao: hoje(),
-    status: isRec?'Recebido':'Pago',
-    plano: l.plano||null,
-    cliente: l.cliente||null,
-    fornecedor: l.fornecedor||null,
-    conta: bancoSel.nome,
-    contaId: bancoSel.id ?? null,
-    aReceber:0, aPagar:0,
-    recebido: isRec ? -valor : 0,
-    pago:     isRec ? 0 : -valor,
-    valorLiquido: isRec ? -valor : valor,
-    historico: 'ESTORNO — '+(l.historico||(isRec?l.cliente:l.fornecedor)||'')+(obs?(' ('+obs+')'):''),
-    lin: lc.length+10,
-    estornoDe: l.id ?? null,
+  const novo = {...l,
+    estornadoEm: new Date().toISOString(),
+    estornadoPor: (u.email||u.nome||'sistema'),
+    dataEfetivacao: null,
+    valorLiquido: 0,
   };
-  lc.push(reversao);
-
+  if(isRec){ novo.status='A Receber'; novo.aReceber=valor; novo.recebido=0; }
+  else      { novo.status='A Pagar';  novo.aPagar=valor;  novo.pago=0; }
+  // mantém conta/contaId (conta original) para o novo recebimento ser obrigatoriamente nela
+  novo.historico = (l.historico||'') + ` [ESTORNADO ${fmtData(hoje())}]`;
+  delete novo._valorOriginal;
+  lc[idx]=novo;
   sd('sf_lancamentos',lc);
-  registrarAuditoria('estorno', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', l.id, `${brl(valor,true)} estornado em ${bancoSel.nome}`+(obs?(' — '+obs):''));
-  fecharModalEstorno();
+  registrarAuditoria('estorno', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', l.id,
+    `${brl(valor,true)} estornado na conta original ${contaNome} — título reaberto`);
   refreshFinanceiro();
-  showToast('↩ Estorno realizado — reversão gerada em '+bancoSel.nome+'.');
+  showToast('↩ Estorno realizado — título reaberto na conta '+contaNome+'.');
 }
 
 // ---- Exportar Contas a Pagar CSV ----
