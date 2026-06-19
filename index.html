@@ -3661,7 +3661,10 @@ async function _syncDiff(key, oldArr, newArr){
       const novoRow = toRow(item);
       const mudou = !oldItem || JSON.stringify(toRow(oldItem)) !== JSON.stringify(novoRow);
       if(mudou){
-        const { error } = await sbClient.from(table).update(novoRow).eq('id', id);
+        // 'id' é coluna GENERATED ALWAYS — não pode ir no SET; o registro já é localizado pelo .eq('id', id)
+        const rowUpdate = { ...novoRow };
+        delete rowUpdate.id;
+        const { error } = await sbClient.from(table).update(rowUpdate).eq('id', id);
         if(error) throw error;
       }
     }
