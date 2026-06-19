@@ -3680,6 +3680,23 @@ async function _syncDiff(key, oldArr, newArr){
 
 // ---------- Carrega todas as tabelas do Supabase para o cache ----------
 // Busca todos os registros de uma tabela paginando em blocos de 1000
+// ---------- Auditoria: registra usuário, data/hora, ação, módulo ----------
+async function registrarAuditoria(acao, modulo, tabela, registroId, detalhe){
+  try {
+    const u = window._usuario || {};
+    await sbClient.from('auditoria').insert({
+      usuario_id: u.id || null,
+      usuario_nome: u.nome || null,
+      usuario_email: u.email || null,
+      acao: acao || null,
+      modulo: modulo || null,
+      registro_tabela: tabela || null,
+      registro_id: registroId != null ? String(registroId) : null,
+      detalhe: detalhe != null ? String(detalhe).slice(0,500) : null,
+    });
+  } catch(e){ console.warn('[auditoria] falha ao registrar', e); }
+}
+
 async function sbSelectAll(table, orderCol='id'){
   const PAGE = 1000;
   let todos = [], pagina = 0, continua = true;
@@ -3700,7 +3717,11 @@ async function sbSelectAll(table, orderCol='id'){
 async function loadAllFromSupabase(){
   for(const key of Object.keys(_SYNC_MAP)){
     const { table, fromRow } = _SYNC_MAP[key];
-    const data = await sbSelectAll(table);
+    let data = await sbSelectAll(table);
+    // Registros financeiros com soft-delete: não carrega os marcados como excluídos
+    if(table==='lancamentos' || table==='mov_bancarias'){
+      data = data.filter(r => !r.deletado);
+    }
     _cache[key] = data.map(fromRow);
   }
   // Pós-processamento: contaIdx das movimentações depende de sf_bancos já carregado
@@ -4995,7 +5016,22 @@ function sortDiario(col){
   paginaAtual.diario=1;renderDiario();
 }
 function limparFiltrosDiario(){['d-busca','d-fstatus','d-fconta','d-fde','d-fate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});renderDiario();}
-function deletarLanc(idx){if(!confirm('Excluir lançamento?'))return;const lc=gd('sf_lancamentos');lc.splice(idx,1);sd('sf_lancamentos',lc);renderDiario();atualizarBadges();showToast('Lançamento excluído.');}
+async function deletarLanc(idx){
+  if(!confirm('Excluir lançamento?\n\nO registro é mantido no histórico (auditoria), apenas marcado como excluído.'))return;
+  const item = _cache.sf_lancamentos[idx];
+  if(!item) return;
+  if(item.id != null){
+    const u = window._usuario || {};
+    const { error } = await sbClient.from('lancamentos').update({
+      deletado:true, deletado_em:new Date().toISOString(), deletado_por: u.email||u.nome||'sistema'
+    }).eq('id', item.id);
+    if(error){ showToast('Falha ao excluir: '+error.message, true); return; }
+    registrarAuditoria('exclusao','Livro Diário','lancamentos', item.id, item.historico||item.cliente||item.fornecedor||'');
+  }
+  _cache.sf_lancamentos.splice(idx,1); // remove do cache SEM disparar hard-delete no sync
+  renderDiario(); if(typeof renderContas==='function') renderContas(); atualizarBadges(); renderPainel&&renderPainel();
+  showToast('Lançamento excluído (mantido no histórico).');
+}
 
 function efetivarLancamento(idx){
   const lc=gd('sf_lancamentos');
@@ -5005,12 +5041,14 @@ function efetivarLancamento(idx){
     const val=l.aReceber||0;
     lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,_valorOriginal:val,valorLiquido:val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
+    registrarAuditoria('recebimento','Livro Diário','lancamentos', l.id, (l.cliente||'')+' — '+brl(val,true));
     renderDiario();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Recebimento efetivado: '+brl(val,true));
   } else if(l.status==='A Pagar'){
     const val=l.aPagar||0;
     lc[idx]={...l,status:'Pago',pago:val,aPagar:0,_valorOriginal:val,valorLiquido:-val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
+    registrarAuditoria('pagamento','Livro Diário','lancamentos', l.id, (l.fornecedor||'')+' — '+brl(val,true));
     renderDiario();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Pagamento efetivado: '+brl(val,true));
   }
@@ -5868,6 +5906,7 @@ function salvarQuitar(){
     lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
+    registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' — '+brl(valor,true));
     fecharModalQuitar();
     renderContas();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Recebimento confirmado: '+brl(valor,true));
@@ -5875,6 +5914,7 @@ function salvarQuitar(){
     lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
+    registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' — '+brl(valor,true));
     fecharModalQuitar();
     renderContas();atualizarBadges();renderPainel&&renderPainel();
     showToast('✓ Pagamento confirmado: '+brl(valor,true));
@@ -5899,6 +5939,7 @@ function estornarLancamento(idx){
     lc[idx]=novo;
   }
   sd('sf_lancamentos',lc);
+  registrarAuditoria('estorno','Livro Diário','lancamentos', l.id, nome+' estornado — '+(l.cliente||l.fornecedor||''));
   renderDiario();renderContas();atualizarBadges();renderPainel&&renderPainel();
   showToast('↩ Estorno realizado com sucesso.');
 }
@@ -6683,6 +6724,7 @@ function salvarLancamento(){
     const liquido=isRec?(rec||aR):-(pg||aP);
     lc[lancEditIdx]={...lc[lancEditIdx],...baseItem,data,valorLiquido:liquido};
     sd('sf_lancamentos',lc);
+    registrarAuditoria('alteracao','Livro Diário','lancamentos', lc[lancEditIdx].id, baseItem.historico||baseItem.cliente||baseItem.fornecedor||'');
     fecharModal('modal-lanc');
     atualizarBadges();
     showToast('Lançamento atualizado!');
@@ -6760,6 +6802,7 @@ function salvarLancamento(){
   item.lin=lc.length+10;
   lc.push(item);
   sd('sf_lancamentos',lc);
+  registrarAuditoria('criacao', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', null, (item.historico||item.cliente||item.fornecedor||'')+' — '+brl(Math.abs(liquido),true));
   fecharModal('modal-lanc');
   atualizarBadges();
   showToast('Lançamento salvo!');
@@ -7615,11 +7658,19 @@ function salvarMovimento(){
   showToast('Movimentação registrada!');
 }
 
-function excluirMovimento(id){
-  if(!confirm('Excluir esta movimentação?'))return;
-  sdMov(gdMov().filter(m=>m.id!==id));
+async function excluirMovimento(id){
+  if(!confirm('Excluir esta movimentação?\n\nÉ mantida no histórico, apenas marcada como excluída.'))return;
+  if(id != null){
+    const u = window._usuario || {};
+    const { error } = await sbClient.from('mov_bancarias').update({
+      deletado:true, deletado_em:new Date().toISOString(), deletado_por: u.email||u.nome||'sistema'
+    }).eq('id', id);
+    if(error){ showToast('Falha ao excluir: '+error.message, true); return; }
+    registrarAuditoria('exclusao','Contas Bancárias','mov_bancarias', id, '');
+  }
+  _cache.sf_mov_bancarias = _cache.sf_mov_bancarias.filter(m=>m.id!==id); // remove do cache SEM hard-delete
   renderBancos();
-  showToast('Movimentação excluída.');
+  showToast('Movimentação excluída (mantida no histórico).');
 }
 
 // ---------- modal transferência ----------
@@ -7666,6 +7717,7 @@ function salvarTransferencia(){
     contaOrigNome:bancos[origIdx]?.nome||'',ts:Date.now(),pairId,
   });
   sdMov(mov);
+  registrarAuditoria('transferencia','Transferências','mov_bancarias', pairId, `${bancos[origIdx]?.nome||''} → ${bancos[destIdx]?.nome||''} — ${brl(valor,true)}`);
   fecharModal('modal-transf');
   renderBancos();
   showToast(`Transferência de ${brl(valor,true)} realizada!`);
@@ -7730,6 +7782,7 @@ async function fazerLogin(){
 }
 
 async function entrarNoSistema(user){
+  window._usuario = user;   // usuário logado (para auditoria)
   // Carrega todos os dados financeiros do Supabase para o cache em memória
   await loadAllFromSupabase();
 
