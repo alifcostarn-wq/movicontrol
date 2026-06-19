@@ -5016,6 +5016,16 @@ function sortDiario(col){
   paginaAtual.diario=1;renderDiario();
 }
 function limparFiltrosDiario(){['d-busca','d-fstatus','d-fconta','d-fde','d-fate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});renderDiario();}
+// Atualiza TODAS as telas financeiras de uma vez (evita extrato/saldo desatualizados após uma ação)
+function refreshFinanceiro(){
+  if(typeof renderDiario==='function')   try{ renderDiario(); }catch(e){}
+  if(typeof renderContas==='function')   try{ renderContas(); }catch(e){}
+  if(typeof renderBancos==='function')   try{ renderBancos(); }catch(e){}   // renderBancos já re-renderiza o extrato
+  if(typeof atualizarBadges==='function')try{ atualizarBadges(); }catch(e){}
+  if(typeof renderPainel==='function')   try{ renderPainel(); }catch(e){}
+  try{ if(typeof renderFluxo==='function' && document.getElementById('page-fluxo')?.classList.contains('active')) renderFluxo(); }catch(e){}
+}
+
 async function deletarLanc(idx){
   if(!confirm('Excluir lançamento?\n\nO registro é mantido no histórico (auditoria), apenas marcado como excluído.'))return;
   const item = _cache.sf_lancamentos[idx];
@@ -5029,7 +5039,7 @@ async function deletarLanc(idx){
     registrarAuditoria('exclusao','Livro Diário','lancamentos', item.id, item.historico||item.cliente||item.fornecedor||'');
   }
   _cache.sf_lancamentos.splice(idx,1); // remove do cache SEM disparar hard-delete no sync
-  renderDiario(); if(typeof renderContas==='function') renderContas(); atualizarBadges(); renderPainel&&renderPainel();
+  refreshFinanceiro();
   showToast('Lançamento excluído (mantido no histórico).');
 }
 
@@ -5042,14 +5052,14 @@ function efetivarLancamento(idx){
     lc[idx]={...l,status:'Recebido',recebido:val,aReceber:0,_valorOriginal:val,valorLiquido:val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
     registrarAuditoria('recebimento','Livro Diário','lancamentos', l.id, (l.cliente||'')+' — '+brl(val,true));
-    renderDiario();atualizarBadges();renderPainel&&renderPainel();
+    refreshFinanceiro();
     showToast('✓ Recebimento efetivado: '+brl(val,true));
   } else if(l.status==='A Pagar'){
     const val=l.aPagar||0;
     lc[idx]={...l,status:'Pago',pago:val,aPagar:0,_valorOriginal:val,valorLiquido:-val,dataEfetivacao:hoje()};
     sd('sf_lancamentos',lc);
     registrarAuditoria('pagamento','Livro Diário','lancamentos', l.id, (l.fornecedor||'')+' — '+brl(val,true));
-    renderDiario();atualizarBadges();renderPainel&&renderPainel();
+    refreshFinanceiro();
     showToast('✓ Pagamento efetivado: '+brl(val,true));
   }
 }
@@ -5908,7 +5918,7 @@ function salvarQuitar(){
     sd('sf_lancamentos',lc);
     registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' — '+brl(valor,true));
     fecharModalQuitar();
-    renderContas();atualizarBadges();renderPainel&&renderPainel();
+    refreshFinanceiro();
     showToast('✓ Recebimento confirmado: '+brl(valor,true));
   } else {
     lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet};
@@ -5916,7 +5926,7 @@ function salvarQuitar(){
     sd('sf_lancamentos',lc);
     registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' — '+brl(valor,true));
     fecharModalQuitar();
-    renderContas();atualizarBadges();renderPainel&&renderPainel();
+    refreshFinanceiro();
     showToast('✓ Pagamento confirmado: '+brl(valor,true));
   }
 }
@@ -5940,7 +5950,7 @@ function estornarLancamento(idx){
   }
   sd('sf_lancamentos',lc);
   registrarAuditoria('estorno','Livro Diário','lancamentos', l.id, nome+' estornado — '+(l.cliente||l.fornecedor||''));
-  renderDiario();renderContas();atualizarBadges();renderPainel&&renderPainel();
+  refreshFinanceiro();
   showToast('↩ Estorno realizado com sucesso.');
 }
 
@@ -7669,7 +7679,7 @@ async function excluirMovimento(id){
     registrarAuditoria('exclusao','Contas Bancárias','mov_bancarias', id, '');
   }
   _cache.sf_mov_bancarias = _cache.sf_mov_bancarias.filter(m=>m.id!==id); // remove do cache SEM hard-delete
-  renderBancos();
+  refreshFinanceiro();
   showToast('Movimentação excluída (mantida no histórico).');
 }
 
