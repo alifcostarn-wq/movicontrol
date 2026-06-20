@@ -2653,19 +2653,23 @@ textarea.cp-form-input{resize:vertical}
           <span class="ct-tab-dot ct-tab-dot-green"></span> Contas a Receber
           <span class="ct-tab-badge ct-tab-badge-green" id="ct-tab-badge-receber">0</span>
         </button>
-        <div style="flex:1"></div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <div class="cp-search" style="margin:0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="cp-busca" placeholder="Buscar..." oninput="renderContas()" style="width:160px">
-          </div>
-          <select id="cp-fstatus" onchange="renderContas()" style="font-size:11px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">
+      </div>
+
+      <!-- FILTROS INDEPENDENTES DA TABELA (não afetam os KPIs acima) -->
+      <div class="ct-filtros">
+        <div class="ct-filtro-item ct-filtro-busca">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text3)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="cp-busca" placeholder="Buscar..." oninput="renderContas()">
+        </div>
+        <div class="ct-filtro-item">
+          <label class="ct-filtro-lbl">Status</label>
+          <select id="cp-fstatus" onchange="renderContas()">
             <option value="">Todos</option>
-            <option value="aberto">Em aberto</option>
-            <option value="efetivado">Efetivados</option>
-            <option value="Cancelado">Cancelados</option>
           </select>
-          <select id="cp-fatrasado" onchange="renderContas()" style="font-size:11px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text)">
+        </div>
+        <div class="ct-filtro-item">
+          <label class="ct-filtro-lbl">Situação</label>
+          <select id="cp-fatrasado" onchange="renderContas()">
             <option value="">Todas as situações</option>
             <option value="atrasado">Atrasadas</option>
             <option value="hoje">Vencem Hoje</option>
@@ -2673,7 +2677,25 @@ textarea.cp-form-input{resize:vertical}
             <option value="ok">Em Dia</option>
           </select>
         </div>
+        <div class="ct-filtro-item">
+          <label class="ct-filtro-lbl">Período: Emissão</label>
+          <div class="ct-filtro-datas">
+            <input type="date" id="ctf-emi-de" onchange="renderContas()" title="Emissão de">
+            <span>→</span>
+            <input type="date" id="ctf-emi-ate" onchange="renderContas()" title="Emissão até">
+          </div>
+        </div>
+        <div class="ct-filtro-item">
+          <label class="ct-filtro-lbl">Período: Vencimento</label>
+          <div class="ct-filtro-datas">
+            <input type="date" id="ctf-venc-de" onchange="renderContas()" title="Vencimento de">
+            <span>→</span>
+            <input type="date" id="ctf-venc-ate" onchange="renderContas()" title="Vencimento até">
+          </div>
+        </div>
+        <button class="ct-filtro-limpar" onclick="limparFiltrosContas()" title="Limpar filtros da tabela">✕ Limpar</button>
       </div>
+
 
       <!-- PAINEL CONTAS A PAGAR -->
       <div class="ct-panel" id="ct-panel-pagar">
@@ -3290,6 +3312,19 @@ textarea.cp-form-input{resize:vertical}
 .ct-rank-name{flex:1;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ct-rank-val{font-family:'DM Mono',monospace;font-size:11.5px;font-weight:600}
 .ct-rank-atraso{color:var(--danger);font-size:10px;margin-left:4px}
+/* Filtros independentes da tabela */
+.ct-filtros{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-top:none}
+.ct-filtro-item{display:flex;flex-direction:column;gap:4px}
+.ct-filtro-lbl{font-size:9.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
+.ct-filtros select,.ct-filtros input[type=date]{font-size:11px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;outline:none}
+.ct-filtros select:focus,.ct-filtros input:focus{border-color:var(--accent)}
+.ct-filtro-busca{flex-direction:row;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);align-self:flex-end}
+.ct-filtro-busca input{border:none;background:transparent;color:var(--text);font-size:11px;outline:none;width:140px;padding:0}
+.ct-filtro-datas{display:flex;align-items:center;gap:5px}
+.ct-filtro-datas span{color:var(--text3);font-size:11px}
+.ct-filtro-datas input[type=date]{width:130px}
+.ct-filtro-limpar{align-self:flex-end;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+.ct-filtro-limpar:hover{border-color:var(--danger);color:var(--danger)}
 /* ===== MODAL LANÇAMENTO V2 ===== */
 .lanc-hdr{padding:20px 26px;background:linear-gradient(135deg, var(--accent2), var(--surface));border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background .25s}
 .lanc-hdr.pag-hdr{background:linear-gradient(135deg, var(--danger-bg), var(--surface))}
@@ -6140,6 +6175,29 @@ function ctSwitchTab(tab){
   document.getElementById('ct-tab-receber').classList.toggle('act',tab==='receber');
   document.getElementById('ct-panel-pagar').style.display=tab==='pagar'?'':'none';
   document.getElementById('ct-panel-receber').style.display=tab==='receber'?'':'none';
+  atualizarStatusFiltro(tab);
+  renderContas();
+}
+
+// Popula o select de status conforme a aba (A Receber/Recebido/Cancelado ou A Pagar/Pago/Cancelado)
+function atualizarStatusFiltro(tab){
+  const sel=document.getElementById('cp-fstatus');
+  if(!sel)return;
+  const atual=sel.value;
+  const opts = tab==='pagar'
+    ? [['','Todos'],['A Pagar','A Pagar'],['Pago','Pago'],['Cancelado','Cancelado']]
+    : [['','Todos'],['A Receber','A Receber'],['Recebido','Recebido'],['Cancelado','Cancelado']];
+  sel.innerHTML=opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');
+  // Mantém seleção se ainda válida (ex.: Cancelado), senão volta pra Todos
+  if(opts.some(([v])=>v===atual)) sel.value=atual; else sel.value='';
+}
+
+// Limpa todos os filtros independentes da tabela
+function limparFiltrosContas(){
+  ['cp-busca','ctf-emi-de','ctf-emi-ate','ctf-venc-de','ctf-venc-ate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const fs=document.getElementById('cp-fstatus'); if(fs) fs.value='';
+  const fa=document.getElementById('cp-fatrasado'); if(fa) fa.value='';
+  renderContas();
 }
 
 // Receber sorting + pagination
@@ -6161,13 +6219,23 @@ function _ctBadge(l,h){
 function renderContas(){
   const lc=gd('sf_lancamentos');
   const h=hoje();
+  // Garante que o select de status esteja populado conforme a aba ativa
+  const _fs=document.getElementById('cp-fstatus');
+  if(_fs && _fs.options.length<=1) atualizarStatusFiltro(_ctActiveTab);
   const busca=(document.getElementById('cp-busca')?.value||'').toLowerCase();
   const fstatus=document.getElementById('cp-fstatus')?.value||'';
   const fatrasado=document.getElementById('cp-fatrasado')?.value||'';
+  // Filtros de período independentes (não afetam os KPIs)
+  const emiDe=document.getElementById('ctf-emi-de')?.value||'';
+  const emiAte=document.getElementById('ctf-emi-ate')?.value||'';
+  const vencDe=document.getElementById('ctf-venc-de')?.value||'';
+  const vencAte=document.getElementById('ctf-venc-ate')?.value||'';
 
-  // Status filter helper
+  // Status filter helper — agora aceita valores diretos (A Receber/Recebido/A Pagar/Pago/Cancelado)
   function matchStatus(l){
     if(!fstatus) return true;
+    if(fstatus==='Cancelado') return l.cancelado||l.status==='Cancelado';
+    // legados (aberto/efetivado) mantidos por compatibilidade
     if(fstatus==='aberto') return l.status==='A Pagar'||l.status==='A Receber';
     if(fstatus==='efetivado') return l.status==='Pago'||l.status==='Recebido';
     return l.status===fstatus;
@@ -6178,6 +6246,16 @@ function renderContas(){
     if(fatrasado==='hoje') return (l.data||'')===h;
     if(fatrasado==='semana'){const d=new Date((l.data||h)+'T00:00:00'),hd=new Date(h+'T00:00:00');return d>=hd&&(d-hd)/86400000<=7;}
     if(fatrasado==='ok') return (l.status==='A Pagar'||l.status==='A Receber')&&(l.data||'')>=h;
+    return true;
+  }
+  // Filtro por período de Emissão (dataOriginal, com fallback p/ data) e Vencimento (data)
+  function matchPeriodoTabela(l){
+    const emi=l.dataOriginal||l.data||'';
+    const venc=l.data||'';
+    if(emiDe&&emi<emiDe) return false;
+    if(emiAte&&emi>emiAte) return false;
+    if(vencDe&&venc<vencDe) return false;
+    if(vencAte&&venc>vencAte) return false;
     return true;
   }
   function matchBusca(l,campos){
@@ -6294,8 +6372,8 @@ function renderContas(){
   // ----- EVOLUÇÃO (últimos 6 meses) -----
   renderContasEvolucao();
 
-  // ----- CONTAS A PAGAR -----
-  let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&dentroP(l.data,contasPeriodo));
+  // ----- CONTAS A PAGAR ----- (filtros independentes dos KPIs)
+  let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&matchPeriodoTabela(l));
   pagar=pagar.filter(l=>matchBusca(l,[l.fornecedor||'',l.historico||'',l.plano||''])&&matchStatus(l)&&matchSituacao(l));
   pagar.sort((a,b)=>{
     if(cpSort.col==='val'){const va=(a.aPagar||a.pago||0),vb=(b.aPagar||b.pago||0);return cpSort.dir==='asc'?va-vb:vb-va;}
@@ -6333,7 +6411,7 @@ function renderContas(){
   if(cpb){let b=`<button onclick="cpNavPag(${cpPag-1})" ${cpPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpP;i++){if(i===1||i===tpP||Math.abs(i-cpPag)<=1)b+=`<button class="${i===cpPag?'active':''}" onclick="cpNavPag(${i})">${i}</button>`;else if(Math.abs(i-cpPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="cpNavPag(${cpPag+1})" ${cpPag===tpP?'disabled':''}>›</button>`;cpb.innerHTML=b;}
 
   // ----- CONTAS A RECEBER -----
-  let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&dentroP(l.data,contasPeriodo));
+  let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&matchPeriodoTabela(l));
   receber=receber.filter(l=>matchBusca(l,[l.cliente||'',l.historico||'',l.plano||''])&&matchStatus(l)&&matchSituacao(l));
   receber.sort((a,b)=>{
     if(crSort.col==='val'){const va=(a.aReceber||a.recebido||0),vb=(b.aReceber||b.recebido||0);return crSort.dir==='asc'?va-vb:vb-va;}
