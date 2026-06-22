@@ -625,22 +625,37 @@ async function rapidoDet(status){
 }
 
 /* ---- DIAGNÓSTICO IXC ---- */
-// Chama o proxy IXC no MESMO contrato do MoviOne: URL/token/endpoint via headers, {params,rp} no corpo.
+// Chama o proxy IXC. Envia URL/token/endpoint TANTO no header (contrato do MoviOne)
+// QUANTO no corpo (compatibilidade), e reporta o erro real do proxy.
 async function _ixcCall(endpoint, params={}){
-  const resp = await fetch(_proxyUrl, {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-ixc-url': _ixcUrl,
-      'x-ixc-token': _ixcToken,
-      'x-ixc-endpoint': endpoint,
-    },
-    body: JSON.stringify({ params: params||{}, rp: (params&&params.rp) || '1' }),
-  });
+  let resp;
+  try {
+    resp = await fetch(_proxyUrl, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-ixc-url': _ixcUrl,
+        'x-ixc-token': _ixcToken,
+        'x-ixc-endpoint': endpoint,
+      },
+      body: JSON.stringify({
+        endpoint,
+        params: params||{},
+        rp: (params&&params.rp) || '1',
+        ixcUrl: _ixcUrl,
+        ixcToken: _ixcToken,
+      }),
+    });
+  } catch(netErr){
+    throw new Error('Falha de rede/CORS ao chamar o proxy ('+netErr.message+')');
+  }
   const text = await resp.text();
   let data;
-  try { data = JSON.parse(text); } catch { throw new Error('Resposta inválida do proxy'); }
-  if(!resp.ok){ throw new Error(data.hint||data.error||('erro HTTP '+resp.status)); }
+  try { data = JSON.parse(text); } catch { data = {_raw:text}; }
+  if(!resp.ok){
+    const msg = data.hint||data.error||data.message||data._raw||('HTTP '+resp.status);
+    throw new Error(`[${resp.status}] ${String(msg).slice(0,160)}`);
+  }
   return data;
 }
 
