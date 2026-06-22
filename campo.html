@@ -825,7 +825,17 @@ async function ixcCall(endpoint, params={}){
     });
     const text = await resp.text();
     let data; try{ data = JSON.parse(text); }catch{ throw new Error('Resposta inválida do proxy: '+text.slice(0,100)); }
-    if(!resp.ok) throw new Error(data.hint||data.error||('erro HTTP '+resp.status));
+    if(!resp.ok){
+      // Anexa o detalhe completo do proxy (URLs/auth tentados) para diagnóstico
+      let det='';
+      if(Array.isArray(data.results)){
+        det = data.results.map(r=>`• ${r.url||''} [${r.auth||''}] → ${r.status!=null?('HTTP '+r.status):(r.error||'?')}${r.isHtml?' (HTML)':''}${r.preview?' | '+String(r.preview).replace(/\s+/g,' ').slice(0,80):''}`).join('\n');
+      }
+      const err = new Error(`[${resp.status}] ${data.hint||data.error||'erro'}`);
+      err.detalhe = det;
+      err.usouUser = !!_ixcUser;
+      throw err;
+    }
     return data;
   } catch(e){
     if(e.name==='AbortError') throw new Error('Proxy IXC não respondeu (timeout). Verifique o proxy/CORS.');
@@ -889,7 +899,9 @@ async function carregarDiag(){
       <div id="ping-out"></div>`;
 
   } catch(e){
-    wrap.innerHTML=`<div style="padding:10px 12px;color:var(--red);font-size:13px">Erro: ${e.message}</div>`;
+    const det = e.detalhe ? `<pre style="margin-top:8px;padding:8px;background:var(--bg2,#f3f3f3);border-radius:6px;font-size:10px;white-space:pre-wrap;overflow-x:auto;max-height:180px;overflow-y:auto">${e.detalhe}</pre>` : '';
+    const userInfo = (e.usouUser===false) ? '<div style="font-size:10px;color:var(--amb);margin-top:4px">⚠️ Sem usuário IXC configurado (x-ixc-user vazio).</div>' : '';
+    wrap.innerHTML=`<div style="padding:10px 12px;color:var(--red);font-size:13px">Erro: ${e.message}${userInfo}${det}</div>`;
   }
 }
 
