@@ -2475,7 +2475,7 @@ textarea.cp-form-input{resize:vertical}
           <button class="diario-mes-hoje-btn" id="diario-mes-hoje-btn" onclick="diarioIrHoje()" title="Ir para o mês atual">Hoje</button>
         </div>
         <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="d-busca" placeholder="Buscar histórico, cliente, fornecedor..." oninput="renderDiario()" style="width:220px"></div>
-        <select id="d-fstatus" onchange="renderDiario()"><option value="">Todos os tipos</option><option>A Receber</option><option>Recebido</option><option>A Pagar</option><option>Pago</option><option value="Transferência">Transferências</option></select>
+        <select id="d-fstatus" onchange="renderDiario()"><option value="">Todos os tipos</option><option>Recebido</option><option>Pago</option><option value="Transferência">Transferências</option></select>
         <select id="d-fconta" onchange="renderDiario()"><option value="">Todas as contas</option></select>
         <input type="date" id="d-fde" onchange="renderDiario()" title="De">
         <input type="date" id="d-fate" onchange="renderDiario()" title="Até">
@@ -3292,6 +3292,8 @@ textarea.cp-form-input{resize:vertical}
 .ct-badge-atrasado{background:rgba(239,68,68,.1);color:#ef4444}.ct-badge-atrasado::before{background:#ef4444}
 .ct-badge-cancelado{background:rgba(130,130,130,.1);color:var(--text3);text-decoration:line-through}.ct-badge-cancelado::before{background:var(--text3)}
 .ct-badge-hoje{background:rgba(59,130,246,.1);color:#3b82f6}.ct-badge-hoje::before{background:#3b82f6}
+.ct-badge-parcial{background:rgba(168,85,247,.12);color:#a855f7}.ct-badge-parcial::before{background:#a855f7}
+.ct-parcial-prog{font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;margin-left:5px;white-space:nowrap}
 .ct-dias-atraso{font-size:9px;color:#ef4444;font-weight:600}
 /* Blocos gerenciais */
 .ct-prog-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
@@ -3655,6 +3657,9 @@ const _SYNC_MAP = {
       estornado_por: l.estornadoPor || null,
       estorno_de: l.estornoDe ?? null,
       parcial_de: l.parcialDe ?? null,
+      parcial: l.parcial || false,
+      valor_total_titulo: l.valorTotalTitulo ?? null,
+      ja_quitado: l.jaQuitado ?? null,
       cancelado: l.cancelado || false,
       cancelado_em: l.canceladoEm || null,
       cancelado_por: l.canceladoPor || null,
@@ -3690,6 +3695,9 @@ const _SYNC_MAP = {
       estornadoPor: r.estornado_por,
       estornoDe: r.estorno_de,
       parcialDe: r.parcial_de,
+      parcial: r.parcial || false,
+      valorTotalTitulo: r.valor_total_titulo,
+      jaQuitado: r.ja_quitado,
       cancelado: r.cancelado || false,
       canceladoEm: r.cancelado_em,
       canceladoPor: r.cancelado_por,
@@ -5326,7 +5334,9 @@ function renderDiario(){
   const fde  = document.getElementById('d-fde')?.value  || '';
   const fate = document.getElementById('d-fate')?.value || '';
   const mesStr = String(_diarioAno)+'-'+String(_diarioMes+1).padStart(2,'0');
-  let lista=[...getLancFiltrados(), ...getTransferenciasDiario()];
+  // Livro Diário mostra SOMENTE lançamentos efetivados (Recebido/Pago) + transferências.
+  // Títulos em aberto (A Receber/A Pagar) aparecem apenas no módulo Contas a Pagar/Receber.
+  let lista=[...getLancFiltrados().filter(_lancEfetivado), ...getTransferenciasDiario()];
   if(!fde && !fate){
     lista = lista.filter(l => {
       const dataRef = (l.status==='Pago'||l.status==='Recebido') && l.dataEfetivacao
@@ -6185,8 +6195,8 @@ function atualizarStatusFiltro(tab){
   if(!sel)return;
   const atual=sel.value;
   const opts = tab==='pagar'
-    ? [['','Todos'],['A Pagar','A Pagar'],['Pago','Pago'],['Cancelado','Cancelado']]
-    : [['','Todos'],['A Receber','A Receber'],['Recebido','Recebido'],['Cancelado','Cancelado']];
+    ? [['','Todos'],['A Pagar','A Pagar'],['parcial','Pago Parcial'],['Pago','Pago'],['Cancelado','Cancelado']]
+    : [['','Todos'],['A Receber','A Receber'],['parcial','Recebido Parcial'],['Recebido','Recebido'],['Cancelado','Cancelado']];
   sel.innerHTML=opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');
   // Mantém seleção se ainda válida (ex.: Cancelado), senão volta pra Todos
   if(opts.some(([v])=>v===atual)) sel.value=atual; else sel.value='';
@@ -6210,6 +6220,13 @@ function _ctBadge(l,h){
   if(l.cancelado||l.status==='Cancelado') return '<span class="ct-badge ct-badge-cancelado">Cancelado</span>';
   if(l.status==='Pago') return '<span class="ct-badge ct-badge-pago">Pago</span>';
   if(l.status==='Recebido') return '<span class="ct-badge ct-badge-recebido">Recebido</span>';
+  // Título com baixa parcial: ainda em aberto pelo restante, mas marcado como parcial
+  if(l.parcial){
+    const lbl = l.status==='A Receber' ? 'Recebido Parcial' : 'Pago Parcial';
+    const prog = (l.valorTotalTitulo) ? `<span class="ct-parcial-prog">${brl(l.jaQuitado||0,true)}/${brl(l.valorTotalTitulo,true)}</span>` : '';
+    const atrasoTag = (l.data||'')<h ? '<span class="ct-badge ct-badge-atrasado" style="margin-left:4px">Atrasado</span>' : '';
+    return `<span class="ct-badge ct-badge-parcial">${lbl}</span>${prog}${atrasoTag}`;
+  }
   if(l.status==='A Pagar'&&(l.data||'')<h) return '<span class="ct-badge ct-badge-atrasado">Atrasado</span>';
   if(l.status==='A Receber'&&(l.data||'')<h) return '<span class="ct-badge ct-badge-atrasado">Atrasado</span>';
   if((l.data||'')===h) return '<span class="ct-badge ct-badge-hoje">Vence Hoje</span>';
@@ -6235,6 +6252,9 @@ function renderContas(){
   function matchStatus(l){
     if(!fstatus) return true;
     if(fstatus==='Cancelado') return l.cancelado||l.status==='Cancelado';
+    if(fstatus==='parcial') return !!l.parcial && !l.cancelado;
+    if(fstatus==='A Receber') return l.status==='A Receber' && !l.parcial;
+    if(fstatus==='A Pagar') return l.status==='A Pagar' && !l.parcial;
     // legados (aberto/efetivado) mantidos por compatibilidade
     if(fstatus==='aberto') return l.status==='A Pagar'||l.status==='A Receber';
     if(fstatus==='efetivado') return l.status==='Pago'||l.status==='Recebido';
@@ -6539,11 +6559,16 @@ function salvarQuitar(){
   const parcial = valor < aberto - 0.001;
 
   if(parcial){
-    // BAIXA PARCIAL: título original continua aberto com o restante + registro efetivado pelo valor pago
+    // BAIXA PARCIAL: título original continua aberto com o restante, marcado como "parcial"
     const restante=+(aberto-valor).toFixed(2);
+    const totalTitulo=+(l.valorTotalTitulo || aberto).toFixed(2); // valor cheio do título (1ª baixa = aberto atual)
+    const jaQuitado=+(totalTitulo-restante).toFixed(2);          // acumulado já recebido/pago
     const orig={...l};
     if(isRec){ orig.aReceber=restante; } else { orig.aPagar=restante; }
-    orig.valorLiquido = isRec?restante:-restante;
+    orig.valorLiquido = 0; // título em aberto não impacta caixa (só as baixas efetivadas impactam)
+    orig.parcial = true;
+    orig.valorTotalTitulo = totalTitulo;
+    orig.jaQuitado = jaQuitado;
     lc[_quitarIdx]=orig;
     const baixa={
       tipo:l.tipo||(isRec?'receber':'pagar'),
@@ -6569,7 +6594,7 @@ function salvarQuitar(){
 
   // QUITAÇÃO TOTAL
   if(isRec){
-    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId};
+    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:null,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
     registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' → '+contaNome+' — '+brl(valor,true));
@@ -6577,7 +6602,7 @@ function salvarQuitar(){
     refreshFinanceiro();
     showToast('✓ Recebimento confirmado: '+brl(valor,true));
   } else {
-    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId};
+    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:null,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     sd('sf_lancamentos',lc);
     registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' ← '+contaNome+' — '+brl(valor,true));
@@ -7469,9 +7494,10 @@ function salvarLancamento(){
 
   const lc=gd('sf_lancamentos');
 
-  // --- Edição simples ---
+  // Edição simples ---
   if(lancEditIdx!==null){
-    const liquido=isRec?(rec||aR):-(pg||aP);
+    const st=baseItem.status;
+    const liquido = st==='Recebido' ? +(rec||0) : st==='Pago' ? -(pg||0) : 0;
     lc[lancEditIdx]={...lc[lancEditIdx],...baseItem,data,valorLiquido:liquido};
     sd('sf_lancamentos',lc);
     registrarAuditoria('alteracao','Livro Diário','lancamentos', lc[lancEditIdx].id, baseItem.historico||baseItem.cliente||baseItem.fornecedor||'');
@@ -7495,7 +7521,7 @@ function salvarLancamento(){
     for(let i=0;i<nParc;i++){
       const dt=i===0?data:addMeses(data,i,per);
       const vR=isRec?valParc:0, vP=isRec?0:valParc;
-      const liquido=isRec?vR:-vP;
+      const liquido=0; // parcelas nascem em aberto — não impactam caixa até efetivar
       lc.push({
         ...baseItem,
         data:dt,
@@ -7524,7 +7550,7 @@ function salvarLancamento(){
     const recGroupId='rec_'+Date.now();
     for(let i=0;i<nRec;i++){
       const dt=i===0?data:addMeses(data,i,per);
-      const liquido=isRec?(rec||aR):-(pg||aP);
+      const liquido=0; // recorrências nascem em aberto — não impactam caixa até efetivar
       lc.push({
         ...baseItem,
         data:dt,
@@ -7547,7 +7573,8 @@ function salvarLancamento(){
   }
 
   // --- Único (padrão) ---
-  const liquido=isRec?(rec||aR):-(pg||aP);
+  const stU=baseItem.status;
+  const liquido = stU==='Recebido' ? +(rec||0) : stU==='Pago' ? -(pg||0) : 0;
   const item={...baseItem,data,valorLiquido:liquido};
   item.lin=lc.length+10;
   lc.push(item);
@@ -8029,6 +8056,19 @@ function gdMov(){return gd('sf_mov_bancarias');}
 function sdMov(v){sd('sf_mov_bancarias',v);}
 
 // Vínculo lançamento↔conta: por id quando existir, senão por nome (fallback p/ histórico antigo)
+// Um lançamento só impacta caixa/diário quando EFETIVADO (Recebido/Pago)
+function _lancEfetivado(l){
+  return !!l && !l.cancelado && (l.status==='Recebido' || l.status==='Pago');
+}
+// Valor realizado (entra/sai do caixa). Em aberto ou cancelado = 0.
+// Calculado pelo status para corrigir até dados legados gravados com valorLiquido errado.
+function _lancRealizado(l){
+  if(!l || l.cancelado || l.status==='Cancelado') return 0;
+  if(l.status==='Recebido') return  +(l.recebido || (l.valorLiquido>0 ?  l.valorLiquido : 0) || 0);
+  if(l.status==='Pago')     return  -(l.pago     || (l.valorLiquido<0 ? -l.valorLiquido : 0) || 0);
+  return 0; // A Receber / A Pagar → não movimenta conta bancária
+}
+
 function _lancNaConta(l, banco){
   if(!banco) return false;
   if(l.contaId!=null && banco.id!=null) return l.contaId===banco.id;
@@ -8043,10 +8083,10 @@ function calcSaldoConta(idx){
   // Movimentações manuais (entradas/saídas/transferências/ajustes)
   const mov=gdMov().filter(m=>m.contaIdx===idx);
   const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
-  // Lançamentos do Livro Diário vinculados a esta conta (por id, fallback nome)
+  // Lançamentos vinculados a esta conta — SOMENTE valor realizado (Recebido/Pago)
   const lc=gd('sf_lancamentos');
   const lancTotal=lc.filter(l=>_lancNaConta(l, bancos[idx]))
-    .reduce((s,l)=>s+(l.valorLiquido||0),0);
+    .reduce((s,l)=>s+_lancRealizado(l),0);
   return saldoInicial+movTotal+lancTotal;
 }
 
@@ -8058,7 +8098,7 @@ function calcSaldoContaAteData(idx,dataLimite){
   const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
   const lc=gd('sf_lancamentos');
   const lancTotal=lc.filter(l=>_lancNaConta(l, bancos[idx])&&(l.data||'')<=dataLimite)
-    .reduce((s,l)=>s+(l.valorLiquido||0),0);
+    .reduce((s,l)=>s+_lancRealizado(l),0);
   return saldoInicial+movTotal+lancTotal;
 }
 
@@ -8182,14 +8222,14 @@ function renderExtrato(){
   const lancComoMov=[];
   bancos.forEach((b,i)=>{
     allLanc.filter(l=>_lancNaConta(l, b)).forEach(l=>{
-      const v=l.valorLiquido||0;
+      const v=_lancRealizado(l);
       if(v===0)return;
       lancComoMov.push({
         id:'lanc_'+l.lin+'_'+i,
         contaIdx:i,
         contaNome:b.nome,
         cat:v>0?'entrada':'saida',
-        data:l.data||'',
+        data:l.dataEfetivacao||l.data||'',
         descricao:(l.historico||l.plano||'Lançamento'),
         valor:v,
         ts:0,
