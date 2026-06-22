@@ -2780,8 +2780,30 @@ textarea.cp-form-input{resize:vertical}
             </div>
             <div class="form-group full">
               <label class="form-label" id="mq-valor-label">Valor Pago (R$)<span style="color:var(--danger)">*</span></label>
-              <input type="number" id="mq-valor" step="0.01" min="0" placeholder="0,00" style="width:100%">
+              <input type="number" id="mq-valor" step="0.01" min="0" placeholder="0,00" style="width:100%" oninput="atualizarTotalQuitar()">
               <div style="font-size:11px;color:var(--text3);margin-top:4px">💡 Valor menor que o total em aberto = baixa parcial (o restante continua em aberto).</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Multa (R$)</label>
+              <input type="number" id="mq-multa" step="0.01" min="0" placeholder="0,00" style="width:100%" oninput="atualizarTotalQuitar()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Juros (R$)</label>
+              <input type="number" id="mq-juros" step="0.01" min="0" placeholder="0,00" style="width:100%" oninput="atualizarTotalQuitar()">
+            </div>
+            <div class="form-group full" id="mq-total-box" style="display:none">
+              <div class="mq-total-row">
+                <span>Valor</span><span id="mq-total-valor">R$ 0,00</span>
+              </div>
+              <div class="mq-total-row" id="mq-total-multa-row" style="display:none">
+                <span>+ Multa</span><span id="mq-total-multa">R$ 0,00</span>
+              </div>
+              <div class="mq-total-row" id="mq-total-juros-row" style="display:none">
+                <span>+ Juros</span><span id="mq-total-juros">R$ 0,00</span>
+              </div>
+              <div class="mq-total-row mq-total-final">
+                <span id="mq-total-label">Total a pagar</span><span id="mq-total-geral">R$ 0,00</span>
+              </div>
             </div>
             <div class="form-group full">
               <label class="form-label">Conta bancária<span style="color:var(--danger)">*</span></label>
@@ -3294,6 +3316,9 @@ textarea.cp-form-input{resize:vertical}
 .ct-badge-hoje{background:rgba(59,130,246,.1);color:#3b82f6}.ct-badge-hoje::before{background:#3b82f6}
 .ct-badge-parcial{background:rgba(168,85,247,.12);color:#a855f7}.ct-badge-parcial::before{background:#a855f7}
 .ct-parcial-prog{font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;margin-left:5px;white-space:nowrap}
+.mq-total-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text2);padding:3px 0;font-family:'DM Mono',monospace}
+.mq-total-row.mq-total-final{border-top:1px solid var(--border);margin-top:4px;padding-top:7px;font-size:14px;font-weight:700;color:var(--text)}
+#mq-total-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
 .ct-dias-atraso{font-size:9px;color:#ef4444;font-weight:600}
 /* Blocos gerenciais */
 .ct-prog-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
@@ -6505,6 +6530,9 @@ function abrirModalReceber(idx){
   document.getElementById('mq-data').value=hoje();
   document.getElementById('mq-valor').value=(l.aReceber||0).toFixed(2);
   document.getElementById('mq-obs').value='';
+  document.getElementById('mq-multa').value='';
+  document.getElementById('mq-juros').value='';
+  atualizarTotalQuitar();
   preencherContasQuitar(l.conta, l.contaId);
   // título estornado: novo recebimento obrigatoriamente na mesma conta original
   const _mqcR=document.getElementById('mq-conta'); if(_mqcR) _mqcR.disabled = !!l.estornadoEm;
@@ -6527,6 +6555,9 @@ function abrirModalQuitar(idx){
   document.getElementById('mq-data').value=hoje();
   document.getElementById('mq-valor').value=(l.aPagar||0).toFixed(2);
   document.getElementById('mq-obs').value='';
+  document.getElementById('mq-multa').value='';
+  document.getElementById('mq-juros').value='';
+  atualizarTotalQuitar();
   preencherContasQuitar(l.conta, l.contaId);
   // título estornado: novo pagamento obrigatoriamente na mesma conta original
   const _mqcP=document.getElementById('mq-conta'); if(_mqcP) _mqcP.disabled = !!l.estornadoEm;
@@ -6536,6 +6567,45 @@ function abrirModalQuitar(idx){
 }
 
 function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;}
+
+// Atualiza o resumo de total (valor + multa + juros) ao vivo no modal de quitação
+function atualizarTotalQuitar(){
+  const isRec=_quitarTipo==='receber';
+  const valor=parseFloat(document.getElementById('mq-valor').value)||0;
+  const multa=parseFloat(document.getElementById('mq-multa').value)||0;
+  const juros=parseFloat(document.getElementById('mq-juros').value)||0;
+  const total=+(valor+multa+juros).toFixed(2);
+  const box=document.getElementById('mq-total-box');
+  if(!box)return;
+  document.getElementById('mq-total-valor').innerHTML=brl(valor,true);
+  document.getElementById('mq-total-multa').innerHTML=brl(multa,true);
+  document.getElementById('mq-total-juros').innerHTML=brl(juros,true);
+  document.getElementById('mq-total-geral').innerHTML=brl(total,true);
+  document.getElementById('mq-total-multa-row').style.display=multa>0?'':'none';
+  document.getElementById('mq-total-juros-row').style.display=juros>0?'':'none';
+  document.getElementById('mq-total-label').textContent=isRec?'Total a receber':'Total a pagar';
+  box.style.display=(multa>0||juros>0)?'':'none';
+}
+
+// Cria lançamentos separados e já efetivados para multa e juros (entram no caixa junto)
+function _pushMultaJuros(lc, isRec, multa, juros, contaNome, contaId, dataEfet, l){
+  const planoMJ = isRec ? '3.3 Recebimento de Juros' : '5.1 Despesas Financeiras';
+  const mk=(rotulo, val)=>({
+    tipo:l.tipo||(isRec?'receber':'pagar'),
+    data:dataEfet, dataOriginal:l.data||null,
+    status:isRec?'Recebido':'Pago',
+    plano:planoMJ, cliente:l.cliente||null, fornecedor:l.fornecedor||null,
+    conta:contaNome, contaId:contaId,
+    aReceber:0, aPagar:0,
+    recebido:isRec?val:0, pago:isRec?0:val,
+    valorLiquido:isRec?val:-val,
+    dataEfetivacao:dataEfet,
+    historico:`${rotulo} ref. ${l.historico||l.cliente||l.fornecedor||'título'}`,
+    lin:lc.length+10,
+  });
+  if(multa>0) lc.push(mk('Multa', multa));
+  if(juros>0) lc.push(mk('Juros', juros));
+}
 
 function salvarQuitar(){
   if(_quitarIdx===null)return;
@@ -6553,6 +6623,9 @@ function salvarQuitar(){
   const l=lc[_quitarIdx];
   if(!l)return;
   const obs=document.getElementById('mq-obs').value.trim();
+  const multa=parseFloat(document.getElementById('mq-multa').value)||0;
+  const juros=parseFloat(document.getElementById('mq-juros').value)||0;
+  const mj=+(multa+juros).toFixed(2);
   const isRec=_quitarTipo==='receber';
   const aberto=isRec?(l.aReceber||0):(l.aPagar||0);
   if(valor > aberto + 0.001){ showToast('O valor não pode ser maior que o saldo em aberto ('+brl(aberto,true)+').',true); return; }
@@ -6584,11 +6657,12 @@ function salvarQuitar(){
       lin:lc.length+10, parcialDe:l.id ?? null,
     };
     lc.push(baixa);
+    _pushMultaJuros(lc, isRec, multa, juros, contaNome, contaId, dataEfet, l);
     sd('sf_lancamentos',lc);
-    registrarAuditoria(isRec?'recebimento_parcial':'pagamento_parcial', isRec?'Contas a Receber':'Contas a Pagar','lancamentos', l.id, `${brl(valor,true)} de ${brl(aberto,true)} → ${contaNome} (restam ${brl(restante,true)})`);
+    registrarAuditoria(isRec?'recebimento_parcial':'pagamento_parcial', isRec?'Contas a Receber':'Contas a Pagar','lancamentos', l.id, `${brl(valor,true)} de ${brl(aberto,true)} → ${contaNome} (restam ${brl(restante,true)})`+(mj>0?` + multa/juros ${brl(mj,true)}`:''));
     fecharModalQuitar();
     refreshFinanceiro();
-    showToast(`✓ Baixa parcial de ${brl(valor,true)} — restam ${brl(restante,true)} em aberto.`);
+    showToast(`✓ Baixa parcial de ${brl(valor,true)}`+(mj>0?` (+ ${brl(mj,true)} multa/juros)`:'')+` — restam ${brl(restante,true)} em aberto.`);
     return;
   }
 
@@ -6596,19 +6670,21 @@ function salvarQuitar(){
   if(isRec){
     lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:null,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
+    _pushMultaJuros(lc, true, multa, juros, contaNome, contaId, dataEfet, l);
     sd('sf_lancamentos',lc);
-    registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' → '+contaNome+' — '+brl(valor,true));
+    registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' → '+contaNome+' — '+brl(valor,true)+(mj>0?` + multa/juros ${brl(mj,true)}`:''));
     fecharModalQuitar();
     refreshFinanceiro();
-    showToast('✓ Recebimento confirmado: '+brl(valor,true));
+    showToast('✓ Recebimento confirmado: '+brl(valor+mj,true)+(mj>0?` (inclui ${brl(mj,true)} de multa/juros)`:''));
   } else {
     lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:null,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
+    _pushMultaJuros(lc, false, multa, juros, contaNome, contaId, dataEfet, l);
     sd('sf_lancamentos',lc);
-    registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' ← '+contaNome+' — '+brl(valor,true));
+    registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' ← '+contaNome+' — '+brl(valor,true)+(mj>0?` + multa/juros ${brl(mj,true)}`:''));
     fecharModalQuitar();
     refreshFinanceiro();
-    showToast('✓ Pagamento confirmado: '+brl(valor,true));
+    showToast('✓ Pagamento confirmado: '+brl(valor+mj,true)+(mj>0?` (inclui ${brl(mj,true)} de multa/juros)`:''));
   }
 }
 
