@@ -9,6 +9,7 @@
 <title>moviTec</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Nunito:wght@800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
@@ -191,6 +192,47 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
 /* ---- REFRESH BTN ---- */
 .refresh-fab{position:fixed;bottom:calc(var(--safe-bot) + 16px);right:16px;width:48px;height:48px;border-radius:50%;background:var(--ac);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;z-index:30}
+
+/* ---- TABS (Minhas OS / Meu Estoque) ---- */
+.vtabs{display:flex;gap:6px;background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:14px}
+.vtab{flex:1;padding:9px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.vtab.on{background:var(--ac);color:#fff}
+
+/* ---- ESTOQUE (técnico) ---- */
+.est-card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.est-nome{font-weight:600;font-size:14px}
+.est-meta{font-size:11px;color:var(--tx3);margin-top:2px}
+.est-qtd{font-size:20px;font-weight:700;color:var(--ac);flex-shrink:0;text-align:right}
+.est-qtd.low{color:var(--amb)} .est-qtd.zero{color:var(--red)}
+.est-qtd small{display:block;font-size:10px;font-weight:500;color:var(--tx3)}
+
+/* ---- CHIPS / LISTA NO MODAL FINALIZAR ---- */
+.mini-add{display:flex;gap:8px;margin-top:6px}
+.mini-add select,.mini-add input{flex:1}
+.mini-add input.qtd{flex:0 0 64px;text-align:center}
+.mini-btn{flex-shrink:0;padding:0 14px;border-radius:10px;border:1px solid var(--ac);background:var(--ac2);color:var(--ac);font-weight:700;font-size:18px;cursor:pointer}
+.chip-list{display:flex;flex-direction:column;gap:7px;margin-top:8px}
+.chip{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:9px 12px;font-size:13px}
+.chip .x{width:24px;height:24px;border-radius:7px;border:none;background:var(--red-bg);color:var(--red);font-weight:700;cursor:pointer;flex-shrink:0}
+.chip .mac{font-family:monospace;font-weight:700;color:var(--ac)}
+.scan-btn{width:100%;padding:13px;border-radius:11px;border:1px dashed var(--ac);background:var(--ac2);color:var(--ac);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
+
+/* ---- SCANNER FULLSCREEN ---- */
+#ov-scan{position:fixed;inset:0;background:#000;z-index:300;display:none;flex-direction:column}
+#ov-scan.open{display:flex}
+#scan-video{flex:1;width:100%;object-fit:cover;background:#000}
+.scan-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:74%;max-width:320px;aspect-ratio:1.3;border:3px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
+.scan-top{position:absolute;top:0;left:0;right:0;padding:calc(var(--safe-top) + 12px) 16px 12px;display:flex;justify-content:space-between;align-items:center;color:#fff;z-index:2}
+.scan-top .t{font-weight:700;font-size:15px}
+.scan-ico{width:40px;height:40px;border-radius:11px;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:18px;cursor:pointer}
+.scan-hint{position:absolute;bottom:calc(var(--safe-bot) + 26px);left:0;right:0;text-align:center;color:#fff;font-size:13px;padding:0 24px;z-index:2;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+
+/* ---- GEOLOCALIZAÇÃO ---- */
+.geo-box{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:11px 13px;margin-top:6px}
+.geo-status{font-size:13px;color:var(--tx2)}
+.geo-status.ok{color:var(--ac);font-weight:600}
+.geo-status.err{color:var(--amb)}
+.geo-retry{flex-shrink:0;padding:7px 12px;border-radius:9px;border:1px solid var(--ac);background:var(--ac2);color:var(--ac);font-weight:600;font-size:12px;cursor:pointer;font-family:inherit}
 </style>
 </head>
 <body>
@@ -227,6 +269,13 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
   <div class="content">
     <div class="ptr" id="ptr">↻ Atualizando...</div>
 
+    <!-- TABS -->
+    <div class="vtabs">
+      <button class="vtab on" id="tab-os" onclick="trocarView('os')">🗂 Minhas OS</button>
+      <button class="vtab" id="tab-est" onclick="trocarView('estoque')">📦 Meu Estoque</button>
+    </div>
+
+    <div id="view-os">
     <!-- KPIs -->
     <div class="kpis">
       <div class="kpi">
@@ -245,7 +294,7 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
     <!-- FILTROS -->
     <div class="filtros">
-      <button class="fil on" data-f="" onclick="filtrar(this,'')">Todas</button>
+      <button class="fil on" data-f="ativas" onclick="filtrar(this,'ativas')">🗂 Ativas</button>
       <button class="fil" data-f="aberta" onclick="filtrar(this,'aberta')">📋 Abertas</button>
       <button class="fil" data-f="assumida" onclick="filtrar(this,'assumida')">✋ Assumidas</button>
       <button class="fil" data-f="executando" onclick="filtrar(this,'executando')">🔧 Executando</button>
@@ -254,6 +303,13 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
     <!-- LISTA -->
     <div class="list" id="lista"></div>
+    </div><!-- /view-os -->
+
+    <!-- MEU ESTOQUE -->
+    <div id="view-estoque" style="display:none">
+      <div class="alert">📦 Peças sob sua responsabilidade. As baixas acontecem ao finalizar uma OS. Para receber mais peças, fale com o administrador.</div>
+      <div class="list" id="lista-est"></div>
+    </div>
   </div>
 </div>
 
@@ -315,10 +371,52 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
       <label class="flabel">📝 Observações (opcional)</label>
       <textarea class="finput" id="fin-obs" placeholder="Orientações ao cliente, pendências..."></textarea>
 
+      <!-- PEÇAS UTILIZADAS -->
+      <label class="flabel">📦 Peças utilizadas (baixa do seu estoque)</label>
+      <div class="mini-add">
+        <select class="finput" id="fin-peca-sel"><option value="">— Selecione a peça —</option></select>
+        <input class="finput qtd" type="number" id="fin-peca-qtd" min="1" placeholder="Qtd" inputmode="numeric">
+        <button class="mini-btn" type="button" onclick="addPecaFin()">+</button>
+      </div>
+      <div class="chip-list" id="fin-pecas-list"></div>
+
+      <!-- EQUIPAMENTOS -->
+      <label class="flabel">📡 Equipamentos instalados <span style="color:var(--red)">*</span></label>
+      <div style="font-size:11px;color:var(--tx3);margin-bottom:2px">Registre ao menos 1 (MAC ou nº de série). Use a câmera ou digite.</div>
+      <button class="scan-btn" type="button" onclick="abrirScanner()">📷 Escanear MAC / Nº de Série</button>
+      <div class="frow2" style="margin-top:8px">
+        <input class="finput" id="eq-mac" placeholder="MAC" autocapitalize="characters">
+        <input class="finput" id="eq-serial" placeholder="Nº de Série">
+      </div>
+      <input class="finput" id="eq-modelo" placeholder="Modelo (opcional, ex.: ONU Huawei EG8145)" style="margin-top:8px">
+      <button class="btn-full btn-ghost" type="button" onclick="addEquipFin()" style="margin-top:8px">➕ Adicionar equipamento</button>
+      <div class="chip-list" id="fin-equip-list"></div>
+
+      <!-- LOCALIZAÇÃO DA FINALIZAÇÃO -->
+      <label class="flabel">📍 Local da finalização</label>
+      <div class="geo-box" id="fin-geo-box">
+        <div class="geo-status" id="fin-geo-status">📡 Obtendo localização…</div>
+        <button class="geo-retry" type="button" id="fin-geo-retry" onclick="capturarLocalizacao()" style="display:none">↻ Tentar novamente</button>
+      </div>
+
       <button class="btn-full btn-green" id="btn-fin" onclick="confirmarFin()">✅ Confirmar Finalização</button>
       <button class="btn-full btn-ghost" onclick="fecharFin()" style="margin-top:6px">Cancelar</button>
     </div>
   </div>
+</div>
+
+<!-- SCANNER FULLSCREEN -->
+<div id="ov-scan">
+  <div class="scan-top">
+    <div class="t">📷 Aponte para a etiqueta</div>
+    <div style="display:flex;gap:8px">
+      <button class="scan-ico" id="btn-flash" onclick="toggleLanterna()" title="Lanterna">🔦</button>
+      <button class="scan-ico" onclick="fecharScanner()" title="Fechar">✕</button>
+    </div>
+  </div>
+  <video id="scan-video" playsinline muted></video>
+  <div class="scan-frame"></div>
+  <div class="scan-hint">Detecta MAC e nº de série automaticamente. O campo certo é preenchido sozinho.</div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -330,6 +428,7 @@ const SB_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 
 let _tec = null, _os = [], _fil = '', _aberta = null, _proxyUrl = '', _ixcUrl = '', _ixcToken = '', _ixcUser = '';
+let _subEstoqueId = null, _meuEstoque = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os', _finGeo = null;
 
 /* ---- UTILS ---- */
 const $  = id => document.getElementById(id);
@@ -397,7 +496,7 @@ async function entrar(){
   _ixcUrl    = cfgMap['ixc_url']       || '';
   _ixcToken  = cfgMap['ixc_token']     || '';
   _ixcUser   = cfgMap['ixc_user']      || '';
-  await atualizar();
+  await atualizar(false, true);
 }
 
 // Verifica sessão ao carregar
@@ -410,13 +509,65 @@ async function entrar(){
 })();
 
 /* ---- DADOS ---- */
-async function atualizar(manual=false){
+async function atualizar(manual=false, smart=false){
   if(!_tec) return;
   if(manual){ $('ptr').classList.add('show'); }
   const { data } = await sb.from('campo_os').select('*').eq('tecnico_id', _tec.id).order('id',{ascending:false});
   _os = data||[];
+  await carregarMeuEstoque();
   if(manual){ setTimeout(()=>$('ptr').classList.remove('show'), 500); }
-  kpis(); render();
+  kpis();
+  if(smart) filtroInteligente(); else render();
+  renderMeuEstoque();
+}
+
+/* ---- MEU ESTOQUE (sub-estoque do técnico) ---- */
+async function carregarMeuEstoque(){
+  // RLS garante que o técnico só enxerga o sub-estoque DELE
+  const { data: subs } = await sb.from('campo_sub_estoques')
+    .select('id').eq('tipo','tecnico').eq('tecnico_id', _tec.id).eq('ativo',true).limit(1);
+  _subEstoqueId = subs && subs.length ? subs[0].id : null;
+  if(!_subEstoqueId){ _meuEstoque = []; return; }
+  const { data: saldos } = await sb.from('campo_estoque_saldo')
+    .select('qtd, peca_id, campo_estoque(nome, sku, unidade, qtd_minima)')
+    .eq('sub_estoque_id', _subEstoqueId);
+  _meuEstoque = (saldos||[]).map(s=>({
+    peca_id: s.peca_id, qtd: s.qtd,
+    nome: s.campo_estoque?.nome || 'Peça',
+    sku: s.campo_estoque?.sku || '',
+    unidade: s.campo_estoque?.unidade || 'unid.',
+    qtd_minima: s.campo_estoque?.qtd_minima || 0,
+  })).sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+
+function renderMeuEstoque(){
+  const el = $('lista-est'); if(!el) return;
+  if(!_subEstoqueId){
+    el.innerHTML = `<div class="empty"><div class="empty-ico">📦</div>Você ainda não tem um estoque atribuído.<br>Fale com o administrador.</div>`;
+    return;
+  }
+  if(!_meuEstoque.length){
+    el.innerHTML = `<div class="empty"><div class="empty-ico">📦</div>Seu estoque está vazio.</div>`;
+    return;
+  }
+  el.innerHTML = _meuEstoque.map(p=>{
+    const cls = p.qtd<=0 ? 'zero' : (p.qtd<=p.qtd_minima ? 'low' : '');
+    return `<div class="est-card">
+      <div>
+        <div class="est-nome">${p.nome}</div>
+        <div class="est-meta">${p.sku?`<code>${p.sku}</code> · `:''}${p.qtd<=0?'Zerado':(p.qtd<=p.qtd_minima?'Estoque baixo':'Disponível')}</div>
+      </div>
+      <div class="est-qtd ${cls}">${p.qtd}<small>${p.unidade}</small></div>
+    </div>`;
+  }).join('');
+}
+
+function trocarView(v){
+  _view = v;
+  $('tab-os').classList.toggle('on', v==='os');
+  $('tab-est').classList.toggle('on', v==='estoque');
+  $('view-os').style.display      = v==='os' ? '' : 'none';
+  $('view-estoque').style.display = v==='estoque' ? '' : 'none';
 }
 
 function kpis(){
@@ -435,12 +586,41 @@ function filtrar(btn, f){
   render();
 }
 
+// Seleciona um filtro por código (sincroniza o botão ativo)
+function selecionarFiltro(f){
+  _fil = f;
+  document.querySelectorAll('.fil').forEach(b=>b.classList.toggle('on', b.dataset.f===f));
+  render();
+}
+
+// Define a aba inicial automaticamente: fixa "Executando" se houver OS em execução,
+// senão "Abertas"; nunca abre em finalizadas.
+function filtroInteligente(){
+  const emExec = _os.some(o=>['executando','andamento'].includes(o.status));
+  const temAberta = _os.some(o=>o.status==='aberta');
+  const temAssumida = _os.some(o=>o.status==='assumida');
+  const f = emExec ? 'executando' : temAberta ? 'aberta' : temAssumida ? 'assumida' : 'aberta';
+  selecionarFiltro(f);
+}
+
 /* ---- RENDER ---- */
+const ST_ATIVAS = ['aberta','assumida','executando','andamento'];
 function render(){
   const el = $('lista');
-  const lista = _fil ? _os.filter(o=>o.status===_fil) : _os;
+  let lista;
+  if(_fil==='ativas')           lista = _os.filter(o=>ST_ATIVAS.includes(o.status));
+  else if(_fil==='executando')  lista = _os.filter(o=>['executando','andamento'].includes(o.status));
+  else if(_fil==='finalizada')  lista = _os.filter(o=>['finalizada','concluida'].includes(o.status));
+  else if(_fil)                 lista = _os.filter(o=>o.status===_fil);
+  else                          lista = _os.filter(o=>ST_ATIVAS.includes(o.status)); // padrão nunca mostra finalizadas
+
   if(!lista.length){
-    el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div>Nenhuma OS${_fil?' nesse status':' atribuída'}.</div>`;
+    const msg = _fil==='finalizada' ? 'Nenhuma OS finalizada.'
+              : _fil==='executando' ? 'Nenhuma OS em execução.'
+              : _fil==='aberta'     ? 'Nenhuma OS aberta. 🎉'
+              : _fil==='assumida'   ? 'Nenhuma OS assumida.'
+              : 'Nenhuma OS ativa no momento. 🎉';
+    el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div>${msg}</div>`;
     return;
   }
 
@@ -497,7 +677,7 @@ async function rapido(evt, id, status){
   const {error} = await sb.from('campo_os').update(campos).eq('id',id);
   ld(false);
   if(error){ toast('Erro: '+error.message); return; }
-  await atualizar();
+  await atualizar(false, true);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Executando!'}[status]||'Atualizado!');
 }
 
@@ -626,12 +806,12 @@ async function rapidoDet(status){
 }
 
 /* ---- DIAGNÓSTICO IXC ---- */
-// Chama o proxy IXC. Envia URL/token/endpoint TANTO no header (contrato do MoviOne)
-// QUANTO no corpo (compatibilidade), e reporta o erro real do proxy.
-async function _ixcCall(endpoint, params={}){
-  let resp;
+// Mesma "assinatura" de chamada usada no MoviOne: URL/token/endpoint vão em cabeçalhos.
+async function ixcCall(endpoint, params={}){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), 20000);
   try {
-    resp = await fetch(_proxyUrl, {
+    const resp = await fetch(_proxyUrl, {
       method:'POST',
       headers:{
         'Content-Type':'application/json',
@@ -640,25 +820,17 @@ async function _ixcCall(endpoint, params={}){
         'x-ixc-user': _ixcUser,
         'x-ixc-endpoint': endpoint,
       },
-      body: JSON.stringify({
-        endpoint,
-        params: params||{},
-        rp: (params&&params.rp) || '1',
-        ixcUrl: _ixcUrl,
-        ixcToken: _ixcToken,
-      }),
+      body: JSON.stringify({ params: params||{}, rp: params?.rp || '1' }),
+      signal: ctrl.signal,
     });
-  } catch(netErr){
-    throw new Error('Falha de rede/CORS ao chamar o proxy ('+netErr.message+')');
-  }
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = {_raw:text}; }
-  if(!resp.ok){
-    const msg = data.hint||data.error||data.message||data._raw||('HTTP '+resp.status);
-    throw new Error(`[${resp.status}] ${String(msg).slice(0,160)}`);
-  }
-  return data;
+    const text = await resp.text();
+    let data; try{ data = JSON.parse(text); }catch{ throw new Error('Resposta inválida do proxy: '+text.slice(0,100)); }
+    if(!resp.ok) throw new Error(data.hint||data.error||('erro HTTP '+resp.status));
+    return data;
+  } catch(e){
+    if(e.name==='AbortError') throw new Error('Proxy IXC não respondeu (timeout). Verifique o proxy/CORS.');
+    throw e;
+  } finally { clearTimeout(t); }
 }
 
 async function carregarDiag(){
@@ -680,8 +852,8 @@ async function carregarDiag(){
       return;
     }
 
-    // Busca por ID — igual ao diagnóstico do MoviOne
-    const d = await _ixcCall('radusuarios', {
+    // Busca por ID — mesmo contrato do diagnóstico do MoviOne
+    const d = await ixcCall('radusuarios', {
       qtype:'radusuarios.id', query:String(loginIxcId), oper:'=', rp:'1'
     });
     const r = (d.registros||[])[0];
@@ -725,7 +897,7 @@ async function executarPing(loginId){
   const out=$('ping-out'); if(!out) return;
   out.innerHTML='<div class="ping-out"><span class="spin-sm"></span> Pingando...</div>';
   try {
-    const d = await _ixcCall(`radusuarios/${loginId}/ping`, {rp:'1'});
+    const d = await ixcCall(`radusuarios/${loginId}/ping`, { rp:'1' });
     const txt = d.resultado||d.result||d.output||JSON.stringify(d,null,2);
     out.innerHTML='<div class="ping-out">'+String(txt).split('\n').map(l=>{
       if(l.includes('bytes from')||l.includes('time=')) return`<span class="p-ok">${l}</span>`;
@@ -744,7 +916,40 @@ function abrirFin(evt, id){
   _aberta = os;
   $('fin-sub').textContent = `OS #${String(os.numero||0).padStart(4,'0')} — ${os.cliente||'—'}`;
   $('fin-sol').value=''; $('fin-sinal').value=''; $('fin-down').value=''; $('fin-up').value=''; $('fin-obs').value='';
+  // reset peças e equipamentos
+  _finPecas = []; _finEquip = [];
+  $('fin-peca-qtd').value=''; $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value='';
+  popularPecaSelect(); renderFinPecas(); renderFinEquip();
   $('ov-fin').classList.add('open');
+  capturarLocalizacao();
+}
+
+/* ---- GEOLOCALIZAÇÃO ---- */
+function capturarLocalizacao(){
+  _finGeo = null;
+  const st = $('fin-geo-status'), rt = $('fin-geo-retry');
+  if(rt) rt.style.display='none';
+  if(!('geolocation' in navigator)){
+    if(st){ st.className='geo-status err'; st.textContent='📍 GPS indisponível neste aparelho.'; }
+    return;
+  }
+  if(st){ st.className='geo-status'; st.textContent='📡 Obtendo localização…'; }
+  navigator.geolocation.getCurrentPosition(
+    (pos)=>{
+      const { latitude, longitude, accuracy } = pos.coords;
+      _finGeo = { lat: latitude, lng: longitude, acc: Math.round(accuracy||0) };
+      if(st){ st.className='geo-status ok'; st.textContent=`📍 Localização capturada (±${_finGeo.acc} m)`; }
+      if(rt) rt.style.display='';
+    },
+    (err)=>{
+      const msg = err.code===1 ? '📍 Permissão negada. Toque para tentar de novo.'
+                : err.code===3 ? '📍 Tempo esgotado. Toque para tentar de novo.'
+                : '📍 Não foi possível obter a localização.';
+      if(st){ st.className='geo-status err'; st.textContent=msg; }
+      if(rt) rt.style.display='';
+    },
+    { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
+  );
 }
 
 function abrirFinDet(){
@@ -755,15 +960,127 @@ function abrirFinDet(){
 
 function fecharFin(){ $('ov-fin').classList.remove('open'); }
 
+/* ---- PEÇAS UTILIZADAS ---- */
+function popularPecaSelect(){
+  const sel = $('fin-peca-sel');
+  const usadas = _finPecas.map(p=>p.peca_id);
+  const disp = _meuEstoque.filter(p=>p.qtd>0 && !usadas.includes(p.peca_id));
+  sel.innerHTML = `<option value="">— Selecione a peça —</option>` +
+    disp.map(p=>`<option value="${p.peca_id}">${p.nome} (${p.qtd} ${p.unidade})</option>`).join('');
+}
+function addPecaFin(){
+  const id = parseInt($('fin-peca-sel').value);
+  const qtd = parseInt($('fin-peca-qtd').value);
+  if(!id){ toast('⚠️ Selecione a peça.'); return; }
+  if(!qtd || qtd<=0){ toast('⚠️ Informe a quantidade.'); return; }
+  const p = _meuEstoque.find(x=>x.peca_id===id);
+  if(!p) return;
+  if(qtd>p.qtd){ toast(`⚠️ Você só tem ${p.qtd} ${p.unidade} de ${p.nome}.`); return; }
+  _finPecas.push({ peca_id:id, qtd, nome:p.nome, unidade:p.unidade });
+  $('fin-peca-qtd').value='';
+  popularPecaSelect(); renderFinPecas();
+}
+function removePecaFin(i){ _finPecas.splice(i,1); popularPecaSelect(); renderFinPecas(); }
+function renderFinPecas(){
+  const el = $('fin-pecas-list');
+  el.innerHTML = _finPecas.map((p,i)=>`<div class="chip">
+    <span>📦 <b>${p.qtd}</b> ${p.unidade} — ${p.nome}</span>
+    <button class="x" type="button" onclick="removePecaFin(${i})">✕</button>
+  </div>`).join('');
+}
+
+/* ---- EQUIPAMENTOS ---- */
+function ehMac(t){ return /^([0-9a-f]{2}[:\-]?){5}[0-9a-f]{2}$/i.test((t||'').trim()); }
+function normMac(t){ const h=(t||'').replace(/[^0-9a-f]/ig,''); return h.length===12 ? h.match(/.{2}/g).join(':').toUpperCase() : (t||'').trim(); }
+function addEquipFin(){
+  const mac = $('eq-mac').value.trim();
+  const serial = $('eq-serial').value.trim();
+  const modelo = $('eq-modelo').value.trim();
+  if(!mac && !serial){ toast('⚠️ Informe MAC ou nº de série.'); return; }
+  _finEquip.push({ mac: mac?normMac(mac):null, serial: serial||null, modelo: modelo||null });
+  $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value='';
+  renderFinEquip();
+}
+function removeEquipFin(i){ _finEquip.splice(i,1); renderFinEquip(); }
+function renderFinEquip(){
+  const el = $('fin-equip-list');
+  el.innerHTML = _finEquip.map((e,i)=>`<div class="chip">
+    <span>📡 ${e.mac?`<span class="mac">${e.mac}</span>`:''}${e.mac&&e.serial?' · ':''}${e.serial?`SN: ${e.serial}`:''}${e.modelo?`<br><small style="color:var(--tx3)">${e.modelo}</small>`:''}</span>
+    <button class="x" type="button" onclick="removeEquipFin(${i})">✕</button>
+  </div>`).join('');
+}
+
+/* ---- SCANNER (ZXing) ---- */
+async function abrirScanner(){
+  if(!window.ZXing){ toast('Leitor indisponível. Digite manualmente.'); return; }
+  $('ov-scan').classList.add('open');
+  $('btn-flash').dataset.on='0';
+  const video = $('scan-video');
+  try{
+    _zx = new ZXing.BrowserMultiFormatReader();
+    await _zx.decodeFromConstraints({ video:{ facingMode:'environment' } }, video, (result)=>{
+      if(result) onLeitura(result.getText());
+    });
+    _track = video.srcObject?.getVideoTracks?.()[0] || null;
+  }catch(e){
+    fecharScanner();
+    toast('Não foi possível abrir a câmera. Digite manualmente.');
+  }
+}
+function fecharScanner(){
+  try{ _zx?.reset(); }catch(_){}
+  const v = $('scan-video');
+  v.srcObject?.getTracks?.().forEach(t=>t.stop());
+  v.srcObject = null;
+  $('ov-scan').classList.remove('open');
+  _zx=null; _track=null;
+}
+let _lastScan=0;
+function onLeitura(texto){
+  const now = Date.now();
+  if(now-_lastScan < 1200) return;   // evita leituras repetidas em rajada
+  _lastScan = now;
+  navigator.vibrate?.(60);
+  texto = (texto||'').trim();
+  if(ehMac(texto)){ $('eq-mac').value = normMac(texto); toast('✅ MAC: '+normMac(texto)); }
+  else            { $('eq-serial').value = texto; toast('✅ Nº de série: '+texto); }
+}
+async function toggleLanterna(){
+  if(!_track){ toast('Lanterna indisponível neste aparelho.'); return; }
+  const on = $('btn-flash').dataset.on!=='1';
+  try{ await _track.applyConstraints({ advanced:[{ torch:on }] }); $('btn-flash').dataset.on = on?'1':'0'; }
+  catch(_){ toast('Lanterna não suportada.'); }
+}
+
 async function confirmarFin(){
   if(!_aberta) return;
   const sol = $('fin-sol').value.trim();
   if(!sol){ toast('⚠️ Descreva o que foi feito.'); return; }
+  if(_finEquip.length===0){ toast('⚠️ Registre ao menos 1 equipamento (MAC ou nº de série).'); return; }
 
   const btn = $('btn-fin');
   btn.disabled=true; btn.textContent='Finalizando...';
 
   try {
+    // 1) Baixa de peças do estoque do técnico (transação na RPC) — se houver
+    if(_finPecas.length){
+      const { error: ePeca } = await sb.rpc('consumir_pecas_os', {
+        p_os_id: _aberta.id,
+        p_itens: _finPecas.map(p=>({ peca_id:p.peca_id, qtd:p.qtd }))
+      });
+      if(ePeca){ toast('Erro nas peças: '+ePeca.message, 3500); return; }
+    }
+
+    // 2) Equipamentos instalados
+    const { error: eEq } = await sb.from('campo_os_equipamentos').insert(
+      _finEquip.map(e=>({ os_id:_aberta.id, mac:e.mac, serial:e.serial, modelo:e.modelo, tecnico_id:_tec.id }))
+    );
+    if(eEq){ toast('Erro nos equipamentos: '+eEq.message, 3500); return; }
+
+    // 3) Resumo legível de peças no campo texto da OS
+    const resumoPecas = _finPecas.map(p=>`${p.qtd}x ${p.nome}`).join(', ') || null;
+
+    // 4) Update final da OS
     const {error} = await sb.from('campo_os').update({
       status: 'finalizada',
       solucao: sol,
@@ -771,12 +1088,16 @@ async function confirmarFin(){
       speedtest_down: parseFloat($('fin-down').value)||null,
       speedtest_up:   parseFloat($('fin-up').value)||null,
       obs: $('fin-obs').value.trim()||null,
+      pecas: resumoPecas,
+      fin_lat: _finGeo?_finGeo.lat:null,
+      fin_lng: _finGeo?_finGeo.lng:null,
+      fin_precisao: _finGeo?_finGeo.acc:null,
       finalizado_em: new Date().toISOString(),
     }).eq('id',_aberta.id);
 
     if(error){ toast('Erro: '+error.message); return; }
     fecharFin(); _aberta=null;
-    await atualizar();
+    await atualizar(false, true);
     toast('✅ OS finalizada!', 3000);
   } catch(e){ toast('Erro: '+e.message); }
   finally { btn.disabled=false; btn.innerHTML='✅ Confirmar Finalização'; }
