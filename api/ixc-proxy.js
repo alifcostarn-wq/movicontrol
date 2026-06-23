@@ -1,73 +1,84 @@
-// api/ixc-proxy.js — Proxy Vercel para a API do IXC Soft
-// Suporta GET (listagem) e PUT/DELETE via header x-ixc-method
-
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-method');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-secret');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const ixcBase     = req.headers['x-ixc-url']      || '';
-  const ixcToken    = req.headers['x-ixc-token']    || '';
-  const ixcUser     = req.headers['x-ixc-user']     || '';
-  const ixcEndpoint = req.headers['x-ixc-endpoint'] || '';
-  // Método que o proxy deve usar ao chamar o IXC (padrão GET)
-  const ixcMethod   = (req.headers['x-ixc-method']  || 'GET').toUpperCase();
+  const ixcUrl    = req.headers['x-ixc-url'];
+  const ixcToken  = req.headers['x-ixc-token'];
+  const ixcUser   = req.headers['x-ixc-user'] || '';
+  const ixcSecret = req.headers['x-ixc-secret'] || '';
+  const endpoint  = req.headers['x-ixc-endpoint'];
+  const params    = req.body?.params || {};
+  const rp        = req.body?.rp || params.rp || '100';
 
-  if (!ixcBase || !ixcToken || !ixcEndpoint) {
-    return res.status(400).json({ error: 'Headers x-ixc-url, x-ixc-token e x-ixc-endpoint são obrigatórios.' });
+  if (!ixcUrl || !ixcToken || !endpoint) {
+    return res.status(400).json({ error: 'Missing required headers' });
   }
 
-  const { params = {}, rp = '500' } = req.body || {};
+  const base = ixcUrl.replace(/\/$/, '').replace(/\/adm\.php$/, '');
 
-  // Monta a URL e o auth
-  const base = ixcBase.replace(/\/$/, '');
-  const auth = ixcToken.startsWith('Basic ') ? ixcToken : `Basic ${ixcToken}`;
+  const apiBody = JSON.stringify({
+    qtype:     params.qtype     || '',
+    query:     params.query     || '',
+    oper:      params.oper      || '=',
+    page:      params.page      || '1',
+    rp:        String(rp),
+    sortname:  params.sortname  || 'id',
+    sortorder: params.sortorder || 'desc',
+  });
 
-  // === GET / listagem ===
-  if (ixcMethod === 'GET') {
-    const url = `${base}/webservice/v1/${ixcEndpoint}`;
-    const body = JSON.stringify({
-      token: ixcToken,
-      ...(ixcUser ? { usuario: ixcUser } : {}),
-      ...params,
-      rp: String(rp),
-    });
-    try {
-      const r = await fetch(url, {
-        method: 'POST',    // IXC usa POST para listagem
-        headers: { 'Content-Type': 'application/json', 'Authorization': auth },
-        body,
-      });
-      const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      return res.status(r.status).json(data);
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
+  const urlCandidates = [
+    `${base}/webservice/v1/${endpoint}`,
+    `${base}/adm.php/webservice/v1/${endpoint}`,
+  ];
+
+  const authCandidates = [];
+  if (ixcUser) authCandidates.push({ label: 'Basic user:token',   value: `Basic ${Buffer.from(`${ixcUser}:${ixcToken}`).toString('base64')}` });
+  authCandidates.push({             label: 'Basic token:',        value: `Basic ${Buffer.from(`${ixcToken}:`).toString('base64')}` });
+  if (ixcUser && ixcSecret) authCandidates.push({ label: 'Basic user:secret', value: `Basic ${Buffer.from(`${ixcUser}:${ixcSecret}`).toString('base64')}` });
+
+  const results = [];
+
+  for (const rawUrl of urlCandidates) {
+    const url = rawUrl;
+
+    for (const { label, value } of authCandidates) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': value,
+            'Content-Type': 'application/json',
+            'ixcsoft': 'listar',
+          },
+          body: apiBody,
+        });
+
+        const text   = await response.text();
+        const isHtml = text.trim().startsWith('<');
+
+        results.push({ url, auth: label, status: response.status, isHtml, preview: text.slice(0, 200) });
+
+        if (!isHtml && response.status >= 200 && response.status < 400) {
+          try {
+            const data = JSON.parse(text);
+            return res.status(200).json({ ...data, _workingUrl: url, _auth: label });
+          } catch { /* not valid JSON */ }
+        }
+
+      } catch (e) {
+        results.push({ url, auth: label, error: e.message });
+      }
     }
   }
 
-  // === PUT / DELETE — operações sobre um registro específico ===
-  // Endpoint já vem com o ID: ex: "cliente_login/1234"
-  const url = `${base}/webservice/v1/${ixcEndpoint}`;
-  try {
-    const r = await fetch(url, {
-      method: ixcMethod,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': auth,
-      },
-      body: ixcMethod !== 'DELETE' ? JSON.stringify(params) : undefined,
-    });
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    return res.status(r.status).json(data);
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
-  }
+  const got401 = results.find(r => r.status === 401 && !r.isHtml);
+  const hint = got401
+    ? `Endpoint correto (${got401.url}) mas credenciais inválidas. Verifique o token.`
+    : results.find(r => !r.isHtml)?.preview || 'Nenhum endpoint respondeu como API.';
+
+  return res.status(401).json({ error: 'Autenticação falhou.', hint, results });
 }
