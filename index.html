@@ -4195,6 +4195,89 @@ async function loadAllFromSupabase(){
   }
 }
 
+// ============================================================
+// REALTIME — sincronização automática entre usuários (sem refresh)
+// ============================================================
+let _rtChannel = null;
+let _rtDirty = new Set();
+let _rtTimer = null;
+
+// Re-renderiza a página atualmente visível, lendo do _cache já atualizado
+function _reRenderAtual(){
+  const page = document.querySelector('.nav-item.active')?.dataset.page
+            || (document.querySelector('.page.active')?.id||'').replace('page-','')
+            || 'painel';
+  const renders = {
+    painel:renderPainel, diario:renderDiario, fluxo:renderFluxo, contas:renderContas,
+    planejamento:renderPlan, analises:renderAnalises,
+    clientes:()=>renderCadastro('clientes'), fornecedores:()=>renderCadastro('fornecedores'),
+    plano:renderPlano, bancos:renderBancos, usuarios:renderUsuarios,
+    'cp-chamados':renderChamados, 'cp-os':renderOS, 'cp-tecnicos':renderTecnicos,
+    'cp-estoque':renderEstoque, 'cp-movimentacoes':renderMovimentacoes
+  };
+  try{ renders[page]?.(); }catch(e){ console.warn('re-render', e); }
+  try{ if(typeof atualizarBadges==='function') atualizarBadges(); }catch(e){}
+  try{ if(typeof atualizarBadgesCampo==='function') atualizarBadgesCampo(); }catch(e){}
+}
+
+// Recarrega UMA tabela do Supabase para o cache (fonte da verdade)
+async function _recarregarTabela(table){
+  try{
+    if(table==='metas'){
+      const { data } = await sbClient.from('metas').select('*');
+      if(data){ const o={}; data.forEach(r=>o[r.chave]=r.valor); _cache.sf_metas=o; }
+      return;
+    }
+    if(table==='plano'){
+      const { data } = await sbClient.from('plano').select('*').eq('id',1).maybeSingle();
+      if(data){ _cache.sf_plano=data.dados; PLANO_DATA.length=0; PLANO_DATA.push(...(data.dados||[])); if(typeof invalidateDreCache==='function') invalidateDreCache(); }
+      return;
+    }
+    const entry = Object.entries(_SYNC_MAP).find(([k,m])=>m.table===table);
+    if(entry){
+      const [key, m] = entry;
+      let data = await sbSelectAll(table);
+      if(table==='lancamentos' || table==='mov_bancarias') data = data.filter(r=>!r.deletado);
+      _cache[key] = data.map(m.fromRow);
+      if(key==='sf_mov_bancarias'){
+        _cache.sf_mov_bancarias = _cache.sf_mov_bancarias.map(mv=>({...mv, contaIdx:m_findBancoIdxById(mv.contaId)}));
+      }
+    }
+  }catch(e){ console.warn('recarregar', table, e); }
+}
+
+// Aplica as tabelas marcadas (debounced) e re-renderiza a tela atual
+function _rtFlush(){
+  const tabelas = [..._rtDirty]; _rtDirty.clear();
+  const temCampo = tabelas.some(t=>t.startsWith('campo_'));
+  const jobs = tabelas.filter(t=>!t.startsWith('campo_')).map(t=>_recarregarTabela(t));
+  if(temCampo && typeof carregarCampo==='function') jobs.push(carregarCampo());
+  Promise.all(jobs).then(()=>_reRenderAtual()).catch(e=>console.warn('rt flush', e));
+}
+
+function _rtMarcar(table){
+  _rtDirty.add(table);
+  clearTimeout(_rtTimer);
+  _rtTimer = setTimeout(_rtFlush, 400);   // agrupa rajadas numa única recarga
+}
+
+// Assina o Realtime de todas as tabelas relevantes
+function iniciarRealtime(){
+  try{ if(_rtChannel){ sbClient.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){}
+  const tabelasSync  = [...new Set(Object.values(_SYNC_MAP).map(m=>m.table))];
+  const tabelasCampo = ['campo_os','campo_chamados','campo_tecnicos','campo_estoque','campo_estoque_saldo','campo_estoque_mov','campo_comodato'];
+  const tabelasExtra = ['metas','plano'];
+  const todas = [...new Set([...tabelasSync, ...tabelasCampo, ...tabelasExtra])];
+  let ch = sbClient.channel('movione-rt');
+  todas.forEach(t=>{
+    ch = ch.on('postgres_changes', { event:'*', schema:'public', table:t }, ()=>_rtMarcar(t));
+  });
+  ch.subscribe((status)=>{
+    if(status==='SUBSCRIBED') console.log('🔄 Realtime ativo —', todas.length, 'tabelas');
+  });
+  _rtChannel = ch;
+}
+
 // ---------- Backup completo: baixa JSON com todos os dados ----------
 async function baixarBackupCompleto(){
   showToast('Gerando backup...');
@@ -9038,12 +9121,15 @@ async function entrarNoSistema(user){
   atualizarBadges();
   // Carrega dados do módulo de campo (chamados/OS/técnicos/estoque)
   carregarCampo();
+  // Inicia sincronização em tempo real entre usuários (sem refresh)
+  iniciarRealtime();
   // Inicia monitor de inatividade
   iniciarMonitorInatividade();
 }
 
 async function fazerLogout(semConfirm){
   if(!semConfirm && !confirm('Deseja sair do sistema?'))return;
+  try{ if(_rtChannel){ sbClient.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){}
   pararMonitorInatividade();
   await sbClient.auth.signOut();
   sessionStorage.removeItem('movi_lastActivity');
