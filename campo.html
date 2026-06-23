@@ -945,26 +945,44 @@ async function carregarDiag(){
     }
 
     const on  = r.online==='S'||r.online===true;
-    const q   = parseInt(r.quantidade_desconexao_hoje||0);
+    const q   = parseInt(r.count_desconexao||0);
     const vel = _aberta._velMbps;
     const qcor = q>=3?'var(--red)':q>=1?'var(--amb)':'var(--ac)';
+
+    // tempo_conectado vem em SEGUNDOS — formata em d/h/m
+    const fmtTempo = (seg)=>{
+      const s = parseInt(seg||0); if(!s) return '';
+      const d=Math.floor(s/86400), h=Math.floor((s%86400)/3600), m=Math.floor((s%3600)/60);
+      return [d?d+'d':'', h?h+'h':'', m?m+'m':''].filter(Boolean).join(' ') || '<1m';
+    };
+    const tempoStr = fmtTempo(r.tempo_conectado);
+    const macCli   = r.mac || '—';
+    const macOnu   = r.onu_mac || '';
+    const concentr = r.concentrador || (r.id_concentrador?('ID '+r.id_concentrador):'—');
+    const ipAtual  = r.ip || r.ip_aviso || '—';
+    const dlAtual  = r.download_atual ? parseInt(r.download_atual) : null;
+    const upAtual  = r.upload_atual   ? parseInt(r.upload_atual)   : null;
+    const motivoQ  = r.motivo_desconexao || '';
 
     wrap.innerHTML=`
       <div class="diag-stat">
         <span class="dg-dot ${on?'on':'off'}"></span>
         <div style="flex:1">
           <div style="font-weight:600;font-size:14px">${on?'🟢 Online':'🔴 Offline'}</div>
-          ${r.tempo_conectado?`<div style="font-size:11px;color:var(--tx3)">Conectado há ${r.tempo_conectado.slice(0,8)}</div>`:''}
+          ${tempoStr?`<div style="font-size:11px;color:var(--tx3)">Conectado há ${tempoStr}</div>`:''}
         </div>
         ${vel?`<div style="font-size:11px;font-weight:700;color:var(--ac);background:var(--ac2);padding:3px 8px;border-radius:8px">${vel>=1000?(vel/1000)+'Gbps':vel+'Mbps'}</div>`:''}
       </div>
       <div class="diag-grid">
-        <div class="diag-cell"><div class="diag-cell-l">IP atual</div><div class="diag-cell-v" style="font-size:12px">${r.ip||r.framedipaddress||'—'}</div></div>
-        <div class="diag-cell"><div class="diag-cell-l">Quedas hoje</div><div class="diag-cell-v" style="color:${qcor}">${q}</div></div>
-        <div class="diag-cell"><div class="diag-cell-l">MAC</div><div class="diag-cell-v" style="font-size:11px">${r.callingstationid||r.mac_address||'—'}</div></div>
-        <div class="diag-cell"><div class="diag-cell-l">Concentrador</div><div class="diag-cell-v" style="font-size:11px">${r.ip_concentrador||r.nasipaddress||'—'}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">IP atual</div><div class="diag-cell-v" style="font-size:12px">${ipAtual}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">Quedas</div><div class="diag-cell-v" style="color:${qcor}">${q}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">MAC do equipamento</div><div class="diag-cell-v" style="font-size:11px">${macCli}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">Concentrador</div><div class="diag-cell-v" style="font-size:11px">${concentr}</div></div>
+        ${macOnu?`<div class="diag-cell"><div class="diag-cell-l">MAC da ONU</div><div class="diag-cell-v" style="font-size:11px">${macOnu}</div></div>`:''}
+        ${(dlAtual||upAtual)?`<div class="diag-cell"><div class="diag-cell-l">Tráfego atual</div><div class="diag-cell-v" style="font-size:11px">↓${dlAtual||0} / ↑${upAtual||0}</div></div>`:''}
       </div>
-      ${q>=2?`<div class="alert warn">⚠️ ${q} quedas hoje — verificar cabo, ONU e potência óptica.</div>`:''}
+      ${(!on&&motivoQ)?`<div class="alert warn">Última desconexão: ${motivoQ}</div>`:''}
+      ${q>=2?`<div class="alert warn">⚠️ ${q} quedas — verificar cabo, ONU e potência óptica.</div>`:''}
       ${!on?`<div class="alert red">❌ Cliente offline — verificar ONU, roteador e cabo.</div>`:`<div class="alert">✅ Cliente online e conectado.</div>`}
       <button onclick="executarPing(${loginIxcId})" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:4px">📡 Executar Ping</button>
       <button onclick="limparMac(${loginIxcId})" class="btn-full" style="font-size:13px;padding:11px;margin-top:6px;background:rgba(194,90,0,0.08);border:1px solid #C25A00;color:#C25A00;border-radius:10px;width:100%;cursor:pointer">🔄 Limpar MAC do login</button>
@@ -982,10 +1000,22 @@ async function executarPing(loginId){
   out.innerHTML='<div class="ping-out"><span class="spin-sm"></span> Pingando...</div>';
   try {
     const d = await ixcCall(`radusuarios/${loginId}/ping`, { rp:'1' });
-    const txt = d.resultado||d.result||d.output||JSON.stringify(d,null,2);
+    // Tenta vários nomes de campo possíveis para o texto do ping
+    let txt = d.resultado || d.result || d.output || d.mensagem || d.message
+           || d.msg || d.retorno || d.ping || d.saida || d.stdout;
+    // Se ainda for objeto/sem texto, tenta achar a primeira string "grande" no retorno
+    if(!txt && d && typeof d==='object'){
+      for(const k of Object.keys(d)){
+        if(typeof d[k]==='string' && (d[k].includes('icmp')||d[k].includes('bytes')||d[k].includes('PING')||d[k].includes('ttl'))){ txt=d[k]; break; }
+      }
+    }
+    if(!txt){
+      out.innerHTML='<div class="ping-out p-err">Não consegui ler o resultado do ping neste formato. Me envie o retorno para ajustar.</div>';
+      return;
+    }
     out.innerHTML='<div class="ping-out">'+String(txt).split('\n').map(l=>{
-      if(l.includes('bytes from')||l.includes('time=')) return`<span class="p-ok">${l}</span>`;
-      if(l.includes('error')||l.includes('unreachable')) return`<span class="p-err">${l}</span>`;
+      if(l.includes('bytes from')||l.includes('time=')||l.includes('ttl=')) return`<span class="p-ok">${l}</span>`;
+      if(l.includes('error')||l.includes('unreachable')||l.includes('100%')) return`<span class="p-err">${l}</span>`;
       if(l.startsWith('PING')||l.includes('statistics')) return`<span class="p-hdr">${l}</span>`;
       return l;
     }).join('\n')+'</div>';
