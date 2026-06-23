@@ -707,6 +707,36 @@ async function abrirDet(id){
   $('det-title').textContent = `OS #${String(os.numero||0).padStart(4,'0')} — ${os.cliente||'—'}`;
   $('det-badge').innerHTML   = `<span class="st ${stCl}" style="margin-top:4px;display:inline-flex"><span class="st-dot"></span>${stLb}</span>`;
 
+  // Comodato: equipamentos da empresa que estão na casa deste cliente (só leitura)
+  let comodatoHtml = '';
+  const _cliIdNum = parseInt(os.cliente_id);
+  if(!isNaN(_cliIdNum)){
+    try{
+      const { data: coms } = await sb.from('campo_comodato')
+        .select('id, peca_id, modelo, serial, mac, status, qtd, os_id, campo_estoque(nome)')
+        .eq('cliente_id', _cliIdNum)
+        .eq('status', 'ativo')
+        .order('data_entrega', { ascending:false });
+      if(coms && coms.length){
+        const itens = coms.map(c=>{
+          const nome = (c.campo_estoque && c.campo_estoque.nome) || ('Peça #'+c.peca_id);
+          const ids = [c.serial?('SN: '+c.serial):'', c.mac?('MAC: '+c.mac):''].filter(Boolean).join(' · ');
+          return `<div class="drow">
+            <span class="dlab" style="display:flex;flex-direction:column;gap:2px">
+              <b style="color:var(--tx1);font-weight:600">📦 ${nome}${c.qtd>1?` (${c.qtd}x)`:''}</b>
+              ${c.modelo?`<span style="font-size:11px">${c.modelo}</span>`:''}
+            </span>
+            <span class="dval mono" style="font-size:11px;text-align:right">${ids||'—'}</span>
+          </div>`;
+        }).join('');
+        comodatoHtml = `<div class="row-sec" style="border-color:#185fa5">
+          <div class="row-sec-title" style="color:#185fa5">📦 Equipamentos em comodato no cliente — confira na retirada</div>
+          ${itens}
+        </div>`;
+      }
+    }catch(e){ /* silencioso: comodato é informativo, não bloqueia a OS */ }
+  }
+
   // Construir corpo
   let html = '';
 
@@ -717,6 +747,9 @@ async function abrirDet(id){
     <div class="drow"><span class="dlab">Telefone</span><span class="dval">${os.telefone||'—'}</span></div>
     <div class="drow"><span class="dlab">Endereço</span><span class="dval">${os.endereco||'—'}</span></div>
   </div>`;
+
+  // Comodato (equipamentos da empresa na casa do cliente)
+  html += comodatoHtml;
 
   // Acesso PPPoE
   if(os.login_cliente){
