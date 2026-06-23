@@ -3464,6 +3464,15 @@ textarea.cp-form-input{resize:vertical}
           <div class="form-group"><label class="form-label">UF</label><input type="text" id="cli-uf" style="width:100%" maxlength="2" placeholder="CE"></div>
           <div class="form-group"><label class="form-label">Referência</label><input type="text" id="cli-referencia" style="width:100%" placeholder="Próximo a..."></div>
           <div class="form-group"><label class="form-label">Moradia</label><select id="cli-moradia" style="width:100%"><option value="">—</option><option>Própria</option><option>Alugada</option><option>Financiada</option><option>Cedida</option></select></div>
+          <div class="form-group full" id="cli-fg-localizacao" style="grid-column:1/-1">
+            <label class="form-label">📍 Localização (GPS)</label>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:120px"><label style="font-size:10px;color:var(--text3)">Latitude</label><input type="text" id="cli-latitude" style="width:100%" placeholder="-3.7319" oninput="atualizarBtnMapa()"></div>
+              <div style="flex:1;min-width:120px"><label style="font-size:10px;color:var(--text3)">Longitude</label><input type="text" id="cli-longitude" style="width:100%" placeholder="-38.5267" oninput="atualizarBtnMapa()"></div>
+              <button type="button" class="btn btn-primary" id="cli-btn-mapa" style="white-space:nowrap" onclick="abrirMapaCliente()">🗺️ Ver no mapa</button>
+            </div>
+            <div style="font-size:10.5px;color:var(--text3);margin-top:4px" id="cli-mapa-hint">Sem coordenadas do IXC — o mapa abre pelo endereço cadastrado.</div>
+          </div>
         </div>
       </div>
 
@@ -3859,6 +3868,8 @@ const _SYNC_MAP = {
       referencia: c.referencia || null,
       moradia: c.moradia || null,
       uf: c.uf || null,
+      latitude:  (c.latitude  != null && c.latitude  !== '') ? c.latitude  : null,
+      longitude: (c.longitude != null && c.longitude !== '') ? c.longitude : null,
       };
       // Só inclui id se tiver valor válido (evita erro "cannot insert non-DEFAULT value into id")
       if(c.id != null) row.id = c.id;
@@ -3879,6 +3890,7 @@ const _SYNC_MAP = {
       telComercial: r.tel_comercial, website: r.website, cepFull: r.cep_full,
       numero: r.numero, complemento: r.complemento, referencia: r.referencia,
       moradia: r.moradia, uf: r.uf,
+      latitude: r.latitude, longitude: r.longitude,
     }),
   },
   sf_clientes_contratos: {
@@ -7781,6 +7793,7 @@ let _cliEditIdx = null;
 const CLI_CAMPOS = ['nome','nomeSocial','razao','cnpj','ie','tipoPessoa','ativo','datacad',
   'dataNasc','genero','estadoCivil','nacionalidade','naturalidade','profissao','rgEmissor',
   'cep','end','numero','complemento','bairro','cidade','uf','referencia','moradia',
+  'latitude','longitude',
   'tel1','tel2','whatsapp','telResidencial','telComercial','email','website','contato','obs'];
 const CLI_TRAVAR_SE_IXC = new Set(['nome','cnpj','tipoPessoa','dataNasc','cep','end','numero','bairro','cidade','uf','tel1','whatsapp','email','ativo']);
 
@@ -7856,6 +7869,9 @@ function abrirModalCliente(idx=null){
   renderCliLogins(cli);
   renderCliFinanceiro(cli);
   renderCliComodato(cli);
+
+  // Atualiza hint do botão de mapa conforme coordenadas
+  if(typeof atualizarBtnMapa==='function') atualizarBtnMapa();
 
   // Volta para aba "dados"
   cliTab('dados');
@@ -8361,6 +8377,48 @@ function salvarCliente(){
   fecharModal('modal-cli');
   renderCadastro('clientes');
   showToast(_cliEditIdx!==null?'Cliente atualizado!':'Cliente salvo!');
+}
+
+// ── Localização / mapa do cliente ──
+function _coordValida(v){
+  if(v==null) return null;
+  const n = parseFloat(String(v).replace(',', '.'));
+  if(isNaN(n) || n===0 || Math.abs(n)>180) return null;
+  return n;
+}
+
+function atualizarBtnMapa(){
+  const hint = document.getElementById('cli-mapa-hint');
+  if(!hint) return;
+  const lat = _coordValida(document.getElementById('cli-latitude').value);
+  const lng = _coordValida(document.getElementById('cli-longitude').value);
+  if(lat!=null && lng!=null){
+    hint.textContent = '✅ Coordenadas GPS — o mapa abre no ponto exato.';
+    hint.style.color = '#3B6D11';
+  }else{
+    hint.textContent = 'Sem coordenadas do IXC — o mapa abre pelo endereço cadastrado.';
+    hint.style.color = 'var(--text3)';
+  }
+}
+
+function _enderecoCliente(){
+  const g = id => (document.getElementById(id)?.value||'').trim();
+  return [g('cli-end'), g('cli-numero'), g('cli-bairro'), g('cli-cidade'), g('cli-uf'), g('cli-cep')]
+    .filter(Boolean).join(', ');
+}
+
+function abrirMapaCliente(){
+  const lat = _coordValida(document.getElementById('cli-latitude').value);
+  const lng = _coordValida(document.getElementById('cli-longitude').value);
+  let url;
+  if(lat!=null && lng!=null){
+    url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }else{
+    const end = _enderecoCliente();
+    if(!end){ showToast('Sem coordenadas nem endereço para localizar.', true); return; }
+    url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(end)}`;
+  }
+  window.open(url, '_blank');
 }
 
 async function resyncClienteIXC(){
@@ -10907,6 +10965,15 @@ function mapStatusIXC(ativo){
   return v; // A, D, I, CM, AB passam como estão
 }
 
+// Converte coordenada do IXC (string, pode vir vazia/zero) em número válido ou null
+function _ixcCoord(v){
+  if(v == null || v === '') return null;
+  const n = parseFloat(String(v).replace(',', '.'));
+  if(isNaN(n) || n === 0) return null;        // 0 ou inválido = sem coordenada
+  if(Math.abs(n) > 180) return null;          // fora de faixa geográfica
+  return n;
+}
+
 // Calcula label legível do status do CONTRATO combinando status do contrato + status de acesso (internet).
 function calcStatusContrato(statusContrato, statusAcesso){
   const sc = (statusContrato||'').toUpperCase();
@@ -11028,6 +11095,8 @@ async function syncIXC(silent){
         cidade: r.cidade || '',
         uf: r.uf || '',
         referencia: r.referencia || '',
+        latitude:  _ixcCoord(r.latitude),
+        longitude: _ixcCoord(r.longitude),
         dataNasc: r.data_nascimento && r.data_nascimento !== '0000-00-00' ? r.data_nascimento : null,
         genero: r.sexo === 'M' ? 'Masculino' : r.sexo === 'F' ? 'Feminino' : '',
         estadoCivil: r.estado_civil || '',
