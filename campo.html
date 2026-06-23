@@ -742,10 +742,8 @@ async function abrirDet(id){
   if(!isNaN(_cliIdNum)){
     let lat=null, lng=null;
     try{
-      const { data: cliRow } = await sb.from('clientes')
-        .select('latitude, longitude')
-        .eq('id', _cliIdNum)
-        .maybeSingle();
+      const { data: coord } = await sb.rpc('get_coord_cliente', { p_cliente_id: _cliIdNum });
+      const cliRow = Array.isArray(coord) ? coord[0] : coord;
       if(cliRow){
         const pl = parseFloat(String(cliRow.latitude ).replace(',','.'));
         const pg = parseFloat(String(cliRow.longitude).replace(',','.'));
