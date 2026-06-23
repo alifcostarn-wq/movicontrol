@@ -8356,7 +8356,7 @@ async function salvarComodatoManual(){
   showToast('Equipamento adicionado ao comodato!');
 }
 
-function salvarCliente(){
+async function salvarCliente(){
   const nome = document.getElementById('cli-nome').value.trim();
   if(!nome){ showToast('Informe o nome.',true); return; }
   const dados = {};
@@ -8374,6 +8374,19 @@ function salvarCliente(){
     lista.push({ ...dados, datacad: dados.datacad || hoje() });
   }
   sd('sf_clientes', lista);
+
+  // Persiste a localização no Supabase para o app de campo enxergar o mesmo ponto
+  const _cliId = _cliEditIdx!==null ? parseInt(lista[_cliEditIdx]?.id) : NaN;
+  if(!isNaN(_cliId)){
+    const _lat = _coordValida(dados.latitude);
+    const _lng = _coordValida(dados.longitude);
+    try{
+      await sbClient.from('clientes')
+        .update({ latitude: _lat, longitude: _lng })
+        .eq('id', _cliId);
+    }catch(e){ console.warn('Coord não sincronizada com Supabase:', e); }
+  }
+
   fecharModal('modal-cli');
   renderCadastro('clientes');
   showToast(_cliEditIdx!==null?'Cliente atualizado!':'Cliente salvo!');
