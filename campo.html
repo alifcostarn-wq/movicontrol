@@ -737,13 +737,14 @@ async function abrirDet(id){
     }catch(e){ /* silencioso: comodato é informativo, não bloqueia a OS */ }
   }
 
-  // Localização: busca coordenadas do cliente para navegação (Maps/Waze)
+  // Localização: busca coordenadas + endereço completo do cliente (igual ao MoviOne)
   let navHtml = '';
+  let _endCli = (os.endereco||'').trim();   // fallback inicial
   if(!isNaN(_cliIdNum)){
     let lat=null, lng=null;
     try{
       const { data: cliRow } = await sb.from('clientes')
-        .select('latitude, longitude')
+        .select('latitude, longitude, endereco, numero, bairro, cidade, uf, cep')
         .eq('id', _cliIdNum)
         .maybeSingle();
       if(cliRow){
@@ -751,21 +752,22 @@ async function abrirDet(id){
         const pg = parseFloat(String(cliRow.longitude).replace(',','.'));
         if(!isNaN(pl) && pl!==0 && Math.abs(pl)<=90)  lat = pl;
         if(!isNaN(pg) && pg!==0 && Math.abs(pg)<=180) lng = pg;
+        // Monta o endereço EXATAMENTE como o MoviOne (rua, nº, bairro, cidade, UF, CEP)
+        const _full = [cliRow.endereco, cliRow.numero, cliRow.bairro, cliRow.cidade, cliRow.uf, cliRow.cep]
+          .map(v => (v==null?'':String(v).trim())).filter(Boolean).join(', ');
+        if(_full) _endCli = _full;
       }
-    }catch(e){ /* segue com endereço */ }
+    }catch(e){ /* segue com endereço da OS */ }
 
     let mapsUrl, wazeUrl, precisao;
     if(lat!=null && lng!=null){
       mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
       wazeUrl = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
       precisao = '✅ Ponto GPS exato';
-    }else{
-      const end = (os.endereco||'').trim();
-      if(end){
-        mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(end)}`;
-        wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(end)}&navigate=yes`;
-        precisao = '📍 Pelo endereço cadastrado';
-      }
+    }else if(_endCli){
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(_endCli)}`;
+      wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(_endCli)}&navigate=yes`;
+      precisao = '📍 Pelo endereço cadastrado';
     }
     if(mapsUrl){
       navHtml = `<div class="row-sec">
@@ -786,7 +788,7 @@ async function abrirDet(id){
     <div class="row-sec-title">👤 Cliente</div>
     <div class="drow"><span class="dlab">Nome</span><span class="dval">${os.cliente||'—'}</span></div>
     <div class="drow"><span class="dlab">Telefone</span><span class="dval">${os.telefone||'—'}</span></div>
-    <div class="drow"><span class="dlab">Endereço</span><span class="dval">${os.endereco||'—'}</span></div>
+    <div class="drow"><span class="dlab">Endereço</span><span class="dval">${_endCli||os.endereco||'—'}</span></div>
   </div>`;
 
   // Comodato (equipamentos da empresa na casa do cliente)
