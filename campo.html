@@ -1011,11 +1011,11 @@ async function limparMac(loginId){
     const reg = (d.registros||[])[0];
     if(!reg) throw new Error('Login não encontrado no IXC.');
 
-    // 2) Monta o payload com MAC zerado (campo mac ou login — depende da versão do IXC)
-    const payload = { ...reg, mac: '', login: reg.login||reg.usuario||'' };
+    // 2) Monta o payload com MAC zerado (mantém os demais campos do registro)
+    const payload = { ...reg, id: String(loginId), mac: '' };
 
-    // 3) PUT no endpoint cliente_login/{id} com mac vazio
-    await ixcCall(`cliente_login/${loginId}`, payload, 'PUT');
+    // 3) PUT no endpoint radusuarios/{id} com o MAC vazio (ixcsoft: editar)
+    await ixcCall(`radusuarios/${loginId}`, payload, 'PUT');
 
     toast('✅ MAC limpo com sucesso! O cliente pode reconectar.', 4000);
     // Recarrega o diagnóstico para refletir o MAC zerado
