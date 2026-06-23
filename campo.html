@@ -876,19 +876,21 @@ async function rapidoDet(status){
 
 /* ---- DIAGNÓSTICO IXC ---- */
 // Mesma "assinatura" de chamada usada no MoviOne: URL/token/endpoint vão em cabeçalhos.
-async function ixcCall(endpoint, params={}){
+async function ixcCall(endpoint, params={}, method='GET'){
   const ctrl = new AbortController();
   const t = setTimeout(()=>ctrl.abort(), 20000);
   try {
+    const hdrs = {
+      'Content-Type':'application/json',
+      'x-ixc-url': _ixcUrl,
+      'x-ixc-token': _ixcToken,
+      'x-ixc-endpoint': endpoint,
+    };
+    if(_ixcUser) hdrs['x-ixc-user'] = _ixcUser;
+    if(method && method !== 'GET') hdrs['x-ixc-method'] = method;
     const resp = await fetch(_proxyUrl, {
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-ixc-url': _ixcUrl,
-        'x-ixc-token': _ixcToken,
-        'x-ixc-user': _ixcUser,
-        'x-ixc-endpoint': endpoint,
-      },
+      headers: hdrs,
       body: JSON.stringify({ params: params||{}, rp: params?.rp || '1' }),
       signal: ctrl.signal,
     });
@@ -965,6 +967,7 @@ async function carregarDiag(){
       ${q>=2?`<div class="alert warn">⚠️ ${q} quedas hoje — verificar cabo, ONU e potência óptica.</div>`:''}
       ${!on?`<div class="alert red">❌ Cliente offline — verificar ONU, roteador e cabo.</div>`:`<div class="alert">✅ Cliente online e conectado.</div>`}
       <button onclick="executarPing(${loginIxcId})" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:4px">📡 Executar Ping</button>
+      <button onclick="limparMac(${loginIxcId})" class="btn-full" style="font-size:13px;padding:11px;margin-top:6px;background:rgba(194,90,0,0.08);border:1px solid #C25A00;color:#C25A00;border-radius:10px;width:100%;cursor:pointer">🔄 Limpar MAC do login</button>
       <div id="ping-out"></div>`;
 
   } catch(e){
@@ -987,6 +990,41 @@ async function executarPing(loginId){
       return l;
     }).join('\n')+'</div>';
   } catch(e){ out.innerHTML=`<div class="ping-out p-err">Erro: ${e.message}</div>`; }
+}
+
+/* ---- LIMPAR MAC ---- */
+async function limparMac(loginId){
+  if(!loginId){ toast('Login IXC não identificado.', 3000); return; }
+  if(!_proxyUrl || !_ixcUrl || !_ixcToken){
+    toast('Integração IXC não configurada.', 3000); return;
+  }
+  if(!confirm('Limpar o MAC deste login no IXC?\nO cliente precisará reconectar para registrar o novo equipamento.')) return;
+
+  const btn = document.querySelector('[onclick="limparMac('+loginId+')"]');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Limpando…'; }
+
+  try{
+    // 1) Busca o registro atual do login para ter todos os campos (PUT exige payload completo no IXC)
+    const d = await ixcCall('radusuarios', {
+      qtype:'radusuarios.id', query:String(loginId), oper:'=', rp:'1'
+    });
+    const reg = (d.registros||[])[0];
+    if(!reg) throw new Error('Login não encontrado no IXC.');
+
+    // 2) Monta o payload com MAC zerado (campo mac ou login — depende da versão do IXC)
+    const payload = { ...reg, mac: '', login: reg.login||reg.usuario||'' };
+
+    // 3) PUT no endpoint cliente_login/{id} com mac vazio
+    await ixcCall(`cliente_login/${loginId}`, payload, 'PUT');
+
+    toast('✅ MAC limpo com sucesso! O cliente pode reconectar.', 4000);
+    // Recarrega o diagnóstico para refletir o MAC zerado
+    if(btn){ btn.disabled=false; btn.textContent='🔄 Limpar MAC do login'; }
+    carregarDiag();
+  }catch(e){
+    toast('Erro ao limpar MAC: ' + e.message, 4000);
+    if(btn){ btn.disabled=false; btn.textContent='🔄 Limpar MAC do login'; }
+  }
 }
 
 /* ---- FINALIZAÇÃO ---- */
