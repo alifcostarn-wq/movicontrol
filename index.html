@@ -3416,6 +3416,7 @@ textarea.cp-form-input{resize:vertical}
         <div class="cli-tab" data-pane="logins" onclick="cliTab('logins')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>Logins<span class="cli-tab-badge" id="cli-tab-log-badge" style="display:none">0</span></div>
         <div class="cli-tab" data-pane="financeiro" onclick="cliTab('financeiro')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Financeiro</div>
         <div class="cli-tab" data-pane="diagnostico" onclick="cliTab('diagnostico');initDiagnostico()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Diagnóstico</div>
+        <div class="cli-tab" data-pane="comodato" onclick="cliTab('comodato');renderCliComodato(window._cliAtual)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Comodato<span class="cp-badge" id="cli-tab-com-badge" style="display:none;margin-left:5px;background:#185fa5;color:#fff;border-radius:9px;padding:0 6px;font-size:10px;font-weight:700">0</span></div>
       </div>
 
       <!-- PANE: Dados Pessoais -->
@@ -3506,10 +3507,95 @@ textarea.cp-form-input{resize:vertical}
         </div>
       </div>
 
+      <div class="cli-pane" id="cli-pane-comodato">
+        <div id="cli-comodato-content">
+          <div class="cli-empty-pane">Carregando equipamentos…</div>
+        </div>
+      </div>
+
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="fecharModal('modal-cli')">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarCliente()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== MODAL DEVOLUÇÃO COMODATO ========== -->
+<div class="modal-overlay" id="modal-com-devolver" onclick="if(event.target===this)fecharModal('modal-com-devolver')">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title">↩ Devolução de Equipamento</span>
+      <button class="modal-close" onclick="fecharModal('modal-com-devolver')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="com-dev-id">
+      <div id="com-dev-resumo" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px"></div>
+      <div class="form-group full">
+        <label class="form-label">Devolver para qual estoque?<span>*</span></label>
+        <select class="cp-form-select" id="com-dev-sub"></select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Motivo (opcional)</label>
+        <input class="cp-form-input" id="com-dev-motivo" placeholder="Ex: Cliente cancelou contrato, troca de equipamento…">
+      </div>
+      <div style="background:rgba(194,90,0,0.07);border-left:3px solid #C25A00;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:#8a4a00;margin-top:6px">
+        ⚠️ Ao confirmar, o equipamento será marcado como devolvido e a quantidade retornará ao estoque selecionado.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="fecharModal('modal-com-devolver')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarDevolucaoComodato()">↩ Confirmar Devolução</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== MODAL ADICIONAR COMODATO MANUAL ========== -->
+<div class="modal-overlay" id="modal-com-add" onclick="if(event.target===this)fecharModal('modal-com-add')">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <span class="modal-title">➕ Adicionar Equipamento em Comodato</span>
+      <button class="modal-close" onclick="fecharModal('modal-com-add')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:rgba(26,92,58,0.07);border-left:3px solid var(--accent,#1A5C3A);border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:16px">
+        📋 Registre um equipamento que já está na casa do cliente. Isto dará baixa no estoque de origem selecionado.
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Equipamento<span>*</span></label>
+          <select class="cp-form-select" id="com-add-peca" onchange="comAddAtualizaSaldo()"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sai de qual estoque?<span>*</span></label>
+          <select class="cp-form-select" id="com-add-sub" onchange="comAddAtualizaSaldo()"></select>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin:-4px 0 12px" id="com-add-saldo">Saldo na origem: —</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Quantidade<span>*</span></label>
+          <input class="cp-form-input" type="number" id="com-add-qtd" value="1" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Modelo</label>
+          <input class="cp-form-input" id="com-add-modelo" placeholder="Ex: HG8310M">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Serial</label>
+          <input class="cp-form-input" id="com-add-serial" placeholder="Número de série">
+        </div>
+        <div class="form-group">
+          <label class="form-label">MAC</label>
+          <input class="cp-form-input" id="com-add-mac" placeholder="00:00:00:00:00:00">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="fecharModal('modal-com-add')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarComodatoManual()">Adicionar</button>
     </div>
   </div>
 </div>
@@ -7769,6 +7855,7 @@ function abrirModalCliente(idx=null){
   renderCliContratos(cli);
   renderCliLogins(cli);
   renderCliFinanceiro(cli);
+  renderCliComodato(cli);
 
   // Volta para aba "dados"
   cliTab('dados');
@@ -8060,6 +8147,197 @@ function renderCliFinanceiro(cli){
           <td class="td-mono">${l.recebido?brl(l.recebido,true):'—'}</td>
         </tr>`).join('')}</tbody>
     </table>`;
+}
+
+// ════════════════════════════════════════════════════════
+//  MÓDULO COMODATO — equipamentos da empresa na casa do cliente
+// ════════════════════════════════════════════════════════
+let _comodatosCliente = [];
+
+async function comGarantirEstoque(){
+  if(!_cpSubEstoques || !_cpSubEstoques.length){
+    if(typeof carregarCampo === 'function'){ try{ await carregarCampo(); }catch(e){} }
+  }
+}
+
+function fmtDataISO(ts){
+  if(!ts) return '—';
+  const d = new Date(ts);
+  if(isNaN(d)) return '—';
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+function comPecaNome(pid){
+  const p = (_cpEstoque||[]).find(x=>x.id==pid);
+  return p ? p.nome : ('Peça #'+pid);
+}
+
+async function renderCliComodato(cli){
+  if(!cli){ cli = window._cliAtual; }
+  if(!cli){ return; }
+  window._cliAtual = cli;
+  const target = document.getElementById('cli-comodato-content');
+  if(!target) return;
+  target.innerHTML = '<div class="cli-empty-pane">Carregando equipamentos…</div>';
+
+  await comGarantirEstoque();
+
+  let lista = [];
+  try{
+    const { data, error } = await sbClient
+      .from('campo_comodato')
+      .select('*')
+      .eq('cliente_id', cli.id)
+      .order('status', { ascending:true })
+      .order('data_entrega', { ascending:false });
+    if(error) throw error;
+    lista = data || [];
+  }catch(e){
+    target.innerHTML = '<div class="cli-empty-pane">Erro ao carregar comodato: '+(e.message||e)+'</div>';
+    return;
+  }
+  _comodatosCliente = lista;
+
+  const ativos = lista.filter(i=>i.status==='ativo');
+  const devolvidos = lista.filter(i=>i.status==='devolvido');
+
+  const badge = document.getElementById('cli-tab-com-badge');
+  if(badge){ if(ativos.length){ badge.style.display=''; badge.textContent=ativos.length; } else badge.style.display='none'; }
+
+  const linhas = lista.map(it=>{
+    const ativo = it.status==='ativo';
+    const sn = it.serial?`<div>SN: ${it.serial}</div>`:'';
+    const mac = it.mac?`<div>MAC: ${it.mac}</div>`:'';
+    const ident = (sn||mac) ? `<div class="td-mono" style="font-size:11px">${sn}${mac}</div>` : '<span style="color:var(--text3)">—</span>';
+    const osBadge = it.os_id
+      ? `<span style="background:rgba(24,95,165,0.12);color:#185fa5;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600">OS #${it.os_id}</span>`
+      : '<span style="font-size:11px;color:var(--text3)">manual</span>';
+    const statusCol = ativo
+      ? '<span class="cli-status-pill" style="background:rgba(24,95,165,0.14);color:#185fa5">📦 Em uso</span>'
+      : `<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:#3B6D11">✅ Devolvido</span><div style="font-size:10px;color:var(--text3);margin-top:2px">${fmtDataISO(it.data_devolucao)}</div>`;
+    const acao = ativo
+      ? `<button class="btn" style="padding:5px 12px;font-size:12px;border-color:#C25A00;color:#C25A00;background:rgba(194,90,0,0.06)" onclick="abrirDevolucaoComodato(${it.id})">↩ Devolver</button>`
+      : `<span style="font-size:11px;color:var(--text3)">${it.devolvido_para_sub_id?cpSubNome(it.devolvido_para_sub_id):''}</span>`;
+    return `<tr>
+      <td><div style="font-weight:500">${comPecaNome(it.peca_id)}</div>${it.modelo?`<div style="font-size:11px;color:var(--text3)">${it.modelo}</div>`:''}</td>
+      <td>${ident}</td>
+      <td>${osBadge}</td>
+      <td class="td-mono td-muted">${fmtDataISO(it.data_entrega)}</td>
+      <td style="text-align:center">${statusCol}</td>
+      <td style="text-align:center">${acao}</td>
+    </tr>`;
+  }).join('');
+
+  target.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;font-weight:600">Total</div>
+        <div style="font-size:22px;font-weight:700;color:var(--accent,#1A5C3A)">${lista.length}</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;font-weight:600">📦 Em uso</div>
+        <div style="font-size:22px;font-weight:700;color:#185fa5">${ativos.length}</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;font-weight:600">✅ Devolvidos</div>
+        <div style="font-size:22px;font-weight:700;color:#3B6D11">${devolvidos.length}</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:11px;color:var(--text3)">Equipamentos da empresa na casa deste cliente.</span>
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirAddComodato()">➕ Adicionar equipamento</button>
+    </div>
+    ${lista.length ? `
+    <table class="cli-mini-table">
+      <thead><tr><th>Equipamento</th><th>Serial / MAC</th><th>Origem</th><th>Entrega</th><th style="text-align:center">Status</th><th style="text-align:center">Ação</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>` : '<div class="cli-empty-pane">Nenhum equipamento em comodato.<br><span style="font-size:11px;color:var(--text3)">Itens aparecem aqui automaticamente quando o técnico usa peças na OS deste cliente.</span></div>'}
+  `;
+}
+
+// ── Devolução ──
+function abrirDevolucaoComodato(id){
+  const it = _comodatosCliente.find(x=>x.id==id);
+  if(!it) return;
+  document.getElementById('com-dev-id').value = id;
+  document.getElementById('com-dev-resumo').innerHTML = `
+    <div style="font-weight:600">${comPecaNome(it.peca_id)}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;display:flex;gap:14px;flex-wrap:wrap">
+      ${it.serial?`<span>SN: <b class="td-mono">${it.serial}</b></span>`:''}
+      ${it.mac?`<span>MAC: <b class="td-mono">${it.mac}</b></span>`:''}
+      ${it.os_id?`<span>OS #${it.os_id}</span>`:''}
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:4px">Entregue em ${fmtDataISO(it.data_entrega)}</div>`;
+  const sel = document.getElementById('com-dev-sub');
+  sel.innerHTML = (_cpSubEstoques||[]).map(s=>`<option value="${s.id}">${cpSubNome(s.id)}</option>`).join('');
+  document.getElementById('com-dev-motivo').value = '';
+  abrirModal('modal-com-devolver');
+}
+
+async function confirmarDevolucaoComodato(){
+  const id = parseInt(document.getElementById('com-dev-id').value);
+  const sub = parseInt(document.getElementById('com-dev-sub').value);
+  const motivo = document.getElementById('com-dev-motivo').value.trim() || null;
+  if(!id || !sub){ showToast('Selecione o estoque de destino.', true); return; }
+  try{
+    const { error } = await sbClient.rpc('devolver_comodato', { p_comodato_id:id, p_sub_destino_id:sub, p_motivo:motivo });
+    if(error) throw error;
+  }catch(e){ showToast('Erro: '+(e.message||e), true); return; }
+  fecharModal('modal-com-devolver');
+  if(typeof carregarCampo==='function'){ try{ await carregarCampo(); }catch(e){} }
+  await renderCliComodato(window._cliAtual);
+  showToast('Equipamento devolvido ao estoque!');
+}
+
+// ── Adicionar manual ──
+function abrirAddComodato(){
+  const selP = document.getElementById('com-add-peca');
+  selP.innerHTML = '<option value="">— Selecione —</option>' +
+    (_cpEstoque||[]).map(p=>`<option value="${p.id}">${p.nome}${p.sku?' ('+p.sku+')':''}</option>`).join('');
+  const selS = document.getElementById('com-add-sub');
+  selS.innerHTML = (_cpSubEstoques||[]).map(s=>`<option value="${s.id}">${cpSubNome(s.id)}</option>`).join('');
+  document.getElementById('com-add-qtd').value = 1;
+  document.getElementById('com-add-modelo').value = '';
+  document.getElementById('com-add-serial').value = '';
+  document.getElementById('com-add-mac').value = '';
+  comAddAtualizaSaldo();
+  abrirModal('modal-com-add');
+}
+
+function comAddAtualizaSaldo(){
+  const peca = parseInt(document.getElementById('com-add-peca').value);
+  const sub = parseInt(document.getElementById('com-add-sub').value);
+  const el = document.getElementById('com-add-saldo');
+  if(peca && sub && typeof cpSaldo==='function'){ el.textContent = 'Saldo na origem: '+cpSaldo(peca,sub); }
+  else el.textContent = 'Saldo na origem: —';
+}
+
+async function salvarComodatoManual(){
+  const cli = window._cliAtual;
+  if(!cli){ showToast('Cliente não identificado.', true); return; }
+  const peca = parseInt(document.getElementById('com-add-peca').value);
+  const sub = parseInt(document.getElementById('com-add-sub').value);
+  const qtd = parseInt(document.getElementById('com-add-qtd').value)||0;
+  if(!peca){ showToast('Selecione o equipamento.', true); return; }
+  if(!sub){ showToast('Selecione o estoque de origem.', true); return; }
+  if(qtd<=0){ showToast('Informe uma quantidade válida.', true); return; }
+  try{
+    const { error } = await sbClient.rpc('adicionar_comodato_manual', {
+      p_cliente_id: cli.id,
+      p_peca_id: peca,
+      p_sub_origem_id: sub,
+      p_qtd: qtd,
+      p_serial: document.getElementById('com-add-serial').value.trim() || null,
+      p_mac: document.getElementById('com-add-mac').value.trim() || null,
+      p_modelo: document.getElementById('com-add-modelo').value.trim() || null,
+      p_tecnico_id: null
+    });
+    if(error) throw error;
+  }catch(e){ showToast('Erro: '+(e.message||e), true); return; }
+  fecharModal('modal-com-add');
+  if(typeof carregarCampo==='function'){ try{ await carregarCampo(); }catch(e){} }
+  await renderCliComodato(window._cliAtual);
+  showToast('Equipamento adicionado ao comodato!');
 }
 
 function salvarCliente(){
