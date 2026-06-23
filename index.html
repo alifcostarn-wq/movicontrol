@@ -3870,8 +3870,6 @@ const _SYNC_MAP = {
       referencia: c.referencia || null,
       moradia: c.moradia || null,
       uf: c.uf || null,
-      latitude:  (c.latitude  != null && c.latitude  !== '') ? c.latitude  : null,
-      longitude: (c.longitude != null && c.longitude !== '') ? c.longitude : null,
       };
       // Só inclui id se tiver valor válido (evita erro "cannot insert non-DEFAULT value into id")
       if(c.id != null) row.id = c.id;
@@ -11211,7 +11209,10 @@ async function syncIXC(silent){
       };
       if(idx!==undefined){
         const existente = clientes[idx];
-        clientes[idx] = { ...existente, ...dados, id: existente.id, datacad: existente.datacad || hoje_ };
+        clientes[idx] = { ...existente, ...dados,
+          latitude:  (dados.latitude  != null ? dados.latitude  : existente.latitude),
+          longitude: (dados.longitude != null ? dados.longitude : existente.longitude),
+          id: existente.id, datacad: existente.datacad || hoje_ };
         atualizadosCli++;
       } else {
         clientes.push({ ...dados, datacad: hoje_ });
@@ -11231,6 +11232,16 @@ async function syncIXC(silent){
       if(data){
         const idMap = new Map(data.map(d => [String(d.ixc_id), d.id]));
         clientes.forEach(c => { if(c.ixcId && idMap.has(String(c.ixcId))) c.id = idMap.get(String(c.ixcId)); });
+      }
+
+      // === Coordenadas: só PREENCHE quando o IXC trouxe lat/long válidas.
+      //     Nunca apaga uma coordenada existente (preserva captura do técnico). ===
+      const coordsIxc = clientesIxc
+        .filter(c => c.latitude != null && c.latitude !== '' && c.longitude != null && c.longitude !== '')
+        .map(c => ({ ixc_id: String(c.ixcId), lat: c.latitude, lng: c.longitude }));
+      if(coordsIxc.length){
+        try{ await sbClient.rpc('atualizar_coords_ixc_lote', { p_dados: coordsIxc }); }
+        catch(e){ console.warn('coords IXC lote:', e); }
       }
     }
 
