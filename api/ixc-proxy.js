@@ -69,6 +69,46 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
+  // INCLUSAO (INSERT) - ex: enviar SMS (ixcsoft: 'incluir')
+  // POST no endpoint da tabela com o corpo do registro
+  // ============================================================
+  if (ixcMethod === 'INSERT') {
+    const insBody = JSON.stringify(params); // campos do novo registro
+    const results = [];
+    for (const url of urlCandidates) {
+      for (const { label, value } of authCandidates) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': value,
+              'Content-Type': 'application/json',
+              'ixcsoft': 'incluir',
+            },
+            body: insBody,
+          });
+          const text   = await response.text();
+          const isHtml = text.trim().startsWith('<');
+          results.push({ url, auth: label, status: response.status, isHtml, preview: text.slice(0, 200) });
+          if (!isHtml && response.status >= 200 && response.status < 400) {
+            try {
+              const data = JSON.parse(text);
+              return res.status(200).json({ ...data, _workingUrl: url, _auth: label });
+            } catch { /* not valid JSON */ }
+          }
+        } catch (e) {
+          results.push({ url, auth: label, error: e.message });
+        }
+      }
+    }
+    const got401i = results.find(r => r.status === 401 && !r.isHtml);
+    const hintI = got401i
+      ? `Endpoint correto (${got401i.url}) mas credenciais invalidas. Verifique o token.`
+      : results.find(r => !r.isHtml)?.preview || 'Nenhum endpoint respondeu como API.';
+    return res.status(401).json({ error: 'Inclusao IXC falhou.', hint: hintI, results });
+  }
+
+  // ============================================================
   // LISTAGEM (GET) - logica original, intacta
   // ============================================================
   const apiBody = JSON.stringify({
