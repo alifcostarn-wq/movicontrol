@@ -95,6 +95,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);displ
 .rota-leaf-num{background:var(--ac);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .rota-leaf-num.urg{background:var(--red)}
 .rota-leaf-tec{background:var(--blu);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+/* SMS */
+.sms-tpl{font-size:12.5px;font-weight:600;padding:10px 8px;border-radius:10px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);cursor:pointer}
+.sms-tpl:active{background:var(--ac2)}
+.sms-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:none;align-items:flex-end;justify-content:center}
+.sms-modal-bg.open{display:flex}
+.sms-modal{background:var(--sf);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto}
+.sms-modal h3{font-size:16px;margin:0 0 4px}
+.sms-modal label{font-size:11px;color:var(--tx3);display:block;margin:10px 0 4px}
+.sms-modal input,.sms-modal textarea{width:100%;border:1px solid var(--bd);border-radius:10px;padding:10px;font-size:13px;background:var(--sf2);color:var(--tx);font-family:inherit}
+.sms-modal textarea{min-height:110px;resize:vertical;line-height:1.5}
+.sms-cc{font-size:11px;color:var(--tx3);text-align:right;margin-top:3px}
+.sms-cc.over{color:var(--red);font-weight:700}
 .card{background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
 .card-body{padding:14px 14px 10px;cursor:pointer}
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px}
@@ -843,6 +855,110 @@ function abrirDetOS(osId){
   if(os){ trocarView('os'); setTimeout(()=>abrirDet(osId),120); }
 }
 
+/* ============================================================
+   📩 SMS AO CLIENTE (via IXC crm_sms_log, com confirmação)
+   ============================================================ */
+let _smsCtx = null;
+
+function _smsTemplates(os){
+  const nome = (os.cliente||'Cliente').trim().split(/\s+/)[0];
+  const tec  = (_tec && _tec.nome) ? _tec.nome.trim().split(/\s+/)[0] : 'tecnico';
+  const num  = os.numero || os.id;
+  return {
+    assumida:     `MoviOn: Ola ${nome}. Seu atendimento foi assumido pelo tecnico ${tec}, que esta a caminho. OS #${num}. Duvidas? Responda este SMS.`,
+    deslocamento: `MoviOn: Ola ${nome}. O tecnico ${tec} iniciou o deslocamento para o seu endereco. OS #${num}.`,
+    cheguei:      `MoviOn: Ola ${nome}. O tecnico ${tec} chegou ao local e iniciara o atendimento. OS #${num}.`,
+    finalizada:   `MoviOn: Ola ${nome}. Atendimento concluido com sucesso. Protocolo #${num}. Tecnico: ${tec}. Em caso de duvidas, fale com nosso suporte.`
+  };
+}
+
+function enviarSmsOS(etapa){
+  const os = _aberta; if(!os){ toast('Abra uma OS primeiro'); return; }
+  const tel = (os.telefone||'').replace(/\D/g,'');
+  const msg = _smsTemplates(os)[etapa] || '';
+  _smsCtx = { etapa, osId: os.id, cliId: parseInt(os.cliente_id)||null };
+  const titulos = { assumida:'✋ Avisar: a caminho', deslocamento:'🚗 Avisar: em deslocamento', cheguei:'📍 Avisar: cheguei', finalizada:'✅ Avisar: concluído' };
+  $('sms-titulo').textContent = titulos[etapa] || '📩 Enviar SMS ao cliente';
+  $('sms-tel').value = tel;
+  $('sms-msg').value = msg;
+  _smsCount();
+  $('sms-modal-bg').classList.add('open');
+}
+
+function _smsCount(){
+  const el = $('sms-msg'), cc = $('sms-cc'); if(!el||!cc) return;
+  const n = el.value.length;
+  const segs = Math.ceil(n/160) || 1;
+  cc.textContent = `${n} caracteres · ${segs} SMS`;
+  cc.classList.toggle('over', n > 160);
+}
+
+function fecharModalSms(){
+  const bg = $('sms-modal-bg'); if(bg) bg.classList.remove('open');
+  _smsCtx = null;
+}
+
+async function confirmarEnvioSms(){
+  if(!_smsCtx){ return; }
+  const tel = ($('sms-tel').value||'').replace(/\D/g,'');
+  const msg = ($('sms-msg').value||'').trim();
+  if(tel.length < 10){ toast('Telefone invalido (use DDD + numero)'); return; }
+  if(!msg){ toast('A mensagem esta vazia'); return; }
+  const osId  = _smsCtx.osId, cliId = _smsCtx.cliId, etapa = _smsCtx.etapa;
+  const btn = $('sms-enviar-btn'); const orig = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Enviando...'; }
+  try {
+    const r = await ixcCall('crm_sms_log', {
+      id_cliente: cliId ? String(cliId) : '',
+      telefone_celular: tel,
+      assunto: msg,
+      gateway: '3'
+    }, 'INSERT');
+    const ok = r && (r.type === 'success' || r.tipo === 'sucesso' || r.id);
+    const ixcId = (r && (r.id || (r.registros && r.registros[0] && r.registros[0].id))) || null;
+    if(!ok){
+      throw new Error((r && (r.message || r.mensagem)) || 'Falha no envio (resposta inesperada do IXC)');
+    }
+    try {
+      await sb.rpc('registrar_sms_os', {
+        p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
+        p_etapa:etapa, p_telefone:tel, p_mensagem:msg,
+        p_status:'enviado', p_erro:null, p_ixc_id: ixcId?String(ixcId):null
+      });
+    } catch(e){ console.warn('registrar_sms_os:', e); }
+    toast('📩 SMS enviado ao cliente!');
+    fecharModalSms();
+    _carregarHistSms(osId);
+  } catch(e){
+    try {
+      await sb.rpc('registrar_sms_os', {
+        p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
+        p_etapa:etapa, p_telefone:tel, p_mensagem:msg,
+        p_status:'erro', p_erro:String(e.message||e).slice(0,300), p_ixc_id:null
+      });
+    } catch(_){}
+    toast('Erro ao enviar: '+(e.message||e));
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+async function _carregarHistSms(osId){
+  const el = $('sms-hist'); if(!el || !osId) return;
+  try {
+    const { data } = await sb.from('os_sms_log')
+      .select('etapa,status,criada_em')
+      .eq('os_id', osId).order('criada_em',{ascending:false}).limit(5);
+    if(data && data.length){
+      const map = {assumida:'A caminho',deslocamento:'Deslocamento',cheguei:'Cheguei',finalizada:'Concluído'};
+      el.innerHTML = data.map(s=>{
+        const d = new Date(s.criada_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+        return `<div style="font-size:11px;color:var(--tx3);padding:2px 0">${s.status==='enviado'?'✅':'⚠️'} ${map[s.etapa]||s.etapa} · ${d}</div>`;
+      }).join('');
+    } else { el.innerHTML=''; }
+  } catch(e){ /* silencioso */ }
+}
+
 /* ---- FILTRO ---- */
 function filtrar(btn, f){
   _fil = f;
@@ -1116,6 +1232,20 @@ async function abrirDet(id){
     html += btns;
   }
 
+  // 📩 Avisar cliente por SMS (com confirmação)
+  if(!['cancelada'].includes(os.status)){
+    html += `<div class="row-sec" style="margin-top:14px">
+      <div class="row-sec-title">📩 Avisar cliente por SMS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px">
+        <button class="sms-tpl" onclick="enviarSmsOS('assumida')">✋ A caminho</button>
+        <button class="sms-tpl" onclick="enviarSmsOS('deslocamento')">🚗 Em deslocamento</button>
+        <button class="sms-tpl" onclick="enviarSmsOS('cheguei')">📍 Cheguei</button>
+        <button class="sms-tpl" onclick="enviarSmsOS('finalizada')">✅ Concluído</button>
+      </div>
+      <div id="sms-hist" style="padding:0 12px 4px"></div>
+    </div>`;
+  }
+
   // Se já finalizada: mostra resumo
   if(['finalizada','concluida'].includes(os.status) && os.solucao){
     html += `<div class="alert" style="margin-top:12px">
@@ -1128,6 +1258,7 @@ async function abrirDet(id){
 
   $('det-body').innerHTML = html;
   $('ov-det').classList.add('open');
+  if(!['cancelada'].includes(os.status)) _carregarHistSms(os.id);
 }
 
 function fecharDet(){ $('ov-det').classList.remove('open'); _aberta=null; }
@@ -1553,5 +1684,21 @@ $('main-scroll').addEventListener('touchend',e=>{
   if($('main-scroll').scrollTop===0 && e.changedTouches[0].clientY-_startY>60) atualizar(true);
 },{passive:true});
 </script>
+<!-- Modal de confirmação de SMS -->
+<div class="sms-modal-bg" id="sms-modal-bg" onclick="if(event.target===this)fecharModalSms()">
+  <div class="sms-modal">
+    <h3 id="sms-titulo">📩 Enviar SMS ao cliente</h3>
+    <div style="font-size:12px;color:var(--tx3)">Revise a mensagem antes de enviar. O cliente receberá por SMS.</div>
+    <label>Telefone (com DDD)</label>
+    <input id="sms-tel" type="tel" inputmode="numeric" placeholder="84999999999">
+    <label>Mensagem</label>
+    <textarea id="sms-msg" oninput="_smsCount()" maxlength="320"></textarea>
+    <div class="sms-cc" id="sms-cc">0 caracteres</div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button onclick="fecharModalSms()" style="flex:1;padding:13px;border-radius:11px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-weight:600;cursor:pointer">Cancelar</button>
+      <button id="sms-enviar-btn" onclick="confirmarEnvioSms()" style="flex:2;padding:13px;border-radius:11px;border:none;background:var(--ac);color:#fff;font-weight:700;cursor:pointer">📩 Enviar SMS</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
