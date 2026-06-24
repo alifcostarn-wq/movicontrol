@@ -10,6 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Nunito:wght@800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
@@ -67,6 +69,32 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);displ
 
 /* ---- CARDS OS ---- */
 .list{display:flex;flex-direction:column;gap:10px}
+/* Rota Inteligente */
+.rota-dash{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+.rota-kpi{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:10px 6px;text-align:center}
+.rota-kpi-n{font-size:18px;font-weight:800;color:var(--ac)}
+.rota-kpi-l{font-size:10px;color:var(--tx3);margin-top:2px}
+.rota-card{background:var(--sf);border:1px solid var(--bd);border-radius:13px;padding:12px 13px;display:flex;gap:11px;align-items:flex-start}
+.rota-num{flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--ac);color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+.rota-card.done .rota-num{background:var(--tx3)}
+.rota-card.urg{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
+.rota-card-body{flex:1;min-width:0}
+.rota-cli{font-weight:700;font-size:14px;margin-bottom:2px}
+.rota-end{font-size:11.5px;color:var(--tx2);margin-bottom:6px;line-height:1.4}
+.rota-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+.rota-tag{font-size:10.5px;padding:2px 7px;border-radius:7px;background:var(--sf2);color:var(--tx2);font-weight:600}
+.rota-tag.dist{background:var(--blu-bg);color:var(--blu)}
+.rota-tag.tempo{background:var(--ac2);color:var(--ac)}
+.rota-tag.prio-urgente{background:var(--red-bg);color:var(--red)}
+.rota-tag.prio-alta{background:var(--amb-bg);color:var(--amb)}
+.rota-motivo{font-size:10.5px;color:var(--tx3);font-style:italic;margin-bottom:8px}
+.rota-nav{display:flex;gap:6px}
+.rota-nav a{flex:1;text-align:center;text-decoration:none;font-size:12px;font-weight:600;padding:8px;border-radius:9px;border:1px solid var(--bd);color:var(--tx)}
+.rota-nav a.maps{background:var(--blu-bg);color:var(--blu);border-color:transparent}
+.rota-nav a.done-btn{background:var(--ac2);color:var(--ac);border-color:transparent}
+.rota-leaf-num{background:var(--ac);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.rota-leaf-num.urg{background:var(--red)}
+.rota-leaf-tec{background:var(--blu);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .card{background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
 .card-body{padding:14px 14px 10px;cursor:pointer}
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px}
@@ -272,6 +300,7 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
     <!-- TABS -->
     <div class="vtabs">
       <button class="vtab on" id="tab-os" onclick="trocarView('os')">🗂 Minhas OS</button>
+      <button class="vtab" id="tab-rota" onclick="trocarView('rota')">🗺️ Rota</button>
       <button class="vtab" id="tab-est" onclick="trocarView('estoque')">📦 Meu Estoque</button>
     </div>
 
@@ -310,6 +339,24 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
       <div class="alert">📦 Peças sob sua responsabilidade. As baixas acontecem ao finalizar uma OS. Para receber mais peças, fale com o administrador.</div>
       <div class="list" id="lista-est"></div>
     </div>
+
+    <!-- ROTA INTELIGENTE -->
+    <div id="view-rota" style="display:none">
+      <div class="rota-dash" id="rota-dash">
+        <div class="rota-kpi"><div class="rota-kpi-n" id="rk-km">—</div><div class="rota-kpi-l">Km previstos</div></div>
+        <div class="rota-kpi"><div class="rota-kpi-n" id="rk-os">—</div><div class="rota-kpi-l">Paradas</div></div>
+        <div class="rota-kpi"><div class="rota-kpi-n" id="rk-tempo">—</div><div class="rota-kpi-l">Tempo estim.</div></div>
+      </div>
+      <div style="display:flex;gap:8px;margin:10px 0">
+        <button class="btn-full" id="btn-calc-rota" onclick="calcularRota()" style="margin-top:0;background:var(--ac);color:#fff;border:none;border-radius:11px;padding:13px;font-weight:700;flex:1">🗺️ Otimizar rota do dia</button>
+      </div>
+      <div id="rota-map" style="height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--bd);display:none;margin-bottom:10px;z-index:0"></div>
+      <div id="rota-acoes" style="display:none;gap:8px;margin-bottom:10px">
+        <button class="btn-full" onclick="iniciarRotaNav()" style="margin-top:0;background:var(--blu);color:#fff;border:none;border-radius:11px;padding:12px;font-weight:600;flex:1">▶ Iniciar no Google Maps</button>
+      </div>
+      <div class="list" id="rota-lista"></div>
+    </div>
+    <!-- /ROTA -->
   </div>
 </div>
 
@@ -566,8 +613,11 @@ function trocarView(v){
   _view = v;
   $('tab-os').classList.toggle('on', v==='os');
   $('tab-est').classList.toggle('on', v==='estoque');
+  $('tab-rota').classList.toggle('on', v==='rota');
   $('view-os').style.display      = v==='os' ? '' : 'none';
   $('view-estoque').style.display = v==='estoque' ? '' : 'none';
+  $('view-rota').style.display    = v==='rota' ? '' : 'none';
+  if(v==='rota') iniciarTelaRota();
 }
 
 function kpis(){
@@ -576,6 +626,221 @@ function kpis(){
   $('k-pend').textContent = _os.filter(o=>ativas.includes(o.status)).length;
   $('k-exec').textContent = _os.filter(o=>['assumida','executando','andamento'].includes(o.status)).length;
   $('k-fin').textContent  = _os.filter(o=>['finalizada','concluida'].includes(o.status) && o.data===h).length;
+}
+
+/* ============================================================
+   🗺️ ROTA INTELIGENTE
+   ============================================================ */
+let _rotaState = { paradas:[], semCoord:[], start:null, rotaId:null, map:null };
+const _ROTA_VEL_KMH = 30;     // velocidade média urbana p/ estimar tempo
+const _ROTA_MIN_OS  = 30;     // tempo médio de execução por OS (min)
+const _coordBR = (lat,lng)=> lat>=-34 && lat<=6 && lng>=-74 && lng<=-34;
+
+function _haversine(a,b){
+  const R=6371, tr=x=>x*Math.PI/180;
+  const dLat=tr(b.lat-a.lat), dLng=tr(b.lng-a.lng);
+  const s=Math.sin(dLat/2)**2 + Math.cos(tr(a.lat))*Math.cos(tr(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function _prioPeso(p){
+  const s=(p||'').toLowerCase();
+  if(s.includes('urg')) return 6;
+  if(s.includes('alta')) return 3;
+  if(s.includes('baixa')) return -1.5;
+  return 0;
+}
+function _getGPS(){
+  return new Promise(res=>{
+    if(!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      pos=>res({lat:pos.coords.latitude, lng:pos.coords.longitude}),
+      ()=>res(null),
+      {enableHighAccuracy:true, timeout:8000, maximumAge:30000}
+    );
+  });
+}
+
+function iniciarTelaRota(){
+  // Se já há rota calculada nesta sessão, mantém. Senão, mostra dica.
+  if(_rotaState.paradas.length){ _renderRota(); return; }
+  $('rota-lista').innerHTML = `<div class="empty"><div class="empty-ico">🗺️</div>Toque em <b>Otimizar rota do dia</b> para calcular a melhor sequência das suas OS.</div>`;
+  $('rk-km').textContent='—'; $('rk-os').textContent='—'; $('rk-tempo').textContent='—';
+}
+
+async function calcularRota(){
+  const btn=$('btn-calc-rota'); const orig=btn.innerHTML;
+  btn.disabled=true; btn.innerHTML='⏳ Calculando...';
+  try{
+    // 1) OS ativas (não finalizadas)
+    const ativas = _os.filter(o=>['aberta','assumida','executando','andamento'].includes(o.status));
+    if(!ativas.length){
+      $('rota-lista').innerHTML=`<div class="empty"><div class="empty-ico">✅</div>Nenhuma OS ativa para roteirizar.</div>`;
+      $('rota-map').style.display='none'; $('rota-acoes').style.display='none';
+      $('rk-km').textContent='0'; $('rk-os').textContent='0'; $('rk-tempo').textContent='0';
+      return;
+    }
+    // 2) Coordenadas dos clientes (via RPC, contorna RLS)
+    const ids=[...new Set(ativas.map(o=>parseInt(o.cliente_id)).filter(n=>!isNaN(n)))];
+    let coordMap={};
+    if(ids.length){
+      const { data } = await sb.rpc('get_coords_clientes',{ p_ids: ids });
+      (data||[]).forEach(c=>{
+        const la=parseFloat(c.latitude), lo=parseFloat(c.longitude);
+        if(!isNaN(la)&&!isNaN(lo)&&_coordBR(la,lo)) coordMap[c.id]={lat:la,lng:lo};
+      });
+    }
+    // 3) Separa OS com e sem coordenada válida
+    const comCoord=[], semCoord=[];
+    ativas.forEach(o=>{
+      const c=coordMap[parseInt(o.cliente_id)];
+      if(c) comCoord.push({ ...o, lat:c.lat, lng:c.lng });
+      else  semCoord.push(o);
+    });
+    if(!comCoord.length){
+      $('rota-lista').innerHTML=`<div class="empty"><div class="empty-ico">📍</div>Nenhuma das OS ativas tem coordenada GPS cadastrada ainda.<br><small>A localização é preenchida ao finalizar uma OS no local ou no cadastro do cliente.</small></div>`;
+      $('rota-map').style.display='none'; $('rota-acoes').style.display='none';
+      return;
+    }
+    // 4) GPS do técnico (início da rota); fallback: centroide das paradas
+    let start = await _getGPS();
+    if(!start || !_coordBR(start.lat,start.lng)){
+      const n=comCoord.length;
+      start={ lat:comCoord.reduce((s,p)=>s+p.lat,0)/n, lng:comCoord.reduce((s,p)=>s+p.lng,0)/n, _aprox:true };
+    }
+    // 5) Otimização: nearest-neighbor ponderado por prioridade
+    const rest=[...comCoord]; const ordem=[]; let cur={lat:start.lat,lng:start.lng};
+    while(rest.length){
+      let melhor=0, melhorScore=Infinity, melhorDist=0;
+      for(let i=0;i<rest.length;i++){
+        const d=_haversine(cur,rest[i]);
+        const score=d - _prioPeso(rest[i].prioridade);
+        if(score<melhorScore){ melhorScore=score; melhor=i; melhorDist=d; }
+      }
+      const escolhido=rest.splice(melhor,1)[0];
+      escolhido._distAnt=melhorDist;
+      ordem.push(escolhido);
+      cur={lat:escolhido.lat,lng:escolhido.lng};
+    }
+    // 6) Métricas acumuladas + motivo
+    let distAcc=0, tempoAcc=0;
+    ordem.forEach((p,i)=>{
+      distAcc += p._distAnt;
+      tempoAcc += (p._distAnt/_ROTA_VEL_KMH)*60 + _ROTA_MIN_OS;
+      p._distAcc=distAcc; p._tempoAcc=tempoAcc;
+      const urg=(p.prioridade||'').toLowerCase().includes('urg');
+      const alta=(p.prioridade||'').toLowerCase().includes('alta');
+      if(urg) p._motivo='⚡ Urgente — priorizada na rota';
+      else if(alta) p._motivo='Prioridade alta — antecipada';
+      else if(i===0) p._motivo='Mais próxima da sua localização';
+      else p._motivo=`${p._distAnt.toFixed(1)} km da parada anterior`;
+    });
+    _rotaState={ paradas:ordem, semCoord, start, rotaId:null, map:_rotaState.map,
+      distTotal:distAcc, tempoTotal:tempoAcc };
+
+    _renderRota();
+    _renderMapaRota();
+
+    // 7) Salva no banco (histórico/dashboard) — não bloqueia a tela
+    try{
+      const paradasJson = ordem.map((p,i)=>({ os_id:parseInt(p.id), ordem:i+1, dist_ant_km:+p._distAnt.toFixed(2), motivo:p._motivo }));
+      const { data:rid } = await sb.rpc('salvar_rota',{
+        p_tecnico_id:_tec.id, p_data:hoje(),
+        p_lat:start.lat, p_lng:start.lng,
+        p_dist:+distAcc.toFixed(2), p_tempo:Math.round(tempoAcc),
+        p_paradas:paradasJson
+      });
+      _rotaState.rotaId=rid;
+    }catch(e){ console.warn('salvar rota:', e); }
+
+  }catch(e){
+    $('rota-lista').innerHTML=`<div class="empty"><div class="empty-ico">⚠️</div>Erro ao calcular: ${e.message}</div>`;
+  }finally{
+    btn.disabled=false; btn.innerHTML=orig;
+  }
+}
+
+function _renderRota(){
+  const { paradas, semCoord, distTotal, tempoTotal } = _rotaState;
+  $('rk-km').textContent = distTotal!=null ? distTotal.toFixed(1) : '—';
+  $('rk-os').textContent = paradas.length;
+  const hMin=Math.round(tempoTotal||0);
+  $('rk-tempo').textContent = hMin>=60 ? Math.floor(hMin/60)+'h'+(hMin%60?(hMin%60)+'m':'') : hMin+'m';
+  $('rota-acoes').style.display = paradas.length ? 'flex' : 'none';
+
+  let html = paradas.map((p,i)=>{
+    const prio=(p.prioridade||'').toLowerCase();
+    const urg=prio.includes('urg');
+    const prioTag = p.prioridade ? `<span class="rota-tag prio-${urg?'urgente':prio.includes('alta')?'alta':'media'}">⚡ ${p.prioridade}</span>` : '';
+    const tMin=Math.round(p._tempoAcc);
+    const tStr=tMin>=60?Math.floor(tMin/60)+'h'+(tMin%60?(tMin%60)+'m':''):tMin+'m';
+    const wazeU=`https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes`;
+    const mapsU=`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
+    return `<div class="rota-card${urg?' urg':''}">
+      <div class="rota-num">${i+1}</div>
+      <div class="rota-card-body">
+        <div class="rota-cli">${p.cliente||'Cliente'}</div>
+        <div class="rota-end">${p.endereco||'—'}</div>
+        <div class="rota-meta">
+          <span class="rota-tag dist">🚗 ${p._distAnt.toFixed(1)} km</span>
+          <span class="rota-tag tempo">⏱ chega ~${tStr}</span>
+          ${prioTag}
+        </div>
+        <div class="rota-motivo">🎯 ${p._motivo}</div>
+        <div class="rota-nav">
+          <a class="maps" href="${mapsU}" target="_blank" rel="noopener">🗺️ Maps</a>
+          <a href="${wazeU}" target="_blank" rel="noopener">🚗 Waze</a>
+          <a class="done-btn" onclick="abrirDetOS(${p.id});return false;" href="#">📋 Abrir OS</a>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if(semCoord.length){
+    html += `<div class="alert warn" style="margin-top:6px">📍 ${semCoord.length} OS sem GPS cadastrado (fora da rota):<br>${semCoord.map(o=>'• '+(o.cliente||'Cliente')).join('<br>')}</div>`;
+  }
+  $('rota-lista').innerHTML = html;
+}
+
+function _renderMapaRota(){
+  if(typeof L==='undefined'){ return; }
+  const el=$('rota-map'); el.style.display='block';
+  if(_rotaState.map){ try{_rotaState.map.remove();}catch(e){} _rotaState.map=null; }
+  const s=_rotaState.start;
+  const pts=_rotaState.paradas.map(p=>[p.lat,p.lng]);
+  const all=[[s.lat,s.lng], ...pts];
+  const map=L.map('rota-map',{zoomControl:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',html:'<div class="rota-leaf-tec">📍</div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(map).bindPopup(s._aprox?'Início (aproximado)':'Você');
+  _rotaState.paradas.forEach((p,i)=>{
+    const urg=(p.prioridade||'').toLowerCase().includes('urg');
+    L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',html:`<div class="rota-leaf-num${urg?' urg':''}">${i+1}</div>`,iconSize:[24,24],iconAnchor:[12,12]})}).addTo(map).bindPopup(`${i+1}. ${p.cliente||'Cliente'}`);
+  });
+  L.polyline(all,{color:'#1A5C3A',weight:3,opacity:.65,dashArray:'6,7'}).addTo(map);
+  try{ map.fitBounds(L.latLngBounds(all).pad(0.18)); }catch(e){ map.setView([s.lat,s.lng],13); }
+  _rotaState.map=map;
+  setTimeout(()=>{ try{map.invalidateSize();}catch(e){} }, 250);
+}
+
+function iniciarRotaNav(){
+  const ps=_rotaState.paradas; if(!ps.length) return;
+  const s=_rotaState.start;
+  // Google Maps: origem (técnico) → waypoints intermediários → destino (última parada)
+  const dest=ps[ps.length-1];
+  const meio=ps.slice(0,-1);
+  // Google limita ~9 waypoints no link gratuito
+  const wp=meio.slice(0,9).map(p=>`${p.lat},${p.lng}`).join('|');
+  let url=`https://www.google.com/maps/dir/?api=1`;
+  if(s && !s._aprox) url+=`&origin=${s.lat},${s.lng}`;
+  url+=`&destination=${dest.lat},${dest.lng}&travelmode=driving`;
+  if(wp) url+=`&waypoints=${encodeURIComponent(wp)}`;
+  if(_rotaState.rotaId){ try{ sb.rpc('iniciar_rota',{p_rota_id:_rotaState.rotaId}); }catch(e){} }
+  window.open(url,'_blank');
+}
+
+// Abre o detalhe da OS a partir da rota
+function abrirDetOS(osId){
+  const os=_os.find(o=>o.id===osId);
+  if(os){ trocarView('os'); setTimeout(()=>abrirDet(osId),120); }
 }
 
 /* ---- FILTRO ---- */
@@ -914,6 +1179,7 @@ async function ixcCall(endpoint, params={}, method='GET'){
   } finally { clearTimeout(t); }
 }
 
+let _diagReg = null;
 async function carregarDiag(){
   if(!_aberta?.login_cliente) return;
   if(!_proxyUrl || !_ixcUrl || !_ixcToken){
@@ -943,6 +1209,7 @@ async function carregarDiag(){
       wrap.innerHTML='<div style="padding:10px 12px;color:var(--tx3);font-size:13px">Sem sessão ativa encontrada para este login.</div>';
       return;
     }
+    _diagReg = r;
 
     const on  = r.online==='S'||r.online===true;
     const q   = parseInt(r.count_desconexao||0);
@@ -984,7 +1251,7 @@ async function carregarDiag(){
       ${(!on&&motivoQ)?`<div class="alert warn">Última desconexão: ${motivoQ}</div>`:''}
       ${q>=2?`<div class="alert warn">⚠️ ${q} quedas — verificar cabo, ONU e potência óptica.</div>`:''}
       ${!on?`<div class="alert red">❌ Cliente offline — verificar ONU, roteador e cabo.</div>`:`<div class="alert">✅ Cliente online e conectado.</div>`}
-      <button onclick="executarPing(${loginIxcId})" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:4px">📡 Executar Ping</button>
+      <button onclick="toggleDetalhesConexao()" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:4px">📋 Detalhes da conexão</button>
       <button onclick="limparMac(${loginIxcId})" class="btn-full" style="font-size:13px;padding:11px;margin-top:6px;background:rgba(194,90,0,0.08);border:1px solid #C25A00;color:#C25A00;border-radius:10px;width:100%;cursor:pointer">🔄 Limpar MAC do login</button>
       <div id="ping-out"></div>`;
 
@@ -995,31 +1262,44 @@ async function carregarDiag(){
   }
 }
 
-async function executarPing(loginId){
+function toggleDetalhesConexao(){
   const out=$('ping-out'); if(!out) return;
-  out.innerHTML='<div class="ping-out"><span class="spin-sm"></span> Pingando...</div>';
-  try {
-    const d = await ixcCall(`radusuarios/${loginId}/ping`, { rp:'1' });
-    // Tenta vários nomes de campo possíveis para o texto do ping
-    let txt = d.resultado || d.result || d.output || d.mensagem || d.message
-           || d.msg || d.retorno || d.ping || d.saida || d.stdout;
-    // Se ainda for objeto/sem texto, tenta achar a primeira string "grande" no retorno
-    if(!txt && d && typeof d==='object'){
-      for(const k of Object.keys(d)){
-        if(typeof d[k]==='string' && (d[k].includes('icmp')||d[k].includes('bytes')||d[k].includes('PING')||d[k].includes('ttl'))){ txt=d[k]; break; }
-      }
-    }
-    if(!txt){
-      out.innerHTML='<div class="ping-out p-err">Não consegui ler o resultado do ping neste formato. Me envie o retorno para ajustar.</div>';
-      return;
-    }
-    out.innerHTML='<div class="ping-out">'+String(txt).split('\n').map(l=>{
-      if(l.includes('bytes from')||l.includes('time=')||l.includes('ttl=')) return`<span class="p-ok">${l}</span>`;
-      if(l.includes('error')||l.includes('unreachable')||l.includes('100%')) return`<span class="p-err">${l}</span>`;
-      if(l.startsWith('PING')||l.includes('statistics')) return`<span class="p-hdr">${l}</span>`;
-      return l;
-    }).join('\n')+'</div>';
-  } catch(e){ out.innerHTML=`<div class="ping-out p-err">Erro: ${e.message}</div>`; }
+  // Fecha se já estiver aberto
+  if(out.dataset.aberto==='1'){ out.innerHTML=''; out.dataset.aberto='0'; return; }
+  const r = _diagReg;
+  if(!r){ out.innerHTML='<div class="ping-out p-err">Carregue o diagnóstico primeiro.</div>'; return; }
+
+  const fmtData = (s)=> s ? String(s).replace('T',' ').slice(0,16) : '—';
+  const fmtBytes = (b)=>{
+    const n = parseInt(b||0); if(!n) return '—';
+    if(n >= 1e9) return (n/1e9).toFixed(1)+' GB';
+    if(n >= 1e6) return (n/1e6).toFixed(1)+' MB';
+    if(n >= 1e3) return (n/1e3).toFixed(1)+' KB';
+    return n+' B';
+  };
+  const linha = (lab,val)=> val && val!=='—' && val!=='' && val!=='0'
+    ? `<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--tx3);font-size:11.5px">${lab}</span><span style="font-size:12px;font-weight:500;text-align:right;word-break:break-all">${val}</span></div>`
+    : '';
+
+  const itens = [
+    linha('Login PPPoE', r.login),
+    linha('Senha PPPoE', r.senha),
+    linha('Conexão / VLAN', r.conexao),
+    linha('Transmissor (OLT)', r.id_transmissor),
+    linha('Caixa FTTH', r.id_caixa_ftth),
+    linha('Wi-Fi 2.4G', r.ssid_router_wifi),
+    linha('Wi-Fi 5G', r.ssid_router_wifi_5ghz),
+    linha('Senha Wi-Fi', r.senha_rede_sem_fio),
+    linha('Usuário roteador', r.usuario_router1),
+    linha('Senha roteador', r.senha_router1),
+    linha('Última conexão', fmtData(r.ultima_conexao_inicial)),
+    linha('Última atualização', fmtData(r.ultima_atualizacao)),
+    linha('Download total', fmtBytes(r.download_atual)),
+    linha('Upload total', fmtBytes(r.upload_atual)),
+  ].filter(Boolean).join('');
+
+  out.innerHTML = `<div style="background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-top:8px">${itens||'<span style="color:var(--tx3);font-size:12px">Sem detalhes adicionais.</span>'}</div>`;
+  out.dataset.aberto='1';
 }
 
 /* ---- LIMPAR MAC ---- */
