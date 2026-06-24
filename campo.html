@@ -856,41 +856,42 @@ function abrirDetOS(osId){
 }
 
 /* ============================================================
-   📩 SMS AO CLIENTE (via IXC crm_sms_log, com confirmação)
+   💬 WHATSAPP AO CLIENTE (via Evotrix, template, com confirmação)
    ============================================================ */
 let _smsCtx = null;
 
-function _smsTemplates(os){
+function _waTemplates(os){
   const nome = (os.cliente||'Cliente').trim().split(/\s+/)[0];
   const tec  = (_tec && _tec.nome) ? _tec.nome.trim().split(/\s+/)[0] : 'tecnico';
-  const num  = os.numero || os.id;
+  const num  = String(os.numero || os.id);
   return {
-    assumida:     `MoviOn: Ola ${nome}. Seu atendimento foi assumido pelo tecnico ${tec}, que esta a caminho. OS #${num}. Duvidas? Responda este SMS.`,
-    deslocamento: `MoviOn: Ola ${nome}. O tecnico ${tec} iniciou o deslocamento para o seu endereco. OS #${num}.`,
-    cheguei:      `MoviOn: Ola ${nome}. O tecnico ${tec} chegou ao local e iniciara o atendimento. OS #${num}.`,
-    finalizada:   `MoviOn: Ola ${nome}. Atendimento concluido com sucesso. Protocolo #${num}. Tecnico: ${tec}. Em caso de duvidas, fale com nosso suporte.`
+    assumida:     { template:'os_a_caminho',      body:[nome,tec,num], titulo:'✋ Avisar: a caminho',
+      preview:`📡 MoviOn\n\nOlá ${nome}! Seu atendimento foi assumido pelo técnico ${tec}, que já está a caminho. 🚗\n\nProtocolo: OS #${num}\n\nEm caso de dúvidas, responda esta mensagem.` },
+    deslocamento: { template:'os_em_deslocamento', body:[nome,tec,num], titulo:'🚗 Avisar: em deslocamento',
+      preview:`📡 MoviOn\n\nOlá ${nome}! O técnico ${tec} iniciou o deslocamento até o seu endereço. 🚗\n\nProtocolo: OS #${num}` },
+    cheguei:      { template:'os_cheguei',         body:[nome,tec,num], titulo:'📍 Avisar: cheguei',
+      preview:`📡 MoviOn\n\nOlá ${nome}! O técnico ${tec} chegou ao local e já vai iniciar o seu atendimento. 📍\n\nProtocolo: OS #${num}` },
+    finalizada:   { template:'os_concluido',       body:[nome,num,tec], titulo:'✅ Avisar: concluído',
+      preview:`📡 MoviOn\n\nOlá ${nome}! Seu atendimento foi concluído com sucesso. ✅\n\nProtocolo: OS #${num}\nTécnico: ${tec}\n\nCaso tenha dúvidas, fale com o nosso suporte.` },
   };
 }
 
-function enviarSmsOS(etapa){
-  const os = _aberta; if(!os){ toast('Abra uma OS primeiro'); return; }
-  const tel = (os.telefone||'').replace(/\D/g,'');
-  const msg = _smsTemplates(os)[etapa] || '';
-  _smsCtx = { etapa, osId: os.id, cliId: parseInt(os.cliente_id)||null };
-  const titulos = { assumida:'✋ Avisar: a caminho', deslocamento:'🚗 Avisar: em deslocamento', cheguei:'📍 Avisar: cheguei', finalizada:'✅ Avisar: concluído' };
-  $('sms-titulo').textContent = titulos[etapa] || '📩 Enviar SMS ao cliente';
-  $('sms-tel').value = tel;
-  $('sms-msg').value = msg;
-  _smsCount();
-  $('sms-modal-bg').classList.add('open');
+// Formata telefone BR para o padrão internacional (55 + DDD + numero)
+function _telBR(raw){
+  let t = (raw||'').replace(/\D/g,'');
+  if(t.length===10 || t.length===11) t = '55'+t;
+  return t;
 }
 
-function _smsCount(){
-  const el = $('sms-msg'), cc = $('sms-cc'); if(!el||!cc) return;
-  const n = el.value.length;
-  const segs = Math.ceil(n/160) || 1;
-  cc.textContent = `${n} caracteres · ${segs} SMS`;
-  cc.classList.toggle('over', n > 160);
+function enviarWaOS(etapa){
+  const os = _aberta; if(!os){ toast('Abra uma OS primeiro'); return; }
+  const cfg = _waTemplates(os)[etapa]; if(!cfg) return;
+  const tel = (os.telefone||'').replace(/\D/g,'');
+  _smsCtx = { etapa, osId: os.id, cliId: parseInt(os.cliente_id)||null, template: cfg.template, body: cfg.body, preview: cfg.preview };
+  $('sms-titulo').textContent = cfg.titulo;
+  $('sms-tel').value = tel;
+  $('sms-preview').textContent = cfg.preview;
+  $('sms-modal-bg').classList.add('open');
 }
 
 function fecharModalSms(){
@@ -898,42 +899,50 @@ function fecharModalSms(){
   _smsCtx = null;
 }
 
-async function confirmarEnvioSms(){
+async function confirmarEnvioWa(){
   if(!_smsCtx){ return; }
-  const tel = ($('sms-tel').value||'').replace(/\D/g,'');
-  const msg = ($('sms-msg').value||'').trim();
-  if(tel.length < 10){ toast('Telefone invalido (use DDD + numero)'); return; }
-  if(!msg){ toast('A mensagem esta vazia'); return; }
-  const osId  = _smsCtx.osId, cliId = _smsCtx.cliId, etapa = _smsCtx.etapa;
+  const telDigits = ($('sms-tel').value||'').replace(/\D/g,'');
+  if(telDigits.length < 10){ toast('Telefone inválido (use DDD + número)'); return; }
+  const recipient = _telBR(telDigits);
+  const osId = _smsCtx.osId, cliId = _smsCtx.cliId, etapa = _smsCtx.etapa;
+  const tmpl = _smsCtx.template, body = _smsCtx.body, preview = _smsCtx.preview;
   const btn = $('sms-enviar-btn'); const orig = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Enviando...'; }
   try {
-    const r = await ixcCall('crm_sms_log', {
-      id_cliente: cliId ? String(cliId) : '',
-      telefone_celular: tel,
-      assunto: msg,
-      gateway: '3'
-    }, 'INSERT');
-    const ok = r && (r.type === 'success' || r.tipo === 'sucesso' || r.id);
-    const ixcId = (r && (r.id || (r.registros && r.registros[0] && r.registros[0].id))) || null;
-    if(!ok){
-      throw new Error((r && (r.message || r.mensagem)) || 'Falha no envio (resposta inesperada do IXC)');
+    const resp = await fetch(_proxyUrl, {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', 'x-target':'evotrix' },
+      body: JSON.stringify({
+        channel: '67127520ecb37a364cc5e36d',
+        recipient: recipient,
+        template: tmpl,
+        campaign: 'os_notificacao',
+        header: '',
+        body: body,
+        buttons: []
+      })
+    });
+    const txt = await resp.text();
+    let data; try{ data = JSON.parse(txt); }catch{ data = { raw: txt.slice(0,200) }; }
+    if(!resp.ok || data.ok === false){
+      const m = (data.evotrix && (data.evotrix.message || data.evotrix.error)) || data.error || ('HTTP '+resp.status);
+      throw new Error(m);
     }
     try {
       await sb.rpc('registrar_sms_os', {
         p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
-        p_etapa:etapa, p_telefone:tel, p_mensagem:msg,
-        p_status:'enviado', p_erro:null, p_ixc_id: ixcId?String(ixcId):null
+        p_etapa:etapa, p_telefone:recipient, p_mensagem:preview,
+        p_status:'enviado', p_erro:null, p_ixc_id:null
       });
     } catch(e){ console.warn('registrar_sms_os:', e); }
-    toast('📩 SMS enviado ao cliente!');
+    toast('💬 WhatsApp enviado ao cliente!');
     fecharModalSms();
     _carregarHistSms(osId);
   } catch(e){
     try {
       await sb.rpc('registrar_sms_os', {
         p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
-        p_etapa:etapa, p_telefone:tel, p_mensagem:msg,
+        p_etapa:etapa, p_telefone:recipient, p_mensagem:preview,
         p_status:'erro', p_erro:String(e.message||e).slice(0,300), p_ixc_id:null
       });
     } catch(_){}
@@ -1232,15 +1241,15 @@ async function abrirDet(id){
     html += btns;
   }
 
-  // 📩 Avisar cliente por SMS (com confirmação)
+  // 💬 Avisar cliente por WhatsApp (template Evotrix, com confirmação)
   if(!['cancelada'].includes(os.status)){
     html += `<div class="row-sec" style="margin-top:14px">
-      <div class="row-sec-title">📩 Avisar cliente por SMS</div>
+      <div class="row-sec-title">💬 Avisar cliente por WhatsApp</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px">
-        <button class="sms-tpl" onclick="enviarSmsOS('assumida')">✋ A caminho</button>
-        <button class="sms-tpl" onclick="enviarSmsOS('deslocamento')">🚗 Em deslocamento</button>
-        <button class="sms-tpl" onclick="enviarSmsOS('cheguei')">📍 Cheguei</button>
-        <button class="sms-tpl" onclick="enviarSmsOS('finalizada')">✅ Concluído</button>
+        <button class="sms-tpl" onclick="enviarWaOS('assumida')">✋ A caminho</button>
+        <button class="sms-tpl" onclick="enviarWaOS('deslocamento')">🚗 Em deslocamento</button>
+        <button class="sms-tpl" onclick="enviarWaOS('cheguei')">📍 Cheguei</button>
+        <button class="sms-tpl" onclick="enviarWaOS('finalizada')">✅ Concluído</button>
       </div>
       <div id="sms-hist" style="padding:0 12px 4px"></div>
     </div>`;
@@ -1684,19 +1693,19 @@ $('main-scroll').addEventListener('touchend',e=>{
   if($('main-scroll').scrollTop===0 && e.changedTouches[0].clientY-_startY>60) atualizar(true);
 },{passive:true});
 </script>
-<!-- Modal de confirmação de SMS -->
+<!-- Modal de confirmação de WhatsApp -->
 <div class="sms-modal-bg" id="sms-modal-bg" onclick="if(event.target===this)fecharModalSms()">
   <div class="sms-modal">
-    <h3 id="sms-titulo">📩 Enviar SMS ao cliente</h3>
-    <div style="font-size:12px;color:var(--tx3)">Revise a mensagem antes de enviar. O cliente receberá por SMS.</div>
+    <h3 id="sms-titulo">💬 Enviar WhatsApp ao cliente</h3>
+    <div style="font-size:12px;color:var(--tx3)">Confirme o número e a mensagem antes de enviar. O cliente receberá no WhatsApp.</div>
     <label>Telefone (com DDD)</label>
     <input id="sms-tel" type="tel" inputmode="numeric" placeholder="84999999999">
-    <label>Mensagem</label>
-    <textarea id="sms-msg" oninput="_smsCount()" maxlength="320"></textarea>
-    <div class="sms-cc" id="sms-cc">0 caracteres</div>
+    <label>Mensagem que será enviada</label>
+    <div id="sms-preview" style="white-space:pre-wrap;font-size:13px;line-height:1.5;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:11px;color:var(--tx)"></div>
+    <div class="sms-cc" id="sms-cc" style="margin-top:6px">Modelo aprovado · variáveis preenchidas automaticamente</div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button onclick="fecharModalSms()" style="flex:1;padding:13px;border-radius:11px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-weight:600;cursor:pointer">Cancelar</button>
-      <button id="sms-enviar-btn" onclick="confirmarEnvioSms()" style="flex:2;padding:13px;border-radius:11px;border:none;background:var(--ac);color:#fff;font-weight:700;cursor:pointer">📩 Enviar SMS</button>
+      <button id="sms-enviar-btn" onclick="confirmarEnvioWa()" style="flex:2;padding:13px;border-radius:11px;border:none;background:#25D366;color:#fff;font-weight:700;cursor:pointer">💬 Enviar WhatsApp</button>
     </div>
   </div>
 </div>
