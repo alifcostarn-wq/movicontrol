@@ -9595,26 +9595,23 @@ async function salvarTecnico(){
     return;
   }
 
-  // Novo técnico: cria login no Supabase Auth (perfil 'tecnico') + registro em campo_tecnicos
+  // Novo técnico: cria o login num cliente TEMPORÁRIO (não troca a sessão do admin)
   const email = document.getElementById('tec-email').value.trim().toLowerCase();
   const senha = document.getElementById('tec-senha').value;
   if(!email||!senha){ showToast('Informe e-mail e senha de acesso.', true); return; }
   if(senha.length<6){ showToast('A senha precisa ter pelo menos 6 caracteres.', true); return; }
 
-  const { data, error: signErr } = await sbClient.auth.signUp({
-    email, password: senha,
-    options: { data: { nome } }
+  // Cliente descartável só para o signUp — assim a sessão do admin permanece intacta
+  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data, error: signErr } = await tempClient.auth.signUp({
+    email, password: senha, options: { data: { nome } }
   });
   if(signErr){ showToast('Erro ao criar login: '+signErr.message, true); return; }
 
-  if(data.user){
-    await sbClient.from('perfis').upsert({
-      id: data.user.id, nome, perfil:'tecnico', email,
-    }, { onConflict:'id' });
-  }
-
-  const { error } = await sbClient.from('campo_tecnicos').insert({
-    nome, telefone, status, user_id: data.user?.id || null,
+  // Perfil + registro do técnico via RPC (admin), de uma vez
+  const { error } = await sbClient.rpc('criar_tecnico_db', {
+    p_user_id: data.user?.id || null,
+    p_nome: nome, p_email: email, p_telefone: telefone, p_status: status,
   });
   if(error){ showToast('Erro: '+error.message, true); return; }
 
