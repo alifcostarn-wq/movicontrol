@@ -6,6 +6,90 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // ============================================================
+  // SUPABASE ADMIN - cria o tecnico INTEIRAMENTE no servidor.
+  // Nenhum signUp roda no navegador => a sessao do admin nunca e afetada.
+  // Acionado pelo header x-target: supabase-admin
+  // Requer a variavel de ambiente SUPABASE_SERVICE_ROLE_KEY (Vercel).
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'supabase-admin') {
+    const SUPA_URL = process.env.SUPABASE_URL || 'https://mgtetsmcswdtvsgewcen.supabase.co';
+    const SRV = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if (!SRV) return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY nao configurada no servidor (Vercel > Settings > Environment Variables).' });
+    const b = req.body || {};
+    const srvH = { 'apikey': SRV, 'Authorization': `Bearer ${SRV}`, 'Content-Type': 'application/json' };
+
+    // 1) Valida que o solicitante e admin/operador (protege o endpoint)
+    const token = (b.access_token || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '')) || '';
+    if (!token) return res.status(401).json({ error: 'Token do solicitante ausente.' });
+    let callerId = null;
+    try {
+      const rv = await fetch(`${SUPA_URL}/auth/v1/user`, { headers: { 'apikey': SRV, 'Authorization': `Bearer ${token}` } });
+      if (!rv.ok) return res.status(401).json({ error: 'Sessao do solicitante invalida.' });
+      const vu = await rv.json();
+      callerId = vu.id;
+    } catch (e) { return res.status(401).json({ error: 'Falha ao validar solicitante.' }); }
+    let callerPerfil = null;
+    try {
+      const rp = await fetch(`${SUPA_URL}/rest/v1/perfis?id=eq.${callerId}&select=perfil`, { headers: srvH });
+      const pj = await rp.json();
+      callerPerfil = Array.isArray(pj) && pj[0] ? pj[0].perfil : null;
+    } catch (e) {}
+    if (!['admin', 'operador'].includes(callerPerfil)) {
+      return res.status(403).json({ error: 'Apenas administradores podem cadastrar tecnicos.' });
+    }
+
+    if (b.action === 'criar_tecnico') {
+      const email = (b.email || '').trim().toLowerCase();
+      const senha = b.senha || '';
+      const nome  = (b.nome || '').trim();
+      const telefone = b.telefone || null;
+      const status = b.status || 'ativo';
+      if (!email || !senha || !nome) return res.status(400).json({ error: 'Informe nome, e-mail e senha.' });
+      if (senha.length < 6) return res.status(400).json({ error: 'A senha precisa ter ao menos 6 caracteres.' });
+
+      // 2) Cria o login via Admin API (no servidor — nao mexe em sessao alguma)
+      let userId = null;
+      try {
+        const ru = await fetch(`${SUPA_URL}/auth/v1/admin/users`, {
+          method: 'POST', headers: srvH,
+          body: JSON.stringify({ email, password: senha, email_confirm: true, user_metadata: { nome } })
+        });
+        const tu = await ru.text(); let du; try { du = JSON.parse(tu); } catch { du = {}; }
+        if (!ru.ok) {
+          const msg = du.msg || du.message || du.error_description || tu.slice(0, 200);
+          if (/already|exist|registered|duplicate/i.test(msg)) {
+            return res.status(409).json({ error: 'Este e-mail ja esta cadastrado. Use outro e-mail.' });
+          }
+          return res.status(ru.status).json({ error: 'Falha ao criar login: ' + msg });
+        }
+        userId = du.id || (du.user && du.user.id);
+      } catch (e) { return res.status(502).json({ error: 'Erro ao criar login: ' + e.message }); }
+      if (!userId) return res.status(502).json({ error: 'Login criado sem ID retornado.' });
+
+      // 3) Perfil = tecnico (upsert; o gatilho ja cria perfil='user')
+      try {
+        await fetch(`${SUPA_URL}/rest/v1/perfis?on_conflict=id`, {
+          method: 'POST', headers: { ...srvH, 'Prefer': 'resolution=merge-duplicates' },
+          body: JSON.stringify({ id: userId, nome, perfil: 'tecnico', email })
+        });
+      } catch (e) {}
+
+      // 4) Registro em campo_tecnicos
+      try {
+        const rt = await fetch(`${SUPA_URL}/rest/v1/campo_tecnicos`, {
+          method: 'POST', headers: { ...srvH, 'Prefer': 'return=representation' },
+          body: JSON.stringify({ nome, telefone, status, user_id: userId })
+        });
+        const tt = await rt.text(); let dt; try { dt = JSON.parse(tt); } catch { dt = {}; }
+        if (!rt.ok) return res.status(rt.status).json({ error: 'Login criado, mas falhou em campo_tecnicos: ' + (dt.message || tt.slice(0, 200)) });
+        return res.status(200).json({ ok: true, user_id: userId, tecnico: Array.isArray(dt) ? dt[0] : dt });
+      } catch (e) { return res.status(502).json({ error: 'Erro ao registrar tecnico: ' + e.message }); }
+    }
+
+    return res.status(400).json({ error: 'Acao desconhecida.' });
+  }
+
+  // ============================================================
   // EVOTRIX - envio de WhatsApp via template (CLOUD API)
   // Acionado pelo header x-target: evotrix
   // A chave fica SOMENTE no servidor (variavel de ambiente EVOTRIX_API_KEY)
