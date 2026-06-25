@@ -860,8 +860,22 @@ function abrirDetOS(osId){
    ============================================================ */
 let _smsCtx = null;
 
+function _nomeCli(os){
+  const full = (os && os.cliente ? os.cliente : '').trim();
+  if(!full) return 'Cliente';
+  const conect = ['de','da','do','dos','das','e'];
+  const out = [];
+  for(const p of full.split(/\s+/)){
+    const l = p.toLowerCase();
+    if(out.length>=1 && conect.includes(l)) continue;   // pula "de/da" entre nome e sobrenome
+    out.push(conect.includes(l) ? l : l.charAt(0).toUpperCase()+l.slice(1));
+    if(out.length>=2) break;                              // nome + sobrenome
+  }
+  return out.join(' ');
+}
+
 function _waTemplates(os){
-  const nome = (os.cliente||'Cliente').trim().split(/\s+/)[0];
+  const nome = _nomeCli(os);
   const tec  = (_tec && _tec.nome) ? _tec.nome.trim().split(/\s+/)[0] : 'tecnico';
   const num  = String(os.numero || os.id);
   return {
@@ -947,6 +961,41 @@ async function confirmarEnvioWa(){
     toast('Erro ao enviar: '+(e.message||e));
   } finally {
     if(btn){ btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+// Envio AUTOMÁTICO ao mudar status (sem confirmação). Fire-and-forget.
+async function _autoWaStatus(os, etapa){
+  if(!os) return;
+  const cfg = _waTemplates(os)[etapa]; if(!cfg) return;
+  const telDigits = (os.telefone||'').replace(/\D/g,'');
+  if(telDigits.length < 10){ return; }                 // sem telefone válido, não envia
+  const recipient = _telBR(telDigits);
+  const cliId = parseInt(os.cliente_id)||null;
+  try {
+    const resp = await fetch(_proxyUrl, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-target':'evotrix' },
+      body: JSON.stringify({ channel:'67127520ecb37a364cc5e36d', recipient, body:cfg.msg, campaign:'os_notificacao' })
+    });
+    const txt = await resp.text(); let data; try{ data = JSON.parse(txt); }catch{ data = {}; }
+    const ok = resp.ok && data.ok !== false;
+    try {
+      await sb.rpc('registrar_sms_os', {
+        p_os_id:os.id, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
+        p_etapa:etapa, p_telefone:recipient, p_mensagem:cfg.msg,
+        p_status: ok?'enviado':'erro', p_erro: ok?null:JSON.stringify(data).slice(0,200), p_ixc_id:null
+      });
+    } catch(_){}
+    if(ok) toast('💬 Cliente avisado no WhatsApp');
+  } catch(e){
+    try {
+      await sb.rpc('registrar_sms_os', {
+        p_os_id:os.id, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
+        p_etapa:etapa, p_telefone:recipient, p_mensagem:cfg.msg,
+        p_status:'erro', p_erro:String(e.message||e).slice(0,200), p_ixc_id:null
+      });
+    } catch(_){}
   }
 }
 
@@ -1067,6 +1116,12 @@ async function rapido(evt, id, status){
   if(error){ toast('Erro: '+error.message); return; }
   await atualizar(false, true);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Executando!'}[status]||'Atualizado!');
+  // Aviso automático ao cliente (WhatsApp)
+  const _osNotif = _os.find(x=>x.id==id);
+  if(_osNotif){
+    if(status==='assumida')   _autoWaStatus(_osNotif, 'assumida');
+    if(status==='executando') _autoWaStatus(_osNotif, 'cheguei');
+  }
 }
 
 /* ---- DETALHE DA OS ---- */
@@ -1239,11 +1294,12 @@ async function abrirDet(id){
     html += btns;
   }
 
-  // 💬 Avisar cliente por WhatsApp (template Evotrix, com confirmação)
+  // 💬 Avisos por WhatsApp — automáticos nas mudanças de status; botões reenviam se precisar
   if(!['cancelada'].includes(os.status)){
     html += `<div class="row-sec" style="margin-top:14px">
-      <div class="row-sec-title">💬 Avisar cliente por WhatsApp</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px">
+      <div class="row-sec-title">💬 Avisos ao cliente (automáticos)</div>
+      <div style="font-size:11px;color:var(--tx3);padding:8px 12px 2px">Enviados sozinhos ao assumir, executar e finalizar. Use os botões só para reenviar.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:8px 12px">
         <button class="sms-tpl" onclick="enviarWaOS('assumida')">✋ A caminho</button>
         <button class="sms-tpl" onclick="enviarWaOS('deslocamento')">🚗 Em deslocamento</button>
         <button class="sms-tpl" onclick="enviarWaOS('cheguei')">📍 Cheguei</button>
@@ -1664,7 +1720,8 @@ async function confirmarFin(){
 
     if(error){ toast('Erro: '+error.message); return; }
 
-    // 5) Atualiza a localização do CLIENTE com o GPS capturado em campo
+    // Aviso automático ao cliente (WhatsApp) — atendimento concluído
+    _autoWaStatus(_aberta, 'finalizada');
     //    (só se a precisão for boa, pra não sobrescrever com leitura ruim)
     const _cliId = parseInt(_aberta.cliente_id);
     if(_finGeo && _finGeo.lat && _finGeo.lng && (_finGeo.acc==null || _finGeo.acc<=100) && !isNaN(_cliId)){
