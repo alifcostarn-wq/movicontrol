@@ -350,7 +350,9 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
       <div style="display:flex;gap:8px;margin:10px 0">
         <button class="btn-full" id="btn-calc-rota" onclick="calcularRota()" style="margin-top:0;background:var(--ac);color:#fff;border:none;border-radius:11px;padding:13px;font-weight:700;flex:1">🗺️ Otimizar rota do dia</button>
       </div>
-      <div id="rota-map" style="height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--bd);display:none;margin-bottom:10px;z-index:0"></div>
+      <div id="rota-map" style="height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--bd);display:none;margin-bottom:10px;z-index:0;position:relative">
+        <button id="btn-satelite" onclick="toggleSatelite()" style="position:absolute;top:8px;right:8px;z-index:999;padding:6px 11px;border-radius:9px;border:none;background:rgba(0,0,0,.62);color:#fff;font-size:12px;font-weight:600;cursor:pointer;backdrop-filter:blur(4px)">🛰️ Satélite</button>
+      </div>
       <div id="rota-acoes" style="display:none;gap:8px;margin-bottom:10px">
         <button class="btn-full" onclick="iniciarRotaNav()" style="margin-top:0;background:var(--blu);color:#fff;border:none;border-radius:11px;padding:12px;font-weight:600;flex:1">▶ Iniciar no Google Maps</button>
       </div>
@@ -757,17 +759,26 @@ async function calcularRota(){
   const btn=$('btn-calc-rota'); const orig=btn.innerHTML;
   btn.disabled=true; btn.innerHTML='⏳ Calculando...';
   try{
-    // 1) OS ativas (não finalizadas)
-    const ativas = _os.filter(o=>['aberta','assumida','executando','andamento'].includes(o.status));
-    if(!ativas.length){
+    // 1) Separa OS por estado:
+    //    TRAVADAS  = assumida/executando/andamento (posição não muda — técnico já iniciou)
+    //    LIVRES    = aberta (inclui novas que chegaram e as que já estavam na fila)
+    const ST_TRAVADO = ['assumida','executando','andamento'];
+    const ST_LIVRE   = ['aberta'];
+
+    const travadas = _os.filter(o=>ST_TRAVADO.includes(o.status));
+    const livres   = _os.filter(o=>ST_LIVRE.includes(o.status));
+
+    if(!travadas.length && !livres.length){
       $('rota-lista').innerHTML=`<div class="empty"><div class="empty-ico">✅</div>Nenhuma OS ativa para roteirizar.</div>`;
       $('rota-map').style.display='none'; $('rota-acoes').style.display='none';
       $('rk-km').textContent='0'; $('rk-os').textContent='0'; $('rk-tempo').textContent='0';
       return;
     }
-    // 2) Coordenadas dos clientes (via RPC, contorna RLS)
-    const ids=[...new Set(ativas.map(o=>parseInt(o.cliente_id)).filter(n=>!isNaN(n)))];
-    let coordMap={};
+
+    // 2) Coordenadas de TODAS as OS (travadas + livres)
+    const todasAtivas = [...travadas, ...livres];
+    const ids = [...new Set(todasAtivas.map(o=>parseInt(o.cliente_id)).filter(n=>!isNaN(n)))];
+    let coordMap = {};
     if(ids.length){
       const { data } = await sb.rpc('get_coords_clientes',{ p_ids: ids });
       (data||[]).forEach(c=>{
@@ -775,58 +786,111 @@ async function calcularRota(){
         if(!isNaN(la)&&!isNaN(lo)&&_coordBR(la,lo)) coordMap[c.id]={lat:la,lng:lo};
       });
     }
-    // 3) Separa OS com e sem coordenada válida
-    const comCoord=[], semCoord=[];
-    ativas.forEach(o=>{
-      const c=coordMap[parseInt(o.cliente_id)];
-      if(c) comCoord.push({ ...o, lat:c.lat, lng:c.lng });
+
+    // 3) Enriquece com coordenadas e separa sem GPS
+    const semCoord = [];
+    const enriquecer = (lista) => lista.reduce((acc,o)=>{
+      const c = coordMap[parseInt(o.cliente_id)];
+      if(c) acc.push({...o, lat:c.lat, lng:c.lng});
       else  semCoord.push(o);
-    });
-    if(!comCoord.length){
-      $('rota-lista').innerHTML=`<div class="empty"><div class="empty-ico">📍</div>Nenhuma das OS ativas tem coordenada GPS cadastrada ainda.<br><small>A localização é preenchida ao finalizar uma OS no local ou no cadastro do cliente.</small></div>`;
+      return acc;
+    },[]);
+
+    const travadasComCoord = enriquecer(travadas);
+    const livresComCoord   = enriquecer(livres);
+
+    if(!travadasComCoord.length && !livresComCoord.length){
+      $('rota-lista').innerHTML=`<div class="empty"><div class="empty-ico">📍</div>Nenhuma OS tem coordenada GPS cadastrada ainda.<br><small>A localização é preenchida ao finalizar uma OS no local ou no cadastro do cliente.</small></div>`;
       $('rota-map').style.display='none'; $('rota-acoes').style.display='none';
       return;
     }
-    // 4) GPS do técnico (início da rota); fallback: centroide das paradas
+
+    // 4) GPS do técnico (início da rota)
     let start = await _getGPS();
     if(!start || !_coordBR(start.lat,start.lng)){
-      const n=comCoord.length;
-      start={ lat:comCoord.reduce((s,p)=>s+p.lat,0)/n, lng:comCoord.reduce((s,p)=>s+p.lng,0)/n, _aprox:true };
+      const todas = [...travadasComCoord,...livresComCoord];
+      const n = todas.length;
+      start = { lat:todas.reduce((s,p)=>s+p.lat,0)/n, lng:todas.reduce((s,p)=>s+p.lng,0)/n, _aprox:true };
     }
-    // 5) Otimização: nearest-neighbor ponderado por prioridade
-    const rest=[...comCoord]; const ordem=[]; let cur={lat:start.lat,lng:start.lng};
-    while(rest.length){
+
+    // 5) Monta a sequência final:
+    //    (a) Travadas: mantém a ordem que já estavam na _rotaState.paradas (se existir),
+    //        ou por assumido_em/executando_em para preservar cronologia
+    let ordemTravadas = [];
+    if(_rotaState.paradas.length){
+      // Preserva a ordem anterior para as OS travadas
+      const idsRotaAtual = _rotaState.paradas.map(p=>p.id);
+      ordemTravadas = [
+        ...idsRotaAtual
+          .map(id=>travadasComCoord.find(o=>o.id===id))
+          .filter(Boolean),
+        // Travadas novas que não estavam na rota anterior (raro, mas cobre)
+        ...travadasComCoord.filter(o=>!idsRotaAtual.includes(o.id)),
+      ];
+    } else {
+      // Primeira vez: ordena travadas por momento de início (assumido_em)
+      ordemTravadas = [...travadasComCoord].sort((a,b)=>{
+        const ta = a.assumido_em||a.executando_em||'';
+        const tb = b.assumido_em||b.executando_em||'';
+        return ta.localeCompare(tb);
+      });
+    }
+
+    //    (b) Livres: otimiza nearest-neighbor a partir do ÚLTIMO ponto das travadas
+    //        (ou do GPS do técnico se não houver travadas)
+    let curOtim = ordemTravadas.length
+      ? { lat: ordemTravadas[ordemTravadas.length-1].lat, lng: ordemTravadas[ordemTravadas.length-1].lng }
+      : { lat: start.lat, lng: start.lng };
+
+    const restLivres = [...livresComCoord];
+    const ordemLivres = [];
+    while(restLivres.length){
       let melhor=0, melhorScore=Infinity, melhorDist=0;
-      for(let i=0;i<rest.length;i++){
-        const d=_haversine(cur,rest[i]);
-        const score=d - _prioPeso(rest[i].prioridade);
+      for(let i=0;i<restLivres.length;i++){
+        const d = _haversine(curOtim, restLivres[i]);
+        const score = d - _prioPeso(restLivres[i].prioridade);
         if(score<melhorScore){ melhorScore=score; melhor=i; melhorDist=d; }
       }
-      const escolhido=rest.splice(melhor,1)[0];
-      escolhido._distAnt=melhorDist;
-      ordem.push(escolhido);
-      cur={lat:escolhido.lat,lng:escolhido.lng};
+      const escolhido = restLivres.splice(melhor,1)[0];
+      escolhido._distAnt = melhorDist;
+      ordemLivres.push(escolhido);
+      curOtim = { lat:escolhido.lat, lng:escolhido.lng };
     }
-    // 6) Métricas acumuladas + motivo
+
+    // 6) Sequência final = travadas (fixas) + livres (otimizadas)
+    const ordem = [...ordemTravadas, ...ordemLivres];
+
+    // Calcula _distAnt para as travadas (distância entre pontos consecutivos na sequência)
+    let prevPt = { lat:start.lat, lng:start.lng };
+    ordem.forEach((p,i)=>{
+      if(p._distAnt == null) p._distAnt = _haversine(prevPt, p); // travadas não tinham
+      prevPt = { lat:p.lat, lng:p.lng };
+    });
+
+    // 7) Métricas acumuladas + motivo
     let distAcc=0, tempoAcc=0;
     ordem.forEach((p,i)=>{
-      distAcc += p._distAnt;
+      distAcc  += p._distAnt;
       tempoAcc += (p._distAnt/_ROTA_VEL_KMH)*60 + _ROTA_MIN_OS;
       p._distAcc=distAcc; p._tempoAcc=tempoAcc;
-      const urg=(p.prioridade||'').toLowerCase().includes('urg');
-      const alta=(p.prioridade||'').toLowerCase().includes('alta');
-      if(urg) p._motivo='⚡ Urgente — priorizada na rota';
-      else if(alta) p._motivo='Prioridade alta — antecipada';
-      else if(i===0) p._motivo='Mais próxima da sua localização';
-      else p._motivo=`${p._distAnt.toFixed(1)} km da parada anterior`;
+      const urg  = (p.prioridade||'').toLowerCase().includes('urg');
+      const alta = (p.prioridade||'').toLowerCase().includes('alta');
+      const travada = ST_TRAVADO.includes(p.status);
+      if(travada)     p._motivo = p.status==='executando'||p.status==='andamento' ? '🔧 Em execução' : '✋ Já assumida — posição mantida';
+      else if(urg)    p._motivo = '⚡ Urgente — priorizada na rota';
+      else if(alta)   p._motivo = 'Prioridade alta — antecipada';
+      else if(i===0 || (i===ordemTravadas.length && !ordemTravadas.length))
+                      p._motivo = 'Mais próxima da sua localização';
+      else            p._motivo = `${p._distAnt.toFixed(1)} km da parada anterior`;
     });
-    _rotaState={ paradas:ordem, semCoord, start, rotaId:null, map:_rotaState.map,
+
+    _rotaState = { paradas:ordem, semCoord, start, rotaId:null, map:_rotaState.map,
       distTotal:distAcc, tempoTotal:tempoAcc };
 
     _renderRota();
     _renderMapaRota();
 
-    // 7) Salva no banco (histórico/dashboard) — não bloqueia a tela
+    // 8) Salva no banco — não bloqueia a tela
     try{
       const paradasJson = ordem.map((p,i)=>({ os_id:parseInt(p.id), ordem:i+1, dist_ant_km:+p._distAnt.toFixed(2), motivo:p._motivo }));
       const { data:rid } = await sb.rpc('salvar_rota',{
@@ -969,7 +1033,19 @@ function _renderMapaRota(){
   const pts=_rotaState.paradas.map(p=>[p.lat,p.lng]);
   const all=[[s.lat,s.lng], ...pts];
   const map=L.map('rota-map',{zoomControl:true});
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+
+  // Camadas de mapa
+  const _layerRua = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19, attribution:'© OpenStreetMap'
+  });
+  const _layerSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:19, attribution:'© Esri, Maxar, Earthstar Geographics'
+  });
+  _layerRua.addTo(map);
+  _rotaState._layerRua = _layerRua;
+  _rotaState._layerSat = _layerSat;
+  _rotaState._sateliteAtivo = false;
+
   L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',html:'<div class="rota-leaf-tec">📍</div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(map).bindPopup(s._aprox?'Início (aproximado)':'Você');
   _rotaState.paradas.forEach((p,i)=>{
     const urg=(p.prioridade||'').toLowerCase().includes('urg');
@@ -979,6 +1055,23 @@ function _renderMapaRota(){
   try{ map.fitBounds(L.latLngBounds(all).pad(0.18)); }catch(e){ map.setView([s.lat,s.lng],13); }
   _rotaState.map=map;
   setTimeout(()=>{ try{map.invalidateSize();}catch(e){} }, 250);
+}
+
+function toggleSatelite(){
+  const rs = _rotaState;
+  if(!rs.map || !rs._layerRua || !rs._layerSat) return;
+  const btn = $('btn-satelite');
+  if(rs._sateliteAtivo){
+    rs.map.removeLayer(rs._layerSat);
+    rs._layerRua.addTo(rs.map);
+    rs._sateliteAtivo = false;
+    if(btn){ btn.textContent='🛰️ Satélite'; btn.style.background='rgba(0,0,0,.62)'; }
+  } else {
+    rs.map.removeLayer(rs._layerRua);
+    rs._layerSat.addTo(rs.map);
+    rs._sateliteAtivo = true;
+    if(btn){ btn.textContent='🗺️ Mapa'; btn.style.background='rgba(26,92,58,.85)'; }
+  }
 }
 
 function iniciarRotaNav(){
@@ -1266,7 +1359,7 @@ async function rapido(evt, id, status){
 
 /* ---- DETALHE DA OS ---- */
 async function abrirDet(id){
-  const os = _os.find(x=>x.id==id);
+  const os = _os.find(x=>x.id==id);   // == intencional: id pode vir como string ou número
   if(!os) return;
   _aberta = {...os};
 
@@ -1488,10 +1581,12 @@ function abrirFinRota(id){
   abrirFin(null, id);
 }
 
-// Abre o detalhe da OS a partir da rota (somente leitura se não for a ativa)
-function abrirDetOS(osId){
-  const os=_os.find(o=>o.id===osId);
-  if(os){ abrirDet(osId); }
+function fecharDet(){ $('ov-det').classList.remove('open'); _aberta=null; }
+
+async function rapidoDet(status){
+  if(!_aberta) return;
+  fecharDet();
+  await rapidoRota(_aberta.id, status);
 }
 
 /* ---- REAGENDAMENTO ---- */
