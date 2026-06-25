@@ -28,8 +28,7 @@ export default async function handler(req, res) {
     // Tenta as URLs/autenticacoes mais provaveis. NAO para no primeiro 404
     // (pode ser apenas URL errada); coleta tudo e escolhe a melhor resposta.
     const evoUrls = [
-      'https://api.evotrix.com.br/v1/whatsapp/notifications/text',
-      'https://api.evotrix.com.br/whatsapp/notifications/text',
+      'https://api.evotrix.com.br/v1/services/whatsapp/notifications/text',
     ];
     const evoAuths = [
       { label: 'Bearer',        headers: { 'Authorization': `Bearer ${apiKey}` } },
