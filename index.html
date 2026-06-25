@@ -9601,8 +9601,12 @@ async function salvarTecnico(){
   if(!email||!senha){ showToast('Informe e-mail e senha de acesso.', true); return; }
   if(senha.length<6){ showToast('A senha precisa ter pelo menos 6 caracteres.', true); return; }
 
-  // Cliente descartável só para o signUp — assim a sessão do admin permanece intacta
-  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Cliente descartável só para o signUp. persistSession:false faz a sessão dele
+  // ficar só na memória — NUNCA grava no localStorage, então a sua sessão de admin
+  // permanece intacta (sem isso, os dois clientes compartilham o mesmo storage).
+  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, storageKey: 'sb-temp-signup' }
+  });
   const { data, error: signErr } = await tempClient.auth.signUp({
     email, password: senha, options: { data: { nome } }
   });
