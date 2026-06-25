@@ -25,59 +25,29 @@ export default async function handler(req, res) {
     if (!payload.channel || !payload.recipient || !payload.body) {
       return res.status(400).json({ error: 'Faltam campos: channel, recipient ou body.' });
     }
-    // Tenta as URLs/autenticacoes mais provaveis. NAO para no primeiro 404
-    // (pode ser apenas URL errada); coleta tudo e escolhe a melhor resposta.
-    const evoUrls = [
-      'https://api.evotrix.com.br/v1/services/whatsapp/notifications/text',
-    ];
-    const evoAuths = [
-      { label: 'Bearer',        headers: { 'Authorization': `Bearer ${apiKey}` } },
-      { label: 'Authorization', headers: { 'Authorization': apiKey } },
-      { label: 'x-api-key',     headers: { 'x-api-key': apiKey } },
-      { label: 'token',         headers: { 'token': apiKey } },
-    ];
-    const evoResults = [];
-    // prioridade da resposta: quanto maior, melhor candidato a "resposta util"
-    const prioridade = (st, hasMsg) => {
-      if (st >= 200 && st < 300) return 100;
-      if (st === 422) return 80;             // chegou no endpoint, parametro errado
-      if (st === 404 && hasMsg) return 70;   // 404 de negocio (canal/template)
-      if (st === 401) return 60;             // auth errada, mas endpoint existe
-      if (st === 400) return 50;
-      if (st === 404) return 20;             // 404 "puro" = provavel URL errada
-      return 10;
-    };
-    let melhor = null;
-    for (const url of evoUrls) {
-      for (const a of evoAuths) {
-        try {
-          const r = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...a.headers },
-            body: JSON.stringify(payload),
-          });
-          const text = await r.text();
-          let data; try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
-          const hasMsg = !!(data && (data.message || data.error || data.mensagem));
-          const cand = { url, auth: a.label, status: r.status, data, prio: prioridade(r.status, hasMsg) };
-          evoResults.push({ url, auth: a.label, status: r.status, body: text.slice(0, 200) });
-          // log para aparecer no Vercel runtime logs
-          console.log(`[evotrix] ${a.label} ${url} -> ${r.status} ${text.slice(0,160)}`);
-          if (r.status >= 200 && r.status < 300) {
-            return res.status(200).json({ ok: true, evotrix: data, _url: url, _auth: a.label });
-          }
-          if (!melhor || cand.prio > melhor.prio) melhor = cand;
-        } catch (e) {
-          evoResults.push({ url, auth: a.label, error: e.message });
-          console.log(`[evotrix] ${a.label} ${url} -> ERRO ${e.message}`);
-        }
+    // Endpoint e autenticacao confirmados em producao (Bearer)
+    const evoUrl = 'https://api.evotrix.com.br/v1/services/whatsapp/notifications/text';
+    try {
+      const r = await fetch(evoUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const text = await r.text();
+      let data; try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
+      console.log(`[evotrix] ${r.status} ${text.slice(0, 160)}`);
+      if (r.status >= 200 && r.status < 300) {
+        return res.status(200).json({ ok: true, evotrix: data });
       }
+      return res.status(r.status).json({ ok: false, evotrix: data });
+    } catch (e) {
+      console.log(`[evotrix] ERRO ${e.message}`);
+      return res.status(502).json({ error: 'Falha ao enviar pela Evotrix.', detail: e.message });
     }
-    // Retorna a resposta mais informativa que conseguimos
-    if (melhor) {
-      return res.status(melhor.status).json({ ok: false, evotrix: melhor.data, _url: melhor.url, _auth: melhor.auth, results: evoResults });
-    }
-    return res.status(502).json({ error: 'Falha ao enviar pela Evotrix.', results: evoResults });
   }
 
   const ixcUrl    = req.headers['x-ixc-url'];
