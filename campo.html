@@ -138,6 +138,31 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);displ
 .s-concluida{background:var(--ac2);color:var(--ac)}
 .s-novo{background:var(--blu-bg);color:var(--blu)}
 .s-atribuido{background:var(--amb-bg);color:var(--amb)}
+.s-reagendada{background:#F3EAFF;color:#6B2FBB}
+body.dk .s-reagendada{background:rgba(107,47,187,.18);color:#9B5FEB}
+
+/* ---- ROTA v4 — card ativo vs bloqueado ---- */
+.rota-card.ativa{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac) inset}
+.rota-card.bloqueada{opacity:.55}
+.rota-card.bloqueada .rota-nav{pointer-events:none;opacity:.5}
+.rota-lock{font-size:11px;color:var(--tx3);text-align:center;padding:6px 0 2px;font-style:italic}
+
+/* ---- BANNER SEM ROTA ---- */
+.rota-empty-banner{background:var(--sf);border:2px dashed var(--ac);border-radius:16px;padding:28px 20px;text-align:center;margin-top:8px}
+.rota-empty-icon{font-size:48px;margin-bottom:10px}
+.rota-empty-title{font-size:17px;font-weight:700;color:var(--tx);margin-bottom:6px}
+.rota-empty-sub{font-size:13px;color:var(--tx2);line-height:1.6;margin-bottom:18px}
+
+/* ---- BADGE ATIVA NA ROTA ---- */
+.rota-ativa-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;background:var(--ac);color:#fff;padding:3px 9px;border-radius:20px;margin-bottom:6px}
+
+/* ---- MODAL REAGENDAR ---- */
+.reagendar-opts{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.reagendar-opt{padding:13px 14px;border-radius:11px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-size:14px;font-weight:500;cursor:pointer;text-align:left;font-family:inherit}
+.reagendar-opt:active,.reagendar-opt.sel{border-color:var(--pur);background:var(--pur-bg);color:var(--pur);font-weight:700}
+
+/* ---- OS SOMENTE LEITURA (aba Minhas OS) ---- */
+.os-readonly-banner{background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:10px 13px;font-size:12px;color:var(--tx3);text-align:center;margin-bottom:12px}
 .prio{display:inline-flex;font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px}
 .p-alta{background:var(--red-bg);color:var(--red)}
 .p-media{background:var(--amb-bg);color:var(--amb)}
@@ -311,49 +336,12 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
     <!-- TABS -->
     <div class="vtabs">
-      <button class="vtab on" id="tab-os" onclick="trocarView('os')">🗂 Minhas OS</button>
-      <button class="vtab" id="tab-rota" onclick="trocarView('rota')">🗺️ Rota</button>
-      <button class="vtab" id="tab-est" onclick="trocarView('estoque')">📦 Meu Estoque</button>
+      <button class="vtab on" id="tab-rota" onclick="trocarView('rota')">🗺️ Rota do Dia</button>
+      <button class="vtab" id="tab-os" onclick="trocarView('os')">🗂 Minhas OS</button>
+      <button class="vtab" id="tab-est" onclick="trocarView('estoque')">📦 Estoque</button>
     </div>
 
-    <div id="view-os">
-    <!-- KPIs -->
-    <div class="kpis">
-      <div class="kpi">
-        <div class="kpi-n" id="k-pend" style="color:var(--blu)">—</div>
-        <div class="kpi-l">Pendentes</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-n" id="k-exec" style="color:var(--pur)">—</div>
-        <div class="kpi-l">Assumidas / Executando</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-n" id="k-fin" style="color:var(--ac)">—</div>
-        <div class="kpi-l">Finalizadas Hoje</div>
-      </div>
-    </div>
-
-    <!-- FILTROS -->
-    <div class="filtros">
-      <button class="fil on" data-f="ativas" onclick="filtrar(this,'ativas')">🗂 Ativas</button>
-      <button class="fil" data-f="aberta" onclick="filtrar(this,'aberta')">📋 Abertas</button>
-      <button class="fil" data-f="assumida" onclick="filtrar(this,'assumida')">✋ Assumidas</button>
-      <button class="fil" data-f="executando" onclick="filtrar(this,'executando')">🔧 Executando</button>
-      <button class="fil" data-f="finalizada" onclick="filtrar(this,'finalizada')">✅ Finalizadas</button>
-    </div>
-
-    <!-- LISTA -->
-    <div class="list" id="lista"></div>
-    </div><!-- /view-os -->
-
-    <!-- MEU ESTOQUE -->
-    <div id="view-estoque" style="display:none">
-      <div class="alert">📦 Peças sob sua responsabilidade. As baixas acontecem ao finalizar uma OS. Para receber mais peças, fale com o administrador.</div>
-      <div class="list" id="lista-est"></div>
-    </div>
-
-    <!-- ROTA INTELIGENTE -->
-    <div id="view-rota" style="display:none">
+    <div id="view-rota">
       <div class="rota-dash" id="rota-dash">
         <div class="rota-kpi"><div class="rota-kpi-n" id="rk-km">—</div><div class="rota-kpi-l">Km previstos</div></div>
         <div class="rota-kpi"><div class="rota-kpi-n" id="rk-os">—</div><div class="rota-kpi-l">Paradas</div></div>
@@ -369,11 +357,80 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
       <div class="list" id="rota-lista"></div>
     </div>
     <!-- /ROTA -->
+
+    <div id="view-os" style="display:none">
+    <!-- Banner somente leitura -->
+    <div class="os-readonly-banner">👁️ Consulta apenas — ações disponíveis somente na aba <b>Rota do Dia</b></div>
+    <!-- KPIs -->
+    <div class="kpis">
+      <div class="kpi">
+        <div class="kpi-n" id="k-pend" style="color:var(--blu)">—</div>
+        <div class="kpi-l">Pendentes</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-n" id="k-exec" style="color:var(--pur)">—</div>
+        <div class="kpi-l">Em execução</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-n" id="k-fin" style="color:var(--ac)">—</div>
+        <div class="kpi-l">Finalizadas Hoje</div>
+      </div>
+    </div>
+
+    <!-- FILTROS -->
+    <div class="filtros">
+      <button class="fil on" data-f="ativas" onclick="filtrar(this,'ativas')">🗂 Ativas</button>
+      <button class="fil" data-f="aberta" onclick="filtrar(this,'aberta')">📋 Abertas</button>
+      <button class="fil" data-f="assumida" onclick="filtrar(this,'assumida')">✋ Assumidas</button>
+      <button class="fil" data-f="executando" onclick="filtrar(this,'executando')">🔧 Executando</button>
+      <button class="fil" data-f="reagendada" onclick="filtrar(this,'reagendada')">📅 Reagendadas</button>
+      <button class="fil" data-f="finalizada" onclick="filtrar(this,'finalizada')">✅ Finalizadas</button>
+    </div>
+
+    <!-- LISTA -->
+    <div class="list" id="lista"></div>
+    </div><!-- /view-os -->
+
+    <!-- MEU ESTOQUE -->
+    <div id="view-estoque" style="display:none">
+      <div class="alert">📦 Peças sob sua responsabilidade. As baixas acontecem ao finalizar uma OS. Para receber mais peças, fale com o administrador.</div>
+      <div class="list" id="lista-est"></div>
+    </div>
+
   </div>
 </div>
 
 <!-- FAB REFRESH -->
 <button class="refresh-fab" onclick="atualizar(true)">↻</button>
+
+<!-- MODAL: REAGENDAR OS -->
+<div class="ov" id="ov-reagendar" onclick="if(event.target===this)fecharReagendar()">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" onclick="fecharReagendar()">✕</button>
+    <div class="sheet-head">
+      <div class="sheet-title">📅 Reagendar OS</div>
+      <div class="sheet-sub" id="reag-sub">—</div>
+    </div>
+    <div class="sheet-body">
+      <div class="alert warn">A OS sairá da rota de hoje e voltará como <b>Reagendada</b> para o admin visualizar e replanejar.</div>
+      <label class="flabel">Motivo do reagendamento <span style="color:var(--red)">*</span></label>
+      <div class="reagendar-opts" id="reag-opts">
+        <button class="reagendar-opt" onclick="selMotivo(this,'cliente_ausente')">🚪 Cliente ausente / não atendeu</button>
+        <button class="reagendar-opt" onclick="selMotivo(this,'endereco_nao_localizado')">📍 Endereço não localizado</button>
+        <button class="reagendar-opt" onclick="selMotivo(this,'cliente_pediu_remarcar')">📆 Cliente pediu para remarcar</button>
+        <button class="reagendar-opt" onclick="selMotivo(this,'problema_tecnico_externo')">🔧 Problema técnico externo (sem peça, clima)</button>
+        <button class="reagendar-opt" onclick="selMotivo(this,'outro')">💬 Outro motivo</button>
+      </div>
+      <div id="reag-outro-wrap" style="display:none">
+        <label class="flabel">Descreva o motivo</label>
+        <textarea class="finput" id="reag-outro-txt" placeholder="Ex: cliente estava no hospital..." rows="3"></textarea>
+      </div>
+      <button class="btn-full btn-amb" id="btn-confirmar-reag" onclick="confirmarReagendar()" style="margin-top:4px" disabled>📅 Confirmar Reagendamento</button>
+      <button class="btn-full btn-ghost" onclick="fecharReagendar()" style="margin-top:6px">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL: DETALHE -->
 <div class="ov" id="ov-det" onclick="if(event.target===this)fecharDet()">
@@ -526,13 +583,13 @@ const ST_LB = {
   aberta:'📋 Aberta', assumida:'✋ Assumida', executando:'🔧 Executando',
   finalizada:'✅ Finalizada', cancelada:'❌ Cancelada',
   andamento:'🔧 Em andamento', concluida:'✅ Concluída',
-  novo:'Novo', atribuido:'Atribuído',
+  novo:'Novo', atribuido:'Atribuído', reagendada:'📅 Reagendada',
 };
 const ST_CL = {
   aberta:'s-aberta', assumida:'s-assumida', executando:'s-executando',
   finalizada:'s-finalizada', cancelada:'s-cancelada',
   andamento:'s-andamento', concluida:'s-concluida',
-  novo:'s-novo', atribuido:'s-atribuido',
+  novo:'s-novo', atribuido:'s-atribuido', reagendada:'s-reagendada',
 };
 const PR_LB = { alta:'🔴 Alta', media:'🟡 Média', baixa:'🟢 Baixa' };
 const PR_CL = { alta:'p-alta', media:'p-media', baixa:'p-baixa' };
@@ -567,7 +624,9 @@ async function entrar(){
   _ixcUrl    = cfgMap['ixc_url']       || '';
   _ixcToken  = cfgMap['ixc_token']     || '';
   _ixcUser   = cfgMap['ixc_user']      || '';
-  await atualizar(false, true);
+  await atualizar(false, false);
+  // Sempre abre na Rota
+  trocarView('rota');
 }
 
 // Verifica sessão ao carregar
@@ -588,8 +647,10 @@ async function atualizar(manual=false, smart=false){
   await carregarMeuEstoque();
   if(manual){ setTimeout(()=>$('ptr').classList.remove('show'), 500); }
   kpis();
-  if(smart) filtroInteligente(); else render();
+  render();
   renderMeuEstoque();
+  // Se estiver na aba rota, re-renderiza a lista (sem recalcular, só atualiza status)
+  if(_view==='rota' && _rotaState.paradas.length) _renderRota();
 }
 
 /* ---- MEU ESTOQUE (sub-estoque do técnico) ---- */
@@ -635,12 +696,12 @@ function renderMeuEstoque(){
 
 function trocarView(v){
   _view = v;
+  $('tab-rota').classList.toggle('on', v==='rota');
   $('tab-os').classList.toggle('on', v==='os');
   $('tab-est').classList.toggle('on', v==='estoque');
-  $('tab-rota').classList.toggle('on', v==='rota');
-  $('view-os').style.display      = v==='os' ? '' : 'none';
-  $('view-estoque').style.display = v==='estoque' ? '' : 'none';
-  $('view-rota').style.display    = v==='rota' ? '' : 'none';
+  $('view-rota').style.display     = v==='rota' ? '' : 'none';
+  $('view-os').style.display       = v==='os' ? '' : 'none';
+  $('view-estoque').style.display  = v==='estoque' ? '' : 'none';
   if(v==='rota') iniciarTelaRota();
 }
 
@@ -685,9 +746,10 @@ function _getGPS(){
 }
 
 function iniciarTelaRota(){
-  // Se já há rota calculada nesta sessão, mantém. Senão, mostra dica.
-  if(_rotaState.paradas.length){ _renderRota(); return; }
-  $('rota-lista').innerHTML = `<div class="empty"><div class="empty-ico">🗺️</div>Toque em <b>Otimizar rota do dia</b> para calcular a melhor sequência das suas OS.</div>`;
+  // Se já há rota calculada nesta sessão, re-renderiza com status atualizado
+  if(_rotaState.paradas.length){ _renderRota(); _renderMapaRota(); return; }
+  // Sem rota: _renderRota exibe o banner automaticamente
+  _renderRota();
   $('rk-km').textContent='—'; $('rk-os').textContent='—'; $('rk-tempo').textContent='—';
 }
 
@@ -785,13 +847,44 @@ async function calcularRota(){
 
 function _renderRota(){
   const { paradas, semCoord, distTotal, tempoTotal } = _rotaState;
+
+  // Sem rota calculada: banner de instrução
+  if(!paradas || paradas.length === 0){
+    $('rota-dash').style.display = 'none';
+    $('rota-acoes').style.display = 'none';
+    $('rota-map').style.display = 'none';
+    $('rota-lista').innerHTML = `
+      <div class="rota-empty-banner">
+        <div class="rota-empty-icon">🗺️</div>
+        <div class="rota-empty-title">Planeje sua rota do dia</div>
+        <div class="rota-empty-sub">Toque em <b>Otimizar rota do dia</b> para o sistema organizar automaticamente a sequência das suas OS abertas no menor trajeto possível.</div>
+      </div>`;
+    return;
+  }
+
+  $('rota-dash').style.display = '';
   $('rk-km').textContent = distTotal!=null ? distTotal.toFixed(1) : '—';
   $('rk-os').textContent = paradas.length;
   const hMin=Math.round(tempoTotal||0);
   $('rk-tempo').textContent = hMin>=60 ? Math.floor(hMin/60)+'h'+(hMin%60?(hMin%60)+'m':'') : hMin+'m';
   $('rota-acoes').style.display = paradas.length ? 'flex' : 'none';
 
+  // Descobre o índice da primeira OS não finalizada/reagendada (= OS ativa)
+  const ST_CONCLUIDOS = ['finalizada','concluida','cancelada','reagendada'];
+  let idxAtiva = -1;
+  for(let i=0;i<paradas.length;i++){
+    const osAtual = _os.find(o=>o.id===paradas[i].id);
+    const stAtual = osAtual?.status || paradas[i].status || 'aberta';
+    if(!ST_CONCLUIDOS.includes(stAtual)){ idxAtiva = i; break; }
+  }
+
   let html = paradas.map((p,i)=>{
+    const osAtual = _os.find(o=>o.id===p.id);
+    const stAtual = osAtual?.status || p.status || 'aberta';
+    const foiConcluida = ST_CONCLUIDOS.includes(stAtual);
+    const ehAtiva = i === idxAtiva;
+    const ehBloqueada = !foiConcluida && !ehAtiva;
+
     const prio=(p.prioridade||'').toLowerCase();
     const urg=prio.includes('urg');
     const prioTag = p.prioridade ? `<span class="rota-tag prio-${urg?'urgente':prio.includes('alta')?'alta':'media'}">⚡ ${p.prioridade}</span>` : '';
@@ -799,29 +892,72 @@ function _renderRota(){
     const tStr=tMin>=60?Math.floor(tMin/60)+'h'+(tMin%60?(tMin%60)+'m':''):tMin+'m';
     const wazeU=`https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes`;
     const mapsU=`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
-    return `<div class="rota-card${urg?' urg':''}">
-      <div class="rota-num">${i+1}</div>
+
+    // Status visual do card
+    const stLbCard = ST_LB[stAtual]||stAtual;
+    const stClCard = ST_CL[stAtual]||'s-aberta';
+
+    // Badge da OS ativa
+    const ativaBadge = ehAtiva && !foiConcluida
+      ? `<div class="rota-ativa-badge">▶ Atendimento atual</div>` : '';
+
+    // Ícone do número: verde se concluída, cinza se bloqueada, colorido se ativa
+    const numStyle = foiConcluida ? 'background:var(--tx3)' : ehBloqueada ? 'background:var(--tx3)' : '';
+
+    // Botões de navegação — sempre visíveis, mas ações bloqueadas em OS não-ativas
+    const navLinks = `
+      <a class="maps" href="${mapsU}" target="_blank" rel="noopener">🗺️ Maps</a>
+      <a href="${wazeU}" target="_blank" rel="noopener">🚗 Waze</a>
+      <a onclick="abrirDetOS(${p.id});return false;" href="#">📋 Detalhe</a>`;
+
+    // Botões de ação — só aparecem na OS ativa
+    let acoesHtml = '';
+    if(ehAtiva && !foiConcluida){
+      if(stAtual==='aberta')
+        acoesHtml = `<button class="btn-full btn-blu" onclick="rapidoRota(${p.id},'assumida')" style="margin-top:8px;padding:12px;font-size:13px">✋ Assumir OS</button>`;
+      else if(stAtual==='assumida')
+        acoesHtml = `<button class="btn-full btn-amb" style="margin-top:8px;padding:12px;font-size:13px;background:var(--amb)" onclick="rapidoRota(${p.id},'executando')">🔧 Iniciar execução</button>`;
+      else if(['executando','andamento'].includes(stAtual))
+        acoesHtml = `<button class="btn-full btn-green" onclick="abrirFinRota(${p.id})" style="margin-top:8px;padding:12px;font-size:13px">✅ Finalizar OS</button>`;
+
+      // Botão Reagendar sempre presente na OS ativa (a menos que já esteja concluída)
+      acoesHtml += `<button class="btn-full" onclick="abrirReagendar(${p.id})" style="margin-top:6px;padding:11px;font-size:13px;background:var(--pur-bg);border:1px solid var(--pur);color:var(--pur);border-radius:10px;width:100%;cursor:pointer;font-weight:600">📅 Reagendar</button>`;
+    }
+
+    // Aviso de bloqueio
+    const lockHtml = ehBloqueada
+      ? `<div class="rota-lock">🔒 Finalize ou reagende a OS #${String(paradas[idxAtiva<0?i:idxAtiva].numero||0).padStart(4,'0')} primeiro</div>`
+      : '';
+
+    return `<div class="rota-card${urg&&!foiConcluida?' urg':''}${foiConcluida?' done':''}${ehAtiva?' ativa':''}${ehBloqueada?' bloqueada':''}">
+      <div class="rota-num" style="${numStyle}">${foiConcluida?'✓':i+1}</div>
       <div class="rota-card-body">
+        ${ativaBadge}
         <div class="rota-cli">${p.cliente||'Cliente'}</div>
         <div class="rota-end">${p.endereco||'—'}</div>
         <div class="rota-meta">
+          <span class="st ${stClCard}" style="font-size:10.5px;padding:2px 8px"><span class="st-dot"></span>${stLbCard}</span>
           <span class="rota-tag dist">🚗 ${p._distAnt.toFixed(1)} km</span>
-          <span class="rota-tag tempo">⏱ chega ~${tStr}</span>
+          <span class="rota-tag tempo">⏱ ~${tStr}</span>
           ${prioTag}
         </div>
         <div class="rota-motivo">🎯 ${p._motivo}</div>
-        <div class="rota-nav">
-          <a class="maps" href="${mapsU}" target="_blank" rel="noopener">🗺️ Maps</a>
-          <a href="${wazeU}" target="_blank" rel="noopener">🚗 Waze</a>
-          <a class="done-btn" onclick="abrirDetOS(${p.id});return false;" href="#">📋 Abrir OS</a>
-        </div>
+        <div class="rota-nav">${navLinks}</div>
+        ${lockHtml}
+        ${acoesHtml}
       </div>
     </div>`;
   }).join('');
 
-  if(semCoord.length){
-    html += `<div class="alert warn" style="margin-top:6px">📍 ${semCoord.length} OS sem GPS cadastrado (fora da rota):<br>${semCoord.map(o=>'• '+(o.cliente||'Cliente')).join('<br>')}</div>`;
+  if(semCoord && semCoord.length){
+    html += `<div class="alert warn" style="margin-top:6px">📍 ${semCoord.length} OS sem GPS (fora da rota):<br>${semCoord.map(o=>'• '+(o.cliente||'Cliente')).join('<br>')}</div>`;
   }
+
+  // Se todas concluídas, mensagem de parabéns
+  if(idxAtiva === -1 && paradas.length > 0){
+    html = `<div class="alert" style="text-align:center;font-size:14px;padding:18px">🎉 <b>Rota concluída!</b><br>Todas as OS do dia foram finalizadas ou reagendadas.</div>` + html;
+  }
+
   $('rota-lista').innerHTML = html;
 }
 
@@ -1052,7 +1188,7 @@ function filtroInteligente(){
   selecionarFiltro(f);
 }
 
-/* ---- RENDER ---- */
+/* ---- RENDER (aba Minhas OS — somente leitura) ---- */
 const ST_ATIVAS = ['aberta','assumida','executando','andamento'];
 function render(){
   const el = $('lista');
@@ -1060,35 +1196,28 @@ function render(){
   if(_fil==='ativas')           lista = _os.filter(o=>ST_ATIVAS.includes(o.status));
   else if(_fil==='executando')  lista = _os.filter(o=>['executando','andamento'].includes(o.status));
   else if(_fil==='finalizada')  lista = _os.filter(o=>['finalizada','concluida'].includes(o.status));
+  else if(_fil==='reagendada')  lista = _os.filter(o=>o.status==='reagendada');
   else if(_fil)                 lista = _os.filter(o=>o.status===_fil);
-  else                          lista = _os.filter(o=>ST_ATIVAS.includes(o.status)); // padrão nunca mostra finalizadas
+  else                          lista = _os.filter(o=>ST_ATIVAS.includes(o.status));
 
   if(!lista.length){
     const msg = _fil==='finalizada' ? 'Nenhuma OS finalizada.'
               : _fil==='executando' ? 'Nenhuma OS em execução.'
               : _fil==='aberta'     ? 'Nenhuma OS aberta. 🎉'
               : _fil==='assumida'   ? 'Nenhuma OS assumida.'
+              : _fil==='reagendada' ? 'Nenhuma OS reagendada.'
               : 'Nenhuma OS ativa no momento. 🎉';
     el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div>${msg}</div>`;
     return;
   }
 
+  // Somente leitura — sem botões de ação
   el.innerHTML = lista.map(os=>{
     const stCl = ST_CL[os.status]||'s-aberta';
     const stLb = ST_LB[os.status]||os.status;
     const prCl = PR_CL[os.prioridade]||'p-media';
     const prLb = PR_LB[os.prioridade]||'Média';
     const num  = `#${String(os.numero||0).padStart(4,'0')}`;
-
-    // Botão de ação principal
-    let acao='';
-    if(os.status==='aberta')
-      acao=`<button class="cta assumir" onclick="rapido(event,${os.id},'assumida')">✋ Assumir OS</button>`;
-    else if(os.status==='assumida')
-      acao=`<button class="cta executando" onclick="rapido(event,${os.id},'executando')">🔧 Iniciar execução</button>`;
-    else if(['executando','andamento'].includes(os.status))
-      acao=`<button class="cta finalizar" onclick="abrirFin(event,${os.id})">✅ Finalizar OS</button>`;
-
     return `<div class="card">
       <div class="card-body" onclick="abrirDet(${os.id})">
         <div class="card-top">
@@ -1111,7 +1240,6 @@ function render(){
           ${os.endereco?`<span style="font-size:11px;color:var(--tx3)">📍 ${os.endereco.slice(0,35)}${os.endereco.length>35?'…':''}</span>`:''}
         </div>
       </div>
-      ${acao?`<div class="card-actions one">${acao}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -1296,14 +1424,12 @@ async function abrirDet(id){
     </div>`;
   }
 
-  // Ações de status
-  const fim = ['finalizada','concluida','cancelada'];
+  // Ações de status — removidas do detalhe (somente leitura)
+  // O técnico age apenas pela aba Rota do Dia
   if(!fim.includes(os.status)){
-    let btns = '';
-    if(os.status==='aberta')      btns=`<button class="btn-full btn-blu" onclick="rapidoDet('assumida')">✋ Assumir esta OS</button>`;
-    else if(os.status==='assumida') btns=`<button class="btn-full btn-amb" style="background:var(--amb)" onclick="rapidoDet('executando')">🔧 Iniciar execução</button>`;
-    else if(['executando','andamento'].includes(os.status)) btns=`<button class="btn-full btn-green" onclick="abrirFinDet()">✅ Finalizar OS</button>`;
-    html += btns;
+    html += `<div class="alert warn" style="margin-top:8px;text-align:center">
+      🔒 Use a aba <b>Rota do Dia</b> para assumir, executar ou finalizar esta OS.
+    </div>`;
   }
 
   // 💬 Avisos por WhatsApp — automáticos nas mudanças de status; botões reenviam se precisar
@@ -1336,13 +1462,114 @@ async function abrirDet(id){
   if(!['cancelada'].includes(os.status)) _carregarHistSms(os.id);
 }
 
-function fecharDet(){ $('ov-det').classList.remove('open'); _aberta=null; }
+/* ---- AÇÃO RÁPIDA NA ROTA (substitui rapido() para OS da rota) ---- */
+async function rapidoRota(id, status){
+  const campos = status==='assumida'   ? {status,assumido_em:new Date().toISOString()} :
+                 status==='executando'  ? {status,executando_em:new Date().toISOString()} :
+                 {status};
+  ld(true);
+  const {error} = await sb.from('campo_os').update(campos).eq('id',id);
+  ld(false);
+  if(error){ toast('Erro: '+error.message); return; }
+  await atualizar(false, false);
+  toast({assumida:'✋ OS assumida!',executando:'🔧 Em execução!'}[status]||'Atualizado!');
+  const _osNotif = _os.find(x=>x.id==id);
+  if(_osNotif){
+    if(status==='assumida')   _autoWaStatus(_osNotif, 'assumida');
+    if(status==='executando') _autoWaStatus(_osNotif, 'cheguei');
+  }
+}
 
-async function rapidoDet(status){
-  if(!_aberta) return;
-  fecharDet();
-  const fakeEvt = {stopPropagation:()=>{}};
-  await rapido(fakeEvt, _aberta.id, status);
+/* ---- ABRIR FINALIZAÇÃO DIRETAMENTE DA ROTA ---- */
+function abrirFinRota(id){
+  const os = _os.find(x=>x.id==id);
+  if(!os) return;
+  _aberta = os;
+  abrirFin(null, id);
+}
+
+// Abre o detalhe da OS a partir da rota (somente leitura se não for a ativa)
+function abrirDetOS(osId){
+  const os=_os.find(o=>o.id===osId);
+  if(os){ abrirDet(osId); }
+}
+
+/* ---- REAGENDAMENTO ---- */
+let _reagOs = null, _reagMotivo = null;
+
+function abrirReagendar(id){
+  const os = _os.find(x=>x.id==id);
+  if(!os){ toast('OS não encontrada.'); return; }
+  _reagOs = os;
+  _reagMotivo = null;
+  $('reag-sub').textContent = `OS #${String(os.numero||0).padStart(4,'0')} — ${os.cliente||'—'}`;
+  // Reset seleção
+  document.querySelectorAll('.reagendar-opt').forEach(b=>b.classList.remove('sel'));
+  $('reag-outro-wrap').style.display = 'none';
+  if($('reag-outro-txt')) $('reag-outro-txt').value = '';
+  $('btn-confirmar-reag').disabled = true;
+  $('ov-reagendar').classList.add('open');
+}
+
+function fecharReagendar(){
+  $('ov-reagendar').classList.remove('open');
+  _reagOs = null; _reagMotivo = null;
+}
+
+function selMotivo(btn, motivo){
+  document.querySelectorAll('.reagendar-opt').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  _reagMotivo = motivo;
+  $('reag-outro-wrap').style.display = motivo==='outro' ? '' : 'none';
+  $('btn-confirmar-reag').disabled = false;
+}
+
+const MOTIVO_LB = {
+  cliente_ausente:           'Cliente ausente / não atendeu',
+  endereco_nao_localizado:   'Endereço não localizado',
+  cliente_pediu_remarcar:    'Cliente pediu para remarcar',
+  problema_tecnico_externo:  'Problema técnico externo',
+  outro:                     'Outro motivo',
+};
+
+async function confirmarReagendar(){
+  if(!_reagOs || !_reagMotivo){ toast('Selecione o motivo.'); return; }
+  let motivoTexto = MOTIVO_LB[_reagMotivo] || _reagMotivo;
+  if(_reagMotivo === 'outro'){
+    const txt = ($('reag-outro-txt').value||'').trim();
+    if(!txt){ toast('Descreva o motivo.'); return; }
+    motivoTexto = txt;
+  }
+
+  const btn = $('btn-confirmar-reag');
+  btn.disabled = true; btn.textContent = '⏳ Reagendando...';
+
+  try {
+    const {error} = await sb.from('campo_os').update({
+      status: 'reagendada',
+      reagendado_em: new Date().toISOString(),
+      reagendado_motivo: motivoTexto,
+    }).eq('id', _reagOs.id);
+
+    if(error) throw new Error(error.message);
+
+    // Remove da rota local (para que a próxima OS desbloqueie imediatamente)
+    _rotaState.paradas = _rotaState.paradas.filter(p=>p.id!==_reagOs.id);
+
+    fecharReagendar();
+    await atualizar(false, false);
+    toast(`📅 OS reagendada — próxima OS desbloqueada!`, 3500);
+  } catch(e){
+    toast('Erro ao reagendar: '+e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '📅 Confirmar Reagendamento';
+  }
+}
+
+/* ---- AÇÃO RÁPIDA (mantida para compatibilidade interna) ---- */
+async function rapido(evt, id, status){
+  if(evt) evt.stopPropagation();
+  await rapidoRota(id, status);
 }
 
 /* ---- DIAGNÓSTICO IXC ---- */
