@@ -8458,16 +8458,17 @@ async function salvarCliente(){
   }
   sd('sf_clientes', lista);
 
-  // Persiste a localização no Supabase para o app de campo enxergar o mesmo ponto
+  // Persiste a localização no Supabase para o app de campo enxergar o mesmo ponto.
+  // Usa a RPC, que FIXA a coordenada (não será sobrescrita pelo sync do IXC).
   const _cliId = _cliEditIdx!==null ? parseInt(lista[_cliEditIdx]?.id) : NaN;
   if(!isNaN(_cliId)){
     const _lat = _coordValida(dados.latitude);
     const _lng = _coordValida(dados.longitude);
-    try{
-      await sbClient.from('clientes')
-        .update({ latitude: _lat, longitude: _lng })
-        .eq('id', _cliId);
-    }catch(e){ console.warn('Coord não sincronizada com Supabase:', e); }
+    if(_lat!=null && _lng!=null){
+      try{
+        await sbClient.rpc('atualizar_coord_cliente', { p_cliente_id: _cliId, p_lat: _lat, p_lng: _lng });
+      }catch(e){ console.warn('Coord não fixada no Supabase:', e); }
+    }
   }
 
   fecharModal('modal-cli');
