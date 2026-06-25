@@ -9595,36 +9595,35 @@ async function salvarTecnico(){
     return;
   }
 
-  // Novo técnico: cria o login num cliente TEMPORÁRIO (não troca a sessão do admin)
+  // Novo técnico: criado INTEIRAMENTE no servidor (proxy + service_role).
+  // Nenhum signUp roda no navegador => sua sessão de admin NUNCA é afetada.
   const email = document.getElementById('tec-email').value.trim().toLowerCase();
   const senha = document.getElementById('tec-senha').value;
   if(!email||!senha){ showToast('Informe e-mail e senha de acesso.', true); return; }
   if(senha.length<6){ showToast('A senha precisa ter pelo menos 6 caracteres.', true); return; }
 
-  // Cliente descartável só para o signUp. persistSession:false faz a sessão dele
-  // ficar só na memória — NUNCA grava no localStorage, então a sua sessão de admin
-  // permanece intacta (sem isso, os dois clientes compartilham o mesmo storage).
-  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false, storageKey: 'sb-temp-signup' }
-  });
-  const { data, error: signErr } = await tempClient.auth.signUp({
-    email, password: senha, options: { data: { nome } }
-  });
-  if(signErr){ showToast('Erro ao criar login: '+signErr.message, true); return; }
+  const cfg = getIXCConfig();
+  if(!cfg.proxyUrl){ showToast('Configure a URL do proxy em ⚙ Integração IXC antes de cadastrar técnicos.', true); return; }
 
-  // Supabase, por segurança, não dá erro quando o e-mail já existe — retorna um
-  // "usuário fantasma" com identities vazio. Detecta isso e avisa com clareza.
-  if(!data.user || (Array.isArray(data.user.identities) && data.user.identities.length === 0)){
-    showToast('Este e-mail já está cadastrado. Use outro e-mail para o técnico.', true);
+  // Token do admin logado — o proxy valida a permissão antes de criar
+  const { data: _sess } = await sbClient.auth.getSession();
+  const accessToken = _sess?.session?.access_token;
+  if(!accessToken){ showToast('Sessão expirada. Faça login novamente.', true); return; }
+
+  let resp, data;
+  try{
+    resp = await fetch(cfg.proxyUrl, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-target':'supabase-admin' },
+      body: JSON.stringify({ action:'criar_tecnico', access_token: accessToken, email, senha, nome, telefone, status })
+    });
+    const txt = await resp.text(); try{ data = JSON.parse(txt); }catch{ data = {}; }
+  }catch(e){ showToast('Erro de conexão com o proxy: '+e.message, true); return; }
+
+  if(!resp.ok || data.ok === false){
+    showToast('Erro: '+(data.error || ('HTTP '+resp.status)), true);
     return;
   }
-
-  // Perfil + registro do técnico via RPC (admin), de uma vez
-  const { error } = await sbClient.rpc('criar_tecnico_db', {
-    p_user_id: data.user?.id || null,
-    p_nome: nome, p_email: email, p_telefone: telefone, p_status: status,
-  });
-  if(error){ showToast('Erro: '+error.message, true); return; }
 
   fecharModal('modal-tecnico');
   await carregarCampo();
