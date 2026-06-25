@@ -19,27 +19,36 @@ export default async function handler(req, res) {
     const payload = {
       channel:   b.channel   || '',
       recipient: b.recipient || '',
-      template:  b.template  || '',
+      body:      typeof b.body === 'string' ? b.body : '',
       campaign:  b.campaign  || 'os_notificacao',
-      header:    b.header    || '',
-      body:      Array.isArray(b.body)    ? b.body    : [],
-      buttons:   Array.isArray(b.buttons) ? b.buttons : [],
     };
-    if (!payload.channel || !payload.recipient || !payload.template) {
-      return res.status(400).json({ error: 'Faltam campos: channel, recipient ou template.' });
+    if (!payload.channel || !payload.recipient || !payload.body) {
+      return res.status(400).json({ error: 'Faltam campos: channel, recipient ou body.' });
     }
-    // Tenta as URLs/autenticacoes mais provaveis; retorna detalhe em caso de falha
+    // Tenta as URLs/autenticacoes mais provaveis. NAO para no primeiro 404
+    // (pode ser apenas URL errada); coleta tudo e escolhe a melhor resposta.
     const evoUrls = [
-      'https://api.evotrix.com.br/v1/whatsapp/notifications/template',
-      'https://api.evotrix.com.br/whatsapp/notifications/template',
+      'https://api.evotrix.com.br/v1/whatsapp/notifications/text',
+      'https://api.evotrix.com.br/whatsapp/notifications/text',
     ];
     const evoAuths = [
-      { label: 'Bearer',      headers: { 'Authorization': `Bearer ${apiKey}` } },
+      { label: 'Bearer',        headers: { 'Authorization': `Bearer ${apiKey}` } },
       { label: 'Authorization', headers: { 'Authorization': apiKey } },
-      { label: 'x-api-key',   headers: { 'x-api-key': apiKey } },
-      { label: 'token',       headers: { 'token': apiKey } },
+      { label: 'x-api-key',     headers: { 'x-api-key': apiKey } },
+      { label: 'token',         headers: { 'token': apiKey } },
     ];
     const evoResults = [];
+    // prioridade da resposta: quanto maior, melhor candidato a "resposta util"
+    const prioridade = (st, hasMsg) => {
+      if (st >= 200 && st < 300) return 100;
+      if (st === 422) return 80;             // chegou no endpoint, parametro errado
+      if (st === 404 && hasMsg) return 70;   // 404 de negocio (canal/template)
+      if (st === 401) return 60;             // auth errada, mas endpoint existe
+      if (st === 400) return 50;
+      if (st === 404) return 20;             // 404 "puro" = provavel URL errada
+      return 10;
+    };
+    let melhor = null;
     for (const url of evoUrls) {
       for (const a of evoAuths) {
         try {
@@ -50,21 +59,24 @@ export default async function handler(req, res) {
           });
           const text = await r.text();
           let data; try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
-          evoResults.push({ url, auth: a.label, status: r.status });
+          const hasMsg = !!(data && (data.message || data.error || data.mensagem));
+          const cand = { url, auth: a.label, status: r.status, data, prio: prioridade(r.status, hasMsg) };
+          evoResults.push({ url, auth: a.label, status: r.status, body: text.slice(0, 200) });
+          // log para aparecer no Vercel runtime logs
+          console.log(`[evotrix] ${a.label} ${url} -> ${r.status} ${text.slice(0,160)}`);
           if (r.status >= 200 && r.status < 300) {
             return res.status(200).json({ ok: true, evotrix: data, _url: url, _auth: a.label });
           }
-          // 401/404/422 com JSON = endpoint certo, problema de auth/parametro: retorna direto
-          if ([400, 401, 404, 422].includes(r.status)) {
-            // tenta proxima auth so no 401; nos demais, ja eh resposta util
-            if (r.status !== 401) {
-              return res.status(r.status).json({ ok: false, evotrix: data, _url: url, _auth: a.label });
-            }
-          }
+          if (!melhor || cand.prio > melhor.prio) melhor = cand;
         } catch (e) {
           evoResults.push({ url, auth: a.label, error: e.message });
+          console.log(`[evotrix] ${a.label} ${url} -> ERRO ${e.message}`);
         }
       }
+    }
+    // Retorna a resposta mais informativa que conseguimos
+    if (melhor) {
+      return res.status(melhor.status).json({ ok: false, evotrix: melhor.data, _url: melhor.url, _auth: melhor.auth, results: evoResults });
     }
     return res.status(502).json({ error: 'Falha ao enviar pela Evotrix.', results: evoResults });
   }
