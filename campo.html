@@ -865,14 +865,14 @@ function _waTemplates(os){
   const tec  = (_tec && _tec.nome) ? _tec.nome.trim().split(/\s+/)[0] : 'tecnico';
   const num  = String(os.numero || os.id);
   return {
-    assumida:     { template:'os_a_caminho',      body:[nome,tec,num], titulo:'✋ Avisar: a caminho',
-      preview:`📡 MoviOn\n\nOlá ${nome}! Seu atendimento foi assumido pelo técnico ${tec}, que já está a caminho. 🚗\n\nProtocolo: OS #${num}\n\nEm caso de dúvidas, responda esta mensagem.` },
-    deslocamento: { template:'os_em_deslocamento', body:[nome,tec,num], titulo:'🚗 Avisar: em deslocamento',
-      preview:`📡 MoviOn\n\nOlá ${nome}! O técnico ${tec} iniciou o deslocamento até o seu endereço. 🚗\n\nProtocolo: OS #${num}` },
-    cheguei:      { template:'os_cheguei',         body:[nome,tec,num], titulo:'📍 Avisar: cheguei',
-      preview:`📡 MoviOn\n\nOlá ${nome}! O técnico ${tec} chegou ao local e já vai iniciar o seu atendimento. 📍\n\nProtocolo: OS #${num}` },
-    finalizada:   { template:'os_concluido',       body:[nome,num,tec], titulo:'✅ Avisar: concluído',
-      preview:`📡 MoviOn\n\nOlá ${nome}! Seu atendimento foi concluído com sucesso. ✅\n\nProtocolo: OS #${num}\nTécnico: ${tec}\n\nCaso tenha dúvidas, fale com o nosso suporte.` },
+    assumida:     { titulo:'✋ Avisar: a caminho',
+      msg:`📡 *MoviOn*\n\nOlá ${nome}! Seu atendimento foi assumido pelo técnico ${tec}, que já está a caminho. 🚗\n\nProtocolo: OS #${num}\n\nEm caso de dúvidas, responda esta mensagem.` },
+    deslocamento: { titulo:'🚗 Avisar: em deslocamento',
+      msg:`📡 *MoviOn*\n\nOlá ${nome}! O técnico ${tec} iniciou o deslocamento até o seu endereço. 🚗\n\nProtocolo: OS #${num}` },
+    cheguei:      { titulo:'📍 Avisar: cheguei',
+      msg:`📡 *MoviOn*\n\nOlá ${nome}! O técnico ${tec} chegou ao local e já vai iniciar o seu atendimento. 📍\n\nProtocolo: OS #${num}` },
+    finalizada:   { titulo:'✅ Avisar: concluído',
+      msg:`📡 *MoviOn*\n\nOlá ${nome}! Seu atendimento foi concluído com sucesso. ✅\n\nProtocolo: OS #${num}\nTécnico: ${tec}\n\nCaso tenha dúvidas, fale com o nosso suporte.` },
   };
 }
 
@@ -887,10 +887,10 @@ function enviarWaOS(etapa){
   const os = _aberta; if(!os){ toast('Abra uma OS primeiro'); return; }
   const cfg = _waTemplates(os)[etapa]; if(!cfg) return;
   const tel = (os.telefone||'').replace(/\D/g,'');
-  _smsCtx = { etapa, osId: os.id, cliId: parseInt(os.cliente_id)||null, template: cfg.template, body: cfg.body, preview: cfg.preview };
+  _smsCtx = { etapa, osId: os.id, cliId: parseInt(os.cliente_id)||null };
   $('sms-titulo').textContent = cfg.titulo;
   $('sms-tel').value = tel;
-  $('sms-preview').textContent = cfg.preview;
+  $('sms-msg').value = cfg.msg;
   $('sms-modal-bg').classList.add('open');
 }
 
@@ -902,10 +902,11 @@ function fecharModalSms(){
 async function confirmarEnvioWa(){
   if(!_smsCtx){ return; }
   const telDigits = ($('sms-tel').value||'').replace(/\D/g,'');
+  const msg = ($('sms-msg').value||'').trim();
   if(telDigits.length < 10){ toast('Telefone inválido (use DDD + número)'); return; }
+  if(!msg){ toast('A mensagem está vazia'); return; }
   const recipient = _telBR(telDigits);
   const osId = _smsCtx.osId, cliId = _smsCtx.cliId, etapa = _smsCtx.etapa;
-  const tmpl = _smsCtx.template, body = _smsCtx.body, preview = _smsCtx.preview;
   const btn = $('sms-enviar-btn'); const orig = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Enviando...'; }
   try {
@@ -915,11 +916,8 @@ async function confirmarEnvioWa(){
       body: JSON.stringify({
         channel: '67127520ecb37a364cc5e36d',
         recipient: recipient,
-        template: tmpl,
-        campaign: 'os_notificacao',
-        header: '',
-        body: body,
-        buttons: []
+        body: msg,
+        campaign: 'os_notificacao'
       })
     });
     const txt = await resp.text();
@@ -931,7 +929,7 @@ async function confirmarEnvioWa(){
     try {
       await sb.rpc('registrar_sms_os', {
         p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
-        p_etapa:etapa, p_telefone:recipient, p_mensagem:preview,
+        p_etapa:etapa, p_telefone:recipient, p_mensagem:msg,
         p_status:'enviado', p_erro:null, p_ixc_id:null
       });
     } catch(e){ console.warn('registrar_sms_os:', e); }
@@ -942,7 +940,7 @@ async function confirmarEnvioWa(){
     try {
       await sb.rpc('registrar_sms_os', {
         p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
-        p_etapa:etapa, p_telefone:recipient, p_mensagem:preview,
+        p_etapa:etapa, p_telefone:recipient, p_mensagem:msg,
         p_status:'erro', p_erro:String(e.message||e).slice(0,300), p_ixc_id:null
       });
     } catch(_){}
@@ -1700,9 +1698,9 @@ $('main-scroll').addEventListener('touchend',e=>{
     <div style="font-size:12px;color:var(--tx3)">Confirme o número e a mensagem antes de enviar. O cliente receberá no WhatsApp.</div>
     <label>Telefone (com DDD)</label>
     <input id="sms-tel" type="tel" inputmode="numeric" placeholder="84999999999">
-    <label>Mensagem que será enviada</label>
-    <div id="sms-preview" style="white-space:pre-wrap;font-size:13px;line-height:1.5;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:11px;color:var(--tx)"></div>
-    <div class="sms-cc" id="sms-cc" style="margin-top:6px">Modelo aprovado · variáveis preenchidas automaticamente</div>
+    <label>Mensagem (pode editar)</label>
+    <textarea id="sms-msg" style="min-height:150px"></textarea>
+    <div class="sms-cc" id="sms-cc" style="margin-top:6px">Texto livre · será enviado pelo WhatsApp</div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button onclick="fecharModalSms()" style="flex:1;padding:13px;border-radius:11px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-weight:600;cursor:pointer">Cancelar</button>
       <button id="sms-enviar-btn" onclick="confirmarEnvioWa()" style="flex:2;padding:13px;border-radius:11px;border:none;background:#25D366;color:#fff;font-weight:700;cursor:pointer">💬 Enviar WhatsApp</button>
