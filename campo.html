@@ -458,6 +458,18 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
         <button class="geo-retry" type="button" id="fin-geo-retry" onclick="capturarLocalizacao()" style="display:none">↻ Tentar novamente</button>
       </div>
 
+      <!-- ASSINATURA DO CLIENTE -->
+      <label class="flabel">✍️ Assinatura do cliente <span style="color:var(--red)">*</span></label>
+      <div style="font-size:11px;color:var(--tx3);margin-bottom:4px">Peça ao cliente para assinar no quadro abaixo com o dedo.</div>
+      <div style="position:relative;border:1px solid var(--bd);border-radius:12px;background:#fff;overflow:hidden">
+        <canvas id="assina-canvas" style="width:100%;height:180px;display:block;touch-action:none"></canvas>
+        <div id="assina-ph" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#c9c9c9;font-size:14px;pointer-events:none">Assine aqui ✍️</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;margin-bottom:4px">
+        <span id="assina-status" style="font-size:11.5px;color:var(--tx3)">Não assinado</span>
+        <button type="button" onclick="assinaturaLimpar()" style="font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);cursor:pointer">🧹 Limpar</button>
+      </div>
+
       <button class="btn-full btn-green" id="btn-fin" onclick="confirmarFin()">✅ Confirmar Finalização</button>
       <button class="btn-full btn-ghost" onclick="fecharFin()" style="margin-top:6px">Cancelar</button>
     </div>
@@ -1544,6 +1556,7 @@ function abrirFin(evt, id){
   $('fin-peca-qtd').value=''; $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value='';
   popularPecaSelect(); renderFinPecas(); renderFinEquip();
   $('ov-fin').classList.add('open');
+  setTimeout(_assinaInit, 180);
   capturarLocalizacao();
 }
 
@@ -1675,16 +1688,84 @@ async function toggleLanterna(){
   catch(_){ toast('Lanterna não suportada.'); }
 }
 
+/* ---- ASSINATURA DO CLIENTE (canvas) ---- */
+let _assinaCtx = null, _assinaCanvas = null, _assinaTem = false;
+
+function _assinaInit(){
+  const c = $('assina-canvas'); if(!c) return;
+  _assinaCanvas = c;
+  const rect = c.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  c.width  = Math.round(rect.width  * dpr);
+  c.height = Math.round(rect.height * dpr);
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, rect.width, rect.height);
+  ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+  _assinaCtx = ctx; _assinaTem = false; _assinaStatus(false);
+
+  let drawing = false, lx = 0, ly = 0;
+  const pos = (e)=>{
+    const r = c.getBoundingClientRect();
+    const p = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  };
+  const start = (e)=>{ e.preventDefault(); drawing = true; const p = pos(e); lx = p.x; ly = p.y; };
+  const move  = (e)=>{
+    if(!drawing) return; e.preventDefault();
+    const p = pos(e);
+    ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(p.x, p.y); ctx.stroke();
+    lx = p.x; ly = p.y;
+    if(!_assinaTem){ _assinaTem = true; _assinaStatus(true); }
+  };
+  const end = ()=>{ drawing = false; };
+  c.onpointerdown = start; c.onpointermove = move;
+  c.onpointerup = end; c.onpointercancel = end; c.onpointerleave = end;
+}
+
+function _assinaStatus(tem){
+  const s = $('assina-status'), ph = $('assina-ph');
+  if(s){ s.textContent = tem ? '✅ Assinado' : 'Não assinado'; s.style.color = tem ? 'var(--ac)' : 'var(--tx3)'; }
+  if(ph) ph.style.display = tem ? 'none' : 'flex';
+}
+
+function assinaturaLimpar(){
+  if(!_assinaCtx || !_assinaCanvas) return;
+  const rect = _assinaCanvas.getBoundingClientRect();
+  _assinaCtx.fillStyle = '#fff';
+  _assinaCtx.fillRect(0, 0, rect.width, rect.height);
+  _assinaTem = false; _assinaStatus(false);
+}
+
+function _assinaBlob(){
+  return new Promise((resolve)=>{
+    if(!_assinaCanvas || !_assinaTem){ resolve(null); return; }
+    _assinaCanvas.toBlob(b => resolve(b), 'image/png');
+  });
+}
+
 async function confirmarFin(){
   if(!_aberta) return;
   const sol = $('fin-sol').value.trim();
   if(!sol){ toast('⚠️ Descreva o que foi feito.'); return; }
   if(_finEquip.length===0){ toast('⚠️ Registre ao menos 1 equipamento (MAC ou nº de série).'); return; }
+  if(!_assinaTem){ toast('✍️ Colete a assinatura do cliente para finalizar.'); return; }
 
   const btn = $('btn-fin');
   btn.disabled=true; btn.textContent='Finalizando...';
 
   try {
+    // 0) Upload da assinatura (obrigatória) para o Supabase Storage
+    let _assinaPath = null;
+    {
+      const blob = await _assinaBlob();
+      if(!blob){ toast('✍️ Colete a assinatura do cliente para finalizar.'); btn.disabled=false; btn.textContent='✅ Confirmar Finalização'; return; }
+      _assinaPath = `os/${_aberta.id}/assinatura_${Date.now()}.png`;
+      const { error: eAss } = await sb.storage.from('assinaturas').upload(_assinaPath, blob, { contentType:'image/png', upsert:true });
+      if(eAss){ toast('Erro ao salvar assinatura: '+eAss.message, 3500); btn.disabled=false; btn.textContent='✅ Confirmar Finalização'; return; }
+    }
+
     // 1) Baixa de peças do estoque do técnico (transação na RPC) — se houver
     if(_finPecas.length){
       const { error: ePeca } = await sb.rpc('consumir_pecas_os', {
@@ -1716,6 +1797,8 @@ async function confirmarFin(){
       fin_lng: _finGeo?_finGeo.lng:null,
       fin_precisao: _finGeo?_finGeo.acc:null,
       finalizado_em: new Date().toISOString(),
+      assinatura_path: _assinaPath,
+      assinatura_em: new Date().toISOString(),
     }).eq('id',_aberta.id);
 
     if(error){ toast('Erro: '+error.message); return; }
