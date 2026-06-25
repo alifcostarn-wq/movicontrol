@@ -10226,6 +10226,9 @@ function renderOsRelatorio(){
   // Equipamentos registrados (MAC / Nº de série) — carregados do banco
   html += `<div id="os-rel-equip"></div>`;
 
+  // Assinatura do cliente — carregada do Storage (URL assinada)
+  html += `<div id="os-rel-assinatura"></div>`;
+
   // Local da finalização (geolocalização capturada no app de campo)
   if(o.fin_lat && o.fin_lng){
     const lat = Number(o.fin_lat), lng = Number(o.fin_lng);
@@ -10268,6 +10271,25 @@ function renderOsRelatorio(){
 
   el.innerHTML = html;
   carregarOsEquipamentos(o.id);
+  carregarOsAssinatura(o);
+}
+
+// Carrega a assinatura do cliente (bucket privado -> URL assinada) e exibe
+async function carregarOsAssinatura(o){
+  const alvo = document.getElementById('os-rel-assinatura');
+  if(!alvo || !o || !o.assinatura_path) return;
+  try {
+    const { data, error } = await sbClient.storage.from('assinaturas')
+      .createSignedUrl(o.assinatura_path, 3600);
+    if(error || !data || !data.signedUrl) return;
+    const quando = o.assinatura_em ? ` · ${fmtDH(o.assinatura_em)}` : '';
+    alvo.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">✍️ Assinatura do Cliente${quando}</div>
+      <div style="padding:14px;text-align:center;background:#fff">
+        <img src="${data.signedUrl}" alt="Assinatura do cliente" style="max-width:100%;height:auto;border-radius:6px"/>
+      </div>
+    </div>`;
+  } catch(e){ /* silencioso */ }
 }
 
 // Carrega equipamentos (MAC/série) registrados na OS e injeta no relatório
