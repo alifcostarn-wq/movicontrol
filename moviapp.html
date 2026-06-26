@@ -45,11 +45,16 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 
 /* ─── Screens ────────────────────────────── */
 .screen{
-  position:absolute;inset:0;
-  display:none;flex-direction:column;
-  overflow:hidden;background:var(--bg);
+  position:absolute !important;
+  top:0 !important;left:0 !important;right:0 !important;bottom:0 !important;
+  display:none !important;
+  flex-direction:column;
+  overflow:hidden;
+  background:var(--bg);
 }
-.screen.active{display:flex}
+.screen.active{
+  display:flex !important;
+}
 
 /* ─── LOGO mark ──────────────────────────── */
 .logo-bubble{
@@ -692,8 +697,17 @@ function buildTabs() {
 
 function goTab(id) {
   activeTab = id;
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(TABS.find(t => t.id === id).screen).classList.add('active');
+  // Esconder todas as screens via style direto (mais confiável que classe CSS)
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('active');
+    s.style.display = 'none';
+  });
+  // Mostrar só a ativa
+  const target = document.getElementById(TABS.find(t => t.id === id).screen);
+  if (target) {
+    target.classList.add('active');
+    target.style.display = 'flex';
+  }
   buildTabs();
 }
 
@@ -1004,12 +1018,25 @@ async function doLogout() {
 
 // ─── INIT ──────────────────────────────────────────────────────
 (async () => {
+  // Garantir que todas as screens estão escondidas exceto o login
+  document.querySelectorAll('.screen').forEach(s => {
+    s.style.display = 'none';
+  });
+  const loginScreen = document.getElementById('s-login');
+  if (loginScreen) {
+    loginScreen.style.display = 'flex';
+    loginScreen.classList.add('active');
+  }
   buildTabs();
   // Verificar sessão ativa
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) {
-    await carregarDados();
-    goTab('home');
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      await carregarDados();
+      goTab('home');
+    }
+  } catch(e) {
+    console.error('Erro ao verificar sessão:', e);
   }
 })();
 </script>
