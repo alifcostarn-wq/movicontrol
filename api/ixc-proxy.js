@@ -377,8 +377,33 @@ export default async function handler(req, res) {
     }
   }
 
+  // ============================================================
+  // SPEEDTEST DOWNLOAD — gera payload aleatório e envia ao cliente
+  // Acionado pelo header x-target: speedtest-down
+  // Query param: ?bytes=N (default 5MB, max 20MB)
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'speedtest-down') {
+    const bytes = Math.min(20 * 1024 * 1024, Math.max(1024, parseInt(req.query?.bytes || req.body?.bytes || 5 * 1024 * 1024)));
+    // Gera buffer aleatório (não compressível — evita distorção por compressão de rede)
+    const buf = Buffer.alloc(bytes);
+    for (let i = 0; i < bytes; i += 4) buf.writeUInt32BE(Math.random() * 0xFFFFFFFF | 0, i);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(bytes));
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Speedtest-Bytes', String(bytes));
+    return res.status(200).send(buf);
+  }
 
-  const apiBody = JSON.stringify({
+  // ============================================================
+  // SPEEDTEST UPLOAD — recebe payload e responde com tamanho + tempo
+  // Acionado pelo header x-target: speedtest-up
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'speedtest-up') {
+    const received = req.body ? (Buffer.isBuffer(req.body) ? req.body.length : JSON.stringify(req.body).length) : 0;
+    return res.status(200).json({ ok: true, bytes: received, ts: Date.now() });
+  }
+
+
     qtype:     params.qtype     || '',
     query:     params.query     || '',
     oper:      params.oper      || '=',
