@@ -239,8 +239,145 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
-  // LISTAGEM (GET) - logica original, intacta
+  // R2 UPLOAD - recebe foto do técnico e salva no Cloudflare R2
+  // Acionado pelo header x-target: r2-upload
+  // Espera body: { os_id, tecnico_id, foto_base64, extensao, access_token }
   // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'r2-upload') {
+    const R2_ACCOUNT  = process.env.R2_ACCOUNT_ID        || '';
+    const R2_KEY      = process.env.R2_ACCESS_KEY_ID     || '';
+    const R2_SECRET   = process.env.R2_SECRET_ACCESS_KEY || '';
+    const R2_BUCKET   = process.env.R2_BUCKET_NAME       || 'movionfotos';
+    const R2_ENDPOINT = process.env.R2_ENDPOINT          || `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`;
+
+    if (!R2_KEY || !R2_SECRET) return res.status(500).json({ error: 'Credenciais R2 não configuradas no Vercel.' });
+
+    const b = req.body || {};
+    const { os_id, tecnico_id, foto_base64, extensao = 'jpg', access_token } = b;
+    if (!os_id || !foto_base64) return res.status(400).json({ error: 'os_id e foto_base64 são obrigatórios.' });
+
+    // Decodifica base64
+    const base64Data = foto_base64.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    const ext = (extensao || 'jpg').toLowerCase().replace(/[^a-z]/g, '');
+    const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+    // Nome do arquivo: fotos/OS_{id}/{timestamp}_{random}.{ext}
+    const ts = Date.now();
+    const rand = Math.random().toString(36).slice(2, 8);
+    const key = `fotos/OS_${os_id}/${ts}_${rand}.${ext}`;
+
+    // Assina a requisição com AWS Signature V4 (compatível com R2)
+    const now = new Date();
+    const dateStr  = now.toISOString().slice(0,10).replace(/-/g,'');   // YYYYMMDD
+    const timeStr  = now.toISOString().replace(/[-:]/g,'').slice(0,15) + 'Z'; // YYYYMMDDTHHmmssZ
+    const region   = 'auto';
+    const service  = 's3';
+    const host     = `${R2_ACCOUNT}.r2.cloudflarestorage.com`;
+    const url      = `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
+
+    // Função de hash/hmac via crypto (Node built-in)
+    const crypto = await import('crypto');
+    const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
+    const hash = (data) => crypto.createHash('sha256').update(data).digest('hex');
+
+    const payloadHash = hash(buffer);
+    const canonicalHeaders = `content-type:${contentType}\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${timeStr}\n`;
+    const signedHeaders    = 'content-type;host;x-amz-content-sha256;x-amz-date';
+    const canonicalRequest = `PUT\n/${R2_BUCKET}/${key}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+    const credScope = `${dateStr}/${region}/${service}/aws4_request`;
+    const stringToSign = `AWS4-HMAC-SHA256\n${timeStr}\n${credScope}\n${hash(canonicalRequest)}`;
+    const sigKey = hmac(hmac(hmac(hmac(`AWS4${R2_SECRET}`, dateStr), region), service), 'aws4_request');
+    const signature = hmac(sigKey, stringToSign).toString('hex');
+    const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_KEY}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    try {
+      const r2Res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type':          contentType,
+          'x-amz-date':            timeStr,
+          'x-amz-content-sha256':  payloadHash,
+          'Authorization':         authHeader,
+          'Content-Length':        String(buffer.length),
+        },
+        body: buffer,
+      });
+
+      if (!r2Res.ok) {
+        const txt = await r2Res.text();
+        return res.status(502).json({ error: 'Falha no upload R2', detail: txt.slice(0, 300) });
+      }
+
+      return res.status(200).json({ ok: true, key, url: `${R2_ENDPOINT}/${R2_BUCKET}/${key}` });
+    } catch (e) {
+      return res.status(500).json({ error: 'Erro ao enviar para R2: ' + e.message });
+    }
+  }
+
+  // ============================================================
+  // R2 LIST - lista fotos de uma OS
+  // Acionado pelo header x-target: r2-list
+  // Espera body: { os_id }
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'r2-list') {
+    const R2_ACCOUNT  = process.env.R2_ACCOUNT_ID        || '';
+    const R2_KEY      = process.env.R2_ACCESS_KEY_ID     || '';
+    const R2_SECRET   = process.env.R2_SECRET_ACCESS_KEY || '';
+    const R2_BUCKET   = process.env.R2_BUCKET_NAME       || 'movionfotos';
+    const R2_ENDPOINT = process.env.R2_ENDPOINT          || `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`;
+
+    const b = req.body || {};
+    const { os_id } = b;
+    if (!os_id) return res.status(400).json({ error: 'os_id obrigatório.' });
+
+    const prefix = `fotos/OS_${os_id}/`;
+    const crypto = await import('crypto');
+    const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
+    const hash = (data) => crypto.createHash('sha256').update(data).digest('hex');
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0,10).replace(/-/g,'');
+    const timeStr = now.toISOString().replace(/[-:]/g,'').slice(0,15) + 'Z';
+    const region = 'auto'; const service = 's3';
+    const host = `${R2_ACCOUNT}.r2.cloudflarestorage.com`;
+    const queryStr = `list-type=2&prefix=${encodeURIComponent(prefix)}`;
+    const listUrl  = `${R2_ENDPOINT}/${R2_BUCKET}?${queryStr}`;
+
+    const payloadHash = hash('');
+    const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${timeStr}\n`;
+    const signedHeaders    = 'host;x-amz-content-sha256;x-amz-date';
+    const canonicalRequest = `GET\n/${R2_BUCKET}\n${queryStr}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+    const credScope = `${dateStr}/${region}/${service}/aws4_request`;
+    const stringToSign = `AWS4-HMAC-SHA256\n${timeStr}\n${credScope}\n${hash(canonicalRequest)}`;
+    const sigKey = hmac(hmac(hmac(hmac(`AWS4${R2_SECRET}`, dateStr), region), service), 'aws4_request');
+    const signature = hmac(sigKey, stringToSign).toString('hex');
+    const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_KEY}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    try {
+      const r2Res = await fetch(listUrl, {
+        headers: {
+          'host': host,
+          'x-amz-date': timeStr,
+          'x-amz-content-sha256': payloadHash,
+          'Authorization': authHeader,
+        }
+      });
+      const xml = await r2Res.text();
+      // Extrai as keys do XML
+      const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1]);
+      const fotos = keys.map(k => ({
+        key: k,
+        url: `${R2_ENDPOINT}/${R2_BUCKET}/${k}`,
+        nome: k.split('/').pop(),
+      }));
+      return res.status(200).json({ ok: true, fotos });
+    } catch(e) {
+      return res.status(500).json({ error: 'Erro ao listar R2: ' + e.message });
+    }
+  }
+
+
   const apiBody = JSON.stringify({
     qtype:     params.qtype     || '',
     query:     params.query     || '',
