@@ -403,7 +403,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, bytes: received, ts: Date.now() });
   }
 
-
+  const apiBody = JSON.stringify({
     qtype:     params.qtype     || '',
     query:     params.query     || '',
     oper:      params.oper      || '=',
