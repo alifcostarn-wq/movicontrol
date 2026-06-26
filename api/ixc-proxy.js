@@ -86,7 +86,201 @@ export default async function handler(req, res) {
       } catch (e) { return res.status(502).json({ error: 'Erro ao registrar tecnico: ' + e.message }); }
     }
 
+    // ── criar_cliente_app ──────────────────────────────────────────
+    // Cadastra um cliente no MoviApp sem afetar a sessao do admin.
+    // Payload: { action, access_token, cliente_id, cpf, nome, whatsapp }
+    // Senha inicial = ultimos 4 digitos do CPF
+    // ───────────────────────────────────────────────────────────────
+    if (b.action === 'criar_cliente_app') {
+      const clienteId = b.cliente_id;
+      const cpf       = (b.cpf || '').replace(/\D/g, '');
+      const nome      = (b.nome || '').trim();
+      const whatsapp  = (b.whatsapp || '').trim();
+
+      if (!clienteId || !cpf || !nome)
+        return res.status(400).json({ error: 'Informe cliente_id, cpf e nome.' });
+      if (cpf.length < 11)
+        return res.status(400).json({ error: 'CPF invalido (minimo 11 digitos).' });
+
+      const email = `${cpf}@moviapp.local`;
+      const senha = cpf.slice(-4);
+
+      // Cria o user no Supabase Auth server-side
+      let userId = null;
+      try {
+        const ru = await fetch(`${SUPA_URL}/auth/v1/admin/users`, {
+          method: 'POST', headers: srvH,
+          body: JSON.stringify({
+            email, password: senha, email_confirm: true,
+            user_metadata: { nome, cpf, whatsapp }
+          })
+        });
+        const tu = await ru.text();
+        let du; try { du = JSON.parse(tu); } catch { du = {}; }
+        if (!ru.ok) {
+          if (/already|exist|registered|duplicate/i.test(du.msg || du.message || ''))
+            return res.status(409).json({ error: 'Este CPF ja possui acesso ao MoviApp.' });
+          return res.status(ru.status).json({ error: 'Falha ao criar login: ' + (du.msg || du.message || tu.slice(0, 200)) });
+        }
+        userId = du.id || (du.user && du.user.id);
+      } catch (e) { return res.status(502).json({ error: 'Erro ao criar login: ' + e.message }); }
+      if (!userId) return res.status(502).json({ error: 'Login criado sem ID retornado.' });
+
+      // Vincula em clientes_app
+      try {
+        const rc = await fetch(`${SUPA_URL}/rest/v1/clientes_app`, {
+          method: 'POST',
+          headers: { ...srvH, 'Prefer': 'return=representation' },
+          body: JSON.stringify({ id: userId, cliente_id: clienteId, cpf })
+        });
+        const tc = await rc.text();
+        let dc; try { dc = JSON.parse(tc); } catch { dc = {}; }
+        if (!rc.ok) {
+          // rollback: remove o user criado
+          await fetch(`${SUPA_URL}/auth/v1/admin/users/${userId}`, { method: 'DELETE', headers: srvH });
+          return res.status(rc.status).json({ error: 'Login criado mas falhou ao vincular: ' + (dc.message || tc.slice(0, 200)) });
+        }
+        return res.status(200).json({
+          ok: true, user_id: userId, cpf,
+          senha_inicial: senha,
+          mensagem: `Acesso criado. Senha inicial: ${senha} (ultimos 4 digitos do CPF).`
+        });
+      } catch (e) { return res.status(502).json({ error: 'Erro ao vincular cliente: ' + e.message }); }
+    }
+
     return res.status(400).json({ error: 'Acao desconhecida.' });
+  }
+
+  // ============================================================
+  // CLIENTE DADOS - rota segura para o MoviApp
+  // Valida JWT do cliente, busca ixc_id dele no Supabase,
+  // chama o IXC com credenciais que ficam SÓ no servidor.
+  // Nenhuma credencial IXC fica exposta no app.
+  // Acoes: get_faturas | get_status
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'cliente-dados') {
+    const SUPA_URL  = process.env.SUPABASE_URL || 'https://mgtetsmcswdtvsgewcen.supabase.co';
+    const SRV       = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const IXC_URL   = process.env.IXC_URL   || '';
+    const IXC_TOKEN = process.env.IXC_TOKEN  || '';
+    const IXC_USER  = process.env.IXC_USER   || '';
+
+    if (!SRV)       return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY nao configurada.' });
+    if (!IXC_URL)   return res.status(500).json({ error: 'IXC_URL nao configurada.' });
+    if (!IXC_TOKEN) return res.status(500).json({ error: 'IXC_TOKEN nao configurada.' });
+
+    const srvH = { 'apikey': SRV, 'Authorization': `Bearer ${SRV}`, 'Content-Type': 'application/json' };
+
+    // 1) Validar JWT do cliente
+    const jwt = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+    if (!jwt) return res.status(401).json({ error: 'Token ausente.' });
+
+    let clienteUserId = null;
+    try {
+      const rv = await fetch(`${SUPA_URL}/auth/v1/user`, {
+        headers: { 'apikey': SRV, 'Authorization': `Bearer ${jwt}` }
+      });
+      if (!rv.ok) return res.status(401).json({ error: 'Sessao invalida.' });
+      const u = await rv.json();
+      clienteUserId = u.id;
+    } catch (e) { return res.status(401).json({ error: 'Falha ao validar sessao.' }); }
+
+    // 2) Buscar ixc_id do cliente na tabela clientes_app -> clientes
+    let ixcId = null;
+    try {
+      const rc = await fetch(
+        `${SUPA_URL}/rest/v1/clientes_app?id=eq.${clienteUserId}&select=cliente_id,clientes(ixc_id)`,
+        { headers: srvH }
+      );
+      const dc = await rc.json();
+      ixcId = dc?.[0]?.clientes?.ixc_id || null;
+    } catch (e) {}
+
+    if (!ixcId) return res.status(404).json({ error: 'Cliente nao encontrado ou sem vinculo IXC.' });
+
+    const b      = req.body || {};
+    const action = b.action || 'get_faturas';
+    const ixcBase = IXC_URL.replace(/\/$/, '').replace(/\/adm\.php$/, '');
+    const authVal = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
+    const ixcH    = { 'Authorization': authVal, 'Content-Type': 'application/json', 'ixcsoft': 'listar' };
+
+    // ── get_faturas ─────────────────────────────────────────────
+    if (action === 'get_faturas') {
+      const endpoints = [
+        `${ixcBase}/webservice/v1/fn_financeiro_conta_receber`,
+        `${ixcBase}/adm.php/webservice/v1/fn_financeiro_conta_receber`,
+      ];
+      const body = JSON.stringify({
+        qtype: 'fn_financeiro_conta_receber.id_cliente',
+        query: String(ixcId),
+        oper: '=',
+        page: '1',
+        rp: '12',
+        sortname: 'data_vencimento',
+        sortorder: 'desc',
+      });
+      for (const url of endpoints) {
+        try {
+          const r = await fetch(url, { method: 'POST', headers: ixcH, body });
+          const txt = await r.text();
+          if (txt.trim().startsWith('<')) continue;
+          const d = JSON.parse(txt);
+          if (r.ok) {
+            // Filtrar campos sensiveis antes de devolver
+            const registros = (d.registros || []).map(f => ({
+              id:               f.id,
+              valor:            f.valor,
+              data_vencimento:  f.data_vencimento,
+              data_pagamento:   f.data_pagamento,
+              status:           f.status,
+              linha_digitavel:  f.linha_digitavel,
+              nosso_numero:     f.nosso_numero,
+              referencia:       f.referencia,
+            }));
+            return res.status(200).json({ ok: true, total: d.total || registros.length, registros });
+          }
+        } catch (e) {}
+      }
+      return res.status(502).json({ error: 'Nao foi possivel buscar faturas no IXC.' });
+    }
+
+    // ── get_status ──────────────────────────────────────────────
+    if (action === 'get_status') {
+      const endpoints = [
+        `${ixcBase}/webservice/v1/cliente_login`,
+        `${ixcBase}/adm.php/webservice/v1/cliente_login`,
+      ];
+      const body = JSON.stringify({
+        qtype: 'cliente_login.id_cliente',
+        query: String(ixcId),
+        oper: '=',
+        page: '1',
+        rp: '5',
+        sortname: 'id',
+        sortorder: 'desc',
+      });
+      for (const url of endpoints) {
+        try {
+          const r = await fetch(url, { method: 'POST', headers: ixcH, body });
+          const txt = await r.text();
+          if (txt.trim().startsWith('<')) continue;
+          const d = JSON.parse(txt);
+          if (r.ok && d.registros?.length) {
+            const login = d.registros[0];
+            return res.status(200).json({
+              ok: true,
+              online:        login.online === '1' || login.online === true,
+              plano:         login.plano || null,
+              velocidade_up: login.velocidade_up || null,
+              velocidade_down: login.velocidade_down || null,
+            });
+          }
+        } catch (e) {}
+      }
+      return res.status(502).json({ error: 'Nao foi possivel buscar status no IXC.' });
+    }
+
+    return res.status(400).json({ error: 'Acao desconhecida. Use get_faturas ou get_status.' });
   }
 
   // ============================================================
@@ -239,170 +433,8 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
-  // R2 UPLOAD - recebe foto do técnico e salva no Cloudflare R2
-  // Acionado pelo header x-target: r2-upload
-  // Espera body: { os_id, tecnico_id, foto_base64, extensao, access_token }
+  // LISTAGEM (GET) - logica original, intacta
   // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'r2-upload') {
-    const R2_ACCOUNT  = process.env.R2_ACCOUNT_ID        || '';
-    const R2_KEY      = process.env.R2_ACCESS_KEY_ID     || '';
-    const R2_SECRET   = process.env.R2_SECRET_ACCESS_KEY || '';
-    const R2_BUCKET   = process.env.R2_BUCKET_NAME       || 'movionfotos';
-    const R2_ENDPOINT = process.env.R2_ENDPOINT          || `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`;
-
-    if (!R2_KEY || !R2_SECRET) return res.status(500).json({ error: 'Credenciais R2 não configuradas no Vercel.' });
-
-    const b = req.body || {};
-    const { os_id, tecnico_id, foto_base64, extensao = 'jpg', access_token } = b;
-    if (!os_id || !foto_base64) return res.status(400).json({ error: 'os_id e foto_base64 são obrigatórios.' });
-
-    // Decodifica base64
-    const base64Data = foto_base64.replace(/^data:image\/\w+;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
-    const ext = (extensao || 'jpg').toLowerCase().replace(/[^a-z]/g, '');
-    const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-
-    // Nome do arquivo: fotos/OS_{id}/{timestamp}_{random}.{ext}
-    const ts = Date.now();
-    const rand = Math.random().toString(36).slice(2, 8);
-    const key = `fotos/OS_${os_id}/${ts}_${rand}.${ext}`;
-
-    // Assina a requisição com AWS Signature V4 (compatível com R2)
-    const now = new Date();
-    const dateStr  = now.toISOString().slice(0,10).replace(/-/g,'');   // YYYYMMDD
-    const timeStr  = now.toISOString().replace(/[-:]/g,'').slice(0,15) + 'Z'; // YYYYMMDDTHHmmssZ
-    const region   = 'auto';
-    const service  = 's3';
-    const host     = `${R2_ACCOUNT}.r2.cloudflarestorage.com`;
-    const url      = `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
-
-    // Função de hash/hmac via crypto (Node built-in)
-    const crypto = await import('crypto');
-    const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
-    const hash = (data) => crypto.createHash('sha256').update(data).digest('hex');
-
-    const payloadHash = hash(buffer);
-    const canonicalHeaders = `content-type:${contentType}\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${timeStr}\n`;
-    const signedHeaders    = 'content-type;host;x-amz-content-sha256;x-amz-date';
-    const canonicalRequest = `PUT\n/${R2_BUCKET}/${key}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-    const credScope = `${dateStr}/${region}/${service}/aws4_request`;
-    const stringToSign = `AWS4-HMAC-SHA256\n${timeStr}\n${credScope}\n${hash(canonicalRequest)}`;
-    const sigKey = hmac(hmac(hmac(hmac(`AWS4${R2_SECRET}`, dateStr), region), service), 'aws4_request');
-    const signature = hmac(sigKey, stringToSign).toString('hex');
-    const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_KEY}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-    try {
-      const r2Res = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type':          contentType,
-          'x-amz-date':            timeStr,
-          'x-amz-content-sha256':  payloadHash,
-          'Authorization':         authHeader,
-          'Content-Length':        String(buffer.length),
-        },
-        body: buffer,
-      });
-
-      if (!r2Res.ok) {
-        const txt = await r2Res.text();
-        return res.status(502).json({ error: 'Falha no upload R2', detail: txt.slice(0, 300) });
-      }
-
-      return res.status(200).json({ ok: true, key, url: `${R2_ENDPOINT}/${R2_BUCKET}/${key}` });
-    } catch (e) {
-      return res.status(500).json({ error: 'Erro ao enviar para R2: ' + e.message });
-    }
-  }
-
-  // ============================================================
-  // R2 LIST - lista fotos de uma OS
-  // Acionado pelo header x-target: r2-list
-  // Espera body: { os_id }
-  // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'r2-list') {
-    const R2_ACCOUNT  = process.env.R2_ACCOUNT_ID        || '';
-    const R2_KEY      = process.env.R2_ACCESS_KEY_ID     || '';
-    const R2_SECRET   = process.env.R2_SECRET_ACCESS_KEY || '';
-    const R2_BUCKET   = process.env.R2_BUCKET_NAME       || 'movionfotos';
-    const R2_ENDPOINT = process.env.R2_ENDPOINT          || `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`;
-
-    const b = req.body || {};
-    const { os_id } = b;
-    if (!os_id) return res.status(400).json({ error: 'os_id obrigatório.' });
-
-    const prefix = `fotos/OS_${os_id}/`;
-    const crypto = await import('crypto');
-    const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
-    const hash = (data) => crypto.createHash('sha256').update(data).digest('hex');
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0,10).replace(/-/g,'');
-    const timeStr = now.toISOString().replace(/[-:]/g,'').slice(0,15) + 'Z';
-    const region = 'auto'; const service = 's3';
-    const host = `${R2_ACCOUNT}.r2.cloudflarestorage.com`;
-    const queryStr = `list-type=2&prefix=${encodeURIComponent(prefix)}`;
-    const listUrl  = `${R2_ENDPOINT}/${R2_BUCKET}?${queryStr}`;
-
-    const payloadHash = hash('');
-    const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${timeStr}\n`;
-    const signedHeaders    = 'host;x-amz-content-sha256;x-amz-date';
-    const canonicalRequest = `GET\n/${R2_BUCKET}\n${queryStr}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-    const credScope = `${dateStr}/${region}/${service}/aws4_request`;
-    const stringToSign = `AWS4-HMAC-SHA256\n${timeStr}\n${credScope}\n${hash(canonicalRequest)}`;
-    const sigKey = hmac(hmac(hmac(hmac(`AWS4${R2_SECRET}`, dateStr), region), service), 'aws4_request');
-    const signature = hmac(sigKey, stringToSign).toString('hex');
-    const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_KEY}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-    try {
-      const r2Res = await fetch(listUrl, {
-        headers: {
-          'host': host,
-          'x-amz-date': timeStr,
-          'x-amz-content-sha256': payloadHash,
-          'Authorization': authHeader,
-        }
-      });
-      const xml = await r2Res.text();
-      // Extrai as keys do XML
-      const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1]);
-      const fotos = keys.map(k => ({
-        key: k,
-        url: `${R2_ENDPOINT}/${R2_BUCKET}/${k}`,
-        nome: k.split('/').pop(),
-      }));
-      return res.status(200).json({ ok: true, fotos });
-    } catch(e) {
-      return res.status(500).json({ error: 'Erro ao listar R2: ' + e.message });
-    }
-  }
-
-  // ============================================================
-  // SPEEDTEST DOWNLOAD — gera payload aleatório e envia ao cliente
-  // Acionado pelo header x-target: speedtest-down
-  // Query param: ?bytes=N (default 5MB, max 20MB)
-  // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'speedtest-down') {
-    const bytes = Math.min(20 * 1024 * 1024, Math.max(1024, parseInt(req.query?.bytes || req.body?.bytes || 5 * 1024 * 1024)));
-    // Gera buffer aleatório (não compressível — evita distorção por compressão de rede)
-    const buf = Buffer.alloc(bytes);
-    for (let i = 0; i < bytes; i += 4) buf.writeUInt32BE(Math.random() * 0xFFFFFFFF | 0, i);
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Length', String(bytes));
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Speedtest-Bytes', String(bytes));
-    return res.status(200).send(buf);
-  }
-
-  // ============================================================
-  // SPEEDTEST UPLOAD — recebe payload e responde com tamanho + tempo
-  // Acionado pelo header x-target: speedtest-up
-  // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'speedtest-up') {
-    const received = req.body ? (Buffer.isBuffer(req.body) ? req.body.length : JSON.stringify(req.body).length) : 0;
-    return res.status(200).json({ ok: true, bytes: received, ts: Date.now() });
-  }
-
   const apiBody = JSON.stringify({
     qtype:     params.qtype     || '',
     query:     params.query     || '',
