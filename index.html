@@ -10347,10 +10347,17 @@ async function carregarOsAssinatura(o){
     }
     const _fmt = dt=>{ if(!dt)return ''; const d=new Date(dt); return isNaN(d)?'':' · '+d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); };
     const quando = _fmt(o.assinatura_em);
+    const url = data.signedUrl;
     alvo.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
-      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">✍️ Assinatura do Cliente${quando}</div>
-      <div style="padding:14px;text-align:center;background:#fff">
-        <img src="${data.signedUrl}" alt="Assinatura do cliente" style="max-width:100%;height:auto;border-radius:6px" onerror="this.parentElement.innerHTML='<div style=padding:12px;color:#999>Imagem não disponível</div>'"/>
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span>✍️ Assinatura do Cliente${quando}</span>
+        <a href="${url}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;color:var(--accent);text-decoration:none">🔍 Ampliar</a>
+      </div>
+      <div style="padding:10px 14px;background:#fff;display:flex;align-items:center;justify-content:center">
+        <img src="${url}" alt="Assinatura do cliente"
+          onclick="window.open('${url}','_blank')"
+          style="height:64px;width:auto;max-width:100%;object-fit:contain;border-radius:4px;cursor:zoom-in"
+          onerror="this.parentElement.innerHTML='<div style=padding:8px;color:#999;font-size:12px>Imagem não disponível</div>'"/>
       </div>
     </div>`;
   } catch(e){
