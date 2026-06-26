@@ -10487,8 +10487,14 @@ function abrirModalOS(id){
       if(tabRel){
         const finalizada = ['finalizada','concluida'].includes(o.status);
         tabRel.style.display = finalizada ? '' : 'none';
-        // Abre direto no relatório se finalizada (após o modal abrir)
-        if(finalizada) setTimeout(()=>osTab('relatorio'), 80);
+        if(finalizada){
+          // OS finalizada: abre direto no relatório (não chama osTab('servico') depois)
+          setTimeout(()=>osTab('relatorio'), 80);
+        } else {
+          osTab('servico');
+        }
+      } else {
+        osTab('servico');
       }
 
       // Histórico de status
@@ -10524,8 +10530,8 @@ function abrirModalOS(id){
     document.getElementById('os-status').value='aberta';
     document.getElementById('os-data').value=cpHoje();
     if(btnFin) btnFin.style.display='none';
+    osTab('servico');
   }
-  osTab('servico');
   abrirModal('modal-os');
 }
 
@@ -11388,6 +11394,17 @@ async function syncIXC(silent){
             if(d){ c.id = d.id; ixcCtrToLocalId.set(String(c.ixcId), d.id); }
           }
         });
+      }
+
+      // === Limpeza de fotos R2: clientes com contrato cancelado (status D) ===
+      // Detecta clienteIds com pelo menos 1 contrato agora cancelado
+      const cancelados = comIxc
+        .filter(c => (c.statusContrato||'').toUpperCase() === 'D' && c.clienteId)
+        .map(c => c.clienteId);
+      const idsCancelados = [...new Set(cancelados)];
+      if(idsCancelados.length){
+        // Dispara em background — não bloqueia o sync
+        _limparFotosClientesCancelados(idsCancelados).catch(e => console.warn('R2 cleanup:', e));
       }
     }
 
