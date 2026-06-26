@@ -10167,11 +10167,21 @@ function irParaOS(osId){
   setTimeout(()=>abrirModalOS(osId), 300);
 }
 
-function renderOsRelatorio(){
+async function renderOsRelatorio(){
   const el = document.getElementById('os-relatorio-content');
   if(!el) return;
   const id = document.getElementById('os-id').value;
-  const o  = _cpOS.find(x=>x.id==id);
+
+  // Busca OS fresca do banco — garante assinatura_path, fotos_r2 atualizados
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">⏳ Carregando relatório...</div>';
+  let o = null;
+  try {
+    const { data } = await sbClient.from('campo_os').select('*').eq('id', id).single();
+    o = data;
+    // Atualiza cache local para manter consistência
+    if(o){ const idx = _cpOS.findIndex(x=>x.id==id); if(idx>=0) _cpOS[idx]=o; else _cpOS.push(o); }
+  } catch(e){}
+
   if(!o){ el.innerHTML='<div style="text-align:center;padding:32px;color:var(--text3)">OS não encontrada.</div>'; return; }
 
   const cli = window._osClienteAtual;
@@ -12163,7 +12173,7 @@ function preencherClienteOS(cli){
 }
 
 // Abas da OS
-function osTab(nome){
+async function osTab(nome){
   ['servico','cliente','diag','relatorio'].forEach(t=>{
     const tab  = document.getElementById('os-tab-'+t);
     const pane = document.getElementById('os-pane-'+t);
@@ -12172,7 +12182,7 @@ function osTab(nome){
   });
   if(nome === 'cliente')   renderOsClienteTab();
   if(nome === 'diag')      carregarDiagOS();
-  if(nome === 'relatorio') renderOsRelatorio();
+  if(nome === 'relatorio') await renderOsRelatorio();
 }
 
 // Diagnóstico embutido na OS
