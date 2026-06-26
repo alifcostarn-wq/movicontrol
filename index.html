@@ -7090,8 +7090,9 @@ function renderCadastro(tipo){
         <td class="td-mono ${t.r?'td-green':''}">${t.r?brl(t.r,true):'—'}</td>
         <td class="td-mono td-muted">${fmtData(i.datacad)}</td>
         <td><div class="action-btns">
-          <button class="action-btn" onclick="abrirModalCadastro('${tipo}',${i._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="action-btn del" onclick="deletarCad('${tipo}',${i._idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+          <button class="action-btn" onclick="abrirModalCadastro('${tipo}',${i._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="action-btn" onclick="abrirModalMoviApp(${JSON.stringify({id:i.id,nome:i.nome,cnpj:i.cnpj,whatsapp:i.whatsapp||i.tel1,ixcId:i.ixcId||i.id}).replace(/"/g,'&quot;')})" title="Liberar MoviApp" style="color:#3B3ED8;border-color:rgba(59,62,216,.25);background:rgba(59,62,216,.06)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></button>
+          <button class="action-btn del" onclick="deletarCad('${tipo}',${i._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
         </div></td>
       </tr>`;
     }
@@ -10167,21 +10168,11 @@ function irParaOS(osId){
   setTimeout(()=>abrirModalOS(osId), 300);
 }
 
-async function renderOsRelatorio(){
+function renderOsRelatorio(){
   const el = document.getElementById('os-relatorio-content');
   if(!el) return;
   const id = document.getElementById('os-id').value;
-
-  // Busca OS fresca do banco — garante assinatura_path, fotos_r2 atualizados
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">⏳ Carregando relatório...</div>';
-  let o = null;
-  try {
-    const { data } = await sbClient.from('campo_os').select('*').eq('id', id).single();
-    o = data;
-    // Atualiza cache local para manter consistência
-    if(o){ const idx = _cpOS.findIndex(x=>x.id==id); if(idx>=0) _cpOS[idx]=o; else _cpOS.push(o); }
-  } catch(e){}
-
+  const o  = _cpOS.find(x=>x.id==id);
   if(!o){ el.innerHTML='<div style="text-align:center;padding:32px;color:var(--text3)">OS não encontrada.</div>'; return; }
 
   const cli = window._osClienteAtual;
@@ -10247,9 +10238,6 @@ async function renderOsRelatorio(){
   // Assinatura do cliente — carregada do Storage (URL assinada)
   html += `<div id="os-rel-assinatura"></div>`;
 
-  // Fotos da instalação — carregadas do R2 via proxy
-  html += `<div id="os-rel-fotos"></div>`;
-
   // Local da finalização (geolocalização capturada no app de campo)
   if(o.fin_lat && o.fin_lng){
     const lat = Number(o.fin_lat), lng = Number(o.fin_lng);
@@ -10293,44 +10281,6 @@ async function renderOsRelatorio(){
   el.innerHTML = html;
   carregarOsEquipamentos(o.id);
   carregarOsAssinatura(o);
-  carregarOsFotos(o);
-}
-
-// Carrega galeria de fotos do R2 via proxy
-async function carregarOsFotos(o){
-  const alvo = document.getElementById('os-rel-fotos');
-  if(!alvo) return;
-  // Verifica se há fotos salvas no banco (array fotos_r2)
-  const keys = o.fotos_r2 || [];
-  if(!keys.length){ alvo.innerHTML = ''; return; }
-
-  const PROXY = (await sbClient.from('app_config').select('valor').eq('chave','ixc_proxy_url').single()).data?.valor || '';
-  if(!PROXY){ alvo.innerHTML = ''; return; }
-
-  try {
-    // Busca lista atualizada via proxy r2-list
-    const r = await fetch(PROXY, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-target':'r2-list'},
-      body: JSON.stringify({ os_id: o.id })
-    });
-    const j = await r.json();
-    const fotos = j.fotos || [];
-    if(!fotos.length){ alvo.innerHTML = ''; return; }
-
-    const thumbs = fotos.map((f,i)=>`
-      <a href="${f.url}" target="_blank" rel="noopener" title="${f.nome}"
-         style="display:block;width:100px;height:100px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0">
-        <img src="${f.url}" alt="Foto ${i+1}"
-             style="width:100%;height:100%;object-fit:cover"
-             onerror="this.parentElement.style.display='none'">
-      </a>`).join('');
-
-    alvo.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
-      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">📸 Fotos da Instalação (${fotos.length})</div>
-      <div style="padding:12px;display:flex;flex-wrap:wrap;gap:10px">${thumbs}</div>
-    </div>`;
-  } catch(e){ console.error('carregarOsFotos erro:', e); alvo.innerHTML = ''; }
 }
 
 // Carrega a assinatura do cliente (bucket privado -> URL assinada) e exibe
@@ -10340,29 +10290,15 @@ async function carregarOsAssinatura(o){
   try {
     const { data, error } = await sbClient.storage.from('assinaturas')
       .createSignedUrl(o.assinatura_path, 3600);
-    if(error || !data || !data.signedUrl){
-      console.error('Assinatura erro:', error);
-      alvo.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text3)">⚠️ Erro ao carregar assinatura.</div>';
-      return;
-    }
-    const _fmt = dt=>{ if(!dt)return ''; const d=new Date(dt); return isNaN(d)?'':' · '+d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); };
-    const quando = _fmt(o.assinatura_em);
-    const url = data.signedUrl;
+    if(error || !data || !data.signedUrl) return;
+    const quando = o.assinatura_em ? ` · ${fmtDH(o.assinatura_em)}` : '';
     alvo.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
-      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <span>✍️ Assinatura do Cliente${quando}</span>
-        <a href="${url}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;color:var(--accent);text-decoration:none">🔍 Ampliar</a>
-      </div>
-      <div style="padding:10px 14px;background:#fff;display:flex;align-items:center;justify-content:center">
-        <img src="${url}" alt="Assinatura do cliente"
-          onclick="window.open('${url}','_blank')"
-          style="height:64px;width:auto;max-width:100%;object-fit:contain;border-radius:4px;cursor:zoom-in"
-          onerror="this.parentElement.innerHTML='<div style=padding:8px;color:#999;font-size:12px>Imagem não disponível</div>'"/>
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">✍️ Assinatura do Cliente${quando}</div>
+      <div style="padding:14px;text-align:center;background:#fff">
+        <img src="${data.signedUrl}" alt="Assinatura do cliente" style="max-width:100%;height:auto;border-radius:6px"/>
       </div>
     </div>`;
-  } catch(e){
-    console.error('carregarOsAssinatura erro:', e);
-  }
+  } catch(e){ /* silencioso */ }
 }
 
 // Carrega equipamentos (MAC/série) registrados na OS e injeta no relatório
@@ -10511,14 +10447,8 @@ function abrirModalOS(id){
       if(tabRel){
         const finalizada = ['finalizada','concluida'].includes(o.status);
         tabRel.style.display = finalizada ? '' : 'none';
-        if(finalizada){
-          // OS finalizada: abre direto no relatório (não chama osTab('servico') depois)
-          setTimeout(()=>osTab('relatorio'), 80);
-        } else {
-          osTab('servico');
-        }
-      } else {
-        osTab('servico');
+        // Abre direto no relatório se finalizada (após o modal abrir)
+        if(finalizada) setTimeout(()=>osTab('relatorio'), 80);
       }
 
       // Histórico de status
@@ -10554,8 +10484,8 @@ function abrirModalOS(id){
     document.getElementById('os-status').value='aberta';
     document.getElementById('os-data').value=cpHoje();
     if(btnFin) btnFin.style.display='none';
-    osTab('servico');
   }
+  osTab('servico');
   abrirModal('modal-os');
 }
 
@@ -11419,17 +11349,6 @@ async function syncIXC(silent){
           }
         });
       }
-
-      // === Limpeza de fotos R2: clientes com contrato cancelado (status D) ===
-      // Detecta clienteIds com pelo menos 1 contrato agora cancelado
-      const cancelados = comIxc
-        .filter(c => (c.statusContrato||'').toUpperCase() === 'D' && c.clienteId)
-        .map(c => c.clienteId);
-      const idsCancelados = [...new Set(cancelados)];
-      if(idsCancelados.length){
-        // Dispara em background — não bloqueia o sync
-        _limparFotosClientesCancelados(idsCancelados).catch(e => console.warn('R2 cleanup:', e));
-      }
     }
 
     // === 3) Processar LOGINS (radusuarios) ===
@@ -12187,7 +12106,7 @@ function preencherClienteOS(cli){
 }
 
 // Abas da OS
-async function osTab(nome){
+function osTab(nome){
   ['servico','cliente','diag','relatorio'].forEach(t=>{
     const tab  = document.getElementById('os-tab-'+t);
     const pane = document.getElementById('os-pane-'+t);
@@ -12196,7 +12115,7 @@ async function osTab(nome){
   });
   if(nome === 'cliente')   renderOsClienteTab();
   if(nome === 'diag')      carregarDiagOS();
-  if(nome === 'relatorio') await renderOsRelatorio();
+  if(nome === 'relatorio') renderOsRelatorio();
 }
 
 // Diagnóstico embutido na OS
@@ -12334,5 +12253,199 @@ function verDiagnosticoChamado(){
 }
 
 </script>
+
+<!-- ══ MODAL LIBERAR MOVIAPP ══════════════════════════════════════ -->
+<div id="modal-moviapp-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:16px;width:440px;max-width:95vw;padding:28px;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <button onclick="fecharModalMoviApp()" style="position:absolute;top:14px;right:14px;background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;line-height:1">✕</button>
+
+    <!-- Estado: formulário -->
+    <div id="mapp-form-state">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <div style="width:44px;height:44px;border-radius:12px;background:#EEEEFF;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B3ED8" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:15px">Liberar MoviApp</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Cria acesso ao app do cliente</div>
+        </div>
+      </div>
+
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Cliente selecionado</div>
+        <div id="mapp-cli-nome" style="font-weight:600;font-size:14px"></div>
+        <div id="mapp-cli-cpf" style="font-size:12px;color:var(--text2);margin-top:2px;font-family:'DM Mono',monospace"></div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">CPF (para login no app)</label>
+        <input id="mapp-inp-cpf" type="text" placeholder="000.000.000-00" inputmode="numeric"
+          style="width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Mono',monospace;font-size:14px;background:var(--surface);color:var(--text)">
+        <div style="font-size:11px;color:var(--text3);margin-top:5px">Senha inicial = últimos 4 dígitos do CPF</div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">WhatsApp <span style="font-weight:400;text-transform:none">(para notificar o cliente)</span></label>
+        <input id="mapp-inp-zap" type="text" placeholder="(11) 99999-9999"
+          style="width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;background:var(--surface);color:var(--text)">
+      </div>
+
+      <div id="mapp-erro" style="display:none;background:#FBF0EE;border:1px solid #f0c8c2;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#c23b2a;margin-bottom:14px"></div>
+
+      <div style="display:flex;gap:10px">
+        <button onclick="fecharModalMoviApp()" style="flex:1;padding:12px;border:1.5px solid var(--border);border-radius:8px;background:none;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--text)">Cancelar</button>
+        <button id="mapp-btn-liberar" onclick="liberarMoviApp()" style="flex:2;padding:12px;border:none;border-radius:8px;background:#3B3ED8;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Liberar acesso
+        </button>
+      </div>
+    </div>
+
+    <!-- Estado: sucesso -->
+    <div id="mapp-sucesso-state" style="display:none;text-align:center;padding:10px 0">
+      <div style="width:60px;height:60px;border-radius:50%;background:#E8FBF2;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22C47A" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <div style="font-weight:800;font-size:17px;margin-bottom:6px">Acesso criado!</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px" id="mapp-sucesso-msg"></div>
+      <div style="background:#F5F5FF;border:1.5px solid #DEDEFF;border-radius:10px;padding:16px;margin-bottom:20px;text-align:left">
+        <div style="font-size:11px;font-weight:700;color:#3B3ED8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Credenciais de acesso</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #DEDEFF">
+          <span style="color:var(--text2)">Login (CPF)</span>
+          <span id="mapp-res-cpf" style="font-family:'DM Mono',monospace;font-weight:600"></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0">
+          <span style="color:var(--text2)">Senha inicial</span>
+          <span id="mapp-res-senha" style="font-family:'DM Mono',monospace;font-weight:600;color:#3B3ED8"></span>
+        </div>
+      </div>
+      <button onclick="fecharModalMoviApp()" style="width:100%;padding:13px;border:none;border-radius:8px;background:#3B3ED8;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── MoviApp: Liberar Acesso ──────────────────────────────────────
+let _mappCliData = null;
+
+function abrirModalMoviApp(cli) {
+  _mappCliData = typeof cli === 'string' ? JSON.parse(cli) : cli;
+
+  // Preencher dados do cliente
+  document.getElementById('mapp-cli-nome').textContent = _mappCliData.nome || '—';
+  const cpfFormatado = (_mappCliData.cnpj || '').replace(/\D/g,'').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  document.getElementById('mapp-cli-cpf').textContent = cpfFormatado || 'CPF não cadastrado';
+  document.getElementById('mapp-inp-cpf').value = cpfFormatado;
+  document.getElementById('mapp-inp-zap').value = _mappCliData.whatsapp || '';
+
+  // Reset estado
+  document.getElementById('mapp-form-state').style.display = '';
+  document.getElementById('mapp-sucesso-state').style.display = 'none';
+  document.getElementById('mapp-erro').style.display = 'none';
+  document.getElementById('mapp-btn-liberar').disabled = false;
+  document.getElementById('mapp-btn-liberar').textContent = 'Liberar acesso';
+
+  // Exibir modal
+  const ov = document.getElementById('modal-moviapp-overlay');
+  ov.style.display = 'flex';
+  setTimeout(() => ov.querySelector('div').style.opacity = '1', 10);
+}
+
+function fecharModalMoviApp() {
+  document.getElementById('modal-moviapp-overlay').style.display = 'none';
+  _mappCliData = null;
+}
+
+async function liberarMoviApp() {
+  const cpfRaw = (document.getElementById('mapp-inp-cpf').value || '').replace(/\D/g,'');
+  const whatsapp = (document.getElementById('mapp-inp-zap').value || '').replace(/\D/g,'');
+  const erroEl = document.getElementById('mapp-erro');
+  const btnEl  = document.getElementById('mapp-btn-liberar');
+
+  erroEl.style.display = 'none';
+
+  if (!cpfRaw || cpfRaw.length < 11) {
+    erroEl.textContent = 'CPF inválido. Informe 11 dígitos.';
+    erroEl.style.display = '';
+    return;
+  }
+  if (!_mappCliData?.id) {
+    erroEl.textContent = 'Dados do cliente incompletos. Feche e tente novamente.';
+    erroEl.style.display = '';
+    return;
+  }
+
+  btnEl.disabled = true;
+  btnEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Criando acesso...';
+
+  try {
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (!session) throw new Error('Sessão expirada. Faça login novamente.');
+
+    const r = await fetch(gd('sf_config')?.proxyUrl || 'https://movicontrol.vercel.app/api/ixc-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-target': 'supabase-admin',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        action: 'criar_cliente_app',
+        access_token: session.access_token,
+        cliente_id: _mappCliData.id,
+        cpf: cpfRaw,
+        nome: _mappCliData.nome,
+        whatsapp: whatsapp
+      })
+    });
+
+    const d = await r.json();
+
+    if (!r.ok) {
+      erroEl.textContent = d.error || 'Erro ao criar acesso.';
+      erroEl.style.display = '';
+      btnEl.disabled = false;
+      btnEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Liberar acesso';
+      return;
+    }
+
+    // Sucesso
+    document.getElementById('mapp-res-cpf').textContent = cpfRaw.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    document.getElementById('mapp-res-senha').textContent = d.senha_inicial || cpfRaw.slice(-4);
+    document.getElementById('mapp-sucesso-msg').textContent = `Acesso ao MoviApp criado para ${_mappCliData.nome?.split(' ')[0] || 'o cliente'} com sucesso.`;
+
+    document.getElementById('mapp-form-state').style.display = 'none';
+    document.getElementById('mapp-sucesso-state').style.display = '';
+
+    // Notificar via WhatsApp se tiver número
+    if (whatsapp && whatsapp.length >= 10) {
+      const senha = d.senha_inicial || cpfRaw.slice(-4);
+      const msg = `Olá ${_mappCliData.nome?.split(' ')[0] || ''}! Seu acesso ao *MoviApp* foi liberado 🎉\n\n📱 Baixe o app e entre com:\n• *Login:* ${cpfRaw}\n• *Senha:* ${senha}\n\nQualquer dúvida é só chamar!`;
+      try {
+        await fetch(gd('sf_config')?.proxyUrl || 'https://movicontrol.vercel.app/api/ixc-proxy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-target': 'evotrix'
+          },
+          body: JSON.stringify({ numero: whatsapp, mensagem: msg })
+        });
+      } catch(e) {}
+    }
+
+  } catch(e) {
+    erroEl.textContent = e.message || 'Erro inesperado.';
+    erroEl.style.display = '';
+    btnEl.disabled = false;
+    btnEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Liberar acesso';
+  }
+}
+
+// Fechar modal ao clicar fora
+document.getElementById('modal-moviapp-overlay').addEventListener('click', function(e) {
+  if (e.target === this) fecharModalMoviApp();
+});
+</script>
+
 </body>
 </html>
