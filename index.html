@@ -10237,6 +10237,9 @@ function renderOsRelatorio(){
   // Assinatura do cliente — carregada do Storage (URL assinada)
   html += `<div id="os-rel-assinatura"></div>`;
 
+  // Fotos da instalação — carregadas do R2 via proxy
+  html += `<div id="os-rel-fotos"></div>`;
+
   // Local da finalização (geolocalização capturada no app de campo)
   if(o.fin_lat && o.fin_lng){
     const lat = Number(o.fin_lat), lng = Number(o.fin_lng);
@@ -10280,6 +10283,44 @@ function renderOsRelatorio(){
   el.innerHTML = html;
   carregarOsEquipamentos(o.id);
   carregarOsAssinatura(o);
+  carregarOsFotos(o);
+}
+
+// Carrega galeria de fotos do R2 via proxy
+async function carregarOsFotos(o){
+  const alvo = document.getElementById('os-rel-fotos');
+  if(!alvo) return;
+  // Verifica se há fotos salvas no banco (array fotos_r2)
+  const keys = o.fotos_r2 || [];
+  if(!keys.length){ alvo.innerHTML = ''; return; }
+
+  const PROXY = (await sbClient.from('app_config').select('valor').eq('chave','ixc_proxy_url').single()).data?.valor || '';
+  if(!PROXY){ alvo.innerHTML = ''; return; }
+
+  try {
+    // Busca lista atualizada via proxy r2-list
+    const r = await fetch(PROXY, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'r2-list'},
+      body: JSON.stringify({ os_id: o.id })
+    });
+    const j = await r.json();
+    const fotos = j.fotos || [];
+    if(!fotos.length){ alvo.innerHTML = ''; return; }
+
+    const thumbs = fotos.map((f,i)=>`
+      <a href="${f.url}" target="_blank" rel="noopener" title="${f.nome}"
+         style="display:block;width:100px;height:100px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0">
+        <img src="${f.url}" alt="Foto ${i+1}"
+             style="width:100%;height:100%;object-fit:cover"
+             onerror="this.parentElement.style.display='none'">
+      </a>`).join('');
+
+    alvo.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);padding:9px 14px;border-bottom:1px solid var(--border)">📸 Fotos da Instalação (${fotos.length})</div>
+      <div style="padding:12px;display:flex;flex-wrap:wrap;gap:10px">${thumbs}</div>
+    </div>`;
+  } catch(e){ alvo.innerHTML = ''; }
 }
 
 // Carrega a assinatura do cliente (bucket privado -> URL assinada) e exibe
