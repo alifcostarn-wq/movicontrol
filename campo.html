@@ -238,7 +238,29 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 .ping-out{font-family:monospace;font-size:11.5px;background:var(--sf2);border:1px solid var(--bd);border-radius:9px;padding:10px;max-height:140px;overflow-y:auto;white-space:pre-wrap;line-height:1.6;margin-top:8px}
 .p-ok{color:var(--ac)}.p-err{color:var(--red)}.p-hdr{color:var(--blu)}
 
-/* ---- LOGIN SCREEN ---- */
+/* ---- DIAGNÓSTICO AVANÇADO ---- */
+.dav-section{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-top:10px}
+.dav-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.dav-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12.5px}
+.dav-row:last-child{border-bottom:none}
+.dav-lab{color:var(--tx2)}
+.dav-val{font-weight:700;font-family:monospace;font-size:12px}
+.dav-ok{color:#3CB371}.dav-warn{color:var(--amb)}.dav-err{color:var(--red)}.dav-neu{color:var(--tx)}
+.dav-bar-wrap{height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-top:3px}
+.dav-bar{height:100%;border-radius:3px;transition:width .6s}
+.dav-laudo{border-radius:12px;padding:14px 16px;margin-top:10px;font-size:13px;line-height:1.6}
+.dav-laudo.ok{background:rgba(60,179,113,.1);border:1px solid rgba(60,179,113,.3);color:#1a5c3a}
+.dav-laudo.warn{background:var(--amb-bg);border:1px solid var(--amb);color:#633806}
+.dav-laudo.err{background:var(--red-bg);border:1px solid var(--red);color:#791F1F}
+.dav-laudo-title{font-weight:700;font-size:14px;margin-bottom:6px}
+.dav-acao{margin-top:8px;font-size:12px;padding:8px 10px;background:rgba(0,0,0,.05);border-radius:8px;line-height:1.5}
+.dav-step{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx3);padding:8px 0;border-bottom:1px solid var(--bd)}
+.dav-step:last-child{border-bottom:none}
+.dav-step-ico{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.dav-teste-btn{width:100%;padding:11px;border-radius:10px;border:none;background:var(--blu-bg);border:1px solid var(--blu);color:var(--blu);font-size:13px;font-weight:700;cursor:pointer;margin-top:6px}
+body.dk .dav-laudo.ok{background:rgba(60,179,113,.15);color:#9FE1CB}
+body.dk .dav-laudo.warn{background:rgba(186,117,23,.15);color:#FAC775}
+body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 #ls{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:200;padding:20px}
 #ls.hide{display:none}
 .lbox{background:var(--sf);border:1px solid var(--bd);border-radius:18px;padding:28px 24px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.12)}
@@ -1565,11 +1587,42 @@ async function abrirDet(id){
       ${os.sinal_fibra?`<b>Sinal:</b> ${os.sinal_fibra}<br>`:''}
       ${os.speedtest_down?`<b>Speedtest:</b> ↓${os.speedtest_down} / ↑${os.speedtest_up||'—'} Mbps`:''}
     </div>`;
+    // Placeholder para equipamentos — preenchido assincronamente
+    html += `<div id="det-equip-wrap"></div>`;
   }
 
   $('det-body').innerHTML = html;
   $('ov-det').classList.add('open');
   if(!['cancelada'].includes(os.status)) _carregarHistSms(os.id);
+
+  // Carrega equipamentos instalados (só para OS finalizadas)
+  if(['finalizada','concluida'].includes(os.status)){
+    _carregarEquipDet(os.id);
+  }
+}
+
+async function _carregarEquipDet(osId){
+  const alvo = document.getElementById('det-equip-wrap');
+  if(!alvo) return;
+  try {
+    const { data, error } = await sb.from('campo_os_equipamentos')
+      .select('mac,serial,modelo,created_at')
+      .eq('os_id', osId)
+      .order('id');
+    if(error || !data || !data.length){ alvo.innerHTML=''; return; }
+    const linhas = data.map(e=>`
+      <div class="drow">
+        <span class="dlab">📡 ${e.modelo||'Equipamento'}</span>
+        <span class="dval" style="font-size:11.5px;text-align:right">
+          ${e.mac?`<span class="mono" style="font-size:11px">${e.mac}</span>`:''}
+          ${e.serial?`<br><span style="color:var(--tx3);font-size:10.5px">SN: ${e.serial}</span>`:''}
+        </span>
+      </div>`).join('');
+    alvo.innerHTML = `<div class="row-sec" style="margin-top:10px">
+      <div class="row-sec-title">📡 Equipamentos Instalados (${data.length})</div>
+      ${linhas}
+    </div>`;
+  } catch(e){ alvo.innerHTML=''; }
 }
 
 /* ---- AÇÃO RÁPIDA NA ROTA (substitui rapido() para OS da rota) ---- */
@@ -1798,7 +1851,9 @@ async function carregarDiag(){
       ${!on?`<div class="alert red">❌ Cliente offline — verificar ONU, roteador e cabo.</div>`:`<div class="alert">✅ Cliente online e conectado.</div>`}
       <button onclick="toggleDetalhesConexao()" class="btn-full btn-ghost" style="font-size:13px;padding:11px;margin-top:4px">📋 Detalhes da conexão</button>
       <button onclick="limparMac(${loginIxcId})" class="btn-full" style="font-size:13px;padding:11px;margin-top:6px;background:rgba(194,90,0,0.08);border:1px solid #C25A00;color:#C25A00;border-radius:10px;width:100%;cursor:pointer">🔄 Limpar MAC do login</button>
-      <div id="ping-out"></div>`;
+      <button onclick="abrirDiagAvancado()" class="btn-full" style="font-size:13px;padding:11px;margin-top:6px;background:var(--pur-bg);border:1px solid var(--pur);color:var(--pur);border-radius:10px;width:100%;cursor:pointer;font-weight:700">🔬 Diagnóstico Avançado</button>
+      <div id="ping-out"></div>
+      <div id="diag-avancado" style="display:none"></div>`;
 
   } catch(e){
     const det = e.detalhe ? `<pre style="margin-top:8px;padding:8px;background:var(--bg2,#f3f3f3);border-radius:6px;font-size:10px;white-space:pre-wrap;overflow-x:auto;max-height:180px;overflow-y:auto">${e.detalhe}</pre>` : '';
@@ -1845,6 +1900,420 @@ function toggleDetalhesConexao(){
 
   out.innerHTML = `<div style="background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-top:8px">${itens||'<span style="color:var(--tx3);font-size:12px">Sem detalhes adicionais.</span>'}</div>`;
   out.dataset.aberto='1';
+}
+
+/* ================================================================
+   DIAGNÓSTICO AVANÇADO
+   Etapa 1 — Análise IXC (dados já carregados em _diagReg)
+   Etapa 2 — Testes de rede no celular (latência, pacote, speed)
+   Etapa 3 — Laudo automático cruzando tudo
+   ================================================================ */
+
+let _diagScore = {}; // acumula resultados entre etapas
+
+function abrirDiagAvancado(){
+  const el = $('diag-avancado');
+  if(!el) return;
+  if(el.style.display !== 'none'){ el.style.display='none'; return; }
+
+  const r = _diagReg;
+  if(!r){ toast('Carregue o diagnóstico primeiro.'); return; }
+
+  _diagScore = {};
+
+  // ── ETAPA 1: Análise IXC ──────────────────────────────────────
+  const on    = r.online==='S' || r.online===true;
+  const quedas = parseInt(r.count_desconexao||0);
+  const tempoSeg = parseInt(r.tempo_conectado||0);
+  const motivo = (r.motivo_desconexao||'').toLowerCase();
+  const vel = _aberta?._velMbps || 0;
+  const dlAtual = parseInt(r.download_atual||0);
+  const upAtual = parseInt(r.upload_atual||0);
+  const rxPower = parseFloat(r.rx_power||r.potencia_rx||r.sinal||'0');
+  const concentr = r.concentrador || r.id_concentrador || '—';
+
+  // Classifica sinal óptico (dBm)
+  // GPON ideal: -8 a -27 dBm. Abaixo de -27 = crítico
+  let sinalTxt='—', sinalCl='dav-neu', sinalScore=0;
+  if(rxPower !== 0){
+    if(rxPower >= -20)        { sinalTxt=rxPower+'dBm'; sinalCl='dav-ok';   sinalScore=0; }
+    else if(rxPower >= -25)   { sinalTxt=rxPower+'dBm'; sinalCl='dav-warn'; sinalScore=1; }
+    else if(rxPower >= -28)   { sinalTxt=rxPower+'dBm'; sinalCl='dav-err';  sinalScore=3; }
+    else                      { sinalTxt=rxPower+'dBm ⚠️'; sinalCl='dav-err'; sinalScore=4; }
+  }
+
+  // Classifica quedas
+  let quedasCl='dav-ok', quedasScore=0;
+  if(quedas>=10){ quedasCl='dav-err'; quedasScore=4; }
+  else if(quedas>=5){ quedasCl='dav-warn'; quedasScore=2; }
+  else if(quedas>=2){ quedasCl='dav-warn'; quedasScore=1; }
+
+  // Classifica motivo de desconexão
+  let motivoAnl='', motivoScore=0;
+  if(/ppp.*timeout|lcp.*timeout|session.*timeout/i.test(motivo)){ motivoAnl='Timeout PPP — instabilidade na ONU ou cabo'; motivoScore=2; }
+  else if(/auth|senha|password/i.test(motivo))                  { motivoAnl='Falha de autenticação — verificar login/senha'; motivoScore=3; }
+  else if(/admin.*down|desativado/i.test(motivo))               { motivoAnl='Desativado pelo sistema'; motivoScore=1; }
+  else if(/signal|sinal/i.test(motivo))                         { motivoAnl='Sinal óptico insuficiente'; motivoScore=3; }
+  else if(motivo)                                                { motivoAnl=r.motivo_desconexao; motivoScore=1; }
+
+  // Tempo online — suspeito se muito curto (reconectando constantemente)
+  let tempoAnl='', tempoScore=0;
+  if(on && tempoSeg > 0 && tempoSeg < 300)  { tempoAnl='⚠️ Menos de 5min online — possível reconexão em loop'; tempoScore=3; }
+  else if(on && tempoSeg < 1800)             { tempoAnl='⚠️ Menos de 30min online'; tempoScore=1; }
+
+  // Tráfego vs plano (se disponível)
+  let trafAnl='', trafScore=0;
+  if(vel > 0 && dlAtual > 0){
+    const pct = Math.round((dlAtual / (vel * 1000 * 1000)) * 100);
+    if(pct > 95){ trafAnl=`🔴 Tráfego saturado (${pct}% do plano)`; trafScore=2; }
+    else if(pct > 70){ trafAnl=`⚠️ Tráfego elevado (${pct}% do plano)`; trafScore=1; }
+  }
+
+  _diagScore.ixc = sinalScore + quedasScore + motivoScore + tempoScore + trafScore;
+  _diagScore.sinal = sinalScore;
+  _diagScore.quedas = quedasScore;
+  _diagScore.motivo = motivoScore;
+  _diagScore.motivoTxt = motivoAnl;
+  _diagScore.tempoTxt = tempoAnl;
+  _diagScore.trafTxt = trafAnl;
+  _diagScore.online = on;
+  _diagScore.concentr = concentr;
+
+  // Formata tempo online
+  const fmtT = s=>{ if(!s) return '—';
+    const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);
+    return [d?d+'d':'',h?h+'h':'',m?m+'m':''].filter(Boolean).join(' ')||'<1m'; };
+
+  el.style.display = '';
+  el.innerHTML = `
+  <div class="dav-section" style="margin-top:14px">
+    <div class="dav-title">📡 Etapa 1 — Análise IXC</div>
+    <div class="dav-row"><span class="dav-lab">Status PPPoE</span><span class="dav-val ${on?'dav-ok':'dav-err'}">${on?'Online':'Offline'}</span></div>
+    ${on?`<div class="dav-row"><span class="dav-lab">Tempo conectado</span><span class="dav-val ${tempoSeg<300?'dav-err':tempoSeg<1800?'dav-warn':'dav-ok'}">${fmtT(tempoSeg)}</span></div>`:''}
+    <div class="dav-row"><span class="dav-lab">Quedas no período</span><span class="dav-val ${quedasCl}">${quedas}</span></div>
+    ${rxPower!==0?`<div class="dav-row">
+      <span class="dav-lab">Sinal óptico (Rx)</span>
+      <span class="dav-val ${sinalCl}">${sinalTxt}</span>
+    </div>
+    <div style="margin:2px 0 8px">
+      <div class="dav-bar-wrap"><div class="dav-bar" style="width:${Math.min(100,Math.max(0,Math.round((rxPower+40)/15*100)))}%;background:${sinalCl==='dav-ok'?'#3CB371':sinalCl==='dav-warn'?'var(--amb)':'var(--red)'}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-top:2px"><span>-40dBm (crítico)</span><span>-20dBm (ideal)</span></div>
+    </div>`:''}
+    ${motivoAnl?`<div class="dav-row"><span class="dav-lab">Causa da queda</span><span class="dav-val dav-warn" style="font-family:inherit;font-size:11px;text-align:right;max-width:60%">${motivoAnl}</span></div>`:''}
+    ${tempoAnl?`<div class="dav-row"><span class="dav-lab">Análise</span><span class="dav-val" style="font-family:inherit;font-size:11px;color:var(--amb);text-align:right;max-width:60%">${tempoAnl}</span></div>`:''}
+    ${trafAnl?`<div class="dav-row"><span class="dav-lab">Tráfego</span><span class="dav-val" style="font-family:inherit;font-size:11px;color:var(--amb);text-align:right;max-width:60%">${trafAnl}</span></div>`:''}
+    <div class="dav-row"><span class="dav-lab">Concentrador/OLT</span><span class="dav-val dav-neu" style="font-size:10px;text-align:right;max-width:65%">${concentr}</span></div>
+  </div>
+
+  <div class="dav-section">
+    <div class="dav-title">📶 Etapa 2 — Testes de rede no celular</div>
+
+    <!-- Aviso de conexão -->
+    <div style="background:var(--amb-bg);border:1px solid var(--amb);border-radius:10px;padding:10px 12px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--amb);margin-bottom:4px">⚠️ Antes de iniciar</div>
+      <div style="font-size:12px;color:var(--tx2);line-height:1.6">Conecte este celular na rede do cliente. O modo de conexão afeta o diagnóstico:</div>
+    </div>
+
+    <!-- Seletor Wi-Fi vs Cabo -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px" id="dav-modo-wrap">
+      <label style="cursor:pointer">
+        <input type="radio" name="dav-modo" value="wifi" checked style="display:none" onchange="selecionarModoRede(this)">
+        <div class="dav-modo-opt" id="dav-opt-wifi" style="border:2px solid var(--ac);background:var(--ac2);border-radius:11px;padding:10px 8px;text-align:center">
+          <div style="font-size:20px;margin-bottom:3px">📶</div>
+          <div style="font-size:12px;font-weight:700;color:var(--ac)">Wi-Fi do cliente</div>
+          <div style="font-size:10px;color:var(--tx3);margin-top:2px;line-height:1.3">Testa tudo incluindo roteador</div>
+        </div>
+      </label>
+      <label style="cursor:pointer">
+        <input type="radio" name="dav-modo" value="cabo" style="display:none" onchange="selecionarModoRede(this)">
+        <div class="dav-modo-opt" id="dav-opt-cabo" style="border:1px solid var(--bd);background:var(--sf2);border-radius:11px;padding:10px 8px;text-align:center">
+          <div style="font-size:20px;margin-bottom:3px">🔌</div>
+          <div style="font-size:12px;font-weight:700;color:var(--tx2)">Cabo (direto na ONU)</div>
+          <div style="font-size:10px;color:var(--tx3);margin-top:2px;line-height:1.3">Isola problema da fibra</div>
+        </div>
+      </label>
+    </div>
+
+    <!-- Aviso contextual por modo -->
+    <div id="dav-modo-aviso" style="font-size:11.5px;color:var(--tx3);margin-bottom:10px;line-height:1.5;padding:8px 10px;background:var(--sf2);border-radius:8px;border:1px solid var(--bd)">
+      📶 <b>Modo Wi-Fi:</b> Velocidade e latência medidas incluem a qualidade do roteador e do sinal sem fio. Se o resultado for ruim, repita via cabo para isolar a fibra.
+    </div>
+
+    <div id="dav-testes-resultado"></div>
+    <button class="dav-teste-btn" id="dav-btn-teste" onclick="rodarTesteRede()">▶ Iniciar testes de rede</button>
+  </div>
+
+  <div id="dav-laudo-wrap"></div>`;
+}
+
+/* ── ETAPA 2: Testes de rede ──────────────────────────────── */
+let _diagModo = 'wifi'; // 'wifi' ou 'cabo'
+
+function selecionarModoRede(input){
+  _diagModo = input.value;
+  const optWifi = $('dav-opt-wifi');
+  const optCabo = $('dav-opt-cabo');
+  const aviso   = $('dav-modo-aviso');
+  if(!optWifi || !optCabo) return;
+
+  if(_diagModo === 'wifi'){
+    optWifi.style.cssText = 'border:2px solid var(--ac);background:var(--ac2);border-radius:11px;padding:10px 8px;text-align:center';
+    optWifi.querySelector('div:nth-child(2)').style.color = 'var(--ac)';
+    optCabo.style.cssText = 'border:1px solid var(--bd);background:var(--sf2);border-radius:11px;padding:10px 8px;text-align:center';
+    optCabo.querySelector('div:nth-child(2)').style.color = 'var(--tx2)';
+    if(aviso) aviso.innerHTML = '📶 <b>Modo Wi-Fi:</b> Velocidade e latência medidas incluem a qualidade do roteador e do sinal sem fio. Se o resultado for ruim, repita via cabo para isolar a fibra.';
+  } else {
+    optCabo.style.cssText = 'border:2px solid var(--ac);background:var(--ac2);border-radius:11px;padding:10px 8px;text-align:center';
+    optCabo.querySelector('div:nth-child(2)').style.color = 'var(--ac)';
+    optWifi.style.cssText = 'border:1px solid var(--bd);background:var(--sf2);border-radius:11px;padding:10px 8px;text-align:center';
+    optWifi.querySelector('div:nth-child(2)').style.color = 'var(--tx2)';
+    if(aviso) aviso.innerHTML = '🔌 <b>Modo Cabo:</b> Teste direto na ONU. Resultado ruim aqui indica problema na fibra ou ONU. Resultado bom indica problema no roteador/Wi-Fi do cliente.';
+  }
+}
+
+async function rodarTesteRede(){
+  const btn = $('dav-btn-teste');
+  const out = $('dav-testes-resultado');
+  if(!btn || !out) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Executando testes...';
+  out.innerHTML = '';
+  _diagScore.rede = {};
+  _diagScore.modo = _diagModo; // salva modo para o laudo
+
+  const atualizar = (html) => { out.innerHTML = html; };
+
+  // Função de step visual
+  const steps = [];
+  const addStep = (ico, txt, cl='') => {
+    steps.push(`<div class="dav-step"><div class="dav-step-ico" style="background:${cl==='ok'?'rgba(60,179,113,.15)':cl==='err'?'var(--red-bg)':cl==='warn'?'var(--amb-bg)':'var(--sf2)'}">${ico}</div><span style="color:${cl==='ok'?'#1a5c3a':cl==='err'?'var(--red)':cl==='warn'?'#633806':'var(--tx2)'}">${txt}</span></div>`);
+    atualizar(`<div style="background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:8px 12px">${steps.join('')}</div>`);
+  };
+
+  // ── Teste 1: Latência para DNS Google (via fetch com timestamp) ──
+  addStep('⏳','Medindo latência para internet (8.8.8.8)...');
+  let latExt = null, latExtCl = 'neu';
+  try {
+    const tempos = [];
+    for(let i=0;i<5;i++){
+      const t0 = performance.now();
+      await fetch(`https://dns.google/resolve?name=test${i}.example.com&type=A`,
+        {mode:'cors', cache:'no-store'}).catch(()=>{});
+      tempos.push(Math.round(performance.now()-t0));
+      await new Promise(r=>setTimeout(r,150));
+    }
+    const validos = tempos.filter(t=>t<9000);
+    latExt = validos.length ? Math.round(validos.reduce((a,b)=>a+b,0)/validos.length) : null;
+    if(latExt!==null){
+      latExtCl = latExt<50?'ok':latExt<120?'warn':'err';
+      _diagScore.rede.latExt = latExt;
+      addStep(latExtCl==='ok'?'✅':latExtCl==='warn'?'⚠️':'❌',
+        `Latência internet: ${latExt}ms ${latExt<50?'(ótimo)':latExt<120?'(aceitável)':'(alta — possível problema de roteamento)'}`, latExtCl);
+    } else {
+      _diagScore.rede.latExtErr = true;
+      addStep('❌','Sem acesso à internet — verificar conexão PPPoE', 'err');
+    }
+  } catch(e){ addStep('⚠️','Não foi possível medir latência externa', 'warn'); }
+
+  // ── Teste 2: Latência local (gateway padrão) ──
+  addStep('⏳','Medindo latência local (gateway)...');
+  let latLocal = null, latLocalCl = 'neu';
+  try {
+    const gateways = ['http://192.168.1.1','http://192.168.0.1','http://10.0.0.1','http://192.168.100.1'];
+    for(const gw of gateways){
+      try {
+        const t0 = performance.now();
+        await fetch(gw, {mode:'no-cors', cache:'no-store', signal: AbortSignal.timeout(2000)});
+        latLocal = Math.round(performance.now()-t0);
+        _diagScore.rede.gateway = gw;
+        break;
+      } catch(e){ continue; }
+    }
+    if(latLocal!==null){
+      latLocalCl = latLocal<10?'ok':latLocal<30?'warn':'err';
+      _diagScore.rede.latLocal = latLocal;
+      addStep(latLocalCl==='ok'?'✅':latLocalCl==='warn'?'⚠️':'❌',
+        `Latência gateway: ${latLocal}ms ${latLocal<10?'(ótimo)':latLocal<30?'(aceitável)':'(alta — possível problema no roteador do cliente)'}`, latLocalCl);
+    } else {
+      _diagScore.rede.latLocalErr = true;
+      addStep('⚠️','Gateway não encontrado — tente conectar no cabo do roteador', 'warn');
+    }
+  } catch(e){ addStep('⚠️','Erro ao medir gateway', 'warn'); }
+
+  // ── Teste 3: Perda de pacote (20 fetches rápidos) ──
+  addStep('⏳','Testando perda de pacote (20 requisições)...');
+  let perdaPct = 0, perdaCl = 'ok';
+  try {
+    const TOTAL = 20;
+    let falhas = 0;
+    const promises = Array.from({length:TOTAL}, async (_,i)=>{
+      try {
+        await fetch(`https://dns.google/resolve?name=pkt${i}.test&type=A`,
+          {mode:'cors', cache:'no-store', signal: AbortSignal.timeout(3000)});
+      } catch(e){ falhas++; }
+    });
+    await Promise.all(promises);
+    perdaPct = Math.round((falhas/TOTAL)*100);
+    _diagScore.rede.perda = perdaPct;
+    perdaCl = perdaPct===0?'ok':perdaPct<=10?'warn':'err';
+    addStep(perdaCl==='ok'?'✅':perdaCl==='warn'?'⚠️':'❌',
+      `Perda de pacote: ${perdaPct}% (${falhas}/${TOTAL}) ${perdaPct===0?'(sem perdas)':perdaPct<=10?'(perda moderada)':'(perda severa — instabilidade na rede)'}`, perdaCl);
+  } catch(e){ addStep('⚠️','Erro no teste de perda de pacote', 'warn'); }
+
+  // ── Teste 4: Velocidade de download (via arquivo de 1MB) ──
+  addStep('⏳','Medindo velocidade de download...');
+  let speedMbps = null, speedCl = 'neu';
+  try {
+    const url = 'https://speed.cloudflare.com/__down?bytes=2000000';
+    const t0 = performance.now();
+    const resp = await fetch(url, {cache:'no-store', signal: AbortSignal.timeout(15000)});
+    const buf = await resp.arrayBuffer();
+    const dt = (performance.now()-t0)/1000;
+    speedMbps = Math.round((buf.byteLength*8)/(dt*1000000)*10)/10;
+    _diagScore.rede.speed = speedMbps;
+    const vel = _aberta?._velMbps || 0;
+    const pct = vel>0 ? Math.round((speedMbps/vel)*100) : null;
+    speedCl = speedMbps>50?'ok':speedMbps>10?'warn':'err';
+    if(vel>0 && pct!==null){
+      speedCl = pct>=70?'ok':pct>=40?'warn':'err';
+      _diagScore.rede.speedPct = pct;
+      addStep(speedCl==='ok'?'✅':speedCl==='warn'?'⚠️':'❌',
+        `Velocidade: ${speedMbps} Mbps (${pct}% do plano de ${vel>=1000?(vel/1000)+'Gbps':vel+'Mbps'}) ${pct>=70?'':pct>=40?'— abaixo do esperado':'— muito abaixo, investigar'}`, speedCl);
+    } else {
+      addStep(speedCl==='ok'?'✅':speedCl==='warn'?'⚠️':'❌',
+        `Velocidade: ${speedMbps} Mbps`, speedCl);
+    }
+  } catch(e){
+    _diagScore.rede.speedErr = true;
+    addStep('⚠️','Não foi possível medir velocidade (timeout ou sem acesso)', 'warn');
+  }
+
+  // ── Teste 5: Jitter (variação de latência) ──
+  addStep('⏳','Calculando jitter...');
+  try {
+    const amostras = [];
+    for(let i=0;i<8;i++){
+      const t0 = performance.now();
+      await fetch(`https://dns.google/resolve?name=jit${i}.test&type=A`,
+        {mode:'cors', cache:'no-store', signal: AbortSignal.timeout(3000)}).catch(()=>{});
+      amostras.push(Math.round(performance.now()-t0));
+      await new Promise(r=>setTimeout(r,100));
+    }
+    const validos = amostras.filter(t=>t<5000);
+    if(validos.length >= 4){
+      const media = validos.reduce((a,b)=>a+b,0)/validos.length;
+      const jitter = Math.round(Math.sqrt(validos.reduce((s,t)=>s+Math.pow(t-media,2),0)/validos.length));
+      _diagScore.rede.jitter = jitter;
+      const jCl = jitter<20?'ok':jitter<50?'warn':'err';
+      addStep(jCl==='ok'?'✅':jCl==='warn'?'⚠️':'❌',
+        `Jitter: ${jitter}ms ${jitter<20?'(estável)':jitter<50?'(variação moderada — pode afetar VoIP/video)':'(instável — tráfego em tempo real comprometido)'}`, jCl);
+    }
+  } catch(e){}
+
+  btn.textContent = '↻ Repetir testes';
+  btn.disabled = false;
+
+  // Gera o laudo
+  gerarLaudo();
+}
+
+/* ── ETAPA 3: Laudo inteligente ──────────────────────────── */
+function gerarLaudo(){
+  const el = $('dav-laudo-wrap');
+  if(!el) return;
+
+  const s  = _diagScore;
+  const r  = s.rede || {};
+  const on = s.online;
+
+  // Sistema de pontuação de problemas — cada item identificado pontua
+  const problemas = [];
+  const acoes     = [];
+
+  // ── Análise IXC ──
+  if(!on){
+    problemas.push('Cliente offline no momento do diagnóstico');
+    acoes.push('Verificar ONU: checar LED de PON e LOS — se LOS piscando, problema óptico');
+    acoes.push('Testar cabo entre ONU e roteador do cliente');
+  }
+  if(s.sinal >= 3){
+    problemas.push(`Sinal óptico crítico (abaixo de -27dBm)`);
+    acoes.push('Limpar conector SC/APC na caixa óptica e na ONU com lenço óptico');
+    acoes.push('Verificar emenda, splitter ou curvatura no cabo de fibra');
+    acoes.push('Se sinal OK na caixa mas ruim na ONU: substituir drop wire');
+  } else if(s.sinal >= 1){
+    problemas.push('Sinal óptico abaixo do ideal (-20 a -25dBm)');
+    acoes.push('Verificar conector SC/APC na ONU e na caixa de atendimento');
+  }
+  if(s.quedas >= 4){
+    problemas.push(`Alto número de desconexões (${s._diagReg?.count_desconexao||'várias'})`);
+    acoes.push('Analisar padrão de horário das quedas — se em horário de pico: saturação de PON, escalar para NOC');
+    acoes.push('Se quedas aleatórias: substituir ONU');
+  }
+  if(s.motivo >= 2 && s.motivoTxt){
+    problemas.push(`Causa de desconexão identificada: ${s.motivoTxt}`);
+    if(/auth|senha/.test(s.motivoTxt||'')) acoes.push('Verificar login/senha PPPoE — possível divergência no IXC');
+    if(/timeout|lcp/.test(s.motivoTxt||'')) acoes.push('Instabilidade no link óptico — verificar sinal e conector');
+  }
+  if(s.tempoTxt){ problemas.push(s.tempoTxt); acoes.push('Cliente em loop de reconexão — verificar ONU e cabo óptico'); }
+  if(s.trafTxt){ problemas.push(s.trafTxt); acoes.push('Verificar equipamentos da rede interna consumindo banda (câmeras, backup automático)'); }
+
+  // ── Análise Rede (celular) ──
+  if(r.latExtErr){ problemas.push('Sem acesso à internet no momento do teste'); }
+  if(r.latExt > 200){ problemas.push(`Latência alta para internet: ${r.latExt}ms`); acoes.push('Alta latência externa: pode ser congestionamento no backbone — verificar com NOC'); }
+  else if(r.latExt > 120){ problemas.push(`Latência moderadamente alta: ${r.latExt}ms`); }
+  if(r.latLocal > 30){ problemas.push(`Latência alta para o roteador: ${r.latLocal}ms`); acoes.push('Latência alta no gateway: verificar cabo entre ONU e roteador, testar outro cabo'); }
+  if(r.latLocalErr){ problemas.push('Gateway do cliente não respondeu'); acoes.push('Verificar se o roteador do cliente está ligado e funcionando'); }
+  if(r.perda > 20){ problemas.push(`Perda de pacote severa: ${r.perda}%`); acoes.push('Perda severa: reiniciar ONU, verificar conector, substituir se persistir'); }
+  else if(r.perda > 5){ problemas.push(`Perda de pacote moderada: ${r.perda}%`); acoes.push('Perda moderada: monitorar — se persistir, substituir ONU'); }
+  if(r.speedPct !== undefined && r.speedPct < 40){ problemas.push(`Velocidade muito abaixo do plano: ${r.speedPct}% entregue`); acoes.push('Velocidade abaixo de 40% do plano: verificar se há limitação no IXC, contrato ou plano incorreto'); }
+  else if(r.speedPct !== undefined && r.speedPct < 70){ problemas.push(`Velocidade abaixo do plano contratado: ${r.speedPct}%`); }
+  if(r.jitter > 50){ problemas.push(`Jitter alto: ${r.jitter}ms — chamadas VoIP e videoconferência afetadas`); acoes.push('Jitter alto: comum em saturação de PON ou ONU com firmware desatualizado'); }
+
+  // ── Define nível do laudo ──
+  const nivel = problemas.length === 0 ? 'ok' : problemas.length <= 2 && s.ixc <= 2 ? 'warn' : 'err';
+
+  const iconeLaudo = nivel==='ok'?'✅':nivel==='warn'?'⚠️':'🔴';
+  const tituloLaudo = nivel==='ok'
+    ? 'Conexão dentro do esperado'
+    : nivel==='warn'
+    ? 'Atenção — pontos de melhoria identificados'
+    : 'Problema identificado — ação necessária';
+
+  // Contexto do modo de teste
+  const modoTag = s.modo === 'cabo'
+    ? `<div style="font-size:11px;margin-bottom:8px;padding:5px 8px;background:rgba(0,0,0,.06);border-radius:6px">🔌 Teste realizado via <b>cabo direto na ONU</b></div>`
+    : `<div style="font-size:11px;margin-bottom:8px;padding:5px 8px;background:rgba(0,0,0,.06);border-radius:6px">📶 Teste realizado via <b>Wi-Fi do cliente</b>${nivel!=='ok'?' — considere repetir via cabo para isolar a fibra':''}</div>`;
+
+  // Remove duplicatas de ações
+  const acoesUnicas = [...new Set(acoes)];
+
+  // Ação adicional: repetir via cabo se foi Wi-Fi e tem problema
+  if(s.modo === 'wifi' && nivel !== 'ok'){
+    acoesUnicas.push('Repetir os testes via cabo diretamente na ONU para isolar se o problema é na fibra ou no roteador/Wi-Fi do cliente');
+  }
+
+  // Se nenhum problema: recomendação para o cliente
+  if(problemas.length===0){
+    problemas.push('Latência, sinal e velocidade dentro dos parâmetros');
+    acoesUnicas.push('Orientar o cliente: verificar equipamentos internos (roteador Wi-Fi, posicionamento, interferências)');
+    acoesUnicas.push('Testar conexão via cabo diretamente na ONU para descartar problema no roteador do cliente');
+  }
+
+  el.innerHTML = `
+  <div class="dav-laudo ${nivel}">
+    <div class="dav-laudo-title">${iconeLaudo} ${tituloLaudo}</div>
+    ${modoTag}
+    <div style="font-size:12px;margin-bottom:6px"><b>O que foi encontrado:</b></div>
+    ${problemas.map(p=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid rgba(0,0,0,.06)">• ${p}</div>`).join('')}
+    ${acoesUnicas.length?`
+    <div class="dav-acao">
+      <b>📋 Ações recomendadas:</b><br>
+      ${acoesUnicas.map((a,i)=>`${i+1}. ${a}`).join('<br>')}
+    </div>`:''}
+    ${nivel==='err'?`<div style="margin-top:8px;font-size:11.5px;color:inherit;opacity:.8">Se o problema persistir após as ações acima, escalar para NOC com este diagnóstico.</div>`:''}
+  </div>`;
 }
 
 /* ---- LIMPAR MAC ---- */
