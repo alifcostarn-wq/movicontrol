@@ -2066,6 +2066,13 @@ function abrirDiagAvancado(){
 
   <div id="dav-laudo-wrap"></div>
 
+  <div class="dav-section" style="margin-top:10px;border-color:var(--ac);background:var(--ac2)">
+    <div class="dav-title" style="color:var(--ac)">⚡ Speedtest — Velocidade do Cliente</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.5">Mede download e upload via servidor próprio em São Paulo e compara com o plano contratado. Celular deve estar no Wi-Fi do cliente.</div>
+    <div id="spt-resultado"></div>
+    <button id="btn-spt" onclick="rodarSpeedtest()" style="width:100%;padding:12px;border-radius:10px;border:none;background:var(--ac);color:#fff;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px">⚡ Iniciar Speedtest</button>
+  </div>
+
   <div class="dav-section" style="margin-top:10px;border-color:var(--pur);background:var(--pur-bg)">
     <div class="dav-title" style="color:var(--pur)">📡 Análise de Interferência Wi-Fi</div>
     <div style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.5">Detecta automaticamente interferência de canal, saturação e qualidade do link sem fio. Celular deve estar no Wi-Fi do cliente.</div>
@@ -2189,35 +2196,7 @@ async function rodarTesteRede(){
       `Perda de pacote: ${perdaPct}% (${falhas}/${TOTAL}) ${perdaPct===0?'(sem perdas)':perdaPct<=10?'(perda moderada)':'(perda severa — instabilidade na rede)'}`, perdaCl);
   } catch(e){ addStep('⚠️','Erro no teste de perda de pacote', 'warn'); }
 
-  // ── Teste 4: Velocidade de download (via arquivo de 1MB) ──
-  addStep('⏳','Medindo velocidade de download...');
-  let speedMbps = null, speedCl = 'neu';
-  try {
-    const url = 'https://speed.cloudflare.com/__down?bytes=2000000';
-    const t0 = performance.now();
-    const resp = await fetch(url, {cache:'no-store', signal: AbortSignal.timeout(15000)});
-    const buf = await resp.arrayBuffer();
-    const dt = (performance.now()-t0)/1000;
-    speedMbps = Math.round((buf.byteLength*8)/(dt*1000000)*10)/10;
-    _diagScore.rede.speed = speedMbps;
-    const vel = _aberta?._velMbps || 0;
-    const pct = vel>0 ? Math.round((speedMbps/vel)*100) : null;
-    speedCl = speedMbps>50?'ok':speedMbps>10?'warn':'err';
-    if(vel>0 && pct!==null){
-      speedCl = pct>=70?'ok':pct>=40?'warn':'err';
-      _diagScore.rede.speedPct = pct;
-      addStep(speedCl==='ok'?'✅':speedCl==='warn'?'⚠️':'❌',
-        `Velocidade: ${speedMbps} Mbps (${pct}% do plano de ${vel>=1000?(vel/1000)+'Gbps':vel+'Mbps'}) ${pct>=70?'':pct>=40?'— abaixo do esperado':'— muito abaixo, investigar'}`, speedCl);
-    } else {
-      addStep(speedCl==='ok'?'✅':speedCl==='warn'?'⚠️':'❌',
-        `Velocidade: ${speedMbps} Mbps`, speedCl);
-    }
-  } catch(e){
-    _diagScore.rede.speedErr = true;
-    addStep('⚠️','Não foi possível medir velocidade (timeout ou sem acesso)', 'warn');
-  }
-
-  // ── Teste 5: Jitter (variação de latência) ──
+  // ── Teste 4: Jitter (variação de latência) ──
   addStep('⏳','Calculando jitter...');
   try {
     const amostras = [];
@@ -2295,8 +2274,6 @@ function gerarLaudo(){
   if(r.latLocalErr){ problemas.push('Gateway do cliente não respondeu'); acoes.push('Verificar se o roteador do cliente está ligado e funcionando'); }
   if(r.perda > 20){ problemas.push(`Perda de pacote severa: ${r.perda}%`); acoes.push('Perda severa: reiniciar ONU, verificar conector, substituir se persistir'); }
   else if(r.perda > 5){ problemas.push(`Perda de pacote moderada: ${r.perda}%`); acoes.push('Perda moderada: monitorar — se persistir, substituir ONU'); }
-  if(r.speedPct !== undefined && r.speedPct < 40){ problemas.push(`Velocidade muito abaixo do plano: ${r.speedPct}% entregue`); acoes.push('Velocidade abaixo de 40% do plano: verificar se há limitação no IXC, contrato ou plano incorreto'); }
-  else if(r.speedPct !== undefined && r.speedPct < 70){ problemas.push(`Velocidade abaixo do plano contratado: ${r.speedPct}%`); }
   if(r.jitter > 50){ problemas.push(`Jitter alto: ${r.jitter}ms — chamadas VoIP e videoconferência afetadas`); acoes.push('Jitter alto: comum em saturação de PON ou ONU com firmware desatualizado'); }
 
   // ── Define nível do laudo ──
@@ -2342,6 +2319,158 @@ function gerarLaudo(){
     </div>`:''}
     ${nivel==='err'?`<div style="margin-top:8px;font-size:11.5px;color:inherit;opacity:.8">Se o problema persistir após as ações acima, escalar para NOC com este diagnóstico.</div>`:''}
   </div>`;
+}
+
+/* ================================================================
+   SPEEDTEST — Download + Upload via proxy Vercel (São Paulo)
+   Compara com plano contratado do IXC
+   ================================================================ */
+async function rodarSpeedtest(){
+  const btn=$('btn-spt'), out=$('spt-resultado');
+  if(!btn||!out) return;
+  btn.disabled=true; btn.textContent='⏳ Testando...';
+
+  // Plano contratado (vem do IXC via _diagReg ou _aberta)
+  const velPlano = parseFloat(_aberta?._velMbps||_diagReg?.velocidade||0);
+  const velLabel = velPlano>=1000?(velPlano/1000)+'Gbps':velPlano>0?velPlano+'Mbps':'—';
+
+  // Progresso visual
+  const mostrar=(html)=>{ out.innerHTML=html; };
+  const progresso=(fase,pct,dl,ul)=>{
+    mostrar(`
+    <div style="background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:14px 16px">
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:8px">${fase}</div>
+      <div style="height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-bottom:12px">
+        <div style="height:100%;width:${pct}%;background:var(--ac);border-radius:3px;transition:width .3s"></div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <div style="flex:1;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:var(--ac)">${dl!=null?dl+'<span style="font-size:12px"> Mbps</span>':'—'}</div>
+          <div style="font-size:11px;color:var(--tx3)">Download</div>
+        </div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:var(--blu)">${ul!=null?ul+'<span style="font-size:12px"> Mbps</span>':'—'}</div>
+          <div style="font-size:11px;color:var(--tx3)">Upload</div>
+        </div>
+      </div>
+    </div>`);
+  };
+
+  let dlMbps=null, ulMbps=null;
+
+  // ── DOWNLOAD: 3 rodadas com 5MB cada, usa a média ──
+  progresso('📥 Testando download...', 15, null, null);
+  try{
+    const BYTES = 5*1024*1024;
+    const rodadas=[];
+    for(let r=0;r<3;r++){
+      progresso(`📥 Download — rodada ${r+1}/3...`, 15+r*20, null, null);
+      const t0=performance.now();
+      const resp=await fetch(_proxyUrl,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-target':'speedtest-down'},
+        body:JSON.stringify({bytes:BYTES}),
+        cache:'no-store',
+        signal:AbortSignal.timeout(20000)
+      });
+      const buf=await resp.arrayBuffer();
+      const dt=(performance.now()-t0)/1000;
+      if(buf.byteLength>1000 && dt>0.1){
+        rodadas.push((buf.byteLength*8)/(dt*1_000_000));
+      }
+    }
+    if(rodadas.length){
+      // Remove a mais lenta (warmup) e faz média das restantes
+      rodadas.sort((a,b)=>a-b);
+      const usadas=rodadas.slice(rodadas.length>1?1:0);
+      dlMbps=Math.round(usadas.reduce((a,b)=>a+b,0)/usadas.length*10)/10;
+    }
+  }catch(e){ console.warn('Download speedtest:',e); }
+
+  progresso('📤 Testando upload...', 65, dlMbps, null);
+
+  // ── UPLOAD: envia 2MB × 2 rodadas ──
+  try{
+    const BYTES=2*1024*1024;
+    const rodadas=[];
+    for(let r=0;r<2;r++){
+      progresso(`📤 Upload — rodada ${r+1}/2...`, 65+r*15, dlMbps, null);
+      const payload=new Uint8Array(BYTES);
+      crypto.getRandomValues(payload.slice(0,Math.min(BYTES,65536))); // aleatoriza parte
+      const t0=performance.now();
+      await fetch(_proxyUrl,{
+        method:'POST',
+        headers:{'Content-Type':'application/octet-stream','x-target':'speedtest-up'},
+        body:payload,
+        cache:'no-store',
+        signal:AbortSignal.timeout(20000)
+      });
+      const dt=(performance.now()-t0)/1000;
+      if(dt>0.1) rodadas.push((BYTES*8)/(dt*1_000_000));
+    }
+    if(rodadas.length){
+      ulMbps=Math.round(rodadas.reduce((a,b)=>a+b,0)/rodadas.length*10)/10;
+    }
+  }catch(e){ console.warn('Upload speedtest:',e); }
+
+  progresso('✅ Concluído', 100, dlMbps, ulMbps);
+
+  // ── VEREDICTO ──
+  const dlPct = velPlano>0&&dlMbps!=null ? Math.round((dlMbps/velPlano)*100) : null;
+  const nivel = dlPct==null?'neu':dlPct>=80?'ok':dlPct>=50?'warn':'err';
+  const corNivel = nivel==='ok'?'var(--ac)':nivel==='warn'?'var(--amb)':'var(--red)';
+  const emojiNivel = nivel==='ok'?'✅':nivel==='warn'?'⚠️':nivel==='err'?'🔴':'📊';
+
+  let veredicto='', acao='';
+  if(dlPct==null){
+    veredicto='Plano contratado não identificado no IXC.';
+    acao='Verifique o login do cliente no IXC para ver a velocidade contratada.';
+  } else if(dlPct>=80){
+    veredicto=`Entregando ${dlPct}% do plano de ${velLabel}. Velocidade dentro do esperado.`;
+    acao='Conexão saudável. Se o cliente reclama de lentidão, verificar dispositivos na rede interna ou posicionamento do roteador.';
+  } else if(dlPct>=50){
+    veredicto=`Entregando apenas ${dlPct}% do plano de ${velLabel}.`;
+    acao='Verificar interferência Wi-Fi (use a análise abaixo), substituir cabo entre ONU e roteador, ou reiniciar ONU.';
+  } else {
+    veredicto=`Entregando somente ${dlPct}% do plano de ${velLabel}. Muito abaixo do esperado.`;
+    acao='Checar sinal óptico no IXC, substituir ONU, verificar limitação de perfil no IXC (velocidade errada no plano).';
+  }
+
+  setTimeout(()=>{
+    out.innerHTML=`
+    <div style="background:var(--sf);border:1px solid var(--bd);border-radius:12px;overflow:hidden">
+      <!-- Resultado principal -->
+      <div style="padding:16px;display:flex;gap:16px">
+        <div style="flex:1;text-align:center">
+          <div style="font-size:30px;font-weight:800;color:var(--ac)">${dlMbps??'—'}<span style="font-size:13px;font-weight:500"> Mbps</span></div>
+          <div style="font-size:11px;color:var(--tx3);margin-top:2px">📥 Download</div>
+          ${dlPct!=null?`<div style="font-size:11px;font-weight:700;color:${corNivel};margin-top:3px">${dlPct}% do plano</div>`:''}
+        </div>
+        <div style="width:1px;background:var(--bd)"></div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:30px;font-weight:800;color:var(--blu)">${ulMbps??'—'}<span style="font-size:13px;font-weight:500"> Mbps</span></div>
+          <div style="font-size:11px;color:var(--tx3);margin-top:2px">📤 Upload</div>
+          <div style="font-size:11px;color:var(--tx3);margin-top:3px">Plano: ${velLabel}</div>
+        </div>
+      </div>
+      <!-- Barra de % do plano -->
+      ${dlPct!=null?`<div style="padding:0 16px 10px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);margin-bottom:4px">
+          <span>Velocidade entregue vs contratada</span><span>${dlPct}%</span>
+        </div>
+        <div style="height:8px;background:var(--bd);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(100,dlPct)}%;background:${corNivel};border-radius:4px;transition:width 1s"></div>
+        </div>
+      </div>`:''}
+      <!-- Veredicto -->
+      <div style="background:var(--sf2);border-top:1px solid var(--bd);padding:12px 16px">
+        <div style="font-size:13px;font-weight:700;color:${corNivel};margin-bottom:4px">${emojiNivel} ${veredicto}</div>
+        <div style="font-size:12px;color:var(--tx2);line-height:1.5">${acao}</div>
+      </div>
+    </div>`;
+    btn.disabled=false;
+    btn.textContent='↻ Repetir Speedtest';
+  }, 300);
 }
 
 /* ================================================================
