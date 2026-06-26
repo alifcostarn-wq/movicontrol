@@ -2330,11 +2330,14 @@ async function rodarSpeedtest(){
   if(!btn||!out) return;
   btn.disabled=true; btn.textContent='⏳ Testando...';
 
-  // Plano contratado (vem do IXC via _diagReg ou _aberta)
-  const velPlano = parseFloat(_aberta?._velMbps||_diagReg?.velocidade||0);
-  const velLabel = velPlano>=1000?(velPlano/1000)+'Gbps':velPlano>0?velPlano+'Mbps':'—';
+  // Velocidade do plano — usa _diagReg que já veio do IXC (mais confiável)
+  const velPlano = parseFloat(
+    _diagReg?.velocidade ||
+    _diagReg?.velocidade_mbps ||
+    _aberta?._velMbps || 0
+  );
+  const velLabel = velPlano>=1000?(velPlano/1000).toFixed(1)+'Gbps':velPlano>0?velPlano+'Mbps':'—';
 
-  // Progresso visual
   const mostrar=(html)=>{ out.innerHTML=html; };
   const progresso=(fase,pct,dl,ul)=>{
     mostrar(`
@@ -2358,58 +2361,67 @@ async function rodarSpeedtest(){
 
   let dlMbps=null, ulMbps=null;
 
-  // ── DOWNLOAD: 3 rodadas com 5MB cada, usa a média ──
-  progresso('📥 Testando download...', 15, null, null);
+  // ── DOWNLOAD: Cloudflare Speed (PoP São Paulo) — mais preciso para fibra ──
+  // Faz 3 downloads de tamanhos crescentes e usa o melhor resultado
+  progresso('📥 Testando download...', 10, null, null);
   try{
-    const BYTES = 5*1024*1024;
-    const rodadas=[];
-    for(let r=0;r<3;r++){
-      progresso(`📥 Download — rodada ${r+1}/3...`, 15+r*20, null, null);
-      const t0=performance.now();
-      const resp=await fetch(_proxyUrl,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','x-target':'speedtest-down'},
-        body:JSON.stringify({bytes:BYTES}),
-        cache:'no-store',
-        signal:AbortSignal.timeout(20000)
-      });
-      const buf=await resp.arrayBuffer();
-      const dt=(performance.now()-t0)/1000;
-      if(buf.byteLength>1000 && dt>0.1){
-        rodadas.push((buf.byteLength*8)/(dt*1_000_000));
-      }
+    const tamanhos = [
+      {bytes: 1_000_000,  label:'1MB'},
+      {bytes: 10_000_000, label:'10MB'},
+      {bytes: 25_000_000, label:'25MB'},
+    ];
+    const resultados=[];
+    for(let i=0;i<tamanhos.length;i++){
+      const {bytes, label} = tamanhos[i];
+      progresso(`📥 Download ${label} (${i+1}/${tamanhos.length})...`, 10+i*18, null, null);
+      try{
+        const t0=performance.now();
+        const resp=await fetch(`https://speed.cloudflare.com/__down?bytes=${bytes}`,{
+          cache:'no-store',
+          signal:AbortSignal.timeout(15000)
+        });
+        const buf=await resp.arrayBuffer();
+        const dt=(performance.now()-t0)/1000;
+        if(buf.byteLength>0 && dt>0.05){
+          const mbps=(buf.byteLength*8)/(dt*1_000_000);
+          resultados.push(mbps);
+          // Se já mediu acima de 80% do plano, não precisa de arquivo maior
+          if(velPlano>0 && mbps>=(velPlano*0.8)) break;
+        }
+      }catch(e){ break; }
     }
-    if(rodadas.length){
-      // Remove a mais lenta (warmup) e faz média das restantes
-      rodadas.sort((a,b)=>a-b);
-      const usadas=rodadas.slice(rodadas.length>1?1:0);
-      dlMbps=Math.round(usadas.reduce((a,b)=>a+b,0)/usadas.length*10)/10;
+    if(resultados.length){
+      // Usa o maior resultado (arquivo maior = medição mais precisa)
+      dlMbps=Math.round(Math.max(...resultados)*10)/10;
     }
   }catch(e){ console.warn('Download speedtest:',e); }
 
   progresso('📤 Testando upload...', 65, dlMbps, null);
 
-  // ── UPLOAD: envia 2MB × 2 rodadas ──
+  // ── UPLOAD: envia para Cloudflare Speed ──
   try{
-    const BYTES=2*1024*1024;
     const rodadas=[];
-    for(let r=0;r<2;r++){
-      progresso(`📤 Upload — rodada ${r+1}/2...`, 65+r*15, dlMbps, null);
-      const payload=new Uint8Array(BYTES);
-      crypto.getRandomValues(payload.slice(0,Math.min(BYTES,65536))); // aleatoriza parte
-      const t0=performance.now();
-      await fetch(_proxyUrl,{
-        method:'POST',
-        headers:{'Content-Type':'application/octet-stream','x-target':'speedtest-up'},
-        body:payload,
-        cache:'no-store',
-        signal:AbortSignal.timeout(20000)
-      });
-      const dt=(performance.now()-t0)/1000;
-      if(dt>0.1) rodadas.push((BYTES*8)/(dt*1_000_000));
+    const tamanhos=[500_000, 2_000_000]; // 500KB e 2MB
+    for(let i=0;i<tamanhos.length;i++){
+      const BYTES=tamanhos[i];
+      progresso(`📤 Upload ${(BYTES/1_000_000).toFixed(1)}MB (${i+1}/${tamanhos.length})...`, 68+i*12, dlMbps, null);
+      try{
+        const payload=new Uint8Array(BYTES);
+        // Aleatoriza para evitar compressão
+        for(let j=0;j<Math.min(BYTES,65536);j++) payload[j]=Math.random()*256|0;
+        const t0=performance.now();
+        await fetch('https://speed.cloudflare.com/__up',{
+          method:'POST',
+          body:payload,
+          cache:'no-store',
+          signal:AbortSignal.timeout(15000)
+        });
+        const dt=(performance.now()-t0)/1000;
+        if(dt>0.05) rodadas.push((BYTES*8)/(dt*1_000_000));
+      }catch(e){ break; }
     }
     if(rodadas.length){
-      ulMbps=Math.round(rodadas.reduce((a,b)=>a+b,0)/rodadas.length*10)/10;
+      ulMbps=Math.round(Math.max(...rodadas)*10)/10;
     }
   }catch(e){ console.warn('Upload speedtest:',e); }
 
@@ -2417,29 +2429,31 @@ async function rodarSpeedtest(){
 
   // ── VEREDICTO ──
   const dlPct = velPlano>0&&dlMbps!=null ? Math.round((dlMbps/velPlano)*100) : null;
-  const nivel = dlPct==null?'neu':dlPct>=80?'ok':dlPct>=50?'warn':'err';
+  const nivel  = dlPct==null?'neu':dlPct>=80?'ok':dlPct>=50?'warn':'err';
   const corNivel = nivel==='ok'?'var(--ac)':nivel==='warn'?'var(--amb)':'var(--red)';
   const emojiNivel = nivel==='ok'?'✅':nivel==='warn'?'⚠️':nivel==='err'?'🔴':'📊';
 
   let veredicto='', acao='';
-  if(dlPct==null){
-    veredicto='Plano contratado não identificado no IXC.';
-    acao='Verifique o login do cliente no IXC para ver a velocidade contratada.';
+  if(dlMbps===null){
+    veredicto='Não foi possível medir a velocidade.';
+    acao='Verifique se o celular está conectado na rede do cliente e tente novamente.';
+  } else if(dlPct==null){
+    veredicto=`Download: ${dlMbps} Mbps · Upload: ${ulMbps??'—'} Mbps`;
+    acao='Plano contratado não identificado. Verifique o cadastro do cliente no IXC.';
   } else if(dlPct>=80){
     veredicto=`Entregando ${dlPct}% do plano de ${velLabel}. Velocidade dentro do esperado.`;
-    acao='Conexão saudável. Se o cliente reclama de lentidão, verificar dispositivos na rede interna ou posicionamento do roteador.';
+    acao='Conexão saudável. Se o cliente reclama de lentidão, verifique dispositivos internos ou Wi-Fi.';
   } else if(dlPct>=50){
-    veredicto=`Entregando apenas ${dlPct}% do plano de ${velLabel}.`;
-    acao='Verificar interferência Wi-Fi (use a análise abaixo), substituir cabo entre ONU e roteador, ou reiniciar ONU.';
+    veredicto=`Entregando ${dlPct}% do plano de ${velLabel}.`;
+    acao='Abaixo do esperado. Verifique interferência Wi-Fi (use a análise abaixo), troque o cabo entre ONU e roteador ou reinicie a ONU.';
   } else {
-    veredicto=`Entregando somente ${dlPct}% do plano de ${velLabel}. Muito abaixo do esperado.`;
-    acao='Checar sinal óptico no IXC, substituir ONU, verificar limitação de perfil no IXC (velocidade errada no plano).';
+    veredicto=`Entregando apenas ${dlPct}% do plano de ${velLabel}.`;
+    acao='Muito abaixo. Verifique sinal óptico no IXC, substitua a ONU ou verifique o perfil de velocidade no plano.';
   }
 
   setTimeout(()=>{
     out.innerHTML=`
     <div style="background:var(--sf);border:1px solid var(--bd);border-radius:12px;overflow:hidden">
-      <!-- Resultado principal -->
       <div style="padding:16px;display:flex;gap:16px">
         <div style="flex:1;text-align:center">
           <div style="font-size:30px;font-weight:800;color:var(--ac)">${dlMbps??'—'}<span style="font-size:13px;font-weight:500"> Mbps</span></div>
@@ -2453,7 +2467,6 @@ async function rodarSpeedtest(){
           <div style="font-size:11px;color:var(--tx3);margin-top:3px">Plano: ${velLabel}</div>
         </div>
       </div>
-      <!-- Barra de % do plano -->
       ${dlPct!=null?`<div style="padding:0 16px 10px">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);margin-bottom:4px">
           <span>Velocidade entregue vs contratada</span><span>${dlPct}%</span>
@@ -2462,7 +2475,6 @@ async function rodarSpeedtest(){
           <div style="height:100%;width:${Math.min(100,dlPct)}%;background:${corNivel};border-radius:4px;transition:width 1s"></div>
         </div>
       </div>`:''}
-      <!-- Veredicto -->
       <div style="background:var(--sf2);border-top:1px solid var(--bd);padding:12px 16px">
         <div style="font-size:13px;font-weight:700;color:${corNivel};margin-bottom:4px">${emojiNivel} ${veredicto}</div>
         <div style="font-size:12px;color:var(--tx2);line-height:1.5">${acao}</div>
@@ -2472,6 +2484,30 @@ async function rodarSpeedtest(){
     btn.textContent='↻ Repetir Speedtest';
   }, 300);
 }
+
+  // Progresso visual
+  const mostrar=(html)=>{ out.innerHTML=html; };
+  const progresso=(fase,pct,dl,ul)=>{
+    mostrar(`
+    <div style="background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:14px 16px">
+      <div style="font-size:12px;color:var(--tx3);margin-bottom:8px">${fase}</div>
+      <div style="height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-bottom:12px">
+        <div style="height:100%;width:${pct}%;background:var(--ac);border-radius:3px;transition:width .3s"></div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <div style="flex:1;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:var(--ac)">${dl!=null?dl+'<span style="font-size:12px"> Mbps</span>':'—'}</div>
+          <div style="font-size:11px;color:var(--tx3)">Download</div>
+        </div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:var(--blu)">${ul!=null?ul+'<span style="font-size:12px"> Mbps</span>':'—'}</div>
+          <div style="font-size:11px;color:var(--tx3)">Upload</div>
+        </div>
+      </div>
+    </div>`);
+  };
+
+
 
 /* ================================================================
    ANÁLISE DE INTERFERÊNCIA WI-FI
