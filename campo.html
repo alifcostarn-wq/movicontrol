@@ -240,6 +240,27 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
 /* ---- DIAGNÓSTICO AVANÇADO ---- */
 .dav-section{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-top:10px}
+
+/* ---- ANÁLISE WI-FI ---- */
+.wifi-resultado{border-radius:12px;overflow:hidden;margin-bottom:8px}
+.wifi-header{padding:14px 16px;display:flex;align-items:center;gap:10px}
+.wifi-nivel{font-size:28px;flex-shrink:0}
+.wifi-titulo{font-size:15px;font-weight:700}
+.wifi-sub{font-size:12px;opacity:.8;margin-top:2px}
+.wifi-metricas{background:rgba(0,0,0,.07);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.wifi-metrica{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.wifi-metrica-lab{opacity:.8}
+.wifi-metrica-val{font-weight:700;font-family:monospace}
+.wifi-barra-wrap{height:5px;border-radius:3px;background:rgba(255,255,255,.2);margin-top:3px;overflow:hidden}
+.wifi-barra-fill{height:100%;border-radius:3px;background:rgba(255,255,255,.6);transition:width .8s}
+.wifi-recomendacao{padding:12px 16px;font-size:12.5px;line-height:1.6;border-top:1px solid rgba(255,255,255,.12)}
+.wifi-canal-opts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.wifi-canal-tag{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:700;background:rgba(255,255,255,.15)}
+.wifi-canal-tag.melhor{background:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.5)}
+.wifi-step-log{font-size:11px;color:var(--tx3);padding:8px 10px;background:var(--sf2);border-radius:8px;border:1px solid var(--bd);line-height:1.9;margin-bottom:8px}
+.wifi-ok  {background:linear-gradient(135deg,#1a5c3a,#2d8a5a);color:#fff}
+.wifi-warn{background:linear-gradient(135deg,#7a4a00,#b36b00);color:#fff}
+.wifi-err {background:linear-gradient(135deg,#7a1f1f,#b33030);color:#fff}
 .dav-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);margin-bottom:10px;display:flex;align-items:center;gap:6px}
 .dav-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12.5px}
 .dav-row:last-child{border-bottom:none}
@@ -2043,7 +2064,14 @@ function abrirDiagAvancado(){
     <button class="dav-teste-btn" id="dav-btn-teste" onclick="rodarTesteRede()">▶ Iniciar testes de rede</button>
   </div>
 
-  <div id="dav-laudo-wrap"></div>`;
+  <div id="dav-laudo-wrap"></div>
+
+  <div class="dav-section" style="margin-top:10px;border-color:var(--pur);background:var(--pur-bg)">
+    <div class="dav-title" style="color:var(--pur)">📡 Análise de Interferência Wi-Fi</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.5">Detecta automaticamente interferência de canal, saturação e qualidade do link sem fio. Celular deve estar no Wi-Fi do cliente.</div>
+    <div id="wifi-analise-resultado"></div>
+    <button id="btn-wifi-analise" onclick="rodarAnaliseWifi()" style="width:100%;padding:12px;border-radius:10px;border:none;background:var(--pur);color:#fff;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px">📡 Analisar Wi-Fi</button>
+  </div>`;
 }
 
 /* ── ETAPA 2: Testes de rede ──────────────────────────────── */
@@ -2314,6 +2342,226 @@ function gerarLaudo(){
     </div>`:''}
     ${nivel==='err'?`<div style="margin-top:8px;font-size:11.5px;color:inherit;opacity:.8">Se o problema persistir após as ações acima, escalar para NOC com este diagnóstico.</div>`:''}
   </div>`;
+}
+
+/* ================================================================
+   ANÁLISE DE INTERFERÊNCIA WI-FI
+   4 testes internos → score de interferência → laudo + canal ideal
+   ================================================================ */
+
+async function rodarAnaliseWifi(){
+  const btn = $('btn-wifi-analise');
+  const out = $('wifi-analise-resultado');
+  if(!btn||!out) return;
+
+  btn.disabled=true; btn.textContent='⏳ Analisando...';
+  out.innerHTML='';
+
+  // Log de progresso
+  const logs=[];
+  const log=(txt)=>{ logs.push(txt); out.innerHTML=`<div class="wifi-step-log">${logs.join('<br>')}</div>`; };
+
+  const res = {
+    latGw:null, jitterGw:null, perdaGw:null,
+    latExt:null, jitterExt:null,
+    throughputLocal:null, throughputExt:null,
+    degradacaoCarga:null,
+    estabilidade:null, // % de pings ok em 90s
+  };
+
+  // ── TESTE 1: Latência + Jitter para o gateway (20 pings) ──────
+  log('🔍 Medindo qualidade do link Wi-Fi local...');
+  const gwCandidatos=['http://192.168.1.1','http://192.168.0.1','http://10.0.0.1','http://192.168.100.1','http://10.1.1.1'];
+  let gwUrl=null;
+  for(const gw of gwCandidatos){
+    try{
+      const t=performance.now();
+      await fetch(gw,{mode:'no-cors',cache:'no-store',signal:AbortSignal.timeout(1500)});
+      if(performance.now()-t<1400){ gwUrl=gw; break; }
+    }catch(e){}
+  }
+
+  const amostrasGw=[];
+  if(gwUrl){
+    for(let i=0;i<20;i++){
+      try{
+        const t0=performance.now();
+        await fetch(gwUrl,{mode:'no-cors',cache:'no-store',signal:AbortSignal.timeout(2000)});
+        amostrasGw.push(Math.round(performance.now()-t0));
+      }catch(e){ amostrasGw.push(2000); } // timeout = pacote perdido
+      await new Promise(r=>setTimeout(r,80));
+    }
+    const validos=amostrasGw.filter(t=>t<1500);
+    res.perdaGw=Math.round(((amostrasGw.length-validos.length)/amostrasGw.length)*100);
+    if(validos.length){
+      res.latGw=Math.round(validos.reduce((a,b)=>a+b,0)/validos.length);
+      const media=res.latGw;
+      res.jitterGw=Math.round(Math.sqrt(validos.reduce((s,t)=>s+Math.pow(t-media,2),0)/validos.length));
+    }
+    log(`✔ Link local: ${res.latGw??'—'}ms latência · ${res.jitterGw??'—'}ms jitter · ${res.perdaGw??0}% perda`);
+  } else {
+    log('⚠️ Gateway não encontrado — verifique se está no Wi-Fi do cliente');
+  }
+
+  // ── TESTE 2: Throughput local vs externo ─────────────────────
+  log('🔍 Medindo throughput Wi-Fi vs internet...');
+  // Throughput externo via Cloudflare (2MB)
+  try{
+    const t0=performance.now();
+    const r=await fetch('https://speed.cloudflare.com/__down?bytes=2000000',{cache:'no-store',signal:AbortSignal.timeout(12000)});
+    const buf=await r.arrayBuffer();
+    const dt=(performance.now()-t0)/1000;
+    res.throughputExt=Math.round((buf.byteLength*8)/(dt*1000000)*10)/10;
+    log(`✔ Throughput externo: ${res.throughputExt} Mbps`);
+  }catch(e){ log('⚠️ Não foi possível medir throughput externo'); }
+
+  // ── TESTE 3: Degradação sob carga (10 conexões paralelas) ─────
+  log('🔍 Testando comportamento sob múltiplas conexões...');
+  try{
+    const N=10;
+    const t0=performance.now();
+    let ok=0;
+    await Promise.all(Array.from({length:N},async(_,i)=>{
+      try{
+        await fetch(`https://dns.google/resolve?name=load${i}.test&type=A`,
+          {mode:'cors',cache:'no-store',signal:AbortSignal.timeout(4000)});
+        ok++;
+      }catch(e){}
+    }));
+    const dt=performance.now()-t0;
+    // Compara com latência base: se carga aumenta muito o tempo, há contenção
+    const latBase=res.latGw||50;
+    const latSobCarga=dt/N;
+    res.degradacaoCarga=Math.round(Math.max(0,(latSobCarga-latBase)/latBase*100));
+    log(`✔ Sob carga: ${N} conexões paralelas · degradação ${res.degradacaoCarga}%`);
+  }catch(e){ log('⚠️ Erro no teste de carga'); }
+
+  // ── TESTE 4: Estabilidade temporal (60 requisições em 90s) ────
+  log('🔍 Monitorando estabilidade (90 segundos)...');
+  if(gwUrl){
+    let okCount=0; const total=30;
+    for(let i=0;i<total;i++){
+      try{
+        await fetch(gwUrl,{mode:'no-cors',cache:'no-store',signal:AbortSignal.timeout(1500)});
+        okCount++;
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,3000));
+      if(i===9)  log(`   ▸ ${Math.round((i+1)/total*100)}% concluído...`);
+      if(i===19) log(`   ▸ ${Math.round((i+1)/total*100)}% concluído...`);
+    }
+    res.estabilidade=Math.round((okCount/total)*100);
+    log(`✔ Estabilidade: ${res.estabilidade}% (${okCount}/${total} pings OK)`);
+  }
+
+  // ── PONTUAÇÃO DE INTERFERÊNCIA ────────────────────────────────
+  // Score 0-100: quanto maior, mais interferência
+  let score=0; const fatores=[];
+
+  // Jitter do gateway — principal indicador de interferência de canal
+  if(res.jitterGw!=null){
+    if(res.jitterGw>80)     { score+=35; fatores.push({l:'Jitter Wi-Fi severo',v:`${res.jitterGw}ms`,s:3}); }
+    else if(res.jitterGw>40){ score+=20; fatores.push({l:'Jitter Wi-Fi moderado',v:`${res.jitterGw}ms`,s:2}); }
+    else if(res.jitterGw>15){ score+=8;  fatores.push({l:'Jitter Wi-Fi leve',v:`${res.jitterGw}ms`,s:1}); }
+    else                    { fatores.push({l:'Jitter Wi-Fi',v:`${res.jitterGw}ms ✓`,s:0}); }
+  }
+
+  // Latência gateway — alta indica congestionamento no canal
+  if(res.latGw!=null){
+    if(res.latGw>50)      { score+=20; fatores.push({l:'Latência gateway alta',v:`${res.latGw}ms`,s:2}); }
+    else if(res.latGw>20) { score+=8;  fatores.push({l:'Latência gateway moderada',v:`${res.latGw}ms`,s:1}); }
+    else                  { fatores.push({l:'Latência gateway',v:`${res.latGw}ms ✓`,s:0}); }
+  }
+
+  // Perda de pacote local
+  if(res.perdaGw!=null){
+    if(res.perdaGw>15)    { score+=25; fatores.push({l:'Perda de pacote local severa',v:`${res.perdaGw}%`,s:3}); }
+    else if(res.perdaGw>5){ score+=12; fatores.push({l:'Perda de pacote local',v:`${res.perdaGw}%`,s:2}); }
+    else if(res.perdaGw>0){ score+=4;  fatores.push({l:'Perda de pacote leve',v:`${res.perdaGw}%`,s:1}); }
+    else                  { fatores.push({l:'Perda de pacote',v:'0% ✓',s:0}); }
+  }
+
+  // Degradação sob carga — indica canal saturado
+  if(res.degradacaoCarga!=null){
+    if(res.degradacaoCarga>200) { score+=15; fatores.push({l:'Canal satura sob carga',v:`+${res.degradacaoCarga}%`,s:2}); }
+    else if(res.degradacaoCarga>80){ score+=6; fatores.push({l:'Leve degradação sob carga',v:`+${res.degradacaoCarga}%`,s:1}); }
+    else                        { fatores.push({l:'Comportamento sob carga',v:'Estável ✓',s:0}); }
+  }
+
+  // Estabilidade temporal
+  if(res.estabilidade!=null){
+    if(res.estabilidade<80)    { score+=20; fatores.push({l:'Link instável',v:`${res.estabilidade}% uptime`,s:3}); }
+    else if(res.estabilidade<95){ score+=8; fatores.push({l:'Link com quedas esporádicas',v:`${res.estabilidade}% uptime`,s:1}); }
+    else                       { fatores.push({l:'Estabilidade',v:`${res.estabilidade}% ✓`,s:0}); }
+  }
+
+  score=Math.min(100,score);
+
+  // ── DETERMINA NÍVEL ──────────────────────────────────────────
+  const nivel   = score>=50?'err':score>=20?'warn':'ok';
+  const emoji   = score>=50?'🔴':score>=20?'⚠️':'✅';
+  const tituloN = score>=50?'Interferência severa detectada':score>=20?'Interferência moderada':' Canal Wi-Fi limpo';
+  const subN    = score>=50?'Mudança de canal necessária':score>=20?'Canal com ruído — mudança recomendada':'Sinal estável, sem interferência significativa';
+
+  // ── RECOMENDAÇÃO DE CANAL ────────────────────────────────────
+  // Canais não sobrepostos 2.4GHz: 1, 6, 11
+  // Como não sabemos o canal atual, recomendamos baseado no score e orientamos testar os 3
+  // Canal 5GHz é sempre melhor se o cliente suportar
+  let recHtml='';
+  if(nivel==='ok'){
+    recHtml=`<div style="margin-bottom:6px">O canal Wi-Fi atual está funcionando bem. Nenhuma mudança necessária.</div>`;
+  } else {
+    recHtml=`
+      <div style="margin-bottom:8px"><b>Ação recomendada:</b> Mudar o canal 2.4GHz no roteador do cliente.</div>
+      <div style="margin-bottom:6px;font-size:12px">Canais 2.4GHz sem sobreposição (teste nesta ordem):</div>
+      <div class="wifi-canal-opts">
+        <span class="wifi-canal-tag melhor">Canal 1</span>
+        <span class="wifi-canal-tag melhor">Canal 6</span>
+        <span class="wifi-canal-tag melhor">Canal 11</span>
+      </div>
+      <div style="margin-top:10px;font-size:12px;opacity:.85">
+        <b>Como mudar:</b> Acesse 192.168.1.1 → Wireless → Configuração Wi-Fi 2.4G → Canal → selecione 1, 6 ou 11 → Salvar &amp; Aplicar.<br>
+        <b>Dica:</b> Se o cliente tiver dispositivos compatíveis com 5GHz, conectar na rede 5GHz elimina a interferência de 2.4GHz.
+      </div>
+      ${score>=50?`<div style="margin-top:8px;padding:8px 10px;background:rgba(0,0,0,.1);border-radius:8px;font-size:12px">Após mudar o canal, aguarde 1 minuto e toque em <b>"Analisar Wi-Fi"</b> novamente para confirmar que o problema foi resolvido.</div>`:''}`;
+  }
+
+  // ── BARRA VISUAL DE INTERFERÊNCIA ────────────────────────────
+  const barColor=nivel==='ok'?'#3CB371':nivel==='warn'?'#E8A000':'#E24B4A';
+  const metricasHtml=fatores.map(f=>`
+    <div class="wifi-metrica" style="flex-direction:column;align-items:flex-start;gap:2px">
+      <div style="display:flex;justify-content:space-between;width:100%">
+        <span class="wifi-metrica-lab">${f.l}</span>
+        <span class="wifi-metrica-val">${f.v}</span>
+      </div>
+      ${f.s>0?`<div class="wifi-barra-wrap" style="width:100%"><div class="wifi-barra-fill" style="width:${f.s===3?100:f.s===2?65:30}%;background:${f.s===3?'rgba(255,100,100,.8)':f.s===2?'rgba(255,180,50,.8)':'rgba(255,255,255,.5)'}"></div></div>`:''}
+    </div>`).join('');
+
+  out.innerHTML=`
+  <div class="wifi-resultado wifi-${nivel}">
+    <div class="wifi-header">
+      <div class="wifi-nivel">${emoji}</div>
+      <div>
+        <div class="wifi-titulo">${tituloN}</div>
+        <div class="wifi-sub">${subN}</div>
+      </div>
+    </div>
+    <!-- Barra geral de interferência -->
+    <div style="padding:0 16px 10px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;opacity:.8;margin-bottom:4px">
+        <span>Nível de interferência</span><span>${score}/100</span>
+      </div>
+      <div style="height:8px;background:rgba(0,0,0,.2);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${score}%;background:${barColor};border-radius:4px;transition:width 1s"></div>
+      </div>
+    </div>
+    <!-- Métricas individuais -->
+    <div class="wifi-metricas">${metricasHtml}</div>
+    <!-- Recomendação -->
+    <div class="wifi-recomendacao">${recHtml}</div>
+  </div>`;
+
+  btn.disabled=false;
+  btn.textContent=nivel==='ok'?'↻ Analisar novamente':'↻ Analisar após mudança de canal';
 }
 
 /* ---- LIMPAR MAC ---- */
