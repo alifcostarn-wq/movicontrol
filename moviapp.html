@@ -119,8 +119,8 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 .qa-lbl{font-size:10.5px;font-weight:700;color:var(--text2);text-align:center;line-height:1.3}
 
 /* ── Fatura ── */
-.fat-hero{background:linear-gradient(135deg,var(--blue-dark),var(--blue));border-radius:14px;padding:22px;margin-bottom:14px;position:relative;overflow:hidden}
-.fat-val{font-family:'DM Mono',monospace;font-size:34px;font-weight:500;color:#fff;line-height:1}
+.fat-hero{background:linear-gradient(135deg,var(--blue-dark),var(--blue));border-radius:14px;padding:22px;margin-bottom:14px;position:relative;overflow:visible;min-height:130px}
+.fat-val{font-family:'DM Mono',monospace;font-size:34px;font-weight:600;color:#fff;line-height:1.1;display:block;margin:8px 0}
 .fat-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;margin-top:10px}
 .fat-badge.aberta{background:rgba(255,214,0,.2);border:1px solid rgba(255,214,0,.35);color:var(--yellow)}
 .fat-badge.paga{background:rgba(34,196,122,.2);border:1px solid rgba(34,196,122,.3);color:#22C47A}
@@ -382,9 +382,12 @@ function renderHome(){
 
 // ── Fatura screen ─────────────────────────────
 function renderFaturaScreen(){
-  const fat   = faturas[0];
+  // Priorizar a fatura em aberto no card hero; se não houver, mostrar a mais recente
+  const emAberto = faturas.find(f => f.status === 'aberto');
+  const fat   = emAberto || faturas[0];
   const pago  = fat?.status === 'pago';
-  const hist  = faturas.slice(1,6);
+  // Histórico = todas menos a que está no card hero
+  const hist  = faturas.filter(f => f.id !== fat?.id).slice(0,6);
   render(`
   <div class="header">
     <div class="header-inner"><div class="page-title">Faturas</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
@@ -395,7 +398,7 @@ function renderFaturaScreen(){
         <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6)">${pago ? 'Última fatura' : 'Fatura em aberto'}</div>
         <div class="fat-badge ${pago?'paga':'aberta'}" style="margin-top:0">${pago?'✓ Paga':'🕐 Em aberto'}</div>
       </div>
-      <div class="fat-val">${fmtReal(fat.valor)}</div>
+      <div class="fat-val" style="color:#fff">${fmtReal(fat.valor)}</div>
       <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:10px;display:flex;align-items:center;gap:6px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
         Vencimento em ${fmtData(fat.data_vencimento)}
