@@ -231,31 +231,40 @@ export default async function handler(req, res) {
       if (IXC_USER) authCandidates.push(`Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`);
       authCandidates.push(`Basic ${Buffer.from(`${IXC_TOKEN}:`).toString('base64')}`);
 
-      const apiBody = JSON.stringify({
-        qtype:     `${ixcEndpoint}.id_cliente`,
-        query:     String(ixcId),
-        oper:      '=',
-        page:      '1',
-        rp:        '12',
-        sortname:  'data_vencimento',
-        sortorder: 'desc',
-      });
+      // Tentar variações de qtype para achar o filtro correto
+      const qtypeVariants = [
+        `${ixcEndpoint}.id_cliente`,
+        `financeiro_conta_receber.id_cliente`,
+        `id_cliente`,
+        `${ixcEndpoint}.id_contrato`,
+        `financeiro_conta_receber.id_contrato`,
+      ];
 
-      const attempts = [];
+      const debug = [];
       for (const url of urlCandidates) {
         for (const auth of authCandidates) {
-          try {
-            const r = await fetch(url, {
-              method: 'POST',
-              headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' },
-              body: apiBody,
+          for (const qtype of qtypeVariants) {
+            const apiBody = JSON.stringify({
+              qtype, query: String(ixcId), oper: '=',
+              page: '1', rp: '12',
+              sortname: 'data_vencimento', sortorder: 'desc',
             });
-            const txt = await r.text();
-            const isHtml = txt.trim().startsWith('<');
-            attempts.push({ url, status: r.status, isHtml, preview: txt.slice(0, 100) });
-            if (!isHtml && r.status >= 200 && r.status < 400) {
-              try {
-                const d = JSON.parse(txt);
+            try {
+              const r = await fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' },
+                body: apiBody,
+              });
+              const txt = await r.text();
+              if (txt.trim().startsWith('<')) {
+                debug.push({ url, qtype, status: r.status, html: true });
+                continue;
+              }
+              let d;
+              try { d = JSON.parse(txt); } catch(e) { debug.push({ url, qtype, status: r.status, parseError: true }); continue; }
+              const total = parseInt(d.total || '0');
+              debug.push({ url, qtype, status: r.status, total });
+              if (r.status >= 200 && r.status < 400 && total > 0) {
                 const registros = (d.registros || []).map(f => ({
                   id:              f.id,
                   valor:           f.valor,
@@ -266,13 +275,14 @@ export default async function handler(req, res) {
                   nosso_numero:    f.nosso_numero,
                   referencia:      f.referencia,
                 }));
-                return res.status(200).json({ ok: true, total: d.total || registros.length, registros });
-              } catch(e) {}
-            }
-          } catch(e) { attempts.push({ url, error: e.message }); }
+                return res.status(200).json({ ok: true, total, registros, _debug_qtype: qtype });
+              }
+            } catch(e) { debug.push({ url, qtype, error: e.message }); }
+          }
         }
       }
-      return res.status(502).json({ error: 'IXC nao retornou faturas', ixcId, attempts });
+      // Nenhum filtro retornou dados — retorna debug para diagnóstico
+      return res.status(200).json({ ok: true, total: 0, registros: [], _debug: debug });
     }
 
     // ── get_status ──────────────────────────────────────────────
