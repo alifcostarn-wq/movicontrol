@@ -261,12 +261,60 @@ export default async function handler(req, res) {
           gateway_link:    f.gateway_link,
           pix_qrcode:      f.pix_qrcode,
         }));
-        // Debug temporário: incluir todos os campos da primeira fatura
-        const _campos_disponiveis = d.registros?.[0] ? Object.keys(d.registros[0]) : [];
-        return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros, _campos_disponiveis });
+        return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros });
       } catch (e) {
         return res.status(502).json({ error: 'Erro ao conectar IXC', message: e.message });
       }
+    }
+
+    // ── get_pix ─────────────────────────────────────────────────
+    // Gera o código PIX (copia-e-cola) de um boleto específico via IXC
+    // Payload: { action:'get_pix', id_areceber: '12345' }
+    // O IXC gera o PIX sob demanda pelo endpoint get_pix
+    if (action === 'get_pix') {
+      const idAreceber = b.id_areceber || b.id;
+      if (!idAreceber) return res.status(400).json({ error: 'Informe id_areceber.' });
+
+      const ixcBase = IXC_URL.replace(/\/$/, '').replace(/\/adm\.php$/, '');
+      const auth = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
+
+      // O IXC tem o endpoint get_pix que recebe o id do boleto (fn_areceber)
+      const urlCandidates = [
+        `${ixcBase}/webservice/v1/get_pix`,
+        `${ixcBase}/adm.php/webservice/v1/get_pix`,
+      ];
+
+      const apiBody = JSON.stringify({ id_areceber: String(idAreceber) });
+
+      const debug = [];
+      for (const url of urlCandidates) {
+        try {
+          const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
+            body: apiBody,
+          });
+          const txt = await r.text();
+          if (txt.trim().startsWith('<')) { debug.push({ url, status: r.status, html: true }); continue; }
+          let d;
+          try { d = JSON.parse(txt); } catch(e) { debug.push({ url, status: r.status, raw: txt.slice(0,200) }); continue; }
+
+          // O IXC retorna o PIX em campos variados conforme versão
+          const pixCode = d.pix || d.qrCode || d.qrcode || d.emv || d.pix_copia_cola ||
+                          d.payload || d.codigo_pix || d.tipo_transacao_pix?.pix || null;
+
+          if (pixCode) {
+            return res.status(200).json({
+              ok: true,
+              pix_copia_cola: pixCode,
+              imagem_base64: d.imagem_base64 || d.qrcode_base64 || d.image || null,
+              validade: d.validade || d.expiracao || null,
+            });
+          }
+          debug.push({ url, status: r.status, resposta: d });
+        } catch(e) { debug.push({ url, error: e.message }); }
+      }
+      return res.status(502).json({ error: 'Nao foi possivel gerar o PIX', id_areceber: idAreceber, _debug: debug });
     }
 
     // ── debug_ixc ─────────────────────────────────────────────
