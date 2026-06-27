@@ -214,30 +214,61 @@ export default async function handler(req, res) {
           let d;
           try { d = JSON.parse(txt); } catch(e) { debug.push({ url, raw: txt.slice(0,200) }); continue; }
 
-          // O IXC (Sulcredi/outros) retorna o PIX aninhado em estruturas variadas.
-          // Vasculhar todos os caminhos possíveis:
-          const pixCode =
-            // caminho direto
-            (typeof d.pix === 'string' ? d.pix : null) ||
-            d.pix_copia_cola || d.pixCopiaECola || d.codigo_pix || d.emv || d.payload ||
-            // aninhado em pix_copia_cola (objeto)
-            d.pix_copia_cola?.dadosPix?.pixCopiaECola ||
-            d.pix_copia_cola?.qrCode?.qrcode ||
-            d.pix_copia_cola?.pixCopiaECola ||
-            // aninhado em qrCode
-            d.qrCode?.qrcode ||
-            (typeof d.qrCode === 'string' ? d.qrCode : null) ||
-            d.qrcode?.qrcode ||
-            (typeof d.qrcode === 'string' ? d.qrcode : null) ||
-            // dadosPix direto
-            d.dadosPix?.pixCopiaECola ||
-            null;
+          // Função recursiva: encontra a string do código PIX (BR Code/EMV)
+          // em qualquer nível do JSON. O PIX começa com "000201" (padrão BR Code).
+          function acharPix(obj, depth) {
+            if (depth > 6 || obj == null) return null;
+            if (typeof obj === 'string') {
+              const s = obj.trim();
+              // Código PIX copia-e-cola sempre começa com 000201 e tem +50 chars
+              if (/^000201/.test(s) && s.length > 50) return s;
+              return null;
+            }
+            if (typeof obj === 'object') {
+              // Priorizar chaves conhecidas
+              const prefer = ['pixCopiaECola','pix_copia_cola','qrcode','qrCode','emv','copiaECola','codigo_pix','payload'];
+              for (const k of prefer) {
+                if (obj[k] != null) {
+                  const found = acharPix(obj[k], depth + 1);
+                  if (found) return found;
+                }
+              }
+              // Varrer todas as chaves restantes
+              for (const k of Object.keys(obj)) {
+                const found = acharPix(obj[k], depth + 1);
+                if (found) return found;
+              }
+            }
+            return null;
+          }
 
-          // Imagem base64 do QR (se o IXC já fornecer)
-          const imagemBase64 =
-            d.qrCode?.imagemQrcode ||
-            d.pix_copia_cola?.qrCode?.imagemQrcode ||
-            d.imagem_base64 || d.qrcode_base64 || null;
+          // Função recursiva: encontra imagem base64 do QR
+          function acharImagem(obj, depth) {
+            if (depth > 6 || obj == null) return null;
+            if (typeof obj === 'string') {
+              const s = obj.trim();
+              // base64 de PNG começa com iVBOR
+              if (/^(data:image|iVBOR)/.test(s) && s.length > 100) return s;
+              return null;
+            }
+            if (typeof obj === 'object') {
+              const prefer = ['imagemQrcode','imagem_base64','qrcode_base64','imagem','image','imagemSrc'];
+              for (const k of prefer) {
+                if (obj[k] != null) {
+                  const found = acharImagem(obj[k], depth + 1);
+                  if (found) return found;
+                }
+              }
+              for (const k of Object.keys(obj)) {
+                const found = acharImagem(obj[k], depth + 1);
+                if (found) return found;
+              }
+            }
+            return null;
+          }
+
+          const pixCode = acharPix(d, 0);
+          const imagemBase64 = acharImagem(d, 0);
 
           if (pixCode) {
             return res.status(200).json({ ok: true, pix_copia_cola: pixCode, imagem_base64: imagemBase64, validade: d.validade || null });
