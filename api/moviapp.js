@@ -279,6 +279,86 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'Nao foi possivel gerar PIX', id_areceber: idAreceber, _debug: debug });
     }
 
+    // ── get_chamados ─────────────────────────────────────────────
+    // Busca os chamados do cliente no Supabase (campo_chamados)
+    if (action === 'get_chamados') {
+      try {
+        const r = await fetch(
+          `${SUPA_URL}/rest/v1/campo_chamados?cliente_id=eq.${encodeURIComponent(ixcId)}&order=created_at.desc&limit=20&select=id,descricao,status,data,created_at,tecnico_nome,solucao_tecnica,concluido_em`,
+          { headers: srvH }
+        );
+        const data = await r.json();
+        if (!r.ok) return res.status(r.status).json({ error: 'Erro ao buscar chamados', detail: data });
+        return res.status(200).json({ ok: true, chamados: data || [] });
+      } catch(e) { return res.status(502).json({ error: 'Erro ao buscar chamados', message: e.message }); }
+    }
+
+    // ── abrir_chamado ─────────────────────────────────────────────
+    // Abre um novo chamado para o cliente.
+    // Impede duplicata: máximo 1 chamado com status 'pendente' por cliente.
+    // Payload: { action:'abrir_chamado', descricao:'texto do problema' }
+    if (action === 'abrir_chamado') {
+      const descricao = (b.descricao || '').trim();
+      if (!descricao || descricao.length < 5)
+        return res.status(400).json({ error: 'Descreva o problema com pelo menos 5 caracteres.' });
+      if (descricao.length > 500)
+        return res.status(400).json({ error: 'Descrição muito longa (máximo 500 caracteres).' });
+
+      // Buscar dados completos do cliente para preencher o chamado
+      let clienteInfo = null;
+      try {
+        const rc = await fetch(
+          `${SUPA_URL}/rest/v1/clientes?id=eq.${clienteIdLocal}&select=nome,tel1,whatsapp,endereco,bairro,cidade`,
+          { headers: srvH }
+        );
+        const dc = await rc.json();
+        clienteInfo = dc?.[0] || null;
+      } catch(e) {}
+
+      // Verificar se já existe chamado pendente deste cliente
+      try {
+        const rv = await fetch(
+          `${SUPA_URL}/rest/v1/campo_chamados?cliente_id=eq.${encodeURIComponent(ixcId)}&status=eq.pendente&select=id,descricao,created_at&limit=1`,
+          { headers: srvH }
+        );
+        const dv = await rv.json();
+        if (Array.isArray(dv) && dv.length > 0) {
+          return res.status(409).json({
+            error: 'Você já tem um chamado em aberto. Aguarde o atendimento antes de abrir um novo.',
+            chamado_existente: { id: dv[0].id, descricao: dv[0].descricao }
+          });
+        }
+      } catch(e) {}
+
+      // Inserir novo chamado
+      const novoChamado = {
+        cliente:     clienteInfo?.nome || 'Cliente',
+        telefone:    clienteInfo?.whatsapp || clienteInfo?.tel1 || '',
+        endereco:    [clienteInfo?.endereco, clienteInfo?.bairro, clienteInfo?.cidade].filter(Boolean).join(', '),
+        descricao,
+        status:      'pendente',
+        prioridade:  'normal',
+        cliente_id:  String(ixcId),
+        data:        new Date().toISOString().slice(0, 10),
+      };
+
+      try {
+        const ri = await fetch(`${SUPA_URL}/rest/v1/campo_chamados`, {
+          method: 'POST',
+          headers: { ...srvH, 'Prefer': 'return=representation' },
+          body: JSON.stringify(novoChamado)
+        });
+        const di = await ri.json();
+        if (!ri.ok) return res.status(ri.status).json({ error: 'Erro ao abrir chamado', detail: di });
+        const chamado = Array.isArray(di) ? di[0] : di;
+        return res.status(200).json({
+          ok: true,
+          chamado_id: chamado.id,
+          mensagem: 'Chamado aberto com sucesso! Nossa equipe entrará em contato em breve.'
+        });
+      } catch(e) { return res.status(502).json({ error: 'Erro ao criar chamado', message: e.message }); }
+    }
+
     // ── get_status ───────────────────────────────────────────────
     if (action === 'get_status') {
       // Lê direto do Supabase (já sincronizado) — mais rápido que IXC
