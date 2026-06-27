@@ -217,78 +217,60 @@ export default async function handler(req, res) {
     const ixcH    = { 'Authorization': authVal, 'Content-Type': 'application/json', 'ixcsoft': 'listar' };
 
     // ── get_faturas ─────────────────────────────────────────────
-    // Usa o mesmo padrão do proxy principal: múltiplos URLs + múltiplas auths
+    // Endpoint correto do IXC: fn_areceber (não fn_financeiro_conta_receber)
     if (action === 'get_faturas') {
       const ixcBase = IXC_URL.replace(/\/$/, '').replace(/\/adm\.php$/, '');
-      const ixcEndpoint = 'fn_financeiro_conta_receber';
+      const url = `${ixcBase}/webservice/v1/fn_areceber`;
+      const auth = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
 
-      const urlCandidates = [
-        `${ixcBase}/webservice/v1/${ixcEndpoint}`,
-        `${ixcBase}/adm.php/webservice/v1/${ixcEndpoint}`,
-      ];
+      const apiBody = JSON.stringify({
+        qtype:     'fn_areceber.id_cliente',
+        query:     String(ixcId),
+        oper:      '=',
+        page:      '1',
+        rp:        '20',
+        sortname:  'fn_areceber.data_vencimento',
+        sortorder: 'desc',
+      });
 
-      const authCandidates = [];
-      if (IXC_USER) authCandidates.push(`Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`);
-      authCandidates.push(`Basic ${Buffer.from(`${IXC_TOKEN}:`).toString('base64')}`);
-
-      // Tentar variações de qtype para achar o filtro correto
-      const qtypeVariants = [
-        `${ixcEndpoint}.id_cliente`,
-        `financeiro_conta_receber.id_cliente`,
-        `id_cliente`,
-        `${ixcEndpoint}.id_contrato`,
-        `financeiro_conta_receber.id_contrato`,
-      ];
-
-      const debug = [];
-      for (const url of urlCandidates) {
-        for (const auth of authCandidates) {
-          for (const qtype of qtypeVariants) {
-            const apiBody = JSON.stringify({
-              qtype, query: String(ixcId), oper: '=',
-              page: '1', rp: '12',
-              sortname: 'data_vencimento', sortorder: 'desc',
-            });
-            try {
-              const r = await fetch(url, {
-                method: 'POST',
-                headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' },
-                body: apiBody,
-              });
-              const txt = await r.text();
-              if (txt.trim().startsWith('<')) {
-                debug.push({ url, qtype, status: r.status, html: true });
-                continue;
-              }
-              let d;
-              try { d = JSON.parse(txt); } catch(e) { debug.push({ url, qtype, status: r.status, parseError: true }); continue; }
-              const total = parseInt(d.total || '0');
-              debug.push({ url, qtype, status: r.status, total });
-              if (r.status >= 200 && r.status < 400 && total > 0) {
-                const registros = (d.registros || []).map(f => ({
-                  id:              f.id,
-                  valor:           f.valor,
-                  data_vencimento: f.data_vencimento,
-                  data_pagamento:  f.data_pagamento,
-                  status:          f.status,
-                  linha_digitavel: f.linha_digitavel,
-                  nosso_numero:    f.nosso_numero,
-                  referencia:      f.referencia,
-                }));
-                return res.status(200).json({ ok: true, total, registros, _debug_qtype: qtype });
-              }
-            } catch(e) { debug.push({ url, qtype, error: e.message }); }
-          }
+      try {
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' },
+          body: apiBody,
+        });
+        const txt = await r.text();
+        if (txt.trim().startsWith('<')) {
+          return res.status(502).json({ error: 'IXC retornou HTML', status: r.status, preview: txt.slice(0,200) });
         }
+        let d;
+        try { d = JSON.parse(txt); } catch(e) {
+          return res.status(502).json({ error: 'JSON invalido', raw: txt.slice(0,300) });
+        }
+        const registros = (d.registros || []).map(f => ({
+          id:              f.id,
+          valor:           f.valor,
+          data_vencimento: f.data_vencimento,
+          data_pagamento:  f.data_pagamento || f.data_recebimento,
+          // status do IXC: A=aberto, R=recebido, C=cancelado
+          status:          (f.status === 'R' ? 'pago' : (f.status === 'C' ? 'cancelado' : 'aberto')),
+          status_raw:      f.status,
+          linha_digitavel: f.linha_digitavel,
+          nosso_numero:    f.nosso_numero,
+          documento:       f.documento,
+          gateway_link:    f.gateway_link,
+          pix_qrcode:      f.pix_qrcode,
+        }));
+        return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros });
+      } catch (e) {
+        return res.status(502).json({ error: 'Erro ao conectar IXC', message: e.message });
       }
-      // Nenhum filtro retornou dados — retorna debug para diagnóstico
-      return res.status(200).json({ ok: true, total: 0, registros: [], _debug: debug });
     }
 
     // ── debug_ixc ─────────────────────────────────────────────
     // Busca 1 registro sem filtro para ver estrutura do endpoint
     if (action === 'debug_ixc') {
-      const ep = b.endpoint || 'fn_financeiro_conta_receber';
+      const ep = b.endpoint || 'fn_areceber';
       const ixcBase2 = IXC_URL.replace(/\/$/, '');
       const url2 = `${ixcBase2}/webservice/v1/${ep}`;
       const auth2 = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
