@@ -261,7 +261,9 @@ export default async function handler(req, res) {
           gateway_link:    f.gateway_link,
           pix_qrcode:      f.pix_qrcode,
         }));
-        return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros });
+        // Debug temporário: incluir todos os campos da primeira fatura
+        const _campos_disponiveis = d.registros?.[0] ? Object.keys(d.registros[0]) : [];
+        return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros, _campos_disponiveis });
       } catch (e) {
         return res.status(502).json({ error: 'Erro ao conectar IXC', message: e.message });
       }
