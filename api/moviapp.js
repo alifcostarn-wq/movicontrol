@@ -172,7 +172,7 @@ export default async function handler(req, res) {
         if (txt.trim().startsWith('<')) return res.status(502).json({ error: 'IXC retornou HTML', preview: txt.slice(0,200) });
         let d;
         try { d = JSON.parse(txt); } catch(e) { return res.status(502).json({ error: 'JSON invalido', raw: txt.slice(0,300) }); }
-        const registros = (d.registros || []).map(f => ({
+        let registros = (d.registros || []).map(f => ({
           id:              f.id,
           valor:           f.valor,
           data_vencimento: f.data_vencimento,
@@ -184,6 +184,16 @@ export default async function handler(req, res) {
           documento:       f.documento,
           gateway_link:    f.gateway_link,
         }));
+        // Ordenar: faturas EM ABERTO primeiro (mais antiga no topo), depois as pagas
+        registros.sort((a, b) => {
+          if (a.status === 'aberto' && b.status !== 'aberto') return -1;
+          if (a.status !== 'aberto' && b.status === 'aberto') return 1;
+          // ambas em aberto: vencimento mais antigo primeiro
+          if (a.status === 'aberto' && b.status === 'aberto')
+            return new Date(a.data_vencimento) - new Date(b.data_vencimento);
+          // ambas pagas: mais recente primeiro
+          return new Date(b.data_vencimento) - new Date(a.data_vencimento);
+        });
         return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros });
       } catch (e) { return res.status(502).json({ error: 'Erro IXC', message: e.message }); }
     }
@@ -203,11 +213,36 @@ export default async function handler(req, res) {
           if (txt.trim().startsWith('<')) { debug.push({ url, status: r.status, html: true }); continue; }
           let d;
           try { d = JSON.parse(txt); } catch(e) { debug.push({ url, raw: txt.slice(0,200) }); continue; }
-          const pixCode = d.pix || d.qrCode || d.qrcode || d.emv || d.pix_copia_cola || d.payload || d.codigo_pix || null;
+
+          // O IXC (Sulcredi/outros) retorna o PIX aninhado em estruturas variadas.
+          // Vasculhar todos os caminhos possíveis:
+          const pixCode =
+            // caminho direto
+            (typeof d.pix === 'string' ? d.pix : null) ||
+            d.pix_copia_cola || d.pixCopiaECola || d.codigo_pix || d.emv || d.payload ||
+            // aninhado em pix_copia_cola (objeto)
+            d.pix_copia_cola?.dadosPix?.pixCopiaECola ||
+            d.pix_copia_cola?.qrCode?.qrcode ||
+            d.pix_copia_cola?.pixCopiaECola ||
+            // aninhado em qrCode
+            d.qrCode?.qrcode ||
+            (typeof d.qrCode === 'string' ? d.qrCode : null) ||
+            d.qrcode?.qrcode ||
+            (typeof d.qrcode === 'string' ? d.qrcode : null) ||
+            // dadosPix direto
+            d.dadosPix?.pixCopiaECola ||
+            null;
+
+          // Imagem base64 do QR (se o IXC já fornecer)
+          const imagemBase64 =
+            d.qrCode?.imagemQrcode ||
+            d.pix_copia_cola?.qrCode?.imagemQrcode ||
+            d.imagem_base64 || d.qrcode_base64 || null;
+
           if (pixCode) {
-            return res.status(200).json({ ok: true, pix_copia_cola: pixCode, imagem_base64: d.imagem_base64 || d.qrcode_base64 || null, validade: d.validade || null });
+            return res.status(200).json({ ok: true, pix_copia_cola: pixCode, imagem_base64: imagemBase64, validade: d.validade || null });
           }
-          debug.push({ url, status: r.status, resposta: d });
+          debug.push({ url, status: r.status, resposta_keys: Object.keys(d) });
         } catch(e) { debug.push({ url, error: e.message }); }
       }
       return res.status(502).json({ error: 'Nao foi possivel gerar PIX', id_areceber: idAreceber, _debug: debug });
