@@ -217,57 +217,62 @@ export default async function handler(req, res) {
     const ixcH    = { 'Authorization': authVal, 'Content-Type': 'application/json', 'ixcsoft': 'listar' };
 
     // ── get_faturas ─────────────────────────────────────────────
+    // Usa o mesmo padrão do proxy principal: múltiplos URLs + múltiplas auths
     if (action === 'get_faturas') {
-      // Usar o mesmo padrão de URL do proxy principal (comprovadamente funcional)
-      const ixcUrl = IXC_URL.replace(/\/$/, '');
-      const url = `${ixcUrl}/webservice/v1/fn_financeiro_conta_receber`;
+      const ixcBase = IXC_URL.replace(/\/$/, '').replace(/\/adm\.php$/, '');
+      const ixcEndpoint = 'fn_financeiro_conta_receber';
 
-      const body = JSON.stringify({
-        qtype: 'fn_financeiro_conta_receber.id_cliente',
-        query: String(ixcId),
-        oper: '=',
-        page: '1',
-        rp: '12',
-        sortname: 'data_vencimento',
+      const urlCandidates = [
+        `${ixcBase}/webservice/v1/${ixcEndpoint}`,
+        `${ixcBase}/adm.php/webservice/v1/${ixcEndpoint}`,
+      ];
+
+      const authCandidates = [];
+      if (IXC_USER) authCandidates.push(`Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`);
+      authCandidates.push(`Basic ${Buffer.from(`${IXC_TOKEN}:`).toString('base64')}`);
+
+      const apiBody = JSON.stringify({
+        qtype:     `${ixcEndpoint}.id_cliente`,
+        query:     String(ixcId),
+        oper:      '=',
+        page:      '1',
+        rp:        '12',
+        sortname:  'data_vencimento',
         sortorder: 'desc',
       });
 
-      let ixcRaw = '', ixcStatus = 0;
-      try {
-        const r = await fetch(url, { method: 'POST', headers: ixcH, body });
-        ixcRaw = await r.text();
-        ixcStatus = r.status;
-
-        // Se IXC retornou HTML (erro de autenticação, página de erro, etc)
-        if (ixcRaw.trim().startsWith('<')) {
-          return res.status(502).json({ error: 'IXC retornou HTML', status: ixcStatus, preview: ixcRaw.slice(0, 200) });
+      const attempts = [];
+      for (const url of urlCandidates) {
+        for (const auth of authCandidates) {
+          try {
+            const r = await fetch(url, {
+              method: 'POST',
+              headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' },
+              body: apiBody,
+            });
+            const txt = await r.text();
+            const isHtml = txt.trim().startsWith('<');
+            attempts.push({ url, status: r.status, isHtml, preview: txt.slice(0, 100) });
+            if (!isHtml && r.status >= 200 && r.status < 400) {
+              try {
+                const d = JSON.parse(txt);
+                const registros = (d.registros || []).map(f => ({
+                  id:              f.id,
+                  valor:           f.valor,
+                  data_vencimento: f.data_vencimento,
+                  data_pagamento:  f.data_pagamento,
+                  status:          f.status,
+                  linha_digitavel: f.linha_digitavel,
+                  nosso_numero:    f.nosso_numero,
+                  referencia:      f.referencia,
+                }));
+                return res.status(200).json({ ok: true, total: d.total || registros.length, registros });
+              } catch(e) {}
+            }
+          } catch(e) { attempts.push({ url, error: e.message }); }
         }
-
-        let d;
-        try { d = JSON.parse(ixcRaw); } catch(e) {
-          return res.status(502).json({ error: 'IXC retornou JSON inválido', raw: ixcRaw.slice(0, 300) });
-        }
-
-        if (!r.ok) {
-          return res.status(502).json({ error: 'IXC retornou erro', status: ixcStatus, body: d });
-        }
-
-        const registros = (d.registros || []).map(f => ({
-          id:              f.id,
-          valor:           f.valor,
-          data_vencimento: f.data_vencimento,
-          data_pagamento:  f.data_pagamento,
-          status:          f.status,
-          linha_digitavel: f.linha_digitavel,
-          nosso_numero:    f.nosso_numero,
-          referencia:      f.referencia,
-        }));
-
-        return res.status(200).json({ ok: true, total: d.total || registros.length, registros });
-
-      } catch (e) {
-        return res.status(502).json({ error: 'Erro ao conectar com IXC', message: e.message, url, ixcId });
       }
+      return res.status(502).json({ error: 'IXC nao retornou faturas', ixcId, attempts });
     }
 
     // ── get_status ──────────────────────────────────────────────
