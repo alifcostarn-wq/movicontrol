@@ -644,7 +644,7 @@ async function abrirPix(idAreceber, valor){
 
   // Cache: se já gerou esse PIX, reusa
   if(_pixCache[idAreceber]){
-    renderPix(_pixCache[idAreceber], valor);
+    renderPix(_pixCache[idAreceber].codigo, valor, _pixCache[idAreceber].imagem);
     return;
   }
 
@@ -660,8 +660,8 @@ async function abrirPix(idAreceber, valor){
     const d = await r.json();
 
     if(d.ok && d.pix_copia_cola){
-      _pixCache[idAreceber] = d.pix_copia_cola;
-      renderPix(d.pix_copia_cola, valor);
+      _pixCache[idAreceber] = { codigo: d.pix_copia_cola, imagem: d.imagem_base64 };
+      renderPix(d.pix_copia_cola, valor, d.imagem_base64);
     } else {
       content.innerHTML = `
         <div class="pix-title">PIX indisponível</div>
@@ -676,7 +676,7 @@ async function abrirPix(idAreceber, valor){
   }
 }
 
-function renderPix(codigo, valor){
+function renderPix(codigo, valor, imagemBase64){
   const content = document.getElementById('pix-content');
   content.innerHTML = `
     <div class="pix-title">Pague com PIX</div>
@@ -684,21 +684,26 @@ function renderPix(codigo, valor){
     <div class="pix-qr" id="pix-qr-canvas"></div>
     <div class="pix-instr">Abra o app do seu banco, escolha pagar com PIX<br>e escaneie o QR Code ou copie o código abaixo</div>
     <div class="pix-copy-box" id="pix-code-text">${codigo}</div>
-    <button class="btn-pix-copy" onclick="copiarPix('${codigo.replace(/'/g,"\\'")}')">
+    <button class="btn-pix-copy" onclick="copiarPix(document.getElementById('pix-code-text').textContent)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       Copiar código PIX
     </button>
     <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
 
-  // Gerar QR Code
-  setTimeout(()=>{
-    const el = document.getElementById('pix-qr-canvas');
-    if(el && window.QRCode){
-      QRCode.toCanvas(codigo, {width:180, margin:1}, (err, canvas)=>{
-        if(!err && canvas){ el.innerHTML=''; el.appendChild(canvas); }
-      });
-    }
-  }, 50);
+  const el = document.getElementById('pix-qr-canvas');
+  // Preferir imagem do IXC (já vem pronta); senão gerar localmente
+  if(imagemBase64){
+    const src = imagemBase64.startsWith('data:') ? imagemBase64 : `data:image/png;base64,${imagemBase64}`;
+    el.innerHTML = `<img src="${src}" alt="QR Code PIX">`;
+  } else {
+    setTimeout(()=>{
+      if(el && window.QRCode){
+        QRCode.toCanvas(codigo, {width:180, margin:1}, (err, canvas)=>{
+          if(!err && canvas){ el.innerHTML=''; el.appendChild(canvas); }
+        });
+      }
+    }, 50);
+  }
 }
 
 function copiarPix(codigo){
