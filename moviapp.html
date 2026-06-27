@@ -2,1042 +2,600 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#3B3ED8">
 <title>MoviApp</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
-/* ─── Tokens de marca ─────────────────────── */
 :root{
-  --blue:#3B3ED8;
-  --blue-dark:#2B2D8C;
-  --blue-light:#5558E8;
-  --blue-faint:#EEEEFF;
-  --yellow:#FFD600;
-  --yellow-dark:#E8C200;
-  --yellow-faint:#FFFBDA;
-  --pink:#E83A8C;
-  --pink-faint:#FDE8F3;
-  --surface:#FFFFFF;
-  --bg:#F5F5FF;
-  --border:#E0E0F8;
-  --text:#1A1A3E;
-  --text2:#5A5A8A;
-  --text3:#9898BC;
-  --success:#22C47A;
-  --danger:#E83A3A;
-  --radius:18px;
-  --radius-sm:12px;
+  --blue:#3B3ED8;--blue-dark:#2B2D8C;--blue-light:#5558E8;--blue-faint:#EEEEFF;
+  --yellow:#FFD600;--yellow-dark:#E8C200;--yellow-faint:#FFFBDA;
+  --pink:#E83A8C;--pink-faint:#FDE8F3;
+  --surface:#fff;--bg:#F5F5FF;--border:#E0E0F8;
+  --text:#1A1A3E;--text2:#5A5A8A;--text3:#9898BC;
+  --green:#22C47A;--danger:#E83A3A;
+  --radius:16px;--radius-sm:12px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--bg)}
-body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+html,body{height:100%;background:var(--blue)}
+body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:antialiased;display:flex;justify-content:center}
 
-/* ─── Phone shell ────────────────────────── */
-.shell{
-  position:fixed;top:0;left:0;right:0;bottom:0;
-  max-width:480px;margin:0 auto;
-  background:var(--bg);overflow:hidden;
-}
-.island{display:none}
-
-/* ─── Screens ────────────────────────────── */
-.screen{
-  position:absolute !important;
-  top:0 !important;left:0 !important;right:0 !important;bottom:0 !important;
-  display:none !important;
-  flex-direction:column;
-  overflow:hidden;
-  background:var(--bg);
-}
-.screen.active{
-  display:flex !important;
+/* ── App container ── */
+#app{
+  width:100%;max-width:480px;min-height:100vh;min-height:100dvh;
+  background:var(--bg);display:flex;flex-direction:column;
+  position:relative;overflow:hidden;
 }
 
-/* ─── LOGO mark ──────────────────────────── */
-.logo-bubble{
-  width:56px;height:56px;background:var(--yellow);border-radius:50% 50% 50% 10%;
-  display:flex;align-items:center;justify-content:center;position:relative;
-  box-shadow:0 8px 24px rgba(255,214,0,.4);
+/* ── Toast ── */
+#toast{
+  position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(10px);
+  background:#1A1A3E;color:#fff;padding:10px 20px;border-radius:30px;
+  font-size:13px;font-weight:600;opacity:0;pointer-events:none;
+  transition:.2s;white-space:nowrap;z-index:9999;max-width:90vw;
 }
-.logo-bubble svg{width:34px;height:34px}
-.logo-name{font-family:'Nunito',sans-serif;font-weight:900;font-size:28px;letter-spacing:-.5px}
-.logo-name .movi{color:var(--yellow)}
-.logo-name .on{color:var(--yellow)}
-.logo-sub{font-size:12px;font-weight:500;opacity:.65;color:#fff;letter-spacing:.2px}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-/* ─── LOGIN ──────────────────────────────── */
-#s-login{background:var(--blue);justify-content:flex-end}
-.login-deco{position:absolute;inset:0;overflow:hidden}
-.login-deco .c{position:absolute;border-radius:50%;background:rgba(255,255,255,.04)}
-.login-top{position:absolute;top:max(80px,env(safe-area-inset-top,0px)+60px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:14px;z-index:2}
-.login-card{
-  background:var(--surface);border-radius:28px 28px 0 0;padding:30px 26px 36px;
-  position:relative;z-index:2;flex-shrink:0;
+/* ── Login ── */
+.login-wrap{
+  min-height:100vh;min-height:100dvh;background:var(--blue);
+  display:flex;flex-direction:column;
+  position:relative;overflow:hidden;
 }
-.login-card h2{font-family:'Nunito',sans-serif;font-weight:800;font-size:21px;color:var(--text);margin-bottom:3px}
-.login-card p{font-size:13px;color:var(--text2);margin-bottom:26px}
+.login-bg{position:absolute;inset:0;background:radial-gradient(ellipse 120% 60% at 50% -10%,#4547E8 0%,#1E1FA8 55%,#10115C 100%)}
+.login-rings{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);pointer-events:none}
+.ring{position:absolute;border-radius:50%;border:1.5px solid rgba(255,214,0,.2);left:0;top:0;transform:translate(-50%,-50%);animation:ringOut 3.2s ease-out infinite}
+@keyframes ringOut{0%{opacity:.7;transform:translate(-50%,-50%) scale(.3)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
+.login-hero{position:absolute;top:0;left:0;right:0;bottom:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:2}
+.login-title{font-family:'Nunito',sans-serif;font-weight:900;font-size:64px;color:#FFD600;letter-spacing:-2px;line-height:1;text-shadow:0 0 50px rgba(255,214,0,.4);animation:float 4s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.login-sub{font-size:14px;color:rgba(255,255,255,.55);margin-top:12px;letter-spacing:2px;text-transform:uppercase}
+.sig-bars{display:flex;align-items:flex-end;gap:4px;margin-top:24px}
+.sig-bar{width:5px;border-radius:3px;background:#FFD600;animation:beat 1.4s ease-in-out infinite}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.35}}
+.login-card{background:#fff;border-radius:28px 28px 0 0;padding:30px 24px 36px;position:relative;z-index:2;margin-top:auto}
+.login-card h2{font-family:'Nunito',sans-serif;font-weight:800;font-size:20px;color:var(--text);margin-bottom:4px}
+.login-card p{font-size:13px;color:var(--text2);margin-bottom:22px}
 .field{margin-bottom:14px}
-.field label{display:block;font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-.field input{
-  width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
-  font-family:inherit;font-size:15px;background:var(--bg);color:var(--text);transition:.15s;
-}
-.field input:focus{outline:none;border-color:var(--blue);background:#fff}
-.btn-yellow{
-  width:100%;padding:15px;border:none;border-radius:var(--radius-sm);
-  background:var(--yellow);color:var(--blue-dark);font-family:inherit;font-size:15px;font-weight:800;
-  cursor:pointer;transition:.12s;letter-spacing:.2px;
-}
-.btn-yellow:active{background:var(--yellow-dark);transform:scale(.99)}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.field input{width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--bg);color:var(--text)}
+.field input:focus{outline:none;border-color:var(--blue)}
+.btn-yellow{width:100%;padding:15px;border:none;border-radius:var(--radius-sm);background:var(--yellow);color:var(--blue-dark);font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;transition:.12s}
+.btn-yellow:active{background:var(--yellow-dark)}
 .login-hint{text-align:center;margin-top:14px;font-size:12.5px;color:var(--text2)}
 .login-hint b{color:var(--blue);cursor:pointer;font-weight:700}
 
-/* ─── Header curvo ───────────────────────── */
-.header{
-  background:var(--blue);padding:52px 22px 36px;position:relative;overflow:hidden;flex-shrink:0;
-}
-.header::after{
-  content:'';position:absolute;bottom:-1px;left:0;right:0;height:28px;
-  background:var(--bg);border-radius:24px 24px 0 0;
-}
-.header-deco .d{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.08)}
-.hd1{width:200px;height:200px;top:-60px;right:-60px}
-.hd2{width:140px;height:140px;top:-20px;right:-20px}
+/* ── Header ── */
+.header{background:var(--blue);padding:calc(env(safe-area-inset-top,0px) + 18px) 20px 30px;position:relative;overflow:hidden;flex-shrink:0}
+.header::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:26px;background:var(--bg);border-radius:22px 22px 0 0}
 .header-inner{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:flex-start}
 .hi-greet{color:rgba(255,255,255,.65);font-size:12.5px;font-weight:500}
-.hi-name{color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:19px;letter-spacing:-.2px;margin-top:2px}
-.hi-avatar{
-  width:42px;height:42px;border-radius:50%;background:var(--yellow);
-  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:var(--blue-dark);
-}
-.notif-btn{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+.hi-name{color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:18px;letter-spacing:-.2px;margin-top:2px}
+.hi-avatar{width:40px;height:40px;border-radius:50%;background:var(--yellow);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:var(--blue-dark);cursor:pointer;flex-shrink:0}
+.h-right{display:flex;gap:8px;align-items:center}
+.notif-btn{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
 .notif-btn svg{width:18px;height:18px;color:#fff}
-.nb-dot{width:8px;height:8px;border-radius:50%;background:var(--yellow);position:absolute;top:7px;right:7px;border:2px solid var(--blue)}
-.h-actions{display:flex;gap:8px}
+.nb-dot{width:7px;height:7px;border-radius:50%;background:var(--yellow);position:absolute;top:8px;right:8px;border:2px solid var(--blue)}
+.page-title{color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:18px}
 
-/* ─── Body scroll ────────────────────────── */
-.body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 18px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+/* ── Scroll body ── */
+.body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 18px calc(80px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
 .body::-webkit-scrollbar{display:none}
 
-/* ─── Hero card conexão ──────────────────── */
-.conn-card{
-  background:linear-gradient(135deg,var(--blue-dark) 0%,var(--blue) 60%,var(--blue-light) 100%);
-  border-radius:var(--radius);padding:22px;position:relative;overflow:hidden;cursor:pointer;
-  box-shadow:0 8px 24px rgba(59,62,216,.3);
-}
-.cc-deco{position:absolute;right:-20px;bottom:-20px;opacity:.12}
-.cc-deco svg{width:130px;height:130px;color:#fff}
-.conn-top{display:flex;align-items:center;gap:8px;margin-bottom:16px}
-.led{width:8px;height:8px;border-radius:50%}
-.led.on{background:#22C47A;box-shadow:0 0 0 3px rgba(34,196,122,.25);animation:pulse 2.5s infinite}
-.led.off{background:#ff6b6b;box-shadow:0 0 0 3px rgba(255,107,107,.25)}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(34,196,122,.25)}50%{box-shadow:0 0 0 7px rgba(34,196,122,.08)}}
-.conn-label{font-size:12px;font-weight:600;color:rgba(255,255,255,.75)}
-.conn-bottom{display:flex;justify-content:space-between;align-items:flex-end}
-.conn-speed{font-family:'Nunito',sans-serif;font-weight:900;font-size:42px;color:#fff;letter-spacing:-1.5px;line-height:1}
-.conn-mbps{font-size:15px;font-weight:600;color:rgba(255,255,255,.6);margin-left:3px}
-.conn-plan{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:5px;font-weight:500}
-.conn-pill{
-  background:rgba(255,214,0,.15);border:1px solid rgba(255,214,0,.3);
-  padding:6px 12px;border-radius:30px;font-size:11px;font-weight:700;color:var(--yellow);
-  display:flex;align-items:center;gap:5px;
-}
-
-/* ─── Quick actions ──────────────────────── */
-.qa-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.qa{
-  background:var(--surface);border-radius:var(--radius-sm);padding:14px 6px 12px;
-  display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;
-  border:1.5px solid var(--border);transition:.12s;
-}
-.qa:active{border-color:var(--blue);background:var(--blue-faint)}
-.qa-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center}
-.qa-icon.blue{background:var(--blue-faint)}
-.qa-icon.yellow{background:var(--yellow-faint)}
-.qa-icon.pink{background:var(--pink-faint)}
-.qa-icon.green{background:#E8FBF2}
-.qa-icon svg{width:19px;height:19px}
-.qa-lbl{font-size:10.5px;font-weight:700;color:var(--text2);text-align:center;line-height:1.3}
-
-/* ─── Cards genéricos ────────────────────── */
-.card{background:var(--surface);border-radius:var(--radius);border:1.5px solid var(--border)}
-.card-head{padding:16px 18px 0;display:flex;justify-content:space-between;align-items:center}
-.card-title{font-weight:700;font-size:13.5px;color:var(--text)}
-.card-link{font-size:12px;font-weight:700;color:var(--blue);cursor:pointer}
-.card-body{padding:14px 18px 18px}
-.sec-title{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:12px}
-
-/* ─── Fatura hero ────────────────────────── */
-.fat-hero{
-  background:linear-gradient(135deg,var(--blue-dark),var(--blue));
-  border-radius:14px;padding:22px;margin-bottom:14px;position:relative;overflow:hidden;
-}
-.fat-hero::before{content:'';position:absolute;right:-30px;top:-30px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.05)}
-.fat-mes{font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6);margin-bottom:5px}
-.fat-val{font-family:'DM Mono',monospace;font-size:34px;font-weight:500;color:#fff;line-height:1}
-.fat-venc{font-size:12px;color:rgba(255,255,255,.6);margin-top:8px}
-.fat-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;margin-top:10px}
-.fat-badge.aberta{background:rgba(255,214,0,.2);border:1px solid rgba(255,214,0,.35);color:var(--yellow)}
-.fat-badge.paga{background:rgba(34,196,122,.2);border:1px solid rgba(34,196,122,.3);color:#22C47A}
-.btn-yellow-full{
-  width:100%;padding:14px;border-radius:var(--radius-sm);border:none;
-  background:var(--yellow);color:var(--blue-dark);font-family:inherit;font-size:14px;font-weight:800;
-  display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:.12s;
-}
-.btn-yellow-full:active{background:var(--yellow-dark)}
-.btn-outline{
-  width:100%;padding:13px;border-radius:var(--radius-sm);margin-top:8px;
-  border:1.5px solid var(--blue);background:transparent;color:var(--blue);
-  font-family:inherit;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
-}
-.hist-item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1.5px solid var(--border)}
-.hist-item:last-child{border-bottom:none}
-.hi-mes{font-weight:600;font-size:13px;color:var(--text)}
-.hi-data{font-size:11.5px;color:var(--text2);margin-top:2px}
-.hi-val{font-family:'DM Mono',monospace;font-size:13.5px;font-weight:500;color:var(--text)}
-.pill{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;margin-top:3px}
-.pill.paga{background:#E8FBF2;color:#1A8C52}
-.pill.aberta{background:var(--yellow-faint);color:#8A7000}
-
-/* ─── OS ─────────────────────────────────── */
-.os-item{display:flex;gap:14px;padding-bottom:20px}
-.os-item:last-child{padding-bottom:0}
-.os-line{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
-.os-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);background:var(--surface)}
-.os-dot.andamento{background:var(--blue);border-color:var(--blue)}
-.os-dot.concluida{background:var(--success);border-color:var(--success)}
-.os-dot svg{width:15px;height:15px;color:#fff}
-.os-connector{width:2px;flex:1;background:var(--border);margin:4px 0;min-height:12px}
-.os-content{flex:1;padding-top:5px}
-.os-num{font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:3px}
-.os-desc{font-weight:700;font-size:13.5px;color:var(--text)}
-.os-detail{font-size:12px;color:var(--text2);margin-top:3px}
-.os-date{font-size:11px;color:var(--text3);margin-top:5px;font-family:'DM Mono',monospace}
-.os-tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;margin-top:7px}
-.os-tag.andamento{background:var(--blue-faint);color:var(--blue)}
-.os-tag.concluida{background:#E8FBF2;color:#1A8C52}
-
-/* ─── Cashback / Indicação ───────────────── */
-.cb-hero{
-  background:linear-gradient(135deg,var(--blue-dark) 0%,var(--pink) 100%);
-  border-radius:var(--radius);padding:24px;position:relative;overflow:hidden;margin-bottom:14px;
-  box-shadow:0 8px 24px rgba(232,58,140,.25);
-}
-.cb-hero::after{content:'💸';position:absolute;right:-8px;bottom:-18px;font-size:88px;opacity:.15;line-height:1}
-.cb-lbl{font-size:12px;font-weight:600;color:rgba(255,255,255,.65);margin-bottom:4px}
-.cb-val{font-family:'DM Mono',monospace;font-size:38px;font-weight:500;color:#fff;line-height:1}
-.cb-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:8px}
-.cb-btn{
-  margin-top:18px;padding:12px 16px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);
-  border-radius:10px;font-size:13px;font-weight:700;color:#fff;text-align:center;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:6px;
-}
-.cb-btn:active{background:rgba(255,255,255,.22)}
-.link-box{
-  background:var(--surface);border:1.5px dashed var(--blue);border-radius:12px;
-  padding:13px 16px;display:flex;align-items:center;gap:10px;margin-bottom:8px;
-}
-.link-url{font-family:'DM Mono',monospace;font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.btn-copy{padding:8px 14px;background:var(--yellow);color:var(--blue-dark);font-size:12px;font-weight:800;border:none;border-radius:8px;cursor:pointer;flex-shrink:0;font-family:inherit}
-.btn-share{
-  width:100%;padding:13px;border-radius:var(--radius-sm);
-  border:1.5px solid var(--blue);background:transparent;color:var(--blue);
-  font-family:inherit;font-size:14px;font-weight:700;
-  display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
-}
-.ind-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1.5px solid var(--border)}
-.ind-item:last-child{border-bottom:none}
-.ind-ava{width:36px;height:36px;border-radius:50%;background:var(--blue-faint);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0}
-.ind-name{font-weight:700;font-size:13px;color:var(--text)}
-.ind-date{font-size:11px;color:var(--text2);margin-top:2px}
-.ind-credit{font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:var(--success);margin-left:auto;flex-shrink:0}
-.how-box{background:var(--blue-faint);border-radius:12px;padding:16px}
-.how-title{font-weight:800;font-size:13px;color:var(--blue);margin-bottom:6px}
-.how-txt{font-size:12.5px;color:var(--blue-dark);line-height:1.6;opacity:.85}
-
-/* ─── Tab bar ────────────────────────────── */
-.tabbar{
-  display:flex;background:var(--surface);border-top:1.5px solid var(--border);
-  padding:10px 0 calc(12px + env(safe-area-inset-bottom,0px));flex-shrink:0;
-}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:4px 0;position:relative}
+/* ── Tab bar ── */
+.tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;background:#fff;border-top:1.5px solid var(--border);padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));z-index:100}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px 0}
 .tab svg{width:22px;height:22px;color:var(--text3);transition:.15s}
 .tab span{font-size:10px;font-weight:700;color:var(--text3);transition:.15s}
 .tab.active svg{color:var(--blue)}
 .tab.active span{color:var(--blue)}
-.tab-dot{width:5px;height:5px;border-radius:50%;background:var(--yellow);position:absolute;top:-2px;opacity:0;transition:.15s}
-.tab.active .tab-dot{opacity:1}
 
-/* ─── Toast ──────────────────────────────── */
-.toast{
-  position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(12px);max-width:90vw;
-  background:var(--blue-dark);color:#fff;padding:10px 20px;border-radius:30px;
-  font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.22s;white-space:nowrap;z-index:999;
-}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* ── Cards ── */
+.card{background:#fff;border-radius:var(--radius);border:1.5px solid var(--border)}
+.card-head{padding:16px 18px 0;display:flex;justify-content:space-between;align-items:center}
+.card-title{font-weight:700;font-size:13.5px;color:var(--text)}
+.card-link{font-size:12px;font-weight:700;color:var(--blue-light);cursor:pointer}
+.card-body{padding:14px 18px 18px}
 
-/* ─── Cashback teaser home ───────────────── */
-.cb-teaser{
-  background:linear-gradient(135deg,var(--blue-dark) 0%,var(--pink) 100%);
-  border-radius:var(--radius);padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;
-  box-shadow:0 6px 18px rgba(232,58,140,.2);
-}
-.cb-teaser-icon{font-size:30px;flex-shrink:0}
-.cb-teaser-val{font-family:'DM Mono',monospace;font-size:20px;font-weight:500;color:#fff}
-.cb-teaser-lbl{font-size:12px;color:rgba(255,255,255,.65);margin-top:2px}
-.cb-arr{color:rgba(255,255,255,.5);margin-left:auto}
+/* ── Conn card ── */
+.conn-card{background:linear-gradient(135deg,var(--blue-dark),var(--blue));border-radius:var(--radius);padding:22px;position:relative;overflow:hidden;cursor:pointer;box-shadow:0 8px 24px rgba(59,62,216,.3)}
+.led{width:8px;height:8px;border-radius:50%;display:inline-block}
+.led.on{background:#22C47A;box-shadow:0 0 0 3px rgba(34,196,122,.25);animation:pulse 2.5s infinite}
+.led.off{background:#ff6b6b}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(34,196,122,.25)}50%{box-shadow:0 0 0 7px rgba(34,196,122,.08)}}
+.conn-speed{font-family:'Nunito',sans-serif;font-weight:900;font-size:40px;color:#fff;letter-spacing:-1.5px;line-height:1}
+.conn-mbps{font-size:14px;font-weight:600;color:rgba(255,255,255,.6);margin-left:3px}
+.conn-plan{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:5px}
+.conn-pill{background:rgba(255,214,0,.15);border:1px solid rgba(255,214,0,.3);padding:6px 12px;border-radius:30px;font-size:11px;font-weight:700;color:var(--yellow)}
 
-/* ─── Efeitos tela login ─────────────────── */
-@keyframes gradShift{
-  0%{opacity:1} 50%{opacity:.75} 100%{opacity:1}
-}
-@keyframes glowPulse{
-  0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.18}
-  50%{transform:translate(-50%,-50%) scale(1.4);opacity:.3}
-}
-@keyframes titleFloat{
-  0%,100%{transform:translateY(0)}
-  50%{transform:translateY(-8px)}
-}
-@keyframes fadeUp{
-  from{opacity:0;transform:translateY(14px)}
-  to{opacity:1;transform:translateY(0)}
-}
-@keyframes ringPulse{
-  0%{transform:translate(-50%,-50%) scale(.3);opacity:.7}
-  100%{transform:translate(-50%,-50%) scale(1);opacity:0}
-}
-@keyframes sigBeat{
-  0%,100%{opacity:1} 50%{opacity:.4}
-}
-.pulse-ring{
-  position:absolute;
-  width:var(--d);height:var(--d);
-  border-radius:50%;
-  border:1.5px solid rgba(255,214,0,.35);
-  left:0;top:0;
-  transform:translate(-50%,-50%) scale(.3);
-  animation:ringPulse 3.2s ease-out infinite;
-  animation-delay:var(--delay);
-}
-.sig-bar{
-  width:5px;height:var(--h);
-  background:#FFD600;border-radius:3px;
-  animation:sigBeat 1.4s ease-in-out infinite;
-  animation-delay:var(--delay);
-  opacity:.9;
-}
+/* ── Quick actions ── */
+.qa-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.qa{background:#fff;border-radius:var(--radius-sm);padding:14px 6px 12px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;border:1.5px solid var(--border);transition:.12s}
+.qa:active{border-color:var(--blue);background:var(--blue-faint)}
+.qa-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.qa-lbl{font-size:10.5px;font-weight:700;color:var(--text2);text-align:center;line-height:1.3}
+
+/* ── Fatura ── */
+.fat-hero{background:linear-gradient(135deg,var(--blue-dark),var(--blue));border-radius:14px;padding:22px;margin-bottom:14px;position:relative;overflow:hidden}
+.fat-val{font-family:'DM Mono',monospace;font-size:34px;font-weight:500;color:#fff;line-height:1}
+.fat-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;margin-top:10px}
+.fat-badge.aberta{background:rgba(255,214,0,.2);border:1px solid rgba(255,214,0,.35);color:var(--yellow)}
+.fat-badge.paga{background:rgba(34,196,122,.2);border:1px solid rgba(34,196,122,.3);color:#22C47A}
+.btn-yellow-full{width:100%;padding:14px;border-radius:var(--radius-sm);border:none;background:var(--yellow);color:var(--blue-dark);font-family:inherit;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:.12s;margin-bottom:8px}
+.btn-yellow-full:active{background:var(--yellow-dark)}
+.btn-outline{width:100%;padding:13px;border-radius:var(--radius-sm);border:1.5px solid var(--blue);background:transparent;color:var(--blue);font-family:inherit;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.hist-item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1.5px solid var(--border)}
+.hist-item:last-child{border-bottom:none}
+.pill{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700}
+.pill.paga{background:#E8FBF2;color:#1A8C52}
+.pill.aberta{background:var(--yellow-faint);color:#8A7000}
+
+/* ── OS ── */
+.os-item{display:flex;gap:14px;padding-bottom:20px}
+.os-item:last-child{padding-bottom:0}
+.os-line{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.os-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);background:#fff}
+.os-dot.andamento{background:var(--blue);border-color:var(--blue)}
+.os-dot.concluida{background:var(--green);border-color:var(--green)}
+.os-dot svg{width:15px;height:15px;color:#fff}
+.os-connector{width:2px;flex:1;background:var(--border);margin:4px 0;min-height:12px}
+.os-tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;margin-top:7px}
+.os-tag.andamento{background:var(--blue-faint);color:var(--blue)}
+.os-tag.concluida{background:#E8FBF2;color:#1A8C52}
+.os-tag.agendada{background:#FDF6E3;color:#8A6200}
+
+/* ── Cashback ── */
+.cb-hero{background:linear-gradient(135deg,var(--blue-dark) 0%,var(--pink) 100%);border-radius:var(--radius);padding:24px;position:relative;overflow:hidden;margin-bottom:14px}
+.cb-hero::after{content:'💸';position:absolute;right:-8px;bottom:-18px;font-size:88px;opacity:.15;line-height:1}
+.cb-val{font-family:'DM Mono',monospace;font-size:38px;font-weight:500;color:#fff;line-height:1}
+.cb-btn{margin-top:16px;padding:12px 16px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:13px;font-weight:700;color:#fff;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.link-box{background:#fff;border:1.5px dashed var(--blue);border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.link-url{font-family:'DM Mono',monospace;font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn-copy{padding:8px 14px;background:var(--yellow);color:var(--blue-dark);font-size:12px;font-weight:800;border:none;border-radius:8px;cursor:pointer;flex-shrink:0;font-family:inherit}
+.btn-share{width:100%;padding:13px;border-radius:var(--radius-sm);border:1.5px solid var(--blue);background:transparent;color:var(--blue);font-family:inherit;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.ind-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1.5px solid var(--border)}
+.ind-item:last-child{border-bottom:none}
+.ind-ava{width:36px;height:36px;border-radius:50%;background:var(--blue-faint);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0}
+.ind-credit{font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:var(--green);margin-left:auto}
+
+/* ── Misc ── */
+.empty-txt{text-align:center;color:var(--text3);padding:20px;font-size:13px}
+.sec-title{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:12px}
+.how-box{background:var(--blue-faint);border-radius:12px;padding:16px}
+.how-title{font-weight:800;font-size:13px;color:var(--blue);margin-bottom:6px}
+.how-txt{font-size:12.5px;color:var(--blue-dark);line-height:1.6;opacity:.85}
+.mono{font-family:'DM Mono',monospace}
+.cb-teaser{background:linear-gradient(135deg,var(--blue-dark),var(--pink));border-radius:var(--radius);padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
-<div class="shell">
-  <div class="toast" id="toast"></div>
+<div id="app"></div>
+<div id="toast"></div>
 
-  <!-- ══ LOGIN ══ -->
-  <div class="screen active" id="s-login" style="background:#1E1FA8;justify-content:flex-end">
+<script>
+// ── Config ────────────────────────────────────
+const SUPA_URL  = 'https://mgtetsmcswdtvsgewcen.supabase.co';
+const SUPA_ANON = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
+const PROXY_URL = 'https://movicontrol.vercel.app/api/ixc-proxy';
+const sb = window.supabase.createClient(SUPA_URL, SUPA_ANON);
 
-    <canvas id="loginCanvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:0"></canvas>
-    <div style="position:absolute;inset:0;z-index:0;background:radial-gradient(ellipse 80% 60% at 50% 40%,#4547E8 0%,#1E1FA8 55%,#10115C 100%);animation:gradShift 6s ease-in-out infinite alternate"></div>
+// ── Estado global ─────────────────────────────
+let route    = 'login';
+let perfil   = null;
+let faturas  = [];
+let ordens   = [];
+let cbSaldo  = 0;
+let cbLista  = [];
 
-    <div style="position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);z-index:1;pointer-events:none">
-      <div class="pulse-ring" style="--d:180px;--delay:0s"></div>
-      <div class="pulse-ring" style="--d:280px;--delay:.8s"></div>
-      <div class="pulse-ring" style="--d:380px;--delay:1.6s"></div>
-      <div class="pulse-ring" style="--d:480px;--delay:2.4s"></div>
+// ── Helpers ───────────────────────────────────
+const fmtNome = n => n ? n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '';
+const iniciais = n => (n||'').split(' ').filter(Boolean).map(p=>p[0]).slice(0,2).join('').toUpperCase();
+const fmtReal  = v => 'R$ '+Number(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+const fmtData  = d => { if(!d) return '—'; try{ return new Date(d+'T12:00:00').toLocaleDateString('pt-BR'); }catch{return d;} };
+
+// ── Toast ─────────────────────────────────────
+let _tt;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_tt); _tt=setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+// ── Render engine ─────────────────────────────
+const TABS = [
+  {id:'home',  lbl:'Início',   ico:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>`},
+  {id:'fatura',lbl:'Fatura',   ico:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>`},
+  {id:'os',    lbl:'Chamados', ico:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`},
+  {id:'ind',   lbl:'Indicação',ico:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`},
+];
+
+function tabBar(active){
+  return `<div class="tabbar">${TABS.map(t=>`
+    <div class="tab ${t.id===active?'active':''}" onclick="navTo('${t.id}')">
+      ${t.ico}<span>${t.lbl}</span>
+    </div>`).join('')}</div>`;
+}
+
+function render(html){ document.getElementById('app').innerHTML = html; }
+
+function navTo(r){
+  route = r;
+  if(r==='home')    renderHome();
+  else if(r==='fatura') renderFaturaScreen();
+  else if(r==='os') renderOSScreen();
+  else if(r==='ind') renderIndScreen();
+}
+
+// ── Tela de Login ─────────────────────────────
+function renderLogin(){
+  render(`
+  <div class="login-wrap">
+    <div class="login-bg"></div>
+    <div class="login-rings">
+      ${[180,280,380,480].map((d,i)=>`<div class="ring" style="width:${d}px;height:${d}px;animation-delay:${i*.8}s"></div>`).join('')}
     </div>
-
-    <div style="position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);width:260px;height:80px;background:rgba(255,214,0,.18);filter:blur(40px);border-radius:50%;z-index:1;animation:glowPulse 3s ease-in-out infinite"></div>
-
-    <div style="position:absolute;top:0;left:0;right:0;bottom:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:2">
-      <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:68px;color:#FFD600;letter-spacing:-2px;line-height:1;text-shadow:0 0 60px rgba(255,214,0,.5),0 4px 24px rgba(0,0,0,.3);animation:titleFloat 4s ease-in-out infinite">MoviApp</div>
-      <div style="font-size:14px;color:rgba(255,255,255,.55);margin-top:12px;font-weight:500;letter-spacing:2px;text-transform:uppercase;animation:fadeUp .8s ease both .3s;opacity:0">Você em movimento</div>
-      <div style="display:flex;align-items:flex-end;gap:4px;margin-top:28px;animation:fadeUp .8s ease both .6s;opacity:0">
-        <div class="sig-bar" style="--h:8px;--delay:0s"></div>
-        <div class="sig-bar" style="--h:14px;--delay:.1s"></div>
-        <div class="sig-bar" style="--h:20px;--delay:.2s"></div>
-        <div class="sig-bar" style="--h:26px;--delay:.3s"></div>
-        <div class="sig-bar" style="--h:32px;--delay:.4s"></div>
+    <div class="login-hero">
+      <div class="login-title">MoviApp</div>
+      <div class="login-sub">Você em movimento</div>
+      <div class="sig-bars">
+        ${[8,14,20,26,32].map((h,i)=>`<div class="sig-bar" style="height:${h}px;animation-delay:${i*.1}s"></div>`).join('')}
       </div>
     </div>
-
-    <div class="login-card" style="position:relative;z-index:2">
+    <div class="login-card">
       <h2>Bem-vindo de volta</h2>
       <p>Acesse sua conta para ver faturas, conexão e muito mais.</p>
       <div class="field">
         <label>CPF ou CNPJ</label>
-        <input type="text" id="inp-cpf" placeholder="000.000.000-00" inputmode="numeric">
+        <input id="inp-cpf" type="text" placeholder="000.000.000-00" inputmode="numeric">
       </div>
       <div class="field">
         <label>Senha</label>
-        <input type="password" id="inp-senha" placeholder="••••••••">
+        <input id="inp-senha" type="password" placeholder="••••••••">
       </div>
-      <button class="btn-yellow" onclick="doLogin()">Entrar</button>
+      <button class="btn-yellow" id="btn-login" onclick="doLogin()">Entrar</button>
       <div class="login-hint">Esqueceu a senha? <b onclick="toast('Link enviado pelo WhatsApp!')">Recuperar pelo WhatsApp</b></div>
     </div>
-  </div>
+  </div>`);
+}
 
-<script>
-(function(){
-  const canvas = document.getElementById('loginCanvas');
-  if(!canvas) return;
-  const ctx = canvas.getContext('2d');
-  let W, H, particles = [];
+// ── Home ──────────────────────────────────────
+function renderHome(){
+  const nome     = fmtNome(perfil?.nome || '');
+  const online   = perfil?.online;
+  const vel      = perfil?.velocidade_mbps || '—';
+  const plano    = perfil?.plano || 'Seu plano';
+  const fat      = faturas[0];
+  const fatVal   = fat ? fmtReal(fat.valor) : '—';
+  const fatVenc  = fat ? `Vence em ${fmtData(fat.data_vencimento)}` : 'Carregando...';
+  const fatPago  = fat?.status === 'pago';
+  const fatCls   = fatPago ? 'paga' : 'aberta';
+  const fatTxt   = fatPago ? 'Paga' : 'Em aberto';
+  const cb       = fmtReal(cbSaldo);
+  const primeiro = nome.split(' ')[0] || 'Olá';
 
-  function resize(){
-    const r = canvas.parentElement.getBoundingClientRect();
-    W = canvas.width = r.width;
-    H = canvas.height = r.height;
-  }
-
-  function Particle(){
-    this.x = Math.random()*W;
-    this.y = Math.random()*H;
-    this.r = Math.random()*2+.5;
-    this.vx = (Math.random()-.5)*.4;
-    this.vy = (Math.random()-.5)*.4;
-    this.alpha = Math.random()*.6+.1;
-    this.color = Math.random()>.7 ? '#FFD600' : 'rgba(255,255,255,1)';
-  }
-
-  function init(){
-    resize();
-    particles = Array.from({length:55}, ()=> new Particle());
-  }
-
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-    particles.forEach(p=>{
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-      ctx.fillStyle = p.color;
-      ctx.globalAlpha = p.alpha;
-      ctx.fill();
-      p.x += p.vx; p.y += p.vy;
-      if(p.x<0||p.x>W) p.vx*=-1;
-      if(p.y<0||p.y>H) p.vy*=-1;
-    });
-    ctx.globalAlpha = 1;
-    // linhas de conexão
-    for(let i=0;i<particles.length;i++){
-      for(let j=i+1;j<particles.length;j++){
-        const dx=particles[i].x-particles[j].x, dy=particles[i].y-particles[j].y;
-        const dist=Math.sqrt(dx*dx+dy*dy);
-        if(dist<80){
-          ctx.beginPath();
-          ctx.moveTo(particles[i].x, particles[i].y);
-          ctx.lineTo(particles[j].x, particles[j].y);
-          ctx.strokeStyle = `rgba(255,214,0,${.12*(1-dist/80)})`;
-          ctx.lineWidth = .6;
-          ctx.stroke();
-        }
-      }
-    }
-    requestAnimationFrame(draw);
-  }
-
-  init();
-  draw();
-  window.addEventListener('resize', init);
-})();
-</script>
-
-  <!-- ══ HOME ══ -->
-  <div class="screen" id="s-home">
-    <div class="header">
-      <div class="header-deco"><div class="d hd1"></div><div class="d hd2"></div></div>
-      <div class="header-inner">
-        <div>
-          <div class="hi-greet">Olá,</div>
-          <div class="hi-name" id="hi-name">Carregando...</div>
+  render(`
+  <div class="header">
+    <div class="header-inner">
+      <div>
+        <div class="hi-greet">Olá,</div>
+        <div class="hi-name">${primeiro || 'Carregando...'} 👋</div>
+      </div>
+      <div class="h-right">
+        <div class="notif-btn" onclick="toast('Sem novas notificações')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         </div>
-        <div class="h-actions">
-          <div class="notif-btn" onclick="toast('1 nova notificação')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            <div class="nb-dot"></div>
-          </div>
-          <div class="hi-avatar" id="hi-avatar" onclick="doLogout()" style="cursor:pointer" title="Sair">?</div>
-        </div>
+        <div class="hi-avatar" onclick="doLogout()" title="Sair">${iniciais(nome)||'?'}</div>
       </div>
     </div>
-    <div class="body">
-      <!-- Hero conexão -->
-      <div class="conn-card" onclick="atualizarConexao()">
-        <div class="cc-deco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg></div>
-        <div class="conn-top">
-          <div class="led on" id="conn-led"></div>
-          <div class="conn-label" id="conn-status-txt">Conectando...</div>
+  </div>
+  <div class="body">
+    <div class="conn-card" onclick="atualizarConexao()">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <div class="led ${online?'on':'off'}"></div>
+        <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.75)">${online?'Conexão ativa':'Conexão offline'}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div>
+          <div class="conn-speed">${vel}<span class="conn-mbps">Mbps</span></div>
+          <div class="conn-plan">${plano}</div>
         </div>
-        <div class="conn-bottom">
+        <div class="conn-pill">${online?'✓ Estável':'✗ Offline'}</div>
+      </div>
+    </div>
+
+    <div class="qa-grid">
+      <div class="qa" onclick="navTo('fatura')">
+        <div class="qa-icon" style="background:#FFFBDA"><svg viewBox="0 0 24 24" fill="none" stroke="#8A7000" stroke-width="2" width="19" height="19"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg></div>
+        <div class="qa-lbl">2ª Via</div>
+      </div>
+      <div class="qa" onclick="navTo('os')">
+        <div class="qa-icon" style="background:#EEEEFF"><svg viewBox="0 0 24 24" fill="none" stroke="#3B3ED8" stroke-width="2" width="19" height="19"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
+        <div class="qa-lbl">Chamados</div>
+      </div>
+      <div class="qa" onclick="navTo('ind')">
+        <div class="qa-icon" style="background:#FDE8F3"><svg viewBox="0 0 24 24" fill="none" stroke="#E83A8C" stroke-width="2" width="19" height="19"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <div class="qa-lbl">Indicação</div>
+      </div>
+      <div class="qa" onclick="toast('Abrindo atendimento...')">
+        <div class="qa-icon" style="background:#E8FBF2"><svg viewBox="0 0 24 24" fill="#22C47A" width="19" height="19"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.6 14.1c-.2.7-1.4 1.3-2 1.4-.5.1-1.1.1-1.8-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.8 1.9c.1.2.1.4 0 .6l-.4.5c-.2.2-.4.4-.5.6-.2.2-.3.4-.1.7.1.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.2 1.4.3.1.4.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.7-.1l2 .9c.3.2.5.2.6.4.1.2.1.8-.1 1.5z"/></svg></div>
+        <div class="qa-lbl">Suporte</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">Fatura atual</div><div class="card-link" onclick="navTo('fatura')">Ver tudo</div></div>
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 12px">
           <div>
-            <div class="conn-speed" id="conn-speed">—<span class="conn-mbps">Mbps</span></div>
-            <div class="conn-plan" id="conn-plan">Carregando plano...</div>
+            <div class="mono" style="font-size:24px;font-weight:500;color:var(--text)">${fatVal}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:3px">${fatVenc}</div>
           </div>
-          <div class="conn-pill" id="conn-pill">...</div>
+          <span class="pill ${fatCls}">${fatTxt}</span>
         </div>
-      </div>
-
-      <!-- Quick actions -->
-      <div class="qa-grid">
-        <div class="qa" onclick="goTab('fatura')">
-          <div class="qa-icon yellow"><svg viewBox="0 0 24 24" fill="none" stroke="#8A7000" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg></div>
-          <div class="qa-lbl">2ª Via</div>
-        </div>
-        <div class="qa" onclick="goTab('os')">
-          <div class="qa-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="#3B3ED8" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
-          <div class="qa-lbl">Chamados</div>
-        </div>
-        <div class="qa" onclick="goTab('indicacao')">
-          <div class="qa-icon pink"><svg viewBox="0 0 24 24" fill="none" stroke="#E83A8C" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-          <div class="qa-lbl">Indicação</div>
-        </div>
-        <div class="qa" onclick="toast('Abrindo WhatsApp...')">
-          <div class="qa-icon green"><svg viewBox="0 0 24 24" fill="#22C47A"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.6 14.1c-.2.7-1.4 1.3-2 1.4-.5.1-1.1.1-1.8-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.8.8 1.9.1.2.1.4 0 .6-.1.2-.2.3-.4.5-.2.2-.4.4-.5.6-.2.2-.3.4-.1.7.1.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.2 1.4.3.1.4.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.7-.1.3.1 1.7.8 2 .9.3.2.5.2.6.4.1.2.1.8-.1 1.5z"/></svg></div>
-          <div class="qa-lbl">Suporte</div>
-        </div>
-      </div>
-
-      <!-- Fatura resumo -->
-      <div class="card">
-        <div class="card-head"><div class="card-title">Fatura de Junho</div><div class="card-link" onclick="goTab('fatura')">Ver tudo</div></div>
-        <div class="card-body">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 12px">
-            <div>
-              <div style="font-family:'DM Mono',monospace;font-size:24px;font-weight:500;color:var(--text)">R$ 119,90</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:3px">Vence em 25/06/2026</div>
-            </div>
-            <span id="home-fat-status" class="pill aberta">—</span>
-          </div>
-          <button id="home-fat-cod" class="btn-yellow-full" data-codigo="" onclick="copiarCodigo(this)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Copiar código do boleto
-          </button>
-        </div>
-      </div>
-
-      <!-- Cashback teaser -->
-      <div class="cb-teaser" onclick="goTab('indicacao')">
-        <div class="cb-teaser-icon">💰</div>
-        <div>
-          <div id="home-cb-val" class="cb-teaser-val">R$ 0,00</div>
-          <div class="cb-teaser-lbl">em cashback disponível</div>
-        </div>
-        <svg class="cb-arr" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+        <button class="btn-yellow-full" style="margin-bottom:0" onclick="copiarCodigo('${fat?.linha_digitavel||''}')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copiar código do boleto
+        </button>
       </div>
     </div>
-    <div class="tabbar" id="tb-home"></div>
+
+    <div class="cb-teaser" onclick="navTo('ind')">
+      <div style="font-size:30px;flex-shrink:0">💰</div>
+      <div>
+        <div class="mono" style="font-size:20px;font-weight:500;color:#fff">${cb}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:2px">em cashback disponível</div>
+      </div>
+      <svg style="color:rgba(255,255,255,.5);margin-left:auto" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+    </div>
   </div>
+  ${tabBar('home')}`);
+}
 
-  <!-- ══ FATURA ══ -->
-  <div class="screen" id="s-fatura">
-    <div class="header" style="padding-bottom:34px">
-      <div class="header-inner"><div class="hi-name">Faturas</div></div>
-    </div>
-    <div class="body" style="padding-top:16px">
-      <div class="fat-hero">
-        <div id="fat-mes" class="fat-mes">—</div>
-        <div id="fat-val" class="fat-val">—</div>
-        <div id="fat-venc" class="fat-venc">—</div>
-        <div id="fat-badge" class="fat-badge aberta">—</div>
-      </div>
-      <button id="fat-cod-btn" class="btn-yellow-full" data-codigo="" onclick="copiarCodigo(this)">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        Copiar código de barras
-      </button>
-      <button class="btn-outline" onclick="toast('Baixando PDF...')">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Baixar boleto em PDF
-      </button>
-      <div class="card">
-        <div class="card-head" style="padding-bottom:12px"><div class="card-title">Histórico</div></div>
-        <div class="card-body" style="padding-top:0"><div id="fat-hist"><div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">Carregando...</div></div></div>
-      </div>
-            <div style="text-align:right"><div class="hi-val">${f.val}</div><span class="pill ${f.st}">${f.st==='paga'?'Paga':'Em aberto'}</span></div>
-          </div>`).join('')}
-        </div>
-      </div>
-    </div>
-    <div class="tabbar" id="tb-fatura"></div>
+// ── Fatura screen ─────────────────────────────
+function renderFaturaScreen(){
+  const fat   = faturas[0];
+  const pago  = fat?.status === 'pago';
+  const hist  = faturas.slice(1,6);
+  render(`
+  <div class="header">
+    <div class="header-inner"><div class="page-title">Faturas</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
   </div>
-
-  <!-- ══ OS ══ -->
-  <div class="screen" id="s-os">
-    <div class="header" style="padding-bottom:34px">
-      <div class="header-inner"><div class="hi-name">Chamados</div></div>
+  <div class="body">
+    <div class="fat-hero">
+      <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6);margin-bottom:5px">${fat?fmtData(fat.data_vencimento):'—'}</div>
+      <div class="fat-val">${fat?fmtReal(fat.valor):'—'}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:8px">Vencimento em ${fat?fmtData(fat.data_vencimento):'—'}</div>
+      <div class="fat-badge ${pago?'paga':'aberta'}">${pago?'✓ Paga':'🕐 Em aberto'}</div>
     </div>
-    <div class="body" style="padding-top:16px">
-      <div class="card">
-        <div class="card-head" style="padding-bottom:14px"><div class="card-title">Em andamento</div></div>
-      <div class="card-body" style="padding-top:0"><div id="os-andamento" class="os-timeline"><div style="text-align:center;color:var(--text3);padding:16px;font-size:12.5px">Carregando...</div></div></div>
-    </div>
-            <div class="os-content">
-              <div class="os-num">OS #4471</div>
-              <div class="os-desc">Instabilidade na conexão</div>
-              <div class="os-detail">Técnico a caminho · previsão até 18h</div>
-              <div class="os-date">Aberta em 26/06/2026 · 14:32</div>
-              <span class="os-tag andamento">Em andamento</span>
-            </div>
-          </div>
-        </div>
+    <button class="btn-yellow-full" onclick="copiarCodigo('${fat?.linha_digitavel||''}')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copiar código de barras
+    </button>
+    <button class="btn-outline" onclick="toast('Baixando PDF...')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Baixar boleto em PDF
+    </button>
+    <div class="card">
+      <div class="card-head" style="padding-bottom:12px"><div class="card-title">Histórico</div></div>
+      <div class="card-body" style="padding-top:0">
+        ${hist.length ? hist.map(f=>{
+          const pg = f.status==='pago';
+          return `<div class="hist-item">
+            <div><div style="font-weight:600;font-size:13px">${fmtData(f.data_vencimento)}</div><div style="font-size:11.5px;color:var(--text2);margin-top:2px">${pg?'Pago':'Em aberto'}</div></div>
+            <div style="text-align:right"><div class="mono" style="font-size:13.5px">${fmtReal(f.valor)}</div><span class="pill ${pg?'paga':'aberta'}">${pg?'Paga':'Em aberto'}</span></div>
+          </div>`;
+        }).join('') : '<div class="empty-txt">Nenhum histórico disponível</div>'}
       </div>
-      <div class="card">
-        <div class="card-head" style="padding-bottom:14px"><div class="card-title">Histórico</div></div>
-      <div class="card-body" style="padding-top:0"><div id="os-historico" class="os-timeline"><div style="text-align:center;color:var(--text3);padding:16px;font-size:12.5px">Carregando...</div></div></div>
     </div>
-            <div class="os-content">
-              <div class="os-num">OS #4410</div>
-              <div class="os-desc">Troca de roteador</div>
-              <div class="os-detail">Equipamento substituído com sucesso</div>
-              <div class="os-date">Concluída em 10/06/2026</div>
-              <span class="os-tag concluida">Concluída</span>
-            </div>
-          </div>
-          <div class="os-item">
-            <div class="os-line"><div class="os-dot concluida"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div></div>
-            <div class="os-content">
-              <div class="os-num">OS #4322</div>
-              <div class="os-desc">Instalação fibra óptica</div>
-              <div class="os-detail">Instalação inicial do serviço</div>
-              <div class="os-date">Concluída em 02/01/2026</div>
-              <span class="os-tag concluida">Concluída</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <button class="btn-yellow-full" onclick="toast('Abrindo chamado...')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-        Abrir novo chamado
-      </button>
-    </div>
-    <div class="tabbar" id="tb-os"></div>
   </div>
-
-  <!-- ══ INDICAÇÃO ══ -->
-  <div class="screen" id="s-indicacao">
-    <div class="header" style="padding-bottom:34px">
-      <div class="header-inner"><div class="hi-name">Indicação</div></div>
-    </div>
-    <div class="body" style="padding-top:16px">
-      <div class="cb-hero">
-        <div class="cb-lbl">Seu cashback disponível</div>
-        <div id="cb-val" class="cb-val">R$ 0,00</div>
-        <div id="cb-ind-count" class="cb-sub">— · Crédito na próxima fatura</div>
-        <div class="cb-btn" onclick="toast('Solicitação enviada! Será creditado na próxima fatura.')">💳 Resgatar na fatura</div>
-      </div>
-      <div class="card">
-        <div class="card-body">
-          <div class="sec-title">Seu link de indicação</div>
-          <div class="link-box">
-            <span class="link-url">movion.com.br/i/renata8821</span>
-            <button class="btn-copy" onclick="compartilharLink()">Copiar</button>
-          </div>
-          <button class="btn-share" onclick="compartilharLink()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.6 14.1c-.2.7-1.4 1.3-2 1.4-.5.1-1.1.1-1.8-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.8.8 1.9.1.2.1.4 0 .6-.1.2-.2.3-.4.5-.2.2-.4.4-.5.6-.2.2-.3.4-.1.7.1.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.2 1.4.3.1.4.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.7-.1.3.1 1.7.8 2 .9.3.2.5.2.6.4.1.2.1.8-.1 1.5z"/></svg>
-            Compartilhar no WhatsApp
-          </button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div class="card-title">Quem você indicou</div></div>
-      <div class="card-body"><div id="cb-lista"><div style="text-align:center;color:var(--text3);padding:16px;font-size:12.5px">Carregando...</div></div></div>
-    </div>
-            <div class="ind-credit">${i.credit}</div>
-          </div>`).join('')}
-        </div>
-      </div>
-      <div class="how-box">
-        <div class="how-title">Como funciona?</div>
-        <div class="how-txt">Compartilhe seu link. Cada amigo que assinar um plano te garante <b>R$ 30,00</b> de crédito na próxima fatura. Sem limite de indicações.</div>
-      </div>
-    </div>
-    <div class="tabbar" id="tb-indicacao"></div>
-  </div>
-</div>
-
-<script>
-// ─── Config ────────────────────────────────────────────────────
-const SUPA_URL  = 'https://mgtetsmcswdtvsgewcen.supabase.co';
-const SUPA_ANON = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
-const PROXY_URL = 'https://movicontrol.vercel.app/api/ixc-proxy';
-// IXC credentials ficam SOMENTE no servidor (Vercel env vars)
-// O app só envia o JWT do Supabase — o proxy cuida do resto
-
-const sb = window.supabase.createClient(SUPA_URL, SUPA_ANON);
-
-// ─── Estado global ─────────────────────────────────────────────
-let activeTab = 'home';
-let perfil    = null;   // dados de v_cliente_app
-let faturas   = [];
-let ordens    = [];
-let cbSaldo   = 0;
-let cbLista   = [];
-
-// ─── Tabs ──────────────────────────────────────────────────────
-const TABS = [
-  {id:'home',lbl:'Início',screen:'s-home',icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>`},
-  {id:'fatura',lbl:'Fatura',screen:'s-fatura',icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>`},
-  {id:'os',lbl:'Chamados',screen:'s-os',icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`},
-  {id:'indicacao',lbl:'Indicação',screen:'s-indicacao',icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`},
-];
-
-function buildTabs() {
-  ['home','fatura','os','indicacao'].forEach(sid => {
-    const el = document.getElementById(`tb-${sid}`);
-    if (!el) return;
-    el.innerHTML = TABS.map(t => `
-      <div class="tab ${t.id===activeTab?'active':''}" onclick="goTab('${t.id}')">
-        <div class="tab-dot"></div>${t.icon}
-        <span>${t.lbl}</span>
-      </div>`).join('');
-  });
+  ${tabBar('fatura')}`);
 }
 
-function goTab(id) {
-  activeTab = id;
-  // Esconder todas as screens via style direto (mais confiável que classe CSS)
-  document.querySelectorAll('.screen').forEach(s => {
-    s.classList.remove('active');
-    s.style.display = 'none';
-  });
-  // Mostrar só a ativa
-  const target = document.getElementById(TABS.find(t => t.id === id).screen);
-  if (target) {
-    target.classList.add('active');
-    target.style.display = 'flex';
-  }
-  buildTabs();
-}
-
-// ─── Toast ─────────────────────────────────────────────────────
-let _tt;
-function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
-  clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 2500);
-}
-
-// ─── Helpers ───────────────────────────────────────────────────
-function fmtNome(nome) {
-  if (!nome) return '';
-  return nome.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-}
-function iniciais(nome) {
-  return (nome || '').split(' ').filter(Boolean).map(p => p[0]).slice(0,2).join('').toUpperCase();
-}
-function fmtReal(v) {
-  return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-function fmtData(d) {
-  if (!d) return '—';
-  const dt = new Date(d);
-  return dt.toLocaleDateString('pt-BR');
-}
-function statusOSLabel(s) {
-  const m = {pendente:'Pendente', assumida:'Em andamento', executando:'Em andamento', finalizada:'Concluída', reagendado:'Reagendada', cancelada:'Cancelada'};
-  return m[s] || s;
-}
-function statusOSClass(s) {
-  if (['assumida','executando'].includes(s)) return 'andamento';
-  if (s === 'finalizada') return 'concluida';
-  return 'agendada';
-}
-
-// ─── LOGIN ─────────────────────────────────────────────────────
-async function doLogin() {
-  const cpfRaw = document.getElementById('inp-cpf').value.replace(/\D/g,'');
-  const senha  = document.getElementById('inp-senha').value;
-  if (!cpfRaw || !senha) { toast('Preencha CPF e senha'); return; }
-
-  const btnEl = document.querySelector('.btn-yellow');
-  btnEl.textContent = 'Entrando...'; btnEl.disabled = true;
-
-  try {
-    const { data, error } = await sb.auth.signInWithPassword({
-      email: `${cpfRaw}@moviapp.local`,
-      password: senha
-    });
-    if (error) {
-      toast('CPF ou senha incorretos');
-      btnEl.textContent = 'Entrar'; btnEl.disabled = false;
-      return;
-    }
-    await carregarDados();
-    goTab('home');
-  } catch(e) {
-    toast('Erro de conexão');
-    btnEl.textContent = 'Entrar'; btnEl.disabled = false;
-  }
-}
-
-// ─── CARREGAR DADOS ────────────────────────────────────────────
-async function carregarDados() {
-  // 1) Perfil do cliente
-  try {
-    const { data } = await sb.from('v_cliente_app').select('*').single();
-    perfil = data;
-  } catch(e) {}
-
-  // 2) Faturas via IXC (parallelo)
-  // 3) OS do Supabase
-  // 4) Cashback
-  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback()]);
-
-  renderHome();
-  renderFatura();
-  renderOS();
-  renderCashback();
-}
-
-// ─── FATURAS (IXC via rota segura) ────────────────────────────
-// Credenciais IXC ficam no servidor — app só envia JWT Supabase
-async function carregarFaturas() {
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) return;
-    const r = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-target': 'cliente-dados',
-        'Authorization': `Bearer ${session.access_token}`
-      },
-      body: JSON.stringify({ action: 'get_faturas' })
-    });
-    const d = await r.json();
-    faturas = d.registros || [];
-  } catch(e) { faturas = []; }
-}
-
-// ─── OS (Supabase) ─────────────────────────────────────────────
-async function carregarOS() {
-  if (!perfil?.ixc_id) return;
-  try {
-    const { data } = await sb.from('campo_os')
-      .select('id, numero, descricao, status, data, finalizado_em, assumido_em, solucao, tecnico_nome')
-      .eq('cliente_id', String(perfil.ixc_id))
-      .order('created_at', { ascending: false })
-      .limit(20);
-    ordens = data || [];
-  } catch(e) { ordens = []; }
-}
-
-// ─── CASHBACK (Supabase) ───────────────────────────────────────
-async function carregarCashback() {
-  try {
-    const [{ data: cb }, { data: lista }] = await Promise.all([
-      sb.from('v_cashback').select('*').single(),
-      sb.from('indicacoes').select('*').order('created_at', { ascending: false })
-    ]);
-    cbSaldo = cb?.saldo || 0;
-    cbLista = lista || [];
-  } catch(e) { cbSaldo = 0; cbLista = []; }
-}
-
-// ─── RENDER HOME ───────────────────────────────────────────────
-function renderHome() {
-  if (!perfil) return;
-  const nome = fmtNome(perfil.nome);
-  const online = perfil.online;
-
-  // Saudação
-  document.getElementById('hi-name').textContent = `${nome.split(' ')[0]} 👋`;
-  document.querySelectorAll('.hi-avatar').forEach(el => el.textContent = iniciais(nome));
-
-  // Card conexão
-  document.getElementById('conn-led').className = `led ${online ? 'on' : 'off'}`;
-  document.getElementById('conn-status-txt').textContent = online ? 'Conexão ativa' : 'Conexão offline';
-  document.getElementById('conn-speed').innerHTML = `${perfil.velocidade_mbps || '—'}<span class="conn-mbps">Mbps</span>`;
-  document.getElementById('conn-plan').textContent = `Fibra · ${perfil.plano || 'Plano'} · Residencial`;
-  document.getElementById('conn-pill').textContent = online ? '✓ Estável' : '✗ Offline';
-
-  // Fatura resumo
-  const fat = faturas[0];
-  if (fat) {
-    document.getElementById('home-fat-val').textContent = fmtReal(fat.valor);
-    document.getElementById('home-fat-venc').textContent = `Vence em ${fmtData(fat.data_vencimento)}`;
-    const pago = fat.status === 'pago';
-    document.getElementById('home-fat-status').textContent = pago ? 'Paga' : 'Em aberto';
-    document.getElementById('home-fat-status').className = `pill ${pago ? 'paga' : 'aberta'}`;
-    document.getElementById('home-fat-cod').dataset.codigo = fat.linha_digitavel || '';
-  }
-
-  // Cashback teaser
-  document.getElementById('home-cb-val').textContent = fmtReal(cbSaldo);
-}
-
-// ─── RENDER FATURA ─────────────────────────────────────────────
-function renderFatura() {
-  const fat = faturas[0];
-  if (fat) {
-    const pago = fat.status === 'pago';
-    document.getElementById('fat-mes').textContent = fmtData(fat.data_vencimento).replace(/\d+\//, '').replace('/', '/');
-    document.getElementById('fat-val').textContent = fmtReal(fat.valor);
-    document.getElementById('fat-venc').textContent = `Vencimento em ${fmtData(fat.data_vencimento)}`;
-    document.getElementById('fat-badge').textContent = pago ? '✓ Paga' : '🕐 Em aberto';
-    document.getElementById('fat-badge').className = `fat-badge ${pago ? 'paga' : 'aberta'}`;
-    document.getElementById('fat-cod-btn').dataset.codigo = fat.linha_digitavel || '';
-  }
-
-  // Histórico
-  const hist = document.getElementById('fat-hist');
-  if (!faturas.length) {
-    hist.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">Nenhuma fatura encontrada</div>';
-    return;
-  }
-  hist.innerHTML = faturas.slice(1,6).map(f => {
-    const pago = f.status === 'pago';
-    return `<div class="hist-item">
-      <div><div class="hi-mes">${fmtData(f.data_vencimento)}</div><div class="hi-data">${pago ? 'Paga' : 'Em aberto'}</div></div>
-      <div style="text-align:right"><div class="hi-val">${fmtReal(f.valor)}</div><span class="pill ${pago?'paga':'aberta'}">${pago?'Paga':'Em aberto'}</span></div>
-    </div>`;
-  }).join('');
-}
-
-// ─── RENDER OS ─────────────────────────────────────────────────
-function renderOS() {
-  const emAndamento = ordens.filter(o => ['assumida','executando','pendente'].includes(o.status));
-  const historico   = ordens.filter(o => ['finalizada','cancelada','reagendado'].includes(o.status));
-
-  const andEl = document.getElementById('os-andamento');
-  if (!emAndamento.length) {
-    andEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:16px;font-size:12.5px">Nenhum chamado em aberto</div>';
-  } else {
-    andEl.innerHTML = emAndamento.map((o, i) => osItemHTML(o, i < emAndamento.length - 1)).join('');
-  }
-
-  const histEl = document.getElementById('os-historico');
-  if (!historico.length) {
-    histEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:16px;font-size:12.5px">Nenhum chamado finalizado</div>';
-  } else {
-    histEl.innerHTML = historico.map((o, i) => osItemHTML(o, i < historico.length - 1)).join('');
-  }
-}
-
-function osItemHTML(o, hasConnector) {
-  const cls = statusOSClass(o.status);
-  const icon = cls === 'concluida'
+// ── OS screen ─────────────────────────────────
+function osTag(s){ return s==='finalizada'?'concluida':['assumida','executando','pendente'].includes(s)?'andamento':'agendada'; }
+function osLabel(s){ return {pendente:'Pendente',assumida:'Em andamento',executando:'Em andamento',finalizada:'Concluída',reagendado:'Reagendada',cancelada:'Cancelada'}[s]||s; }
+function osItemHTML(o, connector){
+  const cls = osTag(o.status);
+  const ico = cls==='concluida'
     ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>`
     : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`;
   return `<div class="os-item">
     <div class="os-line">
-      <div class="os-dot ${cls}">${icon}</div>
-      ${hasConnector ? '<div class="os-connector"></div>' : ''}
+      <div class="os-dot ${cls}">${ico}</div>
+      ${connector?'<div class="os-connector"></div>':''}
     </div>
-    <div class="os-content">
-      <div class="os-num">OS #${o.numero || o.id}</div>
-      <div class="os-desc">${fmtNome(o.descricao)}</div>
-      ${o.tecnico_nome ? `<div class="os-detail">Técnico: ${fmtNome(o.tecnico_nome)}</div>` : ''}
-      <div class="os-date">${fmtData(o.data)}</div>
-      <span class="os-tag ${cls}">${statusOSLabel(o.status)}</span>
+    <div style="flex:1;padding-top:5px">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:3px">OS #${o.numero||o.id}</div>
+      <div style="font-weight:700;font-size:13.5px;color:var(--text)">${fmtNome(o.descricao)}</div>
+      ${o.tecnico_nome?`<div style="font-size:12px;color:var(--text2);margin-top:2px">Técnico: ${fmtNome(o.tecnico_nome)}</div>`:''}
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace">${fmtData(o.data)}</div>
+      <span class="os-tag ${cls}">${osLabel(o.status)}</span>
     </div>
   </div>`;
 }
 
-// ─── RENDER CASHBACK ───────────────────────────────────────────
-function renderCashback() {
-  document.getElementById('cb-val').textContent = fmtReal(cbSaldo);
-  document.getElementById('cb-ind-count').textContent = `${cbLista.filter(i=>i.status==='ativo').length} indicações ativas`;
+function renderOSScreen(){
+  const abertos = ordens.filter(o=>['assumida','executando','pendente'].includes(o.status));
+  const hist    = ordens.filter(o=>['finalizada','cancelada','reagendado'].includes(o.status));
+  render(`
+  <div class="header">
+    <div class="header-inner"><div class="page-title">Chamados</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Em andamento</div></div>
+      <div class="card-body" style="padding-top:0">
+        ${abertos.length ? abertos.map((o,i)=>osItemHTML(o,i<abertos.length-1)).join('') : '<div class="empty-txt">Nenhum chamado em aberto ✓</div>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Histórico</div></div>
+      <div class="card-body" style="padding-top:0">
+        ${hist.length ? hist.map((o,i)=>osItemHTML(o,i<hist.length-1)).join('') : '<div class="empty-txt">Nenhum chamado finalizado ainda</div>'}
+      </div>
+    </div>
+    <button class="btn-yellow-full" style="margin-bottom:0" onclick="toast('Abrindo chamado...')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      Abrir novo chamado
+    </button>
+  </div>
+  ${tabBar('os')}`);
+}
 
-  const lista = document.getElementById('cb-lista');
-  if (!cbLista.length) {
-    lista.innerHTML = '<div style="text-align:center;color:var(--text3);padding:16px;font-size:12.5px">Nenhuma indicação ainda</div>';
-    return;
-  }
-  lista.innerHTML = cbLista.map(i => `
-    <div class="ind-item">
-      <div class="ind-ava">${iniciais(i.indicado_nome)}</div>
-      <div><div class="ind-name">${fmtNome(i.indicado_nome)}</div><div class="ind-date">${fmtData(i.created_at)}</div></div>
-      <div class="ind-credit ${i.status==='ativo'?'':''}${i.status!=='ativo'?'style="color:var(--text3)"':''}">${i.status==='ativo' ? fmtReal(i.credito) : 'Pendente'}</div>
-    </div>`).join('');
+// ── Indicação screen ──────────────────────────
+function renderIndScreen(){
+  const cpfSimples = (perfil?.cpf||'').replace(/\D/g,'').slice(-6);
+  const link = `movion.com.br/i/${cpfSimples||'---'}`;
+  render(`
+  <div class="header">
+    <div class="header-inner"><div class="page-title">Indicação</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
+  </div>
+  <div class="body">
+    <div class="cb-hero">
+      <div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.65);margin-bottom:4px">Seu cashback disponível</div>
+      <div class="cb-val">${fmtReal(cbSaldo)}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:8px">${cbLista.filter(i=>i.status==='ativo').length} indicações ativas · Crédito na próxima fatura</div>
+      <div class="cb-btn" onclick="toast('Resgate solicitado!')">💳 Resgatar na fatura</div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <div class="sec-title">Seu link de indicação</div>
+        <div class="link-box">
+          <span class="link-url">${link}</span>
+          <button class="btn-copy" onclick="compartilharLink('${link}')">Copiar</button>
+        </div>
+        <button class="btn-share" onclick="compartilharLink('${link}')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.6 14.1c-.2.7-1.4 1.3-2 1.4-.5.1-1.1.1-1.8-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.8 1.9c.1.2.1.4 0 .6l-.4.5c-.2.2-.4.4-.5.6-.2.2-.3.4-.1.7.1.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.2 1.4.3.1.4.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.7-.1l2 .9c.3.2.5.2.6.4.1.2.1.8-.1 1.5z"/></svg>
+          Compartilhar no WhatsApp
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Quem você indicou</div></div>
+      <div class="card-body">
+        ${cbLista.length ? cbLista.map(i=>`
+          <div class="ind-item">
+            <div class="ind-ava">${iniciais(i.indicado_nome)}</div>
+            <div><div style="font-weight:700;font-size:13px">${fmtNome(i.indicado_nome)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtData(i.created_at)}</div></div>
+            <div class="ind-credit">${i.status==='ativo'?fmtReal(i.credito):'Pendente'}</div>
+          </div>`).join('') : '<div class="empty-txt">Nenhuma indicação ainda</div>'}
+      </div>
+    </div>
+    <div class="how-box">
+      <div class="how-title">Como funciona?</div>
+      <div class="how-txt">Compartilhe seu link. Cada amigo que assinar um plano te garante <b>R$ 30,00</b> de crédito na próxima fatura. Sem limite de indicações.</div>
+    </div>
+  </div>
+  ${tabBar('ind')}`);
+}
 
-  // Link de indicação
-  if (perfil) {
-    const cpfSimples = (perfil.cpf||'').replace(/\D/g,'').slice(-6);
-    const link = `movion.com.br/i/${cpfSimples}`;
-    document.querySelectorAll('.link-url').forEach(el => el.textContent = link);
+// ── Login ─────────────────────────────────────
+async function doLogin(){
+  const cpf   = (document.getElementById('inp-cpf')?.value||'').replace(/\D/g,'');
+  const senha = document.getElementById('inp-senha')?.value||'';
+  if(!cpf||!senha){ toast('Preencha CPF e senha'); return; }
+  const btn = document.getElementById('btn-login');
+  if(btn){ btn.textContent='Entrando...'; btn.disabled=true; }
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email:`${cpf}@moviapp.local`, password:senha });
+    if(error) throw error;
+    await carregarDados();
+    renderHome();
+  } catch(e){
+    toast('CPF ou senha incorretos');
+    if(btn){ btn.textContent='Entrar'; btn.disabled=false; }
   }
 }
 
-// ─── AÇÕES ─────────────────────────────────────────────────────
-function copiarCodigo(el) {
-  const cod = el?.dataset?.codigo || el?.closest('[data-codigo]')?.dataset?.codigo || '';
-  if (!cod) { toast('Código não disponível'); return; }
+async function doLogout(){
+  await sb.auth.signOut();
+  perfil=null; faturas=[]; ordens=[]; cbSaldo=0; cbLista=[];
+  renderLogin();
+}
+
+// ── Dados ─────────────────────────────────────
+async function carregarDados(){
+  try {
+    const { data } = await sb.from('v_cliente_app').select('*').single();
+    perfil = data;
+  } catch(e){ perfil = null; }
+
+  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback()]);
+}
+
+async function carregarFaturas(){
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session) return;
+    const r = await fetch(PROXY_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente-dados','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'get_faturas'})
+    });
+    const d = await r.json();
+    faturas = d.registros||[];
+  } catch(e){ faturas=[]; }
+}
+
+async function carregarOS(){
+  if(!perfil?.ixc_id) return;
+  try {
+    const { data } = await sb.from('campo_os')
+      .select('id,numero,descricao,status,data,finalizado_em,tecnico_nome')
+      .eq('cliente_id', String(perfil.ixc_id))
+      .order('created_at',{ascending:false}).limit(20);
+    ordens = data||[];
+  } catch(e){ ordens=[]; }
+}
+
+async function carregarCashback(){
+  try {
+    const [{ data:cb },{ data:lista }] = await Promise.all([
+      sb.from('v_cashback').select('*').maybeSingle(),
+      sb.from('indicacoes').select('*').order('created_at',{ascending:false})
+    ]);
+    cbSaldo = cb?.saldo||0;
+    cbLista = lista||[];
+  } catch(e){ cbSaldo=0; cbLista=[]; }
+}
+
+async function atualizarConexao(){
+  toast('Atualizando...');
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session) return;
+    const r = await fetch(PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente-dados','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'get_status'})
+    });
+    const d = await r.json();
+    if(d.ok && perfil){ perfil.online=d.online; renderHome(); }
+    toast(d.online?'Conexão online ✓':'Conexão offline');
+  } catch(e){ toast('Erro ao atualizar'); }
+}
+
+function copiarCodigo(cod){
+  if(!cod){ toast('Código não disponível'); return; }
   navigator.clipboard?.writeText(cod).catch(()=>{});
   toast('Código copiado!');
 }
 
-function compartilharLink() {
-  const cpfSimples = (perfil?.cpf||'').replace(/\D/g,'').slice(-6);
-  const link = `https://movion.com.br/i/${cpfSimples}`;
-  if (navigator.share) {
-    navigator.share({ title: 'MoviApp', text: 'Conheça a MoviOn! Use meu link:', url: link });
-  } else {
-    navigator.clipboard?.writeText(link).catch(()=>{});
-    toast('Link copiado para área de transferência!');
-  }
+function compartilharLink(link){
+  const url = 'https://'+link;
+  if(navigator.share){ navigator.share({title:'MoviApp',text:'Conheça a MoviOn!',url}); }
+  else { navigator.clipboard?.writeText(url).catch(()=>{}); toast('Link copiado!'); }
 }
 
-async function atualizarConexao() {
-  toast('Atualizando...');
+// ── Init ──────────────────────────────────────
+(async()=>{
+  renderLogin();
   try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) return;
-    const r = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-target': 'cliente-dados',
-        'Authorization': `Bearer ${session.access_token}`
-      },
-      body: JSON.stringify({ action: 'get_status' })
-    });
-    const d = await r.json();
-    if (d.ok) {
-      perfil.online = d.online;
-      document.getElementById('conn-led').className = `led ${d.online ? 'on' : 'off'}`;
-      document.getElementById('conn-status-txt').textContent = d.online ? 'Conexão ativa' : 'Conexão offline';
-      document.getElementById('conn-pill').textContent = d.online ? '✓ Estável' : '✗ Offline';
-      toast(d.online ? 'Conexão online ✓' : 'Conexão offline');
-    }
-  } catch(e) { toast('Erro ao atualizar'); }
-}
-
-async function doLogout() {
-  await sb.auth.signOut();
-  perfil = null; faturas = []; ordens = []; cbSaldo = 0; cbLista = [];
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById('s-login').classList.add('active');
-  document.getElementById('inp-cpf').value = '';
-  document.getElementById('inp-senha').value = '';
-  const btnEl = document.querySelector('.btn-yellow');
-  btnEl.textContent = 'Entrar'; btnEl.disabled = false;
-}
-
-// ─── INIT ──────────────────────────────────────────────────────
-(async () => {
-  // Garantir que todas as screens estão escondidas exceto o login
-  document.querySelectorAll('.screen').forEach(s => {
-    s.style.display = 'none';
-  });
-  const loginScreen = document.getElementById('s-login');
-  if (loginScreen) {
-    loginScreen.style.display = 'flex';
-    loginScreen.classList.add('active');
-  }
-  buildTabs();
-  // Verificar sessão ativa
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) {
-      await carregarDados();
-      goTab('home');
-    }
-  } catch(e) {
-    console.error('Erro ao verificar sessão:', e);
-  }
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session){ await carregarDados(); renderHome(); }
+  } catch(e){}
 })();
 </script>
 </body>
