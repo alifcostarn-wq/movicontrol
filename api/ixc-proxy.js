@@ -285,6 +285,37 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, total: 0, registros: [], _debug: debug });
     }
 
+    // ── debug_ixc ─────────────────────────────────────────────
+    // Busca 1 registro sem filtro para ver estrutura do endpoint
+    if (action === 'debug_ixc') {
+      const ep = b.endpoint || 'fn_financeiro_conta_receber';
+      const ixcBase2 = IXC_URL.replace(/\/$/, '');
+      const url2 = `${ixcBase2}/webservice/v1/${ep}`;
+      const auth2 = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
+      const body2 = JSON.stringify({ qtype:'', query:'', oper:'=', page:'1', rp:'3', sortname:'id', sortorder:'desc' });
+      try {
+        const r = await fetch(url2, {
+          method:'POST',
+          headers:{'Authorization':auth2,'Content-Type':'application/json','ixcsoft':'listar'},
+          body: body2
+        });
+        const txt = await r.text();
+        const isHtml = txt.trim().startsWith('<');
+        if(isHtml) return res.status(200).json({ endpoint: ep, status: r.status, html: true, preview: txt.slice(0,300) });
+        try {
+          const d = JSON.parse(txt);
+          const sample = d.registros?.[0] || null;
+          return res.status(200).json({
+            endpoint: ep,
+            status: r.status,
+            total: d.total,
+            campos: sample ? Object.keys(sample) : [],
+            sample
+          });
+        } catch(e) { return res.status(200).json({ endpoint: ep, status: r.status, raw: txt.slice(0,300) }); }
+      } catch(e) { return res.status(200).json({ endpoint: ep, error: e.message }); }
+    }
+
     // ── get_status ──────────────────────────────────────────────
     if (action === 'get_status') {
       const endpoints = [
