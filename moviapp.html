@@ -206,7 +206,18 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 const SUPA_URL  = 'https://mgtetsmcswdtvsgewcen.supabase.co';
 const SUPA_ANON = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const PROXY_URL = 'https://movicontrol.vercel.app/api/moviapp';
-const sb = window.supabase.createClient(SUPA_URL, SUPA_ANON);
+// Storage isolado: o MoviApp usa uma chave própria para NÃO compartilhar
+// sessão com o MoviControl (que roda no mesmo domínio/navegador).
+// Sem isso, logar no app como cliente derrubava a sessão do admin.
+const sb = window.supabase.createClient(SUPA_URL, SUPA_ANON, {
+  auth: {
+    storageKey: 'moviapp-cliente-auth',
+    storage: window.localStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false
+  }
+});
 
 // ── Estado global ─────────────────────────────
 let route    = 'login';
