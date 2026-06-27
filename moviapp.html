@@ -530,20 +530,168 @@ function statusTimeline(status){
   return html;
 }
 
+// ── SLA ────────────────────────────────────────────────────────
+const SLA_INTERNO_H = 4;    // 4 horas corridas
+const SLA_CAMPO_H   = 48;   // 48 horas úteis (8h-18h seg-sex)
+
+// Calcula horas úteis entre duas datas (8h-18h, seg-sex = 10h/dia)
+function horasUteis(inicio, fim) {
+  let h = 0;
+  let cur = new Date(inicio);
+  const end = new Date(fim);
+  while (cur < end) {
+    const dow = cur.getDay(); // 0=dom, 6=sab
+    if (dow !== 0 && dow !== 6) {
+      const hIni = Math.max(cur.getHours() + cur.getMinutes()/60, 8);
+      const hFim = Math.min(
+        cur.getDate() === end.getDate() && cur.getMonth() === end.getMonth()
+          ? end.getHours() + end.getMinutes()/60
+          : 18,
+        18
+      );
+      if (hFim > hIni) h += hFim - hIni;
+    }
+    // Avançar para o próximo dia ou para as 8h do mesmo dia
+    const prox = new Date(cur);
+    if (cur.getHours() >= 18 || dow === 0 || dow === 6) {
+      prox.setDate(prox.getDate() + 1);
+      prox.setHours(8, 0, 0, 0);
+    } else if (cur.getHours() < 8) {
+      prox.setHours(8, 0, 0, 0);
+    } else {
+      prox.setDate(prox.getDate() + 1);
+      prox.setHours(8, 0, 0, 0);
+    }
+    cur = prox;
+  }
+  return h;
+}
+
+// Retorna { tipo, limiteH, decorrido, percentual, status, textoRestante, textoDecorrido }
+function calcSLA(chamado) {
+  const isCampo   = chamado.tipo === 'campo' || chamado.os_id;
+  const tipo      = isCampo ? 'campo' : 'interno';
+  const limiteH   = isCampo ? SLA_CAMPO_H : SLA_INTERNO_H;
+  const inicio    = new Date(chamado.created_at);
+  const agora     = chamado.concluido_em ? new Date(chamado.concluido_em) : new Date();
+  const decorrido = isCampo
+    ? horasUteis(inicio, agora)
+    : (agora - inicio) / 3600000;
+
+  const percentual = Math.min((decorrido / limiteH) * 100, 100);
+  const restanteH  = Math.max(limiteH - decorrido, 0);
+  const vencido    = decorrido >= limiteH;
+
+  let semaforo, textoRestante;
+  if (vencido) {
+    semaforo = 'vermelho';
+    const excesso = decorrido - limiteH;
+    textoRestante = `Vencido há ${fmtDuracao(excesso)}`;
+  } else if (percentual >= 75) {
+    semaforo = 'amarelo';
+    textoRestante = `Vence em ${fmtDuracao(restanteH)}`;
+  } else {
+    semaforo = 'verde';
+    textoRestante = `Vence em ${fmtDuracao(restanteH)}`;
+  }
+
+  return { tipo, limiteH, decorrido, percentual, semaforo, textoRestante,
+    textoDecorrido: fmtDuracao(decorrido) };
+}
+
+function fmtDuracao(h) {
+  if (h < 1) return `${Math.round(h * 60)}min`;
+  if (h < 24) {
+    const hh = Math.floor(h);
+    const mm = Math.round((h - hh) * 60);
+    return mm > 0 ? `${hh}h${mm}min` : `${hh}h`;
+  }
+  const dias = Math.floor(h / 24);
+  const hh   = Math.round(h % 24);
+  return hh > 0 ? `${dias}d ${hh}h` : `${dias}d`;
+}
+
+function slaHtml(chamado) {
+  const isConcluido = ['finalizada','concluido','resolvido','cancelada'].includes(chamado.status);
+  const sla = calcSLA(chamado);
+  const cores = {
+    verde:    { bg:'#E8FBF2', txt:'#1A8C52', dot:'#22C47A' },
+    amarelo:  { bg:'#FDF6E3', txt:'#8A6200', dot:'#FFB800' },
+    vermelho: { bg:'#FBF0EE', txt:'#C23B2A', dot:'#E83A3A' },
+  };
+  const c = cores[sla.semaforo];
+  const tipoLabel = sla.tipo === 'campo' ? '🔧 Visita técnica' : '💬 Suporte remoto';
+  const slaLabel  = sla.tipo === 'campo' ? '48h úteis' : '4h';
+
+  return `<div style="background:${c.bg};border-radius:10px;padding:10px 12px;margin-top:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:700;color:${c.txt}">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.dot};margin-right:5px;vertical-align:middle"></span>
+        ${tipoLabel} · SLA ${slaLabel}
+      </div>
+      <div style="font-size:11px;font-weight:700;color:${c.txt}">${isConcluido ? '✓ Concluído' : sla.textoRestante}</div>
+    </div>
+    <div style="background:rgba(0,0,0,.08);border-radius:4px;height:5px;overflow:hidden">
+      <div style="height:100%;width:${sla.percentual}%;background:${c.dot};border-radius:4px;transition:.3s"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:5px">
+      <div style="font-size:10px;color:${c.txt};opacity:.8">Decorrido: ${sla.textoDecorrido}</div>
+      <div style="font-size:10px;color:${c.txt};opacity:.8">${Math.round(sla.percentual)}%</div>
+    </div>
+  </div>`;
+}
+
+function fmtDatetime(d){
+  if(!d) return '—';
+  try{
+    const dt = new Date(d);
+    return dt.toLocaleDateString('pt-BR') + ' às ' +
+      dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  }catch{return d;}
+}
+
 function chamadoItemHTML(c, connector){
   const cls = chamadoTag(c.status);
   const isConcluido = ['finalizada','concluido','resolvido','cancelada'].includes(c.status);
-  return `<div style="padding:${connector?'0 0 16px':'0'}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+  return `<div style="padding:${connector?'0 0 20px':'0'}">
+    <!-- Cabeçalho: número + status -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
       <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace">Chamado #${c.id}</div>
       <span class="os-tag ${cls}" style="margin:0">${chamadoLabel(c.status)}</span>
     </div>
-    <div style="font-weight:600;font-size:13px;color:var(--text);line-height:1.4">${fmtNome(c.descricao)}</div>
-    ${c.tecnico_nome?`<div style="font-size:12px;color:var(--text2);margin-top:4px;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${fmtNome(c.tecnico_nome)}</div>`:''}
+
+    <!-- Descrição -->
+    <div style="font-weight:600;font-size:13.5px;color:var(--text);line-height:1.5">${fmtNome(c.descricao)}</div>
+
+    <!-- Data de abertura -->
+    <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11.5px;color:var(--text2)">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Aberto em ${fmtDatetime(c.created_at)}
+    </div>
+
+    <!-- Técnico (se atribuído) -->
+    ${c.tecnico_nome ? `<div style="display:flex;align-items:center;gap:5px;margin-top:4px;font-size:11.5px;color:var(--text2)">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Técnico: ${fmtNome(c.tecnico_nome)}
+    </div>` : ''}
+
+    <!-- Timeline de status (só para em aberto) -->
     ${!isConcluido ? statusTimeline(c.status) : ''}
-    ${isConcluido && c.solucao_tecnica ? `<div style="background:var(--blue-faint);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--blue)"><b>Solução:</b> ${c.solucao_tecnica}</div>` : ''}
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">${fmtData(c.created_at||c.data)}${c.concluido_em?' → '+fmtData(c.concluido_em):''}</div>
-    ${connector?'<div style="height:1px;background:var(--border);margin-top:16px"></div>':''}
+
+    <!-- SLA -->
+    ${slaHtml(c)}
+
+    <!-- Solução (se concluído) -->
+    ${isConcluido && c.solucao_tecnica ? `<div style="background:var(--blue-faint);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--blue);line-height:1.5">
+      <b style="display:block;margin-bottom:3px">✓ Solução aplicada:</b>${c.solucao_tecnica}
+    </div>` : ''}
+
+    <!-- Data de conclusão -->
+    ${isConcluido && c.concluido_em ? `<div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">
+      Concluído em ${fmtDatetime(c.concluido_em)}
+    </div>` : ''}
+
+    ${connector?'<div style="height:1px;background:var(--border);margin-top:18px"></div>':''}
   </div>`;
 }
 
