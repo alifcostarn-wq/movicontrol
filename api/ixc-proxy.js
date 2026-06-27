@@ -171,32 +171,44 @@ export default async function handler(req, res) {
 
     const srvH = { 'apikey': SRV, 'Authorization': `Bearer ${SRV}`, 'Content-Type': 'application/json' };
 
-    // 1) Validar JWT do cliente
+    // 1) Decodificar JWT do cliente (sem chamada HTTP — JWT é assinado pelo Supabase)
     const jwt = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
     if (!jwt) return res.status(401).json({ error: 'Token ausente.' });
 
     let clienteUserId = null;
     try {
-      const rv = await fetch(`${SUPA_URL}/auth/v1/user`, {
-        headers: { 'apikey': SRV, 'Authorization': `Bearer ${jwt}` }
-      });
-      if (!rv.ok) return res.status(401).json({ error: 'Sessao invalida.' });
-      const u = await rv.json();
-      clienteUserId = u.id;
-    } catch (e) { return res.status(401).json({ error: 'Falha ao validar sessao.' }); }
+      const payload = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8'));
+      clienteUserId = payload.sub;
+      // Verificar expiração
+      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+        return res.status(401).json({ error: 'Sessao expirada. Faca login novamente.' });
+      }
+    } catch (e) { return res.status(401).json({ error: 'Token invalido.' }); }
+    if (!clienteUserId) return res.status(401).json({ error: 'Token sem identificador de usuario.' });
 
-    // 2) Buscar ixc_id do cliente na tabela clientes_app -> clientes
-    let ixcId = null;
+    // 2a) Buscar cliente_id em clientes_app
+    let clienteIdLocal = null;
     try {
-      const rc = await fetch(
-        `${SUPA_URL}/rest/v1/clientes_app?id=eq.${clienteUserId}&select=cliente_id,clientes(ixc_id)`,
+      const r1 = await fetch(
+        `${SUPA_URL}/rest/v1/clientes_app?id=eq.${clienteUserId}&select=cliente_id`,
         { headers: srvH }
       );
-      const dc = await rc.json();
-      ixcId = dc?.[0]?.clientes?.ixc_id || null;
+      const d1 = await r1.json();
+      clienteIdLocal = d1?.[0]?.cliente_id || null;
     } catch (e) {}
+    if (!clienteIdLocal) return res.status(404).json({ error: 'Acesso nao configurado. Contate o suporte.' });
 
-    if (!ixcId) return res.status(404).json({ error: 'Cliente nao encontrado ou sem vinculo IXC.' });
+    // 2b) Buscar ixc_id em clientes
+    let ixcId = null;
+    try {
+      const r2 = await fetch(
+        `${SUPA_URL}/rest/v1/clientes?id=eq.${clienteIdLocal}&select=ixc_id`,
+        { headers: srvH }
+      );
+      const d2 = await r2.json();
+      ixcId = d2?.[0]?.ixc_id || null;
+    } catch (e) {}
+    if (!ixcId) return res.status(404).json({ error: 'Cliente sem vinculo IXC. Contate o suporte.' });
 
     const b      = req.body || {};
     const action = b.action || 'get_faturas';
