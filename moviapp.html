@@ -187,11 +187,35 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 .pix-instr{font-size:12px;color:var(--text2);text-align:center;margin-bottom:18px;line-height:1.5}
 .btn-pix-copy{width:100%;padding:14px;border-radius:var(--radius-sm);border:none;background:var(--blue);color:#fff;font-family:inherit;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
 .btn-pix-close{width:100%;padding:13px;margin-top:8px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:transparent;color:var(--text2);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+
+.chamado-overlay{position:fixed;inset:0;background:rgba(15,15,50,.6);z-index:9998;display:none;align-items:flex-end;justify-content:center}
+.chamado-sheet{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 22px calc(28px + env(safe-area-inset-bottom,0px));animation:sheetUp .25s ease}
+.chamado-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px}
+.chamado-textarea{width:100%;min-height:120px;padding:14px;border:1.5px solid var(--border);border-radius:12px;font-family:inherit;font-size:14px;resize:none;line-height:1.5;color:var(--text)}
+.chamado-textarea:focus{outline:none;border-color:var(--blue)}
+.chamado-erro{display:none;background:#FBF0EE;border:1px solid #f0c8c2;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#c23b2a;margin:10px 0}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast"></div>
+
+<div class="chamado-overlay" id="chamado-overlay" onclick="if(event.target===this)fecharModalChamado()">
+  <div class="chamado-sheet">
+    <div class="chamado-handle"></div>
+    <div style="font-family:'Nunito',sans-serif;font-weight:800;font-size:18px;margin-bottom:6px">Abrir chamado</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px">Descreva o problema que está enfrentando com sua conexão.</div>
+    <textarea id="chamado-txt" class="chamado-textarea" placeholder="Ex: Minha internet está sem conexão desde ontem às 20h. Já reiniciei o roteador mas não voltou..."></textarea>
+    <div id="chamado-contador" style="font-size:11px;color:var(--text3);text-align:right;margin-top:4px">0/500</div>
+    <div id="chamado-erro" class="chamado-erro"></div>
+    <button id="chamado-btn" class="btn-yellow-full" onclick="confirmarChamado()" style="margin-top:12px;margin-bottom:8px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      Enviar chamado
+    </button>
+    <button onclick="fecharModalChamado()" style="width:100%;padding:13px;border:1.5px solid var(--border);border-radius:12px;background:transparent;font-family:inherit;font-size:14px;color:var(--text2);cursor:pointer">Cancelar</button>
+  </div>
+</div>
+
 
 <div class="pix-overlay" id="pix-overlay">
   <div class="pix-sheet">
@@ -449,57 +473,138 @@ function renderFaturaScreen(){
 }
 
 // ── OS screen ─────────────────────────────────
-function osTag(s){ return s==='finalizada'?'concluida':['assumida','executando','pendente'].includes(s)?'andamento':'agendada'; }
-function osLabel(s){ return {pendente:'Pendente',assumida:'Em andamento',executando:'Em andamento',finalizada:'Concluída',reagendado:'Reagendada',cancelada:'Cancelada'}[s]||s; }
-function osItemHTML(o, connector){
-  const cls = osTag(o.status);
+// ── OS / Chamados screen ──────────────────────────────────────
+let chamados = [];
+
+function chamadoTag(s){
+  if(s==='pendente') return 'agendada';
+  if(['assumida','executando','em_atendimento'].includes(s)) return 'andamento';
+  if(['finalizada','concluido','resolvido'].includes(s)) return 'concluida';
+  return 'agendada';
+}
+function chamadoLabel(s){
+  return {pendente:'Aguardando atendimento',assumida:'Em atendimento',executando:'Em atendimento',
+    finalizada:'Concluído',concluido:'Concluído',resolvido:'Concluído',cancelada:'Cancelado'}[s]||s;
+}
+function chamadoItemHTML(c, connector){
+  const cls = chamadoTag(c.status);
   const ico = cls==='concluida'
     ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`;
+    : cls==='andamento'
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>`;
   return `<div class="os-item">
     <div class="os-line">
       <div class="os-dot ${cls}">${ico}</div>
       ${connector?'<div class="os-connector"></div>':''}
     </div>
     <div style="flex:1;padding-top:5px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:3px">OS #${o.numero||o.id}</div>
-      <div style="font-weight:700;font-size:13.5px;color:var(--text)">${fmtNome(o.descricao)}</div>
-      ${o.tecnico_nome?`<div style="font-size:12px;color:var(--text2);margin-top:2px">Técnico: ${fmtNome(o.tecnico_nome)}</div>`:''}
-      <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace">${fmtData(o.data)}</div>
-      <span class="os-tag ${cls}">${osLabel(o.status)}</span>
+      <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:3px">Chamado #${c.id}</div>
+      <div style="font-weight:700;font-size:13.5px;color:var(--text);line-height:1.4">${fmtNome(c.descricao)}</div>
+      ${c.tecnico_nome?`<div style="font-size:12px;color:var(--text2);margin-top:3px">Técnico: ${fmtNome(c.tecnico_nome)}</div>`:''}
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace">${fmtData(c.created_at||c.data)}</div>
+      <span class="os-tag ${cls}">${chamadoLabel(c.status)}</span>
     </div>
   </div>`;
 }
 
+async function carregarChamados(){
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session) return;
+    const r = await fetch(PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'get_chamados'})
+    });
+    const d = await r.json();
+    chamados = d.chamados || [];
+  } catch(e){ chamados = []; }
+}
+
 function renderOSScreen(){
-  const abertos = ordens.filter(o=>['assumida','executando','pendente'].includes(o.status));
-  const hist    = ordens.filter(o=>['finalizada','cancelada','reagendado'].includes(o.status));
+  const abertos = chamados.filter(c=>['pendente','assumida','executando','em_atendimento'].includes(c.status));
+  const hist    = chamados.filter(c=>['finalizada','concluido','resolvido','cancelada'].includes(c.status));
+  const temAberto = abertos.length > 0;
   render(`
   <div class="header">
     <div class="header-inner"><div class="page-title">Chamados</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
   </div>
   <div class="body">
-    <div class="card">
-      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Em andamento</div></div>
+    ${temAberto ? `<div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Em aberto</div></div>
       <div class="card-body" style="padding-top:0">
-        ${abertos.length ? abertos.map((o,i)=>osItemHTML(o,i<abertos.length-1)).join('') : '<div class="empty-txt">Nenhum chamado em aberto ✓</div>'}
+        ${abertos.map((c,i)=>chamadoItemHTML(c,i<abertos.length-1)).join('')}
       </div>
-    </div>
-    <div class="card">
-      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Histórico</div></div>
-      <div class="card-body" style="padding-top:0">
-        ${hist.length ? hist.map((o,i)=>osItemHTML(o,i<hist.length-1)).join('') : '<div class="empty-txt">Nenhum chamado finalizado ainda</div>'}
-      </div>
-    </div>
-    <button class="btn-yellow-full" style="margin-bottom:0" onclick="toast('Abrindo chamado...')">
+    </div>` : `<button class="btn-yellow-full" onclick="abrirModalChamado()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
       Abrir novo chamado
     </button>
+    <div style="background:var(--blue-faint);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--blue);text-align:center">
+      Descreva seu problema e nossa equipe entrará em contato em breve.
+    </div>`}
+    ${hist.length ? `<div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Histórico</div></div>
+      <div class="card-body" style="padding-top:0">
+        ${hist.map((c,i)=>chamadoItemHTML(c,i<hist.length-1)).join('')}
+      </div>
+    </div>` : ''}
+    ${!hist.length && !temAberto ? `<div class="empty-txt" style="margin-top:10px">Nenhum chamado anterior</div>` : ''}
   </div>
   ${tabBar('os')}`);
 }
 
-// ── Indicação screen ──────────────────────────
+async function abrirModalChamado(){
+  const overlay = document.getElementById('chamado-overlay');
+  if(overlay){ overlay.style.display='flex'; }
+  setTimeout(()=>document.getElementById('chamado-txt')?.focus(), 100);
+  const erroEl = document.getElementById('chamado-erro');
+  if(erroEl) erroEl.style.display='none';
+  const btn = document.getElementById('chamado-btn');
+  if(btn){ btn.textContent='Enviar chamado'; btn.disabled=false; }
+}
+
+function fecharModalChamado(){
+  const overlay = document.getElementById('chamado-overlay');
+  if(overlay) overlay.style.display='none';
+}
+
+async function confirmarChamado(){
+  const descricao = (document.getElementById('chamado-txt')?.value||'').trim();
+  const erroEl = document.getElementById('chamado-erro');
+  const btnEl  = document.getElementById('chamado-btn');
+  erroEl.style.display='none';
+  if(!descricao || descricao.length < 5){
+    erroEl.textContent='Descreva o problema com pelo menos 5 caracteres.';
+    erroEl.style.display=''; return;
+  }
+  btnEl.textContent='Enviando...'; btnEl.disabled=true;
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    const r = await fetch(PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'abrir_chamado', descricao})
+    });
+    const d = await r.json();
+    if(!r.ok || !d.ok){
+      erroEl.textContent = d.error || 'Erro ao abrir chamado.';
+      erroEl.style.display='';
+      btnEl.textContent='Enviar chamado'; btnEl.disabled=false;
+      return;
+    }
+    fecharModalChamado();
+    toast('Chamado aberto! Nossa equipe entrará em contato. ✓');
+    await carregarChamados();
+    renderOSScreen();
+  } catch(e){
+    erroEl.textContent='Erro de conexão. Tente novamente.';
+    erroEl.style.display='';
+    btnEl.textContent='Enviar chamado'; btnEl.disabled=false;
+  }
+}
+
+// ── Indicação screen ──// ── Indicação screen ──────────────────────────
 function renderIndScreen(){
   const cpfSimples = (perfil?.cpf||'').replace(/\D/g,'').slice(-6);
   const link = `movion.com.br/i/${cpfSimples||'---'}`;
@@ -577,7 +682,7 @@ async function carregarDados(){
     perfil = data;
   } catch(e){ perfil = null; }
 
-  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback()]);
+  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback(), carregarChamados()]);
 }
 
 async function carregarFaturas(){
@@ -743,6 +848,15 @@ function fecharPix(){
 // Fechar ao clicar no fundo
 document.getElementById('pix-overlay')?.addEventListener('click', function(e){
   if(e.target === this) fecharPix();
+});
+
+
+document.addEventListener('input', function(e){
+  if(e.target.id==='chamado-txt'){
+    const len = e.target.value.length;
+    const el = document.getElementById('chamado-contador');
+    if(el){ el.textContent = len+'/500'; el.style.color = len > 450 ? 'var(--danger)' : 'var(--text3)'; }
+  }
 });
 
 // ── Init ──────────────────────────────────────
