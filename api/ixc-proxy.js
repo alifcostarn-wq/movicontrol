@@ -218,10 +218,10 @@ export default async function handler(req, res) {
 
     // ── get_faturas ─────────────────────────────────────────────
     if (action === 'get_faturas') {
-      const endpoints = [
-        `${ixcBase}/webservice/v1/fn_financeiro_conta_receber`,
-        `${ixcBase}/adm.php/webservice/v1/fn_financeiro_conta_receber`,
-      ];
+      // Usar o mesmo padrão de URL do proxy principal (comprovadamente funcional)
+      const ixcUrl = IXC_URL.replace(/\/$/, '');
+      const url = `${ixcUrl}/webservice/v1/fn_financeiro_conta_receber`;
+
       const body = JSON.stringify({
         qtype: 'fn_financeiro_conta_receber.id_cliente',
         query: String(ixcId),
@@ -231,29 +231,43 @@ export default async function handler(req, res) {
         sortname: 'data_vencimento',
         sortorder: 'desc',
       });
-      for (const url of endpoints) {
-        try {
-          const r = await fetch(url, { method: 'POST', headers: ixcH, body });
-          const txt = await r.text();
-          if (txt.trim().startsWith('<')) continue;
-          const d = JSON.parse(txt);
-          if (r.ok) {
-            // Filtrar campos sensiveis antes de devolver
-            const registros = (d.registros || []).map(f => ({
-              id:               f.id,
-              valor:            f.valor,
-              data_vencimento:  f.data_vencimento,
-              data_pagamento:   f.data_pagamento,
-              status:           f.status,
-              linha_digitavel:  f.linha_digitavel,
-              nosso_numero:     f.nosso_numero,
-              referencia:       f.referencia,
-            }));
-            return res.status(200).json({ ok: true, total: d.total || registros.length, registros });
-          }
-        } catch (e) {}
+
+      let ixcRaw = '', ixcStatus = 0;
+      try {
+        const r = await fetch(url, { method: 'POST', headers: ixcH, body });
+        ixcRaw = await r.text();
+        ixcStatus = r.status;
+
+        // Se IXC retornou HTML (erro de autenticação, página de erro, etc)
+        if (ixcRaw.trim().startsWith('<')) {
+          return res.status(502).json({ error: 'IXC retornou HTML', status: ixcStatus, preview: ixcRaw.slice(0, 200) });
+        }
+
+        let d;
+        try { d = JSON.parse(ixcRaw); } catch(e) {
+          return res.status(502).json({ error: 'IXC retornou JSON inválido', raw: ixcRaw.slice(0, 300) });
+        }
+
+        if (!r.ok) {
+          return res.status(502).json({ error: 'IXC retornou erro', status: ixcStatus, body: d });
+        }
+
+        const registros = (d.registros || []).map(f => ({
+          id:              f.id,
+          valor:           f.valor,
+          data_vencimento: f.data_vencimento,
+          data_pagamento:  f.data_pagamento,
+          status:          f.status,
+          linha_digitavel: f.linha_digitavel,
+          nosso_numero:    f.nosso_numero,
+          referencia:      f.referencia,
+        }));
+
+        return res.status(200).json({ ok: true, total: d.total || registros.length, registros });
+
+      } catch (e) {
+        return res.status(502).json({ error: 'Erro ao conectar com IXC', message: e.message, url, ixcId });
       }
-      return res.status(502).json({ error: 'Nao foi possivel buscar faturas no IXC.' });
     }
 
     // ── get_status ──────────────────────────────────────────────
