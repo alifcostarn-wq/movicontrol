@@ -194,6 +194,19 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 .chamado-textarea{width:100%;min-height:120px;padding:14px;border:1.5px solid var(--border);border-radius:12px;font-family:inherit;font-size:14px;resize:none;line-height:1.5;color:var(--text)}
 .chamado-textarea:focus{outline:none;border-color:var(--blue)}
 .chamado-erro{display:none;background:#FBF0EE;border:1px solid #f0c8c2;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#c23b2a;margin:10px 0}
+
+.status-timeline{display:flex;align-items:center;gap:0;margin-top:12px;padding:12px 0 4px}
+.st-step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative}
+.st-dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);background:#fff;display:flex;align-items:center;justify-content:center;z-index:1;flex-shrink:0}
+.st-dot.ativo{background:var(--blue);border-color:var(--blue)}
+.st-dot.concluido{background:var(--green);border-color:var(--green)}
+.st-dot svg{width:11px;height:11px;color:#fff}
+.st-label{font-size:9.5px;font-weight:600;color:var(--text3);margin-top:5px;text-align:center;line-height:1.2}
+.st-label.ativo{color:var(--blue)}
+.st-label.concluido{color:var(--green)}
+.st-line{flex:1;height:2px;background:var(--border);margin:0 -2px;margin-bottom:16px}
+.st-line.ativo{background:var(--blue)}
+.st-line.concluido{background:var(--green)}
 </style>
 </head>
 <body>
@@ -486,40 +499,118 @@ function chamadoLabel(s){
   return {pendente:'Aguardando atendimento',assumida:'Em atendimento',executando:'Em atendimento',
     finalizada:'Concluído',concluido:'Concluído',resolvido:'Concluído',cancelada:'Cancelado'}[s]||s;
 }
+function statusTimeline(status){
+  // Etapas: pendente → assumida → executando → finalizada
+  const etapas = [
+    {k:'pendente',    label:'Aguardando'},
+    {k:'assumida',    label:'Designado'},
+    {k:'executando',  label:'Atendendo'},
+    {k:'finalizada',  label:'Concluído'},
+  ];
+  const ordem = {pendente:0, assumida:1, executando:2, finalizada:3, concluido:3, resolvido:3};
+  const atual = ordem[status] ?? 0;
+  let html = '<div class="status-timeline">';
+  etapas.forEach((e,i)=>{
+    const passado  = i < atual;
+    const ativo    = i === atual;
+    const clsDot   = passado||ativo ? (passado ? 'concluido' : 'ativo') : '';
+    const clsLabel = passado||ativo ? (passado ? 'concluido' : 'ativo') : '';
+    const icoCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>`;
+    const icoDot   = `<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="currentColor"/></svg>`;
+    html += `<div class="st-step">
+      <div class="st-dot ${clsDot}">${passado?icoCheck:(ativo?icoDot:'')}</div>
+      <div class="st-label ${clsLabel}">${e.label}</div>
+    </div>`;
+    if(i < etapas.length-1){
+      const clsLine = i < atual ? 'concluido' : (i === atual-1 ? 'ativo' : '');
+      html += `<div class="st-line ${clsLine}"></div>`;
+    }
+  });
+  html += '</div>';
+  return html;
+}
+
 function chamadoItemHTML(c, connector){
   const cls = chamadoTag(c.status);
-  const ico = cls==='concluida'
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>`
-    : cls==='andamento'
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>`;
-  return `<div class="os-item">
-    <div class="os-line">
-      <div class="os-dot ${cls}">${ico}</div>
-      ${connector?'<div class="os-connector"></div>':''}
+  const isConcluido = ['finalizada','concluido','resolvido','cancelada'].includes(c.status);
+  return `<div style="padding:${connector?'0 0 16px':'0'}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace">Chamado #${c.id}</div>
+      <span class="os-tag ${cls}" style="margin:0">${chamadoLabel(c.status)}</span>
     </div>
-    <div style="flex:1;padding-top:5px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:3px">Chamado #${c.id}</div>
-      <div style="font-weight:700;font-size:13.5px;color:var(--text);line-height:1.4">${fmtNome(c.descricao)}</div>
-      ${c.tecnico_nome?`<div style="font-size:12px;color:var(--text2);margin-top:3px">Técnico: ${fmtNome(c.tecnico_nome)}</div>`:''}
-      <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace">${fmtData(c.created_at||c.data)}</div>
-      <span class="os-tag ${cls}">${chamadoLabel(c.status)}</span>
-    </div>
+    <div style="font-weight:600;font-size:13px;color:var(--text);line-height:1.4">${fmtNome(c.descricao)}</div>
+    ${c.tecnico_nome?`<div style="font-size:12px;color:var(--text2);margin-top:4px;display:flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${fmtNome(c.tecnico_nome)}</div>`:''}
+    ${!isConcluido ? statusTimeline(c.status) : ''}
+    ${isConcluido && c.solucao_tecnica ? `<div style="background:var(--blue-faint);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--blue)"><b>Solução:</b> ${c.solucao_tecnica}</div>` : ''}
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">${fmtData(c.created_at||c.data)}${c.concluido_em?' → '+fmtData(c.concluido_em):''}</div>
+    ${connector?'<div style="height:1px;background:var(--border);margin-top:16px"></div>':''}
   </div>`;
 }
 
+let _realtimeChamados = null; // canal Realtime ativo
+
 async function carregarChamados(){
   try {
-    const { data:{ session } } = await sb.auth.getSession();
-    if(!session) return;
-    const r = await fetch(PROXY_URL,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},
-      body:JSON.stringify({action:'get_chamados'})
-    });
-    const d = await r.json();
-    chamados = d.chamados || [];
+    // Usar view v_meus_chamados via Supabase JS direto — mais rápido e suporta Realtime
+    const { data, error } = await sb.from('v_meus_chamados').select('*').order('created_at', {ascending:false});
+    chamados = data || [];
   } catch(e){ chamados = []; }
+}
+
+function assinarRealtimeChamados(){
+  // Cancelar assinatura anterior se existir
+  if(_realtimeChamados){ sb.removeChannel(_realtimeChamados); _realtimeChamados = null; }
+  if(!perfil?.ixc_id) return;
+
+  _realtimeChamados = sb.channel('meus-chamados')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'campo_chamados',
+      filter: `cliente_id=eq.${perfil.ixc_id}`
+    }, async (payload) => {
+      // Atualizar chamado específico na lista sem recarregar tudo
+      const novo = payload.new;
+      const evento = payload.eventType;
+      if(evento === 'INSERT'){
+        chamados.unshift(novo);
+      } else if(evento === 'UPDATE'){
+        const idx = chamados.findIndex(c => String(c.id) === String(novo.id));
+        if(idx !== -1){
+          const statusAnterior = chamados[idx].status;
+          chamados[idx] = { ...chamados[idx], ...novo };
+          // Notificar o cliente se o status mudou
+          if(statusAnterior !== novo.status){
+            mostrarNotificacaoStatus(statusAnterior, novo.status, novo);
+          }
+        } else {
+          chamados.unshift(novo);
+        }
+      } else if(evento === 'DELETE'){
+        chamados = chamados.filter(c => String(c.id) !== String(payload.old?.id));
+      }
+      // Re-renderizar a tela se estiver na aba de chamados
+      if(activeTab === 'os') renderOSScreen();
+    })
+    .subscribe();
+}
+
+function mostrarNotificacaoStatus(anterior, novo, chamado){
+  const msgs = {
+    pendente:       '📋 Chamado registrado',
+    assumida:       '👨‍🔧 Técnico designado para seu chamado',
+    executando:     '🔧 Técnico em atendimento',
+    finalizada:     '✅ Chamado concluído!',
+    concluido:      '✅ Chamado concluído!',
+    reagendado:     '📅 Chamado reagendado',
+    cancelada:      '❌ Chamado cancelado',
+  };
+  const msg = msgs[novo] || `Status atualizado: ${novo}`;
+  toast(msg);
+  // Tentar notificação push do navegador se permitida
+  if(window.Notification && Notification.permission === 'granted'){
+    new Notification('MoviApp — Atualização', { body: msg, icon: '/favicon.ico' });
+  }
 }
 
 function renderOSScreen(){
@@ -528,7 +619,16 @@ function renderOSScreen(){
   const temAberto = abertos.length > 0;
   render(`
   <div class="header">
-    <div class="header-inner"><div class="page-title">Chamados</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
+    <div class="header-inner">
+      <div class="page-title">Chamados</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);padding:5px 10px;border-radius:20px;cursor:pointer" onclick="atualizarChamados()" title="Atualizar">
+          <div style="width:6px;height:6px;border-radius:50%;background:#5EE0A0;animation:pulse 2s infinite"></div>
+          <span style="font-size:11px;color:rgba(255,255,255,.8);font-weight:600">Ao vivo</span>
+        </div>
+        <div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div>
+      </div>
+    </div>
   </div>
   <div class="body">
     ${temAberto ? `<div class="card">
@@ -567,6 +667,13 @@ async function abrirModalChamado(){
 function fecharModalChamado(){
   const overlay = document.getElementById('chamado-overlay');
   if(overlay) overlay.style.display='none';
+}
+
+async function atualizarChamados(){
+  toast('Atualizando...');
+  await carregarChamados();
+  renderOSScreen();
+  toast('Chamados atualizados ✓');
 }
 
 async function confirmarChamado(){
@@ -683,6 +790,7 @@ async function carregarDados(){
   } catch(e){ perfil = null; }
 
   await Promise.all([carregarFaturas(), carregarOS(), carregarCashback(), carregarChamados()]);
+  assinarRealtimeChamados(); // Realtime: escuta mudanças de status em tempo real
 }
 
 async function carregarFaturas(){
