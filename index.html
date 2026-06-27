@@ -9227,8 +9227,8 @@ async function excluirUsuario(id){
 
 async function renderUsuarios(){
   const { data: usuariosRaw, error } = await sbClient.from('perfis').select('*').order('criado_em',{ascending:true});
-  // Esconde técnicos da lista do sistema financeiro (gerenciados na aba Técnicos)
-  const usuarios = (usuariosRaw||[]).filter(u => u.perfil !== 'tecnico');
+  // Esconde técnicos (gerenciados na aba Técnicos) e clientes do MoviApp (@moviapp.local)
+  const usuarios = (usuariosRaw||[]).filter(u => u.perfil !== 'tecnico' && !(u.email||'').endsWith('@moviapp.local'));
   const perfilLabel={admin:'Administrador',operador:'Operador',visualizador:'Visualizador',user:'Visualizador'};
   const perfilCor={admin:'s-recebido',operador:'s-a-receber',visualizador:'s-a-pagar',user:'s-a-pagar'};
   const tb=document.getElementById('tbody-usuarios');
