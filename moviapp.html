@@ -8,6 +8,7 @@
 <title>MoviApp</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
 :root{
   --blue:#3B3ED8;--blue-dark:#2B2D8C;--blue-light:#5558E8;--blue-faint:#EEEEFF;
@@ -168,11 +169,37 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 .how-txt{font-size:12.5px;color:var(--blue-dark);line-height:1.6;opacity:.85}
 .mono{font-family:'DM Mono',monospace}
 .cb-teaser{background:linear-gradient(135deg,var(--blue-dark),var(--pink));border-radius:var(--radius);padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer}
+.btn-pix{width:100%;padding:15px;border-radius:var(--radius-sm);border:none;background:linear-gradient(135deg,#00B89F,#00A896);color:#fff;font-family:inherit;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;margin-bottom:8px;box-shadow:0 6px 18px rgba(0,168,150,.3);transition:.12s}
+.btn-pix:active{transform:scale(.99)}
+.pix-overlay{position:fixed;inset:0;background:rgba(15,15,50,.6);z-index:9998;display:none;align-items:flex-end;justify-content:center}
+.pix-overlay.show{display:flex}
+.pix-sheet{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 22px calc(28px + env(safe-area-inset-bottom,0px));animation:sheetUp .25s ease}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.pix-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px}
+.pix-title{font-family:'Nunito',sans-serif;font-weight:800;font-size:18px;text-align:center;color:var(--text)}
+.pix-val{font-family:'DM Mono',monospace;font-size:24px;font-weight:500;text-align:center;color:var(--blue);margin:6px 0 18px}
+.pix-qr{width:200px;height:200px;margin:0 auto 18px;background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:12px;display:flex;align-items:center;justify-content:center}
+.pix-qr canvas,.pix-qr img{width:100%!important;height:100%!important}
+.pix-loading{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px 0;color:var(--text2)}
+.pix-spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pix-copy-box{background:var(--bg);border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text2);word-break:break-all;margin-bottom:14px;max-height:70px;overflow-y:auto}
+.pix-instr{font-size:12px;color:var(--text2);text-align:center;margin-bottom:18px;line-height:1.5}
+.btn-pix-copy{width:100%;padding:14px;border-radius:var(--radius-sm);border:none;background:var(--blue);color:#fff;font-family:inherit;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.btn-pix-close{width:100%;padding:13px;margin-top:8px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:transparent;color:var(--text2);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast"></div>
+
+<div class="pix-overlay" id="pix-overlay">
+  <div class="pix-sheet">
+    <div class="pix-handle"></div>
+    <div id="pix-content"></div>
+  </div>
+</div>
+
 
 <script>
 // ── Config ────────────────────────────────────
@@ -268,7 +295,7 @@ function renderHome(){
   const plano    = perfil?.plano || 'Seu plano';
   const fat      = faturas[0];
   const fatVal   = fat ? fmtReal(fat.valor) : '—';
-  const fatVenc  = fat ? `Vence em ${fmtData(fat.data_vencimento)}` : 'Carregando...';
+  const fatVenc  = fat ? `Vence em ${fmtData(fat.data_vencimento)}` : (faturas.length === 0 && perfil ? 'Nenhuma fatura encontrada' : 'Carregando...');
   const fatPago  = fat?.status === 'pago';
   const fatCls   = fatPago ? 'paga' : 'aberta';
   const fatTxt   = fatPago ? 'Paga' : 'Em aberto';
@@ -363,12 +390,21 @@ function renderFaturaScreen(){
     <div class="header-inner"><div class="page-title">Faturas</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
   </div>
   <div class="body">
-    <div class="fat-hero">
-      <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6);margin-bottom:5px">${fat?fmtData(fat.data_vencimento):'—'}</div>
-      <div class="fat-val">${fat?fmtReal(fat.valor):'—'}</div>
-      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:8px">Vencimento em ${fat?fmtData(fat.data_vencimento):'—'}</div>
+    ${fat ? `<div class="fat-hero">
+      <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6);margin-bottom:5px">${fmtData(fat.data_vencimento)}</div>
+      <div class="fat-val">${fmtReal(fat.valor)}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:8px">Vencimento em ${fmtData(fat.data_vencimento)}</div>
       <div class="fat-badge ${pago?'paga':'aberta'}">${pago?'✓ Paga':'🕐 Em aberto'}</div>
-    </div>
+    </div>` : `<div style="background:var(--blue-faint);border-radius:14px;padding:30px;text-align:center;margin-bottom:14px">
+      <div style="font-size:32px;margin-bottom:10px">✅</div>
+      <div style="font-weight:700;font-size:15px;color:var(--blue)">Nenhuma fatura em aberto</div>
+      <div style="font-size:12.5px;color:var(--text2);margin-top:6px">Suas contas estão em dia!</div>
+    </div>`}
+    ${fat && !pago ? `
+    <button class="btn-pix" onclick="abrirPix('${fat.id}', ${fat.valor})">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.917 11.71a.546.546 0 0 0-.385.16l-2.434 2.434a.764.764 0 0 1-1.059 0l-2.434-2.434a.535.535 0 0 0-.385-.16H4.764l3.071 3.071a1.224 1.224 0 0 0 1.729 0l3.073-3.071h-.72zM5.247 8.276c.146 0 .283.057.385.16l2.434 2.434c.292.292.769.29 1.059 0l2.434-2.434a.546.546 0 0 1 .385-.16h.72L9.591 5.205a1.224 1.224 0 0 0-1.729 0L4.791 8.276h.456z"/><path d="M15.16 9.116l-1.882-1.882a.290.290 0 0 1-.107.022h-1.063a.819.819 0 0 0-.576.238l-2.434 2.434a.764.764 0 0 1-1.059 0L5.605 7.494a.819.819 0 0 0-.576-.238H3.722a.290.290 0 0 1-.107-.022L1.733 9.116a1.224 1.224 0 0 0 0 1.729l1.882 1.882a.290.290 0 0 1 .107-.022h1.307a.819.819 0 0 0 .576-.238l2.434-2.434a.789.789 0 0 1 1.059 0l2.434 2.434c.153.153.359.238.576.238h1.063c.038 0 .074.009.107.022l1.882-1.882a1.224 1.224 0 0 0 0-1.729z"/></svg>
+      Pagar com PIX
+    </button>` : ''}
     <button class="btn-yellow-full" onclick="copiarCodigo('${fat?.linha_digitavel||''}')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       Copiar código de barras
@@ -588,6 +624,102 @@ function compartilharLink(link){
   if(navigator.share){ navigator.share({title:'MoviApp',text:'Conheça a MoviOn!',url}); }
   else { navigator.clipboard?.writeText(url).catch(()=>{}); toast('Link copiado!'); }
 }
+
+// ── PIX ───────────────────────────────────────
+let _pixCache = {};
+
+async function abrirPix(idAreceber, valor){
+  const overlay = document.getElementById('pix-overlay');
+  const content = document.getElementById('pix-content');
+  overlay.classList.add('show');
+
+  // Estado de loading
+  content.innerHTML = `
+    <div class="pix-title">Pagamento via PIX</div>
+    <div class="pix-val">${fmtReal(valor)}</div>
+    <div class="pix-loading">
+      <div class="pix-spinner"></div>
+      <div style="font-size:13px">Gerando código PIX...</div>
+    </div>`;
+
+  // Cache: se já gerou esse PIX, reusa
+  if(_pixCache[idAreceber]){
+    renderPix(_pixCache[idAreceber], valor);
+    return;
+  }
+
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session) throw new Error('Sessão expirada');
+
+    const r = await fetch(PROXY_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente-dados','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'get_pix', id_areceber:String(idAreceber)})
+    });
+    const d = await r.json();
+
+    if(d.ok && d.pix_copia_cola){
+      _pixCache[idAreceber] = d.pix_copia_cola;
+      renderPix(d.pix_copia_cola, valor);
+    } else {
+      content.innerHTML = `
+        <div class="pix-title">PIX indisponível</div>
+        <div class="pix-instr" style="margin-top:14px">Não foi possível gerar o código PIX no momento. Você pode pagar pelo código de barras do boleto.</div>
+        <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
+    }
+  } catch(e){
+    content.innerHTML = `
+      <div class="pix-title">Erro</div>
+      <div class="pix-instr" style="margin-top:14px">Não foi possível conectar. Tente novamente.</div>
+      <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
+  }
+}
+
+function renderPix(codigo, valor){
+  const content = document.getElementById('pix-content');
+  content.innerHTML = `
+    <div class="pix-title">Pague com PIX</div>
+    <div class="pix-val">${fmtReal(valor)}</div>
+    <div class="pix-qr" id="pix-qr-canvas"></div>
+    <div class="pix-instr">Abra o app do seu banco, escolha pagar com PIX<br>e escaneie o QR Code ou copie o código abaixo</div>
+    <div class="pix-copy-box" id="pix-code-text">${codigo}</div>
+    <button class="btn-pix-copy" onclick="copiarPix('${codigo.replace(/'/g,"\\'")}')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copiar código PIX
+    </button>
+    <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
+
+  // Gerar QR Code
+  setTimeout(()=>{
+    const el = document.getElementById('pix-qr-canvas');
+    if(el && window.QRCode){
+      QRCode.toCanvas(codigo, {width:180, margin:1}, (err, canvas)=>{
+        if(!err && canvas){ el.innerHTML=''; el.appendChild(canvas); }
+      });
+    }
+  }, 50);
+}
+
+function copiarPix(codigo){
+  navigator.clipboard?.writeText(codigo).then(()=>{
+    toast('Código PIX copiado! ✓');
+  }).catch(()=>{
+    // Fallback
+    const el = document.getElementById('pix-code-text');
+    if(el){ const r=document.createRange(); r.selectNode(el); window.getSelection().removeAllRanges(); window.getSelection().addRange(r); document.execCommand('copy'); }
+    toast('Código PIX copiado!');
+  });
+}
+
+function fecharPix(){
+  document.getElementById('pix-overlay').classList.remove('show');
+}
+
+// Fechar ao clicar no fundo
+document.getElementById('pix-overlay')?.addEventListener('click', function(e){
+  if(e.target === this) fecharPix();
+});
 
 // ── Init ──────────────────────────────────────
 (async()=>{
