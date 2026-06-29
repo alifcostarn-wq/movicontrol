@@ -1716,14 +1716,13 @@ textarea.cp-form-input{resize:vertical}
           <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
             <input class="cp-search-input" type="text" placeholder="Buscar…" oninput="renderChamados()" id="ch-search">
             <select class="cp-filter-select" onchange="renderChamados()" id="ch-fil-status">
-              <option value="">Pendentes (todos exceto Aberto)</option>
-              <option value="novo">Novo</option>
-              <option value="atribuido">Atribuído</option>
-              <option value="andamento">Em andamento</option>
+              <option value="">Em aberto (pendente + assumida)</option>
+              <option value="pendente">Pendente (aguardando)</option>
+              <option value="assumida">Assumida (técnico designado)</option>
+              <option value="executando">Executando</option>
               <option value="concluido">Concluído</option>
-              <option value="cancelado">Cancelado</option>
-              <option value="aberto">Aberto (em OS)</option>
-              <option value="__todos__">Todos (incluindo Abertos)</option>
+              <option value="cancelada">Cancelado</option>
+              <option value="__todos__">Todos os chamados</option>
             </select>
             <button class="btn btn-primary perm-edit" onclick="abrirModalChamado()">+ Novo Chamado</button>
             <button class="btn" onclick="refreshChamados(this)" title="Atualizar chamados" style="padding:6px 10px">
@@ -1921,7 +1920,7 @@ textarea.cp-form-input{resize:vertical}
           <div class="form-grid trio">
             <div class="form-group"><label class="form-label">Prioridade</label><select class="cp-form-select" id="ch-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
             <div class="form-group"><label class="form-label">Técnico</label><select class="cp-form-select" id="ch-tecnico"><option value="">Sem técnico</option></select></div>
-            <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="ch-status"><option value="novo">Novo</option><option value="atribuido">Atribuído</option><option value="andamento">Em andamento</option><option value="concluido">Concluído</option><option value="cancelado">Cancelado</option></select></div>
+            <div class="form-group"><label class="form-label">Status</label><select class="cp-form-select" id="ch-status"><option value="pendente">Pendente (aguardando)</option><option value="assumida">Assumida (técnico designado)</option><option value="executando">Executando</option><option value="concluido">Concluído</option><option value="cancelada">Cancelado</option></select></div>
           </div>
         </div>
         <div class="modal-footer">
@@ -9754,7 +9753,7 @@ function abrirModalChamado(id){
         }
       }
     }
-    btnAbrir.style.display = (c && c.status==='aberto') ? 'none' : '';
+    btnAbrir.style.display = (c && ['assumida','executando'].includes(c.status)) ? 'none' : '';
   } else {
     ['ch-cliente','ch-telefone','ch-endereco','ch-localizacao','ch-login-cliente','ch-descricao']
       .forEach(f=>{ const el=document.getElementById(f); if(el) el.value=''; });
@@ -9838,7 +9837,7 @@ async function abrirChamadoParaOS(){
 
   const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao,
     login_cliente:loginCliente, descricao, prioridade,
-    tecnico_id:tecId, tecnico_nome:tecNome, status:'aberto' };
+    tecnico_id:tecId, tecnico_nome:tecNome, status: tecId ? 'assumida' : 'pendente' };
 
   let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
   let chamadoId = id;
@@ -9853,7 +9852,7 @@ async function abrirChamadoParaOS(){
   if(error){ showToast('Erro ao salvar: '+error.message, true); return; }
 
   if(chamadoId){
-    await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status:'aberto' });
+    await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status: tecId ? 'assumida' : 'pendente' });
   }
 
   const obsCompl = [
@@ -9987,29 +9986,41 @@ function renderChamados(){
 
   popularSelectsTecnicosCampo();
 
-  document.getElementById('kpi-ch-novos').textContent = _cpChamados.filter(c=>c.status==='novo').length;
-  document.getElementById('kpi-ch-aguard').textContent = _cpChamados.filter(c=>!c.tecnico_id && !['concluido','cancelado'].includes(c.status)).length;
-  document.getElementById('kpi-ch-andamento').textContent = _cpChamados.filter(c=>c.status==='andamento').length;
+  document.getElementById('kpi-ch-novos').textContent = _cpChamados.filter(c=>c.status==='pendente').length;
+  document.getElementById('kpi-ch-aguard').textContent = _cpChamados.filter(c=>c.status==='assumida').length;
+  document.getElementById('kpi-ch-andamento').textContent = _cpChamados.filter(c=>c.status==='executando').length;
   document.getElementById('kpi-ch-hoje').textContent = _cpChamados.filter(c=>c.status==='concluido' && c.data===hoje_).length;
 
   const lista = _cpChamados.filter(c=>{
     const mb = !busca || c.cliente.toLowerCase().includes(busca) || c.descricao.toLowerCase().includes(busca);
     let ms;
     if(filSt==='__todos__') ms = true;
-    else if(filSt==='') ms = c.status!=='aberto';
+    else if(filSt==='') ms = ['pendente','assumida','executando'].includes(c.status);
     else ms = c.status===filSt;
     return mb && ms;
   });
 
   if(!lista.length){ tb.innerHTML=`<tr><td colspan="8" class="cp-empty-row"><div class="cp-empty-ico">📭</div>Nenhum chamado encontrado</td></tr>`; return; }
 
-  const stMap = { novo:['cp-st-novo','Novo'], atribuido:['cp-st-atribuido','Atribuído'], andamento:['cp-st-andamento','Em andamento'], aberto:['cp-st-aberto','Aberto (em OS)'], concluido:['cp-st-concluido','Concluído'], cancelado:['cp-st-cancelado','Cancelado'] };
+  const stMap = {
+    pendente:   ['cp-st-novo',      'Pendente'],
+    assumida:   ['cp-st-atribuido', 'Assumida'],
+    executando: ['cp-st-andamento', 'Executando'],
+    concluido:  ['cp-st-concluido', 'Concluído'],
+    cancelada:  ['cp-st-cancelado', 'Cancelado'],
+    // legados (compatibilidade)
+    novo:       ['cp-st-novo',      'Pendente'],
+    atribuido:  ['cp-st-atribuido', 'Assumida'],
+    andamento:  ['cp-st-andamento', 'Executando'],
+    aberto:     ['cp-st-atribuido', 'Assumida'],
+    cancelado:  ['cp-st-cancelado', 'Cancelado'],
+  };
   const prMap = { alta:'cp-prio-alta', media:'cp-prio-media', baixa:'cp-prio-baixa' };
 
   tb.innerHTML = lista.map(c=>{
     const [stCl,stLb] = stMap[c.status]||['cp-st-novo','Novo'];
     const prioRowCl = 'cp-row-prio-'+(c.prioridade||'media');
-    const isAberto = c.status==='aberto';
+    const isAberto = ['pendente','assumida','executando'].includes(c.status);
     return `<tr class="${prioRowCl}">
       <td style="font-size:11px;color:var(--text3);font-weight:600">#${String(c.id).slice(-5).toUpperCase()}</td>
       <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}${c.os_id?` · <span style="color:var(--accent);font-weight:600">${(()=>{const o=_cpOS.find(x=>x.id===c.os_id);return o?'OS #'+String(o.numero||0).padStart(4,'0'):'OS vinculada';})()}</span>`:''}</div></td>
@@ -10140,8 +10151,8 @@ async function confirmarAbrirOS(){
 
       // Vincula OS ao chamado + muda status para "aberto"
       if(osId){
-        await sbClient.from('campo_chamados').update({ os_id: osId, status: 'aberto' }).eq('id', chamadoId);
-        try{ await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status: 'aberto' }); }catch(_){}
+        await sbClient.from('campo_chamados').update({ os_id: osId, status: 'assumida' }).eq('id', chamadoId);
+        try{ await sbClient.from('campo_chamados_historico').insert({ chamado_id: chamadoId, status: 'assumida' }); }catch(_){}
       }
     }
 
