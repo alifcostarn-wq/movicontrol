@@ -564,6 +564,414 @@ function renderHome(){
 }
 
 
+// ── Auth ──────────────────────────────────────
+async function doLogin(){
+  const cpf   = (document.getElementById('inp-cpf')?.value||'').replace(/\D/g,'');
+  const senha = (document.getElementById('inp-senha')?.value||'').trim();
+  const btn   = document.getElementById('btn-login');
+  if(!cpf||!senha){ toast('Preencha CPF e senha'); return; }
+  if(btn){ btn.textContent='Entrando...'; btn.disabled=true; }
+  const email = `${cpf}@moviapp.local`;
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
+  if(error){
+    if(btn){ btn.textContent='Entrar'; btn.disabled=false; }
+    toast('CPF ou senha incorretos');
+    return;
+  }
+  await carregarDados();
+  renderHome();
+}
+
+async function doLogout(){
+  esconderFAB();
+  await sb.auth.signOut();
+  perfil=null; faturas=[]; ordens=[]; cbSaldo=0; cbLista=[]; chamados=[];
+  if(_realtimeChamados){ sb.removeChannel(_realtimeChamados); _realtimeChamados=null; }
+  renderLogin();
+}
+
+async function carregarDados(){
+  // 1) Perfil do cliente
+  try {
+    const { data } = await sb.from('v_cliente_app').select('*').single();
+    if(data) perfil = data;
+  } catch(e){}
+  if(!perfil) return;
+
+  // 2) Carregar tudo em paralelo
+  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback(), carregarChamados()]);
+  assinarRealtimeChamados();
+  mostrarFAB();
+}
+
+// ── Tela Fatura ────────────────────────────────
+let activeTab = 'home';
+
+function renderFaturaScreen(){
+  // Priorizar a fatura em aberto no card hero
+  const emAberto = faturas.find(f => f.status === 'aberto');
+  const fat   = emAberto || faturas[0];
+  const pago  = fat?.status === 'pago';
+  const hist  = faturas.filter(f => f.id !== fat?.id).slice(0,6);
+  render(`
+  <div class="header">
+    <div class="header-inner"><div class="page-title">Faturas</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
+  </div>
+  <div class="body">
+    ${fat ? `<div class="fat-hero">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6)">${pago ? 'Última fatura' : 'Fatura em aberto'}</div>
+        <div class="fat-badge ${pago?'paga':'aberta'}" style="margin-top:0">${pago?'✓ Paga':'🕐 Em aberto'}</div>
+      </div>
+      <div class="fat-val" style="color:#fff">${fmtReal(fat.valor)}</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:10px;display:flex;align-items:center;gap:6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        Vencimento em ${fmtData(fat.data_vencimento)}
+      </div>
+    </div>` : `<div style="background:var(--blue-faint);border-radius:14px;padding:30px;text-align:center;margin-bottom:14px">
+      <div style="font-size:32px;margin-bottom:10px">✅</div>
+      <div style="font-weight:700;font-size:15px;color:var(--blue)">Nenhuma fatura em aberto</div>
+      <div style="font-size:12.5px;color:var(--text2);margin-top:6px">Suas contas estão em dia!</div>
+    </div>`}
+    ${fat && !pago ? `
+    <button class="btn-pix" onclick="abrirPix('${fat.id}', ${fat.valor})">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.917 11.71a.546.546 0 0 0-.385.16l-2.434 2.434a.764.764 0 0 1-1.059 0l-2.434-2.434a.535.535 0 0 0-.385-.16H4.764l3.071 3.071a1.224 1.224 0 0 0 1.729 0l3.073-3.071h-.72zM5.247 8.276c.146 0 .283.057.385.16l2.434 2.434c.292.292.769.29 1.059 0l2.434-2.434a.546.546 0 0 1 .385-.16h.72L9.591 5.205a1.224 1.224 0 0 0-1.729 0L4.791 8.276h.456z"/><path d="M15.16 9.116l-1.882-1.882a.290.290 0 0 1-.107.022h-1.063a.819.819 0 0 0-.576.238l-2.434 2.434a.764.764 0 0 1-1.059 0L5.605 7.494a.819.819 0 0 0-.576-.238H3.722a.290.290 0 0 1-.107-.022L1.733 9.116a1.224 1.224 0 0 0 0 1.729l1.882 1.882a.290.290 0 0 1 .107-.022h1.307a.819.819 0 0 0 .576-.238l2.434-2.434a.789.789 0 0 1 1.059 0l2.434 2.434c.153.153.359.238.576.238h1.063c.038 0 .074.009.107.022l1.882-1.882a1.224 1.224 0 0 0 0-1.729z"/></svg>
+      Pagar com PIX
+    </button>` : ''}
+    <button class="btn-yellow-full" onclick="copiarCodigo('${fat?.linha_digitavel||''}')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copiar código de barras
+    </button>
+    <button class="btn-outline" onclick="toast('Baixando PDF...')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Baixar boleto em PDF
+    </button>
+    <div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Histórico</div></div>
+      <div class="card-body" style="padding-top:0">
+        ${hist.length ? hist.map(f=>`<div class="hist-item">
+          <div>
+            <div style="font-weight:600;font-size:13px">${fmtData(f.data_vencimento)}</div>
+            <div style="font-size:11.5px;color:var(--text2);margin-top:2px">${f.status==='pago'?'Pago em '+fmtData(f.data_pagamento):'Em aberto'}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="mono" style="font-size:15px;font-weight:500">${fmtReal(f.valor)}</div>
+            <span class="pill ${f.status==='pago'?'paga':'aberta'}">${f.status==='pago'?'Paga':'Em aberto'}</span>
+          </div>
+        </div>`).join('') : '<div class="empty-txt">Nenhum histórico disponível</div>'}
+      </div>
+    </div>
+  </div>
+  ${tabBar('fatura')}`);
+}
+
+// ── Tela Chamados ──────────────────────────────
+let chamados = [];
+
+function chamadoTag(s){
+  if(s==='aberto')    return 'agendada';
+  if(s==='assumido')  return 'andamento';
+  if(s==='analisando') return 'andamento';
+  if(s==='transferido') return 'andamento';
+  if(['finalizada','concluido','resolvido'].includes(s)) return 'concluida';
+  if(s==='assumida')  return 'andamento';
+  if(s==='executando') return 'andamento';
+  if(s==='reagendada') return 'agendada';
+  if(s==='cancelada') return 'concluida';
+  return 'agendada';
+}
+
+function chamadoLabel(s){
+  return {
+    aberto:      '🔵 Aguardando atendimento',
+    assumido:    '👤 Técnico assumiu',
+    analisando:  '🔍 Em análise',
+    transferido: '🔀 Encaminhado para visita',
+    concluido:   '✅ Resolvido remotamente',
+    assumida:    '👨‍🔧 Técnico designado',
+    executando:  '🔧 Técnico no local',
+    finalizada:  '✅ Visita concluída',
+    reagendada:  '📅 Visita reagendada',
+    cancelada:   '❌ Cancelado',
+  }[s] || s;
+}
+
+function statusTimeline(status, tipo){
+  let etapas, ordem;
+  if(tipo === 'campo'){
+    etapas = [{k:'pendente',label:'Agendado'},{k:'assumida',label:'Designado'},{k:'executando',label:'No local'},{k:'finalizada',label:'Concluído'}];
+    ordem  = {pendente:0,assumida:1,executando:2,finalizada:3,reagendada:1};
+  } else {
+    etapas = [{k:'aberto',label:'Aberto'},{k:'assumido',label:'Assumido'},{k:'analisando',label:'Analisando'},{k:'concluido',label:'Concluído'}];
+    ordem  = {aberto:0,assumido:1,analisando:2,concluido:3,transferido:3};
+  }
+  const atual = ordem[status] ?? 0;
+  let html = '<div class="status-timeline">';
+  etapas.forEach((e,i)=>{
+    const passado = i < atual, ativo = i === atual;
+    const clsDot   = passado ? 'concluido' : (ativo ? 'ativo' : '');
+    const clsLabel = passado ? 'concluido' : (ativo ? 'ativo' : '');
+    const icoCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>`;
+    const icoDot   = `<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="currentColor"/></svg>`;
+    html += `<div class="st-step"><div class="st-dot ${clsDot}">${passado?icoCheck:(ativo?icoDot:'')}</div><div class="st-label ${clsLabel}">${e.label}</div></div>`;
+    if(i < etapas.length-1){
+      const clsLine = i < atual ? 'concluido' : (i===atual-1?'ativo':'');
+      html += `<div class="st-line ${clsLine}"></div>`;
+    }
+  });
+  return html + '</div>';
+}
+
+// ── SLA ────────────────────────────────────────
+const SLA_INTERNO_H = 4;
+const SLA_CAMPO_H   = 48;
+
+function horasUteis(inicio, fim) {
+  let h = 0, cur = new Date(inicio);
+  const end = new Date(fim);
+  while (cur < end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) {
+      const hIni = Math.max(cur.getHours() + cur.getMinutes()/60, 8);
+      const hFim = Math.min(
+        cur.getDate()===end.getDate()&&cur.getMonth()===end.getMonth()
+          ? end.getHours()+end.getMinutes()/60 : 18, 18);
+      if (hFim > hIni) h += hFim - hIni;
+    }
+    const prox = new Date(cur);
+    prox.setDate(prox.getDate()+1); prox.setHours(8,0,0,0);
+    cur = prox;
+  }
+  return h;
+}
+
+function calcSLA(chamado) {
+  const isCampo = chamado.tipo === 'campo' || chamado.os_id;
+  const limiteH = isCampo ? SLA_CAMPO_H : SLA_INTERNO_H;
+  const inicio  = new Date(chamado.created_at);
+  const agora   = chamado.concluido_em ? new Date(chamado.concluido_em) : new Date();
+  const decorrido = isCampo ? horasUteis(inicio, agora) : (agora-inicio)/3600000;
+  const percentual = Math.min((decorrido/limiteH)*100, 100);
+  const restanteH  = Math.max(limiteH-decorrido, 0);
+  const vencido    = decorrido >= limiteH;
+  let semaforo, textoRestante;
+  if(vencido)        { semaforo='vermelho'; textoRestante=`Vencido há ${fmtDuracao(decorrido-limiteH)}`; }
+  else if(percentual>=75){ semaforo='amarelo'; textoRestante=`Vence em ${fmtDuracao(restanteH)}`; }
+  else               { semaforo='verde';    textoRestante=`Vence em ${fmtDuracao(restanteH)}`; }
+  return {tipo:isCampo?'campo':'interno', limiteH, decorrido, percentual, semaforo, textoRestante, textoDecorrido:fmtDuracao(decorrido)};
+}
+
+function fmtDuracao(h) {
+  if(h<1) return `${Math.round(h*60)}min`;
+  if(h<24){ const hh=Math.floor(h),mm=Math.round((h-hh)*60); return mm>0?`${hh}h${mm}min`:`${hh}h`; }
+  const dias=Math.floor(h/24),hh=Math.round(h%24);
+  return hh>0?`${dias}d ${hh}h`:`${dias}d`;
+}
+
+function slaHtml(chamado) {
+  const isConcluido = ['finalizada','concluido','resolvido','cancelada'].includes(chamado.status);
+  const sla = calcSLA(chamado);
+  const cores = {verde:{bg:'#E8FBF2',txt:'#1A8C52',dot:'#22C47A'},amarelo:{bg:'#FDF6E3',txt:'#8A6200',dot:'#FFB800'},vermelho:{bg:'#FBF0EE',txt:'#C23B2A',dot:'#E83A3A'}};
+  const c = cores[sla.semaforo];
+  const tipoLabel = sla.tipo==='campo'?'🔧 Visita técnica':'💬 Suporte remoto';
+  const slaLabel  = sla.tipo==='campo'?'48h úteis':'4h';
+  return `<div style="background:${c.bg};border-radius:10px;padding:10px 12px;margin-top:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:700;color:${c.txt}"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.dot};margin-right:5px;vertical-align:middle"></span>${tipoLabel} · SLA ${slaLabel}</div>
+      <div style="font-size:11px;font-weight:700;color:${c.txt}">${isConcluido?'✓ Concluído':sla.textoRestante}</div>
+    </div>
+    <div style="background:rgba(0,0,0,.08);border-radius:4px;height:5px;overflow:hidden"><div style="height:100%;width:${sla.percentual}%;background:${c.dot};border-radius:4px"></div></div>
+    <div style="display:flex;justify-content:space-between;margin-top:5px">
+      <div style="font-size:10px;color:${c.txt};opacity:.8">Decorrido: ${sla.textoDecorrido}</div>
+      <div style="font-size:10px;color:${c.txt};opacity:.8">${Math.round(sla.percentual)}%</div>
+    </div>
+  </div>`;
+}
+
+function fmtDatetime(d){
+  if(!d) return '—';
+  try{ const dt=new Date(d); return dt.toLocaleDateString('pt-BR')+' às '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }catch{return d;}
+}
+
+function chamadoItemHTML(c, connector){
+  const cls = chamadoTag(c.status);
+  const isConcluido = ['finalizada','concluido','resolvido','cancelada'].includes(c.status);
+  return `<div style="padding:${connector?'0 0 20px':'0'}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:'DM Mono',monospace">Chamado #${c.id}</div>
+      <span class="os-tag ${cls}" style="margin:0">${chamadoLabel(c.status)}</span>
+    </div>
+    <div style="font-weight:600;font-size:13.5px;color:var(--text);line-height:1.5">${fmtNome(c.descricao)}</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11.5px;color:var(--text2)">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Aberto em ${fmtDatetime(c.created_at)}
+    </div>
+    ${c.tecnico_nome?`<div style="display:flex;align-items:center;gap:5px;margin-top:4px;font-size:11.5px;color:var(--text2)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Técnico: ${fmtNome(c.tecnico_nome)}</div>`:''}
+    ${!isConcluido ? statusTimeline(c.status, c.tipo) : ''}
+    ${slaHtml(c)}
+    ${isConcluido&&c.solucao_tecnica?`<div style="background:var(--blue-faint);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--blue)"><b>✓ Solução:</b> ${c.solucao_tecnica}</div>`:''}
+    ${isConcluido&&c.concluido_em?`<div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">Concluído em ${fmtDatetime(c.concluido_em)}</div>`:''}
+    ${connector?'<div style="height:1px;background:var(--border);margin-top:18px"></div>':''}
+  </div>`;
+}
+
+async function carregarChamados(){
+  try {
+    const { data, error } = await sb.from('v_meus_chamados').select('*').order('created_at',{ascending:false});
+    chamados = data || [];
+  } catch(e){ chamados = []; }
+}
+
+let _realtimeChamados = null;
+
+function assinarRealtimeChamados(){
+  if(_realtimeChamados){ sb.removeChannel(_realtimeChamados); _realtimeChamados=null; }
+  if(!perfil?.ixc_id) return;
+  _realtimeChamados = sb.channel('meus-chamados')
+    .on('postgres_changes',{event:'*',schema:'public',table:'campo_chamados',filter:`cliente_id=eq.${perfil.ixc_id}`},async(payload)=>{
+      const novo=payload.new, evento=payload.eventType;
+      if(evento==='INSERT') chamados.unshift(novo);
+      else if(evento==='UPDATE'){
+        const idx=chamados.findIndex(c=>String(c.id)===String(novo.id));
+        if(idx!==-1){ const ant=chamados[idx].status; chamados[idx]={...chamados[idx],...novo}; if(ant!==novo.status) mostrarNotificacaoStatus(ant,novo.status,novo); }
+        else chamados.unshift(novo);
+      } else if(evento==='DELETE') chamados=chamados.filter(c=>String(c.id)!==String(payload.old?.id));
+      if(route==='os') renderOSScreen();
+    }).subscribe();
+}
+
+function mostrarNotificacaoStatus(anterior, novo, chamado){
+  const msgs={aberto:'📋 Chamado registrado',assumido:'👤 Nossa equipe assumiu seu chamado!',analisando:'🔍 Equipe analisando...',concluido:'✅ Chamado resolvido!',transferido:'🔀 Virou uma visita técnica!',assumida:'👨‍🔧 Técnico designado!',executando:'🔧 Técnico chegou!',finalizada:'✅ Visita concluída!',reagendada:'📅 Reagendada',cancelada:'❌ Cancelado'};
+  toast(msgs[novo]||`Status: ${novo}`);
+}
+
+function renderOSScreen(){
+  const abertos = chamados.filter(c=>!['concluido','cancelada','cancelado'].includes(c.status));
+  const hist    = chamados.filter(c=>['concluido','cancelada','cancelado'].includes(c.status));
+  const temAberto = abertos.length > 0;
+  const podeCriar = !chamados.some(c=>['aberto','assumido','analisando'].includes(c.status));
+  render(`
+  <div class="header">
+    <div class="header-inner">
+      <div class="page-title">Chamados</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);padding:5px 10px;border-radius:20px;cursor:pointer" onclick="atualizarChamados()" title="Atualizar">
+          <div style="width:6px;height:6px;border-radius:50%;background:#5EE0A0;animation:pulse 2s infinite"></div>
+          <span style="font-size:11px;color:rgba(255,255,255,.8);font-weight:600">Ao vivo</span>
+        </div>
+        <div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div>
+      </div>
+    </div>
+  </div>
+  <div class="body">
+    ${temAberto ? `<div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Em andamento</div></div>
+      <div class="card-body" style="padding-top:0">${abertos.map((c,i)=>chamadoItemHTML(c,i<abertos.length-1)).join('')}</div>
+    </div>
+    ${podeCriar ? `<button class="btn-yellow-full" onclick="abrirModalChamado()" style="margin-top:8px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>Abrir novo chamado</button>` :
+    `<div style="background:var(--blue-faint);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--blue);display:flex;align-items:center;gap:10px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      Você já tem um chamado em andamento.</div>`}` :
+    `<button class="btn-yellow-full" onclick="abrirModalChamado()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>Abrir novo chamado</button>
+    <div style="background:var(--blue-faint);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--blue);text-align:center">Descreva seu problema e nossa equipe entrará em contato em breve.</div>`}
+    ${hist.length ? `<div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Histórico</div></div>
+      <div class="card-body" style="padding-top:0">${hist.map((c,i)=>chamadoItemHTML(c,i<hist.length-1)).join('')}</div>
+    </div>` : ''}
+    ${!hist.length&&!temAberto?`<div class="empty-txt" style="margin-top:10px">Nenhum chamado anterior</div>`:''}
+  </div>
+  ${tabBar('os')}`);
+}
+
+async function atualizarChamados(){
+  toast('Atualizando...');
+  await carregarChamados();
+  renderOSScreen();
+}
+
+async function abrirModalChamado(){
+  const overlay=document.getElementById('chamado-overlay');
+  if(overlay){ overlay.style.display='flex'; }
+  setTimeout(()=>document.getElementById('chamado-txt')?.focus(),100);
+  const erroEl=document.getElementById('chamado-erro');
+  if(erroEl) erroEl.style.display='none';
+  const btn=document.getElementById('chamado-btn');
+  if(btn){ btn.textContent='Enviar chamado'; btn.disabled=false; }
+}
+
+function fecharModalChamado(){
+  const overlay=document.getElementById('chamado-overlay');
+  if(overlay) overlay.style.display='none';
+}
+
+async function confirmarChamado(){
+  const descricao=(document.getElementById('chamado-txt')?.value||'').trim();
+  const erroEl=document.getElementById('chamado-erro');
+  const btnEl=document.getElementById('chamado-btn');
+  erroEl.style.display='none';
+  if(!descricao||descricao.length<5){ erroEl.textContent='Descreva o problema com pelo menos 5 caracteres.'; erroEl.style.display=''; return; }
+  btnEl.textContent='Enviando...'; btnEl.disabled=true;
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    const r = await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({action:'abrir_chamado',descricao})});
+    const d = await r.json();
+    if(!r.ok||!d.ok){ erroEl.textContent=d.error||'Erro ao abrir chamado.'; erroEl.style.display=''; btnEl.textContent='Enviar chamado'; btnEl.disabled=false; return; }
+    fecharModalChamado();
+    toast('Chamado aberto! ✓');
+    await carregarChamados();
+    renderOSScreen();
+  } catch(e){ erroEl.textContent='Erro de conexão.'; erroEl.style.display=''; btnEl.textContent='Enviar chamado'; btnEl.disabled=false; }
+}
+
+// ── Tela Indicação ─────────────────────────────
+function renderIndScreen(){
+  const link = `moviapp.movion.app/indicacao/${perfil?.cpf||''}`;
+  render(`
+  <div class="header">
+    <div class="header-inner"><div class="page-title">Indicação</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
+  </div>
+  <div class="body">
+    <div class="cb-hero">
+      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Saldo de cashback</div>
+      <div class="cb-val">${fmtReal(cbSaldo)}</div>
+      <div class="cb-btn" onclick="toast('Em breve: resgate de cashback!')">
+        💸 Resgatar cashback
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Seu link de indicação</div></div>
+      <div class="card-body" style="padding-top:0">
+        <div class="how-box" style="margin-bottom:14px">
+          <div class="how-title">Como funciona?</div>
+          <div class="how-txt">Indique um amigo e ganhe <b>R$ 30</b> de cashback quando ele se tornar cliente da MoviOn! Seu amigo também ganha desconto na primeira fatura.</div>
+        </div>
+        <div class="link-box">
+          <div class="link-url">${link}</div>
+          <button class="btn-copy" onclick="compartilharLink('${link}')">Copiar</button>
+        </div>
+        <button class="btn-share" onclick="compartilharLink('${link}')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+          Compartilhar link
+        </button>
+      </div>
+    </div>
+    ${cbLista.length ? `<div class="card">
+      <div class="card-head" style="padding-bottom:14px"><div class="card-title">Minhas indicações</div></div>
+      <div class="card-body" style="padding-top:0">
+        ${cbLista.map(i=>`<div class="ind-item">
+          <div class="ind-ava">${iniciais(i.indicado_nome)}</div>
+          <div><div style="font-weight:600;font-size:13px">${fmtNome(i.indicado_nome)}</div><div style="font-size:11.5px;color:var(--text2)">${i.status==='pago'?'Cashback creditado':'Aguardando ativação'}</div></div>
+          <div class="ind-credit">${i.status==='pago'?fmtReal(i.credito||30):''}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+  </div>
+  ${tabBar('ind')}`);
+}
+
+
 async function carregarFaturas(){
   try {
     const { data:{ session } } = await sb.auth.getSession();
