@@ -9794,7 +9794,12 @@ async function salvarChamado(){
     return;
   }
 
-  const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao, login_cliente:loginCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
+  // Ao editar chamado existente, preservar o cliente_id original (pode ser IXC ID ou local ID)
+  // Para não sobrescrever o valor correto com um ID diferente
+  const objBase = { cliente, telefone, endereco, localizacao, login_cliente:loginCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
+  const obj = id
+    ? objBase  // edição: NÃO inclui cliente_id (preserva o original)
+    : { ...objBase, cliente_id: clienteId };  // criação: inclui cliente_id
 
   let chamadoId = id;
   let error;
@@ -9836,9 +9841,12 @@ async function abrirChamadoParaOS(){
   const loginCliente  = document.getElementById('ch-login-cliente').value.trim();
   const prioridade    = document.getElementById('ch-prioridade').value;
 
-  const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao,
+  const objChamado = { cliente, telefone, endereco, localizacao,
     login_cliente:loginCliente, descricao, prioridade,
     tecnico_id:tecId, tecnico_nome:tecNome, status: 'aberto' };
+  const obj = id
+    ? objChamado
+    : { ...objChamado, cliente_id: clienteId };
 
   let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
   let chamadoId = id;
