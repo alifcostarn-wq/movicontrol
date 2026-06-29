@@ -359,6 +359,72 @@ export default async function handler(req, res) {
       } catch(e) { return res.status(502).json({ error: 'Erro ao criar chamado', message: e.message }); }
     }
 
+    // ── chat_ia ──────────────────────────────────────────────────
+    // Assistente MoviON com Grok — recebe mensagem + contexto do cliente
+    if (action === 'chat_ia') {
+      const GROK_KEY = process.env.GROK_API_KEY || '';
+      if (!GROK_KEY) return res.status(500).json({ error: 'GROK_API_KEY não configurada.' });
+
+      const mensagem   = (b.mensagem || '').trim();
+      const historico  = Array.isArray(b.historico) ? b.historico.slice(-10) : [];
+      const ctx        = b.contexto || {};
+
+      if (!mensagem) return res.status(400).json({ error: 'Mensagem vazia.' });
+
+      // Montar contexto personalizado do cliente
+      const ctxTxt = [
+        ctx.nome       ? `Nome: ${ctx.nome}` : '',
+        ctx.plano      ? `Plano: ${ctx.plano} (${ctx.velocidade_mbps || '?'}Mbps)` : '',
+        ctx.online !== undefined ? `Conexão: ${ctx.online ? 'ONLINE' : 'OFFLINE'}` : '',
+        ctx.fatura     ? `Fatura em aberto: R$ ${ctx.fatura.valor} — vence ${ctx.fatura.data_vencimento}` : 'Sem fatura em aberto',
+        ctx.chamado    ? `Chamado ativo: #${ctx.chamado.id} — Status: ${ctx.chamado.status} — "${ctx.chamado.descricao}"` : 'Nenhum chamado aberto',
+        ctx.pago_ate   ? `Mensalidade paga até: ${ctx.pago_ate}` : '',
+      ].filter(Boolean).join('
+');
+
+      const systemPrompt = `Você é o assistente virtual da MoviON, um provedor de internet de fibra óptica no Brasil.
+Seu nome é MoviON IA. Você é simpático, direto e fala em português informal.
+
+Dados do cliente:
+${ctxTxt}
+
+Regras:
+- Responda sempre em português do Brasil, de forma amigável e descontraída
+- Use emojis com moderação para deixar a conversa mais leve
+- Se o cliente tiver fatura em aberto, mencione quando relevante
+- Se o cliente estiver offline, priorize ajudar com a conexão
+- Para problemas técnicos: guie o cliente por soluções básicas (reiniciar ONU, verificar cabos)
+- Para upgrade de plano: diga que um consultor vai entrar em contato
+- Para visita técnica: oriente a abrir um chamado pelo app
+- Seja breve: respostas de no máximo 3 parágrafos curtos
+- Nunca invente informações sobre o cliente além do contexto fornecido`;
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...historico,
+        { role: 'user', content: mensagem }
+      ];
+
+      try {
+        const r = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${GROK_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'grok-3-mini',
+            messages,
+            max_tokens: 400,
+            temperature: 0.7,
+          })
+        });
+        const d = await r.json();
+        if (!r.ok) return res.status(r.status).json({ error: d.error?.message || 'Erro na API Grok' });
+        const resposta = d.choices?.[0]?.message?.content || '';
+        return res.status(200).json({ ok: true, resposta });
+      } catch(e) {
+        return res.status(502).json({ error: 'Erro ao conectar com a IA', message: e.message });
+      }
+    }
+
     // ── get_status ───────────────────────────────────────────────
     if (action === 'get_status') {
       // Lê direto do Supabase (já sincronizado) — mais rápido que IXC
