@@ -362,8 +362,8 @@ export default async function handler(req, res) {
     // ── chat_ia ──────────────────────────────────────────────────
     // Assistente MoviON com Grok — recebe mensagem + contexto do cliente
     if (action === 'chat_ia') {
-      const GROK_KEY = process.env.GROK_API_KEY || '';
-      if (!GROK_KEY) return res.status(500).json({ error: 'GROK_API_KEY não configurada.' });
+      const GROQ_KEY = process.env.GROQ_API_KEY || '';
+      if (!GROQ_KEY) return res.status(500).json({ error: 'GROQ_API_KEY não configurada.' });
 
       const mensagem   = (b.mensagem || '').trim();
       const historico  = Array.isArray(b.historico) ? b.historico.slice(-10) : [];
@@ -406,11 +406,11 @@ Regras:
       ];
 
       try {
-        const r = await fetch('https://api.x.ai/v1/chat/completions', {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${GROK_KEY}`, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'grok-3-mini',
+            model: 'llama-3.3-70b-versatile',
             messages,
             max_tokens: 400,
             temperature: 0.7,
