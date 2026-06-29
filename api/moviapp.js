@@ -13,7 +13,7 @@
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, IXC_URL, IXC_TOKEN, IXC_USER
 // ════════════════════════════════════════════════════════════════
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-target');
@@ -379,8 +379,7 @@ export default async function handler(req, res) {
         ctx.fatura     ? `Fatura em aberto: R$ ${ctx.fatura.valor} — vence ${ctx.fatura.data_vencimento}` : 'Sem fatura em aberto',
         ctx.chamado    ? `Chamado ativo: #${ctx.chamado.id} — Status: ${ctx.chamado.status} — "${ctx.chamado.descricao}"` : 'Nenhum chamado aberto',
         ctx.pago_ate   ? `Mensalidade paga até: ${ctx.pago_ate}` : '',
-      ].filter(Boolean).join('
-');
+      ].filter(Boolean).join('\n');
 
       const systemPrompt = `Você é o assistente virtual da MoviON, um provedor de internet de fibra óptica no Brasil.
 Seu nome é MoviON IA. Você é simpático, direto e fala em português informal.
