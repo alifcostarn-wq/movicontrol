@@ -318,13 +318,13 @@ export default async function handler(req, res) {
       // Verificar se já existe chamado pendente deste cliente
       try {
         const rv = await fetch(
-          `${SUPA_URL}/rest/v1/campo_chamados?cliente_id=eq.${encodeURIComponent(ixcId)}&status=eq.pendente&select=id,descricao,created_at&limit=1`,
+          `${SUPA_URL}/rest/v1/campo_chamados?cliente_id=eq.${encodeURIComponent(ixcId)}&status=in.(aberto,assumido,analisando)&select=id,descricao,status,created_at&limit=1`,
           { headers: srvH }
         );
         const dv = await rv.json();
         if (Array.isArray(dv) && dv.length > 0) {
           return res.status(409).json({
-            error: 'Você já tem um chamado em aberto. Aguarde o atendimento antes de abrir um novo.',
+            error: 'Você já tem um chamado em andamento. Aguarde o atendimento antes de abrir um novo.',
             chamado_existente: { id: dv[0].id, descricao: dv[0].descricao }
           });
         }
@@ -336,7 +336,7 @@ export default async function handler(req, res) {
         telefone:    clienteInfo?.whatsapp || clienteInfo?.tel1 || '',
         endereco:    [clienteInfo?.endereco, clienteInfo?.bairro, clienteInfo?.cidade].filter(Boolean).join(', '),
         descricao,
-        status:      'pendente',
+        status:      'aberto',
         prioridade:  'normal',
         cliente_id:  String(ixcId),
         data:        new Date().toISOString().slice(0, 10),
