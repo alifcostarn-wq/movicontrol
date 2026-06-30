@@ -74,6 +74,19 @@ export default async function handler(req, res) {
       if (cpf.length < 11)
         return res.status(400).json({ error: 'CPF invalido (minimo 11 digitos).' });
 
+      // Valida que o cliente_id existe (id LOCAL do Supabase) ANTES de criar
+      // o usuario de auth — evita usuario orfao quando a FK de clientes_app
+      // rejeitaria o vinculo (ex.: front enviou ixc_id por engano).
+      try {
+        const rck = await fetch(`${SUPA_URL}/rest/v1/clientes?id=eq.${clienteId}&select=id`, { headers: srvH });
+        const dck = await rck.json();
+        if (!Array.isArray(dck) || !dck.length) {
+          return res.status(400).json({ error: 'cliente_id nao encontrado na base local. Faca o Sync do cliente antes de liberar.' });
+        }
+      } catch (e) {
+        return res.status(502).json({ error: 'Falha ao validar cliente: ' + e.message });
+      }
+
       const email = `${cpf}@moviapp.local`;
       const senha = cpf.slice(-4);
 
