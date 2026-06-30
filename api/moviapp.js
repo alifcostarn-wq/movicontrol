@@ -13,7 +13,7 @@
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, IXC_URL, IXC_TOKEN, IXC_USER
 // ════════════════════════════════════════════════════════════════
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-target');
@@ -159,6 +159,30 @@ module.exports = async function handler(req, res) {
     const auth    = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
     const ixcH    = { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' };
 
+    // Helper: acha o id (ixc) do contrato ATIVO do cliente, via Supabase (ja sincronizado)
+    async function _buscarContratoAtivoIxcId() {
+      const r = await fetch(
+        `${SUPA_URL}/rest/v1/clientes_contratos?cliente_id=eq.${clienteIdLocal}&status_contrato=in.(A,Ativo,ativo)&select=ixc_id&order=updated_at.desc&limit=1`,
+        { headers: srvH }
+      );
+      const d = await r.json();
+      return d?.[0]?.ixc_id || null;
+    }
+
+    // Helper: busca o registro do contrato direto no IXC (campos de desbloqueio em confianca)
+    async function _buscarContratoIXC(ixcContratoId) {
+      const url = `${ixcBase}/webservice/v1/cliente_contrato`;
+      const apiBody = JSON.stringify({
+        qtype: 'cliente_contrato.id', query: String(ixcContratoId), oper: '=',
+        page: '1', rp: '1', sortname: 'id', sortorder: 'desc',
+      });
+      const r = await fetch(url, { method: 'POST', headers: ixcH, body: apiBody });
+      const txt = await r.text();
+      if (txt.trim().startsWith('<')) throw new Error('IXC retornou HTML ao consultar contrato.');
+      const d = JSON.parse(txt);
+      return d?.registros?.[0] || null;
+    }
+
     // ── get_faturas ──────────────────────────────────────────────
     if (action === 'get_faturas') {
       const url = `${ixcBase}/webservice/v1/fn_areceber`;
@@ -172,7 +196,7 @@ module.exports = async function handler(req, res) {
         if (txt.trim().startsWith('<')) return res.status(502).json({ error: 'IXC retornou HTML', preview: txt.slice(0,200) });
         let d;
         try { d = JSON.parse(txt); } catch(e) { return res.status(502).json({ error: 'JSON invalido', raw: txt.slice(0,300) }); }
-        let registros = (d.registros || []).map(f => ({
+        const registros = (d.registros || []).map(f => ({
           id:              f.id,
           valor:           f.valor,
           data_vencimento: f.data_vencimento,
@@ -184,16 +208,6 @@ module.exports = async function handler(req, res) {
           documento:       f.documento,
           gateway_link:    f.gateway_link,
         }));
-        // Ordenar: faturas EM ABERTO primeiro (mais antiga no topo), depois as pagas
-        registros.sort((a, b) => {
-          if (a.status === 'aberto' && b.status !== 'aberto') return -1;
-          if (a.status !== 'aberto' && b.status === 'aberto') return 1;
-          // ambas em aberto: vencimento mais antigo primeiro
-          if (a.status === 'aberto' && b.status === 'aberto')
-            return new Date(a.data_vencimento) - new Date(b.data_vencimento);
-          // ambas pagas: mais recente primeiro
-          return new Date(b.data_vencimento) - new Date(a.data_vencimento);
-        });
         return res.status(200).json({ ok: true, total: parseInt(d.total || registros.length), registros });
       } catch (e) { return res.status(502).json({ error: 'Erro IXC', message: e.message }); }
     }
@@ -213,215 +227,14 @@ module.exports = async function handler(req, res) {
           if (txt.trim().startsWith('<')) { debug.push({ url, status: r.status, html: true }); continue; }
           let d;
           try { d = JSON.parse(txt); } catch(e) { debug.push({ url, raw: txt.slice(0,200) }); continue; }
-
-          // Função recursiva: encontra a string do código PIX (BR Code/EMV)
-          // em qualquer nível do JSON. O PIX começa com "000201" (padrão BR Code).
-          function acharPix(obj, depth) {
-            if (depth > 6 || obj == null) return null;
-            if (typeof obj === 'string') {
-              const s = obj.trim();
-              // Código PIX copia-e-cola sempre começa com 000201 e tem +50 chars
-              if (/^000201/.test(s) && s.length > 50) return s;
-              return null;
-            }
-            if (typeof obj === 'object') {
-              // Priorizar chaves conhecidas
-              const prefer = ['pixCopiaECola','pix_copia_cola','qrcode','qrCode','emv','copiaECola','codigo_pix','payload'];
-              for (const k of prefer) {
-                if (obj[k] != null) {
-                  const found = acharPix(obj[k], depth + 1);
-                  if (found) return found;
-                }
-              }
-              // Varrer todas as chaves restantes
-              for (const k of Object.keys(obj)) {
-                const found = acharPix(obj[k], depth + 1);
-                if (found) return found;
-              }
-            }
-            return null;
-          }
-
-          // Função recursiva: encontra imagem base64 do QR
-          function acharImagem(obj, depth) {
-            if (depth > 6 || obj == null) return null;
-            if (typeof obj === 'string') {
-              const s = obj.trim();
-              // base64 de PNG começa com iVBOR
-              if (/^(data:image|iVBOR)/.test(s) && s.length > 100) return s;
-              return null;
-            }
-            if (typeof obj === 'object') {
-              const prefer = ['imagemQrcode','imagem_base64','qrcode_base64','imagem','image','imagemSrc'];
-              for (const k of prefer) {
-                if (obj[k] != null) {
-                  const found = acharImagem(obj[k], depth + 1);
-                  if (found) return found;
-                }
-              }
-              for (const k of Object.keys(obj)) {
-                const found = acharImagem(obj[k], depth + 1);
-                if (found) return found;
-              }
-            }
-            return null;
-          }
-
-          const pixCode = acharPix(d, 0);
-          const imagemBase64 = acharImagem(d, 0);
-
+          const pixCode = d.pix || d.qrCode || d.qrcode || d.emv || d.pix_copia_cola || d.payload || d.codigo_pix || null;
           if (pixCode) {
-            return res.status(200).json({ ok: true, pix_copia_cola: pixCode, imagem_base64: imagemBase64, validade: d.validade || null });
+            return res.status(200).json({ ok: true, pix_copia_cola: pixCode, imagem_base64: d.imagem_base64 || d.qrcode_base64 || null, validade: d.validade || null });
           }
-          debug.push({ url, status: r.status, resposta_keys: Object.keys(d) });
+          debug.push({ url, status: r.status, resposta: d });
         } catch(e) { debug.push({ url, error: e.message }); }
       }
       return res.status(502).json({ error: 'Nao foi possivel gerar PIX', id_areceber: idAreceber, _debug: debug });
-    }
-
-    // ── get_chamados ─────────────────────────────────────────────
-    // Busca os chamados do cliente no Supabase (campo_chamados)
-    if (action === 'get_chamados') {
-      try {
-        const r = await fetch(
-          `${SUPA_URL}/rest/v1/campo_chamados?cliente_id=eq.${encodeURIComponent(ixcId)}&order=created_at.desc&limit=20&select=id,descricao,status,data,created_at,tecnico_nome,solucao_tecnica,concluido_em`,
-          { headers: srvH }
-        );
-        const data = await r.json();
-        if (!r.ok) return res.status(r.status).json({ error: 'Erro ao buscar chamados', detail: data });
-        return res.status(200).json({ ok: true, chamados: data || [] });
-      } catch(e) { return res.status(502).json({ error: 'Erro ao buscar chamados', message: e.message }); }
-    }
-
-    // ── abrir_chamado ─────────────────────────────────────────────
-    // Abre um novo chamado para o cliente.
-    // Impede duplicata: máximo 1 chamado com status 'pendente' por cliente.
-    // Payload: { action:'abrir_chamado', descricao:'texto do problema' }
-    if (action === 'abrir_chamado') {
-      const descricao = (b.descricao || '').trim();
-      if (!descricao || descricao.length < 5)
-        return res.status(400).json({ error: 'Descreva o problema com pelo menos 5 caracteres.' });
-      if (descricao.length > 500)
-        return res.status(400).json({ error: 'Descrição muito longa (máximo 500 caracteres).' });
-
-      // Buscar dados completos do cliente para preencher o chamado
-      let clienteInfo = null;
-      try {
-        const rc = await fetch(
-          `${SUPA_URL}/rest/v1/clientes?id=eq.${clienteIdLocal}&select=nome,tel1,whatsapp,endereco,bairro,cidade`,
-          { headers: srvH }
-        );
-        const dc = await rc.json();
-        clienteInfo = dc?.[0] || null;
-      } catch(e) {}
-
-      // Verificar se já existe chamado pendente deste cliente
-      try {
-        const rv = await fetch(
-          `${SUPA_URL}/rest/v1/campo_chamados?cliente_id=eq.${encodeURIComponent(ixcId)}&status=in.(aberto,assumido,analisando)&select=id,descricao,status,created_at&limit=1`,
-          { headers: srvH }
-        );
-        const dv = await rv.json();
-        if (Array.isArray(dv) && dv.length > 0) {
-          return res.status(409).json({
-            error: 'Você já tem um chamado em andamento. Aguarde o atendimento antes de abrir um novo.',
-            chamado_existente: { id: dv[0].id, descricao: dv[0].descricao }
-          });
-        }
-      } catch(e) {}
-
-      // Inserir novo chamado
-      const novoChamado = {
-        cliente:     clienteInfo?.nome || 'Cliente',
-        telefone:    clienteInfo?.whatsapp || clienteInfo?.tel1 || '',
-        endereco:    [clienteInfo?.endereco, clienteInfo?.bairro, clienteInfo?.cidade].filter(Boolean).join(', '),
-        descricao,
-        status:      'aberto',
-        prioridade:  'normal',
-        cliente_id:  String(ixcId),
-        data:        new Date().toISOString().slice(0, 10),
-      };
-
-      try {
-        const ri = await fetch(`${SUPA_URL}/rest/v1/campo_chamados`, {
-          method: 'POST',
-          headers: { ...srvH, 'Prefer': 'return=representation' },
-          body: JSON.stringify(novoChamado)
-        });
-        const di = await ri.json();
-        if (!ri.ok) return res.status(ri.status).json({ error: 'Erro ao abrir chamado', detail: di });
-        const chamado = Array.isArray(di) ? di[0] : di;
-        return res.status(200).json({
-          ok: true,
-          chamado_id: chamado.id,
-          mensagem: 'Chamado aberto com sucesso! Nossa equipe entrará em contato em breve.'
-        });
-      } catch(e) { return res.status(502).json({ error: 'Erro ao criar chamado', message: e.message }); }
-    }
-
-    // ── chat_ia ──────────────────────────────────────────────────
-    // Assistente MoviON com Grok — recebe mensagem + contexto do cliente
-    if (action === 'chat_ia') {
-      const GROQ_KEY = process.env.GROQ_API_KEY || '';
-      if (!GROQ_KEY) return res.status(500).json({ error: 'GROQ_API_KEY não configurada.' });
-
-      const mensagem   = (b.mensagem || '').trim();
-      const historico  = Array.isArray(b.historico) ? b.historico.slice(-10) : [];
-      const ctx        = b.contexto || {};
-
-      if (!mensagem) return res.status(400).json({ error: 'Mensagem vazia.' });
-
-      // Montar contexto personalizado do cliente
-      const ctxTxt = [
-        ctx.nome       ? `Nome: ${ctx.nome}` : '',
-        ctx.plano      ? `Plano: ${ctx.plano} (${ctx.velocidade_mbps || '?'}Mbps)` : '',
-        ctx.online !== undefined ? `Conexão: ${ctx.online ? 'ONLINE' : 'OFFLINE'}` : '',
-        ctx.fatura     ? `Fatura em aberto: R$ ${ctx.fatura.valor} — vence ${ctx.fatura.data_vencimento}` : 'Sem fatura em aberto',
-        ctx.chamado    ? `Chamado ativo: #${ctx.chamado.id} — Status: ${ctx.chamado.status} — "${ctx.chamado.descricao}"` : 'Nenhum chamado aberto',
-        ctx.pago_ate   ? `Mensalidade paga até: ${ctx.pago_ate}` : '',
-      ].filter(Boolean).join('\n');
-
-      const systemPrompt = `Você é o assistente virtual da MoviON, um provedor de internet de fibra óptica no Brasil.
-Seu nome é MoviON IA. Você é simpático, direto e fala em português informal.
-
-Dados do cliente:
-${ctxTxt}
-
-Regras:
-- Responda sempre em português do Brasil, de forma amigável e descontraída
-- Use emojis com moderação para deixar a conversa mais leve
-- Se o cliente tiver fatura em aberto, mencione quando relevante
-- Se o cliente estiver offline, priorize ajudar com a conexão
-- Para problemas técnicos: guie o cliente por soluções básicas (reiniciar ONU, verificar cabos)
-- Para upgrade de plano: diga que um consultor vai entrar em contato
-- Para visita técnica: oriente a abrir um chamado pelo app
-- Seja breve: respostas de no máximo 3 parágrafos curtos
-- Nunca invente informações sobre o cliente além do contexto fornecido`;
-
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...historico,
-        { role: 'user', content: mensagem }
-      ];
-
-      try {
-        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages,
-            max_tokens: 400,
-            temperature: 0.7,
-          })
-        });
-        const d = await r.json();
-        if (!r.ok) return res.status(r.status).json({ error: d.error?.message || 'Erro na API Grok' });
-        const resposta = d.choices?.[0]?.message?.content || '';
-        return res.status(200).json({ ok: true, resposta });
-      } catch(e) {
-        return res.status(502).json({ error: 'Erro ao conectar com a IA', message: e.message });
-      }
     }
 
     // ── get_status ───────────────────────────────────────────────
@@ -434,6 +247,99 @@ Regras:
         if (login) return res.status(200).json({ ok: true, online: login.online === true, plano: login.plano, velocidade_mbps: login.velocidade_mbps });
         return res.status(200).json({ ok: true, online: false });
       } catch(e) { return res.status(502).json({ error: 'Erro ao buscar status', message: e.message }); }
+    }
+
+    // ── status_desbloqueio_confianca ────────────────────────────
+    // Consulta os campos de confianca do contrato ativo no IXC e
+    // diz se o cliente esta elegivel a usar o recurso agora.
+    if (action === 'status_desbloqueio_confianca') {
+      try {
+        const ixcContratoId = await _buscarContratoAtivoIxcId();
+        if (!ixcContratoId) return res.status(404).json({ error: 'Contrato ativo nao encontrado.' });
+
+        const ctr = await _buscarContratoIXC(ixcContratoId);
+        if (!ctr) return res.status(404).json({ error: 'Contrato nao encontrado no IXC.' });
+
+        const habilitado  = ctr.desbloqueio_confianca === 'S';
+        const jaAtivo     = ctr.desbloqueio_confianca_ativo === 'S';
+        const restrito     = ctr.restricao_auto_desbloqueio === 'S';
+        const elegivel     = habilitado && !jaAtivo && !restrito;
+
+        return res.status(200).json({
+          ok: true,
+          elegivel,
+          habilitado,
+          ja_ativo: jaAtivo,
+          restrito,
+          motivo_restricao: ctr.motivo_restricao_auto_desbloq || null,
+          ultimo_uso: ctr.dt_ult_des_bloq_conf || null,
+        });
+      } catch (e) { return res.status(502).json({ error: 'Erro ao consultar IXC', message: e.message }); }
+    }
+
+    // ── solicitar_desbloqueio_confianca ─────────────────────────
+    // Re-checa elegibilidade ao vivo (evita corrida/dado velho) e,
+    // se ok, ativa desbloqueio_confianca_ativo='S' no contrato.
+    if (action === 'solicitar_desbloqueio_confianca') {
+      let ixcContratoId = null;
+      try {
+        ixcContratoId = await _buscarContratoAtivoIxcId();
+        if (!ixcContratoId) return res.status(404).json({ error: 'Contrato ativo nao encontrado.' });
+
+        const ctr = await _buscarContratoIXC(ixcContratoId);
+        if (!ctr) return res.status(404).json({ error: 'Contrato nao encontrado no IXC.' });
+
+        const habilitado = ctr.desbloqueio_confianca === 'S';
+        const jaAtivo    = ctr.desbloqueio_confianca_ativo === 'S';
+        const restrito    = ctr.restricao_auto_desbloqueio === 'S';
+
+        if (!habilitado || jaAtivo || restrito) {
+          // Loga tentativa negada para auditoria
+          await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
+            method: 'POST', headers: srvH,
+            body: JSON.stringify({
+              cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId),
+              sucesso: false,
+              motivo: restrito ? (ctr.motivo_restricao_auto_desbloq || 'Restrito pelo IXC') : (jaAtivo ? 'Ja ativo' : 'Recurso nao habilitado para este contrato'),
+            }),
+          }).catch(()=>{});
+          return res.status(403).json({
+            error: 'Nao elegivel para desbloqueio em confianca.',
+            motivo_restricao: ctr.motivo_restricao_auto_desbloq || null,
+            restrito, ja_ativo: jaAtivo, habilitado,
+          });
+        }
+
+        // Ativa no IXC (PUT parcial — so o campo necessario)
+        const urlPut = `${ixcBase}/webservice/v1/cliente_contrato/${ixcContratoId}`;
+        const rPut = await fetch(urlPut, {
+          method: 'PUT',
+          headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'editar' },
+          body: JSON.stringify({ desbloqueio_confianca_ativo: 'S' }),
+        });
+        const txtPut = await rPut.text();
+        const isHtml = txtPut.trim().startsWith('<');
+        let dPut; try { dPut = JSON.parse(txtPut); } catch { dPut = { raw: txtPut.slice(0,300) }; }
+
+        const sucesso = !isHtml && rPut.status >= 200 && rPut.status < 300;
+
+        await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
+          method: 'POST', headers: srvH,
+          body: JSON.stringify({
+            cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId),
+            sucesso, resposta_ixc: dPut, motivo: sucesso ? null : 'Falha no PUT ao IXC',
+          }),
+        }).catch(()=>{});
+
+        if (!sucesso) return res.status(502).json({ error: 'Falha ao ativar no IXC.', detalhe: dPut });
+        return res.status(200).json({ ok: true, mensagem: 'Desbloqueio em confianca ativado. A liberacao do acesso pode levar alguns minutos.' });
+      } catch (e) {
+        await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
+          method: 'POST', headers: srvH,
+          body: JSON.stringify({ cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId||''), sucesso: false, motivo: e.message }),
+        }).catch(()=>{});
+        return res.status(502).json({ error: 'Erro ao processar desbloqueio.', message: e.message });
+      }
     }
 
     // ── debug_ixc ────────────────────────────────────────────────
