@@ -331,18 +331,23 @@ export default async function handler(req, res) {
           });
         }
 
-        // Ativa no IXC (PUT parcial — so o campo necessario)
+        // Ativa no IXC — o endpoint exige o registro completo (valida campos
+        // obrigatorios mesmo em edicao), entao reenviamos tudo que veio no GET
+        // e so sobrescrevemos o campo que queremos mudar.
+        const payloadPut = { ...ctr, desbloqueio_confianca_ativo: 'S' };
+        delete payloadPut.id; // id vai na URL, nao no corpo
+
         const urlPut = `${ixcBase}/webservice/v1/cliente_contrato/${ixcContratoId}`;
         const rPut = await fetch(urlPut, {
           method: 'PUT',
           headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'editar' },
-          body: JSON.stringify({ desbloqueio_confianca_ativo: 'S' }),
+          body: JSON.stringify(payloadPut),
         });
         const txtPut = await rPut.text();
         const isHtml = txtPut.trim().startsWith('<');
         let dPut; try { dPut = JSON.parse(txtPut); } catch { dPut = { raw: txtPut.slice(0,300) }; }
 
-        const sucesso = !isHtml && rPut.status >= 200 && rPut.status < 300;
+        const sucesso = !isHtml && rPut.status >= 200 && rPut.status < 300 && dPut?.type !== 'error';
 
         await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
           method: 'POST', headers: srvH,
@@ -352,7 +357,7 @@ export default async function handler(req, res) {
           }),
         }).catch(()=>{});
 
-        if (!sucesso) return res.status(502).json({ error: 'Falha ao ativar no IXC.', detalhe: dPut });
+        if (!sucesso) return res.status(502).json({ error: dPut?.message || 'Falha ao ativar no IXC.', detalhe: dPut });
         return res.status(200).json({ ok: true, mensagem: 'Desbloqueio em confianca ativado. A liberacao do acesso pode levar alguns minutos.' });
       } catch (e) {
         await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
