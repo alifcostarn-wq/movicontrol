@@ -7192,6 +7192,29 @@ async function liberarMoviApp(idx){
   const btn = document.getElementById('btn-liberar-mva');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Liberando...'; }
 
+  // Resolve o ID LOCAL do Supabase (clientes.id). A FK de clientes_app exige
+  // o id local, não o ixc_id. Clientes carregados do IXC podem ter cli.id
+  // ausente ou igual ao ixc_id, então buscamos pelo ixc_id como fonte segura.
+  let clienteIdLocal = null;
+  try {
+    if(cli.ixcId){
+      const { data: rowByIxc } = await sbClient.from('clientes')
+        .select('id').eq('ixc_id', String(cli.ixcId)).maybeSingle();
+      if(rowByIxc?.id) clienteIdLocal = rowByIxc.id;
+    }
+    if(!clienteIdLocal && cli.id != null){
+      const { data: rowById } = await sbClient.from('clientes')
+        .select('id').eq('id', cli.id).maybeSingle();
+      if(rowById?.id) clienteIdLocal = rowById.id;
+    }
+  } catch(e){ console.warn('resolver id local:', e); }
+
+  if(!clienteIdLocal){
+    showToast('Não foi possível localizar o cliente no banco. Faça o Sync primeiro.', true);
+    if(btn){ btn.disabled=false; btn.textContent='Tentar novamente'; }
+    return;
+  }
+
   const cfg = await getIXCConfig();
   if(!cfg.proxyUrl){ showToast('Configure a integração IXC primeiro.', true); if(btn){btn.disabled=false;} return; }
 
@@ -7213,7 +7236,7 @@ async function liberarMoviApp(idx){
       },
       body: JSON.stringify({
         action:     'criar_cliente_app',
-        cliente_id: cli.id,
+        cliente_id: clienteIdLocal,
         cpf,
         nome:       cli.nome || '',
         whatsapp:   wa,
