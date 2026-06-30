@@ -388,7 +388,7 @@ const SUPA_URL  = 'https://mgtetsmcswdtvsgewcen.supabase.co';
 const SUPA_ANON = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const PROXY_URL = 'https://movicontrol.vercel.app/api/moviapp';
 const PUSH_URL  = 'https://movicontrol.vercel.app/api/push';
-const WHATSAPP_FINANCEIRO = '5585999999999'; // TODO Alif: trocar pelo numero real do financeiro (DDI+DDD+numero, so digitos)
+const WHATSAPP_FINANCEIRO = '5584992106750'; // Atendimento MoviOn
 // Storage isolado: o MoviApp usa uma chave própria para NÃO compartilhar
 // sessão com o MoviControl (que roda no mesmo domínio/navegador).
 // Sem isso, logar no app como cliente derrubava a sessão do admin.
@@ -499,16 +499,36 @@ function renderHome(){
   const vel      = perfil?.velocidade_mbps || 0;
   const plano    = perfil?.plano || '';
 
-  // Fatura em aberto
-  const fatAberta = faturas.find(f => f.status === 'aberto');
-  const fatVal    = fatAberta ? fmtReal(fatAberta.valor) : null;
-  const diasVenc  = fatAberta ? Math.ceil((new Date(fatAberta.data_vencimento) - new Date()) / 86400000) : null;
+  // Status de bloqueio: se _confianca já foi consultado, usa; senão usa online
+  const bloqueado = _confianca ? _confianca.bloqueado : false;
+  const statusContrato = bloqueado ? 'bloqueado' : (online ? 'ativo' : 'offline');
+
+  // Fatura em atraso (vencida, ainda em aberto)
+  const hojeStr = new Date().toISOString().slice(0,10);
+  const fatAtrasada = faturas.find(f => f.status === 'aberto' && f.data_vencimento && f.data_vencimento < hojeStr);
+
+  // Próxima fatura a vencer (em aberto, não vencida ainda)
+  const fatAberta = faturas.find(f => f.status === 'aberto' && (!f.data_vencimento || f.data_vencimento >= hojeStr));
+
+  // Para o mini card: prioriza fatura atrasada, senão próxima a vencer
+  const fatCard   = fatAtrasada || fatAberta;
+  const fatVal    = fatCard ? fmtReal(fatCard.valor) : null;
+  const diasVenc  = fatCard ? Math.ceil((new Date(fatCard.data_vencimento) - new Date()) / 86400000) : null;
   const vencLabel = diasVenc !== null
     ? (diasVenc < 0 ? `Venceu há ${Math.abs(diasVenc)}d` : diasVenc === 0 ? 'Vence hoje!' : `Vence em ${diasVenc}d`)
     : null;
+  const emAtraso  = !!fatAtrasada;
 
   // Chamado ativo
   const chamadoAtivo = chamados.find(c => !['concluido','cancelada','cancelado'].includes(c.status));
+
+  // Card de conexão: cor e conteúdo dependem do status real
+  const cardBg = bloqueado
+    ? 'linear-gradient(135deg,#991B1B,#DC2626)'
+    : 'linear-gradient(135deg,var(--blue-dark),var(--blue))';
+  const cardShadow = bloqueado
+    ? '0 8px 24px rgba(220,38,38,.35)'
+    : '0 8px 24px rgba(59,62,216,.3)';
 
   render(`
   <div class="header">
@@ -528,38 +548,45 @@ function renderHome(){
   <div class="body">
 
     <!-- Hero de conexão -->
-    <div class="home-hero" onclick="atualizarConexao()">
+    <div class="home-hero" onclick="${bloqueado ? "navTo('fatura')" : 'atualizarConexao()'}" style="background:${cardBg};box-shadow:${cardShadow}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;width:100%">
         <div>
-          <span class="home-status-pill ${online?'on':'off'}">
-            <span class="home-pill-dot ${online?'on':'off'}"></span>
-            ${online ? 'Internet ativa' : 'Sem conexão'}
+          <span class="home-status-pill ${bloqueado ? 'off' : (online ? 'on' : 'off')}">
+            <span class="home-pill-dot ${bloqueado ? 'off' : (online ? 'on' : 'off')}"></span>
+            ${bloqueado ? '🔒 Internet bloqueada' : (online ? 'Internet ativa' : 'Sem conexão')}
           </span>
           <div class="home-speed">${vel}<span class="home-mbps"> Mbps</span></div>
           <div style="font-size:12px;color:rgba(255,255,255,.55);">${plano}</div>
         </div>
         <div style="text-align:right">
-          ${online ? `<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Estabilidade</div>
-          <div style="font-size:22px;font-weight:800;color:#5EE0A0">100%</div>` :
-          `<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Status</div>
-          <div style="font-size:13px;font-weight:700;color:#ff6b6b">Verificar</div>`}
+          ${bloqueado
+            ? `<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Status</div>
+               <div style="font-size:13px;font-weight:700;color:#fca5a5">Bloqueada</div>`
+            : online
+              ? `<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Estabilidade</div>
+                 <div style="font-size:22px;font-weight:800;color:#5EE0A0">100%</div>`
+              : `<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px">Status</div>
+                 <div style="font-size:13px;font-weight:700;color:#ff6b6b">Verificar</div>`}
         </div>
       </div>
-      ${!online ? `<div style="margin-top:14px;padding:10px 14px;background:rgba(255,107,107,.12);border-radius:10px;border:1px solid rgba(255,107,107,.25)">
+      ${bloqueado ? `<div style="margin-top:14px;padding:10px 14px;background:rgba(255,255,255,.1);border-radius:10px;border:1px solid rgba(255,255,255,.2);cursor:pointer">
+        <div style="font-size:12px;color:#fca5a5;font-weight:700">⚠️ Sua internet está bloqueada por pendência financeira</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:3px">Toque aqui para ver sua fatura e regularizar</div>
+      </div>` : (!online ? `<div style="margin-top:14px;padding:10px 14px;background:rgba(255,107,107,.12);border-radius:10px;border:1px solid rgba(255,107,107,.25)">
         <div style="font-size:12px;color:#ff9999;font-weight:600">🔴 Sua conexão parece estar offline</div>
         <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:3px">Tente reiniciar seu roteador e aguarde 30 segundos</div>
-      </div>` : ''}
+      </div>` : '')}
     </div>
 
     <!-- Mini cards: Fatura + Plano -->
     <div class="mini-cards">
-      <div class="mini-card" onclick="navTo('fatura')">
-        <div class="mini-card-icon">💳</div>
-        <div class="mini-card-label">Próxima fatura</div>
-        ${fatAberta
-          ? `<div class="mini-card-val">${fatVal}</div>
+      <div class="mini-card" onclick="navTo('fatura')" ${emAtraso ? 'style="border:1.5px solid #FCA5A5;background:rgba(220,38,38,.04)"' : ''}>
+        <div class="mini-card-icon">${emAtraso ? '⚠️' : '💳'}</div>
+        <div class="mini-card-label" style="${emAtraso ? 'color:#DC2626;font-weight:700' : ''}">${emAtraso ? 'Fatura em atraso!' : 'Próxima fatura'}</div>
+        ${fatCard
+          ? `<div class="mini-card-val" style="${emAtraso ? 'color:#DC2626' : ''}">${fatVal}</div>
              <div class="mini-card-sub">${vencLabel}</div>
-             <span class="mini-card-badge" style="background:${diasVenc!==null&&diasVenc<3?'#FEE2E2':'#FEF3C7'};color:${diasVenc!==null&&diasVenc<3?'#991B1B':'#92400E'}">${diasVenc!==null&&diasVenc<0?'Vencida':diasVenc===0?'Hoje!':'Em aberto'}</span>`
+             <span class="mini-card-badge" style="background:${emAtraso ? '#FEE2E2' : (diasVenc!==null&&diasVenc<3?'#FEE2E2':'#FEF3C7')};color:${emAtraso ? '#991B1B' : (diasVenc!==null&&diasVenc<3?'#991B1B':'#92400E')}">${emAtraso ? 'Vencida' : (diasVenc===0?'Hoje!':'Em aberto')}</span>`
           : `<div class="mini-card-val" style="color:var(--green)">Em dia ✓</div>
              <div class="mini-card-sub">Sem faturas abertas</div>`}
       </div>
@@ -568,7 +595,7 @@ function renderHome(){
         <div class="mini-card-label">Seu plano</div>
         <div class="mini-card-val">${vel}Mbps</div>
         <div class="mini-card-sub">${plano || 'Fibra óptica'}</div>
-        <span class="mini-card-badge" style="background:#D1FAE5;color:#065F46">Ativo</span>
+        <span class="mini-card-badge" style="background:${bloqueado?'#FEE2E2':'#D1FAE5'};color:${bloqueado?'#991B1B':'#065F46'}">${bloqueado?'Bloqueado':'Ativo'}</span>
       </div>
     </div>
 
@@ -722,19 +749,22 @@ async function carregarDados(){
 let activeTab = 'home';
 
 function renderFaturaScreen(){
-  const emAberto = faturas.find(f => f.status === 'aberto');
-  const fat   = emAberto || faturas[0];
-  const pago  = fat?.status === 'pago';
-  const hist  = faturas.filter(f => fat && f.id !== fat.id).slice(0,6);
+  const hojeStr  = new Date().toISOString().slice(0,10);
+  const fatAtrasada = faturas.find(f => f.status === 'aberto' && f.data_vencimento && f.data_vencimento < hojeStr);
+  const fatProxima  = faturas.find(f => f.status === 'aberto' && (!f.data_vencimento || f.data_vencimento >= hojeStr));
+
+  // fat = principal exibida no hero (prioriza a atrasada)
+  const fat  = fatAtrasada || fatProxima || faturas[0];
+  const pago = fat?.status === 'pago';
+  const hist = faturas.filter(f => fat && f.id !== fat.id).slice(0,6);
 
   // Há fatura em aberto? Dispara a checagem de bloqueio real no IXC
-  // (a seção só aparece depois, se _confianca.bloqueado vier true)
   const temFaturaAberta = !!(fat && fat.status === 'aberto');
 
   let confiancaHtml = '';
   if(temFaturaAberta){
     if(_confianca === null && !_confiancaLoading){
-      verificarConfianca(); // dispara em segundo plano; só renderiza algo se vier bloqueado
+      verificarConfianca();
     } else if(_confianca && _confianca.bloqueado){
       if(_confiancaBusy){
         confiancaHtml = `<button class="btn-outline" disabled style="opacity:.6">Ativando desbloqueio...</button>`;
@@ -762,18 +792,44 @@ function renderFaturaScreen(){
     }
   }
 
-  // Hero da fatura
+  // Card de fatura em atraso (aparece acima do hero quando existe)
+  let atrasoHtml = '';
+  if(fatAtrasada && fatProxima){
+    // Há DUAS faturas: uma atrasada e uma que vai vencer. Mostra banner da atrasada separado.
+    const diasAtraso = Math.abs(Math.ceil((new Date(fatAtrasada.data_vencimento) - new Date()) / 86400000));
+    atrasoHtml = `<div style="background:#FEE2E2;border:1.5px solid #FCA5A5;border-radius:14px;padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="abrirPix('${fatAtrasada.id}', ${fatAtrasada.valor})">
+      <div style="font-size:28px">⚠️</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:800;color:#991B1B;text-transform:uppercase;letter-spacing:.05em">Fatura em atraso</div>
+        <div style="font-size:18px;font-weight:800;color:#7F1D1D;margin-top:2px">${fmtReal(fatAtrasada.valor)}</div>
+        <div style="font-size:11.5px;color:#DC2626;margin-top:2px">Venceu há ${diasAtraso} dia${diasAtraso!==1?'s':''} · ${fmtData(fatAtrasada.data_vencimento)}</div>
+      </div>
+      <div style="background:#DC2626;color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap">Pagar PIX</div>
+    </div>`;
+  }
+
+  // Hero da fatura principal
   let heroHtml = '';
   if(fat){
-    heroHtml = `<div class="fat-hero">
+    const emAtraso = fat.status === 'aberto' && fat.data_vencimento && fat.data_vencimento < hojeStr;
+    const heroColor = emAtraso ? '#7F1D1D' : '#fff';
+    const heroBg    = emAtraso
+      ? 'linear-gradient(135deg,#991B1B,#DC2626)'
+      : 'linear-gradient(135deg,var(--blue-dark),var(--blue))';
+    const diasVenc  = Math.ceil((new Date(fat.data_vencimento) - new Date()) / 86400000);
+    const vencTxt   = emAtraso
+      ? `Venceu há ${Math.abs(diasVenc)} dia${Math.abs(diasVenc)!==1?'s':''}`
+      : (diasVenc === 0 ? 'Vence hoje!' : `Vence em ${diasVenc} dia${diasVenc!==1?'s':''}`);
+
+    heroHtml = `<div class="fat-hero" style="background:${heroBg}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
-        <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6)">${pago?'Última fatura':'Fatura em aberto'}</div>
-        <div class="fat-badge ${pago?'paga':'aberta'}" style="margin-top:0">${pago?'✓ Paga':'🕐 Em aberto'}</div>
+        <div style="font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6)">${pago?'Última fatura': emAtraso ? '🔴 Fatura em atraso' : 'Próxima fatura'}</div>
+        <div class="fat-badge ${pago?'paga':'aberta'}" style="margin-top:0">${pago?'✓ Paga': emAtraso ? '⚠️ Vencida' : '🕐 Em aberto'}</div>
       </div>
       <div class="fat-val" style="color:#fff">${fmtReal(fat.valor)}</div>
       <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:10px;display:flex;align-items:center;gap:6px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        Vencimento em ${fmtData(fat.data_vencimento)}
+        ${emAtraso ? vencTxt : `Vencimento em ${fmtData(fat.data_vencimento)}`}
       </div>
     </div>`;
   } else {
@@ -820,6 +876,7 @@ function renderFaturaScreen(){
     </div>
   </div>
   <div class="body">
+    ${atrasoHtml}
     ${heroHtml}
     ${pixBtn}
     ${confiancaHtml}
