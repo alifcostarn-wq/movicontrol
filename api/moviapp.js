@@ -426,21 +426,44 @@ export default async function handler(req, res) {
           return res.status(502).json({ error: 'Nao foi possivel autenticar na Central para o desbloqueio.' });
         }
 
-        // Passo 2: dispara o desbloqueio de confianca para o contrato
-        const urlDesbloq = `${CENTRAL_URL}/model/planos/planos.php?ID_CONTRATO=${encodeURIComponent(ixcContratoId)}&ACTION=setDesbloqueioConfianca`;
+        // Passo 2: dispara o desbloqueio de confianca para o contrato.
+        // A Central retornou a sessao no corpo (nao via Set-Cookie), entao
+        // tentamos reaproveita-la de varias formas conhecidas do IXC:
+        //  - cookie PHPSESSID
+        //  - cookie ixc_sessao / sessao
+        //  - parametro de URL sessao=
+        let cookieFinal = cookie;
+        if (sessaoId) {
+          const partes = [];
+          if (!/PHPSESSID=/i.test(cookieFinal)) partes.push(`PHPSESSID=${sessaoId}`);
+          partes.push(`ixc_sessao=${sessaoId}`);
+          partes.push(`sessao=${sessaoId}`);
+          cookieFinal = [cookieFinal, ...partes].filter(Boolean).join('; ');
+        }
+        const sessaoQS = sessaoId ? `&sessao=${encodeURIComponent(sessaoId)}` : '';
+        const urlDesbloq = `${CENTRAL_URL}/model/planos/planos.php?ID_CONTRATO=${encodeURIComponent(ixcContratoId)}&ACTION=setDesbloqueioConfianca${sessaoQS}`;
         const rDesbloq = await fetch(urlDesbloq, {
           method: 'GET',
-          headers: { 'Cookie': cookie, 'X-Requested-With': 'XMLHttpRequest' },
+          headers: {
+            'Cookie': cookieFinal,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': `${CENTRAL_URL}/planos`,
+          },
         });
         const txtPut = await rDesbloq.text();
-        const isHtml = txtPut.trim().startsWith('<');
+        const isHtml = txtPut.trim().toLowerCase().startsWith('<') || /<html/i.test(txtPut.slice(0,200));
         let dPut; try { dPut = JSON.parse(txtPut); } catch { dPut = { raw: txtPut.slice(0,400) }; }
 
-        // A Central retorna mensagem de sucesso/erro. Consideramos sucesso
-        // quando HTTP 2xx e a resposta NAO indica erro explicito.
-        const respStr = (typeof dPut === 'object' ? JSON.stringify(dPut) : String(dPut)).toLowerCase();
-        const indicaErro = /erro|não foi|nao foi|indispon|restri|negad/.test(respStr) && !/sucesso|desbloqueado/.test(respStr);
-        const sucesso = rDesbloq.status >= 200 && rDesbloq.status < 300 && !indicaErro;
+        // Se voltou pagina HTML, a sessao nao foi aceita (caiu no login) — FALHA.
+        // So consideramos sucesso quando a resposta e JSON com tipo "sucesso"
+        // ou contem explicitamente a confirmacao de desbloqueio.
+        let sucesso = false;
+        if (!isHtml && rDesbloq.status >= 200 && rDesbloq.status < 300) {
+          const respStr = (typeof dPut === 'object' ? JSON.stringify(dPut) : String(dPut)).toLowerCase();
+          const indicaErro = /tipo"\s*:\s*"erro|"erro"|não foi|nao foi|indispon|restri|negad/.test(respStr);
+          const indicaSucesso = /sucesso|desbloqueado/.test(respStr);
+          sucesso = indicaSucesso && !indicaErro;
+        }
 
         await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
           method: 'POST', headers: srvH,
