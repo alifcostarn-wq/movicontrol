@@ -388,6 +388,7 @@ const SUPA_URL  = 'https://mgtetsmcswdtvsgewcen.supabase.co';
 const SUPA_ANON = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const PROXY_URL = 'https://movicontrol.vercel.app/api/moviapp';
 const PUSH_URL  = 'https://movicontrol.vercel.app/api/push';
+const WHATSAPP_FINANCEIRO = '5585999999999'; // TODO Alif: trocar pelo numero real do financeiro (DDI+DDD+numero, so digitos)
 // Storage isolado: o MoviApp usa uma chave própria para NÃO compartilhar
 // sessão com o MoviControl (que roda no mesmo domínio/navegador).
 // Sem isso, logar no app como cliente derrubava a sessão do admin.
@@ -408,6 +409,9 @@ let faturas  = [];
 let ordens   = [];
 let cbSaldo  = 0;
 let cbLista  = [];
+let _confianca = null;        // status vindo do IXC: {elegivel, habilitado, ja_ativo, restrito, motivo_restricao}
+let _confiancaLoading = false;
+let _confiancaBusy = false;
 
 // ── Helpers ───────────────────────────────────
 const fmtNome = n => n ? n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '';
@@ -695,7 +699,7 @@ async function doLogin(){
 async function doLogout(){
   esconderFAB();
   await sb.auth.signOut();
-  perfil=null; faturas=[]; ordens=[]; cbSaldo=0; cbLista=[]; chamados=[];
+  perfil=null; faturas=[]; ordens=[]; cbSaldo=0; cbLista=[]; chamados=[]; _confianca=null;
   if(_realtimeChamados){ sb.removeChannel(_realtimeChamados); _realtimeChamados=null; }
   renderLogin();
 }
@@ -722,6 +726,43 @@ function renderFaturaScreen(){
   const fat   = emAberto || faturas[0];
   const pago  = fat?.status === 'pago';
   const hist  = faturas.filter(f => fat && f.id !== fat.id).slice(0,6);
+
+  // Atraso real: fatura aberta com vencimento já passado
+  const hojeStr = new Date().toISOString().slice(0,10);
+  const emAtraso = !!(fat && fat.status === 'aberto' && fat.data_vencimento && fat.data_vencimento < hojeStr);
+
+  // Bloco de Desbloqueio em Confiança (só aparece em atraso)
+  let confiancaHtml = '';
+  if(emAtraso){
+    if(_confianca === null){
+      confiancaHtml = `<div class="card" style="margin-bottom:14px">
+        <div class="card-body" style="font-size:12.5px;color:var(--text2)">Verificando elegibilidade para desbloqueio em confiança...</div>
+      </div>`;
+      verificarConfianca();
+    } else if(_confiancaBusy){
+      confiancaHtml = `<button class="btn-outline" disabled style="opacity:.6">Ativando desbloqueio...</button>`;
+    } else if(_confianca.ja_ativo){
+      confiancaHtml = `<div class="card" style="margin-bottom:14px">
+        <div class="card-body" style="font-size:12.5px;color:var(--text2)">✓ Desbloqueio em confiança já está ativo. A liberação do acesso pode levar alguns minutos.</div>
+      </div>`;
+    } else if(_confianca.elegivel){
+      confiancaHtml = `<button class="btn-outline" onclick="solicitarConfianca()" style="border-color:var(--blue);color:var(--blue);font-weight:700">
+        🔓 Desbloqueio em confiança
+      </button>`;
+    } else {
+      const motivo = _confianca.motivo_restricao
+        || (_confianca.habilitado === false ? 'Esse recurso não está disponível para o seu contrato.' : 'Não foi possível liberar o desbloqueio em confiança agora.');
+      const msgWa  = encodeURIComponent('Olá! Minha fatura está em atraso e preciso de ajuda com o desbloqueio.');
+      confiancaHtml = `<div class="card" style="margin-bottom:14px;border:1px solid rgba(255,214,0,.35)">
+        <div class="card-body">
+          <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px">⚠️ ${motivo}</div>
+          <a href="https://wa.me/${WHATSAPP_FINANCEIRO}?text=${msgWa}" target="_blank" style="display:flex;justify-content:center;align-items:center;gap:6px;text-decoration:none;border:1.5px solid var(--blue);color:var(--blue);border-radius:11px;padding:13px;font-weight:700;font-size:13.5px">
+            💬 Falar com o financeiro
+          </a>
+        </div>
+      </div>`;
+    }
+  }
 
   // Hero da fatura
   let heroHtml = '';
@@ -783,6 +824,7 @@ function renderFaturaScreen(){
   <div class="body">
     ${heroHtml}
     ${pixBtn}
+    ${confiancaHtml}
     <button class="btn-yellow-full" onclick="copiarCodigo('${linha}')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       Copiar código de barras
@@ -1122,7 +1164,57 @@ async function carregarFaturas(){
     });
     const d = await r.json();
     faturas = d.registros||[];
+    _confianca = null; // recarrega elegibilidade sempre que as faturas mudam
   } catch(e){ faturas=[]; }
+}
+
+// ── Desbloqueio em Confiança ──────────────────
+async function verificarConfianca(){
+  if(_confiancaLoading) return;
+  _confiancaLoading = true;
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session) return;
+    const r = await fetch(PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'status_desbloqueio_confianca'})
+    });
+    const d = await r.json();
+    _confianca = (r.ok && d.ok) ? d : { elegivel:false, habilitado:false, ja_ativo:false, restrito:false, motivo_restricao:null };
+  } catch(e){
+    _confianca = { elegivel:false, habilitado:false, ja_ativo:false, restrito:false, motivo_restricao:null };
+  }
+  _confiancaLoading = false;
+  if(route==='fatura') renderFaturaScreen();
+}
+
+async function solicitarConfianca(){
+  if(_confiancaBusy) return;
+  if(!confirm('Confirma o desbloqueio em confiança? Seu acesso será liberado temporariamente enquanto a fatura está em aberto.')) return;
+  _confiancaBusy = true;
+  renderFaturaScreen();
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session) throw new Error('Sessão expirada');
+    const r = await fetch(PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({action:'solicitar_desbloqueio_confianca'})
+    });
+    const d = await r.json();
+    if(r.ok && d.ok){
+      toast('Desbloqueio em confiança ativado!');
+      _confianca = { elegivel:false, habilitado:true, ja_ativo:true, restrito:false, motivo_restricao:null };
+    } else {
+      toast(d.error || 'Não foi possível ativar o desbloqueio.');
+      _confianca = { elegivel:false, habilitado: !!d.habilitado, ja_ativo: !!d.ja_ativo, restrito: !!d.restrito, motivo_restricao: d.motivo_restricao || null };
+    }
+  } catch(e){
+    toast('Erro ao solicitar desbloqueio.');
+  }
+  _confiancaBusy = false;
+  renderFaturaScreen();
 }
 
 async function carregarOS(){
