@@ -727,40 +727,38 @@ function renderFaturaScreen(){
   const pago  = fat?.status === 'pago';
   const hist  = faturas.filter(f => fat && f.id !== fat.id).slice(0,6);
 
-  // Atraso real: fatura aberta com vencimento já passado
-  const hojeStr = new Date().toISOString().slice(0,10);
-  const emAtraso = !!(fat && fat.status === 'aberto' && fat.data_vencimento && fat.data_vencimento < hojeStr);
+  // Há fatura em aberto? Dispara a checagem de bloqueio real no IXC
+  // (a seção só aparece depois, se _confianca.bloqueado vier true)
+  const temFaturaAberta = !!(fat && fat.status === 'aberto');
 
-  // Bloco de Desbloqueio em Confiança (só aparece em atraso)
   let confiancaHtml = '';
-  if(emAtraso){
-    if(_confianca === null){
-      confiancaHtml = `<div class="card" style="margin-bottom:14px">
-        <div class="card-body" style="font-size:12.5px;color:var(--text2)">Verificando elegibilidade para desbloqueio em confiança...</div>
-      </div>`;
-      verificarConfianca();
-    } else if(_confiancaBusy){
-      confiancaHtml = `<button class="btn-outline" disabled style="opacity:.6">Ativando desbloqueio...</button>`;
-    } else if(_confianca.ja_ativo){
-      confiancaHtml = `<div class="card" style="margin-bottom:14px">
-        <div class="card-body" style="font-size:12.5px;color:var(--text2)">✓ Desbloqueio em confiança já está ativo. A liberação do acesso pode levar alguns minutos.</div>
-      </div>`;
-    } else if(_confianca.elegivel){
-      confiancaHtml = `<button class="btn-outline" onclick="solicitarConfianca()" style="border-color:var(--blue);color:var(--blue);font-weight:700">
-        🔓 Desbloqueio em confiança
-      </button>`;
-    } else {
-      const motivo = _confianca.motivo_restricao
-        || (_confianca.habilitado === false ? 'Esse recurso não está disponível para o seu contrato.' : 'Não foi possível liberar o desbloqueio em confiança agora.');
-      const msgWa  = encodeURIComponent('Olá! Minha fatura está em atraso e preciso de ajuda com o desbloqueio.');
-      confiancaHtml = `<div class="card" style="margin-bottom:14px;border:1px solid rgba(255,214,0,.35)">
-        <div class="card-body">
-          <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px">⚠️ ${motivo}</div>
-          <a href="https://wa.me/${WHATSAPP_FINANCEIRO}?text=${msgWa}" target="_blank" style="display:flex;justify-content:center;align-items:center;gap:6px;text-decoration:none;border:1.5px solid var(--blue);color:var(--blue);border-radius:11px;padding:13px;font-weight:700;font-size:13.5px">
-            💬 Falar com o financeiro
-          </a>
-        </div>
-      </div>`;
+  if(temFaturaAberta){
+    if(_confianca === null && !_confiancaLoading){
+      verificarConfianca(); // dispara em segundo plano; só renderiza algo se vier bloqueado
+    } else if(_confianca && _confianca.bloqueado){
+      if(_confiancaBusy){
+        confiancaHtml = `<button class="btn-outline" disabled style="opacity:.6">Ativando desbloqueio...</button>`;
+      } else if(_confianca.ja_ativo){
+        confiancaHtml = `<div class="card" style="margin-bottom:14px">
+          <div class="card-body" style="font-size:12.5px;color:var(--text2)">✓ Desbloqueio em confiança já está ativo. A liberação do acesso pode levar alguns minutos.</div>
+        </div>`;
+      } else if(_confianca.elegivel){
+        confiancaHtml = `<button class="btn-outline" onclick="solicitarConfianca()" style="border-color:var(--blue);color:var(--blue);font-weight:700">
+          🔓 Desbloqueio em confiança
+        </button>`;
+      } else {
+        const motivo = _confianca.motivo_restricao
+          || (_confianca.habilitado === false ? 'Esse recurso não está disponível para o seu contrato.' : 'Não foi possível liberar o desbloqueio em confiança agora.');
+        const msgWa  = encodeURIComponent('Olá! Meu acesso está bloqueado e preciso de ajuda com o desbloqueio.');
+        confiancaHtml = `<div class="card" style="margin-bottom:14px;border:1px solid rgba(255,214,0,.35)">
+          <div class="card-body">
+            <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px">⚠️ ${motivo}</div>
+            <a href="https://wa.me/${WHATSAPP_FINANCEIRO}?text=${msgWa}" target="_blank" style="display:flex;justify-content:center;align-items:center;gap:6px;text-decoration:none;border:1.5px solid var(--blue);color:var(--blue);border-radius:11px;padding:13px;font-weight:700;font-size:13.5px">
+              💬 Falar com o financeiro
+            </a>
+          </div>
+        </div>`;
+      }
     }
   }
 
@@ -1205,10 +1203,10 @@ async function solicitarConfianca(){
     const d = await r.json();
     if(r.ok && d.ok){
       toast('Desbloqueio em confiança ativado!');
-      _confianca = { elegivel:false, habilitado:true, ja_ativo:true, restrito:false, motivo_restricao:null };
+      _confianca = { bloqueado:true, elegivel:false, habilitado:true, ja_ativo:true, restrito:false, motivo_restricao:null };
     } else {
       toast(d.error || 'Não foi possível ativar o desbloqueio.');
-      _confianca = { elegivel:false, habilitado: !!d.habilitado, ja_ativo: !!d.ja_ativo, restrito: !!d.restrito, motivo_restricao: d.motivo_restricao || null };
+      _confianca = { bloqueado: (d.bloqueado !== false), elegivel:false, habilitado: !!d.habilitado, ja_ativo: !!d.ja_ativo, restrito: !!d.restrito, motivo_restricao: d.motivo_restricao || null };
     }
   } catch(e){
     toast('Erro ao solicitar desbloqueio.');
