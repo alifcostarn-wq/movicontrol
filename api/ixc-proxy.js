@@ -38,59 +38,6 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Apenas administradores podem cadastrar tecnicos.' });
     }
 
-    // ── Criar usuário MoviApp (cliente do assinante) ──
-    if (b.action === 'create-moviapp-user') {
-      const email      = (b.email || '').trim().toLowerCase();
-      const senha      = (b.senha || '').trim();
-      const cliente_id = b.cliente_id || null;
-      const ixc_id     = b.ixc_id     || null;
-      const nome       = (b.nome || '').trim();
-      const cpf        = (b.cpf  || '').replace(/\D/g,'');
-      if (!email || !senha || !cliente_id) return res.status(400).json({ error: 'email, senha e cliente_id são obrigatórios.' });
-
-      // Verifica se já existe usuário com esse email
-      let userId = null;
-      let already_exists = false;
-      try {
-        const rList = await fetch(`${SUPA_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, { headers: srvH });
-        const jList = await rList.json();
-        const existente = (jList.users||[]).find(u=>u.email===email);
-        if(existente){ userId = existente.id; already_exists = true; }
-      } catch(e){}
-
-      // Se não existe, cria
-      if (!userId) {
-        try {
-          const ru = await fetch(`${SUPA_URL}/auth/v1/admin/users`, {
-            method:'POST', headers: srvH,
-            body: JSON.stringify({ email, password: senha, email_confirm: true, user_metadata: { nome } })
-          });
-          const du = await ru.json();
-          if (!ru.ok) return res.status(ru.status).json({ error: du.msg || du.message || 'Erro ao criar login.' });
-          userId = du.id || du.user?.id;
-        } catch(e){ return res.status(502).json({ error: 'Erro ao criar login: '+e.message }); }
-      }
-      if (!userId) return res.status(502).json({ error: 'Não foi possível obter o ID do usuário.' });
-
-      // Perfil = cliente_app
-      try {
-        await fetch(`${SUPA_URL}/rest/v1/perfis?on_conflict=id`, {
-          method:'POST', headers: { ...srvH, 'Prefer':'resolution=merge-duplicates' },
-          body: JSON.stringify({ id: userId, nome, perfil:'cliente_app', email })
-        });
-      } catch(e){}
-
-      // Upsert em clientes_app
-      try {
-        await fetch(`${SUPA_URL}/rest/v1/clientes_app?on_conflict=id`, {
-          method:'POST', headers: { ...srvH, 'Prefer':'resolution=merge-duplicates' },
-          body: JSON.stringify({ id: userId, cliente_id, ixc_id: ixc_id ? String(ixc_id) : null, nome, cpf, ativo: true })
-        });
-      } catch(e){ console.error('clientes_app upsert:', e); }
-
-      return res.status(200).json({ ok: true, user_id: userId, already_exists });
-    }
-
     if (b.action === 'criar_tecnico') {
       const email = (b.email || '').trim().toLowerCase();
       const senha = b.senha || '';
