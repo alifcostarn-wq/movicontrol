@@ -11466,17 +11466,6 @@ async function syncIXC(silent){
           }
         });
       }
-
-      // === Limpeza de fotos R2: clientes com contrato cancelado (status D) ===
-      // Detecta clienteIds com pelo menos 1 contrato agora cancelado
-      const cancelados = comIxc
-        .filter(c => (c.statusContrato||'').toUpperCase() === 'D' && c.clienteId)
-        .map(c => c.clienteId);
-      const idsCancelados = [...new Set(cancelados)];
-      if(idsCancelados.length){
-        // Dispara em background — não bloqueia o sync
-        _limparFotosClientesCancelados(idsCancelados).catch(e => console.warn('R2 cleanup:', e));
-      }
     }
 
     // === 3) Processar LOGINS (radusuarios) ===
