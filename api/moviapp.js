@@ -262,7 +262,7 @@ export default async function handler(req, res) {
         const ctr = await _buscarContratoIXC(ixcContratoId);
         if (!ctr) return res.status(404).json({ error: 'Contrato nao encontrado no IXC.' });
 
-        const statusInternet = (ctr.status_internet || '').toUpperCase();
+        const statusInternet = (ctr.status_internet || ctr.status_acesso || '').toUpperCase();
         const bloqueado    = !['A', 'AA', ''].includes(statusInternet); // tudo que nao for Ativo/Ag.Assinatura conta como bloqueado
         const habilitado  = ctr.desbloqueio_confianca === 'S';
         const jaAtivo     = ctr.desbloqueio_confianca_ativo === 'S';
@@ -294,7 +294,7 @@ export default async function handler(req, res) {
         const ctr = await _buscarContratoIXC(ixcContratoId);
         if (!ctr) return res.status(404).json({ error: 'Contrato nao encontrado no IXC.' });
 
-        const statusInternet = (ctr.status_internet || '').toUpperCase();
+        const statusInternet = (ctr.status_internet || ctr.status_acesso || '').toUpperCase();
         const bloqueado   = !['A', 'AA', ''].includes(statusInternet);
         const habilitado = ctr.desbloqueio_confianca === 'S';
         const jaAtivo    = ctr.desbloqueio_confianca_ativo === 'S';
