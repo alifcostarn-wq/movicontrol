@@ -252,6 +252,8 @@ export default async function handler(req, res) {
     // ── status_desbloqueio_confianca ────────────────────────────
     // Consulta os campos de confianca do contrato ativo no IXC e
     // diz se o cliente esta elegivel a usar o recurso agora.
+    // Só faz sentido quando o acesso está REALMENTE bloqueado
+    // (status_internet diferente de Ativo/Aguardando assinatura).
     if (action === 'status_desbloqueio_confianca') {
       try {
         const ixcContratoId = await _buscarContratoAtivoIxcId();
@@ -260,13 +262,16 @@ export default async function handler(req, res) {
         const ctr = await _buscarContratoIXC(ixcContratoId);
         if (!ctr) return res.status(404).json({ error: 'Contrato nao encontrado no IXC.' });
 
+        const statusInternet = (ctr.status_internet || '').toUpperCase();
+        const bloqueado    = !['A', 'AA', ''].includes(statusInternet); // tudo que nao for Ativo/Ag.Assinatura conta como bloqueado
         const habilitado  = ctr.desbloqueio_confianca === 'S';
         const jaAtivo     = ctr.desbloqueio_confianca_ativo === 'S';
         const restrito     = ctr.restricao_auto_desbloqueio === 'S';
-        const elegivel     = habilitado && !jaAtivo && !restrito;
+        const elegivel     = bloqueado && habilitado && !jaAtivo && !restrito;
 
         return res.status(200).json({
           ok: true,
+          bloqueado,
           elegivel,
           habilitado,
           ja_ativo: jaAtivo,
@@ -289,24 +294,26 @@ export default async function handler(req, res) {
         const ctr = await _buscarContratoIXC(ixcContratoId);
         if (!ctr) return res.status(404).json({ error: 'Contrato nao encontrado no IXC.' });
 
+        const statusInternet = (ctr.status_internet || '').toUpperCase();
+        const bloqueado   = !['A', 'AA', ''].includes(statusInternet);
         const habilitado = ctr.desbloqueio_confianca === 'S';
         const jaAtivo    = ctr.desbloqueio_confianca_ativo === 'S';
         const restrito    = ctr.restricao_auto_desbloqueio === 'S';
 
-        if (!habilitado || jaAtivo || restrito) {
+        if (!bloqueado || !habilitado || jaAtivo || restrito) {
           // Loga tentativa negada para auditoria
           await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
             method: 'POST', headers: srvH,
             body: JSON.stringify({
               cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId),
               sucesso: false,
-              motivo: restrito ? (ctr.motivo_restricao_auto_desbloq || 'Restrito pelo IXC') : (jaAtivo ? 'Ja ativo' : 'Recurso nao habilitado para este contrato'),
+              motivo: !bloqueado ? 'Contrato nao esta bloqueado' : (restrito ? (ctr.motivo_restricao_auto_desbloq || 'Restrito pelo IXC') : (jaAtivo ? 'Ja ativo' : 'Recurso nao habilitado para este contrato')),
             }),
           }).catch(()=>{});
           return res.status(403).json({
             error: 'Nao elegivel para desbloqueio em confianca.',
             motivo_restricao: ctr.motivo_restricao_auto_desbloq || null,
-            restrito, ja_ativo: jaAtivo, habilitado,
+            bloqueado, restrito, ja_ativo: jaAtivo, habilitado,
           });
         }
 
