@@ -7195,34 +7195,33 @@ async function liberarMoviApp(idx){
   const cfg = await getIXCConfig();
   if(!cfg.proxyUrl){ showToast('Configure a integração IXC primeiro.', true); if(btn){btn.disabled=false;} return; }
 
+  // Proxy do MoviApp é separado — /api/moviapp (não /api/ixc-proxy)
+  const moviappProxy = cfg.proxyUrl.replace(/\/api\/ixc-proxy\s*$/, '/api/moviapp');
+
   const senha = cpf.slice(-4);
-  const email = cpf + '@moviapp.local'; // email interno único por CPF
 
   try {
-    // 1) Cria usuário Supabase via proxy (service_role)
     const { data: sessData } = await sbClient.auth.getSession();
     const adminToken = sessData?.session?.access_token || '';
 
-    const r = await fetch(cfg.proxyUrl, {
+    const r = await fetch(moviappProxy, {
       method: 'POST',
       headers: {
         'Content-Type':  'application/json',
-        'x-target':      'supabase-admin',
+        'x-target':      'admin',
         'Authorization': `Bearer ${adminToken}`,
       },
       body: JSON.stringify({
-        action:     'create-moviapp-user',
-        email,
-        senha,
+        action:     'criar_cliente_app',
         cliente_id: cli.id,
-        ixc_id: cli.ixcId || null,
-        nome: cli.nome || '',
         cpf,
+        nome:       cli.nome || '',
+        whatsapp:   wa,
       }),
     });
     const j = await r.json();
-    if(!j.ok && !j.already_exists){
-      throw new Error(j.error || 'Erro ao criar usuário.');
+    if(!j.ok && r.status !== 409){
+      throw new Error(j.error || 'Erro ao criar acesso.');
     }
 
     // 2) Notifica via WhatsApp se tiver número
