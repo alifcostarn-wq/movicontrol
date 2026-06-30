@@ -159,6 +159,20 @@ export default async function handler(req, res) {
     const auth    = `Basic ${Buffer.from(`${IXC_USER}:${IXC_TOKEN}`).toString('base64')}`;
     const ixcH    = { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'listar' };
 
+    // Helper: campo desbloqueio_confianca do contrato tem 3 estados no IXC:
+    // 'S' = Habilitado | 'N' = Desabilitado | 'P' (ou vazio) = Padrão (usa o parametro geral do sistema)
+    // O parametro geral fica em Parametros > Contratos 2 > Desbloqueio de confianca,
+    // e nao tem endpoint de leitura via webservice — por isso o valor default abaixo
+    // precisa ser atualizado manualmente (env IXC_DESBLOQUEIO_CONFIANCA_PADRAO) se
+    // o parametro geral do IXC for alterado.
+    function _habilitadoConfianca(valorContrato) {
+      const padraoGlobal = (process.env.IXC_DESBLOQUEIO_CONFIANCA_PADRAO || 'S').toUpperCase();
+      const v = (valorContrato || '').toUpperCase();
+      if (v === 'S') return true;
+      if (v === 'N') return false;
+      return padraoGlobal === 'S'; // 'P' ou vazio cai aqui
+    }
+
     // Helper: acha o id (ixc) do contrato ATIVO do cliente, via Supabase (ja sincronizado)
     async function _buscarContratoAtivoIxcId() {
       const r = await fetch(
@@ -264,7 +278,7 @@ export default async function handler(req, res) {
 
         const statusInternet = (ctr.status_internet || ctr.status_acesso || '').toUpperCase();
         const bloqueado    = !['A', 'AA', ''].includes(statusInternet); // tudo que nao for Ativo/Ag.Assinatura conta como bloqueado
-        const habilitado  = ctr.desbloqueio_confianca === 'S';
+        const habilitado  = _habilitadoConfianca(ctr.desbloqueio_confianca);
         const jaAtivo     = ctr.desbloqueio_confianca_ativo === 'S';
         const restrito     = ctr.restricao_auto_desbloqueio === 'S';
         const elegivel     = bloqueado && habilitado && !jaAtivo && !restrito;
@@ -296,7 +310,7 @@ export default async function handler(req, res) {
 
         const statusInternet = (ctr.status_internet || ctr.status_acesso || '').toUpperCase();
         const bloqueado   = !['A', 'AA', ''].includes(statusInternet);
-        const habilitado = ctr.desbloqueio_confianca === 'S';
+        const habilitado = _habilitadoConfianca(ctr.desbloqueio_confianca);
         const jaAtivo    = ctr.desbloqueio_confianca_ativo === 'S';
         const restrito    = ctr.restricao_auto_desbloqueio === 'S';
 
