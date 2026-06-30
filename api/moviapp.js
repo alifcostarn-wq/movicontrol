@@ -26,6 +26,9 @@ export default async function handler(req, res) {
   const IXC_URL   = process.env.IXC_URL   || '';
   const IXC_TOKEN = process.env.IXC_TOKEN || '';
   const IXC_USER  = process.env.IXC_USER  || '';
+  // Base da Central do Assinante (ex.: https://netmaisconnect.com.br/central_assinante_web)
+  // usada para o Desbloqueio de Confianca, que so existe pela Central (login via CPF).
+  const CENTRAL_URL = (process.env.CENTRAL_ASSINANTE_URL || '').replace(/\/$/, '');
 
   const target = (req.headers['x-target'] || '').toLowerCase();
   const b = req.body || {};
@@ -137,12 +140,14 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(401).json({ error: 'Token invalido.' }); }
     if (!clienteUserId) return res.status(401).json({ error: 'Token sem identificador.' });
 
-    // 2) Buscar cliente_id e ixc_id
+    // 2) Buscar cliente_id, cpf e ixc_id
     let clienteIdLocal = null;
+    let clienteCpf = null;
     try {
-      const r1 = await fetch(`${SUPA_URL}/rest/v1/clientes_app?id=eq.${clienteUserId}&select=cliente_id`, { headers: srvH });
+      const r1 = await fetch(`${SUPA_URL}/rest/v1/clientes_app?id=eq.${clienteUserId}&select=cliente_id,cpf`, { headers: srvH });
       const d1 = await r1.json();
       clienteIdLocal = d1?.[0]?.cliente_id || null;
+      clienteCpf = d1?.[0]?.cpf || null;
     } catch (e) {}
     if (!clienteIdLocal) return res.status(404).json({ error: 'Acesso nao configurado. Contate o suporte.' });
 
@@ -331,33 +336,83 @@ export default async function handler(req, res) {
           });
         }
 
-        // Ativa no IXC — o endpoint exige o registro completo (valida campos
-        // obrigatorios mesmo em edicao), entao reenviamos tudo que veio no GET
-        // e so sobrescrevemos o campo que queremos mudar.
-        const payloadPut = { ...ctr, desbloqueio_confianca_ativo: 'S' };
-        delete payloadPut.id; // id vai na URL, nao no corpo
+        // ── Desbloqueio via Central do Assinante ──────────────────
+        // O recurso "Desbloqueio de Confianca" so existe pela Central
+        // (nao ha endpoint no webservice). A Central loga via CPF (senha
+        // vazia) e dispara a acao setDesbloqueioConfianca por contrato.
+        if (!CENTRAL_URL) {
+          await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
+            method: 'POST', headers: srvH,
+            body: JSON.stringify({ cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId), sucesso: false, motivo: 'CENTRAL_ASSINANTE_URL nao configurada' }),
+          }).catch(()=>{});
+          return res.status(500).json({ error: 'Integracao da Central nao configurada. Contate o suporte.' });
+        }
+        if (!clienteCpf) {
+          return res.status(400).json({ error: 'CPF do cliente nao encontrado para o desbloqueio.' });
+        }
 
-        const urlPut = `${ixcBase}/webservice/v1/cliente_contrato/${ixcContratoId}`;
-        const rPut = await fetch(urlPut, {
-          method: 'PUT',
-          headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'ixcsoft': 'editar' },
-          body: JSON.stringify(payloadPut),
+        // Passo 1: login na Central (captura cookie de sessao)
+        const cpfDigits = String(clienteCpf).replace(/\D/g, '');
+        const loginBody = new URLSearchParams({
+          ID_CLIENTE: '0',
+          USER: cpfDigits,
+          PASSWORD: '',
+          APP: 'N',
+          TOKEN: '',
+          ACTION: 'getValidaLogin',
+          MANTER_CONNECTADO: 'false',
+        }).toString();
+
+        const rLogin = await fetch(`${CENTRAL_URL}/model/login/login.php`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: loginBody,
+          redirect: 'manual',
         });
-        const txtPut = await rPut.text();
-        const isHtml = txtPut.trim().startsWith('<');
-        let dPut; try { dPut = JSON.parse(txtPut); } catch { dPut = { raw: txtPut.slice(0,300) }; }
+        // Coleta cookies de sessao do Set-Cookie
+        const setCookie = rLogin.headers.get('set-cookie') || '';
+        const cookie = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
+        const loginTxt = await rLogin.text();
+        let loginOk = rLogin.status >= 200 && rLogin.status < 300 && !!cookie;
+        // Algumas Centrais retornam JSON indicando sucesso/erro do login
+        try { const lj = JSON.parse(loginTxt); if (lj && (lj.type === 'error' || lj.erro || lj.success === false)) loginOk = false; } catch {}
 
-        const sucesso = !isHtml && rPut.status >= 200 && rPut.status < 300 && dPut?.type !== 'error';
+        if (!loginOk) {
+          await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
+            method: 'POST', headers: srvH,
+            body: JSON.stringify({ cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId), sucesso: false, motivo: 'Falha no login da Central', resposta_ixc: { status: rLogin.status, body: loginTxt.slice(0,300) } }),
+          }).catch(()=>{});
+          return res.status(502).json({ error: 'Nao foi possivel autenticar na Central para o desbloqueio.' });
+        }
+
+        // Passo 2: dispara o desbloqueio de confianca para o contrato
+        const urlDesbloq = `${CENTRAL_URL}/model/planos/planos.php?ID_CONTRATO=${encodeURIComponent(ixcContratoId)}&ACTION=setDesbloqueioConfianca`;
+        const rDesbloq = await fetch(urlDesbloq, {
+          method: 'GET',
+          headers: { 'Cookie': cookie, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const txtPut = await rDesbloq.text();
+        const isHtml = txtPut.trim().startsWith('<');
+        let dPut; try { dPut = JSON.parse(txtPut); } catch { dPut = { raw: txtPut.slice(0,400) }; }
+
+        // A Central retorna mensagem de sucesso/erro. Consideramos sucesso
+        // quando HTTP 2xx e a resposta NAO indica erro explicito.
+        const respStr = (typeof dPut === 'object' ? JSON.stringify(dPut) : String(dPut)).toLowerCase();
+        const indicaErro = /erro|não foi|nao foi|indispon|restri|negad/.test(respStr) && !/sucesso|desbloqueado/.test(respStr);
+        const sucesso = rDesbloq.status >= 200 && rDesbloq.status < 300 && !indicaErro;
 
         await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
           method: 'POST', headers: srvH,
           body: JSON.stringify({
             cliente_id: clienteIdLocal, ixc_contrato_id: String(ixcContratoId),
-            sucesso, resposta_ixc: dPut, motivo: sucesso ? null : 'Falha no PUT ao IXC',
+            sucesso, resposta_ixc: dPut, motivo: sucesso ? null : 'Falha no desbloqueio via Central',
           }),
         }).catch(()=>{});
 
-        if (!sucesso) return res.status(502).json({ error: dPut?.message || 'Falha ao ativar no IXC.', detalhe: dPut });
+        if (!sucesso) return res.status(502).json({ error: (dPut && dPut.message) || 'Nao foi possivel concluir o desbloqueio.', detalhe: dPut });
         return res.status(200).json({ ok: true, mensagem: 'Desbloqueio em confianca ativado. A liberacao do acesso pode levar alguns minutos.' });
       } catch (e) {
         await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
