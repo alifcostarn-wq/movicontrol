@@ -1246,13 +1246,11 @@ function renderPix(codigo, valor, imagemBase64){
     const src = imagemBase64.startsWith('data:') ? imagemBase64 : `data:image/png;base64,${imagemBase64}`;
     el.innerHTML = `<img src="${src}" alt="QR Code PIX">`;
   } else {
-    setTimeout(()=>{
-      if(el && window.QRCode){
-        QRCode.toCanvas(codigo, {width:180, margin:1}, (err, canvas)=>{
-          if(!err && canvas){ el.innerHTML=''; el.appendChild(canvas); }
-        });
-      }
-    }, 50);
+    if(el && window.QRCode){
+      QRCode.toDataURL(codigo, {width:180, margin:1, errorCorrectionLevel:'M'}, (err, url)=>{
+        if(!err && url){ el.innerHTML = `<img src="${url}" alt="QR Code PIX" style="width:100%;height:100%">`; }
+      });
+    }
   }
 }
 
@@ -1472,15 +1470,24 @@ function abrirQRWifi(){
   document.getElementById('qr-overlay').classList.add('show');
 
   // Formato padrão de QR Wi-Fi: WIFI:T:WPA;S:<ssid>;P:<senha>;;
-  const wifiString = `WIFI:T:WPA;S:${ssid};P:${senha};;`;
+  // Escapar caracteres especiais do padrão (\ ; , : ")
+  const esc = s => String(s).replace(/([\\;,:"])/g, '\\$1');
+  const wifiString = `WIFI:T:WPA;S:${esc(ssid)};P:${esc(senha)};;`;
   const box = document.getElementById('qr-canvas-box');
-  box.innerHTML = '';
-  if(window.QRCode){
-    QRCode.toCanvas(wifiString, {width:200, margin:1}, (err, canvas)=>{
-      if(!err && canvas){ box.appendChild(canvas); }
-      else { box.innerHTML = '<div style="padding:40px;color:#999">Erro ao gerar QR</div>'; }
-    });
+  box.innerHTML = '<div style="padding:40px;color:#999;font-size:12px">Gerando...</div>';
+
+  if(!window.QRCode){
+    box.innerHTML = '<div style="padding:40px;color:#999">Biblioteca QR não carregada</div>';
+    return;
   }
+  // toDataURL é mais confiável que toCanvas no Safari/iOS
+  QRCode.toDataURL(wifiString, {width:220, margin:1, errorCorrectionLevel:'M'}, (err, url)=>{
+    if(err || !url){
+      box.innerHTML = '<div style="padding:40px;color:#999">Erro ao gerar QR</div>';
+      return;
+    }
+    box.innerHTML = `<img src="${url}" alt="QR Code Wi-Fi" style="width:200px;height:200px;display:block">`;
+  });
 }
 
 function fecharQRWifi(){
