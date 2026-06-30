@@ -586,7 +586,7 @@ function renderHome(){
     </div>` : ''}
 
     <!-- Banner notificações -->
-    ${renderBotaoPush()}
+    ${(function(){try{return renderBotaoPush()}catch(e){return ''}})()}
 
     <!-- Atalhos rápidos -->
     <div class="qa-grid">
@@ -1577,18 +1577,21 @@ function urlBase64ToUint8Array(base64String) {
   return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
 }
 
-// Botão de ativar notificações na home
+// Botão de ativar notificações na home (à prova de erros)
 function renderBotaoPush(){
-  if(!('Notification' in window)) return '';
-  if(Notification.permission === 'granted') return '';
-  return `<div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:14px;padding:16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="pedirPermissaoPush()">
-    <div style="font-size:26px">🔔</div>
-    <div style="flex:1">
-      <div style="font-weight:800;font-size:14px;color:#fff">Ativar notificações</div>
-      <div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:2px">Receba alertas de fatura, chamados e conexão</div>
-    </div>
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
-  </div>`;
+  try {
+    if(typeof Notification === 'undefined') return '';
+    if(Notification.permission === 'granted') return '';
+    if(Notification.permission === 'denied') return '';
+    return `<div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:14px;padding:16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="pedirPermissaoPush()">
+      <div style="font-size:26px">🔔</div>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:14px;color:#fff">Ativar notificações</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:2px">Receba alertas de fatura, chamados e conexão</div>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+    </div>`;
+  } catch(e){ return ''; }
 }
 
 // ── Init ──────────────────────────────────────
