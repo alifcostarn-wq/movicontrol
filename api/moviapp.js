@@ -365,10 +365,17 @@ export default async function handler(req, res) {
         }
 
         // Passo 1: login na Central (captura cookie de sessao)
+        // A Central espera o CPF/CNPJ FORMATADO (com mascara), nao so digitos.
         const cpfDigits = String(clienteCpf).replace(/\D/g, '');
+        let cpfFmt = cpfDigits;
+        if (cpfDigits.length === 11) {
+          cpfFmt = cpfDigits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+        } else if (cpfDigits.length === 14) {
+          cpfFmt = cpfDigits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+        }
         const loginBody = new URLSearchParams({
           ID_CLIENTE: '0',
-          USER: cpfDigits,
+          USER: cpfFmt,
           PASSWORD: '',
           APP: 'N',
           TOKEN: '',
@@ -390,8 +397,14 @@ export default async function handler(req, res) {
         const cookie = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
         const loginTxt = await rLogin.text();
         let loginOk = rLogin.status >= 200 && rLogin.status < 300 && !!cookie;
-        // Algumas Centrais retornam JSON indicando sucesso/erro do login
-        try { const lj = JSON.parse(loginTxt); if (lj && (lj.type === 'error' || lj.erro || lj.success === false)) loginOk = false; } catch {}
+        // A Central retorna [{"tipo":"erro","mensagem":"..."}] em caso de falha,
+        // mesmo com HTTP 200. Detecta qualquer indicacao de erro no corpo.
+        try {
+          const lj = JSON.parse(loginTxt);
+          const arr = Array.isArray(lj) ? lj : [lj];
+          if (arr.some(x => x && (x.tipo === 'erro' || x.type === 'error' || x.erro || x.success === false))) loginOk = false;
+        } catch {}
+        if (/tipo"\s*:\s*"erro|verifique se o cpf/i.test(loginTxt)) loginOk = false;
 
         if (!loginOk) {
           await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
