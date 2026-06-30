@@ -392,19 +392,31 @@ export default async function handler(req, res) {
           body: loginBody,
           redirect: 'manual',
         });
-        // Coleta cookies de sessao do Set-Cookie
+        // Coleta a sessao. A Central pode devolver de duas formas:
+        //  (a) header Set-Cookie (PHPSESSID=...)
+        //  (b) no corpo JSON: [{"tipo":"sucesso","mensagem":{"sessao":"<id>", ...}}]
         const setCookie = rLogin.headers.get('set-cookie') || '';
-        const cookie = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
+        let cookie = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
         const loginTxt = await rLogin.text();
-        let loginOk = rLogin.status >= 200 && rLogin.status < 300 && !!cookie;
-        // A Central retorna [{"tipo":"erro","mensagem":"..."}] em caso de falha,
-        // mesmo com HTTP 200. Detecta qualquer indicacao de erro no corpo.
+
+        let loginOk = false;
+        let sessaoId = null;
         try {
           const lj = JSON.parse(loginTxt);
           const arr = Array.isArray(lj) ? lj : [lj];
-          if (arr.some(x => x && (x.tipo === 'erro' || x.type === 'error' || x.erro || x.success === false))) loginOk = false;
+          const first = arr[0] || {};
+          if (first.tipo === 'sucesso' || first.type === 'success') {
+            loginOk = true;
+            sessaoId = first?.mensagem?.sessao || first?.sessao || null;
+          }
         } catch {}
-        if (/tipo"\s*:\s*"erro|verifique se o cpf/i.test(loginTxt)) loginOk = false;
+
+        // Se veio sessao no corpo mas nao no cookie, monta o cookie PHPSESSID
+        if (sessaoId && !/PHPSESSID=/i.test(cookie)) {
+          cookie = (cookie ? cookie + '; ' : '') + `PHPSESSID=${sessaoId}`;
+        }
+        // Fallback: se nao detectou sucesso mas tem cookie de sessao, segue
+        if (!loginOk && /PHPSESSID=/i.test(cookie)) loginOk = true;
 
         if (!loginOk) {
           await fetch(`${SUPA_URL}/rest/v1/desbloqueios_confianca_log`, {
