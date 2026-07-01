@@ -721,6 +721,7 @@ async function doLogin(){
   }
   await carregarDados();
   renderHome();
+  iniciarPushNotifications().catch(()=>{});
 }
 
 async function doLogout(){
@@ -1759,7 +1760,15 @@ async function iniciarPushNotifications(){
 
 async function pedirPermissaoPush(){
   if(!('Notification' in window)) return false;
-  if(Notification.permission === 'granted') return true;
+  // Garante que o Service Worker está registrado antes de tudo
+  if(!_swRegistration){
+    await iniciarPushNotifications();
+  }
+  if(Notification.permission === 'granted'){
+    await ativarPush();
+    renderHome();
+    return true;
+  }
   if(Notification.permission === 'denied') {
     toast('Ative as notificações nas configurações do navegador');
     return false;
@@ -1767,6 +1776,8 @@ async function pedirPermissaoPush(){
   const permission = await Notification.requestPermission();
   if(permission === 'granted'){
     await ativarPush();
+    toast('Notificações ativadas! 🔔');
+    renderHome();
     return true;
   }
   return false;
@@ -1846,7 +1857,12 @@ function renderBotaoPush(){
   renderLogin();
   try {
     const { data:{ session } } = await sb.auth.getSession();
-    if(session){ await carregarDados(); renderHome(); }
+    if(session){
+      await carregarDados();
+      renderHome();
+      // Registra o Service Worker de push (e reinscreve se já tem permissão)
+      iniciarPushNotifications().catch(()=>{});
+    }
   } catch(e){}
 })();
 </script>
