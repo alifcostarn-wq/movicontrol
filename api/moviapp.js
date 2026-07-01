@@ -259,9 +259,21 @@ export default async function handler(req, res) {
           if (txt.trim().startsWith('<')) { debug.push({ url, status: r.status, html: true }); continue; }
           let d;
           try { d = JSON.parse(txt); } catch(e) { debug.push({ url, raw: txt.slice(0,200) }); continue; }
-          const pixCode = d.pix || d.qrCode || d.qrcode || d.emv || d.pix_copia_cola || d.payload || d.codigo_pix || null;
-          if (pixCode) {
-            return res.status(200).json({ ok: true, pix_copia_cola: pixCode, imagem_base64: d.imagem_base64 || d.qrcode_base64 || null, validade: d.validade || null });
+          const pixRaw = d.pix || d.qrCode || d.qrcode || d.emv || d.pix_copia_cola || d.payload || d.codigo_pix || null;
+          if (pixRaw) {
+            // O IXC (gateway Sulcredi) retorna um OBJETO aninhado. Extrai a
+            // string EMV e a imagem do QR de dentro dele, se for o caso.
+            let codigo = null, imagem = d.imagem_base64 || d.qrcode_base64 || null;
+            if (typeof pixRaw === 'string') {
+              codigo = pixRaw;
+            } else if (pixRaw && typeof pixRaw === 'object') {
+              codigo = pixRaw.pixCopiaECola || pixRaw.pix_copia_cola || pixRaw.emv || pixRaw.payload || null;
+              const qr = pixRaw.qrCode || pixRaw.qrcode || {};
+              imagem = imagem || qr.imagemQrcode || qr.imagem_qrcode || qr.imagemBase64 || null;
+            }
+            if (codigo) {
+              return res.status(200).json({ ok: true, pix_copia_cola: codigo, imagem_base64: imagem, validade: d.validade || null });
+            }
           }
           debug.push({ url, status: r.status, resposta: d });
         } catch(e) { debug.push({ url, error: e.message }); }
