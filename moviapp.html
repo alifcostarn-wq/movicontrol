@@ -792,10 +792,10 @@ function renderFaturaScreen(){
     }
   }
 
-  // Card de fatura em atraso (aparece acima do hero quando existe)
+  // Card de fatura em atraso (aparece acima do hero SÓ quando o hero mostra
+  // outra fatura — evita duplicar a mesma fatura vencida no banner e no hero)
   let atrasoHtml = '';
-  if(fatAtrasada && fatProxima){
-    // Há DUAS faturas: uma atrasada e uma que vai vencer. Mostra banner da atrasada separado.
+  if(fatAtrasada && fat && String(fatAtrasada.id) !== String(fat.id)){
     const diasAtraso = Math.abs(Math.ceil((new Date(fatAtrasada.data_vencimento) - new Date()) / 86400000));
     atrasoHtml = `<div style="background:#FEE2E2;border:1.5px solid #FCA5A5;border-radius:14px;padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="abrirPix('${fatAtrasada.id}', ${fatAtrasada.valor})">
       <div style="font-size:28px">⚠️</div>
@@ -1382,8 +1382,24 @@ async function abrirPix(idAreceber, valor){
     });
     const d = await r.json();
     if(d.ok && d.pix_copia_cola){
-      _pixCache[idAreceber] = { codigo: d.pix_copia_cola, imagem: d.imagem_base64 };
-      _preencherPix(d.pix_copia_cola, d.imagem_base64);
+      // O IXC pode retornar pix_copia_cola como STRING ou como OBJETO aninhado.
+      // Formato objeto: { pixCopiaECola:"...", qrCode:{ imagemQrcode:"..." }, ... }
+      const pc = d.pix_copia_cola;
+      let codigoPix = '';
+      let imagemPix = d.imagem_base64 || null;
+      if(typeof pc === 'string'){
+        codigoPix = pc;
+      } else if(pc && typeof pc === 'object'){
+        codigoPix = pc.pixCopiaECola || pc.pix_copia_cola || pc.emv || pc.payload || '';
+        const qr = pc.qrCode || pc.qrcode || {};
+        imagemPix = imagemPix || qr.imagemQrcode || qr.imagem_qrcode || qr.imagemBase64 || null;
+      }
+      if(codigoPix){
+        _pixCache[idAreceber] = { codigo: codigoPix, imagem: imagemPix };
+        _preencherPix(codigoPix, imagemPix);
+      } else {
+        _pixIndisponivel();
+      }
     } else {
       _pixIndisponivel();
     }
