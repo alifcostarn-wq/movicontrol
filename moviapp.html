@@ -792,21 +792,9 @@ function renderFaturaScreen(){
     }
   }
 
-  // Card de fatura em atraso (aparece acima do hero SÓ quando o hero mostra
-  // outra fatura — evita duplicar a mesma fatura vencida no banner e no hero)
+  // (o banner de atraso separado foi substituído pela lista de faturas em aberto,
+  //  que já destaca as vencidas em vermelho — evita duplicar a mesma fatura)
   let atrasoHtml = '';
-  if(fatAtrasada && fat && String(fatAtrasada.id) !== String(fat.id)){
-    const diasAtraso = Math.abs(Math.ceil((new Date(fatAtrasada.data_vencimento) - new Date()) / 86400000));
-    atrasoHtml = `<div style="background:#FEE2E2;border:1.5px solid #FCA5A5;border-radius:14px;padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="abrirPix('${fatAtrasada.id}', ${fatAtrasada.valor})">
-      <div style="font-size:28px">⚠️</div>
-      <div style="flex:1">
-        <div style="font-size:12px;font-weight:800;color:#991B1B;text-transform:uppercase;letter-spacing:.05em">Fatura em atraso</div>
-        <div style="font-size:18px;font-weight:800;color:#7F1D1D;margin-top:2px">${fmtReal(fatAtrasada.valor)}</div>
-        <div style="font-size:11.5px;color:#DC2626;margin-top:2px">Venceu há ${diasAtraso} dia${diasAtraso!==1?'s':''} · ${fmtData(fatAtrasada.data_vencimento)}</div>
-      </div>
-      <div style="background:#DC2626;color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap">Pagar PIX</div>
-    </div>`;
-  }
 
   // Hero da fatura principal
   let heroHtml = '';
@@ -840,13 +828,39 @@ function renderFaturaScreen(){
     </div>`;
   }
 
-  // Botão PIX
-  const pixBtn = (fat && !pago)
-    ? `<button class="btn-pix" onclick="abrirPix('${fat.id}', ${fat.valor})">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.917 11.71a.546.546 0 0 0-.385.16l-2.434 2.434a.764.764 0 0 1-1.059 0l-2.434-2.434a.535.535 0 0 0-.385-.16H4.764l3.071 3.071a1.224 1.224 0 0 0 1.729 0l3.073-3.071h-.72zM5.247 8.276c.146 0 .283.057.385.16l2.434 2.434c.292.292.769.29 1.059 0l2.434-2.434a.546.546 0 0 1 .385-.16h.72L9.591 5.205a1.224 1.224 0 0 0-1.729 0L4.791 8.276h.456z"/><path d="M15.16 9.116l-1.882-1.882a.29.29 0 0 1-.107.022h-1.063a.819.819 0 0 0-.576.238l-2.434 2.434a.764.764 0 0 1-1.059 0L5.605 7.494a.819.819 0 0 0-.576-.238H3.722a.29.29 0 0 1-.107-.022L1.733 9.116a1.224 1.224 0 0 0 0 1.729l1.882 1.882a.29.29 0 0 1 .107-.022h1.307a.819.819 0 0 0 .576-.238l2.434-2.434a.789.789 0 0 1 1.059 0l2.434 2.434c.153.153.359.238.576.238h1.063c.038 0 .074.009.107.022l1.882-1.882a1.224 1.224 0 0 0 0-1.729z"/></svg>
-        Pagar com PIX
-      </button>`
-    : '';
+  // Lista de faturas em aberto (cliente escolhe qual pagar)
+  const abertas = faturas.filter(f => f.status === 'aberto')
+    .sort((a,b) => (a.data_vencimento||'').localeCompare(b.data_vencimento||''));
+  let faturasAbertasHtml = '';
+  if(abertas.length){
+    const itens = abertas.map(f => {
+      const venc = f.data_vencimento < hojeStr;
+      const dias = Math.ceil((new Date(f.data_vencimento) - new Date()) / 86400000);
+      const info = venc
+        ? `Venceu há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}`
+        : (dias === 0 ? 'Vence hoje' : `Vence em ${dias} dia${dias!==1?'s':''}`);
+      return `<div onclick="abrirPix('${f.id}', ${f.valor})" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:12px;border:1.5px solid ${venc?'#FCA5A5':'var(--border)'};background:${venc?'rgba(220,38,38,.04)':'var(--card)'};margin-bottom:10px;cursor:pointer;transition:.12s">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:40px;height:40px;border-radius:10px;background:${venc?'#FEE2E2':'var(--blue-faint)'};display:flex;align-items:center;justify-content:center;font-size:18px">${venc?'⚠️':'💳'}</div>
+          <div>
+            <div style="font-weight:700;font-size:14px;color:${venc?'#DC2626':'var(--text)'}">${fmtReal(f.valor)}</div>
+            <div style="font-size:11.5px;color:${venc?'#DC2626':'var(--text2)'};margin-top:2px">${info} · ${fmtData(f.data_vencimento)}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;background:${venc?'#DC2626':'var(--blue)'};color:#fff;white-space:nowrap">Pagar</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </div>`;
+    }).join('');
+    faturasAbertasHtml = `<div class="card" style="margin-bottom:14px">
+      <div class="card-head" style="padding-bottom:12px">
+        <div class="card-title">${abertas.length > 1 ? `Faturas em aberto (${abertas.length})` : 'Fatura em aberto'}</div>
+        ${abertas.length > 1 ? '<div style="font-size:11.5px;color:var(--text2)">Toque para pagar com PIX ou boleto</div>' : ''}
+      </div>
+      <div class="card-body" style="padding-top:0">${itens}</div>
+    </div>`;
+  }
 
   // Histórico
   const histHtml = hist.length
@@ -878,7 +892,7 @@ function renderFaturaScreen(){
   <div class="body">
     ${atrasoHtml}
     ${heroHtml}
-    ${pixBtn}
+    ${faturasAbertasHtml}
     ${confiancaHtml}
     <div class="card">
       <div class="card-head" style="padding-bottom:14px">
