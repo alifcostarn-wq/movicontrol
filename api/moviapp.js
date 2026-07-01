@@ -261,16 +261,40 @@ export default async function handler(req, res) {
           try { d = JSON.parse(txt); } catch(e) { debug.push({ url, raw: txt.slice(0,200) }); continue; }
           const pixRaw = d.pix || d.qrCode || d.qrcode || d.emv || d.pix_copia_cola || d.payload || d.codigo_pix || null;
           if (pixRaw) {
-            // O IXC (gateway Sulcredi) retorna um OBJETO aninhado. Extrai a
-            // string EMV e a imagem do QR de dentro dele, se for o caso.
+            // O IXC (gateway Sulcredi) retorna um OBJETO aninhado, e a
+            // profundidade varia. Ex.: d.pix.dadosPix.pixCopiaECola ou
+            // d.pix.pixCopiaECola. Buscamos a string EMV e a imagem do QR
+            // varrendo recursivamente as chaves conhecidas.
             let codigo = null, imagem = d.imagem_base64 || d.qrcode_base64 || null;
+
+            function _acharPix(obj, prof){
+              if (!obj || prof > 5) return;
+              if (typeof obj === 'string') return;
+              for (const k of Object.keys(obj)) {
+                const v = obj[k];
+                if (typeof v === 'string') {
+                  const kl = k.toLowerCase();
+                  // string EMV do PIX (começa com 000201... ou chave conhecida)
+                  if (!codigo && (kl === 'pixcopiaecola' || kl === 'pix_copia_cola' || kl === 'emv' || kl === 'qrcode' || kl === 'copiaecola')) {
+                    if (/^0002/.test(v) || v.length > 50) codigo = v;
+                  }
+                  // imagem base64 do QR
+                  if (!imagem && (kl === 'imagemqrcode' || kl === 'imagem_qrcode' || kl === 'imagembase64' || kl === 'imagem')) {
+                    if (v.length > 100) imagem = v;
+                  }
+                } else if (v && typeof v === 'object') {
+                  _acharPix(v, prof + 1);
+                }
+              }
+            }
+
             if (typeof pixRaw === 'string') {
               codigo = pixRaw;
-            } else if (pixRaw && typeof pixRaw === 'object') {
-              codigo = pixRaw.pixCopiaECola || pixRaw.pix_copia_cola || pixRaw.emv || pixRaw.payload || null;
-              const qr = pixRaw.qrCode || pixRaw.qrcode || {};
-              imagem = imagem || qr.imagemQrcode || qr.imagem_qrcode || qr.imagemBase64 || null;
+            } else {
+              _acharPix(pixRaw, 0);
+              if (!codigo || !imagem) _acharPix(d, 0); // fallback: varre a resposta toda
             }
+
             if (codigo) {
               return res.status(200).json({ ok: true, pix_copia_cola: codigo, imagem_base64: imagem, validade: d.validade || null });
             }
