@@ -880,14 +880,6 @@ function renderFaturaScreen(){
     ${heroHtml}
     ${pixBtn}
     ${confiancaHtml}
-    <button class="btn-yellow-full" onclick="copiarCodigo('${linha}')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      Copiar código de barras
-    </button>
-    <button class="btn-outline" onclick="toast('Baixando PDF...')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Baixar boleto em PDF
-    </button>
     <div class="card">
       <div class="card-head" style="padding-bottom:14px">
         <div class="card-title">Histórico</div>
@@ -1322,102 +1314,160 @@ function compartilharLink(link){
   else { navigator.clipboard?.writeText(url).catch(()=>{}); toast('Link copiado!'); }
 }
 
-// ── PIX ───────────────────────────────────────
+// ── PIX + BOLETO ───────────────────────────────
 let _pixCache = {};
+let _pixCodigoAtual = '';
+let _boletoAtual = '';
 
 async function abrirPix(idAreceber, valor){
   const overlay = document.getElementById('pix-overlay');
   const content = document.getElementById('pix-content');
   overlay.classList.add('show');
 
-  // Estado de loading
-  content.innerHTML = `
-    <div class="pix-title">Pagamento via PIX</div>
-    <div class="pix-val">${fmtReal(valor)}</div>
-    <div class="pix-loading">
-      <div class="pix-spinner"></div>
-      <div style="font-size:13px">Gerando código PIX...</div>
-    </div>`;
+  // Pega linha digitável do boleto da fatura atual
+  const fat = faturas.find(f => String(f.id) === String(idAreceber)) || faturas.find(f => f.status==='aberto');
+  _boletoAtual = (fat?.linha_digitavel || '').trim();
 
-  // Cache: se já gerou esse PIX, reusa
+  // Renderiza estrutura com abas
+  content.innerHTML = `
+    <div class="pix-title">Pagar fatura</div>
+    <div class="pix-val">${fmtReal(valor)}</div>
+    <div style="display:flex;gap:8px;margin:16px 0 20px">
+      <button id="tab-pix" onclick="switchPayTab('pix')" style="flex:1;padding:10px;border-radius:10px;border:2px solid var(--blue);background:var(--blue);color:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        ◈ PIX
+      </button>
+      <button id="tab-boleto" onclick="switchPayTab('boleto')" style="flex:1;padding:10px;border-radius:10px;border:2px solid var(--blue);background:#fff;color:var(--blue);font-weight:700;font-size:13px;cursor:pointer">
+        📄 Boleto
+      </button>
+    </div>
+    <div id="pay-tab-pix">
+      <div class="pix-qr" id="pix-qr-canvas">
+        <div class="pix-spinner"></div>
+      </div>
+      <div class="pix-instr">Abra o app do seu banco, escolha pagar com PIX<br>e escaneie o QR Code ou copie o código abaixo</div>
+      <div class="pix-copy-box" id="pix-code-text" style="word-break:break-all;font-size:11px;user-select:all">Carregando...</div>
+      <button class="btn-pix-copy" id="btn-copiar-pix" onclick="copiarPix()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copiar código PIX
+      </button>
+    </div>
+    <div id="pay-tab-boleto" style="display:none">
+      ${_boletoAtual
+        ? `<div class="pix-instr">Copie o código de barras e pague pelo app do seu banco ou casa lotérica</div>
+           <div class="pix-copy-box" id="boleto-code-text" style="word-break:break-all;font-size:11.5px;user-select:all;letter-spacing:.5px">${_boletoAtual}</div>
+           <button class="btn-pix-copy" onclick="copiarBoleto()">
+             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+             Copiar código de barras
+           </button>`
+        : `<div class="pix-instr" style="margin-top:20px;text-align:center">
+             <div style="font-size:32px;margin-bottom:10px">🏦</div>
+             Código de barras não disponível para esta fatura.<br>
+             <span style="color:var(--blue);font-weight:600">Use o PIX para pagar com mais rapidez!</span>
+           </div>`}
+    </div>
+    <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
+
+  // Busca o código PIX (com cache)
   if(_pixCache[idAreceber]){
-    renderPix(_pixCache[idAreceber].codigo, valor, _pixCache[idAreceber].imagem);
+    _preencherPix(_pixCache[idAreceber].codigo, _pixCache[idAreceber].imagem);
     return;
   }
-
   try {
     const { data:{ session } } = await sb.auth.getSession();
     if(!session) throw new Error('Sessão expirada');
-
     const r = await fetch(PROXY_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','x-target':'cliente','Authorization':`Bearer ${session.access_token}`},
       body:JSON.stringify({action:'get_pix', id_areceber:String(idAreceber)})
     });
     const d = await r.json();
-
     if(d.ok && d.pix_copia_cola){
       _pixCache[idAreceber] = { codigo: d.pix_copia_cola, imagem: d.imagem_base64 };
-      renderPix(d.pix_copia_cola, valor, d.imagem_base64);
+      _preencherPix(d.pix_copia_cola, d.imagem_base64);
     } else {
-      content.innerHTML = `
-        <div class="pix-title">PIX indisponível</div>
-        <div class="pix-instr" style="margin-top:14px">Não foi possível gerar o código PIX no momento. Você pode pagar pelo código de barras do boleto.</div>
-        <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
+      _pixIndisponivel();
     }
-  } catch(e){
-    content.innerHTML = `
-      <div class="pix-title">Erro</div>
-      <div class="pix-instr" style="margin-top:14px">Não foi possível conectar. Tente novamente.</div>
-      <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
-  }
+  } catch(e){ _pixIndisponivel(); }
 }
 
-function renderPix(codigo, valor, imagemBase64){
-  const content = document.getElementById('pix-content');
-  content.innerHTML = `
-    <div class="pix-title">Pague com PIX</div>
-    <div class="pix-val">${fmtReal(valor)}</div>
-    <div class="pix-qr" id="pix-qr-canvas"></div>
-    <div class="pix-instr">Abra o app do seu banco, escolha pagar com PIX<br>e escaneie o QR Code ou copie o código abaixo</div>
-    <div class="pix-copy-box" id="pix-code-text">${codigo}</div>
-    <button class="btn-pix-copy" onclick="copiarPix(document.getElementById('pix-code-text').textContent)">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      Copiar código PIX
-    </button>
-    <button class="btn-pix-close" onclick="fecharPix()">Fechar</button>`;
-
-  const el = document.getElementById('pix-qr-canvas');
-  // Preferir imagem do IXC (já vem pronta); senão gerar localmente
+function _preencherPix(codigo, imagemBase64){
+  _pixCodigoAtual = (codigo || '').trim();
+  const el = document.getElementById('pix-code-text');
+  const qrEl = document.getElementById('pix-qr-canvas');
+  if(el) el.textContent = _pixCodigoAtual;
+  if(!qrEl) return;
   if(imagemBase64){
     const src = imagemBase64.startsWith('data:') ? imagemBase64 : `data:image/png;base64,${imagemBase64}`;
-    el.innerHTML = `<img src="${src}" alt="QR Code PIX">`;
+    qrEl.innerHTML = `<img src="${src}" alt="QR Code PIX" style="width:180px;height:180px">`;
+  } else if(typeof QRCode !== 'undefined'){
+    qrEl.innerHTML = '';
+    try { new QRCode(qrEl, { text:_pixCodigoAtual, width:180, height:180, colorDark:'#000000', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M }); } catch(e){}
   } else {
-    if(el && typeof QRCode !== 'undefined'){
-      el.innerHTML = '';
-      try {
-        new QRCode(el, {
-          text: codigo,
-          width: 180,
-          height: 180,
-          colorDark: '#000000',
-          colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M
-        });
-      } catch(e){}
-    }
+    qrEl.innerHTML = '<div style="font-size:12px;color:var(--text2)">QR Code indisponível</div>';
   }
 }
 
-function copiarPix(codigo){
-  navigator.clipboard?.writeText(codigo).then(()=>{
-    toast('Código PIX copiado! ✓');
-  }).catch(()=>{
-    // Fallback
-    const el = document.getElementById('pix-code-text');
-    if(el){ const r=document.createRange(); r.selectNode(el); window.getSelection().removeAllRanges(); window.getSelection().addRange(r); document.execCommand('copy'); }
-    toast('Código PIX copiado!');
-  });
+function _pixIndisponivel(){
+  _pixCodigoAtual = '';
+  const qrEl = document.getElementById('pix-qr-canvas');
+  const btnEl = document.getElementById('btn-copiar-pix');
+  if(qrEl) qrEl.innerHTML = '<div style="font-size:12px;color:var(--text2);padding:20px 0">PIX indisponível para esta fatura</div>';
+  if(btnEl){ btnEl.disabled=true; btnEl.style.opacity='.4'; }
+}
+
+function switchPayTab(tab){
+  const tabPix    = document.getElementById('pay-tab-pix');
+  const tabBoleto = document.getElementById('pay-tab-boleto');
+  const btnPix    = document.getElementById('tab-pix');
+  const btnBoleto = document.getElementById('tab-boleto');
+  if(tab === 'pix'){
+    tabPix.style.display    = ''; tabBoleto.style.display = 'none';
+    btnPix.style.background  = 'var(--blue)'; btnPix.style.color = '#fff';
+    btnBoleto.style.background = '#fff'; btnBoleto.style.color = 'var(--blue)';
+  } else {
+    tabPix.style.display    = 'none'; tabBoleto.style.display = '';
+    btnBoleto.style.background = 'var(--blue)'; btnBoleto.style.color = '#fff';
+    btnPix.style.background  = '#fff'; btnPix.style.color = 'var(--blue)';
+  }
+}
+
+function copiarPix(){
+  const cod = _pixCodigoAtual;
+  if(!cod){ toast('Código PIX não disponível'); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(cod).then(()=> toast('Código PIX copiado! ✓')).catch(()=> _copiarFallback(cod, 'pix-code-text', 'Código PIX copiado!'));
+  } else {
+    _copiarFallback(cod, 'pix-code-text', 'Código PIX copiado!');
+  }
+}
+
+function copiarBoleto(){
+  const cod = _boletoAtual;
+  if(!cod){ toast('Código de barras não disponível'); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(cod).then(()=> toast('Código de barras copiado! ✓')).catch(()=> _copiarFallback(cod, 'boleto-code-text', 'Código copiado!'));
+  } else {
+    _copiarFallback(cod, 'boleto-code-text', 'Código copiado!');
+  }
+}
+
+function _copiarFallback(texto, elId, msg){
+  // Fallback via execCommand (funciona em contextos sem permissão clipboard)
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = texto; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast(msg);
+  } catch(e){ toast('Não foi possível copiar automaticamente. Toque no código e segure para copiar.'); }
+}
+
+function copiarCodigo(cod){
+  if(!cod){ toast('Código não disponível'); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(cod).then(()=> toast('Código copiado! ✓')).catch(()=>{ _copiarFallback(cod,'','Código copiado!'); });
+  } else { _copiarFallback(cod,'','Código copiado!'); }
 }
 
 function fecharPix(){
