@@ -8256,10 +8256,12 @@ function abrirModalCliente(idx=null){
   renderCliLogins(cli);
   renderCliFinanceiro(cli);
   renderCliComodato(cli);
-  // Reset visual da aba Faturas IXC (carrega sob demanda ao clicar na aba)
+  // Carregamento AUTOMÁTICO dos dados IXC em segundo plano (com cache):
+  // ao abrir a ficha, Wi-Fi dos logins e Faturas já começam a carregar sozinhos.
   _ixcFinAnoSel='todos';
   const _fx=document.getElementById('cli-fatixc-content');
-  if(_fx)_fx.innerHTML='<div class="cli-empty-pane">Abra a aba Financeiro para carregar as faturas do IXC.</div>';
+  if(_fx)_fx.innerHTML='<div class="cli-empty-pane"><span class="diag-spinner"></span> Carregando faturas do IXC…</div>';
+  _autoCarregarIxcCliente(cli);
 
   // Atualiza hint do botão de mapa conforme coordenadas
   if(typeof atualizarBtnMapa==='function') atualizarBtnMapa();
@@ -8357,8 +8359,8 @@ function renderCliLogins(cli){
   const _wifiMap = (_wifiIxcCache[ixcCid]?.porLogin) || {};
   target.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:0 0 10px">
-      <button class="btn" id="cli-btn-wifi" onclick="carregarWifiIXC(${Object.keys(_wifiMap).length?'true':'false'})" style="font-size:11.5px">📶 Buscar Wi-Fi (IXC)</button>
-      <span style="font-size:11px;color:var(--text3)">Clique em ✏ para editar campos locais. Wi-Fi do IXC é somente leitura.</span>
+      <span style="font-size:11px;color:var(--text3)">${Object.keys(_wifiMap).length?'📶 Wi-Fi carregado do IXC automaticamente.':'<span class="diag-spinner"></span> Carregando Wi-Fi do IXC…'} Clique em ✏ para editar campos locais.</span>
+      <button class="btn" id="cli-btn-wifi" onclick="carregarWifiIXC(true)" style="font-size:11px" title="Buscar novamente no IXC">↻ Atualizar Wi-Fi</button>
     </div>
     <table class="cli-mini-table">
       <thead><tr><th>Login</th><th>Senha</th><th>Plano / Velocidade</th><th>Autenticação</th><th>SSID Wi-Fi</th><th>Senha Wi-Fi</th><th>Ativo</th><th>Online</th><th></th></tr></thead>
@@ -8429,7 +8431,6 @@ function abrirEditContrato(idx){
     </div>`;
   document.getElementById('modal-edit-contrato')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
-  _preencherWifiIxcModal(l);
 }
 
 async function salvarEditContrato(){
@@ -8508,6 +8509,7 @@ function abrirEditLogin(idx){
     </div>`;
   document.getElementById('modal-edit-login')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
+  _preencherWifiIxcModal(l);
 }
 
 async function salvarEditLogin(){
@@ -8763,8 +8765,12 @@ function _extrairWifi(reg, contexto){
 }
 
 // Busca (com cache) as infos de Wi-Fi/roteador de TODOS os logins do cliente
+let _wifiIxcInflight = {};
 async function _buscarWifiIXC(ixcCid, force=false){
   if(!force && _wifiIxcCache[ixcCid]) return _wifiIxcCache[ixcCid].porLogin;
+  // Se já existe uma busca em andamento para este cliente, reaproveita (evita duplicar chamadas ao IXC)
+  if(!force && _wifiIxcInflight[ixcCid]) return _wifiIxcInflight[ixcCid];
+  const _promessa = (async()=>{
   const cfg = await getIXCConfig();
   if(!cfg.proxyUrl) throw new Error('Integração IXC não configurada.');
   const porLogin = {};
@@ -8799,6 +8805,25 @@ async function _buscarWifiIXC(ixcCid, force=false){
   }
   _wifiIxcCache[ixcCid]={ porLogin, quando:Date.now() };
   return porLogin;
+  })();
+  _wifiIxcInflight[ixcCid]=_promessa;
+  try{ return await _promessa; }
+  finally{ delete _wifiIxcInflight[ixcCid]; }
+}
+
+// Auto-carga silenciosa dos dados IXC ao abrir a ficha do cliente
+// (fire-and-forget; usa cache; só re-renderiza se a ficha ainda for do mesmo cliente)
+function _autoCarregarIxcCliente(cli){
+  // Faturas: sempre chama — a própria função trata cliente sem vínculo IXC com a mensagem adequada
+  carregarFaturasIXC();
+  if(!cli || !cli.ixcId) return;
+  const ixcCid = cli.ixcId;
+  // Wi-Fi dos logins — preenche a tabela sozinho quando terminar
+  _buscarWifiIXC(ixcCid).then(()=>{
+    if(window._cliAtual && window._cliAtual.ixcId===ixcCid && document.getElementById('cli-logins-content')){
+      renderCliLogins(window._cliAtual);
+    }
+  }).catch(e=>console.warn('[wifi ixc auto]', e.message||e));
 }
 
 async function carregarWifiIXC(force=false){
@@ -8821,7 +8846,7 @@ async function carregarWifiIXC(force=false){
   }finally{
     _wifiIxcLoading=false;
     const b2=document.getElementById('cli-btn-wifi');
-    if(b2){ b2.disabled=false; b2.innerHTML='📶 Buscar Wi-Fi (IXC)'; }
+    if(b2){ b2.disabled=false; b2.innerHTML='↻ Atualizar Wi-Fi'; }
   }
 }
 
