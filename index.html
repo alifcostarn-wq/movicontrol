@@ -1461,6 +1461,8 @@ textarea.cp-form-input{resize:vertical}
 .fatixc-sec-title{font-size:12.5px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:8px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 .fatixc-sec-sub{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
 .wifi-ixc-badge{display:inline-block;padding:0 5px;border-radius:7px;background:rgba(55,138,221,0.18);color:#185fa5;font-size:8.5px;font-weight:700;vertical-align:middle}
+.sca-lab{display:inline-block;width:54px;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:600}
+.sca-pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -2915,7 +2917,7 @@ textarea.cp-form-input{resize:vertical}
         <button class="btn" onclick="exportarCadastroCSV('clientes')" style="margin-left:auto">↓ CSV</button>
       </div>
       <div class="table-wrap">
-        <div class="table-scroll"><table class="t" style="min-width:1100px"><thead><tr><th style="width:36px"></th><th>Nome Fantasia</th><th>CNPJ / CPF</th><th>Login IXC</th><th>Status</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>A Receber</th><th>Recebido</th><th>Data Cad.</th><th>Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
+        <div class="table-scroll"><table class="t" style="min-width:1100px"><thead><tr><th style="width:36px"></th><th>Nome Fantasia</th><th>CNPJ / CPF</th><th>Login IXC</th><th>Status Contrato / Acesso</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>A Receber</th><th>Recebido</th><th>Data Cad.</th><th>Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
         <div id="cli-empty" class="empty-state" style="display:none"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="empty-title">Nenhum cliente cadastrado</div><div class="empty-sub">Clique em "+ Novo Cliente" para começar.</div><button class="btn btn-primary" onclick="abrirModalCadastro('clientes')">+ Novo Cliente</button></div>
         <div class="paginacao"><span class="pag-info" id="cli-pinfo">0 clientes</span><div class="pag-btns" id="cli-pbtn"></div></div>
       </div>
@@ -7175,9 +7177,18 @@ function renderCadastro(tipo){
       // Prioridade: statusContrato calculado > legacy ixcStatus do cliente
       const txt = i.statusContrato || statusLegacy[i.ixcStatus] || (i.origem!=='ixc' ? (i.ativo===false?'Inativo':'Ativo') : null);
       const st = txt ? (statusMap[txt] || {bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'}) : null;
-      const statusCell = st
-        ? `<span style="display:inline-block;padding:3px 10px;border-radius:11px;background:${st.bg};color:${st.cor};font-size:11.5px;font-weight:700;white-space:nowrap">${txt}</span>`
-        : '<span class="td-muted">—</span>';
+      // IXC diferencia Status do CONTRATO e Status de ACESSO — mostramos os dois
+      const _sca = statusContratoAcessoDe(i);
+      const _corDe = nome => (statusMap[nome] || {bg:'rgba(95,94,90,0.15)',cor:'#5f5e5a'});
+      const _mapPillA = {'Ativo':statusMap['Ativo'],'Bloqueio Manual':statusMap['Bloqueio Manual'],'Bloqueio Automático':statusMap['Bloqueio Automático'],'Ag. Assinatura':statusMap['Aguardando Assinatura']};
+      const statusCell = _sca
+        ? `<div style="display:flex;flex-direction:column;gap:3px">
+             <span style="white-space:nowrap"><span class="sca-lab">Contrato</span><span class="sca-pill" style="background:${_corDe(_sca.contrato).bg};color:${_corDe(_sca.contrato).cor}">${_sca.contrato}</span></span>
+             <span style="white-space:nowrap"><span class="sca-lab">Acesso</span><span class="sca-pill" style="background:${(_mapPillA[_sca.acesso]||_corDe(_sca.acesso)).bg};color:${(_mapPillA[_sca.acesso]||_corDe(_sca.acesso)).cor}">${_sca.acesso}</span></span>
+           </div>`
+        : (st
+          ? `<span style="display:inline-block;padding:3px 10px;border-radius:11px;background:${st.bg};color:${st.cor};font-size:11.5px;font-weight:700;white-space:nowrap">${txt}</span>`
+          : '<span class="td-muted">—</span>');
       const badgeIXC = ixcOrigem
         ? `<span title="Importado do IXC" style="display:inline-block;padding:1px 6px;border-radius:8px;background:rgba(55,138,221,0.18);color:#185fa5;font-size:9px;font-weight:700;margin-left:6px;vertical-align:middle">IXC</span>`
         : '';
@@ -7389,8 +7400,19 @@ function deletarCad(tipo,idx){if(!confirm('Excluir?'))return;const l=gd('sf_'+ti
 
 function exportarCadastroCSV(tipo){
   const l=gd('sf_'+tipo);if(!l.length){showToast('Sem dados.',true);return;}
-  const h='Nome;Razão Social;CNPJ;IE;Contato;Tel1;Tel2;Email;Site;Endereço;Bairro;CEP;Cidade;Data Cad.;Obs';
-  const r=l.map(i=>[i.nome,i.razao,i.cnpj,i.ie,i.contato,i.tel1,i.tel2,i.email,i.site,i.end,i.bairro,i.cep,i.cidade,i.datacad,(i.obs||'').replace(/;/g,' ')].join(';'));
+  const isCliCSV = tipo==='clientes';
+  const h='Nome;Razão Social;CNPJ;IE;Contato;Tel1;Tel2;Email;Site;Endereço;Bairro;CEP;Cidade;Data Cad.;Obs'
+    +(isCliCSV?';ID IXC;Status Contrato;Status Acesso;Status Geral;Qtd Contratos':'');
+  const r=l.map(i=>{
+    const base=[i.nome,i.razao,i.cnpj,i.ie,i.contato,i.tel1,i.tel2,i.email,i.site,i.end,i.bairro,i.cep,i.cidade,i.datacad,(i.obs||'').replace(/;/g,' ')];
+    if(isCliCSV){
+      const sca=statusContratoAcessoDe(i);
+      const legacy={'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado'};
+      const geral=i.statusContrato||legacy[i.ixcStatus]||(i.origem!=='ixc'?(i.ativo===false?'Inativo':'Ativo'):'');
+      base.push(i.ixcId||'', sca?sca.contrato:'', sca?sca.acesso:'', geral, sca?sca.nContratos:0);
+    }
+    return base.join(';');
+  });
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));
   a.download=tipo+'.csv';a.click();showToast('CSV exportado!');
@@ -8407,6 +8429,7 @@ function abrirEditContrato(idx){
     </div>`;
   document.getElementById('modal-edit-contrato')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
+  _preencherWifiIxcModal(l);
 }
 
 async function salvarEditContrato(){
@@ -8469,6 +8492,8 @@ function abrirEditLogin(idx){
             <div class="form-group"><label class="form-label">Senha Wi-Fi</label>
               <input class="cp-form-input" id="el-senhaWifi" value="${l.senhaWifi||''}" placeholder="Senha do Wi-Fi"></div>
           </div>
+          <div class="form-section">Wi-Fi / Roteador do IXC <span style="font-size:10px;color:var(--accent);font-weight:400">🔒 somente leitura</span></div>
+          <div id="el-wifi-ixc"><div class="cli-empty-pane" style="padding:14px">Carregando do IXC…</div></div>
           <div class="form-section">Observações</div>
           <div class="form-grid">
             <div class="form-group full"><label class="form-label">Observações internas</label>
@@ -8695,20 +8720,85 @@ function exportarFaturasIxcCSV(){
 let _wifiIxcCache = {};   // ixcClienteId → { porLogin: {loginIxcId:{ssid,senha}}, quando }
 let _wifiIxcLoading = false;
 
-// Varre um registro do IXC e extrai campos de Wi-Fi por nome de chave
-// (tolerante a variações de schema: ssid, ssid_5, wifi_ssid, senha_wifi, wifi_password…)
-function _extrairWifi(reg){
-  const ssids=[], senhas=[];
+// Rótulos amigáveis dos campos conhecidos do IXC (aba Login → Configurações do roteador)
+const _WIFI_LABELS = {
+  'wifi_ssid':'SSID Wi-Fi', 'wifi_password':'Senha Wi-Fi', 'wifi_senha':'Senha Wi-Fi',
+  'wifi_ssid_5':'SSID Wi-Fi 5GHz', 'wifi_password_5':'Senha Wi-Fi 5GHz', 'wifi_senha_5':'Senha Wi-Fi 5GHz',
+  'ssid':'SSID Wi-Fi', 'ssid_5':'SSID Wi-Fi 5GHz', 'senha_wifi':'Senha Wi-Fi',
+  'usuario_roteador':'Usuário roteador', 'roteador_usuario':'Usuário roteador',
+  'senha_roteador':'Senha roteador', 'roteador_senha':'Senha roteador',
+  'senha_roteador_2':'Senha roteador 2', 'roteador_senha_2':'Senha roteador 2',
+};
+function _labelWifi(k){
+  if(_WIFI_LABELS[k]) return _WIFI_LABELS[k];
+  return k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
+
+// Varre um registro do IXC e extrai Wi-Fi + roteador por nome de chave.
+// contexto: 'radusuarios' (login PPPoE — a chave 'senha' pura é a senha PPPoE, NUNCA entra)
+//           'radio'       (config da ONU/fibra — ali 'senha'/'chave' puras SÃO do Wi-Fi)
+function _extrairWifi(reg, contexto){
+  const ssids=[], senhas=[], extras=[];
+  const ctx = contexto||'radusuarios';
   Object.entries(reg||{}).forEach(([k,v])=>{
     if(v==null||v===''||v==='0') return;
     const kl=k.toLowerCase();
-    const isSenha=/senha|pass|pwd|key/.test(kl);
-    const isWifi=/ssid|wifi|wlan/.test(kl);
-    if(!isWifi) return;
-    if(isSenha) senhas.push(String(v));
-    else if(/ssid/.test(kl)) ssids.push(String(v));
+    const isSenhaKey=/senha|pass|pwd|key|chave/.test(kl);
+    const isWifiKey=/ssid|wifi|wlan/.test(kl);
+    const isRouterKey=/roteador|router/.test(kl);
+    // No contexto 'radio' aceita 'ssid'/'senha' puros; PPPoE nunca (login/senha de autenticação)
+    const senhaWifiPura = ctx==='radio' && isSenhaKey && !/pppoe|login|md5|hash/.test(kl);
+    if(isWifiKey || isRouterKey || (ctx==='radio' && (kl==='ssid'||/^ssid_/.test(kl))) || senhaWifiPura){
+      const val=String(v);
+      extras.push({k, label:_labelWifi(kl), valor:val});
+      if(isRouterKey && !isWifiKey) return; // roteador vai só para extras
+      if(isSenhaKey || senhaWifiPura) senhas.push(val);
+      else if(/ssid/.test(kl)) ssids.push(val);
+    }
   });
-  return { ssid:[...new Set(ssids)].join(' · '), senha:[...new Set(senhas)].join(' · ') };
+  // Ordena extras: SSID 2.4 → Senha 2.4 → SSID 5G → Senha 5G → roteador → resto
+  const ordem=['wifi_ssid','ssid','wifi_password','wifi_senha','senha_wifi','senha','wifi_ssid_5','ssid_5','wifi_password_5','wifi_senha_5','usuario_roteador','roteador_usuario','senha_roteador','roteador_senha','senha_roteador_2'];
+  extras.sort((a,b)=>{const ia=ordem.indexOf(a.k),ib=ordem.indexOf(b.k);return (ia<0?99:ia)-(ib<0?99:ib);});
+  return { ssid:[...new Set(ssids)].join(' · '), senha:[...new Set(senhas)].join(' · '), extras };
+}
+
+// Busca (com cache) as infos de Wi-Fi/roteador de TODOS os logins do cliente
+async function _buscarWifiIXC(ixcCid, force=false){
+  if(!force && _wifiIxcCache[ixcCid]) return _wifiIxcCache[ixcCid].porLogin;
+  const cfg = await getIXCConfig();
+  if(!cfg.proxyUrl) throw new Error('Integração IXC não configurada.');
+  const porLogin = {};
+  // 1ª fonte: radusuarios (traz wifi_ssid / wifi_password / 5GHz / roteador)
+  const resp = await chamarIXC(cfg, 'radusuarios', {
+    qtype:'radusuarios.id_cliente', query:String(ixcCid), oper:'=', rp:'50'
+  });
+  (resp?.registros||[]).forEach(r=>{
+    const w=_extrairWifi(r,'radusuarios');
+    if(w.ssid||w.senha||w.extras.length) porLogin[String(r.id)]=w;
+    else console.log('[wifi ixc] radusuarios #'+r.id+' sem campos de Wi-Fi. Chaves disponíveis:', Object.keys(r).join(', '));
+  });
+  // 2ª fonte: config da ONU (fibra) para completar o que faltou
+  const logins = gd('sf_clientes_logins').filter(l=>l.ixcClienteId==ixcCid && l.ixcId);
+  const faltando = logins.filter(l=>{const w=porLogin[String(l.ixcId)];return !w || !w.senha;}).slice(0,6);
+  for(const l of faltando){
+    try{
+      const r2 = await chamarIXC(cfg, 'radpop_radio_cliente_fibra', {
+        qtype:'radpop_radio_cliente_fibra.id_login', query:String(l.ixcId), oper:'=', rp:'5'
+      });
+      (r2?.registros||[]).forEach(r=>{
+        const w=_extrairWifi(r,'radio');
+        if(!w.ssid&&!w.senha&&!w.extras.length) return;
+        const cur=porLogin[String(l.ixcId)]||{ssid:'',senha:'',extras:[]};
+        porLogin[String(l.ixcId)]={
+          ssid:[...new Set([cur.ssid,w.ssid].filter(Boolean).join(' · ').split(' · ').filter(Boolean))].join(' · '),
+          senha:[...new Set([cur.senha,w.senha].filter(Boolean).join(' · ').split(' · ').filter(Boolean))].join(' · '),
+          extras:[...cur.extras, ...w.extras.filter(e=>!cur.extras.some(c=>c.label===e.label&&c.valor===e.valor))],
+        };
+      });
+    }catch(e){ /* endpoint pode não existir em todas as versões do IXC — segue */ }
+  }
+  _wifiIxcCache[ixcCid]={ porLogin, quando:Date.now() };
+  return porLogin;
 }
 
 async function carregarWifiIXC(force=false){
@@ -8721,41 +8811,10 @@ async function carregarWifiIXC(force=false){
   const btn = document.getElementById('cli-btn-wifi');
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="diag-spinner"></span> Buscando…'; }
   try{
-    const cfg = await getIXCConfig();
-    if(!cfg.proxyUrl){ showToast('Configure a integração IXC primeiro.', true); return; }
-    const porLogin = {};
-    // 1ª tentativa: todos os logins do cliente numa chamada só (radusuarios)
-    const resp = await chamarIXC(cfg, 'radusuarios', {
-      qtype:'radusuarios.id_cliente', query:String(ixcCid), oper:'=', rp:'50'
-    });
-    (resp?.registros||[]).forEach(r=>{
-      const w=_extrairWifi(r);
-      if(w.ssid||w.senha) porLogin[String(r.id)]=w;
-    });
-    // 2ª tentativa: logins sem Wi-Fi no radusuarios → consulta a config da ONU (fibra)
-    const logins = gd('sf_clientes_logins').filter(l=>l.ixcClienteId==ixcCid && l.ixcId);
-    const faltando = logins.filter(l=>!porLogin[String(l.ixcId)]).slice(0,6); // limite de segurança
-    for(const l of faltando){
-      try{
-        const r2 = await chamarIXC(cfg, 'radpop_radio_cliente_fibra', {
-          qtype:'radpop_radio_cliente_fibra.id_login', query:String(l.ixcId), oper:'=', rp:'5'
-        });
-        (r2?.registros||[]).forEach(r=>{
-          const w=_extrairWifi(r);
-          if(w.ssid||w.senha){
-            const cur=porLogin[String(l.ixcId)]||{ssid:'',senha:''};
-            porLogin[String(l.ixcId)]={
-              ssid:[cur.ssid,w.ssid].filter(Boolean).join(' · '),
-              senha:[cur.senha,w.senha].filter(Boolean).join(' · '),
-            };
-          }
-        });
-      }catch(e){ /* endpoint pode não existir em todas as versões do IXC — segue */ }
-    }
-    _wifiIxcCache[ixcCid]={ porLogin, quando:Date.now() };
+    const porLogin = await _buscarWifiIXC(ixcCid, force);
     renderCliLogins(cli);
     const achou=Object.keys(porLogin).length;
-    showToast(achou?`📶 Wi-Fi carregado do IXC (${achou} login${achou!==1?'s':''}).`:'Nenhuma informação de Wi-Fi encontrada no IXC para estes logins.', !achou);
+    showToast(achou?`📶 Wi-Fi carregado do IXC (${achou} login${achou!==1?'s':''}).`:'Nenhuma informação de Wi-Fi encontrada no IXC. Veja o console (F12) para as chaves retornadas.', !achou);
   }catch(e){
     console.error('[wifi ixc]', e);
     showToast('Falha ao buscar Wi-Fi no IXC: '+(e.message||e), true);
@@ -8763,6 +8822,35 @@ async function carregarWifiIXC(force=false){
     _wifiIxcLoading=false;
     const b2=document.getElementById('cli-btn-wifi');
     if(b2){ b2.disabled=false; b2.innerHTML='📶 Buscar Wi-Fi (IXC)'; }
+  }
+}
+
+// Preenche o bloco somente-leitura "Wi-Fi / Roteador do IXC" no modal de edição do login
+async function _preencherWifiIxcModal(l){
+  const alvo=document.getElementById('el-wifi-ixc');
+  if(!alvo) return;
+  if(!l || !l.ixcId || !l.ixcClienteId){
+    alvo.innerHTML='<div class="cli-empty-pane" style="padding:14px">Login sem vínculo IXC.</div>';
+    return;
+  }
+  try{
+    const porLogin = await _buscarWifiIXC(l.ixcClienteId);
+    // o modal pode ter sido fechado durante a busca
+    const alvo2=document.getElementById('el-wifi-ixc');
+    if(!alvo2) return;
+    const w = porLogin[String(l.ixcId)];
+    if(!w || !w.extras || !w.extras.length){
+      alvo2.innerHTML='<div class="cli-empty-pane" style="padding:14px">Nenhuma informação de Wi-Fi/roteador encontrada no IXC para este login.<br><span style="font-size:10.5px;color:var(--text3)">Se o login usa dispositivo ACS, o SSID fica na aba Interfaces Wireless do dispositivo no IXC.</span></div>';
+      return;
+    }
+    alvo2.innerHTML = `<div class="form-grid">${w.extras.map(e=>`
+      <div class="form-group"><label class="form-label">${e.label} <span class="wifi-ixc-badge">IXC</span></label>
+        <input class="cp-form-input" value="${String(e.valor).replace(/"/g,'&quot;')}" readonly onclick="this.select()" style="background:var(--bg2);color:var(--text2);cursor:copy" title="Clique para selecionar"></div>`).join('')}
+    </div>
+    <div style="font-size:10.5px;color:var(--text3);margin-top:4px">Dados lidos direto do IXC (clique num campo para selecionar e copiar). Para alterar, edite no IXC.</div>`;
+  }catch(e){
+    const alvo3=document.getElementById('el-wifi-ixc');
+    if(alvo3) alvo3.innerHTML=`<div class="cli-empty-pane" style="padding:14px">Falha ao consultar o IXC: ${e.message||e}</div>`;
   }
 }
 
@@ -11771,6 +11859,25 @@ function calcStatusContrato(statusContrato, statusAcesso){
   // Fallback: status do cliente (campo ativo do IXC pode vir como S=sim, N=não)
   if(sc === 'S') return 'Ativo';   // ativo='S' significa Sim no cliente IXC
   return sc || '—';
+}
+
+// Resolve os DOIS status do cliente (IXC trabalha com Status do CONTRATO e Status de ACESSO)
+// Usa o contrato "principal": o primeiro Ativo; senão, o primeiro da lista.
+// Retorna null se o cliente não tem contratos espelhados.
+function statusContratoAcessoDe(cli){
+  const todos = gd('sf_clientes_contratos');
+  const ctrs = todos.filter(c => (cli.id && c.clienteId==cli.id) || (cli.ixcId && c.ixcClienteId==cli.ixcId));
+  if(!ctrs.length) return null;
+  const principal = ctrs.find(c => String(c.statusContrato||'').toUpperCase()==='A') || ctrs[0];
+  const mapC = {'A':'Ativo','AT':'Ativo','D':'Cancelado','DS':'Desistiu','C':'Cancelado','EC':'Cancelado','N':'Negativado','I':'Inativo','PC':'Pré-contrato','CM':'Em montagem','AB':'Aberto','S':'Ativo'};
+  const mapA = {'A':'Ativo','':'Ativo','D':'Bloqueio Manual','DM':'Bloqueio Manual','S':'Bloqueio Manual','SU':'Bloqueio Manual','FA':'Bloqueio Automático','BL':'Bloqueio Automático','AA':'Ag. Assinatura'};
+  const sc=String(principal.statusContrato||'').toUpperCase();
+  const sa=String(principal.statusAcesso||'').toUpperCase();
+  return {
+    contrato: mapC[sc] || sc || '—',
+    acesso:   mapA[sa] || sa || '—',
+    nContratos: ctrs.length,
+  };
 }
 
 // Status agregado do cliente baseado em todos os seus contratos
