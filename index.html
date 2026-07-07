@@ -1486,6 +1486,13 @@ textarea.cp-form-input{resize:vertical}
 .if-aba.ativa{background:linear-gradient(135deg,#7C3AED,#2563EB);color:#fff;border-color:transparent;box-shadow:0 6px 18px rgba(124,58,237,.35)}
 .if-topo-dir{display:flex;gap:8px;align-items:center}
 .if-carimbo{font-size:10.5px;color:var(--text3)}
+.if-fstatus{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 16px}
+.if-fstatus-lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:700}
+.if-fstatus-pill{font-size:11.5px;font-weight:600;padding:6px 13px;border-radius:12px;cursor:pointer;border:1.5px solid var(--fc);color:var(--fc);transition:all .12s ease}
+.if-fstatus-pill b{font-family:'DM Mono',monospace}
+.if-fstatus-pill:hover{transform:translateY(-1px)}
+.if-fstatus-pill.ativa{background:var(--fc);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--fc) 45%,transparent)}
+.if-fstatus-aviso{font-size:10.5px;color:#F59E0B;font-weight:600}
 .if-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
 .if-card{border-radius:var(--if-r);padding:16px 18px;color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.12);transition:transform .15s ease}
 .if-card:hover{transform:translateY(-3px)}
@@ -13160,7 +13167,27 @@ function verDiagnosticoChamado(){
 //  100% explicável: todo score, probabilidade e insight expõe seus fatores.
 //  Somente leitura — não grava nada no IXC, no Supabase nem no financeiro interno.
 // ════════════════════════════════════════════════════════════════
-let IF_state = { faturas:[], perfis:[], porId:{}, mensal:[], geradoEm:null, tab:'dash', filtroSeg:'todos', busca:'', ordem:'risco', chatHist:[] };
+let IF_state = { faturas:[], perfis:[], porId:{}, mensal:[], geradoEm:null, tab:'dash', filtroSeg:'todos', busca:'', ordem:'risco', chatHist:[], filtroStatus:'ativos' };
+
+// ── FILTRO DE REALIDADE: recorta toda a análise pela situação ATUAL do cliente ──
+// 'ativos' = base atual (contrato ativo, inclui bloqueados) — padrão
+// 'bloqueados' | 'cancelados' | 'todos' (histórico completo, inclui ex-clientes)
+function ifPerfisFiltrados(){
+  const f=IF_state.filtroStatus;
+  if(f==='todos') return IF_state.perfis;
+  if(f==='ativos') return IF_state.perfis.filter(pf=>pf.grupo!=='cancelado');
+  if(f==='bloqueados') return IF_state.perfis.filter(pf=>pf.grupo==='bloqueado');
+  if(f==='cancelados') return IF_state.perfis.filter(pf=>pf.grupo==='cancelado');
+  return IF_state.perfis;
+}
+let _ifMensalCache={};
+function ifMensalFiltrado(){
+  const k=IF_state.filtroStatus+'_'+IF_state.geradoEm;
+  if(_ifMensalCache[k]) return _ifMensalCache[k];
+  const fats=ifPerfisFiltrados().flatMap(pf=>pf.fats);
+  return _ifMensalCache[k]=ifAgregadosMensais(fats);
+}
+function ifSetFiltroStatus(v){ IF_state.filtroStatus=v; ifRenderTudo(); }
 let IF_charts = {};
 
 const IF_CORES = {
@@ -13445,6 +13472,9 @@ function ifProcessar(regs){
     const fats=porCliente[String(c.ixcId)]||[];
     if(!fats.length) return;
     c._sca=statusContratoAcessoDe(c)||{contrato:'—',acesso:'—'};
+    // Grupo p/ filtro de realidade atual: cancelado × bloqueado × ativo
+    const _grupo = /Cancelado|Desistiu|Negativado|Inativo/.test(c._sca.contrato) ? 'cancelado'
+                 : (/Bloqueio/.test(c._sca.acesso) ? 'bloqueado' : 'ativo');
     const ctr=ctrs.find(x=>x.ixcClienteId==c.ixcId);
     const p=ifPerfilBase(fats);
     const sc=ifScore(p);
@@ -13457,7 +13487,7 @@ function ifProcessar(regs){
       fone:(c.whatsapp||c.tel1||c.tel2||''),
       cidade:c.cidade||'—', bairro:c.bairro||'—',
       plano:(ctr&&(ctr.plano||ctr.descricao))||'—',
-      sca:c._sca, fats, p, sc, prob, seg, evolucao,
+      sca:c._sca, grupo:_grupo, fats, p, sc, prob, seg, evolucao,
       risco:ifNivelRisco(sc.score),
     });
   });
@@ -13471,7 +13501,7 @@ function ifProcessar(regs){
 
 // ── INSIGHTS automáticos (regras sobre os agregados) ──
 function ifGerarInsights(){
-  const out=[]; const M=IF_state.mensal; const P=IF_state.perfis;
+  const out=[]; const M=ifMensalFiltrado(); const P=ifPerfisFiltrados();
   const atu=M[M.length-1], ant=M[M.length-2];
   const nomesMes=m=>{const[y,mm]=m.split('-');return ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm]+'/'+y.slice(2);};
   if(ant&&ant.inadimpl>0){
@@ -13511,7 +13541,7 @@ function ifGerarInsights(){
 function ifPrevisao(){
   const res={d30:{risco:0,n:0},d60:{risco:0,n:0},d90:{risco:0,n:0}};
   const hj=hoje();
-  IF_state.perfis.forEach(pf=>{
+  ifPerfisFiltrados().forEach(pf=>{
     pf.fats.filter(f=>f.tipo==='aberta').forEach(f=>{
       const d=ifDiasEntre(hj,f.venc);
       if(d==null||d<0) return;
@@ -13540,9 +13570,18 @@ function ifRenderTudo(){
         <div class="if-aba ${t==='chat'?'ativa':''}" onclick="ifTab('chat')">🤖 Perguntar à IA</div>
       </div>
       <div class="if-topo-dir">
-        <span class="if-carimbo">Análise: ${new Date(IF_state.geradoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${IF_state.perfis.length} clientes · ${IF_state.faturas.length.toLocaleString('pt-BR')} faturas</span>
-        <button class="btn" onclick="IF_state.geradoEm=null;ifAnalisar()">↻ Reanalisar</button>
+        <span class="if-carimbo">Análise: ${new Date(IF_state.geradoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${ifPerfisFiltrados().length} de ${IF_state.perfis.length} clientes no recorte</span>
+        <button class="btn" onclick="IF_state.geradoEm=null;_ifMensalCache={};ifAnalisar()">↻ Reanalisar</button>
       </div>
+    </div>
+    <div class="if-fstatus">
+      <span class="if-fstatus-lab">Recorte da base:</span>
+      ${[['ativos','✅ Base atual (ativos)',IF_state.perfis.filter(p=>p.grupo!=='cancelado').length,'#10B981'],
+         ['bloqueados','🔒 Só bloqueados',IF_state.perfis.filter(p=>p.grupo==='bloqueado').length,'#F97316'],
+         ['cancelados','❌ Cancelados',IF_state.perfis.filter(p=>p.grupo==='cancelado').length,'#64748B'],
+         ['todos','📚 Todos (histórico 24m)',IF_state.perfis.length,'#7C3AED']]
+        .map(([v,lab,n,cor])=>`<span class="if-fstatus-pill ${IF_state.filtroStatus===v?'ativa':''}" style="--fc:${cor}" onclick="ifSetFiltroStatus('${v}')">${lab} <b>${n}</b></span>`).join('')}
+      ${IF_state.filtroStatus==='todos'?'<span class="if-fstatus-aviso">⚠ inclui ex-clientes — números não refletem a base atual</span>':''}
     </div>
     <div id="if-corpo"></div>`;
   if(t==='dash') ifRenderDash();
@@ -13557,7 +13596,7 @@ function ifDestruirCharts(){ Object.values(IF_charts).forEach(c=>{try{c.destroy(
 // ════════ ABA 1 — DASHBOARD ════════
 function ifRenderDash(){
   ifDestruirCharts();
-  const M=IF_state.mensal, P=IF_state.perfis, atu=M[M.length-1];
+  const M=ifMensalFiltrado(), P=ifPerfisFiltrados(), atu=M[M.length-1];
   const prev=ifPrevisao();
   const totVencido=P.reduce((s,pf)=>s+pf.p.valorVencido,0);
   const totRecuperado12=M.reduce((s,m)=>s+m.recuperada,0);
@@ -13601,7 +13640,7 @@ function ifRenderDash(){
 }
 
 function ifChartsDash(){
-  const M=IF_state.mensal, P=IF_state.perfis;
+  const M=ifMensalFiltrado(), P=ifPerfisFiltrados();
   const lbl=M.map(m=>{const[y,mm]=m.mes.split('-');return ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm];});
   const grid='rgba(128,128,128,0.12)';
   IF_charts.receita=new Chart(document.getElementById('if-ch-receita'),{type:'bar',data:{labels:lbl,datasets:[
@@ -13627,7 +13666,7 @@ function ifChartsDash(){
 // ════════ ABA 2 — CLIENTES & SCORES ════════
 function ifRenderClientes(){
   ifDestruirCharts();
-  const segs=['todos',...new Set(IF_state.perfis.flatMap(pf=>pf.seg.tags))];
+  const segs=['todos',...new Set(ifPerfisFiltrados().flatMap(pf=>pf.seg.tags))];
   document.getElementById('if-corpo').innerHTML=`
     <div class="if-filtros">
       <input type="text" class="if-busca" placeholder="🔎 Buscar cliente, bairro, plano…" value="${IF_state.busca}" oninput="IF_state.busca=this.value;ifRenderTabela()">
@@ -13650,7 +13689,7 @@ function ifRenderClientes(){
 
 function ifRenderTabela(){
   const b=(IF_state.busca||'').toLowerCase();
-  let lista=IF_state.perfis.filter(pf=>
+  let lista=ifPerfisFiltrados().filter(pf=>
     (IF_state.filtroSeg==='todos'||pf.seg.tags.includes(IF_state.filtroSeg)) &&
     (!b||[pf.nome,pf.bairro,pf.cidade,pf.plano].join(' ').toLowerCase().includes(b)));
   const ord=IF_state.ordem;
@@ -13750,12 +13789,14 @@ function ifFecharPerfil(){ try{IF_charts.spark?.destroy()}catch(e){} delete IF_c
 // ════════ ABA 3 — INSIGHTS ════════
 function ifRenderInsights(){
   ifDestruirCharts();
+  const insights=ifGerarInsights(); // recalculado sob o recorte atual
+  const P=ifPerfisFiltrados();
   document.getElementById('if-corpo').innerHTML=`
-    <div class="if-insights">${IF_state.insights.map(i=>`
+    <div class="if-insights">${insights.map(i=>`
       <div class="if-insight" style="border-left-color:${i.cor}"><span class="if-insight-ico">${i.ico}</span><span>${i.txt}</span></div>`).join('')}</div>
     <div class="if-painel" style="margin-top:14px"><div class="if-painel-tit">🎯 Onde agir agora — top 10 prioridades de cobrança</div>
       <div class="if-tscroll"><table class="if-t"><thead><tr><th>#</th><th>Cliente</th><th>Score</th><th>Vencido</th><th>P. recuperação</th><th>Ação sugerida</th></tr></thead>
-      <tbody>${[...IF_state.perfis].filter(pf=>pf.p.valorVencido>0).sort((a,b)=>(b.p.valorVencido*b.prob.probRecup)-(a.p.valorVencido*a.prob.probRecup)).slice(0,10).map((pf,i)=>`
+      <tbody>${[...P].filter(pf=>pf.p.valorVencido>0).sort((a,b)=>(b.p.valorVencido*b.prob.probRecup)-(a.p.valorVencido*a.prob.probRecup)).slice(0,10).map((pf,i)=>`
         <tr><td>${i+1}</td><td><div class="if-cli-nome">${pf.nome}</div><div class="if-cli-sub">${pf.bairro}</div></td>
         <td style="color:${pf.risco.cor};font-weight:700">${pf.sc.score}</td>
         <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${pf.p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
@@ -13796,7 +13837,7 @@ function ifPerguntar(txt){
 function ifResponder(q){
   const t=q.toLowerCase();
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const P=IF_state.perfis;
+  const P=ifPerfisFiltrados();
   const lista=(arr,fmt)=>'<ol class="if-lista">'+arr.map(fmt).map(x=>`<li>${x}</li>`).join('')+'</ol>';
   if(/maior risco|mais risco|inadimpl[eê]ncia.*(quem|clientes)|risco de inadimpl/.test(t)){
     const top=[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,5);
@@ -13818,7 +13859,7 @@ function ifResponder(q){
   }
   if(/tend[eê]ncia|30.*60.*90|pr[oó]ximos (30|60|90)/.test(t)){
     const pr=ifPrevisao();
-    const M=IF_state.mensal; const med=M.slice(-3).reduce((s,m)=>s+m.recebida,0)/3;
+    const M=ifMensalFiltrado(); const med=M.slice(-3).reduce((s,m)=>s+m.recebida,0)/3;
     return `Previsão baseada no comportamento individual de cada cliente:<br>• <b>30 dias:</b> ${brlS(pr.d30.risco)} em risco de atraso.<br>• <b>60 dias:</b> ${brlS(pr.d60.risco)}.<br>• <b>90 dias:</b> ${brlS(pr.d90.risco)}.<br>A receita recebida média dos últimos 3 meses foi ${brlS(med)} — mantido o padrão, é a base esperada por mês, descontando o risco acima.`;
   }
   if(/melhoraram|melhora|recupera[çc][aã]o de clientes|em recupera/.test(t)){
@@ -13826,7 +13867,7 @@ function ifResponder(q){
     return top.length?`Clientes em clara melhora (score subindo):${lista(top,pf=>`<b>${pf.nome}</b> — score foi de ${pf.evolucao[pf.evolucao.length-4]} para ${pf.sc.score} em 3 meses. ${pf.p.seqEmDia?pf.p.seqEmDia+' pagamentos seguidos em dia.':''}`)}`:'Nenhuma melhora significativa de score detectada nos últimos 3 meses.';
   }
   if(/queda.*arrecada|arrecada[çc][aã]o.*(queda|caiu)|por que.*caiu/.test(t)){
-    const M=IF_state.mensal; const atu=M[M.length-1],ant=M[M.length-2];
+    const M=ifMensalFiltrado(); const atu=M[M.length-1],ant=M[M.length-2];
     const dif=atu.recebida-ant.recebida;
     if(dif>=0) return `Na verdade a arrecadação <b>subiu</b> ${brlS(dif)} vs o mês anterior (${brlS(atu.recebida)} vs ${brlS(ant.recebida)}).`;
     const vencAtu=P.reduce((s,pf)=>s+pf.p.valorVencido,0);
@@ -13846,7 +13887,7 @@ function ifResponder(q){
 
 // ── DRILL-DOWN: abre a lista de clientes por trás de qualquer número do dashboard ──
 function ifDrill(tipo, chave){
-  const P=IF_state.perfis; const mesAtu=hoje().slice(0,7);
+  const P=ifPerfisFiltrados(); const mesAtu=hoje().slice(0,7);
   let titulo='', lista=[], colExtra=null;
   if(tipo==='bairro'){ titulo='📍 Clientes do bairro '+chave; lista=P.filter(pf=>pf.bairro===chave); }
   else if(tipo==='plano'){ titulo='📦 Clientes do plano '+chave; lista=P.filter(pf=>String(pf.plano).slice(0,18)===chave||pf.plano===chave); }
@@ -13937,7 +13978,9 @@ function ifFilaCobranca(){
   const log=ifCobLog(); const hj=hoje();
   const feitas=new Set(log.map(x=>x.fatId+'|'+x.etapaId));
   const fila=[];
-  IF_state.perfis.forEach(pf=>{
+  // Régua NUNCA cobra clientes cancelados (mensagens falam de bloqueio de internet
+  // ativa — dívida de ex-cliente é tratamento à parte, fora da régua automática)
+  ifPerfisFiltrados().filter(pf=>pf.grupo!=='cancelado').forEach(pf=>{
     pf.fats.filter(f=>f.tipo==='vencida'||f.tipo==='aberta').forEach(f=>{
       const dias=ifDiasEntre(f.venc,hj); // >0 = vencida há N dias, <0 = faltam N dias
       const atingidas=regua.filter(e=>dias>=e.dias);
@@ -13960,7 +14003,8 @@ function ifRenderCobranca(){
   const log=ifCobLog(); const hj=hoje();
   const hoje0=log.filter(x=>String(x.quando).slice(0,10)===hj);
   const valorFila=fila.reduce((s,i)=>s+i.fat.valor,0);
-  const recup30=IF_state.mensal[IF_state.mensal.length-1]?.recuperada||0;
+  const _MF=ifMensalFiltrado();
+  const recup30=_MF[_MF.length-1]?.recuperada||0;
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
   const porEtapa={}; fila.forEach(i=>{(porEtapa[i.etapa.id]=porEtapa[i.etapa.id]||[]).push(i);});
   document.getElementById('if-corpo').innerHTML=`
