@@ -4317,6 +4317,9 @@ function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';const txt='R$ '+par
 function brlN(v){const txt=parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function brlTxt(v){return'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function hoje(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+// Data ISO (YYYY-MM-DD) no FUSO LOCAL — nunca usar toISOString() para datas de calendário:
+// após as 21h (UTC-3) toISOString() retorna o dia SEGUINTE, deslocando vencimentos/KPIs em 1 dia.
+function isoLocal(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fmtData(d){return d?d.split('-').reverse().join('/'):'—'}
 function initials(n){if(!n)return'?';const p=n.trim().split(' ');return(p[0][0]+(p[1]?.[0]||'')).toUpperCase()}
 
@@ -4541,8 +4544,11 @@ function invalidateDreCache(){ _dreCache = null; }
 Object.defineProperty(window,'DRE_STRUCT',{get:()=>getDre().struct});
 Object.defineProperty(window,'DRE_IDS',   {get:()=>getDre().ids});
 
-function calcDRE(modo){
+function calcDRE(modo, ano){
   // modo: 'realizado' | 'previsto' | undefined/null (todos)
+  // ano: ano-referência (default: ano atual). Sem esse filtro, lançamentos de
+  // 2025 e 2026 caíam na MESMA coluna de mês, inflando DRE, Painel e gráficos.
+  const _anoRef = (ano === 0 || ano === null) ? null : String(ano || new Date().getFullYear());
   const lc=gd('sf_lancamentos');
   // Usa o mesmo cache do DRE para garantir que os ids sejam consistentes
   const dre = getDre();
@@ -4590,6 +4596,7 @@ function calcDRE(modo){
     // No modo realizado usa a data de efetivação (quando disponível),
     // nos demais modos usa a data de vencimento
     const dataRef = (modo==='realizado' && l.dataEfetivacao) ? l.dataEfetivacao : l.data;
+    if(_anoRef && !String(dataRef).startsWith(_anoRef+'-')) return; // fora do ano selecionado
     const m=parseInt(dataRef.split('-')[1])-1;
     if(m<0||m>11)return;
 
@@ -4745,8 +4752,8 @@ function renderKpiMiniStrips(){
   // Próxima semana: hoje+1 até hoje+7
   const proxSemIni = new Date(hoje); proxSemIni.setDate(proxSemIni.getDate()+1);
   const proxSemFim = new Date(hoje); proxSemFim.setDate(proxSemFim.getDate()+7);
-  const psIStr = proxSemIni.toISOString().slice(0,10);
-  const psFStr = proxSemFim.toISOString().slice(0,10);
+  const psIStr = isoLocal(proxSemIni);
+  const psFStr = isoLocal(proxSemFim);
 
   // Mês atual via kpiMesAtual
   const m = kpiMesAtual;
@@ -5235,7 +5242,7 @@ function rxdLimparTodos(){
 }
 
 function renderRxDChart(){
-  const d = calcDRE(_painelModo);
+  const d = calcDRE(_painelModo, parseInt(document.getElementById('rxd-ano')?.value)||undefined);
 
   // Popular select de ano (apenas uma vez)
   const anoSel = document.getElementById('rxd-ano');
@@ -5599,14 +5606,14 @@ function renderDiario(){
       <td class="td-mono ${l.pago?'td-red':''}">${l.pago?brl(l.pago,true):'<span class="td-muted">—</span>'}</td>
       <td class="td-muted">${l.conta||'—'}</td>
       <td><div class="action-btns">
-        ${l.status==='A Receber'?`<button class="btn-efetivar ef-rec" onclick="efetivarLancamento(${l._idx})" title="Marcar como Recebido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
-        ${l.status==='A Pagar'?`<button class="btn-efetivar ef-pag" onclick="efetivarLancamento(${l._idx})" title="Marcar como Pago"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
-        ${(l.status==='Pago'||l.status==='Recebido') && !l.estornado && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}
+        ${l.status==='A Receber'?`<button class="btn-efetivar ef-rec" onclick="efetivarLancamento(${l._idx},${l.id??null})" title="Marcar como Recebido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
+        ${l.status==='A Pagar'?`<button class="btn-efetivar ef-pag" onclick="efetivarLancamento(${l._idx},${l.id??null})" title="Marcar como Pago"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px"><polyline points="20 6 9 17 4 12"/></svg>Efetivar</button>`:''}
+        ${(l.status==='Pago'||l.status==='Recebido') && !l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx},${l.id??null})" title="Estornar">↩ Estornar</button>`:''}
         ${l.estornado?`<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px;white-space:nowrap">Estornado</span>`:''}
         ${l.estornoDe?`<span style="font-size:10px;color:var(--text3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;white-space:nowrap">Reversão</span>`:''}
-        ${(l.status==='A Receber'||l.status==='A Pagar')?`<button class="action-btn" onclick="cancelarLancamento(${l._idx})" title="Cancelar título"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
+        ${(l.status==='A Receber'||l.status==='A Pagar')?`<button class="action-btn" onclick="cancelarLancamento(${l._idx},${l.id??null})" title="Cancelar título"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+        <button class="action-btn del" onclick="deletarLanc(${l._idx},${l.id??null})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
     </tr>`;
   }).join('');
@@ -5629,8 +5636,10 @@ function refreshFinanceiro(){
   try{ if(typeof renderFluxo==='function' && document.getElementById('page-fluxo')?.classList.contains('active')) renderFluxo(); }catch(e){}
 }
 
-async function deletarLanc(idx){
+async function deletarLanc(idx, id=null){
   if(!confirm('Excluir lançamento?\n\nO registro é mantido no histórico (auditoria), apenas marcado como excluído.'))return;
+  idx=_resolverLancIdx(_cache.sf_lancamentos,idx,id);
+  if(idx<0){showToast('Este lançamento foi alterado por outro usuário. Atualize a tela.',true);refreshFinanceiro();return;}
   const item = _cache.sf_lancamentos[idx];
   if(!item) return;
   if(item.id != null){
@@ -5646,15 +5655,17 @@ async function deletarLanc(idx){
   showToast('Lançamento excluído (mantido no histórico).');
 }
 
-function efetivarLancamento(idx){
+function efetivarLancamento(idx, id=null){
   // Unifica a efetivação no modal de quitação (captura a conta bancária)
   const lc=gd('sf_lancamentos');
+  idx=_resolverLancIdx(lc,idx,id);
+  if(idx<0){showToast('Este título foi alterado por outro usuário. Atualize a tela.',true);refreshFinanceiro();return;}
   const l=lc[idx];
   if(!l)return;
-  if(l.status==='A Receber') abrirModalReceber(idx);
-  else if(l.status==='A Pagar') abrirModalQuitar(idx);
+  if(l.status==='A Receber') abrirModalReceber(idx, l.id??null);
+  else if(l.status==='A Pagar') abrirModalQuitar(idx, l.id??null);
 }
-function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showToast('Sem dados.',true);return;}const h='Vencimento;Efetivação;Status;Plano;Cliente;Fornecedor;Histórico;A Receber;Recebido;A Pagar;Pago;Conta;Val.Líquido';const r=lc.map(l=>[l.data||'',l.dataEfetivacao||'',l.status||'',l.plano||'',l.cliente||'',l.fornecedor||'',(l.historico||'').replace(/;/g,' '),l.aReceber||0,l.recebido||0,l.aPagar||0,l.pago||0,l.conta||'',l.valorLiquido||0].join(';'));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n'),{type:'text/csv'}]));a.download='livro-diario.csv';a.click();showToast('CSV exportado!');}
+function exportarDiarioCSV(){const lc=gd('sf_lancamentos');if(!lc.length){showToast('Sem dados.',true);return;}const h='Vencimento;Efetivação;Status;Plano;Cliente;Fornecedor;Histórico;A Receber;Recebido;A Pagar;Pago;Conta;Val.Líquido';const r=lc.map(l=>[l.data||'',l.dataEfetivacao||'',l.status||'',l.plano||'',l.cliente||'',l.fornecedor||'',(l.historico||'').replace(/;/g,' '),l.aReceber||0,l.recebido||0,l.aPagar||0,l.pago||0,l.conta||'',l.valorLiquido||0].join(';'));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));a.download='livro-diario.csv';a.click();showToast('CSV exportado!');}
 
 // ============================================================
 // FLUXO DE CAIXA
@@ -5719,7 +5730,7 @@ function dreCollapseAll(){
   document.querySelectorAll('#dre-tbody-f tr[data-parent]').forEach(tr=>tr.classList.add('dre-sub-hidden'));
 }
 function renderFluxo(){
-  const d=calcDRE(_fluxoModo);
+  const d=calcDRE(_fluxoModo, parseInt(document.getElementById('f-ano')?.value)||undefined);
   const totRec=MESES.reduce((s,_,i)=>s+(d['rec']?.[i]||0),0);
   const totCv=MESES.reduce((s,_,i)=>s+(d['cv']?.[i]||0),0);
   const totMc=MESES.reduce((s,_,i)=>s+(d['mc']?.[i]||0),0);
@@ -5791,7 +5802,7 @@ function renderFluxo(){
 }
 
 function exportarDreCSV(){
-  const d=calcDRE(_fluxoModo);
+  const d=calcDRE(_fluxoModo, parseInt(document.getElementById('f-ano')?.value)||undefined);
   const h='Conta;'+MESES.join(';')+';Total';
   const r=DRE_STRUCT.map(l=>`"${l.nome}";${MESES.map((_,i)=>(d[l.id]?.[i]||0).toFixed(2).replace('.',',')).join(';')};${MESES.reduce((s,_,i)=>s+(d[l.id]?.[i]||0),0).toFixed(2).replace('.',',')}`);
   const a=document.createElement('a');
@@ -5954,7 +5965,7 @@ function renderScoreGeracao(lc) {
   const saldoAtual = bancos.reduce((_,__,i) => _ + calcSaldoConta(i), 0);
 
   // Saldo projetado no fim do mês anterior (até último dia do mês anterior)
-  const ultimoDiaMesAnt = new Date(parseInt(anoMes[0]), parseInt(anoMes[1])-1, 0).toISOString().split('T')[0];
+  const ultimoDiaMesAnt = isoLocal(new Date(parseInt(anoMes[0]), parseInt(anoMes[1])-1, 0));
   const saldoMesAnt = bancos.reduce((_,__,i) => _ + calcSaldoContaAteData(i, ultimoDiaMesAnt), 0);
 
   const variacao  = saldoAtual - saldoMesAnt;
@@ -6490,7 +6501,9 @@ function renderContas(){
   }
 
   // ----- KPIs (todos os lançamentos no período, antes dos filtros de busca/status/situação) -----
-  const allPeriodo=lc.filter(l=>dentroP(l.data,contasPeriodo));
+  // Para efetivados vale a data de EFETIVAÇÃO (quando o dinheiro entrou/saiu);
+  // para títulos em aberto vale o vencimento — mesmo critério do Livro Diário.
+  const allPeriodo=lc.filter(l=>dentroP(((l.status==='Recebido'||l.status==='Pago')&&l.dataEfetivacao)?l.dataEfetivacao:l.data,contasPeriodo));
   const kpiAR=allPeriodo.filter(l=>l.status==='A Receber'&&!l.cancelado);
   const kpiAP=allPeriodo.filter(l=>l.status==='A Pagar'&&!l.cancelado);
   const kpiRecebido=allPeriodo.filter(l=>l.status==='Recebido'&&!l.cancelado);
@@ -6624,11 +6637,11 @@ function renderContas(){
       <td>${_ctBadge(l,h)}${l.parcGroupId?` <span style="font-size:9px;color:var(--text3)">📑${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?` <span style="font-size:9px;color:var(--text3)">🔁${l.recNum}/${l.recTotal}</span>`:''}</td>
       <td style="font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${l.status==='Pago'?'var(--accent)':'var(--danger)'}">${brl(v,true)}</td>
       <td style="text-align:right"><div class="action-btns" style="justify-content:flex-end">
-        ${l.status==='A Pagar'?`<button class="btn-quitar" onclick="abrirModalQuitar(${l._idx})">✓ Quitar</button>`:''}
-        ${l.status==='A Pagar'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx})" title="Cancelar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
-        ${l.status==='Pago'&&!l.estornado&&!l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
+        ${l.status==='A Pagar'?`<button class="btn-quitar" onclick="abrirModalQuitar(${l._idx},${l.id??null})">✓ Quitar</button>`:''}
+        ${l.status==='A Pagar'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx},${l.id??null})" title="Cancelar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
+        ${l.status==='Pago'&&!l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx},${l.id??null})" title="Estornar">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+        <button class="action-btn del" onclick="deletarLanc(${l._idx},${l.id??null})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
     </tr>`;
   }).join('');
@@ -6662,11 +6675,11 @@ function renderContas(){
       <td>${_ctBadge(l,h)}${l.parcGroupId?` <span style="font-size:9px;color:var(--text3)">📑${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?` <span style="font-size:9px;color:var(--text3)">🔁${l.recNum}/${l.recTotal}</span>`:''}</td>
       <td style="font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${l.status==='Recebido'?'var(--accent)':'#22c55e'}">${brl(v,true)}</td>
       <td style="text-align:right"><div class="action-btns" style="justify-content:flex-end">
-        ${l.status==='A Receber'?`<button class="btn-quitar" style="border-color:var(--accent);color:var(--accent)" onclick="abrirModalReceber(${l._idx})">✓ Receber</button>`:''}
-        ${l.status==='A Receber'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx})" title="Cancelar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
-        ${l.status==='Recebido'&&!l.estornado&&!l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx})" title="Estornar">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
+        ${l.status==='A Receber'?`<button class="btn-quitar" style="border-color:var(--accent);color:var(--accent)" onclick="abrirModalReceber(${l._idx},${l.id??null})">✓ Receber</button>`:''}
+        ${l.status==='A Receber'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx},${l.id??null})" title="Cancelar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
+        ${l.status==='Recebido'&&!l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx},${l.id??null})" title="Estornar">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
         <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="deletarLanc(${l._idx})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
+        <button class="action-btn del" onclick="deletarLanc(${l._idx},${l.id??null})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
       </div></td>
     </tr>`;
   }).join('');
@@ -6679,10 +6692,23 @@ function cpNavPag(p){if(p<1)return;cpPag=p;renderContas();}
 
 // ---- Modal Quitar ----
 let _quitarIdx=null;
+let _quitarId=null; // id do título capturado ao abrir o modal — protege contra troca de índice pelo Realtime
 // abrirModalQuitar e fecharModalQuitar definidos junto com salvarQuitar
 let _quitarTipo='pagar'; // 'pagar' ou 'receber'
 
-function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;}
+// PROTEÇÃO MULTIUSUÁRIO: o Realtime recarrega o cache inteiro (400ms de debounce),
+// então um índice capturado no render pode apontar para OUTRO lançamento no clique.
+// Este helper garante que a ação atinja exatamente o registro pretendido, pelo id.
+function _resolverLancIdx(lc, idx, idEsperado){
+  if(idEsperado!=null){
+    if(lc[idx] && lc[idx].id===idEsperado) return idx;
+    const ni=lc.findIndex(x=>x.id===idEsperado);
+    return ni>=0?ni:-1;
+  }
+  return (idx!=null && lc[idx])?idx:-1;
+}
+
+function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;_quitarId=null;}
 
 // Preenche o seletor de conta bancária do modal de quitação (default: a conta já vinculada ao lançamento)
 function preencherContasQuitar(contaNomeAtual, contaIdAtual){
@@ -6697,12 +6723,15 @@ function preencherContasQuitar(contaNomeAtual, contaIdAtual){
   sel.value = idxAtual>=0 ? String(idxAtual) : '0';
 }
 
-function abrirModalReceber(idx){
+function abrirModalReceber(idx, id=null){
+  const lc=gd('sf_lancamentos');
+  idx=_resolverLancIdx(lc,idx,id);
+  if(idx<0){showToast('Este título foi alterado por outro usuário. Atualize a tela.',true);refreshFinanceiro();return;}
   _quitarIdx=idx;
   _quitarTipo='receber';
-  const lc=gd('sf_lancamentos');
   const l=lc[idx];
   if(!l)return;
+  _quitarId=l.id??null;
   document.getElementById('mq-title').textContent='Confirmar Recebimento';
   document.getElementById('mq-desc').className='mq-desc mq-rec';
   document.getElementById('mq-desc').innerHTML=`<strong>${l.cliente||'Sem cliente'}</strong><br>${l.historico||''}<br><span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent)">${brl(l.aReceber,true)}</span> — Venc.: ${fmtData(l.data)}`;
@@ -6722,12 +6751,15 @@ function abrirModalReceber(idx){
   document.getElementById('modal-quitar').classList.add('open');
 }
 
-function abrirModalQuitar(idx){
+function abrirModalQuitar(idx, id=null){
+  const lc=gd('sf_lancamentos');
+  idx=_resolverLancIdx(lc,idx,id);
+  if(idx<0){showToast('Este título foi alterado por outro usuário. Atualize a tela.',true);refreshFinanceiro();return;}
   _quitarIdx=idx;
   _quitarTipo='pagar';
-  const lc=gd('sf_lancamentos');
   const l=lc[idx];
   if(!l)return;
+  _quitarId=l.id??null;
   document.getElementById('mq-title').textContent='Quitar Conta a Pagar';
   document.getElementById('mq-desc').className='mq-desc';
   document.getElementById('mq-desc').innerHTML=`<strong>${l.fornecedor||'Sem fornecedor'}</strong><br>${l.historico||''}<br><span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--danger)">${brl(l.aPagar,true)}</span> — Venc.: ${fmtData(l.data)}`;
@@ -6747,7 +6779,7 @@ function abrirModalQuitar(idx){
   document.getElementById('modal-quitar').classList.add('open');
 }
 
-function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;}
+function fecharModalQuitar(){document.getElementById('modal-quitar').classList.remove('open');_quitarIdx=null;_quitarId=null;}
 
 // Atualiza o resumo de total (valor + multa + juros) ao vivo no modal de quitação
 function atualizarTotalQuitar(){
@@ -6801,8 +6833,14 @@ function salvarQuitar(){
   const contaNome=bancoSel.nome;
   const contaId=bancoSel.id ?? null;
   const lc=gd('sf_lancamentos');
+  // Resolve o título pelo id (o índice pode ter mudado se outro usuário mexeu nos dados)
+  _quitarIdx=_resolverLancIdx(lc,_quitarIdx,_quitarId);
+  if(_quitarIdx<0){showToast('Este título foi alterado ou excluído por outro usuário. Atualize a tela.',true);fecharModalQuitar();refreshFinanceiro();return;}
   const l=lc[_quitarIdx];
   if(!l)return;
+  // Bloqueia quitação dupla (ex.: dois usuários com o mesmo modal aberto)
+  if(l.status==='Recebido'||l.status==='Pago'){showToast('Este título já foi quitado.',true);fecharModalQuitar();refreshFinanceiro();return;}
+  if(l.cancelado||l.status==='Cancelado'){showToast('Este título foi cancelado e não pode ser quitado.',true);fecharModalQuitar();refreshFinanceiro();return;}
   const obs=document.getElementById('mq-obs').value.trim();
   const multa=parseFloat(document.getElementById('mq-multa').value)||0;
   const juros=parseFloat(document.getElementById('mq-juros').value)||0;
@@ -6869,8 +6907,10 @@ function salvarQuitar(){
   }
 }
 
-async function cancelarLancamento(idx){
+async function cancelarLancamento(idx, id=null){
   const lc=gd('sf_lancamentos');
+  idx=_resolverLancIdx(lc,idx,id);
+  if(idx<0){showToast('Este título foi alterado por outro usuário. Atualize a tela.',true);refreshFinanceiro();return;}
   const l=lc[idx];
   if(!l)return;
   if(l.status!=='A Receber' && l.status!=='A Pagar'){
@@ -6893,8 +6933,10 @@ async function cancelarLancamento(idx){
   showToast('Título cancelado (mantido no histórico).');
 }
 
-function estornarLancamento(idx){
+function estornarLancamento(idx, id=null){
   const lc=gd('sf_lancamentos');
+  idx=_resolverLancIdx(lc,idx,id);
+  if(idx<0){showToast('Este título foi alterado por outro usuário. Atualize a tela.',true);refreshFinanceiro();return;}
   const l=lc[idx];
   if(!l)return;
   if(l.status!=='Pago' && l.status!=='Recebido'){ showToast('Só é possível estornar lançamentos efetivados (Pago/Recebido).',true); return; }
@@ -6908,6 +6950,7 @@ function estornarLancamento(idx){
   if(!confirm(msg))return;
   const u = window._usuario||{};
   const novo = {...l,
+    estornado: true,
     estornadoEm: new Date().toISOString(),
     estornadoPor: (u.email||u.nome||'sistema'),
     dataEfetivacao: null,
@@ -6969,7 +7012,7 @@ const PLAN_STRUCT=[
 ];
 
 function renderPlan(){
-  const d=calcDRE(),metas=gd('sf_metas');
+  const d=calcDRE(null, parseInt(document.getElementById('pl-ano')?.value)||undefined),metas=gd('sf_metas');
   const ms=document.getElementById('pl-mes')?.value||'all';
   const mVis=ms==='all'?[0,1,2,3,4,5,6,7,8,9,10,11]:[parseInt(ms)];
   document.getElementById('pl-thead').innerHTML=`<tr><th>Conta</th>${mVis.map(m=>`<th class="mh" colspan="3">${MESES_F[m]}</th>`).join('')}<th>Total Plan.</th><th>Total Real.</th><th>Δ</th></tr><tr><th></th>${mVis.map(()=>'<th style="background:#F7F9F8;color:var(--info);font-size:9px">Planejado</th><th style="font-size:9px">Realizado</th><th style="font-size:9px">Δ</th>').join('')}<th></th><th></th><th></th></tr>`;
@@ -7910,6 +7953,7 @@ function salvarLancamento(){
     cliente:document.getElementById('l-cliente').value,
     fornecedor:document.getElementById('l-fornecedor').value,
     conta:document.getElementById('l-conta').value,
+    contaId:(gdBancos().find(b=>b.nome===document.getElementById('l-conta').value)?.id)??null,
     aReceber:aR,recebido:rec,aPagar:aP,pago:pg,
     cheque:document.getElementById('l-cheque').value,
     historico:document.getElementById('l-hist').value,
@@ -7922,6 +7966,10 @@ function salvarLancamento(){
     const st=baseItem.status;
     const liquido = st==='Recebido' ? +(rec||0) : st==='Pago' ? -(pg||0) : 0;
     lc[lancEditIdx]={...lc[lancEditIdx],...baseItem,data,valorLiquido:liquido};
+    // Status virou efetivado sem data de efetivação → assume a data informada
+    if((st==='Recebido'||st==='Pago') && !lc[lancEditIdx].dataEfetivacao) lc[lancEditIdx].dataEfetivacao=data;
+    // Status voltou para aberto → limpa a data de efetivação
+    if(st==='A Receber'||st==='A Pagar') lc[lancEditIdx].dataEfetivacao=null;
     sd('sf_lancamentos',lc);
     registrarAuditoria('alteracao','Livro Diário','lancamentos', lc[lancEditIdx].id, baseItem.historico||baseItem.cliente||baseItem.fornecedor||'');
     fecharModal('modal-lanc');
@@ -7939,10 +7987,14 @@ function salvarLancamento(){
     const per=document.getElementById('parc-periodo').value;
     const valTotal=isRec?(aR||rec):(aP||pg);
     if(!valTotal){showToast('Informe o valor para parcelar.',true);return;}
-    const valParc=valTotal/nParc;
+    // Arredonda cada parcela a 2 casas; o resíduo de centavos vai na ÚLTIMA parcela,
+    // garantindo que a soma das parcelas feche EXATAMENTE no valor total do título.
+    const valParcBase=Math.round(valTotal/nParc*100)/100;
+    const valUltima=+(valTotal-valParcBase*(nParc-1)).toFixed(2);
     const parcGroupId='parc_'+Date.now();
     for(let i=0;i<nParc;i++){
       const dt=i===0?data:addMeses(data,i,per);
+      const valParc=(i===nParc-1)?valUltima:valParcBase;
       const vR=isRec?valParc:0, vP=isRec?0:valParc;
       const liquido=0; // parcelas nascem em aberto — não impactam caixa até efetivar
       lc.push({
@@ -7957,6 +8009,7 @@ function salvarLancamento(){
       });
     }
     sd('sf_lancamentos',lc);
+    registrarAuditoria('criacao_parcelada', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', null, `${nParc}x — ${baseItem.historico||baseItem.cliente||baseItem.fornecedor||''} — total ${brl(valTotal,true)}`);
     fecharModal('modal-lanc');
     atualizarBadges();
     showToast(`${nParc} parcelas criadas!`);
@@ -7987,6 +8040,7 @@ function salvarLancamento(){
       });
     }
     sd('sf_lancamentos',lc);
+    registrarAuditoria('criacao_recorrente', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', null, `${nRec}x — ${baseItem.historico||baseItem.cliente||baseItem.fornecedor||''}`);
     fecharModal('modal-lanc');
     atualizarBadges();
     showToast(`${nRec} lançamentos recorrentes criados!`);
@@ -7998,7 +8052,8 @@ function salvarLancamento(){
   // --- Único (padrão) ---
   const stU=baseItem.status;
   const liquido = stU==='Recebido' ? +(rec||0) : stU==='Pago' ? -(pg||0) : 0;
-  const item={...baseItem,data,valorLiquido:liquido};
+  const item={...baseItem,data,valorLiquido:liquido,
+    dataEfetivacao:(stU==='Recebido'||stU==='Pago')?data:null};
   item.lin=lc.length+10;
   lc.push(item);
   sd('sf_lancamentos',lc);
@@ -8772,7 +8827,9 @@ function calcSaldoContaAteData(idx,dataLimite){
   const saldoInicial=parseFloat(bancos[idx].saldoInicial)||0;
   const movTotal=mov.reduce((s,m)=>s+parseFloat(m.valor||0),0);
   const lc=gd('sf_lancamentos');
-  const lancTotal=lc.filter(l=>_lancNaConta(l, bancos[idx])&&(l.data||'')<=dataLimite)
+  // Data-referência: para efetivados vale a dataEfetivacao (quando o dinheiro de fato
+  // entrou/saiu), não o vencimento — mesmo critério do Livro Diário e do DRE realizado.
+  const lancTotal=lc.filter(l=>_lancNaConta(l, bancos[idx])&&((l.dataEfetivacao||l.data||''))<=dataLimite)
     .reduce((s,l)=>s+_lancRealizado(l),0);
   return saldoInicial+movTotal+lancTotal;
 }
@@ -8864,7 +8921,7 @@ function setBancoExtratoPeriodo(p){
 
 function filtrarMovPeriodo(mov){
   const hoje_=new Date();
-  const iso=d=>d.toISOString().split('T')[0];
+  const iso=isoLocal; // fuso local — toISOString() deslocava o período em 1 dia após as 21h
   let de='',ate='';
   if(extratoPeriodo==='mes'){
     de=iso(new Date(hoje_.getFullYear(),hoje_.getMonth(),1));
@@ -9048,8 +9105,16 @@ function salvarConta(){
 }
 
 function excluirConta(idx){
-  if(!confirm('Excluir esta conta e todas as suas movimentações?'))return;
   const bancos=gdBancos();
+  // CONTROLE: informa quantos lançamentos quitados estão vinculados à conta —
+  // após a exclusão eles ficam órfãos e o valor deles sai do saldo total.
+  const _lcVinc=gd('sf_lancamentos').filter(l=>_lancNaConta(l,bancos[idx])&&(l.status==='Recebido'||l.status==='Pago'));
+  let _msg='Excluir esta conta e todas as suas movimentações?';
+  if(_lcVinc.length){
+    const _tot=_lcVinc.reduce((sm,l)=>sm+Math.abs(_lancRealizado(l)),0);
+    _msg+=`\n\n⚠️ Esta conta tem ${_lcVinc.length} lançamento(s) quitado(s) vinculado(s), somando R$ ${_tot.toLocaleString('pt-BR',{minimumFractionDigits:2})}.\nEles NÃO serão excluídos, mas perderão o vínculo e deixarão de compor os saldos.`;
+  }
+  if(!confirm(_msg))return;
   bancos.splice(idx,1);
   sdBancos(bancos);
   // reindexar movimentos
@@ -9171,6 +9236,9 @@ function salvarTransferencia(){
   if(origIdx===destIdx){showToast('Origem e destino não podem ser iguais.',true);return;}
   const valor=parseFloat(document.getElementById('tr-valor').value);
   if(!valor||valor<=0){showToast('Informe um valor válido.',true);return;}
+  // CONTROLE: avisa (sem bloquear) quando a transferência deixa a origem negativa
+  const _saldoOrig=calcSaldoConta(origIdx);
+  if(valor>_saldoOrig && !confirm(`Atenção: a conta "${bancos[origIdx]?.nome||''}" tem saldo de ${'R$ '+_saldoOrig.toLocaleString('pt-BR',{minimumFractionDigits:2})} e ficará NEGATIVA após esta transferência.\n\nDeseja continuar mesmo assim?`))return;
   const data=document.getElementById('tr-data').value;
   if(!data){showToast('Informe a data.',true);return;}
   const desc=document.getElementById('tr-desc').value.trim()||'Transferência entre contas';
@@ -9634,7 +9702,7 @@ let _estSubSel     = null; // sub-estoque selecionado na visão de estoque
 let _cpMovs        = [];   // histórico de movimentações
 let _movCarregado  = false;
 
-function cpHoje(){ return new Date().toISOString().slice(0,10); }
+function cpHoje(){ return isoLocal(new Date()); }
 function cpFmtData(d){ if(!d) return '—'; const [y,m,dia]=d.slice(0,10).split('-'); return `${dia}/${m}/${y}`; }
 function cpFmtDataHora(dt){
   if(!dt) return '—';
