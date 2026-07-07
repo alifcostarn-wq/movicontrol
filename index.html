@@ -1412,6 +1412,53 @@ textarea.cp-form-input{resize:vertical}
 
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style id="cli-visual-upgrade">
+/* ═══ Módulo Clientes — refinamento visual (não altera comportamento) ═══ */
+#page-clientes .table-scroll thead th{
+  position:sticky;top:0;z-index:2;background:var(--surface);
+  box-shadow:inset 0 -1px 0 var(--border);
+}
+#page-clientes .t tbody tr{transition:background .12s ease, box-shadow .12s ease}
+#page-clientes .t tbody tr:nth-child(even){background:color-mix(in srgb, var(--surface2) 45%, transparent)}
+#page-clientes .t tbody tr:hover{
+  background:color-mix(in srgb, var(--accent2) 55%, transparent);
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+#page-clientes .t tbody td{vertical-align:middle}
+#page-clientes .action-btns{opacity:.45;transition:opacity .12s ease}
+#page-clientes .t tbody tr:hover .action-btns{opacity:1}
+#page-clientes .search-wrap input:focus{
+  outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+#page-clientes .kpi-strip .kpi-card{transition:transform .15s ease, box-shadow .15s ease}
+#page-clientes .kpi-strip .kpi-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+#cli-filtros-status>*{transition:transform .1s ease}
+#cli-filtros-status>*:hover{transform:translateY(-1px)}
+
+/* Ficha do cliente: mini-tabelas com zebra e hover */
+.cli-mini-table tbody tr:nth-child(even){background:color-mix(in srgb, var(--surface2) 45%, transparent)}
+.cli-mini-table tbody tr:hover{background:color-mix(in srgb, var(--accent2) 45%, transparent)}
+
+/* ═══ Aba Faturas IXC ═══ */
+.fatixc-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.fatixc-note{font-size:11px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-left:3px solid #185fa5;border-radius:8px;padding:8px 12px;flex:1;min-width:240px}
+.fatixc-note b{color:var(--text2)}
+.fatixc-tools{display:flex;gap:6px;align-items:center}
+.fatixc-sel{font-size:11.5px;padding:6px 9px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text)}
+.fatixc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.fatixc-kpi{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:11px 13px;transition:transform .15s ease, box-shadow .15s ease}
+.fatixc-kpi:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.07)}
+.fk-lab{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:4px}
+.fk-val{font-family:'DM Mono',monospace;font-size:16px;font-weight:500}
+.fk-warn{color:#ba7517}.fk-red{color:#c23b2a}.fk-green{color:#2D8C57}
+.fk-sub{font-size:10px;color:var(--text3);margin-top:3px}
+.fatixc-scroll{max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+.fatixc-table{margin:0}
+.fatixc-table thead th{position:sticky;top:0;background:var(--surface);z-index:1;box-shadow:inset 0 -1px 0 var(--border)}
+.fatixc-foot{font-size:10.5px;color:var(--text3);margin-top:8px;text-align:right}
+</style>
 </head>
 <body>
 
@@ -3417,6 +3464,7 @@ textarea.cp-form-input{resize:vertical}
         <div class="cli-tab" data-pane="contratos" onclick="cliTab('contratos')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Contratos<span class="cli-tab-badge" id="cli-tab-ctr-badge" style="display:none">0</span></div>
         <div class="cli-tab" data-pane="logins" onclick="cliTab('logins')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>Logins<span class="cli-tab-badge" id="cli-tab-log-badge" style="display:none">0</span></div>
         <div class="cli-tab" data-pane="financeiro" onclick="cliTab('financeiro')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Financeiro</div>
+        <div class="cli-tab" data-pane="faturasixc" onclick="cliTab('faturasixc');carregarFaturasIXC()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>Faturas IXC</div>
         <div class="cli-tab" data-pane="diagnostico" onclick="cliTab('diagnostico');initDiagnostico()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Diagnóstico</div>
         <div class="cli-tab" data-pane="comodato" onclick="cliTab('comodato');renderCliComodato(window._cliAtual)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Comodato<span class="cp-badge" id="cli-tab-com-badge" style="display:none;margin-left:5px;background:#185fa5;color:#fff;border-radius:9px;padding:0 6px;font-size:10px;font-weight:700">0</span></div>
       </div>
@@ -3509,6 +3557,13 @@ textarea.cp-form-input{resize:vertical}
       <!-- PANE: Financeiro -->
       <div class="cli-pane" id="cli-pane-financeiro">
         <div id="cli-financ-content"></div>
+      </div>
+
+      <!-- PANE: Faturas IXC (somente leitura — análise; não entra no financeiro do MoviControl) -->
+      <div class="cli-pane" id="cli-pane-faturasixc">
+        <div id="cli-fatixc-content">
+          <div class="cli-empty-pane">Clique na aba Faturas IXC para carregar.</div>
+        </div>
       </div>
 
       <!-- PANE: Diagnóstico -->
@@ -8173,6 +8228,10 @@ function abrirModalCliente(idx=null){
   renderCliLogins(cli);
   renderCliFinanceiro(cli);
   renderCliComodato(cli);
+  // Reset visual da aba Faturas IXC (carrega sob demanda ao clicar na aba)
+  _ixcFinAnoSel='todos';
+  const _fx=document.getElementById('cli-fatixc-content');
+  if(_fx)_fx.innerHTML='<div class="cli-empty-pane">Clique na aba Faturas IXC para carregar.</div>';
 
   // Atualiza hint do botão de mapa conforme coordenadas
   if(typeof atualizarBtnMapa==='function') atualizarBtnMapa();
@@ -8467,6 +8526,157 @@ function renderCliFinanceiro(cli){
           <td class="td-mono">${l.recebido?brl(l.recebido,true):'—'}</td>
         </tr>`).join('')}</tbody>
     </table>`;
+}
+
+// ════════════════════════════════════════════════════════
+//  FATURAS IXC — camada de ANÁLISE (somente leitura)
+//  • Consome o endpoint fn_areceber pelo MESMO proxy/chamarIXC já existente
+//  • NÃO grava nada no IXC nem no Supabase
+//  • NÃO entra em sf_lancamentos, saldos, DRE ou qualquer análise do MoviControl
+// ════════════════════════════════════════════════════════
+let _ixcFinCache = {};        // ixcId → { registros:[], quando:ts }
+let _ixcFinLoading = false;
+let _ixcFinAnoSel = 'todos';  // filtro de ano (client-side, só visual)
+
+// Datas do IXC podem vir 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS' ou '0000-00-00'
+function _fmtDataIXC(v){
+  if(!v) return '—';
+  const d = String(v).slice(0,10);
+  if(!d || d==='0000-00-00') return '—';
+  const p = d.split('-');
+  return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
+}
+function _numIXC(v){ const n=parseFloat(String(v??'').replace(',','.')); return isNaN(n)?0:n; }
+
+// Status do título no fn_areceber (fallback mostra o código cru)
+function _statusFaturaIXC(r){
+  const hj = hoje();
+  const venc = String(r.data_vencimento||'').slice(0,10);
+  const map = {
+    'A': (venc && venc < hj)
+        ? {txt:'Vencida',   bg:'rgba(194,59,42,0.15)',  cor:'#c23b2a', k:'vencida'}
+        : {txt:'Em aberto', bg:'rgba(186,117,23,0.15)', cor:'#ba7517', k:'aberta'},
+    'R': {txt:'Recebida',   bg:'rgba(99,153,34,0.15)',  cor:'#639922', k:'recebida'},
+    'C': {txt:'Cancelada',  bg:'rgba(95,94,90,0.15)',   cor:'#5f5e5a', k:'cancelada'},
+    'P': {txt:'Parcial',    bg:'rgba(24,95,165,0.15)',  cor:'#185fa5', k:'parcial'},
+    'G': {txt:'Agrupada',   bg:'rgba(95,94,90,0.15)',   cor:'#5f5e5a', k:'agrupada'},
+  };
+  return map[String(r.status||'').toUpperCase()]
+      || {txt:r.status||'—', bg:'rgba(95,94,90,0.15)', cor:'#5f5e5a', k:'outro'};
+}
+
+async function carregarFaturasIXC(force=false){
+  const cli = window._cliAtual || {};
+  const target = document.getElementById('cli-fatixc-content');
+  if(!target) return;
+  const ixcId = cli.ixcId;
+  if(!ixcId){
+    target.innerHTML = '<div class="cli-empty-pane">Este cliente não está vinculado ao IXC.<br><span style="font-size:11px;color:var(--text3)">As faturas do IXC só estão disponíveis para clientes sincronizados (origem IXC).</span></div>';
+    return;
+  }
+  // Cache em memória: evita bater no IXC toda vez que a aba abre
+  if(!force && _ixcFinCache[ixcId]){ _renderFaturasIXC(_ixcFinCache[ixcId].registros); return; }
+  if(_ixcFinLoading) return;
+  _ixcFinLoading = true;
+  target.innerHTML = '<div class="cli-empty-pane"><span class="diag-spinner"></span> Buscando faturas no IXC…</div>';
+  try{
+    const cfg = await getIXCConfig();
+    if(!cfg.proxyUrl){ target.innerHTML='<div class="cli-empty-pane">Configure a integração IXC em Configurações para usar esta aba.</div>'; return; }
+    const resp = await chamarIXC(cfg, 'fn_areceber', {
+      qtype:'fn_areceber.id_cliente', query:String(ixcId), oper:'=',
+      rp:'500', sortname:'fn_areceber.data_vencimento', sortorder:'desc'
+    });
+    const regs = resp?.registros || [];
+    _ixcFinCache[ixcId] = { registros: regs, quando: Date.now() };
+    _ixcFinAnoSel = 'todos';
+    _renderFaturasIXC(regs);
+  }catch(e){
+    console.error('[faturas ixc]', e);
+    target.innerHTML = `<div class="cli-empty-pane">Falha ao consultar o IXC: ${e.message||e}<br><button class="btn" style="margin-top:10px" onclick="carregarFaturasIXC(true)">↻ Tentar novamente</button></div>`;
+  }finally{ _ixcFinLoading = false; }
+}
+
+function fatIxcFiltrarAno(v){ _ixcFinAnoSel = v; const cli=window._cliAtual||{}; const c=_ixcFinCache[cli.ixcId]; if(c) _renderFaturasIXC(c.registros); }
+
+function _renderFaturasIXC(regsAll){
+  const target = document.getElementById('cli-fatixc-content');
+  if(!target) return;
+  if(!regsAll.length){
+    target.innerHTML = '<div class="cli-empty-pane">Nenhuma fatura encontrada no IXC para este cliente.<br><button class="btn" style="margin-top:10px" onclick="carregarFaturasIXC(true)">↻ Atualizar</button></div>';
+    return;
+  }
+  // Anos disponíveis (pelo vencimento) para o filtro visual
+  const anos = [...new Set(regsAll.map(r=>String(r.data_vencimento||'').slice(0,4)).filter(a=>/^\d{4}$/.test(a)))].sort().reverse();
+  const regs = _ixcFinAnoSel==='todos' ? regsAll
+    : regsAll.filter(r=>String(r.data_vencimento||'').startsWith(_ixcFinAnoSel));
+
+  // KPIs — sobre o conjunto filtrado
+  let abertoV=0, abertoQ=0, vencV=0, vencQ=0, recV=0, recQ=0;
+  regs.forEach(r=>{
+    const st=_statusFaturaIXC(r);
+    if(st.k==='recebida'){ recV+=_numIXC(r.valor_recebido)||_numIXC(r.valor); recQ++; }
+    else if(st.k==='vencida'){ vencV+=_numIXC(r.valor); vencQ++; abertoV+=_numIXC(r.valor); abertoQ++; }
+    else if(st.k==='aberta'||st.k==='parcial'){ abertoV+=_numIXC(r.valor); abertoQ++; }
+  });
+  const pagas = regs.filter(r=>_statusFaturaIXC(r).k==='recebida');
+  const adimpl = (recQ+vencQ)>0 ? Math.round(recQ/(recQ+vencQ)*100) : null;
+
+  // Última fatura paga (maior pagamento_data)
+  const ultPaga = pagas.map(r=>String(r.pagamento_data||'').slice(0,10)).filter(d=>d&&d!=='0000-00-00').sort().pop();
+
+  const cli=window._cliAtual||{};
+  const quando=_ixcFinCache[cli.ixcId]?.quando;
+  const quandoTxt = quando? new Date(quando).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+
+  target.innerHTML = `
+    <div class="fatixc-head">
+      <div class="fatixc-note">📊 <b>Análise IXC</b> — somente leitura. Estes dados vêm direto do IXC e <b>não entram</b> nos saldos, no DRE nem no financeiro do MoviControl.</div>
+      <div class="fatixc-tools">
+        <select onchange="fatIxcFiltrarAno(this.value)" class="fatixc-sel">
+          <option value="todos" ${_ixcFinAnoSel==='todos'?'selected':''}>Todos os anos</option>
+          ${anos.map(a=>`<option value="${a}" ${_ixcFinAnoSel===a?'selected':''}>${a}</option>`).join('')}
+        </select>
+        <button class="btn" onclick="exportarFaturasIxcCSV()" title="Exportar para relatórios">↓ CSV</button>
+        <button class="btn" onclick="carregarFaturasIXC(true)" title="Buscar novamente no IXC">↻ Atualizar</button>
+      </div>
+    </div>
+    <div class="fatixc-kpis">
+      <div class="fatixc-kpi"><div class="fk-lab">Em aberto</div><div class="fk-val fk-warn">${brl(abertoV,true)}</div><div class="fk-sub">${abertoQ} fatura${abertoQ!==1?'s':''}</div></div>
+      <div class="fatixc-kpi"><div class="fk-lab">Vencidas</div><div class="fk-val ${vencQ?'fk-red':''}">${brl(vencV,true)}</div><div class="fk-sub">${vencQ} fatura${vencQ!==1?'s':''}</div></div>
+      <div class="fatixc-kpi"><div class="fk-lab">Recebido</div><div class="fk-val fk-green">${brl(recV,true)}</div><div class="fk-sub">${recQ} fatura${recQ!==1?'s':''}</div></div>
+      <div class="fatixc-kpi"><div class="fk-lab">Adimplência</div><div class="fk-val">${adimpl!=null?adimpl+'%':'—'}</div><div class="fk-sub">${ultPaga?('últ. pgto '+_fmtDataIXC(ultPaga)):'sem pagamentos'}</div></div>
+    </div>
+    <div class="fatixc-scroll">
+    <table class="cli-mini-table fatixc-table">
+      <thead><tr><th>Doc.</th><th>Emissão</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pagamento</th><th>Data Crédito</th><th>Valor Recebido</th></tr></thead>
+      <tbody>${regs.map(r=>{
+        const st=_statusFaturaIXC(r);
+        return `<tr>
+          <td class="td-mono td-muted">#${r.id||'—'}</td>
+          <td class="td-mono">${_fmtDataIXC(r.data_emissao)}</td>
+          <td class="td-mono">${_fmtDataIXC(r.data_vencimento)}</td>
+          <td class="td-mono">${brl(_numIXC(r.valor),true)}</td>
+          <td><span class="cli-status-pill" style="background:${st.bg};color:${st.cor}">${st.txt}</span></td>
+          <td class="td-mono">${_fmtDataIXC(r.pagamento_data)}</td>
+          <td class="td-mono">${_fmtDataIXC(r.credito_data)}</td>
+          <td class="td-mono ${_numIXC(r.valor_recebido)?'td-green':''}">${_numIXC(r.valor_recebido)?brl(_numIXC(r.valor_recebido),true):'—'}</td>
+        </tr>`;}).join('')}</tbody>
+    </table>
+    </div>
+    <div class="fatixc-foot">${regs.length} título${regs.length!==1?'s':''} ${_ixcFinAnoSel!=='todos'?('em '+_ixcFinAnoSel):''} · consultado às ${quandoTxt} · fonte: IXC (fn_areceber)</div>`;
+}
+
+function exportarFaturasIxcCSV(){
+  const cli=window._cliAtual||{};
+  const cache=_ixcFinCache[cli.ixcId];
+  if(!cache||!cache.registros.length){showToast('Sem dados para exportar.',true);return;}
+  const regs=_ixcFinAnoSel==='todos'?cache.registros:cache.registros.filter(r=>String(r.data_vencimento||'').startsWith(_ixcFinAnoSel));
+  const h='Documento;Cliente;Emissao;Vencimento;Valor;Status;Data Pagamento;Data Credito;Valor Recebido';
+  const linhas=regs.map(r=>[r.id||'',(cli.nome||'').replace(/;/g,' '),String(r.data_emissao||'').slice(0,10),String(r.data_vencimento||'').slice(0,10),_numIXC(r.valor).toFixed(2).replace('.',','),_statusFaturaIXC(r).txt,String(r.pagamento_data||'').slice(0,10),String(r.credito_data||'').slice(0,10),_numIXC(r.valor_recebido).toFixed(2).replace('.',',')].join(';'));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...linhas].join('\n')],{type:'text/csv'}));
+  a.download='faturas_ixc_'+(cli.ixcId||'cliente')+'.csv';a.click();
+  showToast('CSV exportado!');
 }
 
 // ════════════════════════════════════════════════════════
