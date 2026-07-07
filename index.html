@@ -1558,6 +1558,21 @@ textarea.cp-form-input{resize:vertical}
 .if-chat-input{display:flex;gap:8px}
 .if-chat-input input{flex:1;padding:11px 16px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px}
 .if-chat-input input:focus{outline:none;border-color:#7C3AED;box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+.if-click{cursor:pointer}
+.if-click:active{transform:translateY(-1px) scale(.99)}
+.if-card-olho{opacity:.55;font-size:10px}
+.if-regua-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:14px}
+.if-regua-etapas{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1}
+.if-regua-etapa{font-size:10.5px;font-weight:700;border:1.5px solid;border-radius:10px;padding:4px 9px;white-space:nowrap}
+.if-regua-qtd{background:currentColor;border-radius:8px;padding:0 6px;margin-left:3px}
+.if-regua-qtd{color:#fff!important;font-size:9.5px}
+.if-regua-seta{color:var(--text3);font-size:11px}
+.if-cob-acoes{display:flex;gap:5px;flex-wrap:wrap}
+.if-btn-wpp{background:#25D366!important;color:#fff!important;border-color:transparent!important;font-size:10.5px;font-weight:700}
+.if-btn-wpp:disabled{opacity:.4}
+.if-regua-linha{border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px;background:var(--surface2)}
+.if-regua-linha-topo{display:flex;gap:8px;margin-bottom:6px}
+.if-regua-tpl{width:100%;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-size:11.5px;padding:8px 10px;font-family:inherit;resize:vertical}
 
 </style>
 </head>
@@ -13439,6 +13454,7 @@ function ifProcessar(regs){
     const evolucao=ifMesesRange(12).map(m=>ifScore(ifPerfilBase(fats,m)).score);
     perfis.push({
       ixcId:String(c.ixcId), nome:c.nome||('Cliente #'+c.ixcId),
+      fone:(c.whatsapp||c.tel1||c.tel2||''),
       cidade:c.cidade||'—', bairro:c.bairro||'—',
       plano:(ctr&&(ctr.plano||ctr.descricao))||'—',
       sca:c._sca, fats, p, sc, prob, seg, evolucao,
@@ -13520,6 +13536,7 @@ function ifRenderTudo(){
         <div class="if-aba ${t==='dash'?'ativa':''}" onclick="ifTab('dash')">📊 Dashboard</div>
         <div class="if-aba ${t==='clientes'?'ativa':''}" onclick="ifTab('clientes')">🎯 Clientes & Scores</div>
         <div class="if-aba ${t==='insights'?'ativa':''}" onclick="ifTab('insights')">💡 Insights</div>
+        <div class="if-aba ${t==='cobranca'?'ativa':''}" onclick="ifTab('cobranca')">📞 Cobrança</div>
         <div class="if-aba ${t==='chat'?'ativa':''}" onclick="ifTab('chat')">🤖 Perguntar à IA</div>
       </div>
       <div class="if-topo-dir">
@@ -13531,6 +13548,7 @@ function ifRenderTudo(){
   if(t==='dash') ifRenderDash();
   else if(t==='clientes') ifRenderClientes();
   else if(t==='insights') ifRenderInsights();
+  else if(t==='cobranca') ifRenderCobranca();
   else ifRenderChat();
 }
 function ifTab(t){ IF_state.tab=t; ifRenderTudo(); }
@@ -13549,17 +13567,17 @@ function ifRenderDash(){
   const tempoMedioPgto=tmp.length?Math.round(tmp.reduce((s,pf)=>s+pf.p.mediaDiasPgto,0)/tmp.length):0;
   const scoreMedio=P.length?Math.round(P.reduce((s,pf)=>s+pf.sc.score,0)/P.length):0;
   const taxaRec=(()=>{const r=P.reduce((s,pf)=>s+pf.p.nRecuperadas,0);const t=P.reduce((s,pf)=>s+pf.p.nRecuperadas+pf.p.nVencidas,0);return t?Math.round(r/t*100):0;})();
-  const card=(grad,lab,val,sub)=>`<div class="if-card" style="background:${grad}"><div class="if-card-lab">${lab}</div><div class="if-card-val">${val}</div><div class="if-card-sub">${sub||''}</div></div>`;
+  const card=(grad,lab,val,sub,click)=>`<div class="if-card ${click?'if-click':''}" style="background:${grad}" ${click?`onclick="${click}" title="Clique para ver os clientes"`:''}><div class="if-card-lab">${lab}</div><div class="if-card-val">${val}</div><div class="if-card-sub">${sub||''}${click?' <span class="if-card-olho">👁</span>':''}</div></div>`;
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   document.getElementById('if-corpo').innerHTML=`
     <div class="if-cards">
-      ${card('linear-gradient(135deg,#2563EB,#06B6D4)','Receita prevista (mês)',brlS(atu.prevista),atu.nFaturas+' faturas')}
-      ${card('linear-gradient(135deg,#10B981,#84CC16)','Receita recebida (mês)',brlS(atu.recebida),'')}
-      ${card('linear-gradient(135deg,#EF4444,#F97316)','Vencido em aberto',brlS(totVencido),inadCli+' clientes inadimplentes')}
-      ${card('linear-gradient(135deg,#06B6D4,#10B981)','Recuperado (12m)',brlS(totRecuperado12),'taxa de recuperação '+taxaRec+'%')}
-      ${card('linear-gradient(135deg,#7C3AED,#EC4899)','Score médio da base',scoreMedio,'de 0 a 100')}
-      ${card('linear-gradient(135deg,#F59E0B,#EF4444)','Risco 30 dias',brlS(prev.d30.risco),prev.d30.n+' faturas de alto risco')}
-      ${card('linear-gradient(135deg,#64748B,#94A3B8)','Bloqueados',bloq,'clientes com acesso bloqueado')}
+      ${card('linear-gradient(135deg,#2563EB,#06B6D4)','Receita prevista (mês)',brlS(atu.prevista),atu.nFaturas+' faturas',"ifDrill('previstoMes')")}
+      ${card('linear-gradient(135deg,#10B981,#84CC16)','Receita recebida (mês)',brlS(atu.recebida),'',"ifDrill('pagosMes')")}
+      ${card('linear-gradient(135deg,#EF4444,#F97316)','Vencido em aberto',brlS(totVencido),inadCli+' clientes inadimplentes',"ifDrill('inadimplentes')")}
+      ${card('linear-gradient(135deg,#06B6D4,#10B981)','Recuperado (12m)',brlS(totRecuperado12),'taxa de recuperação '+taxaRec+'%',"ifDrill('recuperados')")}
+      ${card('linear-gradient(135deg,#7C3AED,#EC4899)','Score médio da base',scoreMedio,'de 0 a 100',"ifDrill('scoreBaixo')")}
+      ${card('linear-gradient(135deg,#F59E0B,#EF4444)','Risco 30 dias',brlS(prev.d30.risco),prev.d30.n+' faturas de alto risco',"ifDrill('risco30')")}
+      ${card('linear-gradient(135deg,#64748B,#94A3B8)','Bloqueados',bloq,'clientes com acesso bloqueado',"ifDrill('bloqueados')")}
       ${card('linear-gradient(135deg,#0EA5E9,#6366F1)','Tempo médio de pgto',tempoMedioPgto+' d','vs vencimento (negativo = antecipa)')}
     </div>
     <div class="if-grid2">
@@ -13590,17 +13608,17 @@ function ifChartsDash(){
     {label:'Prevista',data:M.map(m=>m.prevista),backgroundColor:'rgba(37,99,235,0.35)',borderRadius:6},
     {label:'Recebida',data:M.map(m=>m.recebida),backgroundColor:'rgba(16,185,129,0.85)',borderRadius:6},
     {label:'Inadimplência %',data:M.map(m=>ifPct(m.inadimpl)),type:'line',yAxisID:'y2',borderColor:IF_CORES.vermelho,backgroundColor:IF_CORES.vermelho,tension:.35,pointRadius:3,borderWidth:2.5},
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:10}}}},scales:{y:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(0)+'k'}},y2:{position:'right',grid:{display:false},ticks:{font:{size:9},callback:v=>v+'%'},max:100,min:0},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  ]},options:{responsive:true,maintainAspectRatio:false,onClick:(ev,els,ch)=>{if(els.length){const i=els[0].index;ifDrill('mes',M[i].mes);}},plugins:{legend:{labels:{boxWidth:12,font:{size:10}}}},scales:{y:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(0)+'k'}},y2:{position:'right',grid:{display:false},ticks:{font:{size:9},callback:v=>v+'%'},max:100,min:0},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
   const segCont={};
   P.forEach(pf=>{segCont[pf.seg.principal]=(segCont[pf.seg.principal]||0)+1;});
   const segE=Object.entries(segCont).sort((a,b)=>b[1]-a[1]);
-  IF_charts.seg=new Chart(document.getElementById('if-ch-seg'),{type:'doughnut',data:{labels:segE.map(e=>e[0]),datasets:[{data:segE.map(e=>e[1]),backgroundColor:segE.map(e=>IF_SEG_CORES[e[0]]||IF_CORES.azul),borderWidth:2,borderColor:'rgba(255,255,255,0.7)'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:10}}}}}});
+  IF_charts.seg=new Chart(document.getElementById('if-ch-seg'),{type:'doughnut',data:{labels:segE.map(e=>e[0]),datasets:[{data:segE.map(e=>e[1]),backgroundColor:segE.map(e=>IF_SEG_CORES[e[0]]||IF_CORES.azul),borderWidth:2,borderColor:'rgba(255,255,255,0.7)'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',onClick:(ev,els)=>{if(els.length)ifDrill('seg',segE[els[0].index][0]);},plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:10}}}}}});
   const porB={};P.forEach(pf=>{if(pf.p.valorVencido>0){porB[pf.bairro]=(porB[pf.bairro]||0)+pf.p.valorVencido;}});
   const topB=Object.entries(porB).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  IF_charts.bairro=new Chart(document.getElementById('if-ch-bairro'),{type:'bar',data:{labels:topB.map(e=>e[0]),datasets:[{data:topB.map(e=>e[1]),backgroundColor:['#EF4444','#F97316','#F59E0B','#EC4899','#7C3AED','#6366F1','#0EA5E9','#06B6D4'],borderRadius:6}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(1)+'k'}},y:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  IF_charts.bairro=new Chart(document.getElementById('if-ch-bairro'),{type:'bar',data:{labels:topB.map(e=>e[0]),datasets:[{data:topB.map(e=>e[1]),backgroundColor:['#EF4444','#F97316','#F59E0B','#EC4899','#7C3AED','#6366F1','#0EA5E9','#06B6D4'],borderRadius:6}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,onClick:(ev,els)=>{if(els.length)ifDrill('bairro',topB[els[0].index][0]);},plugins:{legend:{display:false}},scales:{x:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(1)+'k'}},y:{grid:{display:false},ticks:{font:{size:9}}}}}});
   const porPl={};P.forEach(pf=>{if(pf.p.valorVencido>0){porPl[pf.plano]=(porPl[pf.plano]||0)+pf.p.valorVencido;}});
   const topPl=Object.entries(porPl).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  IF_charts.plano=new Chart(document.getElementById('if-ch-plano'),{type:'bar',data:{labels:topPl.map(e=>String(e[0]).slice(0,18)),datasets:[{data:topPl.map(e=>e[1]),backgroundColor:['#7C3AED','#6366F1','#2563EB','#0EA5E9','#06B6D4','#10B981','#84CC16','#F59E0B'],borderRadius:6}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(1)+'k'}},y:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  IF_charts.plano=new Chart(document.getElementById('if-ch-plano'),{type:'bar',data:{labels:topPl.map(e=>String(e[0]).slice(0,18)),datasets:[{data:topPl.map(e=>e[1]),backgroundColor:['#7C3AED','#6366F1','#2563EB','#0EA5E9','#06B6D4','#10B981','#84CC16','#F59E0B'],borderRadius:6}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,onClick:(ev,els)=>{if(els.length)ifDrill('plano',topPl[els[0].index][0]);},plugins:{legend:{display:false}},scales:{x:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(1)+'k'}},y:{grid:{display:false},ticks:{font:{size:9}}}}}});
   const meses12=ifMesesRange(12);
   const scoreMed=meses12.map((m,i)=>{const vs=P.map(pf=>pf.evolucao[i]).filter(v=>v!=null);return vs.length?Math.round(vs.reduce((a,b)=>a+b,0)/vs.length):null;});
   IF_charts.score=new Chart(document.getElementById('if-ch-score'),{type:'line',data:{labels:lbl,datasets:[{data:scoreMed,borderColor:IF_CORES.roxo,backgroundColor:'rgba(124,58,237,0.15)',fill:true,tension:.35,pointRadius:3,borderWidth:2.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:100,grid:{color:grid},ticks:{font:{size:9}}},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
@@ -13819,6 +13837,252 @@ function ifResponder(q){
     return `Clientes de maior valor (total pago no período):${lista(top,pf=>`<b>${pf.nome}</b> — ${brlS(pf.p.totalPago)} pagos, score ${pf.sc.score}.`)}`;
   }
   return `Não encontrei uma análise pronta para essa pergunta. Tente algo como:<br>${IF_PERGUNTAS_PRONTAS.slice(0,4).map(x=>'• '+x).join('<br>')}`;
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  IF — DRILL-DOWN DO DASHBOARD (tudo clicável) + RÉGUA E PAINEL DE COBRANÇA
+// ════════════════════════════════════════════════════════════════
+
+// ── DRILL-DOWN: abre a lista de clientes por trás de qualquer número do dashboard ──
+function ifDrill(tipo, chave){
+  const P=IF_state.perfis; const mesAtu=hoje().slice(0,7);
+  let titulo='', lista=[], colExtra=null;
+  if(tipo==='bairro'){ titulo='📍 Clientes do bairro '+chave; lista=P.filter(pf=>pf.bairro===chave); }
+  else if(tipo==='plano'){ titulo='📦 Clientes do plano '+chave; lista=P.filter(pf=>String(pf.plano).slice(0,18)===chave||pf.plano===chave); }
+  else if(tipo==='seg'){ titulo='🏷️ Segmento: '+chave; lista=P.filter(pf=>pf.seg.tags.includes(chave)||pf.seg.principal===chave); }
+  else if(tipo==='inadimplentes'){ titulo='💸 Clientes com faturas vencidas'; lista=P.filter(pf=>pf.p.nVencidas>0); }
+  else if(tipo==='bloqueados'){ titulo='🔒 Clientes com acesso bloqueado'; lista=P.filter(pf=>/Bloqueio/.test(pf.sca.acesso)); colExtra=pf=>pf.sca.acesso; }
+  else if(tipo==='pagosMes'){ titulo='✅ Clientes que pagaram este mês'; lista=P.filter(pf=>pf.fats.some(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===mesAtu)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===mesAtu);return 'R$ '+fs.reduce((s,f)=>s+(f.recebido||f.valor),0).toLocaleString('pt-BR',{minimumFractionDigits:2});}; }
+  else if(tipo==='previstoMes'){ titulo='📅 Faturas com vencimento este mês'; lista=P.filter(pf=>pf.fats.some(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===mesAtu)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===mesAtu);return 'R$ '+fs.reduce((s,f)=>s+f.valor,0).toLocaleString('pt-BR',{minimumFractionDigits:2});}; }
+  else if(tipo==='recuperados'){ titulo='💰 Clientes com valores recuperados'; lista=P.filter(pf=>pf.p.valorRecuperado>0); colExtra=pf=>'R$ '+pf.p.valorRecuperado.toLocaleString('pt-BR',{minimumFractionDigits:2}); }
+  else if(tipo==='risco30'){ titulo='⚠️ Alto risco nos próximos 30 dias'; lista=P.filter(pf=>pf.prob.probAtraso>=60&&(pf.p.nAbertas>0||pf.p.nVencidas>0)); colExtra=pf=>pf.prob.probAtraso+'% atraso'; }
+  else if(tipo==='scoreBaixo'){ titulo='🧠 Distribuição de score — os 30 mais críticos'; lista=[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,30); }
+  else if(tipo==='mes'){ titulo='📆 Situação das faturas de '+chave; lista=P.filter(pf=>pf.fats.some(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===chave)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===chave);const v=fs.filter(f=>f.tipo==='vencida').length;const a=fs.filter(f=>f.tipo==='paga'&&f.atrasoDias>=1).length;return v?`${v} vencida(s)`:(a?`paga c/ atraso`:'em dia');}; }
+  lista=[...lista].sort((a,b)=>a.sc.score-b.sc.score);
+  ifAbrirDrillModal(titulo, lista, colExtra);
+}
+
+function ifAbrirDrillModal(titulo, lista, colExtra){
+  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const html=`
+  <div class="modal-overlay" id="if-modal-drill" onclick="if(event.target===this)this.remove()" style="display:flex;z-index:2900">
+    <div class="modal" style="max-width:900px">
+      <div class="modal-header" style="background:linear-gradient(135deg,#0e7490,#2563EB);color:#fff;border-radius:12px 12px 0 0">
+        <div style="font-size:14.5px;font-weight:700">${titulo} <span style="font-weight:400;opacity:.8;font-size:12px">· ${lista.length} cliente(s)</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" style="background:rgba(255,255,255,.15);color:#fff;border-color:transparent;font-size:11px" onclick="ifDrillCSV()">↓ CSV</button>
+          <button class="modal-close" style="color:#fff" onclick="document.getElementById('if-modal-drill').remove()">✕</button>
+        </div>
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow:auto">
+        ${lista.length?`<table class="if-t">
+          <thead><tr><th>Cliente</th><th>Score</th><th>P. atraso</th><th>Vencidas</th><th>Valor vencido</th>${colExtra?'<th>Detalhe</th>':''}<th>Segmento</th><th></th></tr></thead>
+          <tbody>${lista.map(pf=>`<tr>
+            <td><div class="if-cli-nome">${pf.nome}</div><div class="if-cli-sub">${pf.bairro} · ${pf.plano}</div></td>
+            <td style="color:${pf.risco.cor};font-weight:700;font-family:'DM Mono',monospace">${pf.sc.score}</td>
+            <td class="td-mono">${pf.prob.probAtraso}%</td>
+            <td class="td-mono">${pf.p.nVencidas||'—'}</td>
+            <td class="td-mono" style="color:${pf.p.valorVencido>0?IF_CORES.vermelho:'inherit'}">${pf.p.valorVencido?brlS(pf.p.valorVencido):'—'}</td>
+            ${colExtra?`<td style="font-size:11px">${colExtra(pf)}</td>`:''}
+            <td><span class="if-pill" style="background:${(IF_SEG_CORES[pf.seg.principal]||'#888')}22;color:${IF_SEG_CORES[pf.seg.principal]||'#888'}">${pf.seg.principal}</span></td>
+            <td><button class="btn" style="font-size:10px;padding:3px 9px" onclick="document.getElementById('if-modal-drill').remove();ifAbrirPerfil('${pf.ixcId}')">👤 Perfil</button></td>
+          </tr>`).join('')}</tbody>
+        </table>`:'<div class="cli-empty-pane">Nenhum cliente neste recorte.</div>'}
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('if-modal-drill')?.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+  window._ifDrillLista=lista;
+}
+function ifDrillCSV(){
+  const lista=window._ifDrillLista||[];
+  const h='Cliente;ID IXC;Bairro;Plano;Score;Risco;Prob Atraso %;Vencidas;Valor Vencido;Segmento;Telefone';
+  const r=lista.map(pf=>[pf.nome.replace(/;/g,' '),pf.ixcId,pf.bairro,String(pf.plano).replace(/;/g,' '),pf.sc.score,pf.risco.txt,pf.prob.probAtraso,pf.p.nVencidas,pf.p.valorVencido.toFixed(2).replace('.',','),pf.seg.principal,pf.fone||''].join(';'));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));
+  a.download='drill_inteligencia.csv';a.click();showToast('CSV exportado!');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RÉGUA DE COBRANÇA — etapas configuráveis + painel de ações
+//  Envio usa a ponte Evotrix JÁ EXISTENTE do proxy (x-target: evotrix).
+//  Config e histórico ficam no navegador (localStorage) — nada muda no banco.
+// ════════════════════════════════════════════════════════════════
+const IF_REGUA_PADRAO=[
+  {id:'lembrete', dias:-3, nome:'Lembrete amigável', cor:'#2563EB', tpl:'Olá {primeiro_nome}! 👋 Passando para lembrar que sua fatura de {valor} vence em {vencimento}. Se já agendou o pagamento, desconsidere. Qualquer dúvida estamos à disposição! — MoviOn Internet'},
+  {id:'vencimento', dias:0, nome:'Dia do vencimento', cor:'#06B6D4', tpl:'Olá {primeiro_nome}! Sua fatura de {valor} vence HOJE ({vencimento}). Pague pelo MoviApp com PIX em segundos e evite bloqueios. 😉 — MoviOn Internet'},
+  {id:'cobranca', dias:3, nome:'Cobrança', cor:'#F59E0B', tpl:'Olá {primeiro_nome}, identificamos que a fatura de {valor} vencida em {vencimento} ({dias} dias) ainda está em aberto. Regularize pelo MoviApp para manter sua conexão ativa. Precisa de ajuda? Responda esta mensagem. — MoviOn Internet'},
+  {id:'aviso_bloqueio', dias:7, nome:'Aviso de bloqueio', cor:'#F97316', tpl:'⚠️ {primeiro_nome}, sua fatura de {valor} está vencida há {dias} dias. Para evitar o BLOQUEIO AUTOMÁTICO da sua internet, regularize hoje pelo MoviApp ou fale conosco para negociar. — MoviOn Internet'},
+  {id:'negociacao', dias:15, nome:'Proposta de negociação', cor:'#EC4899', tpl:'Olá {primeiro_nome}. Sabemos que imprevistos acontecem. Sua fatura de {valor} está aberta há {dias} dias — que tal conversarmos sobre uma condição especial para regularizar? Responda esta mensagem ou ligue para nós. — MoviOn Internet'},
+  {id:'final', dias:30, nome:'Última notificação', cor:'#EF4444', tpl:'{primeiro_nome}, esta é nossa última notificação sobre a fatura de {valor} vencida há {dias} dias. Evite a negativação e o cancelamento do contrato: entre em contato HOJE para regularizar. — MoviOn Internet'},
+];
+function ifRegua(){ try{const r=JSON.parse(localStorage.getItem('if_regua')||'null'); return Array.isArray(r)&&r.length?r:IF_REGUA_PADRAO;}catch(e){return IF_REGUA_PADRAO;} }
+function ifSalvarRegua(r){ localStorage.setItem('if_regua',JSON.stringify(r)); }
+function ifCobLog(){ try{return JSON.parse(localStorage.getItem('if_cob_log')||'[]');}catch(e){return[];} }
+function ifCobLogAdd(item){ const l=ifCobLog(); l.unshift(item); localStorage.setItem('if_cob_log',JSON.stringify(l.slice(0,2000))); }
+function ifFoneNorm(v){ let d=String(v||'').replace(/\D/g,''); if(!d)return''; if(d.length===10||d.length===11)d='55'+d; return d; }
+function ifTpl(tpl, pf, fat, dias){
+  const venc=fat.venc?fat.venc.split('-').reverse().join('/'):'—';
+  return tpl.replace(/{nome}/g,pf.nome).replace(/{primeiro_nome}/g,pf.nome.split(' ')[0])
+    .replace(/{valor}/g,'R$ '+fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2}))
+    .replace(/{vencimento}/g,venc).replace(/{dias}/g,String(Math.max(0,dias)));
+}
+
+// Monta a fila de ações: para cada fatura aberta/vencida, a etapa mais avançada
+// já atingida que ainda não foi registrada no histórico.
+function ifFilaCobranca(){
+  const regua=[...ifRegua()].sort((a,b)=>a.dias-b.dias);
+  const log=ifCobLog(); const hj=hoje();
+  const feitas=new Set(log.map(x=>x.fatId+'|'+x.etapaId));
+  const fila=[];
+  IF_state.perfis.forEach(pf=>{
+    pf.fats.filter(f=>f.tipo==='vencida'||f.tipo==='aberta').forEach(f=>{
+      const dias=ifDiasEntre(f.venc,hj); // >0 = vencida há N dias, <0 = faltam N dias
+      const atingidas=regua.filter(e=>dias>=e.dias);
+      if(!atingidas.length) return;
+      const etapa=atingidas[atingidas.length-1];
+      if(feitas.has(f.id+'|'+etapa.id)) return;
+      fila.push({pf, fat:f, dias, etapa, msg:ifTpl(etapa.tpl,pf,f,dias)});
+    });
+  });
+  // prioriza: etapas mais avançadas primeiro, depois maior valor
+  fila.sort((a,b)=>b.etapa.dias-a.etapa.dias||b.fat.valor-a.fat.valor);
+  return fila;
+}
+
+// ── ABA 5: PAINEL DE COBRANÇA ──
+function ifRenderCobranca(){
+  ifDestruirCharts();
+  const fila=ifFilaCobranca();
+  const regua=[...ifRegua()].sort((a,b)=>a.dias-b.dias);
+  const log=ifCobLog(); const hj=hoje();
+  const hoje0=log.filter(x=>String(x.quando).slice(0,10)===hj);
+  const valorFila=fila.reduce((s,i)=>s+i.fat.valor,0);
+  const recup30=IF_state.mensal[IF_state.mensal.length-1]?.recuperada||0;
+  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const porEtapa={}; fila.forEach(i=>{(porEtapa[i.etapa.id]=porEtapa[i.etapa.id]||[]).push(i);});
+  document.getElementById('if-corpo').innerHTML=`
+    <div class="if-cards" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+      <div class="if-card" style="background:linear-gradient(135deg,#F59E0B,#EF4444)"><div class="if-card-lab">Ações pendentes</div><div class="if-card-val">${fila.length}</div><div class="if-card-sub">na régua hoje</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#EF4444,#EC4899)"><div class="if-card-lab">Valor em cobrança</div><div class="if-card-val">${brlS(valorFila)}</div><div class="if-card-sub">faturas na fila</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#10B981,#06B6D4)"><div class="if-card-lab">Cobranças hoje</div><div class="if-card-val">${hoje0.length}</div><div class="if-card-sub">mensagens registradas</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#7C3AED,#2563EB)"><div class="if-card-lab">Recuperado no mês</div><div class="if-card-val">${brlS(recup30)}</div><div class="if-card-sub">pagos com 15+ dias</div></div>
+    </div>
+    <div class="if-regua-bar">
+      <div class="if-painel-tit" style="margin:0">📏 Régua de cobrança</div>
+      <div class="if-regua-etapas">${regua.map(e=>`<span class="if-regua-etapa" style="border-color:${e.cor};color:${e.cor}"><b>${e.dias>0?'D+'+e.dias:e.dias===0?'D0':'D'+e.dias}</b> ${e.nome} <span class="if-regua-qtd">${(porEtapa[e.id]||[]).length}</span></span>`).join('<span class="if-regua-seta">→</span>')}</div>
+      <button class="btn" onclick="ifAbrirEditorRegua()">⚙ Configurar régua</button>
+    </div>
+    ${fila.length?regua.slice().reverse().filter(e=>porEtapa[e.id]?.length).map(e=>`
+      <div class="if-painel" style="margin-bottom:12px;border-left:4px solid ${e.cor}">
+        <div class="if-painel-tit" style="color:${e.cor}">${e.nome} · ${porEtapa[e.id].length} ação(ões) ${e.dias>0?'· vencidas há '+e.dias+'+ dias':e.dias===0?'· vencem hoje':'· vencem em breve'}</div>
+        <div class="if-tscroll" style="max-height:320px"><table class="if-t">
+          <thead><tr><th>Cliente</th><th>Fatura</th><th>Venc.</th><th>Dias</th><th>Score</th><th>P. recup.</th><th style="min-width:280px">Ações</th></tr></thead>
+          <tbody>${porEtapa[e.id].map((it,i)=>{
+            const key=it.fat.id+'|'+it.etapa.id;
+            const fone=ifFoneNorm(it.pf.fone);
+            return`<tr id="if-cob-${e.id}-${i}">
+              <td><div class="if-cli-nome">${it.pf.nome}</div><div class="if-cli-sub">${it.pf.bairro}${fone?' · 📱 '+fone:' · <span style=\'color:'+IF_CORES.vermelho+'\'>sem telefone</span>'}</div></td>
+              <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${it.fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+              <td class="td-mono">${it.fat.venc.split('-').reverse().join('/').slice(0,5)}</td>
+              <td class="td-mono">${it.dias>0?it.dias+'d':it.dias===0?'hoje':(-it.dias)+'d p/ vencer'}</td>
+              <td style="color:${it.pf.risco.cor};font-weight:700">${it.pf.sc.score}</td>
+              <td class="td-mono">${it.pf.prob.probRecup}%</td>
+              <td class="if-cob-acoes">
+                <button class="btn if-btn-wpp" ${fone?'':'disabled'} onclick="ifCobEnviar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}',this)">💬 Enviar</button>
+                ${fone?`<a class="btn" style="font-size:10.5px;text-decoration:none" target="_blank" href="https://wa.me/${fone}?text=${encodeURIComponent(it.msg)}" onclick="ifCobRegistrar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}','wa.me')">↗ wa.me</a>`:''}
+                <button class="btn" style="font-size:10.5px" onclick="navigator.clipboard.writeText(window._ifFilaMsgs['${key}']||'');showToast('Mensagem copiada!')">📋</button>
+                <button class="btn" style="font-size:10.5px" onclick="ifCobRegistrar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}','manual');this.closest('tr').style.opacity='.35';this.disabled=true">✓</button>
+              </td>
+            </tr>`;}).join('')}</tbody>
+        </table></div>
+      </div>`).join(''):'<div class="if-painel" style="text-align:center;padding:36px"><div style="font-size:34px">🎉</div><b>Nenhuma ação pendente na régua!</b><div class="if-cli-sub" style="margin-top:6px">Todas as faturas em aberto já foram cobradas na etapa atual, ou não há vencidas.</div></div>'}
+    <div class="if-painel" style="margin-top:4px"><div class="if-painel-tit">🗂️ Histórico de cobranças (${log.length})</div>
+      ${log.length?`<div class="if-tscroll" style="max-height:220px"><table class="if-t"><thead><tr><th>Quando</th><th>Cliente</th><th>Etapa</th><th>Canal</th></tr></thead>
+      <tbody>${log.slice(0,60).map(x=>`<tr><td class="td-mono">${new Date(x.quando).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${x.cliente}</td><td>${x.etapaNome||x.etapaId}</td><td>${x.canal}</td></tr>`).join('')}</tbody></table></div>
+      <button class="btn" style="margin-top:8px;font-size:10.5px" onclick="if(confirm('Limpar todo o histórico de cobranças deste navegador?')){localStorage.removeItem('if_cob_log');ifRenderCobranca()}">🗑 Limpar histórico</button>`:'<div class="if-cli-sub">Nenhuma cobrança registrada ainda.</div>'}
+    </div>`;
+  // guarda as mensagens da fila para copiar/enviar
+  window._ifFilaMsgs={}; fila.forEach(it=>{window._ifFilaMsgs[it.fat.id+'|'+it.etapa.id]=it.msg;});
+}
+
+function ifCobRegistrar(key, ixcId, fatId, etapaId, canal){
+  const pf=IF_state.porId[ixcId]; const etapa=ifRegua().find(e=>e.id===etapaId);
+  ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf?.nome||ixcId, canal, quando:new Date().toISOString()});
+}
+async function ifCobEnviar(key, ixcId, fatId, etapaId, btn){
+  const pf=IF_state.porId[ixcId]; if(!pf)return;
+  const msg=window._ifFilaMsgs[key]; const fone=ifFoneNorm(pf.fone);
+  if(!fone||!msg){showToast('Cliente sem telefone cadastrado.',true);return;}
+  if(!confirm(`Enviar WhatsApp para ${pf.nome} (${fone})?\n\n"${msg.slice(0,140)}${msg.length>140?'…':''}"`))return;
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    const cfg=await getIXCConfig();
+    const r=await fetch(cfg.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json','x-target':'evotrix'},body:JSON.stringify({numero:fone,mensagem:msg})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    ifCobRegistrar(key,ixcId,fatId,etapaId,'whatsapp');
+    btn.textContent='✓ Enviado'; btn.closest('tr').style.opacity='.35';
+    showToast('📲 Mensagem enviada para '+pf.nome.split(' ')[0]+'!');
+  }catch(e){
+    console.error('[cobrança]',e);
+    btn.disabled=false; btn.textContent='💬 Enviar';
+    showToast('Falha no envio: '+(e.message||e)+'. Use o botão wa.me como alternativa.',true);
+  }
+}
+
+// ── Editor da régua ──
+function ifAbrirEditorRegua(){
+  const regua=[...ifRegua()].sort((a,b)=>a.dias-b.dias);
+  const html=`
+  <div class="modal-overlay" id="if-modal-regua" onclick="if(event.target===this)this.remove()" style="display:flex;z-index:2950">
+    <div class="modal" style="max-width:760px">
+      <div class="modal-header" style="background:linear-gradient(135deg,#F59E0B,#EF4444);color:#fff;border-radius:12px 12px 0 0">
+        <div style="font-weight:700">⚙ Configurar régua de cobrança</div>
+        <button class="modal-close" style="color:#fff" onclick="document.getElementById('if-modal-regua').remove()">✕</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow:auto">
+        <div class="if-cli-sub" style="margin-bottom:10px">Dias negativos = antes do vencimento · D0 = no dia · positivos = após. Variáveis: <code>{nome}</code> <code>{primeiro_nome}</code> <code>{valor}</code> <code>{vencimento}</code> <code>{dias}</code></div>
+        <div id="if-regua-lista">${regua.map((e,i)=>ifReguaLinha(e,i)).join('')}</div>
+        <button class="btn" style="margin-top:8px" onclick="ifReguaAddLinha()">+ Adicionar etapa</button>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button class="btn" onclick="if(confirm('Restaurar a régua padrão?')){localStorage.removeItem('if_regua');document.getElementById('if-modal-regua').remove();ifRenderCobranca();}">↺ Restaurar padrão</button>
+          <button class="btn if-btn-primario" onclick="ifSalvarReguaModal()">💾 Salvar régua</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function ifReguaLinha(e,i){
+  return`<div class="if-regua-linha" data-idx="${i}">
+    <div class="if-regua-linha-topo">
+      <input class="if-sel" style="width:70px" type="number" value="${e.dias}" data-f="dias" title="Dias (neg=antes)">
+      <input class="if-sel" style="flex:1" type="text" value="${e.nome.replace(/"/g,'&quot;')}" data-f="nome" placeholder="Nome da etapa">
+      <input class="if-sel" style="width:60px;padding:6px" type="color" value="${e.cor||'#F59E0B'}" data-f="cor">
+      <button class="btn" style="color:${IF_CORES.vermelho}" onclick="this.closest('.if-regua-linha').remove()">🗑</button>
+    </div>
+    <textarea class="if-regua-tpl" data-f="tpl" rows="2" placeholder="Mensagem…">${e.tpl}</textarea>
+  </div>`;
+}
+function ifReguaAddLinha(){
+  document.getElementById('if-regua-lista').insertAdjacentHTML('beforeend',
+    ifReguaLinha({dias:5,nome:'Nova etapa',cor:'#6366F1',tpl:'Olá {primeiro_nome}, sua fatura de {valor} vencida em {vencimento} está em aberto há {dias} dias.'},Date.now()));
+}
+function ifSalvarReguaModal(){
+  const linhas=[...document.querySelectorAll('#if-regua-lista .if-regua-linha')];
+  const regua=linhas.map((l,i)=>({
+    id:'et_'+i+'_'+Math.abs(parseInt(l.querySelector('[data-f=dias]').value)||0),
+    dias:parseInt(l.querySelector('[data-f=dias]').value)||0,
+    nome:l.querySelector('[data-f=nome]').value.trim()||'Etapa',
+    cor:l.querySelector('[data-f=cor]').value,
+    tpl:l.querySelector('[data-f=tpl]').value.trim(),
+  })).filter(e=>e.tpl);
+  if(!regua.length){showToast('A régua precisa de pelo menos 1 etapa.',true);return;}
+  ifSalvarRegua(regua);
+  document.getElementById('if-modal-regua').remove();
+  showToast('Régua salva!'); ifRenderCobranca();
 }
 
 </script>
