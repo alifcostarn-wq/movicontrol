@@ -91,6 +91,47 @@ export default async function handler(req, res) {
 
   // ============================================================
   // EVOTRIX - envio de WhatsApp via template (CLOUD API)
+  // ============================================================
+  // GROQ - analises de IA (Llama 3.3 70B)
+  // Acionado pelo header x-target: groq
+  // A chave fica SOMENTE no servidor (variavel de ambiente GROQ_API_KEY)
+  // Body: { messages:[{role,content},...], model?, temperature?, max_tokens? }
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'groq') {
+    const groqKey = process.env.GROQ_API_KEY || '';
+    if (!groqKey) {
+      return res.status(500).json({ error: 'GROQ_API_KEY nao configurada no servidor (Vercel > Settings > Environment Variables).' });
+    }
+    const b = req.body || {};
+    if (!Array.isArray(b.messages) || !b.messages.length) {
+      return res.status(400).json({ error: 'Campo obrigatorio: messages (array).' });
+    }
+    try {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: b.model || 'llama-3.3-70b-versatile',
+          messages: b.messages.slice(0, 20),
+          temperature: typeof b.temperature === 'number' ? b.temperature : 0.4,
+          max_tokens: Math.min(parseInt(b.max_tokens) || 900, 2000),
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      console.log(`[groq] ${r.status}`);
+      if (r.status >= 200 && r.status < 300) {
+        return res.status(200).json({ ok: true, texto: data?.choices?.[0]?.message?.content || '', usage: data?.usage || null });
+      }
+      return res.status(r.status).json({ ok: false, groq: data });
+    } catch (e) {
+      console.log(`[groq] ERRO ${e.message}`);
+      return res.status(502).json({ error: 'Falha ao consultar a IA (Groq).', detail: e.message });
+    }
+  }
+
   // Acionado pelo header x-target: evotrix
   // A chave fica SOMENTE no servidor (variavel de ambiente EVOTRIX_API_KEY)
   // ============================================================
@@ -100,14 +141,17 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'EVOTRIX_API_KEY nao configurada no servidor (Vercel > Settings > Environment Variables).' });
     }
     const b = req.body || {};
+    // Retrocompatibilidade: aceita tanto {channel,recipient,body} quanto o formato
+    // legado {numero,mensagem} usado pelo MoviControl (credenciais + regua de cobranca).
+    // O canal padrao vem da env EVOTRIX_CHANNEL (fallback: canal principal MoviOn).
     const payload = {
-      channel:   b.channel   || '',
-      recipient: b.recipient || '',
-      body:      typeof b.body === 'string' ? b.body : '',
+      channel:   b.channel   || process.env.EVOTRIX_CHANNEL || '67127520ecb37a364cc5e36d',
+      recipient: b.recipient || String(b.numero || '').replace(/\D/g, ''),
+      body:      typeof b.body === 'string' && b.body ? b.body : (typeof b.mensagem === 'string' ? b.mensagem : ''),
       campaign:  b.campaign  || 'os_notificacao',
     };
     if (!payload.channel || !payload.recipient || !payload.body) {
-      return res.status(400).json({ error: 'Faltam campos: channel, recipient ou body.' });
+      return res.status(400).json({ error: 'Faltam campos: channel, recipient ou body (ou numero/mensagem).' });
     }
     // Endpoint e autenticacao confirmados em producao (Bearer)
     const evoUrl = 'https://api.evotrix.com.br/v1/services/whatsapp/notifications/text';
