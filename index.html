@@ -1493,6 +1493,37 @@ textarea.cp-form-input{resize:vertical}
 .if-fstatus-pill:hover{transform:translateY(-1px)}
 .if-fstatus-pill.ativa{background:var(--fc);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--fc) 45%,transparent)}
 .if-fstatus-aviso{font-size:10.5px;color:#F59E0B;font-weight:600}
+.if-ger-topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.if-ger-modos,.if-ger-dimbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.if-ger-modo{font-size:11.5px;font-weight:700;padding:6px 14px;border-radius:11px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--text2);transition:all .12s ease}
+.if-ger-modo:hover{transform:translateY(-1px)}
+.if-ger-modo.ativa{background:linear-gradient(135deg,#EF4444,#EC4899);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(239,68,68,.35)}
+.if-var{display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px;white-space:nowrap}
+.if-var.ruim{background:rgba(239,68,68,.14);color:#EF4444}
+.if-var.bom{background:rgba(16,185,129,.14);color:#10B981}
+.if-var.neutro{background:rgba(128,128,128,.12);color:var(--text3)}
+.if-tr-sel{background:rgba(124,58,237,.1)!important;box-shadow:inset 3px 0 0 #7C3AED}
+.if-ia-chamada{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap}
+.if-ia-box{background:linear-gradient(135deg,rgba(124,58,237,.09),rgba(6,182,212,.09));border:1px solid rgba(124,58,237,.3);border-radius:14px;padding:14px 16px;font-size:12.5px;line-height:1.7;animation:ifFade .3s ease}
+.if-ia-box.erro{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.06)}
+.if-ia-tit{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7C3AED;margin-bottom:8px}
+.if-ia-txt{white-space:normal}
+.if-ia-selo{display:inline-block;background:linear-gradient(135deg,#7C3AED,#EC4899);color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px;vertical-align:middle;margin-right:4px}
+@keyframes ifFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.if-efet{display:grid;gap:8px}
+.if-efet-item{display:grid;grid-template-columns:180px 1fr 200px;gap:10px;align-items:center}
+@media(max-width:760px){.if-efet-item{grid-template-columns:1fr}}
+.if-efet-nome{font-size:11.5px;font-weight:700}
+.if-efet-bar{height:9px;border-radius:5px;background:rgba(128,128,128,.14);overflow:hidden}
+.if-efet-bar>div{height:100%;border-radius:5px;transition:width .4s ease}
+.if-efet-num{font-family:'DM Mono',monospace;font-size:12px;font-weight:700}
+.if-cohorts{display:flex;gap:10px;align-items:flex-end;justify-content:space-around;height:170px;padding-top:8px}
+.if-cohort{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;max-width:70px}
+.if-cohort-bar{width:100%;height:100px;background:rgba(128,128,128,.12);border-radius:7px;display:flex;align-items:flex-end;overflow:hidden}
+.if-cohort-bar>div{width:100%;border-radius:7px 7px 0 0;transition:height .4s ease}
+.if-cohort-tri{font-size:9px;font-weight:700;color:var(--text3)}
+.if-cohort-pct{font-family:'DM Mono',monospace;font-size:11.5px;font-weight:800}
+.if-cohort-n{font-size:8.5px;color:var(--text3)}
 .if-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
 .if-card{border-radius:var(--if-r);padding:16px 18px;color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.12);transition:transform .15s ease}
 .if-card:hover{transform:translateY(-3px)}
@@ -13299,6 +13330,7 @@ function ifScore(p){
   if(p.tendencia==='piora') pen(-8,'Tendência de piora nos últimos 6 meses');
   if(p.tendencia==='melhora') pen(+6,'Tendência de melhora nos últimos 6 meses');
   if(p.seqEmDia>=12) pen(+5,`${p.seqEmDia} pagamentos seguidos em dia`);
+  if(p.mesesHistorico>=18 && p.freqAtraso<0.1) pen(+3,`Cliente de longa data (${p.mesesHistorico} meses) com bom histórico`);
   if(p.nPagas===0 && p.nVencidas===0) { s=70; fat.push({label:'Cliente novo, sem histórico de pagamentos', delta:-30}); }
   const score=Math.max(0,Math.min(100,Math.round(s)));
   return {score, fatores:fat.filter(f=>f.label)};
@@ -13369,7 +13401,7 @@ const IF_SEG_CORES = {
   'Excelente pagador':IF_CORES.verde,'Bom pagador':IF_CORES.lima,'Ocasionalmente atrasado':IF_CORES.amarelo,
   'Alto risco':IF_CORES.laranja,'Muito alto risco':IF_CORES.vermelho,'Crítico':IF_CORES.vermelho,
   'Cliente VIP':IF_CORES.roxo,'Em recuperação':IF_CORES.ciano,'Reincidente':IF_CORES.pink,
-  'Tendência de cancelamento':IF_CORES.laranja,'Cancelado':'#64748B','Regular':IF_CORES.azul,'Atenção':IF_CORES.amarelo,
+  'Tendência de cancelamento':IF_CORES.laranja,'Cancelado':'#64748B','Regular':IF_CORES.azul,'Atenção':IF_CORES.amarelo,'Responde à cobrança':IF_CORES.ciano,
 };
 
 // ── resumo textual do cliente (linguagem natural, gerado dos dados) ──
@@ -13467,6 +13499,8 @@ function ifProcessar(regs){
   // corte VIP = percentil 90 do valor médio
   const medios=Object.values(porCliente).map(fs=>{const pg=fs.filter(f=>f.tipo==='paga');return pg.length?pg.reduce((s,f)=>s+f.valor,0)/pg.length:0;}).filter(v=>v>0).sort((a,b)=>a-b);
   const vipCorte=medios.length?medios[Math.floor(medios.length*0.9)]:null;
+  IF_state.faturas=faturas; // disponível para análises que rodam dentro do loop
+  const _respMap=ifRespondeCobranca();
   const perfis=[];
   clientes.forEach(c=>{
     const fats=porCliente[String(c.ixcId)]||[];
@@ -13479,19 +13513,23 @@ function ifProcessar(regs){
     const p=ifPerfilBase(fats);
     const sc=ifScore(p);
     const prob=ifProbabilidades(p,c);
+    // ANÁLISE: chamados técnicos recentes elevam o risco de cancelamento
+    const nCham=ifChamados90d({ixcId:c.ixcId, cliId:c.id});
+    if(nCham>=3){ prob.probCancel=Math.min(95,prob.probCancel+10); prob.motivos.cancel.push(nCham+' chamados técnicos em 90 dias'); }
     const seg=ifSegmentos(p,sc,prob,c,vipCorte);
+    // SEGMENTO: comprovadamente paga após ser cobrado (histórico da régua)
+    if(_respMap[String(c.ixcId)]) seg.tags.push('Responde à cobrança');
     // evolução do score: 12 pontos mensais (estado do mundo em cada mês)
     const evolucao=ifMesesRange(12).map(m=>ifScore(ifPerfilBase(fats,m)).score);
     perfis.push({
       ixcId:String(c.ixcId), nome:c.nome||('Cliente #'+c.ixcId),
-      fone:(c.whatsapp||c.tel1||c.tel2||''),
+      fone:(c.whatsapp||c.tel1||c.tel2||''), cliId:c.id, nChamados90:nCham,
       cidade:c.cidade||'—', bairro:c.bairro||'—',
       plano:(ctr&&(ctr.plano||ctr.descricao))||'—',
       sca:c._sca, grupo:_grupo, fats, p, sc, prob, seg, evolucao,
       risco:ifNivelRisco(sc.score),
     });
   });
-  IF_state.faturas=faturas;
   IF_state.perfis=perfis;
   IF_state.porId={}; perfis.forEach(pf=>IF_state.porId[pf.ixcId]=pf);
   IF_state.mensal=ifAgregadosMensais(faturas);
@@ -13564,6 +13602,8 @@ function ifRenderTudo(){
     <div class="if-topo">
       <div class="if-abas">
         <div class="if-aba ${t==='dash'?'ativa':''}" onclick="ifTab('dash')">📊 Dashboard</div>
+        <div class="if-aba ${t==='gerencial'?'ativa':''}" onclick="ifTab('gerencial')">📈 Gerencial</div>
+        <div class="if-aba ${t==='growth'?'ativa':''}" onclick="ifTab('growth')">🚀 Crescimento</div>
         <div class="if-aba ${t==='clientes'?'ativa':''}" onclick="ifTab('clientes')">🎯 Clientes & Scores</div>
         <div class="if-aba ${t==='insights'?'ativa':''}" onclick="ifTab('insights')">💡 Insights</div>
         <div class="if-aba ${t==='cobranca'?'ativa':''}" onclick="ifTab('cobranca')">📞 Cobrança</div>
@@ -13571,7 +13611,7 @@ function ifRenderTudo(){
       </div>
       <div class="if-topo-dir">
         <span class="if-carimbo">Análise: ${new Date(IF_state.geradoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${ifPerfisFiltrados().length} de ${IF_state.perfis.length} clientes no recorte</span>
-        <button class="btn" onclick="IF_state.geradoEm=null;_ifMensalCache={};ifAnalisar()">↻ Reanalisar</button>
+        <button class="btn" onclick="IF_state.geradoEm=null;_ifMensalCache={};_ifGrowthCache=null;ifAnalisar()">↻ Reanalisar</button>
       </div>
     </div>
     <div class="if-fstatus">
@@ -13585,6 +13625,8 @@ function ifRenderTudo(){
     </div>
     <div id="if-corpo"></div>`;
   if(t==='dash') ifRenderDash();
+  else if(t==='gerencial') ifRenderGerencial();
+  else if(t==='growth') ifRenderGrowth();
   else if(t==='clientes') ifRenderClientes();
   else if(t==='insights') ifRenderInsights();
   else if(t==='cobranca') ifRenderCobranca();
@@ -13609,6 +13651,7 @@ function ifRenderDash(){
   const card=(grad,lab,val,sub,click)=>`<div class="if-card ${click?'if-click':''}" style="background:${grad}" ${click?`onclick="${click}" title="Clique para ver os clientes"`:''}><div class="if-card-lab">${lab}</div><div class="if-card-val">${val}</div><div class="if-card-sub">${sub||''}${click?' <span class="if-card-olho">👁</span>':''}</div></div>`;
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   document.getElementById('if-corpo').innerHTML=`
+    <div class="if-ia-chamada"><button class="btn if-btn-primario" style="font-size:12px!important;padding:8px 18px!important" onclick="ifAnaliseExecutiva('if-ia-dash')">✨ Análise executiva (IA)</button><div id="if-ia-dash" style="flex:1"></div></div>
     <div class="if-cards">
       ${card('linear-gradient(135deg,#2563EB,#06B6D4)','Receita prevista (mês)',brlS(atu.prevista),atu.nFaturas+' faturas',"ifDrill('previstoMes')")}
       ${card('linear-gradient(135deg,#10B981,#84CC16)','Receita recebida (mês)',brlS(atu.recebida),'',"ifDrill('pagosMes')")}
@@ -13756,10 +13799,10 @@ function ifAbrirPerfil(ixcId){
             <div style="height:56px;margin-top:6px"><canvas id="if-spark"></canvas></div>
             <div class="if-gauge-lab">evolução 12 meses</div>
           </div>
-          <div class="if-resumo-ia"><div class="if-resumo-tit">🧠 Análise da IA</div>${ifResumoTexto(pf)}</div>
+          <div class="if-resumo-ia"><div class="if-resumo-tit">🧠 Análise do motor <button class="btn" style="font-size:9.5px;padding:2px 9px;float:right" onclick="ifIAPerfil('${pf.ixcId}')">✨ Análise avançada (IA)</button></div>${ifResumoTexto(pf)}<div id="if-ia-perfil"></div></div>
         </div>
         <div class="if-mgrid">
-          ${[['Pagamentos',pf.p.nPagas],['Atrasos',pf.p.nAtrasos],['Freq. atraso',ifPct(pf.p.freqAtraso)+'%'],['Atraso médio',pf.p.mediaAtraso+'d'],['Maior atraso',pf.p.maiorAtraso+'d'],['Dias médios p/ pagar',pf.p.mediaDiasPgto+'d'],['Valor médio',brlS(pf.p.valorMedio)],['Total pago',brlS(pf.p.totalPago)],['Em aberto',brlS(pf.p.valorAberto)],['Vencido',brlS(pf.p.valorVencido)],['Recuperado',brlS(pf.p.valorRecuperado)],['Sequência em dia',pf.p.seqEmDia]].map(([l,v])=>`<div class="if-m"><div class="if-m-l">${l}</div><div class="if-m-v">${v}</div></div>`).join('')}
+          ${[['Pagamentos',pf.p.nPagas],['Atrasos',pf.p.nAtrasos],['Freq. atraso',ifPct(pf.p.freqAtraso)+'%'],['Atraso médio',pf.p.mediaAtraso+'d'],['Maior atraso',pf.p.maiorAtraso+'d'],['Dias médios p/ pagar',pf.p.mediaDiasPgto+'d'],['Valor médio',brlS(pf.p.valorMedio)],['Total pago',brlS(pf.p.totalPago)],['Em aberto',brlS(pf.p.valorAberto)],['Vencido',brlS(pf.p.valorVencido)],['Recuperado',brlS(pf.p.valorRecuperado)],['Sequência em dia',pf.p.seqEmDia],['Chamados 90d',pf.nChamados90||0],['Costuma pagar',(d=>d?d.janela:'—')(ifDiaPagamento(pf.fats))]].map(([l,v])=>`<div class="if-m"><div class="if-m-l">${l}</div><div class="if-m-v">${v}</div></div>`).join('')}
         </div>
         <div class="if-grid2" style="margin-top:14px">
           <div>
@@ -13810,7 +13853,7 @@ function ifRenderInsights(){
 const IF_PERGUNTAS_PRONTAS=[
   'Quem possui maior risco de inadimplência?','Quais clientes merecem atenção hoje?','Quais bairros apresentam maior inadimplência?',
   'Quais clientes possuem maior probabilidade de cancelar?','Qual tendência financeira para os próximos 30, 60 e 90 dias?',
-  'Quais clientes melhoraram seu comportamento financeiro?','Onde devo concentrar os esforços da equipe de cobrança?','Qual foi o motivo da queda na arrecadação?'
+  'Quais clientes melhoraram seu comportamento financeiro?','Onde devo concentrar os esforços da equipe de cobrança?','Qual foi o motivo da queda na arrecadação?','Quais campanhas funcionam melhor?'
 ];
 function ifRenderChat(){
   ifDestruirCharts();
@@ -13826,11 +13869,19 @@ function ifRenderChat(){
   const h=document.getElementById('if-chat-hist'); h.scrollTop=h.scrollHeight;
 }
 function ifChatBolha(m){ return `<div class="if-msg ${m.de}"><div class="if-msg-b">${m.txt}</div></div>`; }
-function ifPerguntar(txt){
+async function ifPerguntar(txt){
   txt=(txt||'').trim(); if(!txt)return;
   IF_state.chatHist.push({de:'user',txt});
-  IF_state.chatHist.push({de:'ia',txt:ifResponder(txt)});
-  ifRenderChat();
+  const local=ifResponder(txt);
+  if(local!=null){ IF_state.chatHist.push({de:'ia',txt:local}); ifRenderChat(); }
+  else{
+    // Sem regra local → IA generativa (Groq) com o contexto dos dados
+    IF_state.chatHist.push({de:'ia',txt:'<span class="diag-spinner"></span> Analisando com a IA…'});
+    ifRenderChat();
+    try{ const r=await ifChatGroq(txt); IF_state.chatHist[IF_state.chatHist.length-1]={de:'ia',txt:'<span class="if-ia-selo">✨ IA Groq</span> '+r.replace(/\n/g,'<br>')}; }
+    catch(e){ IF_state.chatHist[IF_state.chatHist.length-1]={de:'ia',txt:'❌ IA indisponível: '+(e.message||e)+'<br>Tente uma das perguntas prontas abaixo.'}; }
+    ifRenderChat();
+  }
   const inp=document.getElementById('if-chat-txt'); if(inp)inp.value='';
 }
 // Motor de respostas: casa a intenção da pergunta com as análises computadas
@@ -13877,7 +13928,12 @@ function ifResponder(q){
     const top=[...P].sort((a,b)=>b.p.totalPago-a.p.totalPago).slice(0,5);
     return `Clientes de maior valor (total pago no período):${lista(top,pf=>`<b>${pf.nome}</b> — ${brlS(pf.p.totalPago)} pagos, score ${pf.sc.score}.`)}`;
   }
-  return `Não encontrei uma análise pronta para essa pergunta. Tente algo como:<br>${IF_PERGUNTAS_PRONTAS.slice(0,4).map(x=>'• '+x).join('<br>')}`;
+  if(/campanha|etapa|funciona melhor|efetividade|r[ée]gua/.test(t)){
+    const ef=ifEfetividadeRegua();
+    if(!ef) return 'Ainda não há histórico de cobranças registrado para medir a efetividade. Use o Painel de Cobrança — cada envio registrado alimenta este aprendizado.';
+    return `Efetividade das etapas da régua (pagamento em até 7 dias após a cobrança):${lista(ef,e=>`<b>${e.nome}</b> — ${e.taxa}% convertem (${e.pagas7d} de ${e.enviadas} envios, R$ ${e.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} recuperados)`)}A etapa "${ef[0].nome}" é a que melhor converte hoje.`;
+  }
+  return null; // sem regra local → cai para a IA (Groq)
 }
 
 
@@ -14019,6 +14075,9 @@ function ifRenderCobranca(){
       <div class="if-regua-etapas">${regua.map(e=>`<span class="if-regua-etapa" style="border-color:${e.cor};color:${e.cor}"><b>${e.dias>0?'D+'+e.dias:e.dias===0?'D0':'D'+e.dias}</b> ${e.nome} <span class="if-regua-qtd">${(porEtapa[e.id]||[]).length}</span></span>`).join('<span class="if-regua-seta">→</span>')}</div>
       <button class="btn" onclick="ifAbrirEditorRegua()">⚙ Configurar régua</button>
     </div>
+    ${(ef=>ef?`<div class="if-painel" style="margin-bottom:14px"><div class="if-painel-tit">📊 Efetividade da régua — % de faturas pagas em até 7 dias após a cobrança</div>
+      <div class="if-efet">${ef.map(e=>`<div class="if-efet-item"><div class="if-efet-nome">${e.nome}</div><div class="if-efet-bar"><div style="width:${e.taxa}%;background:${e.taxa>=50?IF_CORES.verde:e.taxa>=25?IF_CORES.amarelo:IF_CORES.vermelho}"></div></div><div class="if-efet-num">${e.taxa}% <span class="if-cli-sub">(${e.pagas7d}/${e.enviadas} · R$ ${e.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})})</span></div></div>`).join('')}</div>
+      <div class="if-cli-sub" style="margin-top:6px">Aprendizado contínuo: quanto mais cobranças registradas, mais precisa fica a medição de qual etapa converte melhor.</div></div>`:'')(ifEfetividadeRegua())}
     ${fila.length?regua.slice().reverse().filter(e=>porEtapa[e.id]?.length).map(e=>`
       <div class="if-painel" style="margin-bottom:12px;border-left:4px solid ${e.cor}">
         <div class="if-painel-tit" style="color:${e.cor}">${e.nome} · ${porEtapa[e.id].length} ação(ões) ${e.dias>0?'· vencidas há '+e.dias+'+ dias':e.dias===0?'· vencem hoje':'· vencem em breve'}</div>
@@ -14037,6 +14096,7 @@ function ifRenderCobranca(){
               <td class="if-cob-acoes">
                 <button class="btn if-btn-wpp" ${fone?'':'disabled'} onclick="ifCobEnviar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}',this)">💬 Enviar</button>
                 ${fone?`<a class="btn" style="font-size:10.5px;text-decoration:none" target="_blank" href="https://wa.me/${fone}?text=${encodeURIComponent(it.msg)}" onclick="ifCobRegistrar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}','wa.me')">↗ wa.me</a>`:''}
+                <button class="btn" style="font-size:10.5px;color:#7C3AED" title="Personalizar mensagem com IA" onclick="ifIAMensagem('${key}','${it.pf.ixcId}',this)">✨</button>
                 <button class="btn" style="font-size:10.5px" onclick="navigator.clipboard.writeText(window._ifFilaMsgs['${key}']||'');showToast('Mensagem copiada!')">📋</button>
                 <button class="btn" style="font-size:10.5px" onclick="ifCobRegistrar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}','manual');this.closest('tr').style.opacity='.35';this.disabled=true">✓</button>
               </td>
@@ -14127,6 +14187,711 @@ function ifSalvarReguaModal(){
   ifSalvarRegua(regua);
   document.getElementById('if-modal-regua').remove();
   showToast('Régua salva!'); ifRenderCobranca();
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  IF — ANÁLISE GERENCIAL DE INADIMPLÊNCIA
+//  Visões mensal / trimestral / anual · quebras por plano, bairro,
+//  cidade e faixa de valor · variação período a período (cresceu/caiu)
+//  Sempre respeita o Recorte da base (ativos/bloqueados/cancelados/todos).
+// ════════════════════════════════════════════════════════════════
+
+// Chave do período de uma data conforme o modo
+function ifPeriodoKey(d, modo){
+  const ym=String(d||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(ym)) return null;
+  if(modo==='mensal') return ym;
+  const [y,m]=ym.split('-').map(Number);
+  if(modo==='trimestral') return y+'-T'+Math.ceil(m/3);
+  return String(y); // anual
+}
+function ifPeriodoLabel(k, modo){
+  if(modo==='mensal'){const[y,m]=k.split('-');return ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+m]+'/'+y.slice(2);}
+  if(modo==='trimestral'){const[y,t]=k.split('-');return t+'/'+y.slice(2);}
+  return k;
+}
+function ifFaixaValor(v){
+  if(v<80) return 'Até R$ 79';
+  if(v<100) return 'R$ 80–99';
+  if(v<130) return 'R$ 100–129';
+  if(v<180) return 'R$ 130–179';
+  return 'R$ 180+';
+}
+
+// Linhas analíticas: cada fatura do recorte enriquecida com plano/bairro/cidade/faixa
+function ifLinhasAnaliticas(){
+  const out=[];
+  ifPerfisFiltrados().forEach(pf=>{
+    pf.fats.forEach(f=>{
+      if(f.tipo==='ignorada'||!f.venc) return;
+      out.push({f, pf, plano:String(pf.plano||'—').slice(0,22), bairro:pf.bairro||'—', cidade:pf.cidade||'—', faixa:ifFaixaValor(f.valor)});
+    });
+  });
+  return out;
+}
+
+// Métricas de um conjunto de linhas (faturas com vencimento no período)
+function ifMetricas(linhas){
+  const m={previsto:0,recebido:0,recebidoAtraso:0,vencidoAberto:0,nFat:0,nPagasDia:0,nPagasAtraso:0,nVencidas:0,nAbertas:0,clientes:new Set(),clientesInad:new Set()};
+  linhas.forEach(({f,pf})=>{
+    m.nFat++; m.previsto+=f.valor; m.clientes.add(pf.ixcId);
+    if(f.tipo==='paga'){
+      m.recebido+=(f.recebido||f.valor);
+      if(f.atrasoDias>=1){m.nPagasAtraso++;m.recebidoAtraso+=(f.recebido||f.valor);}
+      else m.nPagasDia++;
+    } else if(f.tipo==='vencida'){ m.nVencidas++; m.vencidoAberto+=f.valor; m.clientesInad.add(pf.ixcId); }
+    else if(f.tipo==='aberta'){ m.nAbertas++; }
+  });
+  const vencivel=m.previsto - (linhas.filter(({f})=>f.tipo==='aberta').reduce((s,{f})=>s+f.valor,0)); // exclui não-vencidas
+  m.pctInad = vencivel>0 ? m.vencidoAberto/vencivel : 0;                  // % do valor vencível que segue vencido
+  m.pctAtrasoComp = (m.nPagasDia+m.nPagasAtraso+m.nVencidas)>0 ? (m.nPagasAtraso+m.nVencidas)/(m.nPagasDia+m.nPagasAtraso+m.nVencidas) : 0; // comportamento: % faturas que atrasaram
+  m.pctEmDia = 1-m.pctAtrasoComp;
+  m.nClientes=m.clientes.size; m.nClientesInad=m.clientesInad.size;
+  return m;
+}
+
+// Série de períodos (mensal=12, trimestral=8, anual=todos os anos do histórico)
+function ifSeriePeriodos(modo){
+  const linhas=ifLinhasAnaliticas();
+  const grupos={};
+  linhas.forEach(l=>{ const k=ifPeriodoKey(l.f.venc,modo); if(k) (grupos[k]=grupos[k]||[]).push(l); });
+  let chaves=Object.keys(grupos).sort();
+  const lim=modo==='mensal'?12:modo==='trimestral'?8:99;
+  chaves=chaves.slice(-lim);
+  return chaves.map(k=>({k, label:ifPeriodoLabel(k,modo), linhas:grupos[k], m:ifMetricas(grupos[k])}));
+}
+
+// Quebra por dimensão dentro de um período (com comparação ao período anterior)
+function ifQuebra(serie, idx, dim){
+  const atual=serie[idx], anterior=serie[idx-1];
+  const agrupa=lns=>{const g={};lns.forEach(l=>{(g[l[dim]]=g[l[dim]]||[]).push(l);});return g;};
+  const gAtu=agrupa(atual.linhas), gAnt=anterior?agrupa(anterior.linhas):{};
+  return Object.keys(gAtu).map(ch=>{
+    const mA=ifMetricas(gAtu[ch]);
+    const mB=gAnt[ch]?ifMetricas(gAnt[ch]):null;
+    return {chave:ch, m:mA, ant:mB, varPP: mB!=null ? ifPct(mA.pctInad)-ifPct(mB.pctInad) : null};
+  }).sort((a,b)=>b.m.vencidoAberto-a.m.vencidoAberto);
+}
+
+// ── Estado e render da aba Gerencial ──
+IF_state.gerModo='mensal'; IF_state.gerDim='bairro'; IF_state.gerIdx=null;
+
+function ifRenderGerencial(){
+  ifDestruirCharts();
+  const modo=IF_state.gerModo;
+  const serie=ifSeriePeriodos(modo);
+  if(!serie.length){ document.getElementById('if-corpo').innerHTML='<div class="cli-empty-pane">Sem dados no recorte atual.</div>'; return; }
+  if(IF_state.gerIdx==null||IF_state.gerIdx>=serie.length) IF_state.gerIdx=serie.length-1;
+  const idx=IF_state.gerIdx, atu=serie[idx], ant=serie[idx-1]||null;
+  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const varBadge=(a,b,inverte)=>{ // b=anterior; inverte=true quando crescer é RUIM
+    if(b==null) return '<span class="if-var neutro">—</span>';
+    const d=a-b; if(Math.abs(d)<0.005) return '<span class="if-var neutro">estável</span>';
+    const ruim=inverte?d>0:d<0;
+    return `<span class="if-var ${ruim?'ruim':'bom'}">${d>0?'▲':'▼'} ${Math.abs(ifPct(d))} p.p.</span>`;
+  };
+  const varValor=(a,b)=>{ if(b==null||b===0) return ''; const p=Math.round((a-b)/b*100); return `<span class="if-var ${p>0?'ruim':'bom'}" style="font-size:9.5px">${p>0?'▲':'▼'} ${Math.abs(p)}%</span>`; };
+
+  document.getElementById('if-corpo').innerHTML=`
+    <div class="if-ger-topo">
+      <div class="if-ger-modos">${[['mensal','Mensal'],['trimestral','Trimestral'],['anual','Anual']].map(([v,l])=>`<span class="if-ger-modo ${modo===v?'ativa':''}" onclick="IF_state.gerModo='${v}';IF_state.gerIdx=null;ifRenderGerencial()">${l}</span>`).join('')}</div>
+      <select class="if-sel" onchange="IF_state.gerIdx=parseInt(this.value);ifRenderGerencial()">
+        ${serie.map((p,i)=>`<option value="${i}" ${i===idx?'selected':''}>${p.label}${i===serie.length-1?' (atual)':''}</option>`).join('')}
+      </select>
+      <button class="btn" onclick="ifGerencialCSV()">↓ Relatório CSV</button>
+      <button class="btn if-btn-primario" style="font-size:11px!important;padding:7px 14px!important" onclick="ifAnaliseExecutiva('if-ia-ger')">✨ IA</button>
+    </div>
+    <div id="if-ia-ger"></div>
+
+    <div class="if-cards" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+      <div class="if-card" style="background:linear-gradient(135deg,#EF4444,#EC4899)"><div class="if-card-lab">Inadimplência ${atu.label}</div><div class="if-card-val">${ifPct(atu.m.pctInad)}%</div><div class="if-card-sub">${ant?`vs ${ifPct(ant.m.pctInad)}% em ${ant.label} `:''}${varBadge(atu.m.pctInad,ant?.m.pctInad,true)}</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#F97316,#F59E0B)"><div class="if-card-lab">Vencido em aberto</div><div class="if-card-val">${brlS(atu.m.vencidoAberto)}</div><div class="if-card-sub">${atu.m.nVencidas} faturas · ${atu.m.nClientesInad} clientes ${varValor(atu.m.vencidoAberto,ant?.m.vencidoAberto)}</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#10B981,#84CC16)"><div class="if-card-lab">Pagas em dia</div><div class="if-card-val">${ifPct(atu.m.pctEmDia)}%</div><div class="if-card-sub">${atu.m.nPagasDia} de ${atu.m.nPagasDia+atu.m.nPagasAtraso+atu.m.nVencidas} vencíveis ${varBadge(atu.m.pctEmDia,ant?.m.pctEmDia,false)}</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#2563EB,#06B6D4)"><div class="if-card-lab">Previsto × Recebido</div><div class="if-card-val" style="font-size:16px">${brlS(atu.m.recebido)}</div><div class="if-card-sub">de ${brlS(atu.m.previsto)} previstos (${atu.m.previsto?ifPct(atu.m.recebido/atu.m.previsto):0}%)</div></div>
+      <div class="if-card" style="background:linear-gradient(135deg,#7C3AED,#6366F1)"><div class="if-card-lab">Recebido com atraso</div><div class="if-card-val" style="font-size:16px">${brlS(atu.m.recebidoAtraso)}</div><div class="if-card-sub">${atu.m.nPagasAtraso} faturas pagas atrasadas</div></div>
+    </div>
+
+    <div class="if-grid2">
+      <div class="if-painel"><div class="if-painel-tit">Evolução da inadimplência — visão ${modo}</div><div class="if-chwrap" style="height:260px"><canvas id="if-ger-evo"></canvas></div></div>
+      <div class="if-painel"><div class="if-painel-tit">Composição das faturas de ${atu.label}</div><div class="if-chwrap" style="height:260px"><canvas id="if-ger-comp"></canvas></div></div>
+    </div>
+
+    <div class="if-painel" style="margin-bottom:14px">
+      <div class="if-painel-tit">📋 Relatório por período — clique numa linha para detalhar</div>
+      <div class="if-tscroll" style="max-height:320px"><table class="if-t">
+        <thead><tr><th>Período</th><th>Faturas</th><th>Previsto</th><th>Recebido</th><th>Receb. c/ atraso</th><th>Vencido aberto</th><th>Inadimpl.</th><th>Em dia</th><th>Variação</th></tr></thead>
+        <tbody>${serie.map((p,i)=>{const pa=serie[i-1];return`
+          <tr class="${i===idx?'if-tr-sel':''}" style="cursor:pointer" onclick="IF_state.gerIdx=${i};ifRenderGerencial()">
+            <td style="font-weight:700">${p.label}</td>
+            <td class="td-mono">${p.m.nFat}</td>
+            <td class="td-mono">${brlS(p.m.previsto)}</td>
+            <td class="td-mono" style="color:${IF_CORES.verde}">${brlS(p.m.recebido)}</td>
+            <td class="td-mono" style="color:${IF_CORES.amarelo}">${brlS(p.m.recebidoAtraso)}</td>
+            <td class="td-mono" style="color:${p.m.vencidoAberto>0?IF_CORES.vermelho:'inherit'}">${brlS(p.m.vencidoAberto)}</td>
+            <td class="td-mono" style="font-weight:700">${ifPct(p.m.pctInad)}%</td>
+            <td class="td-mono">${ifPct(p.m.pctEmDia)}%</td>
+            <td>${varBadge(p.m.pctInad,pa?.m.pctInad,true)}</td>
+          </tr>`;}).join('')}</tbody>
+      </table></div>
+      <div class="if-cli-sub" style="margin-top:6px">Inadimpl. = valor ainda vencido ÷ valor vencível do período. Períodos recentes tendem a melhorar conforme pagamentos chegam.</div>
+    </div>
+
+    <div class="if-painel" style="margin-bottom:14px">
+      <div class="if-ger-dimbar">
+        <div class="if-painel-tit" style="margin:0">🔍 Detalhamento de ${atu.label} por:</div>
+        ${[['bairro','📍 Bairro'],['plano','📦 Plano'],['cidade','🏙 Cidade'],['faixa','💵 Faixa de valor']].map(([v,l])=>`<span class="if-ger-modo ${IF_state.gerDim===v?'ativa':''}" onclick="IF_state.gerDim='${v}';ifRenderGerencial()">${l}</span>`).join('')}
+      </div>
+      <div class="if-grid2" style="margin-top:12px">
+        <div><div class="if-chwrap" style="height:${Math.max(200,Math.min(400,ifQuebra(serie,idx,IF_state.gerDim).length*34))}px"><canvas id="if-ger-dim"></canvas></div></div>
+        <div class="if-tscroll" style="max-height:400px"><table class="if-t">
+          <thead><tr><th>${IF_state.gerDim==='faixa'?'Faixa':IF_state.gerDim[0].toUpperCase()+IF_state.gerDim.slice(1)}</th><th>Clientes</th><th>Previsto</th><th>Vencido</th><th>Inadimpl.</th><th>vs anterior</th><th></th></tr></thead>
+          <tbody>${ifQuebra(serie,idx,IF_state.gerDim).map(q=>`
+            <tr><td style="font-weight:600">${q.chave}</td>
+            <td class="td-mono">${q.m.nClientes}</td>
+            <td class="td-mono">${brlS(q.m.previsto)}</td>
+            <td class="td-mono" style="color:${q.m.vencidoAberto>0?IF_CORES.vermelho:'inherit'}">${brlS(q.m.vencidoAberto)}</td>
+            <td class="td-mono" style="font-weight:700">${ifPct(q.m.pctInad)}%</td>
+            <td>${varBadge(q.m.pctInad,q.ant?.pctInad,true)}</td>
+            <td>${IF_state.gerDim==='bairro'||IF_state.gerDim==='plano'?`<button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifDrill('${IF_state.gerDim}','${String(q.chave).replace(/'/g,"\\'")}')">👥</button>`:''}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="if-grid2">
+      <div class="if-painel"><div class="if-painel-tit" style="color:${IF_CORES.vermelho}">🔺 Onde a inadimplência mais CRESCEU (${ant?atu.label+' vs '+ant.label:'—'})</div>${ifRankingVar(serie,idx,true)}</div>
+      <div class="if-painel"><div class="if-painel-tit" style="color:${IF_CORES.verde}">🔻 Onde a inadimplência mais CAIU</div>${ifRankingVar(serie,idx,false)}</div>
+    </div>`;
+  ifChartsGerencial(serie, idx);
+}
+
+function ifRankingVar(serie, idx, cresceu){
+  if(!serie[idx-1]) return '<div class="if-cli-sub">Sem período anterior para comparar.</div>';
+  const tudo=[];
+  ['bairro','plano'].forEach(dim=>{
+    ifQuebra(serie,idx,dim).forEach(q=>{
+      if(q.varPP==null||q.m.nClientes<3) return; // ignora grupos minúsculos
+      tudo.push({dim:dim==='bairro'?'📍':'📦', chave:q.chave, varPP:q.varPP, pct:ifPct(q.m.pctInad), venc:q.m.vencidoAberto});
+    });
+  });
+  const lista=tudo.filter(x=>cresceu?x.varPP>0:x.varPP<0).sort((a,b)=>cresceu?b.varPP-a.varPP:a.varPP-b.varPP).slice(0,6);
+  if(!lista.length) return '<div class="if-cli-sub">Nenhuma variação relevante.</div>';
+  return lista.map(x=>`<div class="if-fator" style="display:flex;justify-content:space-between;gap:8px">
+    <span>${x.dim} <b>${x.chave}</b> — agora em ${x.pct}% (R$ ${x.venc.toLocaleString('pt-BR',{minimumFractionDigits:2})})</span>
+    <span class="if-var ${cresceu?'ruim':'bom'}">${cresceu?'▲':'▼'} ${Math.abs(x.varPP)} p.p.</span></div>`).join('');
+}
+
+function ifChartsGerencial(serie, idx){
+  const grid='rgba(128,128,128,0.12)';
+  const atu=serie[idx];
+  IF_charts.gerEvo=new Chart(document.getElementById('if-ger-evo'),{type:'bar',data:{labels:serie.map(p=>p.label),datasets:[
+    {label:'Recebido',data:serie.map(p=>p.m.recebido),backgroundColor:'rgba(16,185,129,0.8)',stack:'s',borderRadius:4},
+    {label:'Receb. c/ atraso',data:serie.map(p=>p.m.recebidoAtraso),backgroundColor:'rgba(245,158,11,0.85)',stack:'s2',borderRadius:4,hidden:true},
+    {label:'Vencido aberto',data:serie.map(p=>p.m.vencidoAberto),backgroundColor:'rgba(239,68,68,0.85)',stack:'s',borderRadius:4},
+    {label:'Inadimplência %',type:'line',data:serie.map(p=>ifPct(p.m.pctInad)),yAxisID:'y2',borderColor:IF_CORES.roxo,backgroundColor:IF_CORES.roxo,tension:.3,pointRadius:4,borderWidth:2.5},
+  ]},options:{responsive:true,maintainAspectRatio:false,onClick:(e,els)=>{if(els.length){IF_state.gerIdx=els[0].index;ifRenderGerencial();}},plugins:{legend:{labels:{boxWidth:11,font:{size:9.5}}}},scales:{y:{stacked:false,grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(0)+'k'}},y2:{position:'right',min:0,grid:{display:false},ticks:{font:{size:9},callback:v=>v+'%'}},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  IF_charts.gerComp=new Chart(document.getElementById('if-ger-comp'),{type:'doughnut',data:{labels:['Pagas em dia','Pagas com atraso','Vencidas em aberto','A vencer'],datasets:[{data:[atu.m.nPagasDia,atu.m.nPagasAtraso,atu.m.nVencidas,atu.m.nAbertas],backgroundColor:[IF_CORES.verde,IF_CORES.amarelo,IF_CORES.vermelho,IF_CORES.azul],borderWidth:2,borderColor:'rgba(255,255,255,.7)'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:10}}}}}});
+  const quebra=ifQuebra(serie,idx,IF_state.gerDim).slice(0,10);
+  IF_charts.gerDim=new Chart(document.getElementById('if-ger-dim'),{type:'bar',data:{labels:quebra.map(q=>String(q.chave).slice(0,16)),datasets:[{label:'Vencido',data:quebra.map(q=>q.m.vencidoAberto),backgroundColor:'rgba(239,68,68,0.8)',borderRadius:5},{label:'Recebido',data:quebra.map(q=>q.m.recebido),backgroundColor:'rgba(16,185,129,0.55)',borderRadius:5}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,onClick:(e,els)=>{if(els.length&&(IF_state.gerDim==='bairro'||IF_state.gerDim==='plano'))ifDrill(IF_state.gerDim,quebra[els[0].index].chave);},plugins:{legend:{labels:{boxWidth:10,font:{size:9.5}}}},scales:{x:{grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(1)+'k'}},y:{grid:{display:false},ticks:{font:{size:9.5}}}}}});
+}
+
+function ifGerencialCSV(){
+  const modo=IF_state.gerModo, serie=ifSeriePeriodos(modo), idx=IF_state.gerIdx??serie.length-1;
+  const fmt=v=>v.toFixed(2).replace('.',',');
+  const l1='RELATORIO GERENCIAL DE INADIMPLENCIA;Modo: '+modo+';Recorte: '+IF_state.filtroStatus+';Gerado: '+new Date().toLocaleString('pt-BR');
+  const h1='Periodo;Faturas;Clientes;Previsto;Recebido;Recebido com Atraso;Vencido Aberto;Inadimplencia %;Pagas em Dia %;Clientes Inadimplentes';
+  const r1=serie.map(p=>[p.label,p.m.nFat,p.m.nClientes,fmt(p.m.previsto),fmt(p.m.recebido),fmt(p.m.recebidoAtraso),fmt(p.m.vencidoAberto),ifPct(p.m.pctInad),ifPct(p.m.pctEmDia),p.m.nClientesInad].join(';'));
+  const linhas=[l1,'',h1,...r1];
+  ['bairro','plano','cidade','faixa'].forEach(dim=>{
+    linhas.push('','DETALHAMENTO '+serie[idx].label.toUpperCase()+' POR '+dim.toUpperCase());
+    linhas.push(dim+';Clientes;Previsto;Vencido;Inadimplencia %;Variacao p.p. vs anterior');
+    ifQuebra(serie,idx,dim).forEach(q=>linhas.push([String(q.chave).replace(/;/g,' '),q.m.nClientes,fmt(q.m.previsto),fmt(q.m.vencidoAberto),ifPct(q.m.pctInad),q.varPP==null?'':q.varPP].join(';')));
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+linhas.join('\n')],{type:'text/csv'}));
+  a.download='relatorio_gerencial_inadimplencia_'+modo+'.csv';a.click();showToast('Relatório exportado!');
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  IF — ANÁLISES AVANÇADAS + IA GROQ (llama-3.3-70b via proxy, x-target: groq)
+// ════════════════════════════════════════════════════════════════
+
+// ── Helper central da IA ──
+async function ifGroq(system, user, maxTokens=900){
+  const cfg=await getIXCConfig();
+  if(!cfg.proxyUrl) throw new Error('Configure a integração (proxy) primeiro.');
+  const r=await fetch(cfg.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json','x-target':'groq'},
+    body:JSON.stringify({messages:[{role:'system',content:system},{role:'user',content:user}],max_tokens:maxTokens})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||!d.ok) throw new Error(d?.error||d?.groq?.error?.message||('HTTP '+r.status+' — o proxy pode precisar de deploy com o ramo groq'));
+  return d.texto||'';
+}
+const IF_GROQ_SYS='Você é o analista financeiro sênior da MoviOn Internet, um provedor de internet de Mossoró/RN. Responda SEMPRE em português do Brasil, de forma direta, prática e gerencial. Use os dados fornecidos — nunca invente números. Formate com parágrafos curtos e, quando listar, use hífens simples.';
+
+// ── ANÁLISE NOVA 1: padrão do dia do mês em que o cliente paga ──
+function ifDiaPagamento(fats){
+  const dias=fats.filter(f=>f.tipo==='paga'&&f.pgto).map(f=>parseInt(f.pgto.slice(8,10))).filter(d=>d>=1&&d<=31);
+  if(dias.length<3) return null;
+  const s=[...dias].sort((a,b)=>a-b);
+  const q1=s[Math.floor(s.length*0.25)], q3=s[Math.floor(s.length*0.75)];
+  const mediana=s[Math.floor(s.length/2)];
+  return {janela:q1===q3?('dia '+q1):('dias '+q1+'–'+q3), mediana, amostra:dias.length};
+}
+
+// ── ANÁLISE NOVA 2: chamados técnicos (90 dias) × risco de cancelamento ──
+function ifChamados90d(pf){
+  try{
+    const ch=gd('campo_chamados')||[];
+    const corte=(d=>{d.setDate(d.getDate()-90);return isoLocal(d);})(new Date());
+    // cliente_id pode guardar o id IXC OU o id local (peculiaridade conhecida do MoviControl)
+    return ch.filter(c=>{
+      const cid=String(c.cliente_id||'');
+      if(cid!==String(pf.ixcId)&&cid!==String(pf.cliId||'')) return false;
+      const dt=String(c.data||c.created_at||'').slice(0,10);
+      return dt>=corte;
+    }).length;
+  }catch(e){ return 0; }
+}
+
+// ── ANÁLISE NOVA 3: efetividade da régua (cobrança → pagamento em até 7 dias) ──
+function ifEfetividadeRegua(){
+  const log=ifCobLog(); if(!log.length) return null;
+  const porFat={}; IF_state.faturas.forEach(f=>porFat[f.id]=f);
+  const porEtapa={};
+  log.forEach(x=>{
+    const f=porFat[x.fatId]; if(!f) return;
+    const e=(porEtapa[x.etapaNome||x.etapaId]=porEtapa[x.etapaNome||x.etapaId]||{enviadas:0,pagas7d:0,valor:0});
+    e.enviadas++;
+    if(f.tipo==='paga'&&f.pgto){
+      const dias=ifDiasEntre(String(x.quando).slice(0,10), f.pgto);
+      if(dias!=null&&dias>=0&&dias<=7){ e.pagas7d++; e.valor+=(f.recebido||f.valor); }
+    }
+  });
+  const arr=Object.entries(porEtapa).map(([nome,e])=>({nome,...e,taxa:e.enviadas?Math.round(e.pagas7d/e.enviadas*100):0}));
+  return arr.length?arr.sort((a,b)=>b.taxa-a.taxa):null;
+}
+
+// ── ANÁLISE NOVA 4: quem responde à cobrança (pagou ≤7d após cobrança ≥2x) ──
+function ifRespondeCobranca(){
+  const log=ifCobLog(); const resp={};
+  if(!log.length) return resp;
+  const porFat={}; IF_state.faturas.forEach(f=>porFat[f.id]=f);
+  const porCli={};
+  log.forEach(x=>{
+    const f=porFat[x.fatId]; if(!f||f.tipo!=='paga'||!f.pgto) return;
+    const dias=ifDiasEntre(String(x.quando).slice(0,10),f.pgto);
+    if(dias!=null&&dias>=0&&dias<=7) porCli[f.idCliente]=(porCli[f.idCliente]||0)+1;
+  });
+  Object.entries(porCli).forEach(([id,n])=>{ if(n>=2) resp[id]=n; });
+  return resp;
+}
+
+// ── IA 1: Análise executiva (Dashboard/Gerencial) ──
+async function ifAnaliseExecutiva(alvo){
+  const el=document.getElementById(alvo);
+  if(!el) return;
+  el.innerHTML='<div class="if-ia-box"><span class="diag-spinner"></span> A IA está analisando os números…</div>';
+  try{
+    const M=ifMensalFiltrado(), P=ifPerfisFiltrados(), atu=M[M.length-1], ant=M[M.length-2];
+    const prev=ifPrevisao();
+    const topRisco=[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,5).map(pf=>`${pf.nome} (score ${pf.sc.score}, R$${pf.p.valorVencido.toFixed(0)} vencido, bairro ${pf.bairro})`);
+    const porB={};P.forEach(pf=>{if(pf.p.valorVencido>0)porB[pf.bairro]=(porB[pf.bairro]||0)+pf.p.valorVencido;});
+    const ef=ifEfetividadeRegua();
+    const dados={recorte:IF_state.filtroStatus, clientes:P.length,
+      mesAtual:{prevista:atu.prevista.toFixed(0),recebida:atu.recebida.toFixed(0),inadimplenciaPct:ifPct(atu.inadimpl)},
+      mesAnterior:ant?{recebida:ant.recebida.toFixed(0),inadimplenciaPct:ifPct(ant.inadimpl)}:null,
+      vencidoTotal:P.reduce((s,pf)=>s+pf.p.valorVencido,0).toFixed(0),
+      clientesInadimplentes:P.filter(pf=>pf.p.nVencidas>0).length,
+      riscoProx30d:prev.d30.risco.toFixed(0),
+      top5Risco:topRisco,
+      vencidoPorBairro:Object.entries(porB).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([b,v])=>b+': R$'+v.toFixed(0)),
+      efetividadeRegua:ef?ef.map(e=>`${e.nome}: ${e.taxa}% pagam em 7d (${e.enviadas} envios)`):'sem histórico de cobrança ainda'};
+    const txt=await ifGroq(IF_GROQ_SYS,
+      'Analise estes indicadores do provedor e produza uma ANÁLISE EXECUTIVA curta (máx 220 palavras): 1) diagnóstico do momento; 2) principal causa provável; 3) três ações práticas priorizadas para os próximos 7 dias, com foco em recuperar dinheiro sem desgastar clientes.\n\nDADOS:\n'+JSON.stringify(dados,null,1));
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise executiva — IA (Llama 3.3 via Groq)</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
+}
+
+// ── IA 2: Análise avançada do cliente (perfil) ──
+async function ifIAPerfil(ixcId){
+  const pf=IF_state.porId[ixcId]; if(!pf) return;
+  const el=document.getElementById('if-ia-perfil'); if(!el) return;
+  el.innerHTML='<div class="if-ia-box"><span class="diag-spinner"></span> Analisando o comportamento deste cliente…</div>';
+  try{
+    const dia=ifDiaPagamento(pf.fats);
+    const dados={nome:pf.nome, bairro:pf.bairro, plano:pf.plano, score:pf.sc.score,
+      statusContrato:pf.sca.contrato, statusAcesso:pf.sca.acesso,
+      mesesHistorico:pf.p.mesesHistorico, pagas:pf.p.nPagas, atrasos:pf.p.nAtrasos,
+      atrasoMedioDias:pf.p.mediaAtraso, maiorAtraso:pf.p.maiorAtraso, seqEmDia:pf.p.seqEmDia,
+      vencidasAgora:pf.p.nVencidas, valorVencido:pf.p.valorVencido.toFixed(2),
+      totalPago:pf.p.totalPago.toFixed(2), recuperado:pf.p.valorRecuperado.toFixed(2),
+      tendencia:pf.p.tendencia, probAtraso:pf.prob.probAtraso+'%', probCancel:pf.prob.probCancel+'%', probRecup:pf.prob.probRecup+'%',
+      costumaPagar:dia?dia.janela+' do mês':'sem padrão claro',
+      chamadosTecnicos90d:ifChamados90d(pf), segmentos:pf.seg.tags};
+    const txt=await ifGroq(IF_GROQ_SYS,
+      'Analise este cliente do provedor e produza (máx 180 palavras): 1) leitura comportamental em 2-3 frases; 2) a MELHOR abordagem de cobrança/relacionamento para este perfil específico (canal, tom, momento do mês); 3) se houver valor vencido, uma proposta de negociação concreta e justa.\n\nCLIENTE:\n'+JSON.stringify(dados,null,1));
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise avançada — IA</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
+}
+
+// ── IA 3: mensagem de cobrança personalizada (painel de cobrança) ──
+async function ifIAMensagem(key, ixcId, btn){
+  const pf=IF_state.porId[ixcId]; const base=window._ifFilaMsgs[key];
+  if(!pf||!base) return;
+  const orig=btn.textContent; btn.disabled=true; btn.textContent='✨…';
+  try{
+    const dia=ifDiaPagamento(pf.fats);
+    const txt=await ifGroq(
+      IF_GROQ_SYS+' Você escreve mensagens de WhatsApp de cobrança: humanas, curtas (máx 65 palavras), respeitosas, sem juridiquês, terminando com "— MoviOn Internet". Nunca ameace; incentive o pagamento pelo MoviApp (PIX).',
+      `Reescreva esta mensagem de cobrança personalizando para o perfil do cliente. Responda SOMENTE com a mensagem final.\n\nMensagem base: "${base}"\n\nPerfil: ${pf.nome.split(' ')[0]}, score ${pf.sc.score}, ${pf.p.nAtrasos} atrasos em ${pf.p.nPagas} faturas, tendência ${pf.p.tendencia}, ${pf.p.seqEmDia} pgtos seguidos em dia antes disso, costuma pagar ${dia?dia.janela:'sem padrão'}, segmento ${pf.seg.principal}.`,300);
+    const limpa=txt.trim().replace(/^["“]|["”]$/g,'');
+    if(limpa){ window._ifFilaMsgs[key]=limpa; navigator.clipboard?.writeText(limpa).catch(()=>{}); showToast('✨ Mensagem personalizada gerada (e copiada). O botão Enviar usará ela.'); }
+    btn.textContent='✨ ok';
+  }catch(e){ showToast('IA indisponível: '+(e.message||e),true); btn.textContent=orig; btn.disabled=false; }
+}
+
+// ── IA 4: fallback do chat (perguntas fora das regras locais) ──
+async function ifChatGroq(pergunta){
+  const M=ifMensalFiltrado(), P=ifPerfisFiltrados(), atu=M[M.length-1];
+  const ef=ifEfetividadeRegua();
+  const ctx={recorte:IF_state.filtroStatus, clientes:P.length,
+    inadimplenciaMesPct:ifPct(atu.inadimpl), recebidaMes:atu.recebida.toFixed(0), previstaMes:atu.prevista.toFixed(0),
+    vencidoTotal:P.reduce((s,pf)=>s+pf.p.valorVencido,0).toFixed(0),
+    serieInadimplencia12m:M.map(m=>m.mes.slice(5)+':'+ifPct(m.inadimpl)+'%').join(' '),
+    top10Risco:[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,10).map(pf=>({nome:pf.nome,score:pf.sc.score,vencido:pf.p.valorVencido.toFixed(0),bairro:pf.bairro,probCancel:pf.prob.probCancel})),
+    segmentos:Object.entries(P.reduce((a,pf)=>{a[pf.seg.principal]=(a[pf.seg.principal]||0)+1;return a;},{})),
+    efetividadeRegua:ef||'sem dados ainda'};
+  return await ifGroq(IF_GROQ_SYS+' Responda a pergunta do gestor usando o CONTEXTO. Se a resposta não estiver no contexto, diga o que seria preciso analisar. Máx 150 palavras.',
+    'PERGUNTA: '+pergunta+'\n\nCONTEXTO:\n'+JSON.stringify(ctx));
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  IF — CRESCIMENTO & RECEITA RECORRENTE (motor)
+//  MRR/ARR, movimentos (novo/expansão/contração/churn), churn voluntário ×
+//  INVOLUNTÁRIO (inadimplência), ativações, ARPU, LTV, CAC, lifetime,
+//  NRR/GRR, cohorts e crescimento por bairro/cidade/plano com recomendação.
+//  Usa a BASE COMPLETA (churn exige os cancelados) — independe do Recorte.
+//  Ativação = data real do contrato (IXC). Mês do churn = última fatura (proxy).
+// ════════════════════════════════════════════════════════════════
+
+function ifCacCfg(){ try{return JSON.parse(localStorage.getItem('if_cac')||'{}');}catch(e){return{};} }
+function ifSalvarCac(o){ localStorage.setItem('if_cac',JSON.stringify(o)); }
+
+let _ifGrowthCache=null;
+function ifGrowthCalc(){
+  if(_ifGrowthCache && _ifGrowthCache.quando===IF_state.geradoEm) return _ifGrowthCache;
+  const P=IF_state.perfis; // base completa
+  const ctrs=gd('sf_clientes_contratos');
+  const hj=hoje(), mesAtu=hj.slice(0,7);
+  const meses=ifMesesRange(13); // 13 p/ ter MoM completo do 1º exibido
+
+  // ── enriquecer cada perfil com ativação real e churn derivado ──
+  const info=P.map(pf=>{
+    const ctr=ctrs.find(x=>x.ixcClienteId==pf.ixcId)||{};
+    let ativMes=String(ctr.dataAtivacao||'').slice(0,7);
+    if(!/^\d{4}-\d{2}$/.test(ativMes)) ativMes = pf.p.primeiraFat ? pf.p.primeiraFat.slice(0,7) : null; // fallback: 1ª fatura
+    let churnMes=null, churnTipo=null;
+    if(pf.grupo==='cancelado'){
+      const vencs=pf.fats.filter(f=>f.tipo!=='ignorada'&&f.venc).map(f=>f.venc);
+      churnMes = vencs.length ? vencs.sort().pop().slice(0,7) : ativMes;
+      // Involuntário = saiu devendo (faturas vencidas em aberto) — cancelamento por inadimplência
+      churnTipo = pf.p.valorVencido>0 ? 'involuntario' : 'voluntario';
+    }
+    // valor mensal por mês (para MRR/expansão): soma faturas com venc no mês
+    const valMes={};
+    pf.fats.forEach(f=>{ if(f.tipo!=='ignorada'&&f.venc) valMes[f.venc.slice(0,7)]=(valMes[f.venc.slice(0,7)]||0)+f.valor; });
+    return {pf, ativMes, churnMes, churnTipo, valMes,
+      valorRef: parseFloat(ctr.valor)||pf.p.valorMedio||0,
+      bairro:pf.bairro||'—', cidade:pf.cidade||'—', plano:String(pf.plano||'—').slice(0,22)};
+  });
+
+  const ativoEm=(x,m)=> x.ativMes && x.ativMes<=m && (!x.churnMes || x.churnMes>m);
+
+  // ── série mensal ──
+  const serie=meses.map((m,i)=>{
+    const ant=meses[i-1];
+    const ativos=info.filter(x=>ativoEm(x,m));
+    const mrr=ativos.reduce((s,x)=>s+(x.valMes[m]||x.valorRef||0),0);
+    const novas=info.filter(x=>x.ativMes===m);
+    const churns=info.filter(x=>x.churnMes===m);
+    const churnsVol=churns.filter(x=>x.churnTipo==='voluntario');
+    const churnsInv=churns.filter(x=>x.churnTipo==='involuntario');
+    const novoMRR=novas.reduce((s,x)=>s+(x.valMes[m]||x.valorRef||0),0);
+    const churnMRR=churns.reduce((s,x)=>s+(x.valMes[ant]||x.valorRef||0),0);
+    // expansão/contração: mesmo cliente ativo nos 2 meses com valor diferente (>1 real)
+    let expMRR=0, conMRR=0;
+    if(ant) info.forEach(x=>{
+      if(!ativoEm(x,ant)||!ativoEm(x,m)) return;
+      const a=x.valMes[ant], b=x.valMes[m];
+      if(a==null||b==null) return;
+      const d=b-a; if(d>1) expMRR+=d; else if(d<-1) conMRR+=-d;
+    });
+    return {mes:m, label:ifPeriodoLabel(m,'mensal'), parcial:m===mesAtu,
+      ativos:ativos.length, mrr, novas:novas.length, novoMRR,
+      churns:churns.length, churnsVol:churnsVol.length, churnsInv:churnsInv.length, churnMRR,
+      expMRR, conMRR};
+  });
+  serie.forEach((p,i)=>{
+    const a=serie[i-1];
+    p.netClientes=p.novas-p.churns;
+    p.churnRate = a&&a.ativos>0 ? p.churns/a.ativos : 0;
+    p.churnRateInv = a&&a.ativos>0 ? p.churnsInv/a.ativos : 0;
+    p.arpu = p.ativos>0 ? p.mrr/p.ativos : 0;
+    p.grr = a&&a.mrr>0 ? Math.max(0,(a.mrr-p.churnMRR-p.conMRR)/a.mrr) : null;
+    p.nrr = a&&a.mrr>0 ? (a.mrr-p.churnMRR-p.conMRR+p.expMRR)/a.mrr : null;
+    p.mrrMoM = a&&a.mrr>0 ? (p.mrr-a.mrr)/a.mrr : null;
+  });
+  const s12=serie.slice(1); // 12 exibidos
+  const ultimoFechado = s12[s12.length-1].parcial ? s12[s12.length-2] : s12[s12.length-1];
+
+  // ── KPIs derivados ──
+  const churn6m=s12.slice(-7,-1); // 6 meses fechados
+  const churnMedio = churn6m.length ? churn6m.reduce((s,p)=>s+p.churnRate,0)/churn6m.length : 0;
+  const arpuAtual = ultimoFechado.arpu;
+  const lifetimeEsperado = churnMedio>0.0005 ? 1/churnMedio : null; // meses
+  const ltv = lifetimeEsperado ? arpuAtual*Math.min(lifetimeEsperado,120) : null; // cap 10 anos
+  // lifetime observado dos que cancelaram
+  const vidas=info.filter(x=>x.churnMes&&x.ativMes).map(x=>{
+    const[a1,a2]=x.ativMes.split('-').map(Number),[c1,c2]=x.churnMes.split('-').map(Number);
+    return Math.max(1,(c1-a1)*12+(c2-a2));
+  });
+  const lifetimeObs = vidas.length ? Math.round(vidas.reduce((a,b)=>a+b,0)/vidas.length) : null;
+  // CAC
+  const cac=ifCacCfg();
+  const ativ3m=s12.slice(-4,-1).reduce((s,p)=>s+p.novas,0)/3;
+  const ativ12m=s12.slice(0,-1).reduce((s,p)=>s+p.novas,0)/Math.max(1,s12.length-1);
+  const ativBase = ativ3m>0 ? ativ3m : ativ12m; // fallback: média 12m
+  const cacValor = cac.gastoMensal>0 && ativBase>0 ? cac.gastoMensal/ativBase : null;
+  const paybackMeses = cacValor&&arpuAtual>0 ? Math.ceil(cacValor/arpuAtual) : null;
+
+  // ── churn involuntário: quem saiu devendo (lista acionável) ──
+  const perdidosDevendo=info.filter(x=>x.churnTipo==='involuntario')
+    .sort((a,b)=>b.pf.p.valorVencido-a.pf.p.valorVencido)
+    .map(x=>({nome:x.pf.nome,ixcId:x.pf.ixcId,bairro:x.bairro,mes:x.churnMes,divida:x.pf.p.valorVencido,probRecup:x.pf.prob.probRecup}));
+
+  // ── dimensões: bairro / cidade / plano ──
+  const m12ini=meses[1];
+  function porDim(campo){
+    const g={};
+    info.forEach(x=>{ (g[x[campo]]=g[x[campo]]||[]).push(x); });
+    return Object.entries(g).map(([chave,arr])=>{
+      const baseAtual=arr.filter(x=>ativoEm(x,mesAtu)).length;
+      const ativ12=arr.filter(x=>x.ativMes&&x.ativMes>=m12ini).length;
+      const churn12=arr.filter(x=>x.churnMes&&x.churnMes>=m12ini);
+      const inv12=churn12.filter(x=>x.churnTipo==='involuntario').length;
+      const mrr=arr.filter(x=>ativoEm(x,mesAtu)).reduce((s,x)=>s+(x.valMes[ultimoFechado.mes]||x.valorRef||0),0);
+      const vencido=arr.filter(x=>x.pf.grupo!=='cancelado').reduce((s,x)=>s+x.pf.p.valorVencido,0);
+      const inad = mrr>0 ? vencido/mrr : 0;
+      const net=ativ12-churn12.length;
+      const churnPct = baseAtual+churn12.length>0 ? churn12.length/(baseAtual+churn12.length) : 0;
+      let rec, recCor;
+      if(baseAtual>=3 && net>0 && inad<0.08 && churnPct<0.12){ rec='🚀 Expandir'; recCor=IF_CORES.verde; }
+      else if(net<0 || churnPct>=0.25){ rec='🚨 Recuperar'; recCor=IF_CORES.vermelho; }
+      else if(inad>=0.15){ rec='🛡 Defender'; recCor=IF_CORES.laranja; }
+      else { rec='👁 Observar'; recCor=IF_CORES.azul; }
+      return {chave, baseAtual, ativ12, churn12:churn12.length, inv12, net, churnPct, mrr, vencido, inad, rec, recCor};
+    }).sort((a,b)=>b.baseAtual-a.baseAtual);
+  }
+
+  // ── cohorts por trimestre de ativação: % ainda ativos ──
+  const cohorts=(()=>{
+    const g={};
+    info.forEach(x=>{ if(!x.ativMes) return; const k=ifPeriodoKey(x.ativMes+'-01','trimestral'); (g[k]=g[k]||{tot:0,ativos:0}); g[k].tot++; if(!x.churnMes)g[k].ativos++; });
+    return Object.entries(g).sort((a,b)=>a[0]<b[0]?-1:1).slice(-8)
+      .map(([k,v])=>({tri:ifPeriodoLabel(k,'trimestral'),tot:v.tot,ativos:v.ativos,ret:Math.round(v.ativos/v.tot*100)}));
+  })();
+
+  _ifGrowthCache={quando:IF_state.geradoEm, serie:s12, ultimoFechado, info,
+    kpis:{mrr:ultimoFechado.mrr, arr:ultimoFechado.mrr*12, mrrMoM:ultimoFechado.mrrMoM,
+      arpu:arpuAtual, baseAtiva:s12[s12.length-1].ativos,
+      churnMedio, churnInvShare: (c=>{const t=s12.slice(-7,-1);const ci=t.reduce((s,p)=>s+p.churnsInv,0);const ct=t.reduce((s,p)=>s+p.churns,0);return ct?ci/ct:0;})(),
+      ltv, lifetimeEsperado, lifetimeObs, cacValor, paybackMeses,
+      ltvCac: ltv&&cacValor ? ltv/cacValor : null,
+      nrr:ultimoFechado.nrr, grr:ultimoFechado.grr},
+    porBairro:porDim('bairro'), porCidade:porDim('cidade'), porPlano:porDim('plano'),
+    perdidosDevendo, cohorts};
+  return _ifGrowthCache;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  IF — CRESCIMENTO & RECEITA RECORRENTE (interface)
+// ════════════════════════════════════════════════════════════════
+IF_state.growDim='bairro';
+
+function ifRenderGrowth(){
+  ifDestruirCharts();
+  const g=ifGrowthCalc(); const k=g.kpis;
+  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const brlK=v=>'R$ '+(v>=1000?(v/1000).toFixed(1).replace('.',',')+'k':v.toFixed(0));
+  const mom=k.mrrMoM!=null?`<span class="if-var ${k.mrrMoM<0?'ruim':'bom'}">${k.mrrMoM>0?'▲':'▼'} ${Math.abs(k.mrrMoM*100).toFixed(1)}% MoM</span>`:'';
+  const card=(grad,lab,val,sub,click)=>`<div class="if-card ${click?'if-click':''}" style="background:${grad}" ${click?`onclick="${click}"`:''}><div class="if-card-lab">${lab}</div><div class="if-card-val">${val}</div><div class="if-card-sub">${sub||''}</div></div>`;
+  const dim={bairro:g.porBairro,cidade:g.porCidade,plano:g.porPlano}[IF_state.growDim];
+
+  document.getElementById('if-corpo').innerHTML=`
+    <div class="if-ia-chamada">
+      <button class="btn if-btn-primario" style="font-size:12px!important;padding:8px 18px!important" onclick="ifIAGrowth()">✨ Análise de crescimento (IA)</button>
+      <div id="if-ia-grow" style="flex:1"></div>
+    </div>
+    <div class="if-cli-sub" style="margin:-6px 0 12px">Esta aba usa a <b>base completa dos 24 meses</b> (o churn precisa dos cancelados) — independe do Recorte acima. Ativação = data real do contrato no IXC · mês do churn = última fatura do cliente cancelado.</div>
+
+    <div class="if-cards">
+      ${card('linear-gradient(135deg,#7C3AED,#2563EB)','MRR (último mês fechado)',brlK(k.mrr),`ARR ${brlK(k.arr)} ${mom}`)}
+      ${card('linear-gradient(135deg,#2563EB,#06B6D4)','Base ativa',k.baseAtiva,`ARPU ${brlS(k.arpu)}`)}
+      ${card('linear-gradient(135deg,#EF4444,#F97316)','Churn médio (6m)',(k.churnMedio*100).toFixed(2)+'%','ao mês · '+(k.churnInvShare*100).toFixed(0)+'% é involuntário (inadimplência)')}
+      ${card('linear-gradient(135deg,#10B981,#84CC16)','LTV',k.ltv?brlK(k.ltv):'—',k.lifetimeEsperado?('vida esperada '+k.lifetimeEsperado.toFixed(0)+' meses'+(k.lifetimeObs?' · observada '+k.lifetimeObs+'m':'')):'churn insuficiente p/ estimar')}
+      ${card('linear-gradient(135deg,#F59E0B,#EC4899)','CAC',k.cacValor?brlS(k.cacValor):'configurar →',k.cacValor?`LTV/CAC ${k.ltvCac?.toFixed(1)}x · payback ${k.paybackMeses}m`:'informe o gasto mensal de aquisição',"ifAbrirCacCfg()")}
+      ${card('linear-gradient(135deg,#0EA5E9,#6366F1)','Retenção de receita',k.nrr!=null?(k.nrr*100).toFixed(1)+'%':'—','NRR · GRR '+(k.grr!=null?(k.grr*100).toFixed(1)+'%':'—'))}
+    </div>
+
+    <div class="if-grid2">
+      <div class="if-painel"><div class="if-painel-tit">MRR e movimentos — novo × perdido (churn)</div><div class="if-chwrap" style="height:250px"><canvas id="if-gr-mrr"></canvas></div></div>
+      <div class="if-painel"><div class="if-painel-tit">Base de clientes — ativações × cancelamentos</div><div class="if-chwrap" style="height:250px"><canvas id="if-gr-base"></canvas></div></div>
+    </div>
+    <div class="if-grid2">
+      <div class="if-painel"><div class="if-painel-tit">Churn voluntário × involuntário (inadimplência)</div><div class="if-chwrap" style="height:230px"><canvas id="if-gr-churn"></canvas></div></div>
+      <div class="if-painel"><div class="if-painel-tit">Retenção por cohort de ativação (% ainda ativos)</div>
+        <div class="if-cohorts">${g.cohorts.map(c=>`<div class="if-cohort"><div class="if-cohort-tri">${c.tri}</div><div class="if-cohort-bar"><div style="height:${c.ret}%;background:${c.ret>=85?IF_CORES.verde:c.ret>=70?IF_CORES.lima:c.ret>=50?IF_CORES.amarelo:IF_CORES.vermelho}"></div></div><div class="if-cohort-pct">${c.ret}%</div><div class="if-cohort-n">${c.ativos}/${c.tot}</div></div>`).join('')}</div>
+        <div class="if-cli-sub" style="margin-top:8px">Cada coluna = clientes ativados naquele trimestre. Cohorts com retenção baixa indicam problema na entrada (venda, instalação ou perfil).</div>
+      </div>
+    </div>
+
+    <div class="if-painel" style="margin-bottom:14px">
+      <div class="if-ger-dimbar">
+        <div class="if-painel-tit" style="margin:0">🗺️ Crescimento da base por:</div>
+        ${[['bairro','📍 Bairro'],['cidade','🏙 Cidade'],['plano','📦 Plano']].map(([v,l])=>`<span class="if-ger-modo ${IF_state.growDim===v?'ativa':''}" onclick="IF_state.growDim='${v}';ifRenderGrowth()">${l}</span>`).join('')}
+        <span style="flex:1"></span>
+        <button class="btn" onclick="ifGrowthCSV()">↓ Relatório CSV</button>
+      </div>
+      <div class="if-grid2" style="margin-top:12px">
+        <div class="if-chwrap" style="height:${Math.max(200,Math.min(420,dim.length*32))}px"><canvas id="if-gr-dim"></canvas></div>
+        <div class="if-tscroll" style="max-height:420px"><table class="if-t">
+          <thead><tr><th>${IF_state.growDim[0].toUpperCase()+IF_state.growDim.slice(1)}</th><th>Base</th><th>Ativ. 12m</th><th>Perdas 12m</th><th>Líquido</th><th>Churn %</th><th>MRR</th><th>Ação</th><th></th></tr></thead>
+          <tbody>${dim.map(d=>`<tr>
+            <td style="font-weight:600">${d.chave}</td>
+            <td class="td-mono">${d.baseAtual}</td>
+            <td class="td-mono" style="color:${IF_CORES.verde}">+${d.ativ12}</td>
+            <td class="td-mono" style="color:${d.churn12?IF_CORES.vermelho:'inherit'}">−${d.churn12}${d.inv12?` <span class="if-cli-sub">(${d.inv12} inad.)</span>`:''}</td>
+            <td class="td-mono" style="font-weight:800;color:${d.net>0?IF_CORES.verde:d.net<0?IF_CORES.vermelho:'inherit'}">${d.net>0?'+':''}${d.net}</td>
+            <td class="td-mono">${(d.churnPct*100).toFixed(0)}%</td>
+            <td class="td-mono">${brlK(d.mrr)}</td>
+            <td><span class="if-pill" style="background:${d.recCor}22;color:${d.recCor}">${d.rec}</span></td>
+            <td>${IF_state.growDim!=='cidade'?`<button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifDrill('${IF_state.growDim}','${String(d.chave).replace(/'/g,"\\'")}')">👥</button>`:''}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+      <div class="if-cli-sub" style="margin-top:6px"><b>🚀 Expandir</b> = crescendo com churn/inadimplência baixos (investir em captação) · <b>🚨 Recuperar</b> = perdendo base ou churn ≥25% · <b>🛡 Defender</b> = inadimplência alta · <b>👁 Observar</b> = estável.</div>
+    </div>
+
+    <div class="if-painel">
+      <div class="if-painel-tit" style="color:${IF_CORES.vermelho}">💸 Churn involuntário — clientes perdidos por inadimplência (saíram devendo)</div>
+      ${g.perdidosDevendo.length?`<div class="if-tscroll" style="max-height:280px"><table class="if-t">
+        <thead><tr><th>Cliente</th><th>Bairro</th><th>Perdido em</th><th>Dívida final</th><th>P. recuperação</th><th></th></tr></thead>
+        <tbody>${g.perdidosDevendo.slice(0,25).map(x=>`<tr>
+          <td class="if-cli-nome">${x.nome}</td><td>${x.bairro}</td>
+          <td class="td-mono">${x.mes?ifPeriodoLabel(x.mes,'mensal'):'—'}</td>
+          <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${x.divida.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+          <td class="td-mono">${x.probRecup}%</td>
+          <td><button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifAbrirPerfil('${x.ixcId}')">👤</button></td></tr>`).join('')}</tbody></table></div>
+      <div class="if-cli-sub" style="margin-top:6px">Total: ${g.perdidosDevendo.length} clientes · R$ ${g.perdidosDevendo.reduce((s,x)=>s+x.divida,0).toLocaleString('pt-BR',{minimumFractionDigits:2})} em dívidas de ex-clientes. <b>Cada um destes é um churn que a régua de cobrança poderia ter evitado.</b></div>`
+      :'<div class="if-cli-sub">Nenhum cliente perdido por inadimplência no período. 🎉</div>'}
+    </div>`;
+  ifChartsGrowth(g);
+}
+
+function ifChartsGrowth(g){
+  const grid='rgba(128,128,128,0.12)';
+  const S=g.serie;
+  const lbl=S.map(p=>p.label+(p.parcial?'*':''));
+  IF_charts.grMrr=new Chart(document.getElementById('if-gr-mrr'),{type:'bar',data:{labels:lbl,datasets:[
+    {label:'MRR novo',data:S.map(p=>p.novoMRR),backgroundColor:'rgba(16,185,129,0.85)',stack:'m',borderRadius:4},
+    {label:'MRR perdido',data:S.map(p=>-p.churnMRR),backgroundColor:'rgba(239,68,68,0.85)',stack:'m',borderRadius:4},
+    {label:'MRR total',type:'line',data:S.map(p=>p.mrr),yAxisID:'y2',borderColor:IF_CORES.roxo,backgroundColor:'rgba(124,58,237,.15)',fill:true,tension:.3,pointRadius:3,borderWidth:2.5},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:11,font:{size:9.5}}}},scales:{y:{stacked:true,grid:{color:grid},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(1)+'k'}},y2:{position:'right',grid:{display:false},ticks:{font:{size:9},callback:v=>'R$'+(v/1000).toFixed(0)+'k'}},x:{stacked:true,grid:{display:false},ticks:{font:{size:9}}}}}});
+  IF_charts.grBase=new Chart(document.getElementById('if-gr-base'),{type:'bar',data:{labels:lbl,datasets:[
+    {label:'Ativações',data:S.map(p=>p.novas),backgroundColor:'rgba(16,185,129,0.85)',borderRadius:4},
+    {label:'Cancelamentos',data:S.map(p=>-p.churns),backgroundColor:'rgba(239,68,68,0.85)',borderRadius:4},
+    {label:'Base ativa',type:'line',data:S.map(p=>p.ativos),yAxisID:'y2',borderColor:IF_CORES.azul,tension:.3,pointRadius:3,borderWidth:2.5},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:11,font:{size:9.5}}}},scales:{y:{grid:{color:grid},ticks:{font:{size:9}}},y2:{position:'right',grid:{display:false},ticks:{font:{size:9}}},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  IF_charts.grChurn=new Chart(document.getElementById('if-gr-churn'),{type:'bar',data:{labels:lbl,datasets:[
+    {label:'Voluntário',data:S.map(p=>p.churnsVol),backgroundColor:'rgba(100,116,139,0.8)',stack:'c',borderRadius:4},
+    {label:'Involuntário (inadimplência)',data:S.map(p=>p.churnsInv),backgroundColor:'rgba(239,68,68,0.9)',stack:'c',borderRadius:4},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:11,font:{size:9.5}}}},scales:{y:{stacked:true,grid:{color:grid},ticks:{font:{size:9},precision:0}},x:{stacked:true,grid:{display:false},ticks:{font:{size:9}}}}}});
+  const dim={bairro:g.porBairro,cidade:g.porCidade,plano:g.porPlano}[IF_state.growDim].slice(0,12);
+  IF_charts.grDim=new Chart(document.getElementById('if-gr-dim'),{type:'bar',data:{labels:dim.map(d=>String(d.chave).slice(0,16)),datasets:[
+    {label:'Ativações 12m',data:dim.map(d=>d.ativ12),backgroundColor:'rgba(16,185,129,0.85)',borderRadius:4},
+    {label:'Perdas 12m',data:dim.map(d=>-d.churn12),backgroundColor:'rgba(239,68,68,0.85)',borderRadius:4},
+  ]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,onClick:(e,els)=>{if(els.length&&IF_state.growDim!=='cidade')ifDrill(IF_state.growDim,dim[els[0].index].chave);},plugins:{legend:{labels:{boxWidth:10,font:{size:9.5}}}},scales:{x:{stacked:true,grid:{color:grid},ticks:{font:{size:9},precision:0}},y:{stacked:true,grid:{display:false},ticks:{font:{size:9.5}}}}}});
+}
+
+// ── configurar CAC (gasto mensal de aquisição) ──
+function ifAbrirCacCfg(){
+  const c=ifCacCfg();
+  const html=`<div class="modal-overlay" id="if-modal-cac" onclick="if(event.target===this)this.remove()" style="display:flex;z-index:2950">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header" style="background:linear-gradient(135deg,#F59E0B,#EC4899);color:#fff;border-radius:12px 12px 0 0">
+        <div style="font-weight:700">💰 Configurar CAC</div>
+        <button class="modal-close" style="color:#fff" onclick="document.getElementById('if-modal-cac').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="if-cli-sub" style="margin-bottom:10px">Informe quanto a MoviOn gasta por mês para <b>conquistar clientes</b>: marketing, tráfego pago, comissões de venda, panfletagem, PAP etc. O CAC = gasto ÷ ativações do período.</div>
+        <label class="form-label">Gasto mensal de aquisição (R$)</label>
+        <input class="cp-form-input" id="if-cac-gasto" type="number" step="0.01" value="${c.gastoMensal||''}" placeholder="ex.: 3500">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn" onclick="ifSalvarCac({});document.getElementById('if-modal-cac').remove();_ifGrowthCache=null;ifRenderGrowth()">Limpar</button>
+          <button class="btn if-btn-primario" onclick="ifSalvarCac({gastoMensal:parseFloat(document.getElementById('if-cac-gasto').value)||0});document.getElementById('if-modal-cac').remove();_ifGrowthCache=null;ifRenderGrowth();showToast('CAC configurado!')">💾 Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+// ── IA: análise estratégica de crescimento ──
+async function ifIAGrowth(){
+  const el=document.getElementById('if-ia-grow'); if(!el)return;
+  el.innerHTML='<div class="if-ia-box"><span class="diag-spinner"></span> A IA está analisando o crescimento…</div>';
+  try{
+    const g=ifGrowthCalc(); const k=g.kpis;
+    const dados={
+      mrr:k.mrr.toFixed(0), mrrVariacaoMoM:k.mrrMoM!=null?(k.mrrMoM*100).toFixed(1)+'%':null,
+      baseAtiva:k.baseAtiva, arpu:k.arpu.toFixed(2),
+      churnMensalMedio:(k.churnMedio*100).toFixed(2)+'%',
+      parcelaChurnInvoluntario:(k.churnInvShare*100).toFixed(0)+'%',
+      ltv:k.ltv?.toFixed(0), lifetimeMeses:k.lifetimeEsperado?.toFixed(0),
+      cac:k.cacValor?.toFixed(0)||'não configurado', ltvCac:k.ltvCac?.toFixed(1),
+      serie6m:g.serie.slice(-7,-1).map(p=>`${p.label}: MRR ${p.mrr.toFixed(0)}, +${p.novas} ativ, -${p.churns} churn (${p.churnsInv} inad)`),
+      bairros:g.porBairro.slice(0,8).map(b=>`${b.chave}: base ${b.baseAtual}, net12m ${b.net>0?'+':''}${b.net}, churn ${(b.churnPct*100).toFixed(0)}%, ${b.rec.replace(/[^\w À-ú]/g,'').trim()}`),
+      dividaExClientes:g.perdidosDevendo.reduce((s,x)=>s+x.divida,0).toFixed(0),
+      cohortsRetencao:g.cohorts.map(c=>c.tri+': '+c.ret+'%')};
+    const txt=await ifGroq(IF_GROQ_SYS,
+      'Você é consultor de crescimento de ISPs. Com estes dados de receita recorrente, produza (máx 260 palavras): 1) diagnóstico do crescimento (saudável? estagnado?); 2) o problema nº1 que mais destrói valor hoje e quanto custa; 3) em QUAIS bairros investir captação e quais precisam de retenção, com justificativa; 4) três ações práticas para os próximos 30 dias com impacto estimado.\n\nDADOS:\n'+JSON.stringify(dados,null,1));
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise estratégica de crescimento — IA</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
+}
+
+// ── CSV completo ──
+function ifGrowthCSV(){
+  const g=ifGrowthCalc(); const k=g.kpis; const fmt=v=>v==null?'':(typeof v==='number'?v.toFixed(2).replace('.',','):v);
+  const L=['RELATORIO DE CRESCIMENTO E RECEITA RECORRENTE - MoviOn;Gerado: '+new Date().toLocaleString('pt-BR'),'',
+    'KPIS','MRR;'+fmt(k.mrr),'ARR;'+fmt(k.arr),'ARPU;'+fmt(k.arpu),'Base ativa;'+k.baseAtiva,
+    'Churn mensal medio 6m %;'+fmt(k.churnMedio*100),'Churn involuntario share %;'+fmt(k.churnInvShare*100),
+    'LTV;'+fmt(k.ltv),'Lifetime esperado meses;'+fmt(k.lifetimeEsperado),'Lifetime observado meses;'+(k.lifetimeObs||''),
+    'CAC;'+fmt(k.cacValor),'LTV/CAC;'+fmt(k.ltvCac),'Payback meses;'+(k.paybackMeses||''),
+    'NRR %;'+fmt(k.nrr!=null?k.nrr*100:null),'GRR %;'+fmt(k.grr!=null?k.grr*100:null),'',
+    'SERIE MENSAL','Mes;Base Ativa;MRR;MRR Novo;MRR Perdido;Ativacoes;Cancelamentos;Churn Voluntario;Churn Involuntario;Churn Rate %;ARPU',
+    ...g.serie.map(p=>[p.label,p.ativos,fmt(p.mrr),fmt(p.novoMRR),fmt(p.churnMRR),p.novas,p.churns,p.churnsVol,p.churnsInv,fmt(p.churnRate*100),fmt(p.arpu)].join(';'))];
+  [['BAIRRO',g.porBairro],['CIDADE',g.porCidade],['PLANO',g.porPlano]].forEach(([nome,arr])=>{
+    L.push('','CRESCIMENTO POR '+nome,nome+';Base Atual;Ativacoes 12m;Perdas 12m;Perdas por Inadimplencia;Liquido;Churn %;MRR;Vencido;Recomendacao');
+    arr.forEach(d=>L.push([String(d.chave).replace(/;/g,' '),d.baseAtual,d.ativ12,d.churn12,d.inv12,d.net,fmt(d.churnPct*100),fmt(d.mrr),fmt(d.vencido),d.rec.replace(/[^\w À-ú/]/g,'').trim()].join(';')));
+  });
+  L.push('','CHURN INVOLUNTARIO - PERDIDOS DEVENDO','Cliente;Bairro;Mes;Divida;Prob Recuperacao %');
+  g.perdidosDevendo.forEach(x=>L.push([x.nome.replace(/;/g,' '),x.bairro,x.mes||'',fmt(x.divida),x.probRecup].join(';')));
+  L.push('','COHORTS','Trimestre de Ativacao;Ativados;Ainda Ativos;Retencao %');
+  g.cohorts.forEach(c=>L.push([c.tri,c.tot,c.ativos,c.ret].join(';')));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+L.join('\n')],{type:'text/csv'}));
+  a.download='crescimento_receita_recorrente.csv';a.click();showToast('Relatório exportado!');
 }
 
 </script>
