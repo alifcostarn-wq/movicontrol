@@ -1524,6 +1524,11 @@ textarea.cp-form-input{resize:vertical}
 .if-cohort-tri{font-size:9px;font-weight:700;color:var(--text3)}
 .if-cohort-pct{font-family:'DM Mono',monospace;font-size:11.5px;font-weight:800}
 .if-cohort-n{font-size:8.5px;color:var(--text3)}
+.if-numgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.if-num{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 12px}
+.if-num-l{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:700}
+.if-num-v{font-family:'DM Mono',monospace;font-size:13.5px;font-weight:700;margin-top:3px}
+.if-t-num td,.if-t-num th{padding:7px 9px;font-size:11px;white-space:nowrap}
 .if-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
 .if-card{border-radius:var(--if-r);padding:16px 18px;color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.12);transition:transform .15s ease}
 .if-card:hover{transform:translateY(-3px)}
@@ -14578,6 +14583,59 @@ async function ifChatGroq(pergunta){
 function ifCacCfg(){ try{return JSON.parse(localStorage.getItem('if_cac')||'{}');}catch(e){return{};} }
 function ifSalvarCac(o){ localStorage.setItem('if_cac',JSON.stringify(o)); }
 
+// ── MOTIVOS DE CANCELAMENTO (busca sob demanda no IXC) ──
+// Fonte: cliente_contrato (status D) → data_cancelamento, motivo_cancelamento, obs.
+// A tabela de nomes dos motivos é buscada de forma tolerante a versões do IXC.
+let _ifMotivos=null, _ifMotivosLoading=false;
+async function ifBuscarMotivosChurn(force=false){
+  if(_ifMotivos && !force) return _ifMotivos;
+  if(_ifMotivosLoading) return null;
+  _ifMotivosLoading=true;
+  try{
+    const cfg=await getIXCConfig();
+    if(!cfg.proxyUrl) throw new Error('Integração IXC não configurada.');
+    const resp=await buscarTudoIXC(cfg,'cliente_contrato',{
+      qtype:'cliente_contrato.status', query:'D', oper:'=', rp:'1000',
+      sortname:'cliente_contrato.id', sortorder:'desc'});
+    const regs=resp.registros||[];
+    const porCliente={};
+    regs.forEach(r=>{
+      const cid=String(r.id_cliente||''); if(!cid) return;
+      // tolerante a schema: acha campos por nome
+      let motivoId=null, dataCanc=null, obs='';
+      Object.entries(r).forEach(([k,v])=>{
+        const kl=k.toLowerCase();
+        if(v==null||v==='') return;
+        if(/motivo.*cancel|cancel.*motivo|id_motivo/.test(kl)&&!motivoId) motivoId=String(v);
+        if(/data.*cancel/.test(kl)&&!dataCanc){const d=String(v).slice(0,10);if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&d!=='0000-00-00')dataCanc=d;}
+        if(/obs.*cancel|cancel.*obs/.test(kl)) obs=String(v).slice(0,140);
+      });
+      // mantém o cancelamento mais recente por cliente
+      if(!porCliente[cid]||(dataCanc&&(!porCliente[cid].data||dataCanc>porCliente[cid].data)))
+        porCliente[cid]={motivoId, data:dataCanc, obs};
+    });
+    // nomes dos motivos (tenta os dois nomes de tabela conhecidos; falha silenciosa)
+    const nomes={};
+    for(const tabela of ['motivo_cancelamento','tipo_motivo_cancelamento']){
+      try{
+        const rm=await chamarIXC(cfg,tabela,{qtype:tabela+'.id',query:'0',oper:'>',rp:'300'});
+        (rm?.registros||[]).forEach(m=>{
+          const desc=m.motivo||m.descricao||m.nome||m.titulo;
+          if(m.id&&desc) nomes[String(m.id)]=String(desc);
+        });
+        if(Object.keys(nomes).length) break;
+      }catch(e){/* tabela pode não existir nesta versão */}
+    }
+    _ifMotivos={porCliente, nomes, quando:Date.now(), total:Object.keys(porCliente).length};
+    _ifGrowthCache=null; // datas reais de cancelamento mudam a série
+    return _ifMotivos;
+  }finally{ _ifMotivosLoading=false; }
+}
+function ifNomeMotivo(id){
+  if(!id) return 'Não informado';
+  return (_ifMotivos?.nomes?.[String(id)]) || ('Motivo #'+id);
+}
+
 let _ifGrowthCache=null;
 function ifGrowthCalc(){
   if(_ifGrowthCache && _ifGrowthCache.quando===IF_state.geradoEm) return _ifGrowthCache;
@@ -14591,17 +14649,20 @@ function ifGrowthCalc(){
     const ctr=ctrs.find(x=>x.ixcClienteId==pf.ixcId)||{};
     let ativMes=String(ctr.dataAtivacao||'').slice(0,7);
     if(!/^\d{4}-\d{2}$/.test(ativMes)) ativMes = pf.p.primeiraFat ? pf.p.primeiraFat.slice(0,7) : null; // fallback: 1ª fatura
-    let churnMes=null, churnTipo=null;
+    let churnMes=null, churnTipo=null, motivoId=null, motivoObs='';
     if(pf.grupo==='cancelado'){
-      const vencs=pf.fats.filter(f=>f.tipo!=='ignorada'&&f.venc).map(f=>f.venc);
-      churnMes = vencs.length ? vencs.sort().pop().slice(0,7) : ativMes;
+      const mv=_ifMotivos?.porCliente?.[String(pf.ixcId)];
+      if(mv){ motivoId=mv.motivoId; motivoObs=mv.obs||''; }
+      // Prioridade: data REAL de cancelamento do IXC; fallback: última fatura
+      if(mv&&mv.data) churnMes=mv.data.slice(0,7);
+      else{ const vencs=pf.fats.filter(f=>f.tipo!=='ignorada'&&f.venc).map(f=>f.venc); churnMes = vencs.length ? vencs.sort().pop().slice(0,7) : ativMes; }
       // Involuntário = saiu devendo (faturas vencidas em aberto) — cancelamento por inadimplência
       churnTipo = pf.p.valorVencido>0 ? 'involuntario' : 'voluntario';
     }
     // valor mensal por mês (para MRR/expansão): soma faturas com venc no mês
     const valMes={};
     pf.fats.forEach(f=>{ if(f.tipo!=='ignorada'&&f.venc) valMes[f.venc.slice(0,7)]=(valMes[f.venc.slice(0,7)]||0)+f.valor; });
-    return {pf, ativMes, churnMes, churnTipo, valMes,
+    return {pf, ativMes, churnMes, churnTipo, motivoId, motivoObs, valMes,
       valorRef: parseFloat(ctr.valor)||pf.p.valorMedio||0,
       bairro:pf.bairro||'—', cidade:pf.cidade||'—', plano:String(pf.plano||'—').slice(0,22)};
   });
@@ -14668,7 +14729,7 @@ function ifGrowthCalc(){
   // ── churn involuntário: quem saiu devendo (lista acionável) ──
   const perdidosDevendo=info.filter(x=>x.churnTipo==='involuntario')
     .sort((a,b)=>b.pf.p.valorVencido-a.pf.p.valorVencido)
-    .map(x=>({nome:x.pf.nome,ixcId:x.pf.ixcId,bairro:x.bairro,mes:x.churnMes,divida:x.pf.p.valorVencido,probRecup:x.pf.prob.probRecup}));
+    .map(x=>({nome:x.pf.nome,ixcId:x.pf.ixcId,bairro:x.bairro,mes:x.churnMes,divida:x.pf.p.valorVencido,probRecup:x.pf.prob.probRecup,motivo:ifNomeMotivo(x.motivoId)}));
 
   // ── dimensões: bairro / cidade / plano ──
   const m12ini=meses[1];
@@ -14702,7 +14763,37 @@ function ifGrowthCalc(){
       .map(([k,v])=>({tri:ifPeriodoLabel(k,'trimestral'),tot:v.tot,ativos:v.ativos,ret:Math.round(v.ativos/v.tot*100)}));
   })();
 
-  _ifGrowthCache={quando:IF_state.geradoEm, serie:s12, ultimoFechado, info,
+  // ── por MOTIVO de cancelamento (12m) ──
+  const porMotivo=(()=>{
+    const g={};
+    info.filter(x=>x.churnMes&&x.churnMes>=m12ini).forEach(x=>{
+      const nome=ifNomeMotivo(x.motivoId);
+      const e=(g[nome]=g[nome]||{qtd:0,vol:0,inv:0,mrrPerdido:0,bairros:{},obs:[]});
+      e.qtd++; e[x.churnTipo==='involuntario'?'inv':'vol']++;
+      e.mrrPerdido+=x.valorRef||0;
+      e.bairros[x.bairro]=(e.bairros[x.bairro]||0)+1;
+      if(x.motivoObs&&e.obs.length<3) e.obs.push(x.motivoObs);
+    });
+    return Object.entries(g).map(([motivo,e])=>({motivo,...e,
+      bairroTop:Object.entries(e.bairros).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—'}))
+      .sort((a,b)=>b.qtd-a.qtd);
+  })();
+  // ── totais numéricos 12m (para análise por números) ──
+  const fech=s12.filter(p=>!p.parcial);
+  const tot12={
+    ativ:fech.reduce((s,p)=>s+p.novas,0), churn:fech.reduce((s,p)=>s+p.churns,0),
+    churnInv:fech.reduce((s,p)=>s+p.churnsInv,0), churnVol:fech.reduce((s,p)=>s+p.churnsVol,0),
+    mrrNovo:fech.reduce((s,p)=>s+p.novoMRR,0), mrrPerdido:fech.reduce((s,p)=>s+p.churnMRR,0),
+    baseIni:serie[0].ativos, baseFim:s12[s12.length-1].ativos,
+    melhorMes:fech.reduce((a,p)=>p.netClientes>(a?.netClientes??-1e9)?p:a,null),
+    piorMes:fech.reduce((a,p)=>p.netClientes<(a?.netClientes??1e9)?p:a,null),
+  };
+  tot12.net=tot12.ativ-tot12.churn;
+  tot12.crescPct = tot12.baseIni>0 ? (tot12.baseFim-tot12.baseIni)/tot12.baseIni : null;
+  tot12.mediaAtivMes = fech.length?tot12.ativ/fech.length:0;
+  tot12.mediaChurnMes = fech.length?tot12.churn/fech.length:0;
+
+  _ifGrowthCache={quando:IF_state.geradoEm, serie:s12, ultimoFechado, info, porMotivo, tot12,
     kpis:{mrr:ultimoFechado.mrr, arr:ultimoFechado.mrr*12, mrrMoM:ultimoFechado.mrrMoM,
       arpu:arpuAtual, baseAtiva:s12[s12.length-1].ativos,
       churnMedio, churnInvShare: (c=>{const t=s12.slice(-7,-1);const ci=t.reduce((s,p)=>s+p.churnsInv,0);const ct=t.reduce((s,p)=>s+p.churns,0);return ct?ci/ct:0;})(),
@@ -14721,6 +14812,11 @@ IF_state.growDim='bairro';
 
 function ifRenderGrowth(){
   ifDestruirCharts();
+  // Busca automática dos motivos de cancelamento (uma vez; re-renderiza ao chegar)
+  if(!_ifMotivos && !_ifMotivosLoading){
+    ifBuscarMotivosChurn().then(m=>{ if(m && IF_state.tab==='growth') ifRenderGrowth(); })
+      .catch(e=>console.warn('[motivos churn]', e.message||e));
+  }
   const g=ifGrowthCalc(); const k=g.kpis;
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const brlK=v=>'R$ '+(v>=1000?(v/1000).toFixed(1).replace('.',',')+'k':v.toFixed(0));
@@ -14783,13 +14879,77 @@ function ifRenderGrowth(){
       <div class="if-cli-sub" style="margin-top:6px"><b>🚀 Expandir</b> = crescendo com churn/inadimplência baixos (investir em captação) · <b>🚨 Recuperar</b> = perdendo base ou churn ≥25% · <b>🛡 Defender</b> = inadimplência alta · <b>👁 Observar</b> = estável.</div>
     </div>
 
+    <div class="if-painel" style="margin-bottom:14px">
+      <div class="if-painel-tit">📑 Números do período — últimos 12 meses (fechados)</div>
+      <div class="if-numgrid">
+        ${[['Base início → fim',g.tot12.baseIni+' → '+g.tot12.baseFim],
+           ['Crescimento da base',g.tot12.crescPct!=null?((g.tot12.crescPct>=0?'+':'')+(g.tot12.crescPct*100).toFixed(1)+'%'):'—'],
+           ['Ativações',(+g.tot12.ativ)+' (média '+g.tot12.mediaAtivMes.toFixed(1)+'/mês)'],
+           ['Cancelamentos',g.tot12.churn+' (média '+g.tot12.mediaChurnMes.toFixed(1)+'/mês)'],
+           ['— voluntários',g.tot12.churnVol],
+           ['— por inadimplência',g.tot12.churnInv+' ('+(g.tot12.churn?Math.round(g.tot12.churnInv/g.tot12.churn*100):0)+'%)'],
+           ['Saldo líquido',(g.tot12.net>0?'+':'')+g.tot12.net+' clientes'],
+           ['MRR ganho (novos)','R$ '+g.tot12.mrrNovo.toLocaleString('pt-BR',{minimumFractionDigits:2})],
+           ['MRR perdido (churn)','R$ '+g.tot12.mrrPerdido.toLocaleString('pt-BR',{minimumFractionDigits:2})],
+           ['Saldo de MRR',(v=>'R$ '+(v>0?'+':'')+v.toLocaleString('pt-BR',{minimumFractionDigits:2}))(g.tot12.mrrNovo-g.tot12.mrrPerdido)],
+           ['Melhor mês (líquido)',g.tot12.melhorMes?g.tot12.melhorMes.label+' ('+(g.tot12.melhorMes.netClientes>0?'+':'')+g.tot12.melhorMes.netClientes+')':'—'],
+           ['Pior mês (líquido)',g.tot12.piorMes?g.tot12.piorMes.label+' ('+g.tot12.piorMes.netClientes+')':'—'],
+          ].map(([l,v])=>`<div class="if-num"><div class="if-num-l">${l}</div><div class="if-num-v">${v}</div></div>`).join('')}
+      </div>
+      <div class="if-tscroll" style="max-height:340px;margin-top:12px"><table class="if-t if-t-num">
+        <thead><tr><th>Mês</th><th>Base</th><th>Ativ.</th><th>Canc.</th><th>Vol.</th><th>Inad.</th><th>Líquido</th><th>Churn %</th><th>MRR</th><th>MRR novo</th><th>MRR perdido</th><th>ARPU</th><th>NRR %</th></tr></thead>
+        <tbody>${g.serie.map(p=>`<tr>
+          <td style="font-weight:700">${p.label}${p.parcial?' <span class="if-cli-sub">(parcial)</span>':''}</td>
+          <td class="td-mono">${p.ativos}</td>
+          <td class="td-mono" style="color:${IF_CORES.verde}">${p.novas?'+'+p.novas:'0'}</td>
+          <td class="td-mono" style="color:${p.churns?IF_CORES.vermelho:'inherit'}">${p.churns?'−'+p.churns:'0'}</td>
+          <td class="td-mono">${p.churnsVol}</td>
+          <td class="td-mono" style="color:${p.churnsInv?IF_CORES.vermelho:'inherit'}">${p.churnsInv}</td>
+          <td class="td-mono" style="font-weight:800;color:${p.netClientes>0?IF_CORES.verde:p.netClientes<0?IF_CORES.vermelho:'inherit'}">${p.netClientes>0?'+':''}${p.netClientes}</td>
+          <td class="td-mono">${(p.churnRate*100).toFixed(2)}%</td>
+          <td class="td-mono">${(p.mrr/1000).toFixed(1)}k</td>
+          <td class="td-mono" style="color:${IF_CORES.verde}">${p.novoMRR?(p.novoMRR/1000).toFixed(2)+'k':'—'}</td>
+          <td class="td-mono" style="color:${p.churnMRR?IF_CORES.vermelho:'inherit'}">${p.churnMRR?(p.churnMRR/1000).toFixed(2)+'k':'—'}</td>
+          <td class="td-mono">${p.arpu.toFixed(2)}</td>
+          <td class="td-mono">${p.nrr!=null?(p.nrr*100).toFixed(1):'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+
+    <div class="if-painel" style="margin-bottom:14px">
+      <div class="if-painel-tit" style="display:flex;justify-content:space-between;align-items:center">
+        <span>📵 Motivos de cancelamento — últimos 12 meses ${_ifMotivos?`<span class="if-cli-sub">(${_ifMotivos.total} contratos cancelados lidos do IXC)</span>`:''}</span>
+        <button class="btn" style="font-size:10.5px" onclick="_ifMotivos=null;ifRenderGrowth()">↻ Atualizar do IXC</button>
+      </div>
+      ${!_ifMotivos?'<div class="cli-empty-pane"><span class="diag-spinner"></span> Buscando motivos de cancelamento no IXC…</div>'
+      :(g.porMotivo.length?`
+      <div class="if-grid2">
+        <div class="if-chwrap" style="height:${Math.max(180,Math.min(360,g.porMotivo.length*36))}px"><canvas id="if-gr-motivo"></canvas></div>
+        <div class="if-tscroll" style="max-height:360px"><table class="if-t if-t-num">
+          <thead><tr><th>Motivo</th><th>Qtd</th><th>% do churn</th><th>Volunt.</th><th>Inad.</th><th>MRR perdido</th><th>Bairro + afetado</th></tr></thead>
+          <tbody>${(tot=>g.porMotivo.map(m=>`<tr>
+            <td style="font-weight:600">${m.motivo}${m.obs.length?`<div class="if-cli-sub" title="${m.obs.join(' | ').replace(/"/g,'&quot;')}">💬 ${m.obs[0].slice(0,45)}…</div>`:''}</td>
+            <td class="td-mono" style="font-weight:800">${m.qtd}</td>
+            <td class="td-mono">${tot?Math.round(m.qtd/tot*100):0}%</td>
+            <td class="td-mono">${m.vol}</td>
+            <td class="td-mono" style="color:${m.inv?IF_CORES.vermelho:'inherit'}">${m.inv}</td>
+            <td class="td-mono">R$ ${m.mrrPerdido.toLocaleString('pt-BR',{minimumFractionDigits:2})}/mês</td>
+            <td>${m.bairroTop}</td>
+          </tr>`).join(''))(g.porMotivo.reduce((s,m)=>s+m.qtd,0))}</tbody>
+        </table></div>
+      </div>
+      <div class="if-cli-sub" style="margin-top:6px">MRR perdido = mensalidade somada dos clientes que saíram por cada motivo. Motivos "Não informado" indicam cancelamentos sem motivo registrado no IXC — vale padronizar o preenchimento na equipe.</div>`
+      :'<div class="if-cli-sub">Nenhum cancelamento com motivo nos últimos 12 meses.</div>')}
+    </div>
+
     <div class="if-painel">
       <div class="if-painel-tit" style="color:${IF_CORES.vermelho}">💸 Churn involuntário — clientes perdidos por inadimplência (saíram devendo)</div>
       ${g.perdidosDevendo.length?`<div class="if-tscroll" style="max-height:280px"><table class="if-t">
-        <thead><tr><th>Cliente</th><th>Bairro</th><th>Perdido em</th><th>Dívida final</th><th>P. recuperação</th><th></th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Bairro</th><th>Perdido em</th><th>Motivo (IXC)</th><th>Dívida final</th><th>P. recuperação</th><th></th></tr></thead>
         <tbody>${g.perdidosDevendo.slice(0,25).map(x=>`<tr>
           <td class="if-cli-nome">${x.nome}</td><td>${x.bairro}</td>
           <td class="td-mono">${x.mes?ifPeriodoLabel(x.mes,'mensal'):'—'}</td>
+          <td style="font-size:11px">${x.motivo}</td>
           <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${x.divida.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
           <td class="td-mono">${x.probRecup}%</td>
           <td><button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifAbrirPerfil('${x.ixcId}')">👤</button></td></tr>`).join('')}</tbody></table></div>
@@ -14817,6 +14977,13 @@ function ifChartsGrowth(g){
     {label:'Voluntário',data:S.map(p=>p.churnsVol),backgroundColor:'rgba(100,116,139,0.8)',stack:'c',borderRadius:4},
     {label:'Involuntário (inadimplência)',data:S.map(p=>p.churnsInv),backgroundColor:'rgba(239,68,68,0.9)',stack:'c',borderRadius:4},
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:11,font:{size:9.5}}}},scales:{y:{stacked:true,grid:{color:grid},ticks:{font:{size:9},precision:0}},x:{stacked:true,grid:{display:false},ticks:{font:{size:9}}}}}});
+  if(_ifMotivos && g.porMotivo.length && document.getElementById('if-gr-motivo')){
+    const mo=g.porMotivo.slice(0,10);
+    IF_charts.grMotivo=new Chart(document.getElementById('if-gr-motivo'),{type:'bar',data:{labels:mo.map(m=>String(m.motivo).slice(0,22)),datasets:[
+      {label:'Voluntário',data:mo.map(m=>m.vol),backgroundColor:'rgba(100,116,139,0.8)',stack:'m',borderRadius:5},
+      {label:'Por inadimplência',data:mo.map(m=>m.inv),backgroundColor:'rgba(239,68,68,0.9)',stack:'m',borderRadius:5},
+    ]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:10,font:{size:9.5}}}},scales:{x:{stacked:true,grid:{color:grid},ticks:{font:{size:9},precision:0}},y:{stacked:true,grid:{display:false},ticks:{font:{size:9.5}}}}}});
+  }
   const dim={bairro:g.porBairro,cidade:g.porCidade,plano:g.porPlano}[IF_state.growDim].slice(0,12);
   IF_charts.grDim=new Chart(document.getElementById('if-gr-dim'),{type:'bar',data:{labels:dim.map(d=>String(d.chave).slice(0,16)),datasets:[
     {label:'Ativações 12m',data:dim.map(d=>d.ativ12),backgroundColor:'rgba(16,185,129,0.85)',borderRadius:4},
@@ -14863,6 +15030,7 @@ async function ifIAGrowth(){
       serie6m:g.serie.slice(-7,-1).map(p=>`${p.label}: MRR ${p.mrr.toFixed(0)}, +${p.novas} ativ, -${p.churns} churn (${p.churnsInv} inad)`),
       bairros:g.porBairro.slice(0,8).map(b=>`${b.chave}: base ${b.baseAtual}, net12m ${b.net>0?'+':''}${b.net}, churn ${(b.churnPct*100).toFixed(0)}%, ${b.rec.replace(/[^\w À-ú]/g,'').trim()}`),
       dividaExClientes:g.perdidosDevendo.reduce((s,x)=>s+x.divida,0).toFixed(0),
+      motivosCancelamento12m:g.porMotivo.slice(0,8).map(m=>`${m.motivo}: ${m.qtd} (${m.inv} por inadimplência, MRR perdido R$${m.mrrPerdido.toFixed(0)})`),
       cohortsRetencao:g.cohorts.map(c=>c.tri+': '+c.ret+'%')};
     const txt=await ifGroq(IF_GROQ_SYS,
       'Você é consultor de crescimento de ISPs. Com estes dados de receita recorrente, produza (máx 260 palavras): 1) diagnóstico do crescimento (saudável? estagnado?); 2) o problema nº1 que mais destrói valor hoje e quanto custa; 3) em QUAIS bairros investir captação e quais precisam de retenção, com justificativa; 4) três ações práticas para os próximos 30 dias com impacto estimado.\n\nDADOS:\n'+JSON.stringify(dados,null,1));
@@ -14887,6 +15055,11 @@ function ifGrowthCSV(){
   });
   L.push('','CHURN INVOLUNTARIO - PERDIDOS DEVENDO','Cliente;Bairro;Mes;Divida;Prob Recuperacao %');
   g.perdidosDevendo.forEach(x=>L.push([x.nome.replace(/;/g,' '),x.bairro,x.mes||'',fmt(x.divida),x.probRecup].join(';')));
+  L.push('','TOTAIS 12 MESES','Ativacoes;'+g.tot12.ativ,'Cancelamentos;'+g.tot12.churn,'Cancel Voluntarios;'+g.tot12.churnVol,'Cancel por Inadimplencia;'+g.tot12.churnInv,'Saldo Liquido;'+g.tot12.net,'Crescimento Base %;'+fmt(g.tot12.crescPct!=null?g.tot12.crescPct*100:null),'MRR Ganho;'+fmt(g.tot12.mrrNovo),'MRR Perdido;'+fmt(g.tot12.mrrPerdido));
+  if(g.porMotivo.length){
+    L.push('','MOTIVOS DE CANCELAMENTO 12M','Motivo;Qtd;Voluntario;Por Inadimplencia;MRR Perdido;Bairro Mais Afetado');
+    g.porMotivo.forEach(m=>L.push([String(m.motivo).replace(/;/g,' '),m.qtd,m.vol,m.inv,fmt(m.mrrPerdido),m.bairroTop].join(';')));
+  }
   L.push('','COHORTS','Trimestre de Ativacao;Ativados;Ainda Ativos;Retencao %');
   g.cohorts.forEach(c=>L.push([c.tri,c.tot,c.ativos,c.ret].join(';')));
   const a=document.createElement('a');
