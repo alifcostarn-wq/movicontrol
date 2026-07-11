@@ -392,6 +392,7 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 const SUPA_URL  = 'https://mgtetsmcswdtvsgewcen.supabase.co';
 const SUPA_ANON = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const PROXY_URL = 'https://movicontrol.vercel.app/api/moviapp';
+const ASNP_URL = 'https://movicontrol.vercel.app/api/assinatura-propria';
 const PUSH_URL  = 'https://movicontrol.vercel.app/api/push';
 const WHATSAPP_FINANCEIRO = '5584992106750'; // Atendimento MoviOn
 // Storage isolado: o MoviApp usa uma chave própria para NÃO compartilhar
@@ -417,6 +418,7 @@ let cbLista  = [];
 let _confianca = null;        // status vindo do IXC: {elegivel, habilitado, ja_ativo, restrito, motivo_restricao}
 let _confiancaLoading = false;
 let _confiancaBusy = false;
+let _lotesAssinatura = [];    // lotes de assinatura eletrônica do cliente
 
 // ── Helpers ───────────────────────────────────
 const fmtNome = n => n ? n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : '';
@@ -583,6 +585,17 @@ function renderHome(){
       </div>` : '')}
     </div>
 
+    <!-- Assinaturas pendentes -->
+    ${(_lotesAssinatura||[]).filter(l=>l.status==='pendente').length ? `
+    <div onclick="abrirAssinaturasPendentes()" style="background:linear-gradient(135deg,#FFFBEB,#FEF3C7);border:1.5px solid #FCD34D;border-radius:16px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer">
+      <div style="font-size:24px">📝</div>
+      <div style="flex:1">
+        <div style="font-size:13.5px;font-weight:800;color:#92400E">Documentos aguardando assinatura</div>
+        <div style="font-size:11.5px;color:#B45309;margin-top:2px">${(_lotesAssinatura||[]).filter(l=>l.status==='pendente').length} pendente(s) — toque para assinar</div>
+      </div>
+      <div style="font-size:18px;color:#B45309">›</div>
+    </div>` : ''}
+
     <!-- Mini cards: Fatura + Plano -->
     <div class="mini-cards">
       <div class="mini-card" onclick="navTo('fatura')" ${emAtraso ? 'style="border:1.5px solid #FCA5A5;background:rgba(220,38,38,.04)"' : ''}>
@@ -732,7 +745,7 @@ async function doLogin(){
 async function doLogout(){
   esconderFAB();
   await sb.auth.signOut();
-  perfil=null; faturas=[]; ordens=[]; cbSaldo=0; cbLista=[]; chamados=[]; _confianca=null;
+  perfil=null; faturas=[]; ordens=[]; cbSaldo=0; cbLista=[]; chamados=[]; _confianca=null; _lotesAssinatura=[];
   if(_realtimeChamados){ sb.removeChannel(_realtimeChamados); _realtimeChamados=null; }
   renderLogin();
 }
@@ -746,7 +759,7 @@ async function carregarDados(){
   if(!perfil) return;
 
   // 2) Carregar tudo em paralelo
-  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback(), carregarChamados()]);
+  await Promise.all([carregarFaturas(), carregarOS(), carregarCashback(), carregarChamados(), carregarLotesAssinatura()]);
   assinarRealtimeChamados();
   mostrarFAB();
 }
@@ -1233,6 +1246,222 @@ async function carregarFaturas(){
     faturas = d.registros||[];
     _confianca = null; // recarrega elegibilidade sempre que as faturas mudam
   } catch(e){ faturas=[]; }
+}
+
+// ── Assinatura Eletrônica Própria (contrato → confirmar dados → selfie) ────────
+async function asnpToken(){
+  const { data:{ session } } = await sb.auth.getSession();
+  return session ? session.access_token : '';
+}
+async function asnpCall(action, payload){
+  const tk = await asnpToken();
+  if(!tk) return { ok:false, error:'sem sessão' };
+  const r = await fetch(ASNP_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+tk, 'x-target':'cliente' },
+    body: JSON.stringify({ action, ...(payload||{}) })
+  });
+  return await r.json();
+}
+
+async function carregarLotesAssinatura(){
+  try {
+    const d = await asnpCall('meus_lotes');
+    _lotesAssinatura = (d.ok && d.lotes) ? d.lotes : [];
+  } catch(e){ _lotesAssinatura = []; }
+}
+
+function abrirAssinaturasPendentes(){
+  const pend = (_lotesAssinatura||[]).filter(l=>l.status==='pendente');
+  const done = (_lotesAssinatura||[]).filter(l=>l.status==='assinado');
+  const ov = document.createElement('div');
+  ov.id = 'asnp-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,40,.55);z-index:400;display:flex;align-items:flex-end;justify-content:center';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:22px 22px 0 0;width:100%;max-width:520px;max-height:82vh;overflow:auto;padding:22px 20px 30px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:17px;font-weight:800">📝 Assinatura de documentos</div>
+        <button onclick="document.getElementById('asnp-overlay').remove()" style="background:#F1F1F6;border:none;border-radius:50%;width:32px;height:32px;font-size:15px;cursor:pointer">✕</button>
+      </div>
+      ${pend.length ? pend.map(l=>`
+        <div style="border:1.5px solid #E4E5F3;border-radius:14px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px">
+          <div style="font-size:20px">📄</div>
+          <div style="flex:1">
+            <div style="font-size:13.5px;font-weight:700">${l.documentos ? l.documentos : (l.qtd||1)+' documento(s)'}</div>
+            <div style="font-size:11px;color:#9496B0;margin-top:2px">Enviado ${l.criado_em ? new Date(l.criado_em).toLocaleDateString('pt-BR') : ''}</div>
+          </div>
+          <button onclick="asnpAbrirLote(${l.id})" style="background:#3B3ED8;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-weight:800;font-size:12.5px;cursor:pointer">Assinar</button>
+        </div>`).join('') : `<div style="text-align:center;color:#9496B0;font-size:13px;padding:16px 0">Nenhum documento pendente ✓</div>`}
+      ${done.length ? `
+        <div style="font-size:11.5px;font-weight:700;color:#9496B0;text-transform:uppercase;letter-spacing:.04em;margin:16px 0 8px">Assinados</div>
+        ${done.map(l=>`
+          <div style="border:1.5px solid #D1FAE5;background:#F0FDF6;border-radius:14px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+            <div style="font-size:16px">✅</div>
+            <div style="flex:1"><div style="font-size:13px;font-weight:700">Documentos assinados</div>
+            <div style="font-size:11px;color:#059669">Em ${l.assinado_em ? new Date(l.assinado_em).toLocaleDateString('pt-BR') : ''}</div></div>
+          </div>`).join('')}` : ''}
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+// estado do fluxo de assinatura em andamento
+let _asnpLote = null;
+let _asnpDocs = [];
+let _asnpDocIdx = 0;
+let _asnpDados = {};
+let _asnpSelfieB64 = null;
+
+async function asnpAbrirLote(loteId){
+  const old = document.getElementById('asnp-overlay'); if(old) old.remove();
+  const d = await asnpCall('lote_detalhe', { lote_id: loteId });
+  if(!d.ok){ alert('Não foi possível carregar os documentos.'); return; }
+  _asnpLote = d.lote;
+  _asnpDocs = d.documentos || [];
+  _asnpDocIdx = 0;
+  asnpRenderDocumento();
+}
+
+function asnpFullOverlay(innerHtml){
+  let ov = document.getElementById('asnp-flow');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'asnp-flow';
+    ov.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = innerHtml;
+}
+function asnpFecharFluxo(){
+  const ov = document.getElementById('asnp-flow'); if(ov) ov.remove();
+}
+
+// Passo 1: revisão de cada documento (o cliente lê o contrato)
+function asnpRenderDocumento(){
+  const doc = _asnpDocs[_asnpDocIdx];
+  const isUltimo = _asnpDocIdx === _asnpDocs.length - 1;
+  asnpFullOverlay(`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E4E5F3;background:#3B3ED8;color:#fff">
+      <button onclick="asnpFecharFluxo()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">‹ Fechar</button>
+      <div style="font-size:13px;font-weight:800;flex:1">${doc.documento_nome||'Documento'} (${_asnpDocIdx+1}/${_asnpDocs.length})</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:20px 18px;font-size:13.5px;line-height:1.75;color:#1A1A2E">
+      ${doc.conteudo_html_final || '<p>Conteúdo indisponível.</p>'}
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid #E4E5F3;background:#fff">
+      <button onclick="asnpProximoDocumento()" style="width:100%;background:#3B3ED8;color:#fff;border:none;border-radius:12px;padding:14px;font-weight:800;font-size:14px;cursor:pointer">
+        ${isUltimo ? 'Li e concordo — Continuar' : 'Li e concordo — Próximo documento'}
+      </button>
+    </div>`);
+}
+function asnpProximoDocumento(){
+  if(_asnpDocIdx < _asnpDocs.length - 1){ _asnpDocIdx++; asnpRenderDocumento(); }
+  else { asnpRenderConfirmarDados(); }
+}
+
+// Passo 2: confirmar dados cadastrais
+function asnpRenderConfirmarDados(){
+  const p = perfil || {};
+  asnpFullOverlay(`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E4E5F3;background:#3B3ED8;color:#fff">
+      <button onclick="asnpRenderDocumento()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">‹ Voltar</button>
+      <div style="font-size:13px;font-weight:800;flex:1">Confirme seus dados</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:20px 18px">
+      <div style="font-size:12.5px;color:#5B5D77;margin-bottom:16px">Confira se os dados abaixo estão corretos antes de assinar.</div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:#5B5D77;margin-bottom:5px">Nome completo</label>
+      <input id="asnp-nome" value="${(p.nome||'').replace(/"/g,'&quot;')}" style="width:100%;padding:12px 14px;border:1.5px solid #E4E5F3;border-radius:10px;font-size:14px;margin-bottom:14px">
+      <label style="display:block;font-size:11.5px;font-weight:600;color:#5B5D77;margin-bottom:5px">CPF</label>
+      <input id="asnp-cpf" value="${(p.cnpj||p.cpf||'').replace(/"/g,'&quot;')}" style="width:100%;padding:12px 14px;border:1.5px solid #E4E5F3;border-radius:10px;font-size:14px;margin-bottom:14px">
+      <label style="display:block;font-size:11.5px;font-weight:600;color:#5B5D77;margin-bottom:5px">Endereço</label>
+      <input id="asnp-endereco" value="${(p.endereco||'').replace(/"/g,'&quot;')}" style="width:100%;padding:12px 14px;border:1.5px solid #E4E5F3;border-radius:10px;font-size:14px;margin-bottom:6px">
+      <div style="font-size:11px;color:#9496B0;margin-bottom:16px">Se algum dado estiver errado, entre em contato com o suporte antes de assinar.</div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid #E4E5F3;background:#fff">
+      <button onclick="asnpConfirmarDados()" style="width:100%;background:#3B3ED8;color:#fff;border:none;border-radius:12px;padding:14px;font-weight:800;font-size:14px;cursor:pointer">Confirmar e continuar</button>
+    </div>`);
+}
+function asnpConfirmarDados(){
+  const nome = (document.getElementById('asnp-nome').value||'').trim();
+  const cpf = (document.getElementById('asnp-cpf').value||'').trim();
+  const endereco = (document.getElementById('asnp-endereco').value||'').trim();
+  if(!nome || !cpf){ alert('Preencha nome e CPF.'); return; }
+  _asnpDados = { nome, cpf, endereco };
+  asnpRenderSelfie();
+}
+
+// Passo 3: selfie com RG/CNH
+function asnpRenderSelfie(){
+  asnpFullOverlay(`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E4E5F3;background:#3B3ED8;color:#fff">
+      <button onclick="asnpRenderConfirmarDados()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">‹ Voltar</button>
+      <div style="font-size:13px;font-weight:800;flex:1">Selfie com documento</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:24px 20px;text-align:center">
+      <div style="font-size:44px;margin-bottom:10px">🤳</div>
+      <div style="font-size:15px;font-weight:800;margin-bottom:8px">Tire uma selfie segurando seu RG ou CNH ao lado do rosto</div>
+      <div style="font-size:12.5px;color:#5B5D77;margin-bottom:22px;line-height:1.6">Isso confirma que é você quem está assinando. Certifique-se de que seu rosto e o documento estejam visíveis e legíveis.</div>
+      <div id="asnp-preview-box" style="border:2px dashed #C9CBE8;border-radius:16px;padding:26px;margin-bottom:18px">
+        <img id="asnp-preview-img" style="display:none;max-width:100%;border-radius:12px;margin-bottom:10px">
+        <div id="asnp-preview-placeholder" style="color:#9496B0;font-size:13px">Nenhuma foto selecionada</div>
+      </div>
+      <input type="file" id="asnp-input-foto" accept="image/*" capture="user" style="display:none" onchange="asnpFotoSelecionada(event)">
+      <button onclick="document.getElementById('asnp-input-foto').click()" style="background:#EEF0FF;color:#3B3ED8;border:1.5px solid #3B3ED8;border-radius:12px;padding:13px 20px;font-weight:800;font-size:13.5px;cursor:pointer;width:100%">📷 Abrir câmera</button>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid #E4E5F3;background:#fff">
+      <button id="asnp-btn-finalizar" onclick="asnpFinalizarAssinatura()" disabled style="width:100%;background:#C9CBE8;color:#fff;border:none;border-radius:12px;padding:14px;font-weight:800;font-size:14px;cursor:not-allowed">Confirmar assinatura</button>
+    </div>`);
+}
+function asnpFotoSelecionada(ev){
+  const file = ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      // comprime para no máx 1000px de largura, JPEG 0.82
+      const canvas = document.createElement('canvas');
+      const maxW = 1000;
+      const scale = Math.min(1, maxW / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      _asnpSelfieB64 = dataUrl.split(',')[1];
+      document.getElementById('asnp-preview-img').src = dataUrl;
+      document.getElementById('asnp-preview-img').style.display = 'block';
+      document.getElementById('asnp-preview-placeholder').style.display = 'none';
+      const btn = document.getElementById('asnp-btn-finalizar');
+      btn.disabled = false;
+      btn.style.background = '#3B3ED8';
+      btn.style.cursor = 'pointer';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function asnpFinalizarAssinatura(){
+  if(!_asnpSelfieB64){ alert('Tire a selfie antes de continuar.'); return; }
+  const btn = document.getElementById('asnp-btn-finalizar');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try {
+    const r = await asnpCall('confirmar_assinatura', {
+      lote_id: _asnpLote.id,
+      dados_confirmados: _asnpDados,
+      selfie_base64: _asnpSelfieB64
+    });
+    if(!r.ok){ alert('Erro ao confirmar: ' + (r.error||'')); btn.disabled=false; btn.textContent='Confirmar assinatura'; return; }
+    asnpFullOverlay(`
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center">
+        <div style="font-size:56px;margin-bottom:14px">✅</div>
+        <div style="font-size:18px;font-weight:800;margin-bottom:8px">Documentos assinados!</div>
+        <div style="font-size:13px;color:#5B5D77;margin-bottom:24px">Sua assinatura foi registrada com sucesso.</div>
+        <button onclick="asnpFecharFluxo();carregarLotesAssinatura().then(()=>{if(activeTab==='home')renderHome();})" style="background:#3B3ED8;color:#fff;border:none;border-radius:12px;padding:13px 26px;font-weight:800;font-size:14px;cursor:pointer">Concluir</button>
+      </div>`);
+  } catch(e) {
+    alert('Erro: ' + (e.message||e));
+    btn.disabled=false; btn.textContent='Confirmar assinatura';
+  }
 }
 
 // ── Desbloqueio em Confiança ──────────────────
