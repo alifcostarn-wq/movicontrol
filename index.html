@@ -15144,12 +15144,21 @@ async function asnToken(){
 }
 async function asnProxy(action, payload){
   const tk = await asnToken();
-  const r = await fetch(ASN_PROXY, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+tk, 'x-target':'admin' },
-    body: JSON.stringify({ action, ...(payload||{}) })
-  });
-  return await r.json();
+  try {
+    const r = await fetch(ASN_PROXY, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+tk, 'x-target':'admin' },
+      body: JSON.stringify({ action, ...(payload||{}) })
+    });
+    const txt = await r.text();
+    let data;
+    try { data = JSON.parse(txt); }
+    catch(e){ return { ok:false, error:'Resposta inválida do servidor (HTTP '+r.status+'): '+txt.slice(0,140) }; }
+    if(!r.ok && data.ok === undefined) return { ok:false, error:(data.error||('HTTP '+r.status)) };
+    return data;
+  } catch(e) {
+    return { ok:false, error:'Falha de conexão: '+(e.message||e) };
+  }
 }
 
 /* ── Modal principal do cliente ─────────────────────────────── */
@@ -15177,6 +15186,16 @@ async function asnCarregarLista(){
   const body = document.getElementById('asn-body');
   if(!body) return;
   const r = await asnProxy('listar_lotes', { cliente_id: asnCli.id });
+  if(!r.ok){
+    body.innerHTML = `
+      <div style="text-align:center;padding:20px 10px">
+        <div style="font-size:32px;margin-bottom:10px">⚠️</div>
+        <div style="font-size:13.5px;font-weight:700;color:#991B1B;margin-bottom:6px">Não foi possível carregar</div>
+        <div style="font-size:12px;color:#5B5D77;background:#FEE2E2;border-radius:8px;padding:10px 12px;text-align:left;word-break:break-word">${r.error||'Erro desconhecido'}</div>
+        <button class="btn btn-primary" style="margin-top:14px" onclick="asnCarregarLista()">Tentar novamente</button>
+      </div>`;
+    return;
+  }
   const lotes = (r.ok && r.lotes) ? r.lotes : [];
   body.innerHTML = `
     ${lotes.length ? lotes.map(l=>`
