@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Método não permitido' });
 
-  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://mgtetsmcswdtvsgewcen.supabase.co';
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
   const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
