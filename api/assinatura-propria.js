@@ -154,7 +154,7 @@ export default async function handler(req, res) {
   try {
     // ══════════════ TARGET: CLIENTE (MoviApp) ══════════════
     if (target === 'cliente') {
-      const ca = await sb(`clientes_app?user_id=eq.${userId}&select=cliente_id`);
+      const ca = await sb(`clientes_app?id=eq.${userId}&select=cliente_id`);
       if (!ca.ok || !ca.data || !ca.data.length) return res.status(403).json({ ok: false, error: 'Cliente não vinculado' });
       const clienteId = ca.data[0].cliente_id;
 
