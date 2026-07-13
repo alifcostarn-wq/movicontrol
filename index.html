@@ -107,8 +107,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .sidebar-nav::-webkit-scrollbar-track{background:transparent}
 .sidebar-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px}
 
-.nav-section{font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.55);letter-spacing:0.09em;text-transform:uppercase;padding:14px 12px 5px;margin-top:6px;max-height:40px;transition:opacity 0.18s,max-height 0.22s,padding 0.22s}
+.nav-section{font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.55);letter-spacing:0.09em;text-transform:uppercase;padding:14px 12px 5px;margin-top:6px;max-height:40px;transition:opacity 0.18s,max-height 0.22s,padding 0.22s,color 0.13s;
+  display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;user-select:none;background:none;border:none;width:100%;text-align:left;font-family:inherit}
+.nav-section:hover{color:rgba(255,255,255,0.85)}
+.nav-section .nav-sec-chev{width:10px;height:10px;flex-shrink:0;opacity:0.55;transition:transform 0.22s cubic-bezier(.4,0,.2,1)}
+.nav-section.is-collapsed .nav-sec-chev{transform:rotate(-90deg)}
 .sidebar.collapsed .nav-section{opacity:0;max-height:0;padding:0;pointer-events:none}
+
+.nav-group{display:flex;flex-direction:column;gap:1px;overflow:hidden;max-height:600px;transition:max-height 0.28s cubic-bezier(.4,0,.2,1),opacity 0.2s}
+.nav-group.is-collapsed{max-height:0;opacity:0;pointer-events:none}
+.sidebar.collapsed .nav-group{max-height:none!important;opacity:1!important;pointer-events:auto!important}
 
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,0.78);font-size:13.5px;font-weight:400;border:none;background:none;width:100%;text-align:left;transition:all 0.13s;font-family:inherit;position:relative;min-width:0}
 .nav-item:hover{background:rgba(255,255,255,0.09);color:#fff}
@@ -1752,7 +1760,8 @@ textarea.cp-form-input{resize:vertical}
     </button>
   </div>
   <nav class="sidebar-nav">
-    <div class="nav-section">Principal</div>
+    <button class="nav-section" data-group="principal" onclick="navToggleGroup(this)">Principal<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-principal">
     <button class="nav-item active" data-page="painel" data-tooltip="Painel de Controle" onclick="navTo('painel',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
       <span class="nav-label">Painel de Controle</span>
@@ -1762,7 +1771,9 @@ textarea.cp-form-input{resize:vertical}
       <span class="nav-label">Livro Diário</span>
       <span class="nav-badge" id="nb-diario">0</span>
     </button>
-    <div class="nav-section">Financeiro</div>
+    </div>
+    <button class="nav-section" data-group="financeiro" onclick="navToggleGroup(this)">Financeiro<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-financeiro">
     <button class="nav-item" data-page="fluxo" data-tooltip="Fluxo de Caixa / DRE" onclick="navTo('fluxo',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
       <span class="nav-label">Fluxo de Caixa / DRE</span>
@@ -1776,7 +1787,9 @@ textarea.cp-form-input{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       <span class="nav-label">Planejamento Financeiro</span>
     </button>
-    <div class="nav-section">Análises</div>
+    </div>
+    <button class="nav-section" data-group="analises" onclick="navToggleGroup(this)">Análises<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-analises">
     <button class="nav-item" data-page="intel" data-tooltip="Inteligência Financeira" onclick="navTo('intel',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/><line x1="10" y1="23" x2="14" y2="23"/></svg>
       <span>Inteligência Financeira</span>
@@ -1785,7 +1798,9 @@ textarea.cp-form-input{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       <span class="nav-label">Diagnóstico</span>
     </button>
-    <div class="nav-section">Cadastros</div>
+    </div>
+    <button class="nav-section" data-group="cadastros" onclick="navToggleGroup(this)">Cadastros<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-cadastros">
     <button class="nav-item" data-page="clientes" data-tooltip="Clientes" onclick="navTo('clientes',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
       <span class="nav-label">Clientes</span>
@@ -1802,7 +1817,9 @@ textarea.cp-form-input{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
       <span class="nav-label">Plano de Contas</span>
     </button>
-    <div class="nav-section">Campo</div>
+    </div>
+    <button class="nav-section" data-group="campo" onclick="navToggleGroup(this)">Campo<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-campo">
     <button class="nav-item" data-page="cp-chamados" data-tooltip="Chamados" onclick="navTo('cp-chamados',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
       <span class="nav-label">Chamados</span>
@@ -1825,7 +1842,9 @@ textarea.cp-form-input{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
       <span class="nav-label">Movimentações</span>
     </button>
-    <div class="nav-section" id="nav-sec-admin" style="display:none">Sistema</div>
+    </div>
+    <button class="nav-section" id="nav-sec-admin" data-group="sistema" onclick="navToggleGroup(this)" style="display:none">Sistema<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-sistema">
     <button class="nav-item" id="nav-usuarios" data-page="usuarios" data-tooltip="Usuários" onclick="navTo('usuarios',this)" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span class="nav-label">Usuários</span>
@@ -1838,6 +1857,7 @@ textarea.cp-form-input{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span class="nav-label">Configurações</span>
     </button>
+    </div>
   </nav>
   <div class="sidebar-footer">
     <div class="user-pill" style="cursor:pointer" onclick="fazerLogout()" title="Sair do sistema">
@@ -4611,12 +4631,58 @@ const PAGE_META={
   'cp-movimentacoes':{title:'Movimentações de Estoque',sub:'Histórico de entradas, transferências e consumos'},
 };
 
+// ---- Accordion do menu lateral ----
+const NAV_COLLAPSE_KEY='mc_nav_collapsed_v1';
+function navGetCollapsedState(){
+  try{ return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)||'{}'); }catch(e){ return {}; }
+}
+function navSaveCollapsedState(state){
+  try{ localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(state)); }catch(e){}
+}
+function navToggleGroup(header){
+  const id=header.dataset.group;
+  const group=document.getElementById('nav-group-'+id);
+  if(!group)return;
+  const collapsed=group.classList.toggle('is-collapsed');
+  header.classList.toggle('is-collapsed',collapsed);
+  const state=navGetCollapsedState();
+  state[id]=collapsed;
+  navSaveCollapsedState(state);
+}
+function navExpandGroupOf(itemBtn){
+  if(!itemBtn)return;
+  const group=itemBtn.closest('.nav-group');
+  if(!group || !group.classList.contains('is-collapsed'))return;
+  group.classList.remove('is-collapsed');
+  const header=document.querySelector(`.nav-section[data-group="${group.id.replace('nav-group-','')}"]`);
+  header && header.classList.remove('is-collapsed');
+  const id=group.id.replace('nav-group-','');
+  const state=navGetCollapsedState();
+  state[id]=false;
+  navSaveCollapsedState(state);
+}
+function navInitAccordion(){
+  const state=navGetCollapsedState();
+  document.querySelectorAll('.nav-section[data-group]').forEach(header=>{
+    const id=header.dataset.group;
+    const group=document.getElementById('nav-group-'+id);
+    if(!group)return;
+    if(state[id]===true){
+      group.classList.add('is-collapsed');
+      header.classList.add('is-collapsed');
+    }
+  });
+  // garante que o grupo do item ativo comece aberto
+  navExpandGroupOf(document.querySelector('.nav-item.active'));
+}
+document.addEventListener('DOMContentLoaded', navInitAccordion);
+
 function navTo(page,btn){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
-  if(btn) btn.classList.add('active');
-  else document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
+  const activeBtn = btn || document.querySelector(`[data-page="${page}"]`);
+  if(activeBtn){ activeBtn.classList.add('active'); navExpandGroupOf(activeBtn); }
   const m=PAGE_META[page]||{};
   document.getElementById('page-title').textContent=m.title||page;
   document.getElementById('page-sub').textContent=m.sub||'';
