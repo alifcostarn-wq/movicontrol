@@ -317,6 +317,52 @@ export default async function handler(req, res) {
       } catch(e) { return res.status(502).json({ error: 'Erro ao buscar status', message: e.message }); }
     }
 
+    // ── get_contrato ────────────────────────────────────────────
+    // Informações do contrato do cliente para a tela "Meu Contrato".
+    // Combina Supabase (data_ativacao já sincronizada) + IXC em tempo real.
+    if (action === 'get_contrato') {
+      try {
+        // 1) base do Supabase (rápido e já tem data_ativacao/plano/valor)
+        const rSb = await fetch(
+          `${SUPA_URL}/rest/v1/clientes_contratos?cliente_id=eq.${clienteIdLocal}&status_contrato=in.(A,Ativo,ativo)&select=ixc_id,plano,descricao,status_contrato,valor,data_ativacao,data_renovacao,pago_ate,velocidade_mbps&order=updated_at.desc&limit=1`,
+          { headers: srvH }
+        );
+        const base = (await rSb.json())?.[0] || {};
+
+        // 2) enriquece com o IXC em tempo real (campos que não temos no banco)
+        let ixc = {};
+        try {
+          const ixcContratoId = base.ixc_id || await _buscarContratoAtivoIxcId();
+          if (ixcContratoId) {
+            const c = await _buscarContratoIXC(ixcContratoId);
+            if (c) ixc = c;
+          }
+        } catch(e) { /* se IXC falhar, seguimos só com o Supabase */ }
+
+        // 3) monta resposta defensiva: usa IXC quando disponível, senão Supabase
+        const pega = (...vals) => { for (const v of vals) { if (v !== undefined && v !== null && v !== '') return v; } return null; };
+
+        const contrato = {
+          plano:            pega(ixc.contrato, ixc.plano, base.descricao, base.plano),
+          descricao_plano:  pega(ixc.contrato, base.descricao),
+          velocidade_mbps:  pega(base.velocidade_mbps, ixc.download),
+          valor:            pega(ixc.valor, ixc.valor_contrato, base.valor),
+          status_contrato:  pega(ixc.status, base.status_contrato),
+          data_ativacao:    pega(ixc.data_ativacao, base.data_ativacao),
+          data_renovacao:   pega(ixc.data_renovacao, base.data_renovacao),
+          data_expiracao:   pega(ixc.data_expiracao, ixc.data_final_fidelidade),
+          dia_vencimento:   pega(ixc.dia_vencimento, ixc.data_vencimento),
+          fidelidade_meses: pega(ixc.contrato_fidelidade, ixc.fidelidade, ixc.tempo_fidelidade),
+          pago_ate:         pega(base.pago_ate),
+          numero_contrato:  pega(ixc.id, base.ixc_id)
+        };
+
+        return res.status(200).json({ ok: true, contrato });
+      } catch(e) {
+        return res.status(502).json({ error: 'Erro ao buscar contrato', message: e.message });
+      }
+    }
+
     // ── status_desbloqueio_confianca ────────────────────────────
     // Consulta os campos de confianca do contrato ativo no IXC e
     // diz se o cliente esta elegivel a usar o recurso agora.
