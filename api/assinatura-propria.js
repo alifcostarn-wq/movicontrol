@@ -1,4 +1,4 @@
-// api/assinatura-propria.js — Sistema PRÓPRIO de assinatura eletrônica
+// api/assinatura-propria.js - Sistema PRÓPRIO de assinatura eletrônica
 // Armazenamento: Cloudflare R2 (bucket movionfotos) via aws4fetch (biblioteca S3-compatível
 // recomendada pela própria documentação da Cloudflare para ambientes serverless)
 //
@@ -71,7 +71,7 @@ export default async function handler(req, res) {
     return { ok: r.ok, status: r.status, data };
   }
 
-  // Upload direto (PUT) via aws4fetch — assina e envia numa chamada só
+  // Upload direto (PUT) via aws4fetch - assina e envia numa chamada só
   async function r2Upload(key, buffer, contentType) {
     const url = `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
     const r = await r2.fetch(url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: buffer });
@@ -150,21 +150,24 @@ export default async function handler(req, res) {
         // "assinatura" estilizada (nome em itálico), ao lado da foto
         page.drawText(signer.nome, { x: M + w + 30, y: y - h / 2, size: 20, font: fontItalic, color: dark });
         page.drawLine({ start: { x: M + w + 30, y: y - h / 2 - 8 }, end: { x: M + w + 220, y: y - h / 2 - 8 }, thickness: 0.5, color: gray });
-        page.drawText(signer.nome + ' — CPF ' + signer.cpf, { x: M + w + 30, y: y - h / 2 - 22, size: 8, font, color: gray });
+        page.drawText(signer.nome + ' - CPF ' + signer.cpf, { x: M + w + 30, y: y - h / 2 - 22, size: 8, font, color: gray });
         y -= (h + 24);
-      } catch (e) { /* selfie não é JPEG válido — segue sem foto */ }
+      } catch (e) { /* selfie não é JPEG válido - segue sem foto */ }
     }
 
     // Selo visual de autenticidade
     const seloY = Math.max(y - 10, 90);
     const seloW = 495, seloH = 54;
     page.drawRectangle({ x: M, y: seloY - seloH, width: seloW, height: seloH, color: rgb(0.231, 0.243, 0.847), opacity: 0.06, borderColor: azul, borderWidth: 1.2 });
-    page.drawText('✓ DOCUMENTO ASSINADO ELETRONICAMENTE', { x: M + 16, y: seloY - 22, size: 11, font: fontBold, color: azul });
-    page.drawText('MoviOn Internet — Allison Costa de Souza-ME · CNPJ 18.757.155/0001-32 · Ato Anatel 7.025', { x: M + 16, y: seloY - 36, size: 7.5, font, color: gray });
+    // check vetorial (✓ desenhado com 2 linhas, evita problema de encoding da fonte)
+    page.drawLine({ start: { x: M + 16, y: seloY - 21 }, end: { x: M + 20, y: seloY - 25 }, thickness: 1.6, color: azul });
+    page.drawLine({ start: { x: M + 20, y: seloY - 25 }, end: { x: M + 27, y: seloY - 15 }, thickness: 1.6, color: azul });
+    page.drawText('DOCUMENTO ASSINADO ELETRONICAMENTE', { x: M + 34, y: seloY - 22, size: 11, font: fontBold, color: azul });
+    page.drawText('MoviOn Internet - Allison Costa de Souza-ME · CNPJ 18.757.155/0001-32 · Ato Anatel 7.025', { x: M + 16, y: seloY - 36, size: 7.5, font, color: gray });
     page.drawText('Autenticado por selfie com documento, hash SHA-256, IP e registro de data/hora.', { x: M + 16, y: seloY - 47, size: 7.5, font, color: gray });
 
     page.drawLine({ start: { x: M, y: 40 }, end: { x: 545, y: 40 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.93) });
-    page.drawText('MoviOn Internet — assinatura eletrônica registrada internamente' + (codigoVerificacao ? '  ·  Verificação: ' + codigoVerificacao : ''), { x: M, y: 28, size: 8, font, color: gray });
+    page.drawText('MoviOn Internet - assinatura eletrônica registrada internamente' + (codigoVerificacao ? '  ·  Verificação: ' + codigoVerificacao : ''), { x: M, y: 28, size: 8, font, color: gray });
 
     return Buffer.from(await doc.save());
   }
