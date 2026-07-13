@@ -1458,22 +1458,41 @@ function asnpFotoSelecionada(ev){
   };
   reader.readAsDataURL(file);
 }
+// Tenta capturar a localização (com consentimento). Nunca trava o fluxo: se negar/demorar, segue sem.
+function asnpObterGeo(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    let resolvido = false;
+    const done = (v)=>{ if(!resolvido){ resolvido=true; resolve(v); } };
+    const t = setTimeout(()=>done(null), 8000); // no máx 8s de espera
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{ clearTimeout(t); done({ lat: pos.coords.latitude, lng: pos.coords.longitude, precisao: pos.coords.accuracy }); },
+      ()=>{ clearTimeout(t); done(null); },
+      { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 }
+    );
+  });
+}
+
 async function asnpFinalizarAssinatura(){
   if(!_asnpSelfieB64){ alert('Tire a selfie antes de continuar.'); return; }
   const btn = document.getElementById('asnp-btn-finalizar');
-  btn.disabled = true; btn.textContent = 'Enviando...';
+  btn.disabled = true; btn.textContent = 'Obtendo localização...';
+  const geo = await asnpObterGeo();
+  btn.textContent = 'Enviando...';
   try {
     const r = await asnpCall('confirmar_assinatura', {
       lote_id: _asnpLote.id,
       dados_confirmados: _asnpDados,
-      selfie_base64: _asnpSelfieB64
+      selfie_base64: _asnpSelfieB64,
+      geo
     });
     if(!r.ok){ alert('Erro ao confirmar: ' + (r.error||'')); btn.disabled=false; btn.textContent='Confirmar assinatura'; return; }
     asnpFullOverlay(`
       <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center">
         <div style="font-size:56px;margin-bottom:14px">✅</div>
         <div style="font-size:18px;font-weight:800;margin-bottom:8px">Documentos assinados!</div>
-        <div style="font-size:13px;color:#5B5D77;margin-bottom:24px">Sua assinatura foi registrada com sucesso.</div>
+        <div style="font-size:13px;color:#5B5D77;margin-bottom:6px">Sua assinatura foi registrada com sucesso.</div>
+        ${r.codigo_verificacao ? `<div style="font-size:12px;color:#3B3ED8;font-weight:700;background:#EEF0FF;border-radius:8px;padding:8px 14px;margin-bottom:20px">Código de verificação: ${r.codigo_verificacao}</div>` : '<div style="margin-bottom:20px"></div>'}
         <button onclick="asnpFecharFluxo();carregarLotesAssinatura().then(()=>{if(activeTab==='home')renderHome();})" style="background:#3B3ED8;color:#fff;border:none;border-radius:12px;padding:13px 26px;font-weight:800;font-size:14px;cursor:pointer">Concluir</button>
       </div>`);
   } catch(e) {
