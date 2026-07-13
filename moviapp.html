@@ -616,7 +616,7 @@ function renderHome(){
           : `<div class="mini-card-val" style="color:var(--green)">Em dia ✓</div>
              <div class="mini-card-sub">Sem faturas abertas</div>`}
       </div>
-      <div class="mini-card" onclick="navTo('fatura')">
+      <div class="mini-card" onclick="abrirMeuContrato()">
         <div class="mini-card-icon">📶</div>
         <div class="mini-card-label">Seu plano</div>
         <div class="mini-card-val">${vel}Mbps</div>
@@ -1270,6 +1270,121 @@ async function asnpCall(action, payload){
     body: JSON.stringify({ action, ...(payload||{}) })
   });
   return await r.json();
+}
+
+// ── Meu Contrato (informações do contrato do cliente) ──────────
+function _fmtData(d){
+  if(!d) return '—';
+  try {
+    // aceita 'YYYY-MM-DD' ou 'DD/MM/YYYY'
+    let dt;
+    if(/^\d{4}-\d{2}-\d{2}/.test(d)) dt = new Date(d + 'T00:00:00');
+    else if(/^\d{2}\/\d{2}\/\d{4}/.test(d)) { const [dia,mes,ano]=d.split('/'); dt=new Date(`${ano}-${mes}-${dia}T00:00:00`); }
+    else dt = new Date(d);
+    if(isNaN(dt)) return d;
+    return dt.toLocaleDateString('pt-BR');
+  } catch(e){ return d; }
+}
+function _fmtMoeda(v){
+  if(v===null||v===undefined||v==='') return '—';
+  const n = parseFloat(String(v).replace(',','.'));
+  if(isNaN(n)) return '—';
+  return 'R$ ' + n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+async function abrirMeuContrato(){
+  // overlay em tela cheia com loading
+  let ov = document.getElementById('contrato-overlay');
+  if(ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'contrato-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:#F4F5F9;z-index:450;display:flex;flex-direction:column';
+  ov.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:#3B3ED8;color:#fff">
+      <button onclick="document.getElementById('contrato-overlay').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">‹ Voltar</button>
+      <div style="font-size:15px;font-weight:800;flex:1">Meu Contrato</div>
+    </div>
+    <div id="contrato-body" style="flex:1;overflow:auto;padding:18px 16px">
+      <div style="text-align:center;color:#9496B0;padding:40px 0">Carregando informações do contrato...</div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    const r = await fetch(PROXY_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token },
+      body: JSON.stringify({ action:'get_contrato' })
+    });
+    const d = await r.json();
+    const body = document.getElementById('contrato-body');
+    if(!body) return;
+    if(!d.ok || !d.contrato){ body.innerHTML = `<div style="text-align:center;color:#991B1B;padding:30px 0">Não foi possível carregar o contrato.<br><span style="font-size:12px;color:#9496B0">${d.error||''}</span></div>`; return; }
+
+    const c = d.contrato;
+    const p = perfil || {};
+    // dados: prioriza contrato do IXC, cai pro perfil do app
+    const planoNome = c.plano || p.plano || 'Fibra óptica';
+    const vel = c.velocidade_mbps || p.velocidade_mbps || '';
+    const valor = _fmtMoeda(c.valor || p.mensalidade);
+    const ativo = (c.status_contrato||'').toUpperCase().startsWith('A');
+
+    // calcula fim da fidelidade se tivermos início + meses
+    let fimFidelidade = c.data_expiracao;
+    if(!fimFidelidade && c.data_ativacao && c.fidelidade_meses){
+      try {
+        const base = /^\d{4}-\d{2}-\d{2}/.test(c.data_ativacao) ? new Date(c.data_ativacao+'T00:00:00') : new Date(c.data_ativacao);
+        base.setMonth(base.getMonth() + parseInt(c.fidelidade_meses));
+        fimFidelidade = base.toISOString().slice(0,10);
+      } catch(e){}
+    }
+    // fidelidade ainda vigente?
+    let fidelidadeInfo = '';
+    if(fimFidelidade){
+      const fim = /^\d{4}-\d{2}-\d{2}/.test(fimFidelidade) ? new Date(fimFidelidade+'T00:00:00') : new Date(fimFidelidade);
+      const hoje = new Date(); hoje.setHours(0,0,0,0);
+      fidelidadeInfo = fim > hoje ? `Vigente até ${_fmtData(fimFidelidade)}` : `Encerrada em ${_fmtData(fimFidelidade)}`;
+    } else if(c.fidelidade_meses){
+      fidelidadeInfo = `${c.fidelidade_meses} meses`;
+    } else {
+      fidelidadeInfo = 'Sem fidelidade / não informado';
+    }
+
+    const item = (icon,label,valor,cor) => `
+      <div style="display:flex;align-items:center;gap:13px;padding:15px 16px;border-bottom:1px solid #EEEFF4">
+        <div style="width:38px;height:38px;border-radius:10px;background:${cor||'#EEF0FF'};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:#9496B0;text-transform:uppercase;letter-spacing:.03em;font-weight:700">${label}</div>
+          <div style="font-size:14.5px;color:#1A1A2E;font-weight:600;margin-top:2px">${valor}</div>
+        </div>
+      </div>`;
+
+    body.innerHTML = `
+      <!-- Cabeçalho do plano -->
+      <div style="background:linear-gradient(135deg,#3B3ED8,#5B5EE8);border-radius:18px;padding:20px;color:#fff;margin-bottom:16px">
+        <div style="font-size:12px;opacity:.8;text-transform:uppercase;letter-spacing:.05em;font-weight:700">Plano contratado</div>
+        <div style="font-size:22px;font-weight:800;margin-top:4px">${planoNome}</div>
+        ${vel ? `<div style="font-size:14px;opacity:.9;margin-top:2px">${vel} Mbps</div>` : ''}
+        <div style="display:inline-block;margin-top:10px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,.2);font-size:12px;font-weight:700">${ativo ? '● Contrato ativo' : '● '+(c.status_contrato||'Inativo')}</div>
+      </div>
+
+      <!-- Detalhes -->
+      <div style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+        ${item('💰','Mensalidade', valor, '#D1FAE5')}
+        ${item('📅','Início do contrato', _fmtData(c.data_ativacao), '#DBEAFE')}
+        ${c.dia_vencimento ? item('🗓️','Vencimento', 'Todo dia '+c.dia_vencimento, '#FEF3C7') : ''}
+        ${item('🔒','Fidelidade', fidelidadeInfo, '#EDE9FE')}
+        ${c.data_renovacao ? item('🔄','Última renovação', _fmtData(c.data_renovacao), '#E0E7FF') : ''}
+        ${c.numero_contrato ? item('📄','Número do contrato', '#'+c.numero_contrato, '#F3F4F6') : ''}
+      </div>
+
+      <div style="text-align:center;font-size:11px;color:#9496B0;margin-top:16px;padding:0 20px">
+        Informações do seu contrato de prestação de serviço. Dúvidas? Fale com o suporte pelo app.
+      </div>`;
+  } catch(e) {
+    const body = document.getElementById('contrato-body');
+    if(body) body.innerHTML = `<div style="text-align:center;color:#991B1B;padding:30px 0">Erro ao carregar: ${e.message||e}</div>`;
+  }
 }
 
 async function carregarLotesAssinatura(){
