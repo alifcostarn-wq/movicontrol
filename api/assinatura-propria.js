@@ -88,7 +88,14 @@ export default async function handler(req, res) {
   }
 
   // Monta a página final de "Relatório de Assinatura" (padrão do mercado) e anexa ao PDF original
-  async function gerarPdfAssinado({ originalBytes, hashOriginal, documentoNome, signer, dataAssinatura, ip, userAgent, selfieBuf }) {
+  // Gera código de verificação legível: MOV-2026-XXXX-XXXX (sem caracteres ambíguos)
+  function gerarCodigoVerificacao(data) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem I,O,0,1
+    const bloco = () => Array.from({ length: 4 }, () => chars[crypto.randomBytes(1)[0] % chars.length]).join('');
+    return `MOV-${data.getFullYear()}-${bloco()}-${bloco()}`;
+  }
+
+  async function gerarPdfAssinado({ originalBytes, hashOriginal, documentoNome, signer, dataAssinatura, ip, userAgent, selfieBuf, codigoVerificacao, geoTexto }) {
     const doc = await PDFDocument.load(originalBytes);
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -99,6 +106,7 @@ export default async function handler(req, res) {
     let y = 780;
     const gray = rgb(0.35, 0.35, 0.4);
     const dark = rgb(0.1, 0.1, 0.18);
+    const azul = rgb(0.231, 0.243, 0.847);
 
     page.drawText('Relatório de Assinatura', { x: M, y, size: 18, font: fontBold, color: dark });
     y -= 30;
@@ -118,9 +126,19 @@ export default async function handler(req, res) {
     linha('Signatário:', signer.nome);
     linha('CPF:', signer.cpf);
     linha('Data/hora da assinatura:', dataAssinatura);
+    linha('Localização (geo):', geoTexto || 'Não informada');
     linha('Dispositivo:', (userAgent || '').slice(0, 80));
     linha('Endereço IP:', ip || '');
-    y -= 20;
+    y -= 8;
+
+    // Código de verificação em destaque (caixa)
+    if (codigoVerificacao) {
+      const boxH = 30;
+      page.drawRectangle({ x: M, y: y - boxH, width: 300, height: boxH, color: rgb(0.93, 0.94, 1), borderColor: azul, borderWidth: 1 });
+      page.drawText('Código de verificação:', { x: M + 10, y: y - 12, size: 8, font: fontBold, color: gray });
+      page.drawText(codigoVerificacao, { x: M + 10, y: y - 24, size: 13, font: fontBold, color: azul });
+      y -= (boxH + 18);
+    }
 
     // foto (selfie) embutida
     if (selfieBuf) {
@@ -133,12 +151,20 @@ export default async function handler(req, res) {
         page.drawText(signer.nome, { x: M + w + 30, y: y - h / 2, size: 20, font: fontItalic, color: dark });
         page.drawLine({ start: { x: M + w + 30, y: y - h / 2 - 8 }, end: { x: M + w + 220, y: y - h / 2 - 8 }, thickness: 0.5, color: gray });
         page.drawText(signer.nome + ' — CPF ' + signer.cpf, { x: M + w + 30, y: y - h / 2 - 22, size: 8, font, color: gray });
-        y -= (h + 20);
+        y -= (h + 24);
       } catch (e) { /* selfie não é JPEG válido — segue sem foto */ }
     }
 
+    // Selo visual de autenticidade
+    const seloY = Math.max(y - 10, 90);
+    const seloW = 495, seloH = 54;
+    page.drawRectangle({ x: M, y: seloY - seloH, width: seloW, height: seloH, color: rgb(0.231, 0.243, 0.847), opacity: 0.06, borderColor: azul, borderWidth: 1.2 });
+    page.drawText('✓ DOCUMENTO ASSINADO ELETRONICAMENTE', { x: M + 16, y: seloY - 22, size: 11, font: fontBold, color: azul });
+    page.drawText('MoviOn Internet — Allison Costa de Souza-ME · CNPJ 18.757.155/0001-32 · Ato Anatel 7.025', { x: M + 16, y: seloY - 36, size: 7.5, font, color: gray });
+    page.drawText('Autenticado por selfie com documento, hash SHA-256, IP e registro de data/hora.', { x: M + 16, y: seloY - 47, size: 7.5, font, color: gray });
+
     page.drawLine({ start: { x: M, y: 40 }, end: { x: 545, y: 40 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.93) });
-    page.drawText('MoviOn Internet — assinatura eletrônica registrada internamente', { x: M, y: 28, size: 8, font, color: gray });
+    page.drawText('MoviOn Internet — assinatura eletrônica registrada internamente' + (codigoVerificacao ? '  ·  Verificação: ' + codigoVerificacao : ''), { x: M, y: 28, size: 8, font, color: gray });
 
     return Buffer.from(await doc.save());
   }
@@ -173,10 +199,10 @@ export default async function handler(req, res) {
       }
 
       if (action === 'confirmar_assinatura') {
-        const { lote_id, dados_confirmados, selfie_base64 } = req.body;
+        const { lote_id, dados_confirmados, selfie_base64, geo } = req.body;
         if (!lote_id || !dados_confirmados || !selfie_base64) return res.status(400).json({ ok: false, error: 'lote_id, dados_confirmados e selfie_base64 obrigatórios' });
 
-        const lote = await sb(`assinatura_lotes?id=eq.${lote_id}&cliente_id=eq.${clienteId}&select=id,status`);
+        const lote = await sb(`assinatura_lotes?id=eq.${lote_id}&cliente_id=eq.${clienteId}&select=id,status,codigo_verificacao`);
         if (!lote.ok || !lote.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
         if (lote.data[0].status === 'assinado') return res.status(200).json({ ok: true, ja_assinado: true });
 
@@ -191,6 +217,17 @@ export default async function handler(req, res) {
         const agora = new Date();
         const dataAssinaturaFmt = agora.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' }) + ' (Horário de Brasília)';
 
+        // código de verificação único e legível: MOV-AAAA-XXXX-XXXX
+        const cod = lote.data[0].codigo_verificacao || gerarCodigoVerificacao(agora);
+
+        // geolocalização (opcional, veio do navegador com consentimento)
+        const geoLat = (geo && typeof geo.lat === 'number') ? geo.lat : null;
+        const geoLng = (geo && typeof geo.lng === 'number') ? geo.lng : null;
+        const geoPrec = (geo && typeof geo.precisao === 'number') ? geo.precisao : null;
+        const geoTexto = (geoLat !== null && geoLng !== null)
+          ? `${geoLat.toFixed(6)}, ${geoLng.toFixed(6)}` + (geoPrec ? ` (±${Math.round(geoPrec)}m)` : '')
+          : 'Não informada pelo dispositivo';
+
         // 2) para cada documento do lote: baixa o original, gera o PDF final com certificado, sobe
         const docs = await sb(`contratos_assinatura?lote_id=eq.${lote_id}&select=id,documento_nome,documento_url`);
         for (const d of (docs.data || [])) {
@@ -202,15 +239,19 @@ export default async function handler(req, res) {
           const finalBytes = await gerarPdfAssinado({
             originalBytes, hashOriginal, documentoNome: d.documento_nome,
             signer: { nome: dados_confirmados.nome, cpf: dados_confirmados.cpf },
-            dataAssinatura: dataAssinaturaFmt, ip, userAgent: ua, selfieBuf
+            dataAssinatura: dataAssinaturaFmt, ip, userAgent: ua, selfieBuf,
+            codigoVerificacao: cod, geoTexto
           });
+
+          // hash do PDF FINAL assinado (detecta adulteração posterior)
+          const hashAssinado = crypto.createHash('sha256').update(finalBytes).digest('hex');
 
           const assinadoKey = `assinaturas/contratos-assinados/${clienteId}/${lote_id}_${d.id}.pdf`;
           const upFinal = await r2Upload(assinadoKey, finalBytes, 'application/pdf');
           if (upFinal.ok) {
             await sb(`contratos_assinatura?id=eq.${d.id}`, {
               method: 'PATCH',
-              body: JSON.stringify({ documento_assinado_url: assinadoKey, hash_original: hashOriginal, status: 'assinado', assinado_em: agora.toISOString() })
+              body: JSON.stringify({ documento_assinado_url: assinadoKey, hash_original: hashOriginal, hash_assinado: hashAssinado, status: 'assinado', assinado_em: agora.toISOString() })
             });
           }
         }
@@ -220,12 +261,13 @@ export default async function handler(req, res) {
           method: 'PATCH',
           body: JSON.stringify({
             status: 'assinado', dados_confirmados, selfie_url: selfieKey,
-            ip, user_agent: ua, assinado_em: agora.toISOString()
+            ip, user_agent: ua, assinado_em: agora.toISOString(),
+            codigo_verificacao: cod, geo_lat: geoLat, geo_lng: geoLng, geo_precisao: geoPrec
           })
         });
         if (!updLote.ok) return res.status(500).json({ ok: false, error: 'Falha ao atualizar lote' });
 
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true, codigo_verificacao: cod });
       }
 
       return res.status(400).json({ ok: false, error: 'Ação inválida para cliente' });
@@ -272,7 +314,7 @@ export default async function handler(req, res) {
       }
       const lote = await sb('assinatura_lotes', {
         method: 'POST',
-        body: JSON.stringify({ cliente_id, ixc_contrato_id: ixc_contrato_id || null, status: 'pendente' })
+        body: JSON.stringify({ cliente_id, ixc_contrato_id: ixc_contrato_id || null, status: 'pendente', codigo_verificacao: gerarCodigoVerificacao(new Date()) })
       });
       if (!lote.ok || !lote.data?.[0]?.id) return res.status(500).json({ ok: false, error: 'Falha ao criar lote' });
       const loteId = lote.data[0].id;
