@@ -1322,6 +1322,7 @@ body.perfil-visualizador .plano-add-row,
 body.perfil-visualizador .plano-add-l1,
 body.perfil-visualizador .plano-add-btn,
 body.perfil-visualizador #nav-usuarios,
+body.perfil-visualizador #nav-modelos-doc,
 body.perfil-visualizador #nav-config,
 body.perfil-visualizador #nav-sec-admin{display:none !important}
 
@@ -1829,6 +1830,10 @@ textarea.cp-form-input{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span class="nav-label">Usuários</span>
     </button>
+    <button class="nav-item" id="nav-modelos-doc" data-page="modelos-doc" data-tooltip="Documentos" onclick="navTo('modelos-doc',this)" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span class="nav-label">Documentos</span>
+    </button>
     <button class="nav-item" id="nav-config" data-page="config" data-tooltip="Configurações" onclick="navTo('config',this)" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span class="nav-label">Configurações</span>
@@ -1914,7 +1919,21 @@ textarea.cp-form-input{resize:vertical}
       </div>
     </div>
 
-    <!-- ====== CAMPO: CHAMADOS ====== -->
+    <div class="page" id="page-modelos-doc">
+      <div class="table-wrap">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:13px;font-weight:600">Modelos de documentos</div>
+            <div class="td-muted" style="font-size:12px;margin-top:4px">Contratos e termos disponíveis para envio à assinatura eletrônica. Use as variáveis para preencher os dados do cliente automaticamente.</div>
+          </div>
+          <button class="btn btn-primary perm-edit" onclick="asnEditarModelo(null,'pagina')">+ Novo modelo</button>
+        </div>
+        <div style="padding:0" id="modelos-doc-lista">
+          <div style="text-align:center;color:var(--muted);padding:24px">Carregando modelos...</div>
+        </div>
+      </div>
+    </div>
+
     <div class="page" id="page-cp-chamados">
       <div class="cp-kpi-grid">
         <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📞</div><span class="cp-kpi-badge cp-kb-info">Novos</span></div><div class="cp-kpi-num" id="kpi-ch-novos">—</div><div class="cp-kpi-lbl">Chamados Novos</div></div>
@@ -4584,6 +4603,7 @@ const PAGE_META={
   usuarios:{title:'Usuários do Sistema',sub:'Gerenciar acessos e permissões'},
   intel:{title:'Inteligência Financeira',sub:'Score, previsão de inadimplência, segmentação e insights — motor analítico explicável'},
   config:{title:'Configurações',sub:'Backup e preferências do sistema'},
+  'modelos-doc':{title:'Documentos',sub:'Biblioteca de modelos de contratos e termos para assinatura eletrônica'},
   'cp-chamados':{title:'Chamados',sub:'Gerenciar e distribuir chamados de suporte'},
   'cp-os':{title:'Ordens de Serviço',sub:'Controle de OS por técnico'},
   'cp-tecnicos':{title:'Técnicos',sub:'Cadastro e gestão de técnicos de campo'},
@@ -4628,7 +4648,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
-  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-movimentacoes':renderMovimentacoes};
+  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,planejamento:renderPlan,analises:renderAnalises,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-movimentacoes':renderMovimentacoes,'modelos-doc':asnRenderModelosPagina};
   renders[page]?.();
   // Auto-sync IXC ao abrir a aba clientes (se configurado)
   if(page==='clientes' && typeof autoSyncIXC==='function') autoSyncIXC();
@@ -9929,6 +9949,8 @@ async function entrarNoSistema(user){
   }
   // Menu de configurações (backup) visível para todos
   document.getElementById('nav-config').style.display='';
+  // Menu de documentos/modelos visível para todos que logam (CSS oculta de visualizador)
+  document.getElementById('nav-modelos-doc').style.display='';
   renderPainel();
   atualizarBadges();
   // Carrega dados do módulo de campo (chamados/OS/técnicos/estoque)
@@ -15166,6 +15188,7 @@ async function asnAbrirCliente(idx){
   const cli = gd('sf_clientes')[idx];
   if(!cli){ showToast('Cliente não encontrado.', true); return; }
   asnCli = cli;
+  asnCtx = 'modal';
   const html = `
   <div class="modal-overlay" id="modal-asn" style="display:flex">
     <div class="modal" style="max-width:620px">
@@ -15218,8 +15241,7 @@ async function asnCarregarLista(){
             </div>
           </div>` : ''}
       </div>`).join('') : `<div style="text-align:center;color:#9496B0;font-size:13px;padding:14px 0">Nenhum documento enviado para este cliente ainda.</div>`}
-    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:8px">
-      <button class="btn" style="background:#fff;border:1.5px solid #E4E5F3;color:#333" onclick="asnAbrirModelos()">📚 Gerenciar modelos</button>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-primary" onclick="asnAbrirEnvio()">+ Documento</button>
     </div>`;
 }
@@ -15467,10 +15489,23 @@ async function asnGerarEnviar(){
 }
 
 /* ── Biblioteca de modelos (CRUD) — igual antes, sem dependência externa ── */
+// Contexto de renderização dos modelos: 'modal' (dentro do cadastro do cliente) ou 'pagina' (Configurações > Documentos)
+let asnCtx = 'modal';
+function asnBody(){
+  return asnCtx==='pagina' ? document.getElementById('modelos-doc-lista') : document.getElementById('asn-body');
+}
+// Entrada pela página Configurações > Documentos
+async function asnRenderModelosPagina(){
+  asnCtx = 'pagina';
+  await asnAbrirModelos();
+}
+
 async function asnAbrirModelos(){
   const { data } = await sbClient.from('modelos_documento').select('*').order('ordem');
   asnModelosCache = data || [];
-  const body = document.getElementById('asn-body');
+  const body = asnBody();
+  if(!body) return;
+  const naPagina = asnCtx==='pagina';
   body.innerHTML = `
     <table style="width:100%;border-collapse:collapse;margin-bottom:12px">
       <thead><tr>
@@ -15486,22 +15521,24 @@ async function asnAbrirModelos(){
             <td style="text-align:center">${m.ativo?'✅':'❌'}</td>
             <td style="text-align:center">${m.assinavel?'✅':'❌'}</td>
             <td style="padding:9px 10px;text-align:right">
-              <button class="action-btn" onclick="asnEditarModelo(${m.id})">✏️</button>
+              <button class="action-btn" onclick="asnEditarModelo(${m.id},'${asnCtx}')">✏️</button>
               <button class="action-btn del" onclick="asnExcluirModelo(${m.id})">🗑️</button>
             </td>
           </tr>`).join('')}
       </tbody>
     </table>
-    <div style="display:flex;gap:10px;justify-content:space-between">
+    ${naPagina ? '' : `<div style="display:flex;gap:10px;justify-content:space-between">
       <button class="btn" style="background:#fff;border:1.5px solid #E4E5F3;color:#333" onclick="asnCarregarLista()">← Voltar</button>
-      <button class="btn btn-primary" onclick="asnEditarModelo(null)">+ Novo modelo</button>
-    </div>`;
+      <button class="btn btn-primary" onclick="asnEditarModelo(null,'modal')">+ Novo modelo</button>
+    </div>`}`;
 }
-function asnEditarModelo(id){
+function asnEditarModelo(id, ctx){
+  if(ctx) asnCtx = ctx;
   asnEditandoId = id;
   const m = id ? asnModelosCache.find(x=>x.id===id) : { nome:'', categoria:'geral', conteudo_html:'<p>Digite o texto do documento...</p>', ativo:true, assinavel:true };
   const vars = ['nome','cpf','rg','endereco','numero','bairro','cidade','estado','cep','telefone','plano','contrato_numero','data_extenso','equipamentos','taxa_instalacao','chk_ip','chk_equip','chk_fidelidade','chk_multa','chk_msg','chk_cobranca','chk_pagamento','qtd_pontos','qtd_pcs','qtd_acessos','vencimento','prazo','validade','banda_maxima','upload','download'];
-  const body = document.getElementById('asn-body');
+  const body = asnBody();
+  if(!body) return;
   body.innerHTML = `
     <div class="asn-rev-grid" style="margin-bottom:10px">
       <div><label class="asn-lbl">Nome do documento</label><input class="asn-inp" id="asn-ed-nome" value="${(m.nome||'').replace(/"/g,'&quot;')}"></div>
