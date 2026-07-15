@@ -909,7 +909,28 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 #page-fluxo .fx-seg-btn.act{color:#fff;background:linear-gradient(135deg,#2563EB,#60A5FA)}
 #page-fluxo .btn.fx-ia{background:linear-gradient(135deg,#7C3AED,#9333EA);color:#fff;border:none}
 #page-fluxo .btn.fx-ia:hover{filter:brightness(1.08)}
-/* ===== modais do Fluxo — SEM escopo #page-fluxo (ficam fora da .page no DOM) ===== */
+/* ---- linhas de conciliação de caixa (abaixo do RESULTADO LÍQUIDO) ---- */
+#page-fluxo .dre tr.dcx-acerto td{background:#FEF3C7;font-weight:700;color:#92400E;border-top:2px solid #FCD34D}
+#page-fluxo .dre tr.dcx-acerto td:first-child{background:#FEF3C7}
+#page-fluxo .dre tr.dcx-acerto.ok td{background:#F0FDF4;color:#047857;border-top-color:#A7F3CE}
+#page-fluxo .dre tr.dcx-acerto.ok td:first-child{background:#F0FDF4}
+#page-fluxo .dre tr.dcx-saldo td{background:#EFF6FF;font-weight:800;color:#1D4ED8;font-size:13.5px}
+#page-fluxo .dre tr.dcx-saldo td:first-child{background:#EFF6FF}
+#page-fluxo .dre tr.dcx-conta td{background:var(--surface);color:var(--text2);font-size:12.5px}
+#page-fluxo .dre tr.dcx-conta td:first-child{background:var(--surface)}
+#page-fluxo .dre tr.dcx-saldo .cv.neg,#page-fluxo .dre tr.dcx-conta .cv.neg{color:#BE123C}
+body.dark-mode #page-fluxo .dre tr.dcx-acerto td{background:rgba(217,119,6,.18);color:#FCD34D}
+body.dark-mode #page-fluxo .dre tr.dcx-acerto td:first-child{background:rgba(217,119,6,.18)}
+body.dark-mode #page-fluxo .dre tr.dcx-acerto.ok td{background:rgba(5,150,105,.14);color:#6EE7B7}
+body.dark-mode #page-fluxo .dre tr.dcx-acerto.ok td:first-child{background:rgba(5,150,105,.14)}
+body.dark-mode #page-fluxo .dre tr.dcx-saldo td{background:rgba(37,99,235,.16);color:#93C5FD}
+body.dark-mode #page-fluxo .dre tr.dcx-saldo td:first-child{background:rgba(37,99,235,.16)}
+/* KPI de geração de caixa */
+#page-fluxo .fx-card.caixa::before{background:linear-gradient(90deg,#0891B2,#22D3EE)}
+#page-fluxo .fx-cx-alerta{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:9px;background:#FEF3C7;color:#92400E}
+#page-fluxo .fx-cx-alerta.ok{background:#DCFCE9;color:#065F46}
+
+/* modais do Fluxo — SEM escopo #page-fluxo (ficam fora da .page no DOM) */
 .fx-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:9000;padding:20px}
 .fx-modal-overlay.open{display:flex;animation:fxFadeIn .18s ease both}
 @keyframes fxFadeIn{from{opacity:0}to{opacity:1}}
@@ -7337,6 +7358,17 @@ function renderFluxo(){
   // composição: custos variáveis, despesas fixas e investimentos sobre a receita
   const pCv = totRec?totCv/totRec*100:0, pDf=totRec?totDf/totRec*100:0, pInv=totRec?totInv/totRec*100:0;
   const pRes = Math.max(0,100-pCv-pDf-pInv);
+
+  // ---- geração de caixa do período (só faz sentido no realizado) ----
+  let cxKpi = null;
+  if(modoReal==='realizado' && !projIdx){
+    const cx = granular ? calcCaixaDia(ano, _fxMesSel, d) : calcCaixa(ano, d);
+    const n = granular ? d['rec'].length : 12;
+    // no período completo em tela: do saldo inicial do 1º ao saldo final do último
+    const geracao = (cx.fim[n-1]||0) - (cx.ini[0]||0);
+    const acertoTot = cx.acerto.reduce((a,b)=>a+b,0);
+    cxKpi = {geracao, acerto:acertoTot, saldoFim:cx.fim[n-1]||0, conciliado:Math.abs(acertoTot)<0.01};
+  }
   heroRes.innerHTML = `
     <div class="fx-hero ${heroClass}">
       <div class="fx-kh-lbl">📈 RESULTADO LÍQUIDO · ${heroLbl}${modoReal==='previsto'?' (PREVISTO)':''}</div>
@@ -7347,13 +7379,22 @@ function renderFluxo(){
     <div class="fx-card verde">
       <div class="fx-kc-num">${fxNum(totRec)}</div>
       <div class="fx-kc-lbl">💵 Receita Total</div>
-      <div class="fx-kc-av">média/período: ${fxBRLk(totRec/(nPeriodos||1))}</div>
+      <div class="fx-kc-av">MC: ${totRec?(totMc/totRec*100).toFixed(1)+'%':'—'} · ${fxBRLk(totMc)}</div>
     </div>
+    ${cxKpi ? `
+    <div class="fx-card caixa">
+      <div class="fx-kc-num" style="color:${cxKpi.geracao>=0?'#047857':'#BE123C'}">${cxKpi.geracao>=0?'+':''}${fxNum(cxKpi.geracao)}</div>
+      <div class="fx-kc-lbl">${cxKpi.geracao>=0?'💰 Gerou caixa no período':'🔥 Queimou caixa no período'}</div>
+      <div class="fx-kc-av">saldo final: ${fxBRLk(cxKpi.saldoFim)}</div>
+      ${cxKpi.conciliado
+        ? '<div class="fx-cx-alerta ok">✓ caixa conciliado</div>'
+        : `<div class="fx-cx-alerta" title="Diferença entre a variação do saldo bancário e o resultado do DRE — veja a linha ACERTO DE CAIXA">⚠️ acerto de ${fxBRLk(cxKpi.acerto)}</div>`}
+    </div>` : `
     <div class="fx-card azul">
       <div class="fx-kc-num" style="color:#059669">${fxNum(totMc)}</div>
       <div class="fx-kc-lbl">🧮 Margem de Contribuição</div>
       <div class="fx-kc-av">AV: ${totRec?(totMc/totRec*100).toFixed(1)+'%':'—'}</div>
-    </div>
+    </div>`}
     <div class="fx-card">
       <div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--text2);margin-bottom:10px">PARA ONDE VAI A RECEITA</div>
       <div class="fx-comp-bar"><i class="c-cv" style="width:${pCv}%"></i><i class="c-do" style="width:${pDf}%"></i><i class="c-inv" style="width:${pInv}%"></i><i class="c-res" style="width:${pRes}%"></i></div>
@@ -7445,7 +7486,7 @@ function renderFluxo(){
     return `<td class="cv ${cls}${c.atual&&!isPrev?' fx-mesatual':''}${c.fds?' fx-fds':''}${isProj?' fx-proj':''}${isPrev?' fx-prev-col':''}${clickable?' fx-cv-cell':''}"${click}>${conteudo}</td>`;
   }
 
-  document.getElementById('dre-tbody-f').innerHTML = dreWithParent.map(l=>{
+  const linhasDre = dreWithParent.map(l=>{
     const isRecSub=l.n===1 && l.parent0===recGrupoId;
     const rCls=l.t==='resultado'?'dresult':l.t==='margem'?'dmargem':l.t==='lucrop'?'dlucrop':l.n===0?'dn0':l.n===1?(isRecSub?'dn1r':'dn1'):'dn2';
     const indent=l.n===1?' i1':l.n===2?' i2':'';
@@ -7465,6 +7506,41 @@ function renderFluxo(){
     const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0)) || (l.n===2 && (_dreCollapsed.has(l.parent1)||_dreCollapsed.has(l.parent0))) ? ' dre-sub-hidden' : '';
     return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}${l.nome}</td>${colsH}${totCell}${totPrevCell}</tr>`;
   }).join('');
+
+  // ---- CONCILIAÇÃO DE CAIXA (abaixo do RESULTADO LÍQUIDO) ----
+  // Só faz sentido no modo realizado: saldo bancário reflete dinheiro que de fato entrou/saiu.
+  let linhasCaixa = '';
+  if(modoReal==='realizado' && !projIdx){
+    const cx = granular ? calcCaixaDia(ano, _fxMesSel, d) : calcCaixa(ano, d);
+    const nCols = granular ? d['rec'].length : 12;
+    // valor da célula respeitando o tipo de agregação da linha
+    const valCaixa = (l, idxArr) => {
+      const serie = l.conta!=null ? cx.porConta[l.conta]?.[l.campo] : (l.id==='acerto_caixa'?cx.acerto : l.id.startsWith('saldo_ini')?cx.ini : cx.fim);
+      if(!serie) return 0;
+      if(l.agg==='soma') return idxArr.reduce((s,i)=>s+(serie[i]||0),0);
+      if(l.agg==='primeiro') return serie[idxArr[0]]||0;
+      return serie[idxArr[idxArr.length-1]]||0; // ultimo
+    };
+    const todosIdx = Array.from({length:nCols},(_,i)=>i);
+    linhasCaixa = caixaStruct().map(l=>{
+      const colsH = cols.map(c=>{
+        const v = valCaixa(l, c.idx);
+        const cls = v===0?'zero':v<0?'neg':'pos';
+        const cell = `<td class="cv ${cls}${c.atual?' fx-mesatual':''}${c.fds?' fx-fds':''}">${v?fxNum(v):'—'}</td>`;
+        return comparar ? cell+'<td class="cv fx-prev-col">—</td>' : cell;
+      }).join('');
+      const tot = valCaixa(l, todosIdx);
+      const totCell = `<td class="cv ${tot===0?'zero':tot<0?'neg':'pos'}">${tot?fxNum(tot):'—'}</td>`+(comparar?'<td class="cv fx-prev-col">—</td>':'');
+      // acerto zerado = conciliado ✓
+      const acertoOk = l.id==='acerto_caixa' && Math.abs(tot)<0.01;
+      const indent = l.n===1?' i1':'';
+      const espaco = '<span style="display:inline-block;width:21px;flex-shrink:0"></span>';
+      const sufixo = l.id==='acerto_caixa' ? (acertoOk?' ✓':' ⚠️') : '';
+      return `<tr class="${l.cls}${acertoOk?' ok':''}"><td class="cn${indent}">${l.n===0?espaco:''}${l.nome}${sufixo}</td>${colsH}${totCell}</tr>`;
+    }).join('');
+  }
+
+  document.getElementById('dre-tbody-f').innerHTML = linhasDre + linhasCaixa;
 }
 
 // ============================================================
@@ -8465,6 +8541,85 @@ async function renderPrec(){
     `<div class="pr-diag info">📌 <b>Rateio em uso:</b> cada assinante carrega <b>${fxNum(B.qtd?B.df/B.qtd:0)}</b> de despesa fixa/mês (${fxBRLk(B.df)} ÷ ${B.qtd} assinantes) · percentuais sobre venda somam <b>${percTot.toFixed(1)}%</b> · link a <b>${fxNum(c.custo_mbps)}/Mbps</b> com overbooking padrão <b>1:${c.overbooking_padrao}</b>.</div>`;
   renderPrecPlanos();
   renderPrecEstrategia();
+}
+
+// ============================================================
+// CONCILIAÇÃO DE CAIXA — "estamos gerando caixa?"
+//
+// O DRE mostra o RESULTADO (competência). O caixa mostra o que de fato
+// entrou/saiu da conta. Quando os dois não fecham, existe algo não registrado.
+//
+//   Geração de caixa = Saldo Final − Saldo Inicial
+//   ACERTO DE CAIXA  = Geração de caixa − Resultado Líquido
+//
+// Acerto ≠ 0 significa: lançamento faltando, saldo inicial errado,
+// movimentação manual não classificada ou transferência mal registrada.
+// ============================================================
+function _ultimoDiaMes(ano, mes){ // mes 0-based → 'YYYY-MM-DD'
+  const d = new Date(ano, mes+1, 0);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// saldos mensais: ini[m] = saldo no fim do mês anterior; fim[m] = saldo no fim do mês m
+function calcCaixa(ano, dre){
+  const bancos = gdBancos();
+  const ini = Array(12).fill(0), fim = Array(12).fill(0);
+  const porConta = bancos.map(b=>({nome:b.nome||'Conta', ini:Array(12).fill(0), fim:Array(12).fill(0)}));
+  for(let m=0;m<12;m++){
+    const dIni = _ultimoDiaMes(m===0 ? ano-1 : ano, m===0 ? 11 : m-1);
+    const dFim = _ultimoDiaMes(ano, m);
+    bancos.forEach((b,i)=>{
+      const sI = calcSaldoContaAteData(i, dIni);
+      const sF = calcSaldoContaAteData(i, dFim);
+      porConta[i].ini[m] = sI; porConta[i].fim[m] = sF;
+      ini[m] += sI; fim[m] += sF;
+    });
+  }
+  const acerto = Array(12).fill(0);
+  for(let m=0;m<12;m++){
+    const geracao = fim[m] - ini[m];
+    acerto[m] = geracao - (dre['resultado']?.[m] || 0);
+  }
+  return {ini, fim, acerto, porConta};
+}
+
+// versão diária: saldos por dia do mês selecionado
+function calcCaixaDia(ano, mes, dreDia){
+  const bancos = gdBancos();
+  const nd = diasNoMesRef(ano, mes);
+  const ini = Array(nd).fill(0), fim = Array(nd).fill(0);
+  const porConta = bancos.map(b=>({nome:b.nome||'Conta', ini:Array(nd).fill(0), fim:Array(nd).fill(0)}));
+  const fmt = d => ano+'-'+String(mes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+  for(let i=0;i<nd;i++){
+    const dFim = fmt(i+1);
+    const dIni = i===0 ? _ultimoDiaMes(mes===0?ano-1:ano, mes===0?11:mes-1) : fmt(i);
+    bancos.forEach((b,bi)=>{
+      const sI = calcSaldoContaAteData(bi, dIni);
+      const sF = calcSaldoContaAteData(bi, dFim);
+      porConta[bi].ini[i]=sI; porConta[bi].fim[i]=sF;
+      ini[i]+=sI; fim[i]+=sF;
+    });
+  }
+  const acerto = Array(nd).fill(0);
+  for(let i=0;i<nd;i++) acerto[i] = (fim[i]-ini[i]) - (dreDia['resultado']?.[i]||0);
+  return {ini, fim, acerto, porConta};
+}
+
+// estrutura das linhas de caixa exibidas abaixo do RESULTADO LÍQUIDO.
+// agg define como a célula agrega num período de vários meses/dias:
+//   soma    → acumula (acerto de caixa)
+//   primeiro→ saldo no início do período
+//   ultimo  → saldo no fim do período
+function caixaStruct(){
+  const bancos = gdBancos();
+  const linhas = [
+    {id:'acerto_caixa', nome:'ACERTO DE CAIXA', n:0, cls:'dcx-acerto', agg:'soma'},
+    {id:'saldo_ini', nome:'SALDO INICIAL DISPONIBILIDADES', n:0, cls:'dcx-saldo', agg:'primeiro'},
+  ];
+  bancos.forEach((b,i)=>linhas.push({id:'saldo_ini_'+i, nome:b.nome||'Conta '+(i+1), n:1, cls:'dcx-conta', agg:'primeiro', conta:i, campo:'ini'}));
+  linhas.push({id:'saldo_fim', nome:'SALDO FINAL DISPONIBILIDADES', n:0, cls:'dcx-saldo', agg:'ultimo'});
+  bancos.forEach((b,i)=>linhas.push({id:'saldo_fim_'+i, nome:b.nome||'Conta '+(i+1), n:1, cls:'dcx-conta', agg:'ultimo', conta:i, campo:'fim'}));
+  return linhas;
 }
 
 function exportarDreCSV(){
