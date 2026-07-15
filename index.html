@@ -636,41 +636,101 @@ table.dre{width:100%;border-collapse:collapse;min-width:850px}
 #page-fluxo .fx-chart-wrap{height:145px}
 #page-fluxo select#f-mes{border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12.5px;background:var(--surface);font-family:inherit;font-weight:600}
 #page-fluxo select#fx-sel-ind{border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12.5px;background:var(--surface);font-family:inherit;font-weight:600}
-#page-fluxo .dre th.fx-fds{color:#B8860B;background:#FDF6E0}
-#page-fluxo .dre td.fx-fds{background:rgba(217,119,6,.05)}
-#page-fluxo .dre td.fx-mesatual{background:rgba(16,185,129,.06)}
-#page-fluxo .dre th.fx-mesatual{color:#059669;background:#DCFCE9}
-#page-fluxo .dre .cv .fx-avs{display:block;font-size:8.5px;font-weight:700;margin-top:1px;color:var(--text3)}
-#page-fluxo .dre .cv .fx-avs.up{color:#059669}
-#page-fluxo .dre .cv .fx-avs.down{color:#E11D48}
-#page-fluxo .dre .cv.fx-proj{opacity:.55;font-style:italic}
-#page-fluxo .dre .cv.fx-prev-col{color:#0891B2;background:rgba(8,145,178,.05);font-style:italic;border-right:1px solid var(--border)}
+/* ===== TABELA DRE — legibilidade e colunas modulares ===== */
+/* largura da coluna de contas se adapta à visão (definida por JS em data-view) */
+#page-fluxo table.dre{table-layout:auto;min-width:0;width:100%}
+#page-fluxo .dre th:first-child,#page-fluxo .dre td:first-child{width:1%;white-space:nowrap}
+#page-fluxo .dre th:not(:first-child),#page-fluxo .dre td:not(:first-child){width:auto}
+/* Anual/Trimestral: poucas colunas → conta ocupa o espaço, números não fogem pro fim */
+#page-fluxo[data-fxview="anual"] .dre th:not(:first-child),
+#page-fluxo[data-fxview="anual"] .dre td:not(:first-child){width:180px}
+#page-fluxo[data-fxview="trimestral"] .dre th:not(:first-child),
+#page-fluxo[data-fxview="trimestral"] .dre td:not(:first-child){width:130px}
+#page-fluxo[data-fxview="anual"] table.dre,
+#page-fluxo[data-fxview="trimestral"] table.dre{min-width:0}
+/* Mensal/Semanal/Diário: muitas colunas → tabela rola, conta fixa e legível */
+#page-fluxo[data-fxview="mensal"] table.dre{min-width:1250px}
+#page-fluxo[data-fxview="semanal"] table.dre{min-width:900px}
+#page-fluxo[data-fxview="diario"] table.dre{min-width:1900px}
+#page-fluxo[data-fxview="mensal"] .dre th:first-child,#page-fluxo[data-fxview="mensal"] .dre td:first-child{min-width:265px;max-width:265px}
+#page-fluxo[data-fxview="semanal"] .dre th:first-child,#page-fluxo[data-fxview="semanal"] .dre td:first-child{min-width:275px;max-width:275px}
+#page-fluxo[data-fxview="diario"] .dre th:first-child,#page-fluxo[data-fxview="diario"] .dre td:first-child{min-width:250px;max-width:250px}
+#page-fluxo[data-fxview="anual"] .dre th:first-child,#page-fluxo[data-fxview="anual"] .dre td:first-child{min-width:320px}
+#page-fluxo[data-fxview="trimestral"] .dre th:first-child,#page-fluxo[data-fxview="trimestral"] .dre td:first-child{min-width:300px}
+/* comparar (Real×Previsto) dobra as colunas */
+#page-fluxo[data-fxcomp="1"][data-fxview="mensal"] table.dre{min-width:2100px}
+#page-fluxo[data-fxcomp="1"][data-fxview="anual"] table.dre{min-width:0}
+#page-fluxo[data-fxcomp="1"][data-fxview="trimestral"] table.dre{min-width:1100px}
+
+/* fonte maior e mais legível */
+#page-fluxo .dre th{font-size:11px;font-weight:800;letter-spacing:.04em;padding:12px 13px;color:var(--text2)}
+#page-fluxo .dre td{font-size:13.5px}
+#page-fluxo .dre .cn{padding:10px 13px;font-size:13.5px;font-weight:600;overflow:hidden}
+#page-fluxo .dre .cn .fx-cn-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#page-fluxo .dre .cn.i1{padding-left:30px;font-size:13px}
+#page-fluxo .dre .cn.i2{padding-left:50px;font-size:12.5px}
+#page-fluxo .dre .cv{padding:10px 13px;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}
+#page-fluxo[data-fxview="diario"] .dre th{font-size:10px;padding:10px 8px}
+#page-fluxo[data-fxview="diario"] .dre .cv{font-size:12px;padding:9px 8px}
+/* AV%/AH% — bem maior que os 8.5px anteriores */
+#page-fluxo .dre .cv .fx-avs{display:block;font-size:10.5px;font-weight:700;margin-top:2px;color:var(--text3);opacity:.85}
+#page-fluxo .dre .cv .fx-avs.up{color:#047857}
+#page-fluxo .dre .cv .fx-avs.down{color:#BE123C}
+#page-fluxo[data-fxview="diario"] .dre .cv .fx-avs{font-size:9px}
+/* destaques de coluna com cor mais presente */
+#page-fluxo .dre th.fx-fds{color:#92400E;background:#FEF3C7}
+#page-fluxo .dre td.fx-fds{background:rgba(217,119,6,.07)}
+#page-fluxo .dre td.fx-mesatual{background:rgba(16,185,129,.1);box-shadow:inset 2px 0 0 #10B981,inset -2px 0 0 #10B981}
+#page-fluxo .dre th.fx-mesatual{color:#fff;background:#059669;font-weight:800}
+#page-fluxo .dre .cv.fx-proj{opacity:.5;font-style:italic}
+#page-fluxo .dre .cv.fx-prev-col{color:#0E7490;background:rgba(8,145,178,.09);font-style:italic;border-right:2px solid rgba(8,145,178,.25)}
 #page-fluxo .dre .cv.fx-prev-col .fx-avs{color:#0891B2}
-#page-fluxo .dre th.fx-sub-r{color:#059669;font-size:8.5px;padding-top:5px;padding-bottom:7px}
-#page-fluxo .dre th.fx-sub-p{color:#0891B2;font-size:8.5px;padding-top:5px;padding-bottom:7px;border-right:1px solid var(--border)}
-#page-fluxo .dre td.fx-cv-cell{cursor:pointer}
-#page-fluxo .fx-negbox{display:inline-block;background:linear-gradient(135deg,#E11D48,#F43F5E);color:#fff!important;font-weight:800;padding:2px 9px;border-radius:8px}
+#page-fluxo .dre th.fx-sub-r{color:#047857;font-size:10px;padding-top:5px;padding-bottom:8px;font-weight:800}
+#page-fluxo .dre th.fx-sub-p{color:#0E7490;font-size:10px;padding-top:5px;padding-bottom:8px;border-right:2px solid rgba(8,145,178,.25);font-weight:800}
+#page-fluxo .dre td.fx-cv-cell{cursor:pointer;transition:background .12s}
+#page-fluxo .dre td.fx-cv-cell:hover{background:rgba(37,99,235,.1);box-shadow:inset 0 0 0 2px rgba(37,99,235,.35)}
+#page-fluxo .fx-negbox{display:inline-block;background:linear-gradient(135deg,#E11D48,#F43F5E);color:#fff!important;font-weight:800;padding:3px 10px;border-radius:8px;font-size:13px;box-shadow:0 2px 8px rgba(225,29,72,.3)}
 #page-fluxo .dresult .fx-negbox{background:linear-gradient(135deg,#F43F5E,#FB7185)}
+/* cores de valor mais fortes */
+#page-fluxo .dre .cv.neg{color:#BE123C;font-weight:700}
+#page-fluxo .dre .cv.zero{color:var(--text3);opacity:.5}
+/* grupos com identidade cromática */
+#page-fluxo .dre tr.dn0 td{font-weight:800;font-size:14px}
+#page-fluxo .dre tr.dn1 .cn,#page-fluxo .dre tr.dn1r .cn{font-weight:700}
+#page-fluxo .dre tr.dn2 td{color:var(--text2)}
+#page-fluxo .dre tr.dmargem td{font-size:14px;font-weight:800}
+#page-fluxo .dre tr.dlucrop td{font-size:14px;font-weight:800}
+#page-fluxo .dre tr.dresult td{font-size:14.5px;font-weight:800}
 #page-fluxo .fx-seg{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px}
 #page-fluxo .fx-seg-btn{border:none;background:none;font-family:inherit;font-size:12px;font-weight:700;padding:6px 13px;border-radius:7px;cursor:pointer;color:var(--text2);transition:all .18s}
 #page-fluxo .fx-seg-btn.act{color:#fff;background:linear-gradient(135deg,#2563EB,#60A5FA)}
 #page-fluxo .btn.fx-ia{background:linear-gradient(135deg,#7C3AED,#9333EA);color:#fff;border:none}
 #page-fluxo .btn.fx-ia:hover{filter:brightness(1.08)}
-/* modais do Fluxo */
-#page-fluxo .fx-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:400;padding:20px}
-#page-fluxo .fx-modal-overlay.open{display:flex}
-#page-fluxo .fx-modal{background:var(--surface);border-radius:16px;width:100%;max-width:600px;max-height:88vh;overflow:auto;box-shadow:0 30px 80px rgba(15,23,42,.3)}
-#page-fluxo .fx-modal.lg{max-width:740px}
-#page-fluxo .fx-modal-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:15px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2}
-#page-fluxo .fx-modal-body{padding:18px 20px}
-#page-fluxo .fx-lanc-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 13px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:7px;font-size:12.5px}
-#page-fluxo .fx-lanc-st{font-size:9px;font-weight:800;padding:2.5px 8px;border-radius:9px;letter-spacing:.04em}
-#page-fluxo .st-ef{background:#DCFCE9;color:#065F46}
-#page-fluxo .st-pd{background:#CFFAFE;color:#155E75}
-#page-fluxo .fx-ia-sec{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 15px;margin-bottom:10px;font-size:13px;line-height:1.6}
-#page-fluxo .fx-ia-sec h4{font-size:11px;letter-spacing:.07em;color:#7C3AED;margin-bottom:6px}
-#page-fluxo .fx-ia-cursor{display:inline-block;width:7px;height:14px;background:#7C3AED;animation:fxblink 1s steps(1) infinite;vertical-align:text-bottom}
+/* ===== modais do Fluxo — SEM escopo #page-fluxo (ficam fora da .page no DOM) ===== */
+.fx-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:9000;padding:20px}
+.fx-modal-overlay.open{display:flex;animation:fxFadeIn .18s ease both}
+@keyframes fxFadeIn{from{opacity:0}to{opacity:1}}
+.fx-modal{background:var(--surface);border-radius:18px;width:100%;max-width:640px;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 90px rgba(15,23,42,.4);animation:fxPop .24s cubic-bezier(.28,1.15,.4,1) both}
+@keyframes fxPop{from{opacity:0;transform:scale(.95) translateY(12px)}to{opacity:1;transform:none}}
+.fx-modal.lg{max-width:780px}
+.fx-modal-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.fx-modal-title{font-weight:800;font-size:16px;color:var(--text)}
+.fx-modal-x{border:none;background:var(--surface2);width:32px;height:32px;border-radius:10px;font-size:15px;cursor:pointer;color:var(--text2);transition:all .15s;flex-shrink:0;font-family:inherit}
+.fx-modal-x:hover{background:#FFE4E9;color:#E11D48;transform:rotate(90deg)}
+.fx-modal-body{padding:18px 22px;overflow-y:auto;flex:1}
+.fx-lanc-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;font-size:13.5px;transition:transform .13s,box-shadow .13s}
+.fx-lanc-item:hover{transform:translateX(3px);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.fx-lanc-desc{font-weight:600;font-size:13.5px;color:var(--text)}
+.fx-lanc-meta{font-size:11.5px;color:var(--text3);margin-top:2px}
+.fx-lanc-val{font-weight:800;font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fx-lanc-st{font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}
+.fx-lanc-st.st-ef{background:#DCFCE9;color:#065F46}
+.fx-lanc-st.st-pd{background:#CFFAFE;color:#155E75}
+.fx-ia-sec{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 17px;margin-bottom:11px;font-size:14px;line-height:1.65;color:var(--text)}
+.fx-ia-cursor{display:inline-block;width:7px;height:15px;background:#7C3AED;animation:fxblink 1s steps(1) infinite;vertical-align:text-bottom}
 @keyframes fxblink{50%{opacity:0}}
+body.dark-mode .fx-lanc-st.st-ef{background:rgba(5,150,105,.22);color:#6EE7B7}
+body.dark-mode .fx-lanc-st.st-pd{background:rgba(8,145,178,.22);color:#67E8F9}
 .cn{padding:8px 10px;font-size:11.5px}.cn.i1{padding-left:22px}.cn.i2{padding-left:36px;font-size:10.5px;color:var(--text3)}
 .cv{padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:10.5px;white-space:nowrap}
 .cv.pos{color:var(--accent)}.cv.neg{color:var(--danger)}.cv.zero{color:var(--text3)}
@@ -3175,9 +3235,12 @@ textarea.cp-form-input{resize:vertical}
     <!-- MODAL: drill-down de lançamentos -->
     <div class="fx-modal-overlay" id="fx-m-drill" onclick="if(event.target===this)fxFechar('fx-m-drill')">
       <div class="fx-modal">
-        <div class="fx-modal-header"><span style="font-weight:800;font-size:15px" id="fx-drill-title">Lançamentos</span><button class="btn" onclick="fxFechar('fx-m-drill')" style="width:29px;height:29px;padding:0;border-radius:9px">✕</button></div>
+        <div class="fx-modal-header">
+          <div><div class="fx-modal-title" id="fx-drill-title">Lançamentos</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Somente visualização</div></div>
+          <button class="fx-modal-x" onclick="fxFechar('fx-m-drill')" title="Fechar (Esc)">✕</button>
+        </div>
         <div class="fx-modal-body">
-          <div id="fx-drill-resumo" style="background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:10px 14px;font-size:12.5px;margin-bottom:13px"></div>
+          <div id="fx-drill-resumo" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 15px;font-size:13.5px;margin-bottom:14px"></div>
           <div id="fx-drill-lista"></div>
         </div>
       </div>
@@ -3187,10 +3250,10 @@ textarea.cp-form-input{resize:vertical}
     <div class="fx-modal-overlay" id="fx-m-ia" onclick="if(event.target===this)fxFechar('fx-m-ia')">
       <div class="fx-modal lg">
         <div class="fx-modal-header">
-          <span style="font-weight:800;font-size:15px">👔 Gerente Financeiro IA</span>
+          <div class="fx-modal-title">👔 Gerente Financeiro IA</div>
           <div style="display:flex;gap:8px;align-items:center">
-            <select id="fx-ia-mes" onchange="fxGerarIA()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:8px"></select>
-            <button class="btn" onclick="fxFechar('fx-m-ia')" style="width:29px;height:29px;padding:0;border-radius:9px">✕</button>
+            <select id="fx-ia-mes" onchange="fxGerarIA()" style="padding:7px 11px;font-size:13px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-weight:600"></select>
+            <button class="fx-modal-x" onclick="fxFechar('fx-m-ia')" title="Fechar (Esc)">✕</button>
           </div>
         </div>
         <div class="fx-modal-body"><div id="fx-ia-out"></div></div>
@@ -3200,9 +3263,9 @@ textarea.cp-form-input{resize:vertical}
     <!-- MODAL: PDF executivo -->
     <div class="fx-modal-overlay" id="fx-m-pdf" onclick="if(event.target===this)fxFechar('fx-m-pdf')">
       <div class="fx-modal lg">
-        <div class="fx-modal-header"><span style="font-weight:800;font-size:15px">📄 Relatório Executivo</span><button class="btn" onclick="fxFechar('fx-m-pdf')" style="width:29px;height:29px;padding:0;border-radius:9px">✕</button></div>
+        <div class="fx-modal-header"><div class="fx-modal-title">📄 Relatório Executivo</div><button class="fx-modal-x" onclick="fxFechar('fx-m-pdf')" title="Fechar (Esc)">✕</button></div>
         <div class="fx-modal-body">
-          <div style="font-size:11.5px;color:var(--text3);margin-bottom:12px" id="fx-pdf-status">Gerando relatório em PDF...</div>
+          <div style="font-size:13.5px;color:var(--text2)" id="fx-pdf-status">Gerando relatório em PDF...</div>
         </div>
       </div>
     </div>
@@ -6646,18 +6709,30 @@ function fxLancamentosDoId(rootId, modo, ano, meses, dias){
 
 function fxAbrir(id){ document.getElementById(id).classList.add('open'); }
 function fxFechar(id){ document.getElementById(id).classList.remove('open'); }
+// Esc fecha qualquer modal do Fluxo que esteja aberto
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  document.querySelectorAll('.fx-modal-overlay.open').forEach(m=>m.classList.remove('open'));
+});
 
 function fxAbrirDrill(rootId, nome, ano, meses, dias, lbl){
   const modo = _fluxoModo==='comparar' ? 'realizado' : _fluxoModo;
   const lan = fxLancamentosDoId(rootId, modo, ano, meses, dias);
   const tot = lan.reduce((s,l)=>s+l.valor,0);
   document.getElementById('fx-drill-title').textContent = `${nome} — ${lbl}`;
-  document.getElementById('fx-drill-resumo').innerHTML = `<b>${lan.length}</b> lançamento${lan.length!==1?'s':''} · total <b>${brlN(tot)}</b>`;
+  const rotulo = modo==='previsto' ? 'em aberto' : 'efetivados';
+  document.getElementById('fx-drill-resumo').innerHTML =
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <span><b>${lan.length}</b> lançamento${lan.length!==1?'s':''} ${rotulo}</span>
+      <span style="font-size:16px;font-weight:800">${brlN(tot)}</span>
+    </div>`;
   document.getElementById('fx-drill-lista').innerHTML = lan.length ? lan.map(l=>{
     const ef = l.status==='Recebido'||l.status==='Pago';
-    return `<div class="fx-lanc-item"><div><div style="font-weight:600">${l.desc}</div><div style="font-size:10.5px;color:var(--text3)">${l.data.split('-').reverse().join('/')} · ${l.plano}</div></div>
-    <div style="display:flex;align-items:center;gap:9px"><span class="fx-lanc-st ${ef?'st-ef':'st-pd'}">${l.status}</span><span style="font-weight:800">${brlN(l.valor)}</span></div></div>`;
-  }).join('') : '<div style="font-size:12px;color:var(--text3);text-align:center;padding:16px">Nenhum lançamento neste período.</div>';
+    return `<div class="fx-lanc-item">
+      <div style="min-width:0"><div class="fx-lanc-desc">${l.desc}</div><div class="fx-lanc-meta">${l.data.split('-').reverse().join('/')}${l.plano?' · '+l.plano:''}</div></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span class="fx-lanc-st ${ef?'st-ef':'st-pd'}">${l.status}</span><span class="fx-lanc-val">${brlN(l.valor)}</span></div>
+    </div>`;
+  }).join('') : '<div style="font-size:13.5px;color:var(--text3);text-align:center;padding:24px">Nenhum lançamento neste período.</div>';
   fxAbrir('fx-m-drill');
 }
 
@@ -6802,7 +6877,10 @@ function renderFluxo(){
     const nd=d['rec'].length;
     cols=Array.from({length:nd},(_,i)=>{ const dw=new Date(ano,_fxMesSel,i+1).getDay(); return {label:String(i+1).padStart(2,'0'),idx:[i],fds:dw===0||dw===6, atual: ano===new Date().getFullYear() && _fxMesSel===new Date().getMonth() && (i+1)===new Date().getDate()}; });
   }
-  document.querySelector('#page-fluxo table.dre').classList.toggle('fx-compact', view==='diario');
+  // colunas modulares: o CSS usa estes atributos para dimensionar conta × valores por visão
+  const pgFluxo = document.getElementById('page-fluxo');
+  pgFluxo.setAttribute('data-fxview', view);
+  pgFluxo.setAttribute('data-fxcomp', comparar ? '1' : '0');
 
   const ind = document.getElementById('fx-sel-ind')?.value||'av';
 
@@ -6874,7 +6952,7 @@ function renderFluxo(){
       : (l.n===0||l.n===1?'<span style="display:inline-block;width:21px;flex-shrink:0"></span>':'');
     const parentAttr = l.n===1 && l.parent0 ? ` data-parent="${l.parent0}" data-group="${l.id}"` : l.n===2 && l.parent1 ? ` data-parent="${l.parent1}"` : '';
     const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0)) || (l.n===2 && (_dreCollapsed.has(l.parent1)||_dreCollapsed.has(l.parent0))) ? ' dre-sub-hidden' : '';
-    return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}${l.nome}</td>${colsH}${totCell}${totPrevCell}</tr>`;
+    return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}<span class="fx-cn-txt" title="${l.nome.replace(/"/g,'&quot;')}">${l.nome}</span></td>${colsH}${totCell}${totPrevCell}</tr>`;
   }).join('');
 }
 
