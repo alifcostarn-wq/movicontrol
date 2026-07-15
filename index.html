@@ -150,7 +150,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .user-role{font-size:11px;color:rgba(255,255,255,0.50)}
 
 /* ======== MAIN ======== */
-.main{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;min-height:100vh;transition:margin-left 0.22s cubic-bezier(.4,0,.2,1)}
+.main{margin-left:var(--sidebar);flex:1;min-width:0;display:flex;flex-direction:column;min-height:100vh;transition:margin-left 0.22s cubic-bezier(.4,0,.2,1)}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 30px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
 .topbar-left{display:flex;flex-direction:column}
 .page-title{font-size:14.5px;font-weight:600}
@@ -160,7 +160,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .btn:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
 .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn-primary:hover{background:#155030;color:#fff;border-color:#155030}
-.content{padding:24px 30px;flex:1}
+.content{padding:24px 30px;flex:1;min-width:0}
 .page{display:none}.page.active{display:block}
 
 /* ======== SHARED COMPONENTS ======== */
@@ -659,9 +659,9 @@ table.dre{width:100%;border-collapse:collapse;min-width:850px}
 #page-fluxo[data-fxview="mensal"] table.dre{min-width:1250px}
 #page-fluxo[data-fxview="semanal"] table.dre{min-width:900px}
 #page-fluxo[data-fxview="diario"] table.dre{min-width:1900px}
-#page-fluxo[data-fxview="mensal"] .dre th:first-child,#page-fluxo[data-fxview="mensal"] .dre td:first-child{min-width:265px;max-width:265px}
-#page-fluxo[data-fxview="semanal"] .dre th:first-child,#page-fluxo[data-fxview="semanal"] .dre td:first-child{min-width:275px;max-width:275px}
-#page-fluxo[data-fxview="diario"] .dre th:first-child,#page-fluxo[data-fxview="diario"] .dre td:first-child{min-width:250px;max-width:250px}
+#page-fluxo[data-fxview="mensal"] .dre th:first-child,#page-fluxo[data-fxview="mensal"] .dre td:first-child{min-width:265px}
+#page-fluxo[data-fxview="semanal"] .dre th:first-child,#page-fluxo[data-fxview="semanal"] .dre td:first-child{min-width:275px}
+#page-fluxo[data-fxview="diario"] .dre th:first-child,#page-fluxo[data-fxview="diario"] .dre td:first-child{min-width:250px}
 #page-fluxo[data-fxview="anual"] .dre th:first-child,#page-fluxo[data-fxview="anual"] .dre td:first-child{min-width:320px}
 #page-fluxo[data-fxview="trimestral"] .dre th:first-child,#page-fluxo[data-fxview="trimestral"] .dre td:first-child{min-width:300px}
 /* comparar (Real×Previsto) dobra as colunas */
@@ -672,8 +672,7 @@ table.dre{width:100%;border-collapse:collapse;min-width:850px}
 /* fonte maior e mais legível */
 #page-fluxo .dre th{font-size:11px;font-weight:800;letter-spacing:.04em;padding:12px 13px;color:var(--text2)}
 #page-fluxo .dre td{font-size:13.5px}
-#page-fluxo .dre .cn{padding:10px 13px;font-size:13.5px;font-weight:600;overflow:hidden}
-#page-fluxo .dre .cn .fx-cn-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#page-fluxo .dre .cn{padding:10px 13px;font-size:13.5px;font-weight:600}
 #page-fluxo .dre .cn.i1{padding-left:30px;font-size:13px}
 #page-fluxo .dre .cn.i2{padding-left:50px;font-size:12.5px}
 #page-fluxo .dre .cv{padding:10px 13px;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -6959,7 +6958,7 @@ function renderFluxo(){
       : (l.n===0||l.n===1?'<span style="display:inline-block;width:21px;flex-shrink:0"></span>':'');
     const parentAttr = l.n===1 && l.parent0 ? ` data-parent="${l.parent0}" data-group="${l.id}"` : l.n===2 && l.parent1 ? ` data-parent="${l.parent1}"` : '';
     const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0)) || (l.n===2 && (_dreCollapsed.has(l.parent1)||_dreCollapsed.has(l.parent0))) ? ' dre-sub-hidden' : '';
-    return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}<span class="fx-cn-txt" title="${l.nome.replace(/"/g,'&quot;')}">${l.nome}</span></td>${colsH}${totCell}${totPrevCell}</tr>`;
+    return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}${l.nome}</td>${colsH}${totCell}${totPrevCell}</tr>`;
   }).join('');
 }
 
