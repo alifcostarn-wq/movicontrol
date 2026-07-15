@@ -909,6 +909,27 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 #page-fluxo .fx-seg-btn.act{color:#fff;background:linear-gradient(135deg,#2563EB,#60A5FA)}
 #page-fluxo .btn.fx-ia{background:linear-gradient(135deg,#7C3AED,#9333EA);color:#fff;border:none}
 #page-fluxo .btn.fx-ia:hover{filter:brightness(1.08)}
+/* ---- painel de análise automática da IA ---- */
+#page-fluxo .fx-ia-auto{border-radius:14px;background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(37,99,235,.05));border:1.5px solid rgba(124,58,237,.22);padding:14px 17px;margin-bottom:14px;position:relative;overflow:hidden}
+#page-fluxo .fx-ia-auto::before{content:'';position:absolute;top:0;left:0;bottom:0;width:4px;background:linear-gradient(180deg,#7C3AED,#2563EB)}
+#page-fluxo .fx-ia-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+#page-fluxo .fx-ia-tit{font-size:11.5px;font-weight:800;letter-spacing:.06em;color:#6D28D9;display:flex;align-items:center;gap:7px}
+#page-fluxo .fx-ia-txt{font-size:13.5px;line-height:1.65;color:var(--text);white-space:pre-line}
+#page-fluxo .fx-ia-txt b,#page-fluxo .fx-ia-txt strong{color:#5B21B6}
+#page-fluxo .fx-ia-load{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text2)}
+#page-fluxo .fx-ia-dots{display:inline-flex;gap:4px}
+#page-fluxo .fx-ia-dots i{width:6px;height:6px;border-radius:50%;background:#7C3AED;animation:fxDot 1.2s infinite ease-in-out}
+#page-fluxo .fx-ia-dots i:nth-child(2){animation-delay:.15s}
+#page-fluxo .fx-ia-dots i:nth-child(3){animation-delay:.3s}
+@keyframes fxDot{0%,60%,100%{opacity:.25;transform:scale(.8)}30%{opacity:1;transform:scale(1)}}
+#page-fluxo .fx-ia-btn{border:1px solid rgba(124,58,237,.3);background:rgba(124,58,237,.08);color:#6D28D9;border-radius:8px;padding:4px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+#page-fluxo .fx-ia-btn:hover{background:rgba(124,58,237,.16)}
+#page-fluxo .fx-ia-meta{font-size:10px;color:var(--text3);font-weight:600}
+body.dark-mode #page-fluxo .fx-ia-auto{background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(37,99,235,.1));border-color:rgba(167,139,250,.3)}
+body.dark-mode #page-fluxo .fx-ia-tit{color:#C4B5FD}
+body.dark-mode #page-fluxo .fx-ia-txt b,body.dark-mode #page-fluxo .fx-ia-txt strong{color:#C4B5FD}
+body.dark-mode #page-fluxo .fx-ia-btn{color:#C4B5FD;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)}
+
 /* ---- linhas de conciliação de caixa (abaixo do RESULTADO LÍQUIDO) ---- */
 #page-fluxo .dre tr.dcx-acerto td{background:#FEF3C7;font-weight:700;color:#92400E;border-top:2px solid #FCD34D}
 #page-fluxo .dre tr.dcx-acerto td:first-child{background:#FEF3C7}
@@ -3426,6 +3447,16 @@ textarea.cp-form-input{resize:vertical}
     <!-- ====== FLUXO DE CAIXA ====== -->
     <div class="page" id="page-fluxo">
       <div class="fx-kpi-row" id="fx-kpi-row"></div>
+      <div class="fx-ia-auto" id="fx-ia-auto" style="display:none">
+        <div class="fx-ia-head">
+          <span class="fx-ia-tit">🧠 ANÁLISE INTELIGENTE DO FLUXO</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="fx-ia-meta" id="fx-ia-auto-meta"></span>
+            <button class="fx-ia-btn" onclick="fxAnaliseAuto(true)" title="Gerar uma nova análise agora">↻ Atualizar</button>
+          </div>
+        </div>
+        <div id="fx-ia-auto-body"></div>
+      </div>
       <div class="fx-alert-strip" id="fx-alert-strip"></div>
       <div class="fx-chart-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -7541,6 +7572,15 @@ function renderFluxo(){
   }
 
   document.getElementById('dre-tbody-f').innerHTML = linhasDre + linhasCaixa;
+
+  // análise automática da IA — assíncrona, não trava a tela.
+  // Só no modo realizado (é o retrato do que de fato aconteceu).
+  if(modoReal==='realizado' && !comparar){
+    setTimeout(()=>fxAnaliseAuto(false), 60);
+  } else {
+    const box=document.getElementById('fx-ia-auto');
+    if(box) box.style.display='none';
+  }
 }
 
 // ============================================================
@@ -8620,6 +8660,173 @@ function caixaStruct(){
   linhas.push({id:'saldo_fim', nome:'SALDO FINAL DISPONIBILIDADES', n:0, cls:'dcx-saldo', agg:'ultimo'});
   bancos.forEach((b,i)=>linhas.push({id:'saldo_fim_'+i, nome:b.nome||'Conta '+(i+1), n:1, cls:'dcx-conta', agg:'ultimo', conta:i, campo:'fim'}));
   return linhas;
+}
+
+// ============================================================
+// ANÁLISE INTELIGENTE AUTOMÁTICA DO FLUXO
+// Roda ao abrir a página. Compara hoje × ontem, mês × mês anterior,
+// identifica onde o dinheiro está indo e o que mudou na receita.
+// Cache de 6h por dia/ano para não gastar chamada a cada navegação.
+// ============================================================
+let _fxIaRodando = false;
+
+function _fxIsoLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+// soma de uma linha do DRE num dia específico
+function _fxTotalDia(dreDia, id, dia){ return dreDia[id]?.[dia] || 0; }
+
+// monta o retrato do fluxo com números reais para alimentar a IA
+function fxContextoAnalise(ano){
+  const hojeD = new Date();
+  const mesAtual = hojeD.getMonth();
+  const diaHoje = hojeD.getDate()-1; // 0-based
+  const dre = calcDRE('realizado', ano);
+  const drePrev = calcDRE('previsto', ano);
+  const dreDia = calcDREDia('realizado', ano, mesAtual);
+  const nd = dreDia['rec'].length;
+
+  // ontem: se hoje é dia 1, olha o último dia do mês anterior
+  let dreDiaOntem = dreDia, diaOntem = diaHoje-1, mesOntem = mesAtual;
+  if(diaOntem < 0){
+    mesOntem = mesAtual===0 ? 11 : mesAtual-1;
+    const anoOntem = mesAtual===0 ? ano-1 : ano;
+    dreDiaOntem = calcDREDia('realizado', anoOntem, mesOntem);
+    diaOntem = dreDiaOntem['rec'].length-1;
+  }
+
+  const MN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const nReal = MESES.reduce((n,_,i)=>n+((dre['rec']?.[i]||0)>0?1:0),0)||1;
+
+  // top contas de despesa/custo do mês (nível 2 = detalhe, senão nível 1)
+  const contasDesp = DRE_STRUCT
+    .filter(l=>l.n>0 && !['margem','lucrop','resultado'].includes(l.t))
+    .filter(l=>{
+      const id=l.id;
+      return id.startsWith('cv_')||id.startsWith('df_')||id.startsWith('inv_');
+    })
+    .map(l=>{
+      const atual = dre[l.id]?.[mesAtual]||0;
+      const ant = mesAtual>0 ? (dre[l.id]?.[mesAtual-1]||0) : 0;
+      const mediaOutros = (dre[l.id]||[]).slice(0,nReal).filter((_,i)=>i!==mesAtual).reduce((a,b)=>a+b,0)/Math.max(1,nReal-1);
+      return {nome:l.nome, n:l.n, atual, ant, mediaOutros, var: ant? (atual/ant-1)*100 : null};
+    })
+    .filter(x=>x.atual>0);
+  const topGastos = contasDesp.filter(x=>x.n===2).length>=3
+    ? contasDesp.filter(x=>x.n===2).sort((a,b)=>b.atual-a.atual).slice(0,6)
+    : contasDesp.sort((a,b)=>b.atual-a.atual).slice(0,6);
+  // maiores altas de despesa vs mês anterior
+  const altasDesp = contasDesp.filter(x=>x.ant>50 && x.var>15).sort((a,b)=>b.var-a.var).slice(0,4);
+
+  // receitas: o que cresceu/caiu
+  const contasRec = DRE_STRUCT.filter(l=>l.n>0 && l.id.startsWith('rec_')).map(l=>{
+    const atual = dre[l.id]?.[mesAtual]||0;
+    const ant = mesAtual>0 ? (dre[l.id]?.[mesAtual-1]||0) : 0;
+    return {nome:l.nome, atual, ant, var: ant? (atual/ant-1)*100 : null};
+  }).filter(x=>x.atual>0 || x.ant>0);
+
+  // caixa
+  const cx = calcCaixa(ano, dre);
+  const saldoHoje = cx.fim[mesAtual]||0;
+  const geracaoMes = (cx.fim[mesAtual]||0)-(cx.ini[mesAtual]||0);
+
+  // pendências
+  const aReceber = drePrev['rec']?.[mesAtual]||0;
+  const aPagar = drePrev['desp_op']?.[mesAtual]||0;
+
+  const fmt = v => (v||0).toFixed(2);
+  return {
+    hoje: _fxIsoLocal(hojeD),
+    mesNome: MN[mesAtual],
+    dia: {
+      recHoje: _fxTotalDia(dreDia,'rec',diaHoje), despHoje: _fxTotalDia(dreDia,'desp_op',diaHoje), resHoje: _fxTotalDia(dreDia,'resultado',diaHoje),
+      recOntem: _fxTotalDia(dreDiaOntem,'rec',diaOntem), despOntem: _fxTotalDia(dreDiaOntem,'desp_op',diaOntem), resOntem: _fxTotalDia(dreDiaOntem,'resultado',diaOntem),
+      ontemLbl: (diaOntem+1)+'/'+String(mesOntem+1).padStart(2,'0'),
+    },
+    mes: {
+      rec: dre['rec']?.[mesAtual]||0, cv: dre['cv']?.[mesAtual]||0, df: dre['df']?.[mesAtual]||0,
+      inv: dre['inv']?.[mesAtual]||0, mc: dre['mc']?.[mesAtual]||0, res: dre['resultado']?.[mesAtual]||0,
+      recAnt: mesAtual>0?(dre['rec']?.[mesAtual-1]||0):0, resAnt: mesAtual>0?(dre['resultado']?.[mesAtual-1]||0):0,
+    },
+    topGastos, altasDesp, contasRec,
+    caixa: {saldoHoje, geracaoMes, aReceber, aPagar},
+    diaDoMes: hojeD.getDate(), diasNoMes: nd,
+  };
+}
+
+async function fxAnaliseAuto(forcar){
+  const box = document.getElementById('fx-ia-auto');
+  const body = document.getElementById('fx-ia-auto-body');
+  const meta = document.getElementById('fx-ia-auto-meta');
+  if(!box) return;
+  const ano = parseInt(document.getElementById('f-ano')?.value)||new Date().getFullYear();
+  const hojeIso = _fxIsoLocal(new Date());
+  const chave = 'fx_ia_auto_'+ano+'_'+hojeIso;
+
+  // 1 análise por dia: se já existe a do dia de hoje, reaproveita (economiza token).
+  // O botão ↻ Atualizar força uma nova quando necessário.
+  if(!forcar){
+    try{
+      const cache = JSON.parse(localStorage.getItem(chave)||'null');
+      if(cache && cache.html){
+        box.style.display='';
+        body.innerHTML = `<div class="fx-ia-txt">${cache.html}</div>`;
+        meta.textContent = 'análise de hoje · '+new Date(cache.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+        return;
+      }
+    }catch(e){}
+  }
+  // limpa análises de dias anteriores para não acumular lixo no localStorage
+  try{
+    Object.keys(localStorage).forEach(k=>{ if(k.startsWith('fx_ia_auto_') && k!==chave) localStorage.removeItem(k); });
+  }catch(e){}
+  if(_fxIaRodando) return;
+  _fxIaRodando = true;
+  box.style.display='';
+  meta.textContent='';
+  body.innerHTML = `<div class="fx-ia-load"><span class="fx-ia-dots"><i></i><i></i><i></i></span> Analisando seu fluxo de caixa...</div>`;
+
+  try{
+    const c = fxContextoAnalise(ano);
+    if(!c.mes.rec && !c.mes.df){ box.style.display='none'; _fxIaRodando=false; return; }
+    const f = v => 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const prompt = `Analise o fluxo de caixa da MoviOn hoje (${c.hoje}) e escreva um resumo executivo CURTO (máximo 5 linhas), em 3 blocos separados por quebra de linha, usando **negrito** nos números e nomes de contas importantes:
+
+1) O DIA: compare hoje com ontem (${c.dia.ontemLbl}).
+2) ONDE O DINHEIRO ESTÁ INDO: aponte as 2-3 contas que mais consomem caixa no mês e destaque as que subiram muito.
+3) O QUE FAZER: 1 recomendação prática e específica.
+
+DADOS REAIS (não invente nada além disso):
+
+HOJE: entrou ${f(c.dia.recHoje)}, saiu ${f(c.dia.despHoje)}, resultado ${f(c.dia.resHoje)}
+ONTEM (${c.dia.ontemLbl}): entrou ${f(c.dia.recOntem)}, saiu ${f(c.dia.despOntem)}, resultado ${f(c.dia.resOntem)}
+
+MÊS DE ${c.mesNome.toUpperCase()} (dia ${c.diaDoMes} de ${c.diasNoMes}):
+- Receita: ${f(c.mes.rec)} (mês anterior: ${f(c.mes.recAnt)})
+- Custos variáveis: ${f(c.mes.cv)} | Despesas fixas: ${f(c.mes.df)} | Investimentos: ${f(c.mes.inv)}
+- Margem de contribuição: ${f(c.mes.mc)} | Resultado: ${f(c.mes.res)} (mês anterior: ${f(c.mes.resAnt)})
+
+ONDE MAIS GASTOU NO MÊS:
+${c.topGastos.map(g=>`- ${g.nome}: ${f(g.atual)}${g.var!==null?` (${g.var>=0?'+':''}${g.var.toFixed(0)}% vs mês anterior)`:''}`).join('\n')||'- sem dados'}
+
+DESPESAS QUE MAIS SUBIRAM:
+${c.altasDesp.map(g=>`- ${g.nome}: ${f(g.ant)} → ${f(g.atual)} (+${g.var.toFixed(0)}%)`).join('\n')||'- nenhuma alta relevante'}
+
+RECEITAS:
+${c.contasRec.map(r=>`- ${r.nome}: ${f(r.atual)}${r.var!==null?` (${r.var>=0?'+':''}${r.var.toFixed(0)}% vs mês anterior)`:''}`).join('\n')||'- sem dados'}
+
+CAIXA: saldo ${f(c.caixa.saldoHoje)} | gerou ${f(c.caixa.geracaoMes)} no mês | a receber em aberto ${f(c.caixa.aReceber)} | a pagar em aberto ${f(c.caixa.aPagar)}`;
+
+    const txt = await ifGroq(IF_GROQ_SYS+' Seja MUITO conciso: no máximo 5 linhas no total. Vá direto ao ponto, sem saudação e sem repetir os dados brutos — interprete.', prompt, 420);
+    const html = txt.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/^- /gm,'• ').trim();
+    body.innerHTML = `<div class="fx-ia-txt">${html}</div>`;
+    meta.textContent = 'gerada agora';
+    try{ localStorage.setItem(chave, JSON.stringify({ts:Date.now(), html})); }catch(e){}
+  }catch(e){
+    // falha na IA não pode atrapalhar o uso da tela
+    body.innerHTML = `<div style="font-size:12.5px;color:var(--text3)">Não foi possível gerar a análise agora (${e.message}). <button class="fx-ia-btn" onclick="fxAnaliseAuto(true)" style="margin-left:6px">Tentar de novo</button></div>`;
+    meta.textContent='';
+  }
+  _fxIaRodando = false;
 }
 
 function exportarDreCSV(){
