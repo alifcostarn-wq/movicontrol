@@ -15971,6 +15971,7 @@ async function syncIXC(silent){
     const logByIxcId = new Map();
     logins.forEach((l,idx)=>{ if(l.ixcId) logByIxcId.set(String(l.ixcId), idx); });
     let novosLog=0, atualizadosLog=0;
+    const pendWifi = []; // logins que ainda precisam buscar a senha na 2ª fonte
 
     for (const r of regLog) {
       const ixcId = String(r.id||'');
@@ -15991,23 +15992,11 @@ async function syncIXC(silent){
       const senhaJaSalva = idxExistente !== undefined ? (logins[idxExistente].senhaWifi || '') : '';
 
       // A senha do Wi-Fi normalmente NÃO vem do radusuarios — vive numa fonte separada
-      // (config da ONU/fibra), consultada por login. Só busca se ainda não tivermos
-      // (1ª sync é mais lenta; nas próximas, quem já tem senha salva é pulado).
+      // (config da ONU/fibra), consultada por login. A busca dessa 2ª fonte é feita
+      // DEPOIS deste loop, em paralelo controlado (pool) — só pra quem não tem senha.
       let senhaFinal = _w.senha || '';
       let ssidFinal = _w.ssid || '';
-      if (!senhaFinal && !senhaJaSalva) {
-        try {
-          const r2 = await chamarIXC(cfg, 'radpop_radio_cliente_fibra', {
-            qtype: 'radpop_radio_cliente_fibra.id_login', query: ixcId, oper: '=', rp: '5'
-          });
-          (r2?.registros || []).forEach(reg => {
-            const w2 = _extrairWifi(reg, 'radio');
-            if (w2.senha) senhaFinal = [...new Set([senhaFinal, w2.senha].filter(Boolean))].join(' · ');
-            if (w2.ssid)  ssidFinal  = [...new Set([ssidFinal, w2.ssid].filter(Boolean))].join(' · ');
-          });
-        } catch (e) { /* endpoint pode não existir em todas as versões do IXC — segue */ }
-      }
-      // Nunca apaga uma senha já salva se a busca desta vez não achou nada novo
+      // Nunca apaga uma senha já salva se esta fonte não trouxe nada novo
       if (!senhaFinal && senhaJaSalva) senhaFinal = senhaJaSalva;
 
       const dados = {
@@ -16028,14 +16017,46 @@ async function syncIXC(silent){
         senhaWifi: senhaFinal,
       };
       const idx = logByIxcId.get(ixcId);
+      let objLogin;
       if(idx!==undefined){
         // Preserva campos editados localmente (ssid, senhaWifi, obs)
         logins[idx] = { ssid: logins[idx].ssid, senhaWifi: logins[idx].senhaWifi, obs: logins[idx].obs, ...logins[idx], ...dados };
+        objLogin = logins[idx];
         atualizadosLog++;
       } else {
         logins.push(dados);
+        objLogin = dados;
         novosLog++;
       }
+      // Enfileira pra busca da senha (2ª fonte) só quem ainda não tem — incremental
+      if (!objLogin.senhaWifi) pendWifi.push(objLogin);
+    }
+
+    // === 3b) Busca da senha Wi-Fi na 2ª fonte (radpop_radio_cliente_fibra) ===
+    // Antes: sequencial (1 chamada por vez → muito lento com centenas de logins).
+    // Agora: pool de até 10 chamadas simultâneas. Mesmo comportamento de dados:
+    // incremental (só busca quem falta) e nunca apaga senha/SSID já preenchidos.
+    if (pendWifi.length) {
+      const POOL_WIFI = 10;
+      let _wifiIdx = 0;
+      const _wifiWorker = async () => {
+        while (_wifiIdx < pendWifi.length) {
+          const l = pendWifi[_wifiIdx++];
+          if (btn && _wifiIdx % 20 === 0) btn.innerHTML = '⟳ Wi-Fi ' + _wifiIdx + '/' + pendWifi.length + '...';
+          try {
+            const r2 = await chamarIXC(cfg, 'radpop_radio_cliente_fibra', {
+              qtype: 'radpop_radio_cliente_fibra.id_login', query: String(l.ixcId), oper: '=', rp: '5'
+            });
+            (r2?.registros || []).forEach(reg => {
+              const w2 = _extrairWifi(reg, 'radio');
+              if (w2.senha) l.senhaWifi = [...new Set([l.senhaWifi, w2.senha].filter(Boolean))].join(' · ');
+              if (w2.ssid)  l.ssid     = [...new Set([l.ssid, w2.ssid].filter(Boolean))].join(' · ');
+            });
+          } catch (e) { /* endpoint pode não existir em todas as versões do IXC — segue */ }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(POOL_WIFI, pendWifi.length) }, _wifiWorker));
+      if (btn) btn.innerHTML = '⟳ Sincronizando...';
     }
 
     if(logins.length){
