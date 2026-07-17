@@ -15972,7 +15972,7 @@ async function syncIXC(silent){
     logins.forEach((l,idx)=>{ if(l.ixcId) logByIxcId.set(String(l.ixcId), idx); });
     let novosLog=0, atualizadosLog=0;
 
-    regLog.forEach(r => {
+    for (const r of regLog) {
       const ixcId = String(r.id||'');
       const ixcCliId = String(r.id_cliente||'');
       const ixcCtrId = String(r.id_contrato||'');
@@ -15986,6 +15986,29 @@ async function syncIXC(silent){
       // (o IXC não usa os nomes fixos 'ssid_router'/'senha_router' — os nomes reais
       // variam, por isso _extrairWifi testa várias variações conhecidas).
       const _w = _extrairWifi(r, 'radusuarios');
+
+      const idxExistente = logByIxcId.get(ixcId);
+      const senhaJaSalva = idxExistente !== undefined ? (logins[idxExistente].senhaWifi || '') : '';
+
+      // A senha do Wi-Fi normalmente NÃO vem do radusuarios — vive numa fonte separada
+      // (config da ONU/fibra), consultada por login. Só busca se ainda não tivermos
+      // (1ª sync é mais lenta; nas próximas, quem já tem senha salva é pulado).
+      let senhaFinal = _w.senha || '';
+      let ssidFinal = _w.ssid || '';
+      if (!senhaFinal && !senhaJaSalva) {
+        try {
+          const r2 = await chamarIXC(cfg, 'radpop_radio_cliente_fibra', {
+            qtype: 'radpop_radio_cliente_fibra.id_login', query: ixcId, oper: '=', rp: '5'
+          });
+          (r2?.registros || []).forEach(reg => {
+            const w2 = _extrairWifi(reg, 'radio');
+            if (w2.senha) senhaFinal = [...new Set([senhaFinal, w2.senha].filter(Boolean))].join(' · ');
+            if (w2.ssid)  ssidFinal  = [...new Set([ssidFinal, w2.ssid].filter(Boolean))].join(' · ');
+          });
+        } catch (e) { /* endpoint pode não existir em todas as versões do IXC — segue */ }
+      }
+      // Nunca apaga uma senha já salva se a busca desta vez não achou nada novo
+      if (!senhaFinal && senhaJaSalva) senhaFinal = senhaJaSalva;
 
       const dados = {
         ixcId,
@@ -16001,8 +16024,8 @@ async function syncIXC(silent){
         online: r.online === 'S',
         plano: planoNome,               // nome do plano vindo do contrato
         velocidadeMbps,                 // velocidade em Mbps extraída do plano do contrato
-        ssid: _w.ssid || '',
-        senhaWifi: _w.senha || '',
+        ssid: ssidFinal,
+        senhaWifi: senhaFinal,
       };
       const idx = logByIxcId.get(ixcId);
       if(idx!==undefined){
@@ -16013,7 +16036,7 @@ async function syncIXC(silent){
         logins.push(dados);
         novosLog++;
       }
-    });
+    }
 
     if(logins.length){
       const mapLog = _SYNC_MAP.sf_clientes_logins;
