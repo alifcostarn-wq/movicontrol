@@ -15982,6 +15982,11 @@ async function syncIXC(silent){
       const velocidadeMbps = contratoVinculado?.velocidadeMbps || null;
       const planoNome = contratoVinculado?.plano || r.id_plano || '';
 
+      // Extrai SSID/senha do Wi-Fi usando a mesma lógica robusta do lookup manual
+      // (o IXC não usa os nomes fixos 'ssid_router'/'senha_router' — os nomes reais
+      // variam, por isso _extrairWifi testa várias variações conhecidas).
+      const _w = _extrairWifi(r, 'radusuarios');
+
       const dados = {
         ixcId,
         ixcClienteId: ixcCliId,
@@ -15996,8 +16001,8 @@ async function syncIXC(silent){
         online: r.online === 'S',
         plano: planoNome,               // nome do plano vindo do contrato
         velocidadeMbps,                 // velocidade em Mbps extraída do plano do contrato
-        ssid: r.ssid_router || '',
-        senhaWifi: r.senha_router || '',
+        ssid: _w.ssid || '',
+        senhaWifi: _w.senha || '',
       };
       const idx = logByIxcId.get(ixcId);
       if(idx!==undefined){
