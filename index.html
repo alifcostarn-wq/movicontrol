@@ -15484,7 +15484,7 @@ function renderMovimentacoes(){
 }
 const IXC_CFG_KEY = 'sf_ixc_config';
 const IXC_LAST_SYNC_KEY = 'sf_ixc_last_sync';
-const IXC_AUTO_SYNC_INTERVAL_MIN = 30; // não re-sincronizar se foi há menos de X min
+const IXC_AUTO_SYNC_INTERVAL_MIN = 5; // não re-sincronizar se foi há menos de X min
 
 // Lê config local (cache) — uso síncrono interno/rápido
 function getIXCConfigLocal(){
@@ -16028,8 +16028,11 @@ async function syncIXC(silent){
         objLogin = dados;
         novosLog++;
       }
-      // Enfileira pra busca da senha (2ª fonte) só quem ainda não tem — incremental
-      if (!objLogin.senhaWifi) pendWifi.push(objLogin);
+      // Enfileira pra busca da senha (2ª fonte) só quem ainda não tem — incremental.
+      // Filtro extra: só busca de LOGIN ATIVO ou CONTRATO ATIVO ('A' no IXC) —
+      // evita gastar chamadas com contratos cancelados/inativos que nem login usam.
+      const _vinculoAtivo = objLogin.ativo === true || contratoVinculado?.statusContrato === 'A';
+      if (!objLogin.senhaWifi && _vinculoAtivo) pendWifi.push(objLogin);
     }
 
     // === 3b) Busca da senha Wi-Fi na 2ª fonte (radpop_radio_cliente_fibra) ===
