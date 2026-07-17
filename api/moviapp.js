@@ -26,6 +26,7 @@ export default async function handler(req, res) {
   const IXC_URL   = process.env.IXC_URL   || '';
   const IXC_TOKEN = process.env.IXC_TOKEN || '';
   const IXC_USER  = process.env.IXC_USER  || '';
+  const GROQ_KEY  = process.env.GROQ_API_KEY || '';
   // Base da Central do Assinante (ex.: https://netmaisconnect.com.br/central_assinante_web)
   // usada para o Desbloqueio de Confianca, que so existe pela Central (login via CPF).
   const CENTRAL_URL = (process.env.CENTRAL_ASSINANTE_URL || '').replace(/\/$/, '');
@@ -360,6 +361,50 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, contrato });
       } catch(e) {
         return res.status(502).json({ error: 'Erro ao buscar contrato', message: e.message });
+      }
+    }
+
+    // ── chat_ia ──────────────────────────────────────────────────
+    // Assistente virtual "MoviON IA" — responde dúvidas do cliente sobre
+    // fatura, conexão e chamados usando o contexto real da conta dele.
+    if (action === 'chat_ia') {
+      const { mensagem, historico, contexto } = req.body || {};
+      if (!mensagem) return res.status(400).json({ ok: false, error: 'mensagem obrigatória' });
+      if (!GROQ_KEY) return res.status(500).json({ ok: false, error: 'GROQ_API_KEY não configurada' });
+
+      try {
+        const ctx = contexto || {};
+        const partesContexto = [
+          `Cliente: ${ctx.nome || 'não informado'}`,
+          `Plano: ${ctx.plano || 'não informado'}${ctx.velocidade_mbps ? ' (' + ctx.velocidade_mbps + ' Mbps)' : ''}`,
+          `Conexão: ${ctx.online === false ? 'OFFLINE (sem internet no momento)' : 'online/ativa'}`,
+          ctx.fatura ? `Fatura em aberto: R$ ${ctx.fatura.valor}, vencimento em ${ctx.fatura.data_vencimento}` : 'Sem faturas em aberto',
+          ctx.chamado ? `Chamado em andamento: #${ctx.chamado.id} (${ctx.chamado.status}) - ${ctx.chamado.descricao}` : 'Sem chamados em andamento'
+        ].join('\n');
+
+        const systemPrompt = `Você é a MoviON IA, assistente virtual da MoviOn Internet (provedor de internet fibra óptica em Mossoró/RN). Seja simpática, direta e use poucas palavras. Responda em português do Brasil. Use os dados reais do cliente abaixo para responder com precisão. Se não souber algo específico (ex: detalhes técnicos que você não tem), oriente o cliente a abrir um chamado ou falar com o suporte pelo WhatsApp (84) 99210-6750. Nunca invente valores, datas ou status que não estejam no contexto.
+
+Dados do cliente:
+${partesContexto}`;
+
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          ...(Array.isArray(historico) ? historico.slice(-8) : []),
+          { role: 'user', content: mensagem }
+        ];
+
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature: 0.6, max_tokens: 500 })
+        });
+        const d = await r.json();
+        const resposta = d?.choices?.[0]?.message?.content;
+        if (!resposta) return res.status(502).json({ ok: false, error: 'Sem resposta da IA', detalhe: d });
+
+        return res.status(200).json({ ok: true, resposta: resposta.trim() });
+      } catch (e) {
+        return res.status(502).json({ ok: false, error: 'Erro ao consultar IA', message: e.message });
       }
     }
 
