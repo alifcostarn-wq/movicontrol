@@ -85,6 +85,23 @@ body{font-family:'DM Sans',sans-serif;font-size:14px;-webkit-font-smoothing:anti
 .notif-btn svg{width:18px;height:18px;color:#fff}
 .nb-dot{width:7px;height:7px;border-radius:50%;background:var(--yellow);position:absolute;top:8px;right:8px;border:2px solid var(--blue)}
 .page-title{color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:18px}
+.perf-back{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;flex-shrink:0}
+.perf-back:active{background:rgba(255,255,255,.28)}
+.perf-hero{display:flex;flex-direction:column;align-items:center;text-align:center;margin-top:16px;position:relative;z-index:1}
+.perf-hero-ava{width:76px;height:76px;border-radius:50%;background:var(--yellow);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:26px;color:var(--blue-dark);box-shadow:0 6px 18px rgba(0,0,0,.18);margin-bottom:12px}
+.perf-hero-nome{color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:19px;line-height:1.2}
+.perf-hero-plano{margin-top:6px;font-size:12px;font-weight:600;color:var(--blue-dark);background:var(--yellow);padding:4px 12px;border-radius:20px}
+.perf-sec-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin:20px 4px 8px}
+.perf-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.perf-row{display:flex;align-items:center;gap:13px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.perf-row:last-child{border-bottom:none}
+.perf-row-ico{width:38px;height:38px;border-radius:11px;background:var(--blue-faint);color:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.perf-row-body{flex:1;min-width:0}
+.perf-row-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px}
+.perf-row-val{font-size:14.5px;font-weight:600;color:var(--text);word-break:break-word}
+.perf-hint{text-align:center;font-size:12px;color:var(--text3);margin:18px 8px 4px}
+.perf-sair{width:100%;margin-top:14px;padding:15px;border:1.5px solid var(--danger);border-radius:var(--radius-sm);background:transparent;color:var(--danger);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;transition:.12s}
+.perf-sair:active{background:var(--danger);color:#fff}
 
 /* ── Scroll body ── */
 .body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 18px calc(110px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
@@ -433,6 +450,8 @@ const fmtNome = n => n ? n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) 
 const iniciais = n => (n||'').split(' ').filter(Boolean).map(p=>p[0]).slice(0,2).join('').toUpperCase();
 const fmtReal  = v => 'R$ '+Number(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 const fmtData  = d => { if(!d) return '—'; try{ return new Date(d+'T12:00:00').toLocaleDateString('pt-BR'); }catch{return d;} };
+const fmtCPF   = v => { const s=(v||'').replace(/\D/g,''); return s.length===11 ? s.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4') : s.length===14 ? s.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5') : (v||'—'); };
+const fmtTel   = v => { const s=(v||'').replace(/\D/g,'').replace(/^55/,''); return s.length===11 ? s.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3') : s.length===10 ? s.replace(/(\d{2})(\d{4})(\d{4})/,'($1) $2-$3') : (v||'—'); };
 
 // ── Toast ─────────────────────────────────────
 let _tt;
@@ -465,6 +484,7 @@ function navTo(r){
   else if(r==='fatura') renderFaturaScreen();
   else if(r==='os') renderOSScreen();
   else if(r==='ind') renderIndScreen();
+  else if(r==='perfil') renderPerfilScreen();
 }
 
 // ── Tela de Login ─────────────────────────────
@@ -556,7 +576,7 @@ function renderHome(){
         <div class="notif-btn" onclick="abrirIA()">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
-        <div class="hi-avatar" onclick="doLogout()" title="Sair">${iniciais(nome)||'?'}</div>
+        <div class="hi-avatar" onclick="navTo('perfil')" title="Minha conta">${iniciais(nome)||'?'}</div>
       </div>
     </div>
   </div>
@@ -730,8 +750,79 @@ function renderHome(){
   ${tabBar('home')}`);
 }
 
+// ── Perfil / Minha Conta ──────────────────────
+function renderPerfilScreen(){
+  const nome  = fmtNome(perfil?.nome || '');
+  const end   = perfil?.endereco || '';
+  const bairro= perfil?.bairro || '';
+  const cidade= perfil?.cidade || '';
+  const uf    = perfil?.uf || '';
+  const linhaEnd = [end, bairro].filter(Boolean).join(', ');
+  const linhaCid = [cidade, uf].filter(Boolean).join(' - ');
+  const temEndereco = end || bairro || cidade || uf;
 
-// ── Auth ──────────────────────────────────────
+  const linha = (label, valor, icone) => `
+    <div class="perf-row">
+      <div class="perf-row-ico">${icone}</div>
+      <div class="perf-row-body">
+        <div class="perf-row-label">${label}</div>
+        <div class="perf-row-val">${valor || '—'}</div>
+      </div>
+    </div>`;
+
+  render(`
+  <div class="header">
+    <div class="header-inner">
+      <div class="page-title" style="display:flex;align-items:center;gap:10px">
+        <div class="perf-back" onclick="navTo('home')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+        </div>
+        Minha conta
+      </div>
+    </div>
+    <div class="perf-hero">
+      <div class="perf-hero-ava">${iniciais(nome)||'?'}</div>
+      <div class="perf-hero-nome">${nome || 'Cliente'}</div>
+      ${perfil?.plano ? `<div class="perf-hero-plano">${perfil.plano}</div>` : ''}
+    </div>
+  </div>
+  <div class="body">
+
+    <div class="perf-sec-title">Dados pessoais</div>
+    <div class="perf-card">
+      ${linha('Nome completo', nome, '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>')}
+      ${linha('CPF / CNPJ', fmtCPF(perfil?.cpf), '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h4M7 13h10M7 17h6"/></svg>')}
+    </div>
+
+    <div class="perf-sec-title">Contato</div>
+    <div class="perf-card">
+      ${linha('WhatsApp / Telefone', fmtTel(perfil?.whatsapp), '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>')}
+      ${linha('E-mail', perfil?.email, '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>')}
+    </div>
+
+    ${temEndereco ? `
+    <div class="perf-sec-title">Endereço</div>
+    <div class="perf-card">
+      ${linha('Logradouro', linhaEnd, '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>')}
+      ${linhaCid ? linha('Cidade / UF', linhaCid, '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01"/></svg>') : ''}
+    </div>` : ''}
+
+    <div class="perf-sec-title">Plano</div>
+    <div class="perf-card">
+      ${linha('Plano contratado', perfil?.plano, '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>')}
+      ${perfil?.login_pppoe ? linha('Login de acesso', perfil.login_pppoe, '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>') : ''}
+    </div>
+
+    <div class="perf-hint">Para alterar seus dados, fale com o atendimento.</div>
+
+    <button class="perf-sair" onclick="doLogout()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      Sair da conta
+    </button>
+
+  </div>
+  ${tabBar('')}`);
+}
 async function doLogin(){
   const cpf   = (document.getElementById('inp-cpf')?.value||'').replace(/\D/g,'');
   const senha = (document.getElementById('inp-senha')?.value||'').trim();
@@ -913,7 +1004,7 @@ function renderFaturaScreen(){
   <div class="header">
     <div class="header-inner">
       <div class="page-title">Faturas</div>
-      <div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div>
+      <div class="hi-avatar" onclick="navTo('perfil')">${iniciais(perfil?.nome||'')}</div>
     </div>
   </div>
   <div class="body">
@@ -1128,7 +1219,7 @@ function renderOSScreen(){
           <div style="width:6px;height:6px;border-radius:50%;background:#5EE0A0;animation:pulse 2s infinite"></div>
           <span style="font-size:11px;color:rgba(255,255,255,.8);font-weight:600">Ao vivo</span>
         </div>
-        <div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div>
+        <div class="hi-avatar" onclick="navTo('perfil')">${iniciais(perfil?.nome||'')}</div>
       </div>
     </div>
   </div>
@@ -1199,7 +1290,7 @@ function renderIndScreen(){
   const link = `moviapp.movion.app/indicacao/${perfil?.cpf||''}`;
   render(`
   <div class="header">
-    <div class="header-inner"><div class="page-title">Indicação</div><div class="hi-avatar" onclick="doLogout()">${iniciais(perfil?.nome||'')}</div></div>
+    <div class="header-inner"><div class="page-title">Indicação</div><div class="hi-avatar" onclick="navTo('perfil')">${iniciais(perfil?.nome||'')}</div></div>
   </div>
   <div class="body">
     <div class="cb-hero">
