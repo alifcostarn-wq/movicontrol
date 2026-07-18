@@ -12143,6 +12143,8 @@ let _wifiIxcLoading = false;
 // Rótulos amigáveis dos campos conhecidos do IXC (aba Login → Configurações do roteador)
 const _WIFI_LABELS = {
   'wifi_ssid':'SSID Wi-Fi', 'wifi_password':'Senha Wi-Fi', 'wifi_senha':'Senha Wi-Fi',
+  'senha_rede_sem_fio':'Senha Wi-Fi', 'senha_rede_sem_fio_5ghz':'Senha Wi-Fi 5GHz',
+  'ssid_router_wifi':'SSID Wi-Fi', 'ssid_router_wifi_5ghz':'SSID Wi-Fi 5GHz',
   'wifi_ssid_5':'SSID Wi-Fi 5GHz', 'wifi_password_5':'Senha Wi-Fi 5GHz', 'wifi_senha_5':'Senha Wi-Fi 5GHz',
   'ssid':'SSID Wi-Fi', 'ssid_5':'SSID Wi-Fi 5GHz', 'senha_wifi':'Senha Wi-Fi',
   'usuario_roteador':'Usuário roteador', 'roteador_usuario':'Usuário roteador',
@@ -12164,7 +12166,7 @@ function _extrairWifi(reg, contexto){
     if(v==null||v===''||v==='0') return;
     const kl=k.toLowerCase();
     const isSenhaKey=/senha|pass|pwd|key|chave/.test(kl);
-    const isWifiKey=/ssid|wifi|wlan/.test(kl);
+    const isWifiKey=/ssid|wifi|wlan|sem_fio/.test(kl);
     const isRouterKey=/roteador|router/.test(kl);
     // No contexto 'radio' aceita 'ssid'/'senha' puros; PPPoE nunca (login/senha de autenticação)
     const senhaWifiPura = ctx==='radio' && isSenhaKey && !/pppoe|login|md5|hash/.test(kl);
@@ -15774,6 +15776,9 @@ async function buscarTudoIXC(cfg, endpoint, baseParams={}){
 function normDoc(s){ return String(s||'').replace(/\D+/g,''); }
 
 async function syncIXC(silent){
+  if(window._syncIXCRodando) return; // evita sincronizações sobrepostas
+  window._syncIXCRodando = true;
+  try {
   const cfg = await getIXCConfig();
   if(!cfg.proxyUrl || !cfg.ixcUrl || !cfg.ixcToken){
     if(!silent){ showToast('Configure a integração IXC primeiro.', true); abrirModalIXC(); }
@@ -16035,31 +16040,29 @@ async function syncIXC(silent){
       if (!objLogin.senhaWifi && _vinculoAtivo) pendWifi.push(objLogin);
     }
 
-    // === 3b) Busca da senha Wi-Fi na 2ª fonte (radpop_radio_cliente_fibra) ===
-    // Antes: sequencial (1 chamada por vez → muito lento com centenas de logins).
-    // Agora: pool de até 10 chamadas simultâneas. Mesmo comportamento de dados:
-    // incremental (só busca quem falta) e nunca apaga senha/SSID já preenchidos.
+    // === 3b) Fallback da senha Wi-Fi via config da ONU (radpop) em pool paralelo ===
+    // Com o campo senha_rede_sem_fio reconhecido, a senha já vem na listagem em massa
+    // do radusuarios. Este pool só cobre quem ainda ficou sem (config só na ONU).
+    // Incremental (só busca quem falta) e nunca apaga senha/SSID já preenchidos.
     if (pendWifi.length) {
       const POOL_WIFI = 10;
       let _wifiIdx = 0;
+      const _mesclar = (l, w) => {
+        if (w.senha) l.senhaWifi = [...new Set([l.senhaWifi, w.senha].filter(Boolean))].join(' · ');
+        if (w.ssid)  l.ssid     = [...new Set([l.ssid, w.ssid].filter(Boolean))].join(' · ');
+      };
       const _wifiWorker = async () => {
         while (_wifiIdx < pendWifi.length) {
           const l = pendWifi[_wifiIdx++];
-          if (btn && _wifiIdx % 20 === 0) btn.innerHTML = '⟳ Wi-Fi ' + _wifiIdx + '/' + pendWifi.length + '...';
           try {
             const r2 = await chamarIXC(cfg, 'radpop_radio_cliente_fibra', {
               qtype: 'radpop_radio_cliente_fibra.id_login', query: String(l.ixcId), oper: '=', rp: '5'
             });
-            (r2?.registros || []).forEach(reg => {
-              const w2 = _extrairWifi(reg, 'radio');
-              if (w2.senha) l.senhaWifi = [...new Set([l.senhaWifi, w2.senha].filter(Boolean))].join(' · ');
-              if (w2.ssid)  l.ssid     = [...new Set([l.ssid, w2.ssid].filter(Boolean))].join(' · ');
-            });
+            (r2?.registros || []).forEach(reg => _mesclar(l, _extrairWifi(reg, 'radio')));
           } catch (e) { /* endpoint pode não existir em todas as versões do IXC — segue */ }
         }
       };
       await Promise.all(Array.from({ length: Math.min(POOL_WIFI, pendWifi.length) }, _wifiWorker));
-      if (btn) btn.innerHTML = '⟳ Sincronizando...';
     }
 
     if(logins.length){
@@ -16127,15 +16130,16 @@ async function syncIXC(silent){
   } finally {
     if(btn){ btn.disabled = false; btn.innerHTML = '⟳ Sync'; }
   }
+  } finally {
+    window._syncIXCRodando = false;
+  }
 }
 
-// Auto-sync ao abrir aba Clientes — só se passou tempo suficiente
+// Auto-sync ao abrir aba Clientes — sempre, silencioso (em segundo plano)
 async function autoSyncIXC(){
   const cfg = await getIXCConfig();
   if(!cfg.proxyUrl || !cfg.ixcToken || cfg.autoSync===false) return;
-  const last = parseInt(localStorage.getItem(IXC_LAST_SYNC_KEY) || '0');
-  const minutosDesde = (Date.now() - last) / 60000;
-  if(minutosDesde < IXC_AUTO_SYNC_INTERVAL_MIN) return; // recente demais
+  if(window._syncIXCRodando) return; // já tem uma sincronização em andamento
   // Pequeno delay para não bloquear a renderização da aba
   setTimeout(() => syncIXC(true), 400);
 }
