@@ -438,9 +438,6 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="dr-item" onclick="abrirMateriais()"><span class="ic">🧰</span> Lista de Materiais</button>
       <button class="dr-item" onclick="abrirRelArea()"><span class="ic">🗂️</span> Relatório por Área</button>
       <button class="dr-item" onclick="abrirPendencias()"><span class="ic">⚠️</span> Pendências <span class="badge" id="pend-badge" style="display:none"></span></button>
-      <div class="dr-sec">Clientes</div>
-      <button class="dr-item" onclick="carregarClientesMoviOne()"><span class="ic">📍</span> Carregar do MoviOne <span class="badge" id="one-badge" style="display:none;background:var(--accent);color:#08120C"></span></button>
-      <button class="dr-item" onclick="atualizarStatusIXC()"><span class="ic">📶</span> Atualizar status IXC</button>
       <div class="dr-sec">Projeto</div>
       <button class="dr-item" onclick="abrirConfig()"><span class="ic">⚙️</span> Configurações</button>
       <button class="dr-item" onclick="exportarProjetoJSON()"><span class="ic">💾</span> Exportar Projeto (.json)</button>
@@ -463,7 +460,6 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" data-modo="pop" onclick="setModo('pop')"><span class="ic">🏢</span>POP</button>
     <button class="tool" data-modo="cto" onclick="setModo('cto')"><span class="ic">📦</span>CTO</button>
     <button class="tool" data-modo="ceo" onclick="setModo('ceo')"><span class="ic">🔗</span>CEO</button>
-    <button class="tool" data-modo="cliente" onclick="setModo('cliente')"><span class="ic">🏠</span>Cliente</button>
     <button class="tool" data-modo="poste" onclick="setModo('poste')"><span class="ic">⚡</span>Poste</button>
     <button class="tool" data-modo="cabo" onclick="setModo('cabo')"><span class="ic">〰️</span>Cabo</button>
     <button class="tool" data-modo="reserva" onclick="setModo('reserva')"><span class="ic">➰</span>Reserva</button>
@@ -938,7 +934,7 @@ let CAT;
 try{CAT=Object.assign(JSON.parse(JSON.stringify(CAT_PADRAO)),JSON.parse(store.get(CAT_KEY)||'{}'))}catch(e){CAT=JSON.parse(JSON.stringify(CAT_PADRAO))}
 function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
-let camadasVisiveis={satelite:true,pop:true,cto:true,ceo:true,reserva:true,backbone:true,distribuicao:true,drop:true,area:true,cliente:true,poste:true,clienteone:true};
+let camadasVisiveis={satelite:true,pop:true,cto:true,ceo:true,reserva:true,backbone:true,distribuicao:true,drop:true,area:true,cliente:true,poste:true,clienteone:false};
 let layerRefs={}, caboTemp=null, areaTemp=null;
 const CORES_CABO={backbone:'#E8C818',distribuicao:'#5B9BFF',drop:'#3CB371'};
 const ABNT=[
@@ -1060,6 +1056,7 @@ function limparProjeto(){
 function abrirProjeto(id){
   projAtual=DB.projetos.find(p=>p.id===id);
   document.getElementById('shell').style.display='none';
+  clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
   if(!projAtual.clientes)projAtual.clientes=[];
   if(projAtual.seq.cliente===undefined)projAtual.seq.cliente=0;
   if(projAtual.seq.poste===undefined)projAtual.seq.poste=0;
@@ -1137,7 +1134,6 @@ function cliqueMapa(e){
     salvar();renderTudo();
     toast(nome+' adicionado com sucesso');
   }
-  if(modo==='cliente'){adicionarCliente(ll);return}
   if(modo==='viab'){viabilidadePonto(ll);return}
   if(modo==='cabo'){
     const alt=e.originalEvent&&e.originalEvent.altKey;
@@ -1316,17 +1312,25 @@ function renderCamadas(){
     {sub:'POPs'},{k:'pop',l:'POPs'},
     {sub:'Postes'},{k:'poste',l:'Postes'},
     {sub:'Cabos'},{k:'backbone',l:'Backbone'},{k:'distribuicao',l:'Distribuição'},{k:'drop',l:'Drop'},
-    {sub:'Clientes'},{k:'cliente',l:'Clientes (projeto)'},{k:'clienteone',l:'Clientes MoviOne'},
+    {sub:'Clientes'},{k:'clienteone',l:'Clientes (MoviOne)',fn:toggleCamadaClientes},
     {sub:'Outros'},{k:'reserva',l:'Reservas Técnicas'},{k:'area',l:'Áreas'}
   ];
   document.getElementById('cam-body').innerHTML=defs.map(d=>{
     if(d.sub)return `<div class="cam-sub">${d.sub}</div>`;
-    return `<div class="cam-item ${camadasVisiveis[d.k]?'on':''}" onclick="toggleCamada('${d.k}')"><div class="sw"></div>${d.l}</div>`;
+    return `<div class="cam-item ${camadasVisiveis[d.k]?'on':''}" onclick="${d.fn?d.fn.name+'()':`toggleCamada('${d.k}')`}"><div class="sw"></div>${d.l}${d.k==='clienteone'&&clientesOne.length?' <span style=\'margin-left:auto;font-size:10px;color:var(--text-dim)\'>'+clientesOne.length+'</span>':''}</div>`;
   }).join('');
 }
 function toggleCamada(k){
   camadasVisiveis[k]=!camadasVisiveis[k];
   if(k==='satelite')toggleSatelite();else renderTudo();
+  renderCamadas();
+}
+async function toggleCamadaClientes(){
+  camadasVisiveis.clienteone=!camadasVisiveis.clienteone;
+  renderCamadas();
+  if(camadasVisiveis.clienteone){
+    await carregarClientesMoviOne();   // sempre busca dados frescos do MoviOne + IXC
+  } else { renderTudo(); }
   renderCamadas();
 }
 function toggleSatelite(){
@@ -2314,20 +2318,29 @@ async function proxyMovifiber(body){
 }
 
 /* 1) MoviOne: localização + vínculo caixa (filtra pelo projeto atual) */
+function _normProj(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 async function carregarClientesMoviOne(){
   toast('Buscando clientes do projeto "'+projAtual.nome+'" no MoviOne…');
   try{
-    // filtro ESTRITO pelo projeto aberto — só aparecem clientes vinculados a ele
-    const d=await proxyMovifiber({acao:'clientes-movione',projeto:projAtual.nome});
-    aplicarClientesMoviOne(d.clientes||[]);
+    // busca TODOS e filtra pelo projeto no cliente (tolerante a hífen/espaço/caixa)
+    const d=await proxyMovifiber({acao:'clientes-movione'});
+    const alvo=_normProj(projAtual.nome);
+    const todos=d.clientes||[];
+    let lista=todos.filter(c=>_normProj(c.projeto)===alvo);
+    aplicarClientesMoviOne(lista);
     if(!clientesOne.length){
-      toast('Nenhum cliente vinculado ao projeto "'+projAtual.nome+'" — vincule na aba Logins do cliente (MoviOne) ou pelo Campo',true);
+      // diagnóstico útil: mostra quais projetos existem no MoviOne
+      const outros=[...new Set(todos.map(c=>c.projeto).filter(Boolean))];
+      camadasVisiveis.clienteone=false;renderCamadas();
+      toast(outros.length
+        ? 'Nenhum cliente no projeto "'+projAtual.nome+'". Projetos vinculados no MoviOne: '+outros.join(', ')
+        : 'Nenhum cliente com vínculo FTTH e localização no MoviOne ainda.',true);
       return;
     }
     const semCaixa=clientesOne.filter(c=>!c.caixa).length;
     toast(clientesOne.length+' cliente(s) do projeto'+(semCaixa?(' · '+semCaixa+' sem caixa'):''));
     const bb=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(bb,{padding:[60,60]});
-    // já consulta o IXC em seguida: casinhas ficam verde (online) / vermelho (offline)
+    // consulta o IXC: casinhas ficam verde (online) / vermelho (offline)
     if(clientesOne.some(c=>c.ixcId))await atualizarStatusIXC();
   }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
 }
