@@ -11,7 +11,7 @@
 //   IXC (isolado aqui)  ->  SOMENTE online/offline + potencia da ONU.
 //
 // ENV VARS (reutiliza as existentes; NAO crie novas):
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, IXC_TOKEN
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, IXC_URL, IXC_USER, IXC_TOKEN
 //
 // ACOES (POST /api/movifiber, body {acao:"..."}):
 //   - "clientes-movione"   -> {projeto?}  Clientes do MoviOne com lat/lng +
@@ -23,7 +23,7 @@
 //   - "debug-schema"       -> 1 registro cru de cada fonte (descobrir colunas).
 // ============================================================================
 
-const IXC_HOST = 'https://netmaisconnect.com.br';
+const IXC_URL = (process.env.IXC_URL || 'https://netmaisconnect.com.br').replace(/\/$/, '').replace(/\/adm\.php$/, '');
 
 // ==== AJUSTE FINO DE SCHEMA (confira com "debug-schema") =====================
 // Supabase MoviOne
@@ -121,16 +121,18 @@ async function salvarInstalacao(b) {
 
 // ─────────── IXC (isolado): SO online + potencia ONU ───────────
 function ixcHeaders() {
+  const user = process.env.IXC_USER || '';
+  const token = process.env.IXC_TOKEN || '';
   return {
     'Content-Type': 'application/json',
-    Authorization: 'Basic ' + Buffer.from(process.env.IXC_TOKEN).toString('base64'),
+    Authorization: 'Basic ' + Buffer.from(`${user}:${token}`).toString('base64'),
     ixcsoft: 'listar'
   };
 }
 async function ixcListarTudo(tabela, body) {
   const out = []; let page = 1;
   while (true) {
-    const r = await fetch(`${IXC_HOST}/webservice/v1/${tabela}`, {
+    const r = await fetch(`${IXC_URL}/webservice/v1/${tabela}`, {
       method: 'POST', headers: ixcHeaders(),
       body: JSON.stringify({ ...body, page: String(page), rp: '1000' })
     });
@@ -199,14 +201,14 @@ async function debugSchema() {
     out.supabase_clientes = (await r.json())[0] || '(vazio)';
   } catch (e) { out.supabase_clientes = 'ERRO: ' + e.message; }
   try {
-    const r = await fetch(`${IXC_HOST}/webservice/v1/${IXC_TB_FIBRA}`, {
+    const r = await fetch(`${IXC_URL}/webservice/v1/${IXC_TB_FIBRA}`, {
       method: 'POST', headers: ixcHeaders(),
       body: JSON.stringify({ qtype: `${IXC_TB_FIBRA}.id`, query: '0', oper: '>', page: '1', rp: '1' })
     });
     out.ixc_fibra = ((await r.json()).registros || [])[0] || '(sem registros)';
   } catch (e) { out.ixc_fibra = 'ERRO: ' + e.message; }
   try {
-    const r = await fetch(`${IXC_HOST}/webservice/v1/${IXC_TB_RAD}`, {
+    const r = await fetch(`${IXC_URL}/webservice/v1/${IXC_TB_RAD}`, {
       method: 'POST', headers: ixcHeaders(),
       body: JSON.stringify({ qtype: `${IXC_TB_RAD}.id`, query: '0', oper: '>', page: '1', rp: '1' })
     });
