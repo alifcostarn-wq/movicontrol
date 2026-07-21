@@ -438,9 +438,9 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="dr-item" onclick="abrirMateriais()"><span class="ic">🧰</span> Lista de Materiais</button>
       <button class="dr-item" onclick="abrirRelArea()"><span class="ic">🗂️</span> Relatório por Área</button>
       <button class="dr-item" onclick="abrirPendencias()"><span class="ic">⚠️</span> Pendências <span class="badge" id="pend-badge" style="display:none"></span></button>
-      <div class="dr-sec">MoviOne · IXC</div>
-      <button class="dr-item" onclick="sincronizarClientesOne()"><span class="ic">🔄</span> Sincronizar clientes <span class="badge" id="one-badge" style="display:none;background:var(--accent);color:#08120C"></span></button>
-      <button class="dr-item" onclick="demoClientesOne()"><span class="ic">🎭</span> Demonstração (dados fake)</button>
+      <div class="dr-sec">Clientes</div>
+      <button class="dr-item" onclick="carregarClientesMoviOne()"><span class="ic">📍</span> Carregar do MoviOne <span class="badge" id="one-badge" style="display:none;background:var(--accent);color:#08120C"></span></button>
+      <button class="dr-item" onclick="atualizarStatusIXC()"><span class="ic">📶</span> Atualizar status IXC</button>
       <div class="dr-sec">Projeto</div>
       <button class="dr-item" onclick="abrirConfig()"><span class="ic">⚙️</span> Configurações</button>
       <button class="dr-item" onclick="exportarProjetoJSON()"><span class="ic">💾</span> Exportar Projeto (.json)</button>
@@ -482,6 +482,23 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 </div>
 
 <div id="ctx-menu"></div>
+
+<!-- ================= MODAL: VINCULAR CTO (MoviOne) ================= -->
+<div class="modal-bg" id="md-vincular-cto">
+  <div class="modal">
+    <div class="md-head"><b id="vc-titulo">Vincular à Caixa (CTO)</b><button class="x" onclick="fecharModal('md-vincular-cto')">✕</button></div>
+    <div class="md-body">
+      <div class="info-box">O vínculo <b>caixa/porta</b> é gravado no <b>MoviOne</b> (tabela ftth_cliente_instalacao) — o mesmo que o técnico preenche no Campo.</div>
+      <input type="hidden" id="vc-cliente-id">
+      <div class="campo"><label>Caixa (CTO) do projeto</label><select id="vc-caixa"></select></div>
+      <div class="campo"><label>Porta</label><select id="vc-porta"></select></div>
+    </div>
+    <div class="md-foot">
+      <button class="btn ghost" id="vc-remover" style="border-color:var(--danger);color:var(--danger);display:none" onclick="removerVinculoCTO()">Remover vínculo</button>
+      <button class="btn" onclick="salvarVinculoCTO()">Salvar no MoviOne</button>
+    </div>
+  </div>
+</div>
 
 <!-- ================= MODAL: PENDÊNCIAS ================= -->
 <div class="modal-bg" id="md-pend">
@@ -1221,19 +1238,24 @@ function renderTudo(){
         <div class="pp-meta">${nomeEl(c.origemId)||'—'} ⇄ ${nomeEl(c.destinoId)||'—'}</div>
         <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button></div>`).addTo(mapa);
   });
-  // clientes MoviOne (integração)
+  // clientes MoviOne (localização + vínculo) · status IXC opcional
   if(camadasVisiveis.clienteone)clientesOne.forEach(c=>{
-    const cor=c.temLogin?(c.online?'#22C55E':'#F87168'):'#8B90A0';
-    const glow=c.online?'box-shadow:0 0 9px rgba(34,197,94,.85);':'';
-    const ic=L.divIcon({className:'',html:`<div style="width:13px;height:13px;border-radius:50%;background:${cor};border:2px solid #0B0D11;${glow}"></div>`,iconSize:[13,13],iconAnchor:[7,7]});
-    const vinc=projAtual.clientes.find(x=>x.idIxc===c.id);
-    const badge=c.temLogin?(c.online?'<span class="tag implantado">● ONLINE</span>':'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● OFFLINE</span>'):'<span class="tag nao-implantado">sem login</span>';
+    // cor: cinza = status IXC não carregado · verde = online · vermelho = offline
+    const cor=c.online===null||c.online===undefined?'#8B90A0':(c.online?'#22C55E':'#F87168');
+    const glow=c.online?'filter:drop-shadow(0 0 4px rgba(34,197,94,.9));':'';
+    const casa=`<svg viewBox="0 0 24 24" width="22" height="22" style="${glow}"><path d="M12 3l9 8h-2.5v8h-13v-8H3z" fill="${cor}" stroke="#0B0D11" stroke-width="1.2"/></svg>`;
+    const ic=L.divIcon({className:'',html:`<div>${casa}</div>`,iconSize:[22,22],iconAnchor:[11,17]});
+    const badge=c.online===null||c.online===undefined?'<span class="tag nao-implantado">status IXC não carregado</span>':(c.online?'<span class="tag implantado">● ONLINE</span>':'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● OFFLINE</span>');
+    const rxTxt=c.rx!=null?`<div class="pp-meta mono">ONU RX <b style="color:${c.rx>=-27&&c.rx<=-8?'var(--accent)':'var(--danger)'}">${c.rx.toFixed(1)} dBm</b>${c.tx!=null?' · TX '+c.tx.toFixed(1):''}${c.onu?' · '+c.onu:''}</div>`:'';
     const mk=L.marker([c.lat,c.lng],{icon:ic}).bindPopup(`
-      <div class="pp-title">${c.nome}<span class="pp-badge">MOVIONE</span></div>
+      <div class="pp-title">🏠 ${c.nome}<span class="pp-badge">MOVIONE</span></div>
       <div class="pp-meta">${badge}${c.login?' · <span class="mono">'+c.login+'</span>':''}</div>
-      ${c.rx!=null?`<div class="pp-meta mono">RX <b style="color:${c.rx>=-25&&c.rx<=-15?'var(--accent)':(c.rx>-15?'var(--warn)':'var(--danger)')}">${c.rx.toFixed(1)} dBm</b>${c.tx!=null?' · TX '+c.tx.toFixed(1)+' dBm':''}</div>`:''}
-      <div class="pp-meta">${vinc?('Vinculado: <b>'+(nomeEl(vinc.ctoId)||'—')+'</b> porta '+vinc.porta):'Sem vínculo de CTO no projeto'}</div>
-      <div class="pp-acoes">${vinc?'':`<button class="btn sm" onclick="vincularOneCTO('${c.id}')">🔗 Vincular à CTO próxima</button>`}</div>`);
+      ${rxTxt}
+      <div class="pp-meta" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">
+        <b>Caixa (CTO):</b> ${c.caixa||'<span style="color:var(--warn)">não vinculada</span>'}<br>
+        <b>Porta:</b> <span class="mono">${c.porta??'—'}</span>${c.projeto?'<br><b>Projeto:</b> '+c.projeto:''}
+      </div>
+      <div class="pp-acoes"><button class="btn sm" onclick="abrirVincularCTO('${c.id}')">🔗 ${c.caixa?'Alterar caixa':'Vincular caixa (CTO)'}</button></div>`);
     layerRefs['one-'+c.id]=mk.addTo(mapa);
   });
   // clientes
@@ -2272,6 +2294,8 @@ function limparVFL(){vflLayers.forEach(l=>mapa.removeLayer(l));vflLayers=[]}
 
 
 /* ================= INTEGRAÇÃO MOVIONE + IXC (proxy isolado) ================= */
+/* DIREÇÃO: localização + vínculo caixa vêm do MoviOne (Supabase).
+   Online + potência ONU vêm do IXC (isolado). São passos SEPARADOS. */
 const INTEG_KEY='movifiber_integracao_v1';
 let INTEG;
 try{INTEG=JSON.parse(store.get(INTEG_KEY)||'{}')}catch(e){INTEG={}}
@@ -2280,65 +2304,136 @@ function salvarInteg(){store.set(INTEG_KEY,JSON.stringify(INTEG))}
 let clientesOne=[];
 try{clientesOne=JSON.parse(store.get('movifiber_clientes_one')||'[]')}catch(e){clientesOne=[]}
 
-async function sincronizarClientesOne(){
-  if(!INTEG.proxyUrl){
-    toast('Configure a URL do proxy nas Configurações (seção Integração) ou use a Demonstração',true);
-    abrirConfig();return;
-  }
-  toast('Sincronizando MoviOne + IXC…');
-  try{
-    const r=await fetch(INTEG.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:'clientes-full'})});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const d=await r.json();
-    if(!Array.isArray(d.clientes))throw new Error(d.erro||'resposta inválida do proxy');
-    aplicarClientesOne(d.clientes);
-  }catch(e){toast('Falha na sincronização: '+e.message,true)}
+async function proxyMovifiber(body){
+  if(!INTEG.proxyUrl){toast('Configure a URL do proxy nas Configurações → Integração',true);abrirConfig();throw new Error('sem proxy')}
+  const r=await fetch(INTEG.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const d=await r.json();
+  if(d.erro)throw new Error(d.erro);
+  return d;
 }
-function aplicarClientesOne(lista){
+
+/* 1) MoviOne: localização + vínculo caixa (filtra pelo projeto atual) */
+async function carregarClientesMoviOne(){
+  toast('Buscando clientes no MoviOne…');
+  try{
+    const d=await proxyMovifiber({acao:'clientes-movione',projeto:projAtual.nome});
+    let lista=d.clientes||[];
+    // se nada casar pelo nome do projeto, cai para todos (útil no início)
+    if(!lista.length&&d.total===0&&(d.projetos||[]).length===0){
+      const d2=await proxyMovifiber({acao:'clientes-movione'});
+      lista=d2.clientes||[];
+    }
+    aplicarClientesMoviOne(lista);
+    const semCaixa=clientesOne.filter(c=>!c.caixa).length;
+    toast(clientesOne.length+' clientes carregados'+(semCaixa?(' · '+semCaixa+' sem caixa vinculada'):''));
+    if(clientesOne.length){const b=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(b,{padding:[60,60]})}
+  }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
+}
+function aplicarClientesMoviOne(lista){
+  const statusPrev={};
+  clientesOne.forEach(c=>{if(c.online!=null||c.rx!=null)statusPrev[c.id]={online:c.online,rx:c.rx,tx:c.tx,onu:c.onu,login:c.login}});
   clientesOne=lista
     .filter(c=>c.latitude!=null&&c.longitude!=null)
-    .map(c=>({
-      id:String(c.id_cliente??c.id??Math.random()),
-      nome:c.nome||c.razao||'Cliente',
-      lat:+c.latitude,lng:+c.longitude,
-      login:c.login||null,
-      online:c.online==='S'||c.online===true,
-      temLogin:!!c.login,
-      rx:c.sinal_rx!=null?+c.sinal_rx:null,
-      tx:c.sinal_tx!=null?+c.sinal_tx:null
-    }));
-  INTEG.ultimaSync=Date.now();salvarInteg();
+    .map(c=>{
+      const id=String(c.id_cliente);
+      const st=statusPrev[id]||{};
+      return{
+        id,idCliente:c.id_cliente,ixcId:c.ixc_id,
+        nome:c.nome||'Cliente',
+        lat:+c.latitude,lng:+c.longitude,
+        projeto:c.projeto||null,
+        caixa:c.caixa||null,caixaId:c.caixa_id||null,porta:c.porta??null,
+        login:c.login||st.login||null,
+        online:st.online!==undefined?st.online:null,   // null = status IXC ainda não carregado
+        rx:st.rx??null,tx:st.tx??null,onu:st.onu??null
+      };
+    });
   store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
   renderTudo();
-  const on=clientesOne.filter(c=>c.online).length;
-  const off=clientesOne.filter(c=>c.temLogin&&!c.online).length;
-  toast(clientesOne.length+' clientes no mapa · '+on+' online · '+off+' offline');
 }
-function demoClientesOne(){
-  const c0=projAtual?projAtual.centro:[-5.19,-37.34];
-  const nomes=['Ana Souza','Bruno Lima','Carla Mendes','Diego Alves','Edna Rocha','Fábio Nunes','Gabriela Reis','Hugo Prado','Iara Campos','José Vitor','Karen Dias','Lucas Melo'];
-  const mock=nomes.map((n,i)=>{
-    const ang=i/nomes.length*Math.PI*2, r=0.0009+((i%4)*0.0006);
-    const online=i%5!==3, semLogin=i===10;
-    return{id_cliente:1000+i,nome:n,
-      latitude:c0[0]+Math.sin(ang)*r,longitude:c0[1]+Math.cos(ang)*r,
-      login:semLogin?null:('cli'+(1000+i)),
-      online:semLogin?null:(online?'S':'N'),
-      sinal_rx:semLogin?null:-(15+(i%12)),sinal_tx:semLogin?null:2.1};
-  });
-  aplicarClientesOne(mock);
+
+/* 2) IXC (isolado): online + potência ONU */
+async function atualizarStatusIXC(){
+  if(!clientesOne.length){toast('Carregue os clientes do MoviOne primeiro',true);return}
+  const ixcIds=[...new Set(clientesOne.map(c=>c.ixcId).filter(Boolean))];
+  if(!ixcIds.length){toast('Clientes sem ixc_id — não dá para consultar o IXC',true);return}
+  toast('Consultando IXC (online + potência ONU)…');
+  try{
+    const d=await proxyMovifiber({acao:'ixc-status',ixc_ids:ixcIds});
+    const st=d.status||{};
+    let on=0,off=0;
+    clientesOne.forEach(c=>{
+      const s=c.ixcId!=null?st[String(c.ixcId)]:null;
+      if(s){
+        c.online=s.online==='S'||s.online===true;
+        c.rx=s.rx??null;c.tx=s.tx??null;c.onu=s.onu??null;
+        if(!c.login)c.login=s.login||null;
+        if(c.online)on++;else off++;
+      }else{c.online=null}
+    });
+    store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
+    renderTudo();
+    toast('Status IXC: '+on+' online · '+off+' offline');
+  }catch(e){if(e.message!=='sem proxy')toast('Falha no IXC: '+e.message,true)}
 }
-function vincularOneCTO(id){
+
+/* 3) Vincular caixa/CTO → grava no MoviOne */
+function abrirVincularCTO(id){
   const c=clientesOne.find(x=>x.id===id);
   if(!c)return;
-  if(projAtual.clientes.some(x=>x.idIxc===c.id)){toast('Cliente já vinculado no projeto',true);return}
-  const cand=melhorCTO([c.lat,c.lng]).find(x=>x.livres>0);
-  if(!cand){toast('Nenhuma CTO com porta livre no raio de viabilidade',true);return}
-  projAtual.seq.cliente=(projAtual.seq.cliente||0)+1;
-  projAtual.clientes.push({id:uid('cli'),idIxc:c.id,nome:c.nome,lat:c.lat,lng:c.lng,
-    ctoId:cand.c.id,porta:proximaPorta(cand.c.id),sinal:c.rx,statusPorta:'ativa'});
-  salvar();renderTudo();mapa.closePopup();
-  toast(c.nome+' vinculado a '+cand.c.nome+' porta '+projAtual.clientes[projAtual.clientes.length-1].porta);
+  const ctos=projAtual.elementos.filter(e=>e.tipo==='cto');
+  if(!ctos.length){toast('Crie ao menos uma CTO no projeto para vincular',true);return}
+  document.getElementById('vc-cliente-id').value=id;
+  document.getElementById('vc-titulo').textContent='Vincular '+c.nome+' à Caixa';
+  const selC=document.getElementById('vc-caixa');
+  selC.innerHTML=ctos.map(e=>`<option value="${e.id}">${e.nome}${e.splitter?' ('+e.splitter+')':''}</option>`).join('');
+  if(c.caixaId&&ctos.some(e=>e.id===c.caixaId))selC.value=c.caixaId;
+  selC.onchange=()=>preencherPortasVC();
+  preencherPortasVC(c.porta);
+  document.getElementById('vc-remover').style.display=c.caixa?'':'none';
+  abrirModal('md-vincular-cto');
+}
+function preencherPortasVC(portaSel){
+  const ctoId=document.getElementById('vc-caixa').value;
+  const cto=projAtual.elementos.find(e=>e.id===ctoId);
+  const n=cto&&cto.splitter?(nSaidasSp({ratio:cto.splitter})||+String(cto.splitter).split(':')[1]||16):16;
+  const selP=document.getElementById('vc-porta');
+  selP.innerHTML=Array.from({length:n},(_,i)=>`<option value="${i+1}">Porta ${String(i+1).padStart(2,'0')}</option>`).join('');
+  if(portaSel)selP.value=portaSel;
+}
+async function salvarVinculoCTO(){
+  const id=document.getElementById('vc-cliente-id').value;
+  const c=clientesOne.find(x=>x.id===id);
+  const ctoId=document.getElementById('vc-caixa').value;
+  const cto=projAtual.elementos.find(e=>e.id===ctoId);
+  const porta=+document.getElementById('vc-porta').value;
+  try{
+    await proxyMovifiber({acao:'salvar-instalacao',cliente_id:c.idCliente,
+      projeto:projAtual.nome,caixa_id:ctoId,caixa_nome:cto.nome,porta});
+    c.caixa=cto.nome;c.caixaId=ctoId;c.porta=porta;c.projeto=projAtual.nome;
+    store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
+    // reflete no projeto local também
+    if(!projAtual.clientes.some(x=>x.idIxc===c.id)){
+      projAtual.seq.cliente=(projAtual.seq.cliente||0)+1;
+      projAtual.clientes.push({id:uid('cli'),idIxc:c.id,nome:c.nome,lat:c.lat,lng:c.lng,ctoId,porta,sinal:c.rx,statusPorta:'ativa'});
+      salvar();
+    }
+    renderTudo();fecharModal('md-vincular-cto');mapa.closePopup();
+    toast(c.nome+' vinculado a '+cto.nome+' porta '+porta+' (salvo no MoviOne)');
+  }catch(e){if(e.message!=='sem proxy')toast('Falha ao salvar: '+e.message,true)}
+}
+async function removerVinculoCTO(){
+  const id=document.getElementById('vc-cliente-id').value;
+  const c=clientesOne.find(x=>x.id===id);
+  if(!confirm('Remover o vínculo de caixa deste cliente no MoviOne?'))return;
+  try{
+    await proxyMovifiber({acao:'salvar-instalacao',cliente_id:c.idCliente,projeto:null,caixa_id:null,caixa_nome:null,porta:null});
+    c.caixa=null;c.caixaId=null;c.porta=null;
+    store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
+    renderTudo();fecharModal('md-vincular-cto');
+    toast('Vínculo removido');
+  }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
 }
 function attOneBadge(){
   const b=document.getElementById('one-badge');
