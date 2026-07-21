@@ -1007,11 +1007,16 @@ function renderHome(){
   if(!DB.projetos.length){l.innerHTML='<div class="vazio">Nenhum projeto ainda.<br>Crie o primeiro projeto FTTH para começar.</div>';return}
   let cab='';
   if(DB.projetos.length>1){
-    const totEl=DB.projetos.reduce((s,p)=>s+p.elementos.length,0);
-    const totCb=DB.projetos.reduce((s,p)=>s+p.cabos.length,0);
-    cab=`<div class="proj-item" style="border-color:var(--accent);background:rgba(60,179,113,.08)" onclick="abrirTodosProjetos()">
-      <div><b>🌐 Todos os projetos</b><div class="meta">${DB.projetos.length} projetos · ${totEl} elementos · ${totCb} cabos — visão geral (somente leitura)</div></div>
-      <div style="text-align:right"><div class="prog mono">${DB.projetos.length}</div><div class="meta">projetos</div></div>
+    cab=`<div class="proj-item" style="border-color:var(--accent);background:rgba(60,179,113,.08);cursor:default;display:block">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <b>🗂️ Ver vários projetos juntos</b>
+        <button class="btn sm" onclick="abrirSelecionados()">Abrir selecionados</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px">
+        ${DB.projetos.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+          <input type="checkbox" class="chk-proj" value="${p.id}"> ${p.nome}</label>`).join('')}
+      </div>
+      <div style="font-size:10.5px;color:var(--text-dim);margin-top:6px">Marque 2 ou mais e clique em "Abrir selecionados" (visão somente leitura). Ou clique num projeto abaixo para editá-lo.</div>
     </div>`;
   }
   l.innerHTML=cab+DB.projetos.map(p=>{
@@ -1023,38 +1028,40 @@ function renderHome(){
       <div style="text-align:right"><div class="prog mono">${pct}%</div><div class="meta">implantado</div></div>
     </div>`}).join('');
 }
-function abrirTodosProjetos(){
-  // projeto VIRTUAL agregando todos — cada elemento/cabo carrega _proj (nome de origem)
+function abrirSelecionados(){
+  const ids=[...document.querySelectorAll('.chk-proj:checked')].map(c=>c.value);
+  if(ids.length<1){toast('Marque ao menos um projeto',true);return}
+  if(ids.length===1){abrirProjeto(ids[0]);return}  // um só → abre normal (editável)
+  abrirProjetos(ids);
+}
+function abrirProjetos(ids){
+  // visão agregada SOMENTE dos projetos selecionados (somente leitura)
+  const sel=DB.projetos.filter(p=>ids.includes(p.id));
   const elementos=[], cabos=[], areas=[];
   let fusoes={}, pops={};
-  DB.projetos.forEach(p=>{
+  sel.forEach(p=>{
     (p.elementos||[]).forEach(e=>elementos.push({...e,_proj:p.nome,_projId:p.id}));
     (p.cabos||[]).forEach(c=>cabos.push({...c,_proj:p.nome,_projId:p.id}));
     (p.areas||[]).forEach(a=>areas.push({...a,_proj:p.nome,_projId:p.id}));
     Object.assign(fusoes,p.fusoes||{});Object.assign(pops,p.pops||{});
   });
-  const centro=DB.projetos[0]?DB.projetos[0].centro:[-5.19,-37.34];
-  projAtual={id:'__todos__',_todos:true,nome:'🌐 Todos os projetos',centro,criado:Date.now(),
-    elementos,cabos,areas,fusoes,pops,clientes:[],seq:{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0,cliente:0}};
+  const centro=sel[0]?sel[0].centro:[-5.19,-37.34];
+  projAtual={id:'__multi__',_todos:true,_ids:ids,nome:'🗂️ '+sel.length+' projetos: '+sel.map(p=>p.nome).join(', '),
+    centro,criado:Date.now(),elementos,cabos,areas,fusoes,pops,clientes:[],
+    seq:{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0,cliente:0}};
   document.getElementById('shell').style.display='none';
   clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
   cfg();undoStack=[];redoStack=[];_estadoAtual=null;
   document.getElementById('tela-editor').style.display='block';
   document.getElementById('dr-nome-proj').textContent=projAtual.nome;
-  if(!mapa){
-    mapa=L.map('mapa',{zoomControl:false}).setView(projAtual.centro,13);
-    L.control.zoom({position:'bottomright'}).addTo(mapa);
-    mapa._ruas=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'OSM'});
-    aplicarTiles();mapa.on('click',cliqueMapa);mapa.on('mousemove',aoMoverMapa);
-  } else {aplicarTiles()}
+  garantirMapa(centro,13);
   setTimeout(()=>{mapa.invalidateSize();
-    // enquadra todos os elementos
     const pts=[...elementos.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...cabos.flatMap(c=>c.pontos||[])];
     if(pts.length)mapa.fitBounds(pts,{padding:[60,60]});else mapa.setView(centro,13);
   },120);
   limparOverlaysSoltos();
   setModo('navegar');renderCamadas();renderTudo();
-  toast('Visão geral: '+DB.projetos.length+' projetos · '+elementos.length+' elementos · '+cabos.length+' cabos');
+  toast(sel.length+' projetos · '+elementos.length+' elementos · '+cabos.length+' cabos (somente leitura)');
 }
 function abrirModalNovoProjeto(){
   abrirModal('md-novo-projeto');
@@ -1111,8 +1118,15 @@ function abrirProjeto(id){
   undoStack=[];redoStack=[];_estadoAtual=null;
   document.getElementById('tela-editor').style.display='block';
   document.getElementById('dr-nome-proj').textContent=projAtual.nome;
+  garantirMapa(projAtual.centro,16);
+  setTimeout(()=>mapa.invalidateSize(),100);
+  limparOverlaysSoltos();
+  renderCamadas();renderTudo();setModo('navegar');
+  _estadoAtual=snapProj();
+}
+function garantirMapa(centro,zoom){
   if(!mapa){
-    mapa=L.map('mapa',{zoomControl:false}).setView(projAtual.centro,16);
+    mapa=L.map('mapa',{zoomControl:false}).setView(centro,zoom);
     L.control.zoom({position:'bottomright'}).addTo(mapa);
     mapa._ruas=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'OSM'});
     aplicarTiles();
@@ -1126,11 +1140,7 @@ function abrirProjeto(id){
       if(e.key==='Escape'){if(editCabo){concluirTracado();return}cancelarDesenho()}
       if(e.key==='Enter')finalizarDesenho();
     });
-  } else {mapa.setView(projAtual.centro,16);aplicarTiles()}
-  setTimeout(()=>mapa.invalidateSize(),100);
-  limparOverlaysSoltos();
-  renderCamadas();renderTudo();setModo('navegar');
-  _estadoAtual=snapProj();
+  } else {mapa.setView(centro,zoom);aplicarTiles()}
 }
 function toggleDrawer(){document.getElementById('drawer').classList.toggle('fechado')}
 const HINTS={
