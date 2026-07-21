@@ -464,9 +464,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" data-modo="cabo" onclick="setModo('cabo')"><span class="ic">〰️</span>Cabo</button>
     <button class="tool" data-modo="reserva" onclick="setModo('reserva')"><span class="ic">➰</span>Reserva</button>
     <button class="tool" data-modo="area" onclick="setModo('area')"><span class="ic">⬠</span>Área</button>
+    <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
+    <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
   </div>
 
   <div id="subbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:899;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 12px;display:none;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12px;color:var(--text-dim)"></div>
+
+  <div id="clientes-topbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:898;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:7px 14px;display:none;gap:16px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12.5px"></div>
 
   <div id="toast"></div>
   <div id="hint"><b>Navegação:</b> clique nos elementos para editar</div>
@@ -1277,7 +1281,7 @@ function renderTudo(){
     mk.bindPopup(popupElemento(e));
     layerRefs[e.id]=mk.addTo(mapa);
   });
-  attProgresso();renderListaElementos();atualizarPendBadge();attOneBadge();
+  attProgresso();renderListaElementos();atualizarPendBadge();attOneBadge();renderClientesTopbar();
   const vz=document.getElementById('vazio-mapa');
   if(vz)vz.style.display=(projAtual.elementos.length||projAtual.cabos.length)?'none':'block';
 }
@@ -2157,7 +2161,26 @@ function renderListaElementos(){
         <span class="ac"><button title="Excluir" onclick="event.stopPropagation();excluirCliente('${cl.id}')">🗑</button></span></div>`;
     });
   }
+  // Clientes do MoviOne (localização + status IXC) — só quando a camada está ativa
+  if(clientesOne.length&&camadasVisiveis.clienteone){
+    const fech=grpFechado['clienteone'];
+    const on=clientesOne.filter(c=>c.online===true).length;
+    const off=clientesOne.filter(c=>c.online===false).length;
+    html+=`<div class="el-grp-h" onclick="grpFechado['clienteone']=!grpFechado['clienteone'];renderListaElementos()">Clientes (MoviOne) <span class="cnt">${clientesOne.length} ${fech?'▸':'▾'}</span></div>`;
+    if(!fech)clientesOne.forEach(c=>{
+      const cor=c.online===null||c.online===undefined?'var(--text-dim)':(c.online?'#22C55E':'#F87168');
+      html+=`<div class="el-row" onclick="irParaClienteOne('${c.id}')">
+        <span class="dot" style="background:${cor}"></span><span class="nm">${c.nome}</span>
+        <span class="ac"><button title="Vincular caixa" onclick="event.stopPropagation();abrirVincularCTO('${c.id}')">🔗</button></span></div>`;
+    });
+  }
   box.innerHTML=html||'<div style="font-size:11.5px;color:var(--text-dim);padding:4px 8px">Nenhum elemento ainda</div>';
+}
+function irParaClienteOne(id){
+  const c=clientesOne.find(x=>x.id===id);
+  if(!c)return;
+  mapa.setView([c.lat,c.lng],19);
+  if(layerRefs['one-'+c.id])layerRefs['one-'+c.id].openPopup();
 }
 function irParaCabo(id){
   const c=projAtual.cabos.find(x=>x.id===id);
@@ -2448,6 +2471,24 @@ async function removerVinculoCTO(){
     renderTudo();fecharModal('md-vincular-cto');
     toast('Vínculo removido');
   }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
+}
+function renderClientesTopbar(){
+  const tb=document.getElementById('clientes-topbar');
+  const btn=document.getElementById('tool-clientes');
+  if(!tb)return;
+  const ativo=camadasVisiveis.clienteone&&clientesOne.length;
+  if(btn)btn.classList.toggle('ativo',!!camadasVisiveis.clienteone);
+  if(!ativo){tb.style.display='none';return}
+  const on=clientesOne.filter(c=>c.online===true).length;
+  const off=clientesOne.filter(c=>c.online===false).length;
+  const semSt=clientesOne.filter(c=>c.online===null||c.online===undefined).length;
+  tb.style.display='flex';
+  tb.innerHTML=`<b style="color:var(--text)">👥 ${clientesOne.length} clientes</b>`
+    +`<span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:#22C55E;display:inline-block"></span>${on} online</span>`
+    +`<span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:#F87168;display:inline-block"></span>${off} offline</span>`
+    +(semSt?`<span style="color:var(--text-dim)">${semSt} sem status</span>`:'')
+    +`<button class="btn sm ghost" style="padding:3px 9px" onclick="atualizarStatusIXC()">↻ Status IXC</button>`
+    +`<button class="btn sm ghost" style="padding:3px 9px" onclick="toggleCamadaClientes()">✕ Ocultar</button>`;
 }
 function attOneBadge(){
   const b=document.getElementById('one-badge');
