@@ -2315,19 +2315,20 @@ async function proxyMovifiber(body){
 
 /* 1) MoviOne: localização + vínculo caixa (filtra pelo projeto atual) */
 async function carregarClientesMoviOne(){
-  toast('Buscando clientes no MoviOne…');
+  toast('Buscando clientes do projeto "'+projAtual.nome+'" no MoviOne…');
   try{
+    // filtro ESTRITO pelo projeto aberto — só aparecem clientes vinculados a ele
     const d=await proxyMovifiber({acao:'clientes-movione',projeto:projAtual.nome});
-    let lista=d.clientes||[];
-    // se nada casar pelo nome do projeto, cai para todos (útil no início)
-    if(!lista.length&&d.total===0&&(d.projetos||[]).length===0){
-      const d2=await proxyMovifiber({acao:'clientes-movione'});
-      lista=d2.clientes||[];
+    aplicarClientesMoviOne(d.clientes||[]);
+    if(!clientesOne.length){
+      toast('Nenhum cliente vinculado ao projeto "'+projAtual.nome+'" — vincule na aba Logins do cliente (MoviOne) ou pelo Campo',true);
+      return;
     }
-    aplicarClientesMoviOne(lista);
     const semCaixa=clientesOne.filter(c=>!c.caixa).length;
-    toast(clientesOne.length+' clientes carregados'+(semCaixa?(' · '+semCaixa+' sem caixa vinculada'):''));
-    if(clientesOne.length){const b=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(b,{padding:[60,60]})}
+    toast(clientesOne.length+' cliente(s) do projeto'+(semCaixa?(' · '+semCaixa+' sem caixa'):''));
+    const bb=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(bb,{padding:[60,60]});
+    // já consulta o IXC em seguida: casinhas ficam verde (online) / vermelho (offline)
+    if(clientesOne.some(c=>c.ixcId))await atualizarStatusIXC();
   }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
 }
 function aplicarClientesMoviOne(lista){
