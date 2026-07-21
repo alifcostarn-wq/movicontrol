@@ -1005,7 +1005,16 @@ function abrirProjetoSelecionado(){
 function renderHome(){
   const l=document.getElementById('lista-projetos');
   if(!DB.projetos.length){l.innerHTML='<div class="vazio">Nenhum projeto ainda.<br>Crie o primeiro projeto FTTH para começar.</div>';return}
-  l.innerHTML=DB.projetos.map(p=>{
+  let cab='';
+  if(DB.projetos.length>1){
+    const totEl=DB.projetos.reduce((s,p)=>s+p.elementos.length,0);
+    const totCb=DB.projetos.reduce((s,p)=>s+p.cabos.length,0);
+    cab=`<div class="proj-item" style="border-color:var(--accent);background:rgba(60,179,113,.08)" onclick="abrirTodosProjetos()">
+      <div><b>🌐 Todos os projetos</b><div class="meta">${DB.projetos.length} projetos · ${totEl} elementos · ${totCb} cabos — visão geral (somente leitura)</div></div>
+      <div style="text-align:right"><div class="prog mono">${DB.projetos.length}</div><div class="meta">projetos</div></div>
+    </div>`;
+  }
+  l.innerHTML=cab+DB.projetos.map(p=>{
     const tot=p.elementos.length+p.cabos.length;
     const impl=p.elementos.filter(e=>['implantado','certificado'].includes(e.status)).length+p.cabos.filter(c=>['implantado','certificado'].includes(c.status)).length;
     const pct=tot?Math.round(impl/tot*100):0;
@@ -1013,6 +1022,39 @@ function renderHome(){
       <div><b>${p.nome}</b><div class="meta">${p.elementos.length} elementos · ${p.cabos.length} cabos · criado em ${new Date(p.criado).toLocaleDateString('pt-BR')}</div></div>
       <div style="text-align:right"><div class="prog mono">${pct}%</div><div class="meta">implantado</div></div>
     </div>`}).join('');
+}
+function abrirTodosProjetos(){
+  // projeto VIRTUAL agregando todos — cada elemento/cabo carrega _proj (nome de origem)
+  const elementos=[], cabos=[], areas=[];
+  let fusoes={}, pops={};
+  DB.projetos.forEach(p=>{
+    (p.elementos||[]).forEach(e=>elementos.push({...e,_proj:p.nome,_projId:p.id}));
+    (p.cabos||[]).forEach(c=>cabos.push({...c,_proj:p.nome,_projId:p.id}));
+    (p.areas||[]).forEach(a=>areas.push({...a,_proj:p.nome,_projId:p.id}));
+    Object.assign(fusoes,p.fusoes||{});Object.assign(pops,p.pops||{});
+  });
+  const centro=DB.projetos[0]?DB.projetos[0].centro:[-5.19,-37.34];
+  projAtual={id:'__todos__',_todos:true,nome:'🌐 Todos os projetos',centro,criado:Date.now(),
+    elementos,cabos,areas,fusoes,pops,clientes:[],seq:{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0,cliente:0}};
+  document.getElementById('shell').style.display='none';
+  clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
+  cfg();undoStack=[];redoStack=[];_estadoAtual=null;
+  document.getElementById('tela-editor').style.display='block';
+  document.getElementById('dr-nome-proj').textContent=projAtual.nome;
+  if(!mapa){
+    mapa=L.map('mapa',{zoomControl:false}).setView(projAtual.centro,13);
+    L.control.zoom({position:'bottomright'}).addTo(mapa);
+    mapa._ruas=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'OSM'});
+    aplicarTiles();mapa.on('click',cliqueMapa);mapa.on('mousemove',aoMoverMapa);
+  } else {aplicarTiles()}
+  setTimeout(()=>{mapa.invalidateSize();
+    // enquadra todos os elementos
+    const pts=[...elementos.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...cabos.flatMap(c=>c.pontos||[])];
+    if(pts.length)mapa.fitBounds(pts,{padding:[60,60]});else mapa.setView(centro,13);
+  },120);
+  limparOverlaysSoltos();
+  setModo('navegar');renderCamadas();renderTudo();
+  toast('Visão geral: '+DB.projetos.length+' projetos · '+elementos.length+' elementos · '+cabos.length+' cabos');
 }
 function abrirModalNovoProjeto(){
   abrirModal('md-novo-projeto');
@@ -1046,6 +1088,7 @@ function criarProjeto(){
   DB.projetos.push(p);salvar();fecharModal('md-novo-projeto');abrirProjeto(p.id);
 }
 function voltarHome(){
+  if(mapa)limparOverlaysSoltos();
   document.getElementById('tela-editor').style.display='none';
   document.getElementById('shell').style.display='flex';
   renderHome();
@@ -1085,6 +1128,7 @@ function abrirProjeto(id){
     });
   } else {mapa.setView(projAtual.centro,16);aplicarTiles()}
   setTimeout(()=>mapa.invalidateSize(),100);
+  limparOverlaysSoltos();
   renderCamadas();renderTudo();setModo('navegar');
   _estadoAtual=snapProj();
 }
@@ -1119,9 +1163,18 @@ function renderSubbar(){
   } else sb.style.display='none';
 }
 function setModo(m){
+  if(projAtual&&projAtual._todos&&m!=='navegar'){
+    toast('Visão "Todos os projetos" é somente leitura. Abra um projeto para editar.',true);
+    m='navegar';
+  }
   modo=m;cancelarDesenho();
   renderSubbar();
   document.querySelectorAll('.tool').forEach(t=>t.classList.toggle('ativo',t.dataset.modo===m));
+  // no modo "todos", desabilita visualmente as ferramentas de criação
+  const todos=projAtual&&projAtual._todos;
+  document.querySelectorAll('.tool[data-modo]').forEach(t=>{
+    if(t.dataset.modo&&t.dataset.modo!=='navegar'){t.style.opacity=todos?'.35':'';t.style.pointerEvents=todos?'none':''}
+  });
   attHint();
   mapa.getContainer().style.cursor=m==='navegar'?'':'crosshair';
   if(['cabo','area'].includes(m))mapa.doubleClickZoom.disable();else mapa.doubleClickZoom.enable();
@@ -1218,6 +1271,18 @@ function nomeEl(id){const e=projAtual.elementos.find(x=>x.id===id);return e?e.no
 function medirCabo(pts){let m=0;for(let i=1;i<pts.length;i++)m+=mapa.distance(pts[i-1],pts[i]);return m}
 
 /* ================= RENDER MAPA ================= */
+function limparOverlaysSoltos(){
+  // remove TUDO que vive fora de layerRefs (senão vaza ao trocar de projeto)
+  try{
+    if(typeof editMarkers!=='undefined'){editMarkers.forEach(m=>mapa.removeLayer(m));editMarkers=[]}
+    if(typeof editCabo!=='undefined')editCabo=null;
+    if(typeof vflLayers!=='undefined'){vflLayers.forEach(l=>mapa.removeLayer(l));vflLayers=[]}
+    if(caboTemp){mapa.removeLayer(caboTemp.linha);caboTemp=null}
+    if(areaTemp){mapa.removeLayer(areaTemp.poly);areaTemp=null}
+    if(snapMk){mapa.removeLayer(snapMk);snapMk=null}
+    if(ghostLn){mapa.removeLayer(ghostLn);ghostLn=null}
+  }catch(e){}
+}
 function renderTudo(){
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
   // áreas
@@ -1228,11 +1293,12 @@ function renderTudo(){
   // cabos
   projAtual.cabos.forEach(c=>{
     if(!camadasVisiveis[c.tipo])return;
+    const _tag=projAtual._todos&&c._proj?` · <span class="pp-badge">${c._proj}</span>`:'';
     const geo=medirCabo(c.pontos), tot=geo*(1+(c.folga||0)/100);
     const est=estiloCabo(c);
     layerRefs[c.id]=L.polyline(c.pontos,{color:CORES_CABO[c.tipo],weight:est.weight,dashArray:est.dashArray,opacity:.95})
       .on('click',()=>{if(modo==='navegar')editarTracado(c.id,true)})
-      .bindPopup(`<div class="pp-title">${c.nome}<span class="pp-badge">${c.fo}FO</span></div>
+      .bindPopup(`<div class="pp-title">${c.nome}<span class="pp-badge">${c.fo}FO</span>${_tag}</div>
         <div class="pp-meta">${c.tipo} · <span class="tag ${c.status}">${labelStatus(c.status)}</span></div>
         <div class="pp-meta mono">Geométrico: ${geo.toFixed(0)} m · Total: ${tot.toFixed(0)} m</div>
         <div class="pp-meta">${nomeEl(c.origemId)||'—'} ⇄ ${nomeEl(c.destinoId)||'—'}</div>
@@ -1429,9 +1495,18 @@ function excluirCabo(){
 }
 function excluirCaboDireto(id){
   if(!confirm('Excluir este cabo?'))return false;
+  // se o cabo estava em edição, remove os marcadores de vértice/ponta órfãos
+  if(editCabo&&editCabo.id===id){
+    editMarkers.forEach(m=>mapa.removeLayer(m));editMarkers=[];
+    editCabo=null;
+    const hint=document.getElementById('hint');if(hint)attHint();
+  }
+  // remove a polyline do cabo do mapa imediatamente
+  if(layerRefs[id]){mapa.removeLayer(layerRefs[id]);delete layerRefs[id]}
   projAtual.cabos=projAtual.cabos.filter(x=>x.id!==id);
-  Object.values(projAtual.fusoes).forEach(f=>{f.fusoes=f.fusoes.filter(fu=>fu.a.cabo!==id&&fu.b.cabo!==id)});
-  salvar();renderTudo();toast('Cabo excluído');return true;
+  // limpa fusões que referenciavam o cabo
+  Object.values(projAtual.fusoes).forEach(f=>{if(f.fusoes)f.fusoes=f.fusoes.filter(fu=>fu.a.cabo!==id&&fu.b.cabo!==id)});
+  salvar();renderTudo();toast('Cabo e pontos excluídos');return true;
 }
 
 /* ================= ANÁLISE DE REDE ================= */
