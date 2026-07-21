@@ -1661,7 +1661,7 @@ function renderFusao(){
       s+=`<line class="fibra-linha" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"><title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title></line>`;
       // luz na fibra que participa de uma fusão ativa (implantada/certificada)
       const fk='fib-'+c.id+'-'+f;
-      const fuFib=fsAnim&&F.fusoes.some(fu=>ptKey(fu.a)===fk||ptKey(fu.b)===fk);
+      const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
       if(fuFib)s+=`<line class="fibra-luz" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"/>`;
       s+=`<circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="5.5" fill="${cor}" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}})"/>`;
     }
@@ -1716,14 +1716,15 @@ function renderFusao(){
     const mx=(ax+bx)/2;
     const cor=stCor[fu.status||'projeto'];
     const dPath=`M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
-    // luz de tráfego em TODAS as fusões (cor varia com o status)
-    const luzCor=fu.status==='certificado'?'#7DE0FF':(fu.status==='implantado'?'#8DFFB0':(fu.status==='nao-implantado'?'#C9CDD6':'#FFD86B'));
-    if(fsAnim){
+    // luz de tráfego SÓ em fusões ativas (implantada/certificada)
+    const ativa=(fu.status==='implantado'||fu.status==='certificado');
+    const luzCor=fu.status==='certificado'?'#7DE0FF':'#8DFFB0';
+    if(fsAnim&&ativa){
       s+=`<path class="fusao-glow" stroke="${luzCor}" d="${dPath}"/>`;
       s+=`<path class="fusao-trilho" stroke="${cor}" d="${dPath}"/>`;
     }
     s+=`<path class="fusao-linha" stroke="${cor}" d="${dPath}" onclick="clicarFusao(event,${i})"><title>Fusão (clique para remover) — perda ${PERDAS.fusao} dB</title></path>`;
-    if(fsAnim)s+=`<path class="fusao-luz" stroke="${luzCor}" d="${dPath}"/>`;
+    if(fsAnim&&ativa)s+=`<path class="fusao-luz" stroke="${luzCor}" d="${dPath}"/>`;
   });
   if(!cabos.length)s+=`<text x="560" y="300" text-anchor="middle" fill="#8B90A0" font-size="13" font-family="DM Sans">Nenhum cabo chega nesta caixa — trace um cabo até ela no mapa (ele conecta sozinho ao passar perto)</text>`;
   svg.innerHTML=s;
