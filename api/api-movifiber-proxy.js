@@ -1,113 +1,65 @@
 // ============================================================================
 // api/movifiber.js — PROXY ISOLADO DO MOVIFIBER (Vercel Serverless)
 // ============================================================================
-// Padrão MoviOne de isolamento: este arquivo é EXCLUSIVO do MoviFiber.
-// Nada aqui é compartilhado com ixc-proxy.js, campo-proxy.js, moviapp.js ou
-// push.js — alterações no MoviFiber jamais afetam os outros sistemas.
+// Isolamento MoviOne: arquivo EXCLUSIVO do MoviFiber. Nada compartilhado com
+// ixc-proxy.js, campo-proxy.js, moviapp.js ou push.js.
 //
-// FUNÇÃO: entregar ao mapa do MoviFiber os clientes com:
-//   • localização (lat/lng)  → Supabase MoviOne (tabela `clientes`)
-//   • login + online S/N     → IXC /webservice/v1/radusuarios
-//   • sinal de fibra RX/TX   → IXC /webservice/v1/radpop_radio_cliente_fibra
+// DIRECAO CORRETA DAS FONTES:
+//   MoviOne (Supabase)  ->  LOCALIZACAO (clientes.latitude/longitude)
+//                           + VINCULO FTTH (ftth_cliente_instalacao:
+//                             projeto, caixa/CTO, porta) preenchido no Campo.
+//   IXC (isolado aqui)  ->  SOMENTE online/offline + potencia da ONU.
 //
-// ENV VARS necessárias no projeto Vercel (as mesmas já usadas nos outros
-// proxies — não crie duplicadas, apenas reutilize):
-//   SUPABASE_URL          ex: https://mgtetsmcswdtvsgewcen.supabase.co
-//   SUPABASE_SERVICE_KEY  service role (somente server-side, nunca no front)
-//   IXC_TOKEN             token do webservice IXC (formato id:hash)
+// ENV VARS (reutiliza as existentes; NAO crie novas):
+//   SUPABASE_URL, SUPABASE_SERVICE_KEY, IXC_TOKEN
 //
-// CHAMADA DO FRONT:
-//   POST /api/movifiber   body: { "acao": "clientes-full" }
-//   → { clientes:[{ id_cliente, nome, latitude, longitude, login, online,
-//                   sinal_rx, sinal_tx }], total, fontes:{...} }
-//
-// Também aceita acao:"clientes-mapa" (só Supabase) e acao:"status-logins"
-// (só IXC), para depuração isolada de cada fonte.
+// ACOES (POST /api/movifiber, body {acao:"..."}):
+//   - "clientes-movione"   -> {projeto?}  Clientes do MoviOne com lat/lng +
+//                             projeto/caixa/porta. (NAO consulta IXC.)
+//   - "ixc-status"         -> {ixc_ids:[...]}  SO IXC: online + potencia ONU
+//                             por cliente. Isolado do MoviOne.
+//   - "salvar-instalacao"  -> {cliente_id, projeto, caixa_id, caixa_nome, porta}
+//                             grava o vinculo (RPC ftth_upsert_instalacao).
+//   - "debug-schema"       -> 1 registro cru de cada fonte (descobrir colunas).
 // ============================================================================
 
 const IXC_HOST = 'https://netmaisconnect.com.br';
 
-// ---- AJUSTE FINO DE SCHEMA (confira com o seu banco) -----------------------
-// Colunas da tabela `clientes` no Supabase (MoviOne):
-const SB_TABELA   = 'clientes';
-const SB_COL_ID   = 'id';          // id do cliente = id no IXC (sync MoviOne)
-const SB_COL_NOME = 'razao';       // ou 'nome' conforme seu schema
-const SB_COL_LAT  = 'latitude';
-const SB_COL_LNG  = 'longitude';
-// Campos do IXC radusuarios usados:
-const IXC_RAD_CAMPOS = ['id', 'id_cliente', 'login', 'online', 'ip'];
-// Tabela de fibra do IXC (RX/TX por login). Se o seu IXC não usa esta tabela,
-// defina INCLUIR_FIBRA = false que o proxy pula essa etapa sem erro.
-const INCLUIR_FIBRA = true;
-const IXC_FIBRA_TABELA = 'radpop_radio_cliente_fibra';
-// ---------------------------------------------------------------------------
-
-// Cache em memória da instância (evita marretar o IXC em navegações rápidas)
-let _cache = { quando: 0, dados: null };
-const CACHE_MS = 60 * 1000;
+// ==== AJUSTE FINO DE SCHEMA (confira com "debug-schema") =====================
+// Supabase MoviOne
+const SB_CLIENTES = 'clientes';
+const SB_ID    = 'id';
+const SB_NOME  = 'razao';
+const SB_IXCID = 'ixc_id';
+const SB_LOGIN = 'ixc_login';
+const SB_LAT   = 'latitude';
+const SB_LNG   = 'longitude';
+const SB_INSTAL = 'ftth_cliente_instalacao';   // tabela criada pela migration
+// IXC (SOMENTE online + potencia ONU)
+const IXC_TB_RAD   = 'radusuarios';
+const R_ID = 'id', R_CLIENTE = 'id_cliente', R_LOGIN = 'login', R_ONLINE = 'online', R_IP = 'ip';
+const IXC_TB_FIBRA = 'radpop_radio_cliente_fibra';
+const F_LOGIN = 'id_login';
+// campos de potencia dentro da fibra (o proxy tenta varios nomes comuns):
+const F_RX_CANDIDATOS = ['potencia_rx','sinal_rx','rx','potencia_recebida','signal_rx'];
+const F_TX_CANDIDATOS = ['potencia_tx','sinal_tx','tx','potencia_transmitida','signal_tx'];
+const F_ONU_CANDIDATOS = ['id_hardware','onu','serial_onu','id_onu'];
+// ============================================================================
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ erro: 'use POST' });
 
-  const acao = (req.body && req.body.acao) || 'clientes-full';
-
+  const b = req.body || {};
+  const acao = b.acao || 'clientes-movione';
   try {
-    if (acao === 'clientes-mapa') {
-      const locs = await clientesSupabase();
-      return res.status(200).json({ clientes: locs, total: locs.length, fontes: { supabase: true } });
-    }
-    if (acao === 'status-logins') {
-      const logins = await radusuariosIXC();
-      return res.status(200).json({ logins, total: logins.length, fontes: { ixc: true } });
-    }
-    if (acao === 'clientes-full') {
-      if (_cache.dados && Date.now() - _cache.quando < CACHE_MS) {
-        return res.status(200).json({ ..._cache.dados, cache: true });
-      }
-      const [locs, logins, fibra] = await Promise.all([
-        clientesSupabase(),
-        radusuariosIXC(),
-        INCLUIR_FIBRA ? fibraIXC().catch(() => new Map()) : Promise.resolve(new Map())
-      ]);
-      // índice: id_cliente IXC -> login/online
-      const porCliente = new Map();
-      for (const l of logins) {
-        // um cliente pode ter mais de um login; prioriza o que estiver online
-        const atual = porCliente.get(String(l.id_cliente));
-        if (!atual || (l.online === 'S' && atual.online !== 'S')) {
-          porCliente.set(String(l.id_cliente), l);
-        }
-      }
-      const clientes = locs
-        .filter(c => c.latitude != null && c.longitude != null)
-        .map(c => {
-          const rad = porCliente.get(String(c.id_cliente)) || null;
-          const f = rad ? (fibra.get(String(rad.id)) || null) : null;
-          return {
-            id_cliente: c.id_cliente,
-            nome: c.nome,
-            latitude: +c.latitude,
-            longitude: +c.longitude,
-            login: rad ? rad.login : null,
-            online: rad ? rad.online : null,          // 'S' | 'N' | null
-            ip: rad ? rad.ip : null,
-            sinal_rx: f ? f.sinal_rx : null,
-            sinal_tx: f ? f.sinal_tx : null
-          };
-        });
-      const payload = {
-        clientes,
-        total: clientes.length,
-        fontes: { supabase: true, ixc: true, fibra: INCLUIR_FIBRA }
-      };
-      _cache = { quando: Date.now(), dados: payload };
-      return res.status(200).json(payload);
-    }
+    if (acao === 'clientes-movione')  return res.status(200).json(await clientesMoviOne(b.projeto));
+    if (acao === 'ixc-status')        return res.status(200).json(await ixcStatus(b.ixc_ids || []));
+    if (acao === 'salvar-instalacao') return res.status(200).json(await salvarInstalacao(b));
+    if (acao === 'debug-schema')      return res.status(200).json(await debugSchema());
     return res.status(400).json({ erro: 'acao desconhecida: ' + acao });
   } catch (e) {
     console.error('[movifiber-proxy]', e);
@@ -115,35 +67,59 @@ export default async function handler(req, res) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// SUPABASE (MoviOne) — localização dos clientes
-// Respeita coord_fixada implicitamente: lemos o que está na tabela, que é a
-// fonte de verdade do MoviOne (o trigger trg_proteger_coord já garante isso).
-// ---------------------------------------------------------------------------
-async function clientesSupabase() {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_TABELA}` +
-    `?select=${SB_COL_ID},${SB_COL_NOME},${SB_COL_LAT},${SB_COL_LNG}` +
-    `&${SB_COL_LAT}=not.is.null&${SB_COL_LNG}=not.is.null&limit=20000`;
-  const r = await fetch(url, {
-    headers: {
-      apikey: process.env.SUPABASE_SERVICE_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`
-    }
-  });
+// ─────────── MoviOne (Supabase): localizacao + vinculo FTTH ───────────
+function sbHeaders() {
+  return { apikey: process.env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}` };
+}
+async function clientesMoviOne(projeto) {
+  // embute a instalacao (FK cliente_id -> clientes) via PostgREST
+  let url = `${process.env.SUPABASE_URL}/rest/v1/${SB_CLIENTES}` +
+    `?select=${SB_ID},${SB_NOME},${SB_IXCID},${SB_LOGIN},${SB_LAT},${SB_LNG},` +
+    `${SB_INSTAL}(projeto_ftth,caixa_id,caixa_nome,porta)` +
+    `&${SB_LAT}=not.is.null&${SB_LNG}=not.is.null&limit=20000`;
+  const r = await fetch(url, { headers: sbHeaders() });
   if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
-  const rows = await r.json();
-  return rows.map(x => ({
-    id_cliente: x[SB_COL_ID],
-    nome: x[SB_COL_NOME],
-    latitude: x[SB_COL_LAT],
-    longitude: x[SB_COL_LNG]
-  }));
+  let rows = await r.json();
+  const out = rows.map(x => {
+    const inst = Array.isArray(x[SB_INSTAL]) ? x[SB_INSTAL][0] : x[SB_INSTAL];
+    return {
+      id_cliente: x[SB_ID],
+      nome: x[SB_NOME],
+      ixc_id: x[SB_IXCID],
+      login: x[SB_LOGIN],
+      latitude: +x[SB_LAT],
+      longitude: +x[SB_LNG],
+      projeto: inst ? inst.projeto_ftth : null,
+      caixa_id: inst ? inst.caixa_id : null,
+      caixa: inst ? inst.caixa_nome : null,
+      porta: inst ? inst.porta : null
+    };
+  });
+  const filtrados = projeto ? out.filter(c => String(c.projeto) === String(projeto)) : out;
+  return { clientes: filtrados, total: filtrados.length, projetos: projetosDistintos(out) };
+}
+function projetosDistintos(lista) {
+  const set = new Map();
+  for (const c of lista) if (c.projeto) set.set(String(c.projeto), c.projeto);
+  return [...set.values()].map(p => ({ id: p, nome: String(p) }));
+}
+async function salvarInstalacao(b) {
+  if (b.cliente_id == null) throw new Error('cliente_id obrigatorio');
+  const url = `${process.env.SUPABASE_URL}/rest/v1/rpc/ftth_upsert_instalacao`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      p_cliente_id: b.cliente_id, p_projeto: b.projeto ?? null,
+      p_caixa_id: b.caixa_id ?? null, p_caixa_nome: b.caixa_nome ?? null,
+      p_porta: b.porta ?? null
+    })
+  });
+  if (!r.ok) throw new Error('Supabase RPC HTTP ' + r.status + ' — rodou a migration ftth_cliente_instalacao?');
+  return { ok: true, instalacao: await r.json() };
 }
 
-// ---------------------------------------------------------------------------
-// IXC — helpers no padrão MoviOne (Basic token, header ixcsoft:listar,
-// paginação rp=1000 igual ao buscarTudoIXC)
-// ---------------------------------------------------------------------------
+// ─────────── IXC (isolado): SO online + potencia ONU ───────────
 function ixcHeaders() {
   return {
     'Content-Type': 'application/json',
@@ -151,63 +127,91 @@ function ixcHeaders() {
     ixcsoft: 'listar'
   };
 }
-
 async function ixcListarTudo(tabela, body) {
-  const out = [];
-  let page = 1;
+  const out = []; let page = 1;
   while (true) {
     const r = await fetch(`${IXC_HOST}/webservice/v1/${tabela}`, {
-      method: 'POST',
-      headers: ixcHeaders(),
+      method: 'POST', headers: ixcHeaders(),
       body: JSON.stringify({ ...body, page: String(page), rp: '1000' })
     });
     if (!r.ok) throw new Error(`IXC ${tabela} HTTP ` + r.status);
     const d = await r.json();
     const regs = d.registros || [];
     out.push(...regs);
-    const total = parseInt(d.total || '0', 10);
-    if (out.length >= total || regs.length === 0) break;
-    page++;
-    if (page > 60) break; // trava de segurança (60k registros)
+    if (out.length >= parseInt(d.total || '0', 10) || regs.length === 0) break;
+    if (++page > 60) break;
   }
   return out;
 }
-
-async function radusuariosIXC() {
-  const regs = await ixcListarTudo('radusuarios', {
-    qtype: 'radusuarios.id',
-    query: '0',
-    oper: '>',
-    sortname: 'radusuarios.id',
-    sortorder: 'asc'
-  });
-  return regs.map(r => {
-    const o = {};
-    for (const c of IXC_RAD_CAMPOS) o[c] = r[c];
-    return o;
-  });
+function primeiroCampo(reg, candidatos) {
+  for (const k of candidatos) if (reg[k] != null && reg[k] !== '') return reg[k];
+  return null;
 }
-
-// Sinal de fibra por login (id do radusuarios → sinal_rx/sinal_tx)
-async function fibraIXC() {
-  const regs = await ixcListarTudo(IXC_FIBRA_TABELA, {
-    qtype: IXC_FIBRA_TABELA + '.id',
-    query: '0',
-    oper: '>',
-    sortname: IXC_FIBRA_TABELA + '.id',
-    sortorder: 'asc'
-  });
-  const mapa = new Map();
-  for (const r of regs) {
-    // campo de vínculo com o login: normalmente id_login / id_radusuario —
-    // ajuste aqui se o seu IXC usar outro nome:
-    const idLogin = r.id_login || r.id_radusuario || r.id_contrato;
-    if (idLogin != null) {
-      mapa.set(String(idLogin), {
-        sinal_rx: r.sinal_rx != null ? parseFloat(r.sinal_rx) : null,
-        sinal_tx: r.sinal_tx != null ? parseFloat(r.sinal_tx) : null
+async function ixcStatus(ixcIds) {
+  const ids = [...new Set((ixcIds || []).map(String).filter(Boolean))];
+  if (!ids.length) return { status: {}, total: 0 };
+  // 1) radusuarios por id_cliente -> online + login id
+  const rad = [];
+  for (let i = 0; i < ids.length; i += 400) {
+    const lote = ids.slice(i, i + 400).join(',');
+    const regs = await ixcListarTudo(IXC_TB_RAD, {
+      qtype: `${IXC_TB_RAD}.${R_CLIENTE}`, query: lote, oper: 'IN',
+      sortname: `${IXC_TB_RAD}.${R_ID}`, sortorder: 'asc'
+    }).catch(() => []);
+    rad.push(...regs);
+  }
+  // 2) potencia ONU por id_login
+  const loginIds = [...new Set(rad.map(u => u[R_ID]).filter(Boolean))].map(String);
+  const potMap = new Map();
+  for (let i = 0; i < loginIds.length; i += 400) {
+    const lote = loginIds.slice(i, i + 400).join(',');
+    const regs = await ixcListarTudo(IXC_TB_FIBRA, {
+      qtype: `${IXC_TB_FIBRA}.${F_LOGIN}`, query: lote, oper: 'IN',
+      sortname: `${IXC_TB_FIBRA}.id`, sortorder: 'asc'
+    }).catch(() => []);
+    for (const f of regs) {
+      potMap.set(String(f[F_LOGIN]), {
+        rx: numOrNull(primeiroCampo(f, F_RX_CANDIDATOS)),
+        tx: numOrNull(primeiroCampo(f, F_TX_CANDIDATOS)),
+        onu: primeiroCampo(f, F_ONU_CANDIDATOS)
       });
     }
   }
-  return mapa;
+  // 3) monta por id_cliente IXC
+  const status = {};
+  for (const u of rad) {
+    const cid = String(u[R_CLIENTE]);
+    const pot = potMap.get(String(u[R_ID])) || {};
+    const anterior = status[cid];
+    const cand = { online: u[R_ONLINE], login: u[R_LOGIN], ip: u[R_IP], rx: pot.rx ?? null, tx: pot.tx ?? null, onu: pot.onu ?? null };
+    // prioriza login online
+    if (!anterior || (cand.online === 'S' && anterior.online !== 'S')) status[cid] = cand;
+  }
+  return { status, total: Object.keys(status).length };
+}
+function numOrNull(v) { if (v == null || v === '') return null; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? null : n; }
+
+// ─────────── DEBUG ───────────
+async function debugSchema() {
+  const out = {};
+  try {
+    const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_CLIENTES}?select=*,${SB_INSTAL}(*)&limit=1`, { headers: sbHeaders() });
+    out.supabase_clientes = (await r.json())[0] || '(vazio)';
+  } catch (e) { out.supabase_clientes = 'ERRO: ' + e.message; }
+  try {
+    const r = await fetch(`${IXC_HOST}/webservice/v1/${IXC_TB_FIBRA}`, {
+      method: 'POST', headers: ixcHeaders(),
+      body: JSON.stringify({ qtype: `${IXC_TB_FIBRA}.id`, query: '0', oper: '>', page: '1', rp: '1' })
+    });
+    out.ixc_fibra = ((await r.json()).registros || [])[0] || '(sem registros)';
+  } catch (e) { out.ixc_fibra = 'ERRO: ' + e.message; }
+  try {
+    const r = await fetch(`${IXC_HOST}/webservice/v1/${IXC_TB_RAD}`, {
+      method: 'POST', headers: ixcHeaders(),
+      body: JSON.stringify({ qtype: `${IXC_TB_RAD}.id`, query: '0', oper: '>', page: '1', rp: '1' })
+    });
+    out.ixc_radusuarios = ((await r.json()).registros || [])[0] || '(sem registros)';
+  } catch (e) { out.ixc_radusuarios = 'ERRO: ' + e.message; }
+  out.dica = 'Confira nomes de potencia da ONU em ixc_fibra e ajuste F_RX_CANDIDATOS/F_TX_CANDIDATOS. Localizacao/vinculo saem de supabase_clientes.';
+  return out;
 }
