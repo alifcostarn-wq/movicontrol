@@ -311,6 +311,15 @@ input:focus,select:focus{border-color:var(--accent)}
 .fibra-ponto.sel{stroke:var(--accent);stroke-width:3}
 .fusao-linha{fill:none;stroke-width:2.2;cursor:pointer;opacity:.9}
 .fusao-linha:hover{stroke-width:4;opacity:1}
+/* luz de tráfego percorrendo a fibra fusionada */
+@keyframes fluxo-luz{to{stroke-dashoffset:-28}}
+.fusao-luz{fill:none;stroke-width:2.4;opacity:.9;stroke-dasharray:3 25;stroke-linecap:round;
+  animation:fluxo-luz 1s linear infinite;pointer-events:none;filter:drop-shadow(0 0 3px currentColor)}
+.fibra-luz{stroke-width:2.6;opacity:.85;stroke-dasharray:2 20;stroke-linecap:round;
+  animation:fluxo-luz .9s linear infinite;pointer-events:none;filter:drop-shadow(0 0 2px currentColor)}
+.fusao-glow{fill:none;stroke-width:5;opacity:.12;filter:blur(2px);pointer-events:none}
+.splitter-shape.sel-sp .splitter-body{stroke:var(--accent);stroke-width:2.5;filter:drop-shadow(0 0 5px rgba(60,179,113,.6))}
+#fs-svg.sem-anim .fusao-luz,#fs-svg.sem-anim .fibra-luz{animation:none;display:none}
 .splitter-shape{cursor:move}
 .splitter-body{fill:var(--surface2);stroke:var(--text-dim);stroke-width:1.5}
 .splitter-lbl{fill:var(--text);font-size:10px;font-family:'DM Mono';text-anchor:middle}
@@ -808,6 +817,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="fs-tool" onclick="abrirQR()">▦ QR Code</button>
       <button class="fs-tool" id="btn-vfl" onclick="tracarVFL()" style="border-color:#FF3B30;color:#FF8A80">🔴 Traçar VFL</button>
       <button class="fs-tool" id="btn-orc" onclick="abrirOrcamento()">🔦 Orçamento Óptico</button>
+      <button class="fs-tool" id="btn-anim" onclick="toggleFsAnim()" title="Liga/desliga a luz de tráfego">✨ Tráfego: ON</button>
       <button class="btn sm" onclick="fecharFusao()">💾 Salvar / sair</button>
     </div>
   </div>
@@ -1581,7 +1591,7 @@ function baixar(nome,conteudo,tipo){
 }
 
 /* ================= EDITOR DE FUSÕES ================= */
-let fsCaixa=null, fsSel=null, fsDrag=null;
+let fsCaixa=null, fsSel=null, fsDrag=null, fsAnim=true, fsSelSp=null;
 function getFus(id){if(!projAtual.fusoes[id])projAtual.fusoes[id]={splitters:[],fusoes:[]};return projAtual.fusoes[id]}
 function abrirFusao(caixaId){
   fsCaixa=caixaId;fsSel=null;
@@ -1596,7 +1606,7 @@ function abrirFusao(caixaId){
   document.getElementById('tela-fusao').style.display='flex';
   renderFusao();
 }
-function fecharFusao(){salvar();document.getElementById('tela-fusao').style.display='none';renderTudo()}
+function fecharFusao(){salvar();fsSelSp=null;renderFsToolbar();document.getElementById('tela-fusao').style.display='none';renderTudo()}
 function mudarStatusCaixaFusao(v){const e=projAtual.elementos.find(x=>x.id===fsCaixa);e.status=v;salvar();toast('Status: '+labelStatus(v))}
 function cabosDaCaixa(id){return projAtual.cabos.filter(c=>c.origemId===id||c.destinoId===id)}
 function fsPos(){ // calcula posições de todos os pontos conectáveis
@@ -1644,8 +1654,12 @@ function renderFusao(){
     for(let f=1;f<=c.fo;f++){
       const cor=ABNT[(f-1)%12].hex, p=pos['fib-'+c.id+'-'+f];
       const x1=b.lado==='esq'?b.x+bw:b.x, x2=p.x;
-      s+=`<line class="fibra-linha" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"><title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title></line>
-      <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="5.5" fill="${cor}" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}})"/>`;
+      s+=`<line class="fibra-linha" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"><title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title></line>`;
+      // luz na fibra que participa de uma fusão ativa (implantada/certificada)
+      const fk='fib-'+c.id+'-'+f;
+      const fuAtiva=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
+      if(fuAtiva)s+=`<line class="fibra-luz" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"/>`;
+      s+=`<circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="5.5" fill="${cor}" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}})"/>`;
     }
     s+='</g>';
   });
@@ -1654,7 +1668,12 @@ function renderFusao(){
     const n=nSaidasSp(sp), h=n*13+6;
     const cat=splitCatDe(sp), des=cat&&cat.tipo==='des';
     const pcts=des?rotuloSp(sp).split('/'):null;
-    s+=`<g class="splitter-shape" onmousedown="fsIniciarDrag(event,'${sp.id}')">
+    // transformação: rotação + espelho + escala em torno do centro do splitter
+    const cx0=sp.x+25, cy0=sp.y+h/2;
+    const rot=sp.rot||0, sc=sp.scale||1, fl=sp.flip?-1:1;
+    const tr=`transform="translate(${cx0} ${cy0}) rotate(${rot}) scale(${sc*fl} ${sc}) translate(${-cx0} ${-cy0})"`;
+    const selSp=fsSelSp===sp.id?' sel-sp':'';
+    s+=`<g class="splitter-shape${selSp}" ${tr} onmousedown="fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">
       <polygon class="splitter-body" points="${sp.x},${sp.y+h/2-14} ${sp.x+50},${sp.y} ${sp.x+50},${sp.y+h} ${sp.x},${sp.y+h/2+14}" ${des?'style="stroke:#D4A027"':''}/>
       <text class="splitter-lbl" x="${sp.x+25}" y="${sp.y+h+16}">${rotuloSp(sp)}${spConectorizado(sp)?' APC':''}${des?' DGO':''}</text>
       <text class="splitter-lbl" x="${sp.x+25}" y="${sp.y-8}" style="fill:var(--danger);cursor:pointer" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
@@ -1691,7 +1710,16 @@ function renderFusao(){
     // ajuste para portas de splitter (posições vêm de fsPos com offset)
     const ax=A.x,ay=A.y,bx=B.x,by=B.y;
     const mx=(ax+bx)/2;
-    s+=`<path class="fusao-linha" stroke="${stCor[fu.status||'projeto']}" d="M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}" onclick="clicarFusao(event,${i})"><title>Fusão (clique para remover) — perda ${PERDAS.fusao} dB</title></path>`;
+    const cor=stCor[fu.status||'projeto'];
+    const dPath=`M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
+    // fusões implantadas/certificadas mostram luz de tráfego; projeto fica estático
+    const ativa=(fu.status==='implantado'||fu.status==='certificado');
+    s+=`<path class="fusao-linha" stroke="${cor}" d="${dPath}" onclick="clicarFusao(event,${i})"><title>Fusão (clique para remover) — perda ${PERDAS.fusao} dB</title></path>`;
+    if(ativa&&fsAnim){
+      const luzCor=fu.status==='certificado'?'#7DE0FF':'#8DFFB0';
+      s+=`<path class="fusao-glow" stroke="${luzCor}" d="${dPath}"/>`;
+      s+=`<path class="fusao-luz" stroke="${luzCor}" d="${dPath}"/>`;
+    }
   });
   if(!cabos.length)s+=`<text x="560" y="300" text-anchor="middle" fill="#8B90A0" font-size="13" font-family="DM Sans">Nenhum cabo chega nesta caixa — trace um cabo até ela no mapa (ele conecta sozinho ao passar perto)</text>`;
   svg.innerHTML=s;
@@ -1748,6 +1776,43 @@ function removerSplitter(ev,id){
   F.splitters=F.splitters.filter(s=>s.id!==id);
   F.fusoes=F.fusoes.filter(f=>!(f.a.t==='sp'&&f.a.sp===id)&&!(f.b.t==='sp'&&f.b.sp===id));
   salvar();renderFusao();
+}
+function fsSelecionarSplitter(ev,id){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  fsSelSp=(fsSelSp===id?null:id);
+  renderFusao();
+  renderFsToolbar();
+}
+function _spSel(){return getFus(fsCaixa).splitters.find(s=>s.id===fsSelSp)}
+function toggleFsAnim(){
+  fsAnim=!fsAnim;
+  const b=document.getElementById('btn-anim');if(b)b.textContent=fsAnim?'✨ Tráfego: ON':'✨ Tráfego: OFF';
+  const svg=document.getElementById('fs-svg');if(svg)svg.classList.toggle('sem-anim',!fsAnim);
+  renderFusao();
+}
+function fsGirar(d){const sp=_spSel();if(!sp)return;sp.rot=((sp.rot||0)+d+360)%360;salvar();renderFusao()}
+function fsEspelhar(){const sp=_spSel();if(!sp)return;sp.flip=!sp.flip;salvar();renderFusao()}
+function fsEscala(d){const sp=_spSel();if(!sp)return;sp.scale=Math.max(.5,Math.min(2.5,(sp.scale||1)+d));salvar();renderFusao()}
+function fsResetTransform(){const sp=_spSel();if(!sp)return;sp.rot=0;sp.flip=false;sp.scale=1;salvar();renderFusao()}
+function renderFsToolbar(){
+  let tb=document.getElementById('fs-transform-bar');
+  const sp=_spSel();
+  if(!sp){if(tb)tb.style.display='none';return}
+  if(!tb){
+    tb=document.createElement('div');tb.id='fs-transform-bar';
+    tb.style.cssText='position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 10px;display:flex;gap:6px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.5);font-size:12px';
+    const tela=document.getElementById('tela-fusao');tela.appendChild(tb);
+  }
+  tb.style.display='flex';
+  const cat=splitCatDe(sp);
+  tb.innerHTML=`<b style="color:var(--text-dim);font-size:11px;margin-right:2px">${cat?cat.nome:'Splitter'}</b>`+
+    `<button class="btn sm ghost" title="Girar -90°" onclick="fsGirar(-90)">↺</button>`+
+    `<button class="btn sm ghost" title="Girar +90°" onclick="fsGirar(90)">↻</button>`+
+    `<button class="btn sm ghost" title="Espelhar (mudar de lado)" onclick="fsEspelhar()">⇄</button>`+
+    `<button class="btn sm ghost" title="Diminuir" onclick="fsEscala(-.15)">−</button>`+
+    `<button class="btn sm ghost" title="Aumentar" onclick="fsEscala(.15)">＋</button>`+
+    `<button class="btn sm ghost" title="Resetar" onclick="fsResetTransform()">⭯</button>`+
+    `<button class="btn sm" title="Concluir" onclick="fsSelSp=null;renderFusao();renderFsToolbar()">✓</button>`;
 }
 function fsIniciarDrag(ev,id){
   const sp=getFus(fsCaixa).splitters.find(s=>s.id===id);
