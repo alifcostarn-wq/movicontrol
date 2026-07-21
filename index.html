@@ -4797,6 +4797,17 @@ textarea.cp-form-input{resize:vertical}
             </div>
             <div style="font-size:10.5px;color:var(--text3);margin-top:4px" id="cli-mapa-hint">Sem coordenadas do IXC — o mapa abre pelo endereço cadastrado.</div>
           </div>
+          <div class="form-group full" id="cli-fg-ftth" style="grid-column:1/-1">
+            <label class="form-label">🔌 Rede Fibra (FTTH) — projeto e caixa</label>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1.2;min-width:140px"><label style="font-size:10px;color:var(--text3)">Projeto FTTH</label><input type="text" id="cli-ftth-projeto" list="dl-ftth-projetos" style="width:100%" placeholder="Ex: FTTH MAISA" oninput="_ftthAtualizaCaixas()"></div>
+              <div style="flex:1.2;min-width:140px"><label style="font-size:10px;color:var(--text3)">Caixa (CTO)</label><input type="text" id="cli-ftth-caixa" list="dl-ftth-caixas" style="width:100%" placeholder="Ex: CTO-014"></div>
+              <div style="width:90px"><label style="font-size:10px;color:var(--text3)">Porta</label><input type="number" id="cli-ftth-porta" min="1" max="64" style="width:100%" placeholder="8"></div>
+            </div>
+            <datalist id="dl-ftth-projetos"></datalist>
+            <datalist id="dl-ftth-caixas"></datalist>
+            <div style="font-size:10.5px;color:var(--text3);margin-top:4px" id="cli-ftth-hint">Salvo no MoviOne (ftth_cliente_instalacao) — o mesmo vínculo que o técnico preenche no Campo e o MoviFiber mostra no mapa. Sugestões vêm dos projetos do MoviFiber neste navegador; pode digitar livremente.</div>
+          </div>
         </div>
       </div>
 
@@ -11627,6 +11638,9 @@ function abrirModalCliente(idx=null){
     el.value = v == null ? '' : v;
   });
 
+  // FTTH: carrega o vínculo projeto/caixa do cliente (isolado; não bloqueia o modal)
+  _ftthCarregarInstalacao(idx!==null ? parseInt(cli.id) : NaN);
+
   // Trava campos vindos do IXC
   CLI_CAMPOS.forEach(k => {
     const fg = document.getElementById('cli-fg-'+k);
@@ -12498,6 +12512,74 @@ async function salvarComodatoManual(){
   showToast('Equipamento adicionado ao comodato!');
 }
 
+// ══════════════════════════════════════════════════════════════
+//  FTTH — vínculo projeto/caixa do cliente (ftth_cliente_instalacao)
+//  Isolado: só roda dentro do modal de cliente; falha vira aviso, nunca quebra o salvar.
+// ══════════════════════════════════════════════════════════════
+let _ftthInstCache = null;
+function _ftthProjetosMF(){
+  try{ return (JSON.parse(localStorage.getItem('movifiber_v1')||'{}').projetos)||[] }catch(e){ return [] }
+}
+function _ftthPreencheDatalists(){
+  const projs=_ftthProjetosMF();
+  const dlP=document.getElementById('dl-ftth-projetos');
+  if(dlP) dlP.innerHTML=projs.map(p=>`<option value="${String(p.nome||'').replace(/"/g,'&quot;')}">`).join('');
+  _ftthAtualizaCaixas();
+}
+function _ftthAtualizaCaixas(){
+  const nomeProj=(document.getElementById('cli-ftth-projeto')?.value||'').trim().toLowerCase();
+  const projs=_ftthProjetosMF();
+  const p=projs.find(x=>String(x.nome||'').toLowerCase()===nomeProj)||null;
+  const ctos=p?(p.elementos||[]).filter(e=>e.tipo==='cto')
+              :projs.flatMap(x=>(x.elementos||[]).filter(e=>e.tipo==='cto'));
+  const dlC=document.getElementById('dl-ftth-caixas');
+  if(dlC) dlC.innerHTML=ctos.map(c=>`<option value="${String(c.nome||'').replace(/"/g,'&quot;')}">`).join('');
+}
+async function _ftthCarregarInstalacao(clienteId){
+  _ftthInstCache=null;
+  ['cli-ftth-projeto','cli-ftth-caixa','cli-ftth-porta'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
+  _ftthPreencheDatalists();
+  if(clienteId==null||isNaN(clienteId))return;
+  try{
+    const {data,error}=await sbClient.from('ftth_cliente_instalacao').select('*').eq('cliente_id',clienteId).maybeSingle();
+    if(error)throw error;
+    if(data){
+      _ftthInstCache=data;
+      const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v==null?'':v};
+      s('cli-ftth-projeto',data.projeto_ftth);
+      s('cli-ftth-caixa',data.caixa_nome);
+      s('cli-ftth-porta',data.porta);
+      _ftthAtualizaCaixas();
+    }
+  }catch(e){ console.warn('[ftth] instalação não carregada:', e.message); }
+}
+async function _ftthSalvarInstalacao(clienteId){
+  if(clienteId==null||isNaN(clienteId))return;
+  const g=id=>{const el=document.getElementById(id);return el?el.value.trim():''};
+  const proj=g('cli-ftth-projeto'), caixa=g('cli-ftth-caixa'), portaTxt=g('cli-ftth-porta');
+  const porta=portaTxt?parseInt(portaTxt):null;
+  const vazio=!proj&&!caixa&&porta==null;
+  try{
+    if(vazio){
+      if(_ftthInstCache) await sbClient.rpc('ftth_remover_instalacao',{p_cliente_id:clienteId});
+      return;
+    }
+    let caixaId=null;
+    for(const p of _ftthProjetosMF()){
+      const c=(p.elementos||[]).find(e=>e.tipo==='cto'&&String(e.nome||'').toLowerCase()===caixa.toLowerCase());
+      if(c){caixaId=c.id;break}
+    }
+    const {error}=await sbClient.rpc('ftth_upsert_instalacao',{
+      p_cliente_id:clienteId, p_projeto:proj||null,
+      p_caixa_id:caixaId, p_caixa_nome:caixa||null, p_porta:porta
+    });
+    if(error)throw error;
+  }catch(e){
+    console.warn('[ftth] instalação não salva:', e.message);
+    showToast('⚠️ Vínculo FTTH não salvo: '+e.message);
+  }
+}
+
 async function salvarCliente(){
   const nome = document.getElementById('cli-nome').value.trim();
   if(!nome){ showToast('Informe o nome.',true); return; }
@@ -12521,6 +12603,8 @@ async function salvarCliente(){
   // Usa a RPC, que FIXA a coordenada (não será sobrescrita pelo sync do IXC).
   const _cliId = _cliEditIdx!==null ? parseInt(lista[_cliEditIdx]?.id) : NaN;
   if(!isNaN(_cliId)){
+    // FTTH: grava o vínculo projeto/caixa no MoviOne (falha vira aviso, não bloqueia)
+    await _ftthSalvarInstalacao(_cliId);
     const _lat = _coordValida(dados.latitude);
     const _lng = _coordValida(dados.longitude);
     if(_lat!=null && _lng!=null){
