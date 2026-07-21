@@ -2331,10 +2331,22 @@ function salvarInteg(){store.set(INTEG_KEY,JSON.stringify(INTEG))}
 let clientesOne=[];
 try{clientesOne=JSON.parse(store.get('movifiber_clientes_one')||'[]')}catch(e){clientesOne=[]}
 
+function _proxyUrl(){
+  // URL configurada manualmente, OU o proxy do mesmo domínio (produção: /api/movifiber)
+  const u=(INTEG.proxyUrl||'').trim();
+  if(u)return u;
+  try{ if(location&&location.origin&&location.origin.startsWith('http'))return location.origin+'/api/movifiber'; }catch(e){}
+  return '/api/movifiber';
+}
 async function proxyMovifiber(body){
-  if(!INTEG.proxyUrl){toast('Configure a URL do proxy nas Configurações → Integração',true);abrirConfig();throw new Error('sem proxy')}
-  const r=await fetch(INTEG.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok)throw new Error('HTTP '+r.status);
+  const url=_proxyUrl();
+  let r;
+  try{
+    r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }catch(e){
+    throw new Error('não consegui acessar o proxy ('+url+') — verifique se api/movifiber.js está publicado');
+  }
+  if(!r.ok)throw new Error('proxy respondeu HTTP '+r.status+' ('+url+')');
   const d=await r.json();
   if(d.erro)throw new Error(d.erro);
   return d;
@@ -2365,7 +2377,10 @@ async function carregarClientesMoviOne(){
     const bb=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(bb,{padding:[60,60]});
     // consulta o IXC: casinhas ficam verde (online) / vermelho (offline)
     if(clientesOne.some(c=>c.ixcId))await atualizarStatusIXC();
-  }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
+  }catch(e){
+    camadasVisiveis.clienteone=false;renderCamadas();
+    toast('Falha ao carregar clientes: '+e.message,true);
+  }
 }
 function aplicarClientesMoviOne(lista){
   const statusPrev={};
@@ -2412,7 +2427,7 @@ async function atualizarStatusIXC(){
     store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
     renderTudo();
     toast('Status IXC: '+on+' online · '+off+' offline');
-  }catch(e){if(e.message!=='sem proxy')toast('Falha no IXC: '+e.message,true)}
+  }catch(e){toast('Falha no IXC: '+e.message,true)}
 }
 
 /* 3) Vincular caixa/CTO → grava no MoviOne */
@@ -2458,7 +2473,7 @@ async function salvarVinculoCTO(){
     }
     renderTudo();fecharModal('md-vincular-cto');mapa.closePopup();
     toast(c.nome+' vinculado a '+cto.nome+' porta '+porta+' (salvo no MoviOne)');
-  }catch(e){if(e.message!=='sem proxy')toast('Falha ao salvar: '+e.message,true)}
+  }catch(e){toast('Falha ao salvar: '+e.message,true)}
 }
 async function removerVinculoCTO(){
   const id=document.getElementById('vc-cliente-id').value;
@@ -2470,7 +2485,7 @@ async function removerVinculoCTO(){
     store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
     renderTudo();fecharModal('md-vincular-cto');
     toast('Vínculo removido');
-  }catch(e){if(e.message!=='sem proxy')toast('Falha: '+e.message,true)}
+  }catch(e){toast('Falha ao carregar clientes: '+e.message,true)}
 }
 function renderClientesTopbar(){
   const tb=document.getElementById('clientes-topbar');
@@ -2606,6 +2621,7 @@ function abrirConfig(){
   document.getElementById('cf-rviab').value=c.raioViab;
   document.getElementById('cf-tiles').value=c.tiles;
   document.getElementById('cf-proxy').value=INTEG.proxyUrl||'';
+  document.getElementById('cf-proxy').placeholder=_proxyUrl();
   abrirModal('md-config');
 }
 function salvarConfig(){
