@@ -11,7 +11,7 @@
 //   IXC (isolado aqui)  ->  SOMENTE online/offline + potencia da ONU.
 //
 // ENV VARS (reutiliza as existentes; NAO crie novas):
-//   SUPABASE_URL, SUPABASE_SERVICE_KEY, IXC_TOKEN
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, IXC_TOKEN
 //
 // ACOES (POST /api/movifiber, body {acao:"..."}):
 //   - "clientes-movione"   -> {projeto?}  Clientes do MoviOne com lat/lng +
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
 
 // ─────────── MoviOne (Supabase): localizacao + vinculo FTTH ───────────
 function sbHeaders() {
-  return { apikey: process.env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}` };
+  return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` };
 }
 async function clientesMoviOne(projeto) {
   // embute a instalacao (FK cliente_id -> clientes) via PostgREST
