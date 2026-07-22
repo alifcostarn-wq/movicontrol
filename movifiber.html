@@ -240,6 +240,7 @@ input:focus,select:focus{border-color:var(--accent)}
 .mk .pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.6)}
 .mk .lbl{margin-top:2px;background:rgba(13,15,20,.85);padding:1px 6px;border-radius:5px;font-size:9.5px;white-space:nowrap;font-weight:600}
 .pin-pop{background:#7B2ED8}.pin-cto{background:#1E5AD8}.pin-ceo{background:#E87818}.pin-reserva{background:#8A8A8A}
+.pin-poste-real{background:#6B4A28}
 .pin-poste{background:#8A6A3A;width:16px !important;height:16px !important;font-size:8px !important}
 .mk.st-implantado .pin{border-color:var(--st-impl)}
 .mk.st-certificado .pin{border-color:var(--st-cert)}
@@ -617,6 +618,19 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
             <option value="1:2">1:2 Desbalanceado</option>
           </select>
         </div>
+        <div class="campo" id="el-campo-cor" style="display:none"><label>Cor do ícone da CTO</label>
+          <select id="el-cor">
+            <option value="">Padrão (azul)</option>
+            <option value="#1E5AD8">Azul</option>
+            <option value="#3CB371">Verde</option>
+            <option value="#E8C818">Amarelo</option>
+            <option value="#FF3B30">Vermelho</option>
+            <option value="#B98AE8">Roxo</option>
+            <option value="#FF8A3C">Laranja</option>
+            <option value="#00E5FF">Ciano</option>
+            <option value="#8A8A8A">Cinza</option>
+          </select>
+        </div>
       </div>
       <div id="el-campo-poste" style="display:none">
         <div class="dr-sec" style="margin-top:8px">⚡ Dados do Poste</div>
@@ -711,7 +725,31 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       </div>
       <div class="linha2">
         <div class="campo"><label>Folga / sobra (%)</label><input id="cb-folga" type="number" value="10" min="0" max="50"></div>
-        <div class="campo"><label>Padrão de cores</label><select disabled><option>ABNT (Brasil)</option></select></div>
+        <div class="campo"><label>Largura da linha</label>
+          <select id="cb-largura">
+            <option value="">Automática (pela fibra)</option>
+            <option value="1.5">Fina (1.5)</option>
+            <option value="2.5">Média (2.5)</option>
+            <option value="4">Grossa (4)</option>
+            <option value="6">Extra grossa (6)</option>
+            <option value="8">Máxima (8)</option>
+          </select></div>
+      </div>
+      <div class="linha2">
+        <div class="campo"><label>Cor da linha</label>
+          <select id="cb-cor">
+            <option value="">Automática (pelo tipo)</option>
+            <option value="#E8C818">Amarelo</option>
+            <option value="#5B9BFF">Azul</option>
+            <option value="#3CB371">Verde</option>
+            <option value="#FF3B30">Vermelho</option>
+            <option value="#B98AE8">Roxo</option>
+            <option value="#FF8A3C">Laranja</option>
+            <option value="#00E5FF">Ciano</option>
+            <option value="#FFFFFF">Branco</option>
+          </select></div>
+        <div class="campo"><label>Estilo</label>
+          <select id="cb-estilo"><option value="">Automático</option><option value="solid">Sólida</option><option value="dash">Tracejada</option></select></div>
       </div>
       <div class="info-box">
         Comprimento geométrico: <b class="mono" id="cb-geo">—</b><br>
@@ -1136,10 +1174,10 @@ window.__leafletPronto=new Promise(function(resolve){
 const _ic=(inner)=>`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 const ICONS={
   navegar:_ic('<path d="M4 4l16 7-7 2-2 7z"/>'),
-  pop:_ic('<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3"/>'),
-  cto:_ic('<rect x="4" y="5" width="16" height="12" rx="2"/><path d="M12 17v5M8 9h.01M12 9h.01M16 9h.01M8 13h8"/>'),
-  ceo:_ic('<rect x="3" y="8" width="18" height="8" rx="4"/><path d="M1 12h2M21 12h2M8 12h.01M12 12h.01M16 12h.01"/>'),
-  poste:_ic('<path d="M12 3v19M5 6h14M8 6l-2.5 4M16 6l2.5 4M12 3v0"/>'),
+  pop:_ic('<path d="M4 20V8l8-4 8 4v12M4 20h16M8 20v-5h3v5M13 12h3v8M8 9h2M14 9h2"/>'),
+  cto:_ic('<rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M5 8h14M9 4v4M15 4v4M8 13h8M8 16h8M12 20v2"/>'),
+  ceo:_ic('<path d="M5 7h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1V8a1 1 0 011-1z"/><path d="M2 12h2M20 12h2M8 7V5M16 7V5M9 11h6M9 14h6"/>'),
+  poste:_ic('<path d="M12 2v20M12 4c-3 0-6 1-9 2M12 4c3 0 6 1 9 2M12 9c-2.5 0-5 .8-7.5 1.8M12 9c2.5 0 5 .8 7.5 1.8"/>'),
   reserva:_ic('<circle cx="12" cy="12" r="5.5"/><path d="M1.5 12h5M17.5 12h5"/>'),
   cliente:_ic('<path d="M3 11l9-7 9 7M5.5 9.5V20h13V9.5"/><rect x="10" y="14" width="4" height="6"/>'),
   cabo:_ic('<path d="M2 15c4-9 7 9 11 0s4-9 9 0"/>'),
@@ -1507,6 +1545,7 @@ const HINTS={
   poste:'<b>Adicionando Poste:</b> clique no mapa — cabos traçados depois "grudam" nos postes próximos',
   regua:'<b>Régua:</b> clique para marcar pontos e medir a distância · duplo-clique ou Esc para finalizar',
   otdr:'<b>OTDR:</b> clique em um cabo para simular a varredura óptica (eventos, distâncias e perdas ao longo da fibra)',
+  romper:'<b>Romper cabo:</b> clique no ponto onde o cabo passa pela caixa — parte das fibras fica (sangria) e o resto segue',
   viab:'<b>Viabilidade:</b> clique em qualquer ponto do mapa para analisar o atendimento'
 };
 function attHint(){document.getElementById('hint').innerHTML=HINTS[modo]}
@@ -1559,6 +1598,7 @@ function cliqueMapa(e){
   }
   if(modo==='viab'){viabilidadePonto(ll);return}
   if(modo==='regua'){reguaClique(ll);return}
+  if(modo==='romper'){romperNoPonto(ll);return}
   if(modo==='cabo'){
     const alt=e.originalEvent&&e.originalEvent.altKey;
     const cxSnap=alt?null:caixaProximaPx(ll,22);
@@ -1710,13 +1750,15 @@ function renderTudo(){
     const _tag=projAtual._todos&&c._proj?` · <span class="pp-badge">${c._proj}</span>`:'';
     const geo=medirCabo(c.pontos), tot=geo*(1+(c.folga||0)/100);
     const est=estiloCabo(c);
-    layerRefs[c.id]=L.polyline(c.pontos,{color:CORES_CABO[c.tipo],weight:est.weight,dashArray:est.dashArray,opacity:.95})
+    const corCabo=c.cor||CORES_CABO[c.tipo];
+    layerRefs[c.id]=L.polyline(c.pontos,{color:corCabo,weight:est.weight,dashArray:est.dashArray,opacity:.95})
       .on('click',(ev)=>{if(modo==='otdr'){if(ev&&ev.originalEvent)L.DomEvent.stop(ev);otdrClicarCabo(c);return}if(modo==='navegar')editarTracado(c.id,true)})
       .bindPopup(`<div class="pp-title">${c.nome}<span class="pp-badge">${c.fo}FO</span>${_tag}</div>
         <div class="pp-meta">${c.tipo} · <span class="tag ${c.status}">${labelStatus(c.status)}</span></div>
         <div class="pp-meta mono">Geométrico: ${geo.toFixed(0)} m · Total: ${tot.toFixed(0)} m</div>
         <div class="pp-meta">${nomeEl(c.origemId)||'—'} ⇄ ${nomeEl(c.destinoId)||'—'}</div>
-        <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button></div>`).addTo(mapa);
+        ${c.sangria?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria: ${c.sangria.fibrasNaCaixa} fibra(s) na caixa · ${c.sangria.fibrasSeguem} seguem</div>`:''}
+        <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
   });
   // clientes MoviOne (localização + vínculo) · status IXC opcional
   if(camadasVisiveis.clienteone)clientesOne.forEach(c=>{
@@ -1771,7 +1813,8 @@ function renderTudo(){
       const tag=`<div style="position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:1px;background:rgba(17,19,24,.85);border:1px solid #2C3040;border-radius:4px;padding:0 4px;font-size:7.5px;color:${cor};white-space:nowrap;line-height:1.5">${txt}${e.poste.suporte?' · '+e.poste.suporte:''}</div>`;
       ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}" style="position:relative"><div class="pin pin-poste">${ICONS.poste||''}</div>${tag}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
     }else{
-      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}">${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
+      const corInline=(e.tipo==='cto'&&e.cor)?` style="background:${e.cor}"`:'';
+      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}"${corInline}>${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
     }
     const mk=L.marker([e.lat,e.lng],{icon:ic,draggable:modo==='navegar'});
     mk.on('dragend',ev=>{const p=ev.target.getLatLng();e.lat=p.lat;e.lng=p.lng;salvar();renderTudo()});
@@ -1883,6 +1926,8 @@ function abrirModalElemento(id){
   document.getElementById('el-nome').value=e.nome;
   document.getElementById('el-status').value=e.status;
   document.getElementById('el-campo-splitter').style.display=e.tipo==='cto'?'':'none';
+  document.getElementById('el-campo-cor').style.display=e.tipo==='cto'?'':'none';
+  if(e.tipo==='cto')document.getElementById('el-cor').value=e.cor||'';
   // campos ricos do poste
   const ehPoste=e.tipo==='poste';
   document.getElementById('el-campo-poste').style.display=ehPoste?'':'none';
@@ -1921,7 +1966,7 @@ function salvarElemento(){
   const e=projAtual.elementos.find(x=>x.id===document.getElementById('el-id').value);
   e.nome=document.getElementById('el-nome').value.trim()||e.nome;
   e.status=document.getElementById('el-status').value;
-  if(e.tipo==='cto')e.splitter=document.getElementById('el-splitter').value;
+  if(e.tipo==='cto'){e.splitter=document.getElementById('el-splitter').value;e.cor=document.getElementById('el-cor').value||null}
   if(e.tipo==='poste'){
     const g=id=>{const el=document.getElementById(id);return el?el.value:''};
     e.poste={proprietario:g('pst-prop'),material:g('pst-mat'),altura:g('pst-alt'),
@@ -1952,6 +1997,9 @@ function abrirModalCabo(id){
   document.getElementById('cb-tipo').value=c.tipo;
   document.getElementById('cb-status').value=c.status;
   document.getElementById('cb-folga').value=c.folga;
+  document.getElementById('cb-largura').value=c.largura||'';
+  document.getElementById('cb-cor').value=c.cor||'';
+  document.getElementById('cb-estilo').value=c.estilo||'';
   const geo=medirCabo(c.pontos);
   document.getElementById('cb-geo').textContent=geo.toFixed(0)+' m';
   document.getElementById('cb-total').textContent=(geo*(1+c.folga/100)).toFixed(0)+' m';
@@ -1966,10 +2014,90 @@ function salvarCabo(){
   c.tipo=document.getElementById('cb-tipo').value;
   c.status=document.getElementById('cb-status').value;
   c.folga=+document.getElementById('cb-folga').value||0;
+  c.largura=document.getElementById('cb-largura').value||null;
+  c.cor=document.getElementById('cb-cor').value||null;
+  c.estilo=document.getElementById('cb-estilo').value||null;
   salvar();renderTudo();fecharModal('md-cabo');toast('Alterações salvas');
 }
 function excluirCabo(){
   if(excluirCaboDireto(document.getElementById('cb-id').value))fecharModal('md-cabo');
+}
+/* ===== ROMPER CABO (sangria: parte das fibras fica na caixa, resto segue) ===== */
+let romperCaboId=null;
+function iniciarRomper(id){
+  romperCaboId=id;
+  mapa.closePopup();
+  setModo('romper');
+  toast('Clique no ponto do cabo onde ele passa pela caixa (CTO/CEO) para romper');
+}
+function romperNoPonto(ll){
+  const c=projAtual.cabos.find(x=>x.id===romperCaboId);
+  if(!c){setModo('navegar');return}
+  // acha o vértice/segmento mais próximo do clique
+  const pts=c.pontos;
+  let melhorIdx=0, melhorD=Infinity, pontoNoCabo=null;
+  for(let i=0;i<pts.length-1;i++){
+    const proj=projetarNoSegmento(ll,pts[i],pts[i+1]);
+    const d=mapa.distance(ll,proj);
+    if(d<melhorD){melhorD=d;melhorIdx=i;pontoNoCabo=proj}
+  }
+  if(melhorD>60){toast('Clique mais perto do cabo',true);return}
+  // caixa mais próxima do ponto de rompimento
+  const caixa=elementoProximo(pontoNoCabo,80);
+  abrirModalRomper(c,melhorIdx,pontoNoCabo,caixa);
+}
+function projetarNoSegmento(p,a,b){
+  // projeção aproximada em lat/lng (suficiente para distâncias curtas)
+  const ax=a[1],ay=a[0],bx=b[1],by=b[0],px=p[1]||p.lng,py=p[0]||p.lat;
+  const dx=bx-ax,dy=by-ay;
+  const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/((dx*dx+dy*dy)||1)));
+  return [ay+t*dy, ax+t*dx];
+}
+function abrirModalRomper(c,segIdx,ponto,caixaId){
+  const caixaNome=caixaId?nomeEl(caixaId):null;
+  const html=`
+    <div class="info-box">Cabo <b>${c.nome}</b> (${c.fo}FO) será dividido em <b>2 segmentos</b> no ponto de rompimento${caixaNome?' na caixa <b>'+caixaNome+'</b>':''}.</div>
+    <div class="campo"><label>Quantas fibras FICAM na caixa (sangria)?</label>
+      <input type="number" id="rmp-fibras" min="1" max="${c.fo}" value="${Math.min(2,c.fo)}"></div>
+    <div class="campo"><label>Nome do segmento que continua</label>
+      <input id="rmp-nome" value="${c.nome} (continuação)"></div>
+    <div class="info-box" style="font-size:11px">O 1º segmento (até a caixa) mantém as <b>${c.fo}</b> fibras. O 2º segmento (após a caixa) fica com <b class="mono" id="rmp-resto">${c.fo-Math.min(2,c.fo)}</b> fibras (as que não sangraram). ${caixaNome?'A caixa '+caixaNome+' recebe a sangria.':'⚠️ Nenhuma caixa próxima — o rompimento será só geométrico.'}</div>`;
+  abrirModalGenerico('✂️ Romper cabo — sangria',html);
+  // botão de confirmar no rodapé do modal genérico
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost" onclick="fecharModal('md-generico');setModo('navegar')">Cancelar</button><button class="btn" onclick="confirmarRomper('${c.id}',${segIdx},${ponto[0]},${ponto[1]},'${caixaId||''}')">✂️ Romper</button>`;
+  // atualiza o "resto" ao digitar
+  setTimeout(()=>{const inp=document.getElementById('rmp-fibras');if(inp)inp.oninput=()=>{const r=document.getElementById('rmp-resto');if(r)r.textContent=Math.max(0,c.fo-(+inp.value||0))}},50);
+}
+function confirmarRomper(cid,segIdx,plat,plng,caixaId){
+  const c=projAtual.cabos.find(x=>x.id===cid);
+  if(!c)return;
+  const fibrasSangria=Math.max(1,Math.min(c.fo,+document.getElementById('rmp-fibras').value||1));
+  const nomeCont=document.getElementById('rmp-nome').value.trim()||(c.nome+' (cont.)');
+  const ponto=[plat,plng];
+  // segmento 1: do início até o ponto de rompimento (inclui o ponto)
+  const pts1=c.pontos.slice(0,segIdx+1).concat([ponto]);
+  // segmento 2: do ponto até o fim
+  const pts2=[ponto].concat(c.pontos.slice(segIdx+1));
+  if(pts2.length<2){toast('Ponto muito próximo da ponta — nada a romper',true);return}
+  // registra a sangria na caixa
+  if(caixaId){
+    if(!c.sangrias)c.sangrias=[];
+  }
+  // atualiza o cabo original como segmento 1 (mantém fo, ganha destino na caixa)
+  const foRestante=c.fo-fibrasSangria;
+  c.pontos=pts1;
+  if(caixaId)c.destinoId=caixaId;
+  c.sangria={caixa:caixaId||null,fibrasNaCaixa:fibrasSangria,fibrasSeguem:foRestante};
+  // cria segmento 2 com as fibras que seguem
+  projAtual.seq.cabo++;
+  const seg2={id:uid('cabo'),nome:nomeCont,fo:Math.max(1,foRestante),tipo:c.tipo,status:c.status,
+    folga:c.folga,largura:c.largura,cor:c.cor,estilo:c.estilo,pontos:pts2,
+    origemId:caixaId||null,destinoId:elementoProximo(pts2[pts2.length-1]),
+    _rompidoDe:c.id};
+  projAtual.cabos.push(seg2);
+  salvar();renderTudo();fecharModal('md-generico');setModo('navegar');romperCaboId=null;
+  toast('✂️ Cabo rompido: '+fibrasSangria+' fibra(s) na caixa · '+foRestante+' seguem em "'+nomeCont+'"');
 }
 function excluirCaboDireto(id){
   if(!confirm('Excluir este cabo?'))return false;
@@ -3677,11 +3805,17 @@ function catCaboDe(c){return CAT.catCabos.find(x=>x.id===c.catId)||CAT.catCabos.
 function dbCabo(c){const cat=catCaboDe(c);return cat?cat.db:PERDAS.fibraKm}
 function estiloCabo(c){
   const fo=c.fo||12;
-  if(fo<=2)return{weight:2.5,dashArray:'4 6'};
-  if(fo<=6)return{weight:3,dashArray:'10 5'};
-  if(fo<=12)return{weight:4,dashArray:null};
-  if(fo<=24)return{weight:5.5,dashArray:null};
-  return{weight:7,dashArray:null};
+  let base;
+  if(fo<=2)base={weight:2.5,dashArray:'4 6'};
+  else if(fo<=6)base={weight:3,dashArray:'10 5'};
+  else if(fo<=12)base={weight:4,dashArray:null};
+  else if(fo<=24)base={weight:5.5,dashArray:null};
+  else base={weight:7,dashArray:null};
+  // overrides do usuário
+  if(c.largura)base.weight=+c.largura;
+  if(c.estilo==='solid')base.dashArray=null;
+  else if(c.estilo==='dash')base.dashArray=base.dashArray||'8 6';
+  return base;
 }
 function splitCatDe(sp){return sp.cat?CAT.catSplit.find(c=>c.id===sp.cat):null}
 function nSaidasSp(sp){const c=splitCatDe(sp);if(c)return c.saidas;return +String(sp.ratio||'1:2').split(':')[1]||2}
