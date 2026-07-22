@@ -633,7 +633,44 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
           <div class="campo"><label>Transformador</label>
             <select id="pst-trafo"><option value="nao">Não</option><option value="sim">Sim (com trafo)</option></select></div>
         </div>
+        <div class="dr-sec" style="margin-top:8px">🔧 Fixação do cabo neste poste</div>
+        <div class="linha2">
+          <div class="campo"><label>Função</label>
+            <select id="pst-fixacao" onchange="_pstFixMudou()">
+              <option value="passagem">↔ Passagem (suspensão)</option>
+              <option value="ancoragem">⚓ Ancoragem (esforço)</option>
+              <option value="derivacao">⤳ Derivação (atendimento)</option>
+              <option value="passagem-ancoragem">↔⚓ Passagem + Ancoragem</option>
+            </select></div>
+          <div class="campo"><label>Modelo do suporte</label>
+            <select id="pst-suporte">
+              <optgroup label="SIPA (injetado PP)">
+                <option value="SIPA">SIPA</option>
+                <option value="SIPA-4V">SIPA 4 vias</option>
+                <option value="SIPA-U">SIPA-U (multifunção)</option>
+              </optgroup>
+              <optgroup label="SUPA (universal)">
+                <option value="SUPA">SUPA</option>
+                <option value="SUPA-01">SUPA-01</option>
+                <option value="SUPA-FS">SUPA FS (8 cabos)</option>
+                <option value="SUPA-SC01">SUPA SC01</option>
+              </optgroup>
+              <optgroup label="Outros">
+                <option value="alca-preformada">Alça pré-formada</option>
+                <option value="roldana">Roldana</option>
+                <option value="outro">Outro</option>
+                <option value="">— não definido —</option>
+              </optgroup>
+            </select></div>
+        </div>
+        <div class="linha2">
+          <div class="campo"><label>Qtd. de cabos no suporte</label>
+            <select id="pst-qtdcabos"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4+</option></select></div>
+          <div class="campo"><label>Reserva técnica no poste</label>
+            <select id="pst-reserva"><option value="nao">Não</option><option value="sim">Sim (sobra de cabo)</option></select></div>
+        </div>
         <div class="campo"><label>Ocupação / observações</label><input id="pst-obs" placeholder="Ex: já tem 2 cabos de TV, espaço para 1 fibra"></div>
+        <div class="info-box" id="pst-fix-info" style="margin-top:6px"></div>
       </div>
       <div class="info-box" id="el-info"></div>
     </div>
@@ -1718,7 +1755,25 @@ function renderTudo(){
   projAtual.elementos.forEach(e=>{
     if(!camadasVisiveis[e.tipo])return;
     const lbl=e.tipo==='poste'?'':`<div class="lbl">${e.nome}</div>`;
-    const ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}">${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
+    let ic;
+    if(e.tipo==='poste'){
+      // ícone do poste diferenciado por função de fixação (inovação de campo)
+      const fx=(e.poste&&e.poste.fixacao)||'passagem';
+      const anc=fx.includes('ancoragem');
+      const deriv=fx==='derivacao';
+      // ancoragem = losango firme laranja/vermelho · passagem = círculo aberto verde · derivação = triângulo
+      const cor=anc?'#FF8A3C':(deriv?'#B98AE8':'#3CB371');
+      const glow=anc?'filter:drop-shadow(0 0 3px rgba(255,138,60,.8));':'';
+      let shape;
+      if(anc)shape=`<path d="M11 2 L20 11 L11 20 L2 11 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.5"/><path d="M11 6 L16 11 L11 16 L6 11 Z" fill="none" stroke="#0B0D11" stroke-width="1"/>`;
+      else if(deriv)shape=`<path d="M11 2 L20 19 L2 19 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.5"/>`;
+      else shape=`<circle cx="11" cy="11" r="8" fill="none" stroke="${cor}" stroke-width="3"/><circle cx="11" cy="11" r="2.5" fill="${cor}"/>`;
+      const svg=`<svg viewBox="0 0 22 22" width="20" height="20" style="${glow}">${shape}</svg>`;
+      const supBadge=(e.poste&&e.poste.suporte)?`<div style="position:absolute;top:-6px;right:-8px;background:#1A1D26;border:1px solid #2C3040;border-radius:4px;padding:0 3px;font-size:7px;color:#C9CDD6;white-space:nowrap">${e.poste.suporte}</div>`:'';
+      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}" style="position:relative">${svg}${supBadge}</div>`,iconSize:[22,22],iconAnchor:[11,11]});
+    }else{
+      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}">${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
+    }
     const mk=L.marker([e.lat,e.lng],{icon:ic,draggable:modo==='navegar'});
     mk.on('dragend',ev=>{const p=ev.target.getLatLng();e.lat=p.lat;e.lng=p.lng;salvar();renderTudo()});
     mk.bindPopup(popupElemento(e));
@@ -1744,8 +1799,16 @@ function popupElemento(e){
     if(p.esforco)bits.push(p.esforco+' daN');
     posteInfo=`<div class="pp-meta">${bits.join(' · ')||'sem dados'}</div>`
       +(p.numero?`<div class="pp-meta mono">Nº ${p.numero}</div>`:'')
-      +(p.trafo==='sim'?`<div class="pp-meta" style="color:var(--warn)">⚡ Com transformador</div>`:'')
-      +(p.obs?`<div class="pp-meta" style="font-size:11px;color:var(--text-dim)">${p.obs}</div>`:'');
+      +(p.trafo==='sim'?`<div class="pp-meta" style="color:var(--warn)">⚡ Com transformador</div>`:'');
+    // fixação (função + suporte) — destaque visual
+    if(p.fixacao){
+      const fxLabel={passagem:'↔ Passagem',ancoragem:'⚓ Ancoragem',derivacao:'⤳ Derivação','passagem-ancoragem':'↔⚓ Passagem + Ancoragem'}[p.fixacao]||p.fixacao;
+      const anc=p.fixacao.includes('ancoragem');
+      posteInfo+=`<div class="pp-meta" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><b style="color:${anc?'#FF8A3C':'#5FE0A0'}">${fxLabel}</b>${p.suporte?' · suporte <b>'+p.suporte+'</b>':''}</div>`;
+      if(p.qtdCabos&&+p.qtdCabos>1)posteInfo+=`<div class="pp-meta mono" style="font-size:11px">${p.qtdCabos} cabos no suporte</div>`;
+      if(p.reserva==='sim')posteInfo+=`<div class="pp-meta" style="font-size:11px;color:#5B9BFF">🔄 Reserva técnica neste poste</div>`;
+    }
+    posteInfo+=(p.obs?`<div class="pp-meta" style="font-size:11px;color:var(--text-dim)">${p.obs}</div>`:'');
   }
   let acoes=`<button class="btn sm" onclick="abrirModalElemento('${e.id}')">✏️ Editar</button>`;
   if(e.tipo==='pop')acoes+=`<button class="btn sm ghost" onclick="abrirEditorPop('${e.id}')">🖥 Equipamentos</button>`;
@@ -1830,6 +1893,9 @@ function abrirModalElemento(id){
     sv('pst-prop',p.proprietario,'Concessionária');sv('pst-mat',p.material,'Concreto (DT)');
     sv('pst-alt',p.altura);sv('pst-esf',p.esforco);sv('pst-num',p.numero);
     sv('pst-trafo',p.trafo,'nao');sv('pst-obs',p.obs);
+    sv('pst-fixacao',p.fixacao,'passagem');sv('pst-suporte',p.suporte,'SIPA');
+    sv('pst-qtdcabos',p.qtdCabos,'1');sv('pst-reserva',p.reserva,'nao');
+    _pstFixMudou();
   }
   document.getElementById('el-splitter').innerHTML='<option value="">— sem splitter —</option>'+
     CAT.catSplit.filter(c=>c.tipo==='bal').map(c=>`<option value="${c.nome}">${c.nome}${c.con?' APC':''} · −${c.perdas[0]}dB</option>`).join('');
@@ -1837,6 +1903,20 @@ function abrirModalElemento(id){
   const cabosLig=projAtual.cabos.filter(c=>c.origemId===id||c.destinoId===id);
   document.getElementById('el-info').innerHTML='Cabos vinculados: <b>'+(cabosLig.length?cabosLig.map(c=>c.nome).join(', '):'nenhum')+'</b><br>Coordenadas: <b class="mono">'+e.lat.toFixed(6)+', '+e.lng.toFixed(6)+'</b>';
   mapa.closePopup();abrirModal('md-elemento');
+}
+function _pstFixMudou(){
+  // dica visual: ancoragem costuma exigir suporte mais robusto
+  const fx=document.getElementById('pst-fixacao').value;
+  const info=document.getElementById('pst-fix-info');
+  if(fx&&info){
+    const dicas={
+      'passagem':'↔ Passagem: cabo apenas suspenso (roldana/SIPA). Sem esforço mecânico.',
+      'ancoragem':'⚓ Ancoragem: cabo tracionado/terminado. Use suporte robusto (SUPA/SIPA-U) + alça pré-formada.',
+      'derivacao':'⤳ Derivação: sangria para atendimento de cliente.',
+      'passagem-ancoragem':'↔⚓ Poste de passagem que também ancora (mudança de direção/vão longo).'
+    };
+    info.textContent=dicas[fx]||'';
+  }
 }
 function salvarElemento(){
   const e=projAtual.elementos.find(x=>x.id===document.getElementById('el-id').value);
@@ -1846,7 +1926,8 @@ function salvarElemento(){
   if(e.tipo==='poste'){
     const g=id=>{const el=document.getElementById(id);return el?el.value:''};
     e.poste={proprietario:g('pst-prop'),material:g('pst-mat'),altura:g('pst-alt'),
-      esforco:g('pst-esf'),numero:g('pst-num'),trafo:g('pst-trafo'),obs:g('pst-obs')};
+      esforco:g('pst-esf'),numero:g('pst-num'),trafo:g('pst-trafo'),obs:g('pst-obs'),
+      fixacao:g('pst-fixacao'),suporte:g('pst-suporte'),qtdCabos:g('pst-qtdcabos'),reserva:g('pst-reserva')};
   }
   salvar();renderTudo();fecharModal('md-elemento');toast('Alterações salvas');
 }
@@ -3625,23 +3706,44 @@ function viabilidadePonto(ll){
   } else {
     const ok=cands.find(x=>x.livres>0);
     html=`<div class="info-box">Ponto analisado: <b class="mono">${ll[0].toFixed(5)}, ${ll[1].toFixed(5)}</b> · raio ${cfg().raioViab}m</div>`;
+    // link budget do DROP: fibra drop (~0.35 dB/km) + 2 conectores (~0.3 dB cada)
+    const DROP_DBKM=0.35, CONECTOR=0.3;
     html+=cands.slice(0,4).map(x=>{
       const orc=calcOrcamento(x.c.id);
-      const rxTxt=orc?('RX est. <b class="mono">'+orc.rx.toFixed(2)+' dBm</b>'):'<span style="color:var(--text-dim)">sem caminho óptico projetado</span>';
+      const perdaDrop=(x.d/1000)*DROP_DBKM + CONECTOR*2;
+      const rxFinal=orc?(orc.rx - perdaDrop):null;  // RX na casa do cliente = RX na CTO - perda do drop
+      const rxOk=rxFinal!=null&&rxFinal>=-27&&rxFinal<=-8;
+      const rxTxt=orc?(`RX cliente <b class="mono" style="color:${rxOk?'#5FE0A0':'#FF8A80'}">${rxFinal.toFixed(2)} dBm</b> <span style="color:var(--text-dim)">(CTO ${orc.rx.toFixed(1)} − drop ${perdaDrop.toFixed(2)})</span>`):'<span style="color:var(--text-dim)">projete o caminho óptico da CTO ao POP</span>';
       return `<div class="orc-item"><div class="orc-num" style="border-color:${x.livres>0?'var(--accent)':'var(--danger)'}">${x.livres>0?'✓':'✗'}</div>
-        <div class="orc-info"><b>${x.c.nome}</b><span>${x.d.toFixed(0)} m · ${x.livres}/${portasCTO(x.c.id)} porta(s) livre(s) · ${rxTxt}</span></div>
+        <div class="orc-info"><b>${x.c.nome}</b><span>${x.d.toFixed(0)} m · ${x.livres}/${portasCTO(x.c.id)} livre(s) · ${rxTxt}</span></div>
         <div class="orc-db">${x.d.toFixed(0)}m</div></div>`;
     }).join('');
+    // postes de ancoragem/passagem próximos do trajeto (ajuda o projeto do drop)
+    const postesProx=projAtual.elementos.filter(e=>e.tipo==='poste')
+      .map(p=>({p,d:mapa.distance(ll,[p.lat,p.lng])}))
+      .filter(x=>x.d<=cfg().raioViab).sort((a,b)=>a.d-b.d).slice(0,3);
+    if(postesProx.length){
+      html+=`<div class="dr-sec" style="margin-top:10px">🔧 Postes de apoio próximos (para o drop)</div>`;
+      html+=postesProx.map(x=>{
+        const fx=(x.p.poste&&x.p.poste.fixacao)||'—';
+        const sup=(x.p.poste&&x.p.poste.suporte)||'';
+        const anc=fx.includes('ancoragem');
+        return `<div class="pp-meta" style="font-size:12px">${anc?'⚓':'↔'} <b>${x.p.nome}</b> · ${x.d.toFixed(0)}m · ${fx}${sup?' · '+sup:''}</div>`;
+      }).join('');
+    }
     if(ok){
       const orc=calcOrcamento(ok.c.id);
-      const rxOk=orc&&orc.rx>=-25&&orc.rx<=-8;
+      const perdaDrop=(ok.d/1000)*0.35 + 0.3*2;
+      const rxFinal=orc?(orc.rx-perdaDrop):null;
+      const rxOk=rxFinal!=null&&rxFinal>=-27&&rxFinal<=-8;
+      const veredito=!orc?'✅ VIÁVEL (projete o óptico p/ confirmar sinal)':(rxOk?'✅ VIÁVEL':'⚠️ VIÁVEL, MAS SINAL LIMÍTROFE');
       html+=`<div class="orc-total ${(!orc||rxOk)?'ok':'ruim'}">
-        <span>${(!orc||rxOk)?'✅ VIÁVEL':'⚠️ VERIFICAR SINAL'}</span>
-        <span>atender por <b>${ok.c.nome}</b> porta ${proximaPorta(ok.c.id)}</span></div>`;
+        <span>${veredito}</span>
+        <span>atender por <b>${ok.c.nome}</b> porta ${proximaPorta(ok.c.id)}${rxFinal!=null?' · RX ~'+rxFinal.toFixed(1)+' dBm':''}</span></div>`;
       if(!orc)html+=`<div style="font-size:11px;color:var(--text-dim);margin-top:8px">💡 Projete as fusões da ${ok.c.nome} até o POP para validar também o orçamento óptico.</div>`;
     } else html+=`<div class="orc-total ruim"><span>❌ INVIÁVEL</span><span>CTOs próximas saturadas</span></div>`;
   }
-  html+=`<div class="info-box" style="margin-top:12px">💡 Na versão integrada, esta análise será a RPC de <b>viabilidade da tela de vendas</b> (PostGIS + tabela clientes/IXC).</div>`;
+  html+=`<div class="info-box" style="margin-top:12px">📊 <b>Link budget do drop</b>: RX no cliente = RX na CTO − (distância × 0,35 dB/km + 2 conectores × 0,3 dB). Faixa saudável: −8 a −27 dBm.</div>`;
   document.getElementById('viab-body').innerHTML=html;
   abrirModal('md-viab');
 }
