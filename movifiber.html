@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoviFiber — Projetos FTTH (Protótipo v1)</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -883,6 +884,50 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     </div>
   </div>
   <div id="pop-canvas-wrap"><svg id="pop-svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+  <!-- MODAL: Adicionar/Editar OLT (chassi) -->
+  <div class="modal-bg" id="md-olt">
+    <div class="modal">
+      <div class="md-head"><b id="olt-titulo">🖥 Adicionar OLT</b><button class="x" onclick="fecharModal('md-olt')">✕</button></div>
+      <div class="md-body">
+        <input type="hidden" id="olt-id">
+        <div class="campo"><label>Modelo</label>
+          <select id="olt-modelo" onchange="_oltPreset()"></select></div>
+        <div class="dr-sec" style="margin-top:6px">Configuração do chassi</div>
+        <div class="linha2">
+          <div class="campo"><label>Slots (placas)</label><input type="number" id="olt-slots" min="1" max="16" value="1" oninput="_oltCalc()"></div>
+          <div class="campo"><label>Portas por placa</label>
+            <select id="olt-ppp" onchange="_oltCalc()"><option>8</option><option>16</option></select></div>
+        </div>
+        <div class="linha2">
+          <div class="campo"><label>Uplinks (SFP+)</label><input type="number" id="olt-uplinks" min="0" max="8" value="2"></div>
+          <div class="campo"><label>Nome</label><input id="olt-nome" placeholder="Auto"></div>
+        </div>
+        <div class="info-box" id="olt-resumo">Total: 8 portas PON</div>
+      </div>
+      <div class="md-foot">
+        <button class="btn ghost" onclick="fecharModal('md-olt')">Cancelar</button>
+        <button class="btn" onclick="salvarOLT()">Criar dispositivo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Adicionar/Editar DIO (bandejas) -->
+  <div class="modal-bg" id="md-dio">
+    <div class="modal">
+      <div class="md-head"><b id="dio-titulo">🗄 Adicionar DIO</b><button class="x" onclick="fecharModal('md-dio')">✕</button></div>
+      <div class="md-body">
+        <input type="hidden" id="dio-id">
+        <div class="dr-sec">Capacidade (bandejas de 12 portas)</div>
+        <div id="dio-opcoes" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+        <div class="info-box" id="dio-resumo" style="margin-top:8px">24 portas · 2 bandejas</div>
+      </div>
+      <div class="md-foot">
+        <button class="btn ghost" onclick="fecharModal('md-dio')">Cancelar</button>
+        <button class="btn" onclick="salvarDIO()">Criar dispositivo</button>
+      </div>
+    </div>
+  </div>
   <div id="fs-foot" style="border-top:1px solid var(--border)">
     <div class="fs-leg">
       <span><i style="background:var(--accent)"></i>Patch óptico</span>
@@ -893,7 +938,28 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+// Carrega o Leaflet com fallback automático entre CDNs (se uma estiver bloqueada/fora).
+(function(){
+  var cdns=[
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
+  ];
+  function tenta(i){
+    if(typeof L!=='undefined')return;
+    if(i>=cdns.length)return;
+    var s=document.createElement('script');
+    s.src=cdns[i];
+    s.onload=function(){/* ok */};
+    s.onerror=function(){tenta(i+1)};
+    document.head.appendChild(s);
+    // se em 3.5s ainda não carregou (bloqueio silencioso), tenta a próxima
+    setTimeout(function(){if(typeof L==='undefined')tenta(i+1)},3500);
+  }
+  tenta(0);
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin=""></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin=""></script>
 <script>
@@ -906,10 +972,19 @@ window.onerror=function(msg,src,ln){
   d.innerHTML+='⚠️ '+msg+' <span style="opacity:.6">('+(src||'').split('/').pop()+':'+ln+')</span><br>';
   return false;
 };
-if(typeof L==='undefined'){
-  document.body.innerHTML='<div style="display:flex;height:100vh;align-items:center;justify-content:center;text-align:center;font-family:sans-serif;color:#E2E0DB;background:#111318"><div><h2>⚠️ Leaflet não carregou</h2><p>Este protótipo precisa de internet para carregar o mapa (CDN unpkg.com).<br>Verifique a conexão e recarregue a página.</p></div></div>';
-  throw new Error('Leaflet indisponível');
-}
+// Espera o Leaflet ficar disponível (ele carrega de forma assíncrona com fallback entre CDNs).
+// Só mostra erro se, após várias tentativas (~12s), nenhuma CDN respondeu.
+window.__leafletPronto=new Promise(function(resolve){
+  var tentativas=0;
+  (function checa(){
+    if(typeof L!=='undefined'){resolve(true);return}
+    if(++tentativas>60){  // 60 × 200ms = 12s
+      document.body.innerHTML='<div style="display:flex;height:100vh;align-items:center;justify-content:center;text-align:center;font-family:sans-serif;color:#E2E0DB;background:#111318;padding:24px"><div><h2>⚠️ O mapa não carregou</h2><p>O MoviFiber precisa baixar a biblioteca do mapa (Leaflet) de uma CDN.<br>Se sua rede/navegador estiver bloqueando <b>unpkg.com</b>, <b>cdnjs.cloudflare.com</b> ou <b>jsdelivr.net</b>, libere um deles e recarregue.</p><button onclick="location.reload()" style="margin-top:12px;padding:8px 18px;border-radius:8px;border:1px solid #3CB371;background:#3CB371;color:#08120C;font-weight:600;cursor:pointer">Recarregar</button></div></div>';
+      return;
+    }
+    setTimeout(checa,200);
+  })();
+});
 
 /* ================= ÍCONES SVG ================= */
 const _ic=(inner)=>`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
@@ -1155,7 +1230,7 @@ function abrirSelecionados(){
   if(ids.length===1){abrirProjeto(ids[0]);return}  // um só → abre normal (editável)
   abrirProjetos(ids);
 }
-function abrirProjetos(ids){
+async function abrirProjetos(ids){
   // visão agregada SOMENTE dos projetos selecionados (somente leitura)
   const sel=DB.projetos.filter(p=>ids.includes(p.id));
   const elementos=[], cabos=[], areas=[];
@@ -1175,7 +1250,8 @@ function abrirProjetos(ids){
   cfg();undoStack=[];redoStack=[];_estadoAtual=null;
   document.getElementById('tela-editor').style.display='block';
   document.getElementById('dr-nome-proj').textContent=projAtual.nome;
-  garantirMapa(centro,13);
+  await garantirMapa(centro,13);
+  if(!mapa)return;
   setTimeout(()=>{mapa.invalidateSize();
     const pts=[...elementos.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...cabos.flatMap(c=>c.pontos||[])];
     if(pts.length)mapa.fitBounds(pts,{padding:[60,60]});else mapa.setView(centro,13);
@@ -1245,13 +1321,16 @@ async function abrirProjeto(id){
   undoStack=[];redoStack=[];_estadoAtual=null;
   document.getElementById('tela-editor').style.display='block';
   document.getElementById('dr-nome-proj').textContent=projAtual.nome;
-  garantirMapa(projAtual.centro,16);
+  await garantirMapa(projAtual.centro,16);
+  if(!mapa)return;
   setTimeout(()=>mapa.invalidateSize(),100);
   limparOverlaysSoltos();
   renderCamadas();renderTudo();setModo('navegar');
   _estadoAtual=snapProj();
 }
-function garantirMapa(centro,zoom){
+async function garantirMapa(centro,zoom){
+  if(typeof L==='undefined'&&window.__leafletPronto){await window.__leafletPronto}
+  if(typeof L==='undefined'){toast('O mapa ainda está carregando, tente novamente em instantes',true);return}
   if(!mapa){
     mapa=L.map('mapa',{zoomControl:false}).setView(centro,zoom);
     L.control.zoom({position:'bottomright'}).addTo(mapa);
@@ -2076,18 +2155,90 @@ function abrirEditorPop(id){
 }
 function fecharPop(){salvar();document.getElementById('tela-pop').style.display='none';renderTudo()}
 function abrirFusaoDoPop(){document.getElementById('tela-pop').style.display='none';abrirFusao(popAtual)}
-function addOLT(){
+/* ===== OLT com chassi (slots × placas) ===== */
+function addOLT(){ abrirModalOLT(null) }
+function abrirModalOLT(id){
   const P=getPop(popAtual);
-  const portas=+prompt('Quantas portas PON tem a OLT?','8')||8;
-  const nome=prompt('Nome/modelo da OLT:','OLT V-Sol '+portas+' Portas')||'OLT';
-  P.olts.push({id:uid('olt'),nome,portas,x:120+P.olts.length*30,y:120+P.olts.length*30});
-  salvar();renderPop();
+  const olt=id?P.olts.find(o=>o.id===id):null;
+  document.getElementById('olt-id').value=id||'';
+  document.getElementById('olt-titulo').textContent=olt?'🖥 Editar OLT':'🖥 Adicionar OLT';
+  const sel=document.getElementById('olt-modelo');
+  sel.innerHTML='<option value="">— personalizado —</option>'+CAT.catOlt.map(o=>`<option value="${o.id}">${o.nome}</option>`).join('');
+  document.getElementById('olt-slots').value=olt?olt.slots||1:1;
+  document.getElementById('olt-ppp').value=olt?olt.ppp||8:8;
+  document.getElementById('olt-uplinks').value=olt?olt.uplinks??2:2;
+  document.getElementById('olt-nome').value=olt?olt.nome:'';
+  _oltCalc();
+  abrirModal('md-olt');
 }
-function addDIO(){
+function _oltPreset(){
+  const id=document.getElementById('olt-modelo').value;
+  const o=CAT.catOlt.find(x=>x.id===id);
+  if(o){
+    // deriva slots/ppp a partir das portas do catálogo (assume 1 slot)
+    document.getElementById('olt-slots').value=1;
+    document.getElementById('olt-ppp').value=o.portas>=16?16:8;
+    if(!document.getElementById('olt-nome').value)document.getElementById('olt-nome').value=o.nome;
+  }
+  _oltCalc();
+}
+function _oltCalc(){
+  const slots=+document.getElementById('olt-slots').value||1;
+  const ppp=+document.getElementById('olt-ppp').value||8;
+  document.getElementById('olt-resumo').innerHTML=`Total: <b>${slots*ppp}</b> portas PON (${slots} slot × ${ppp}p) + <b>${+document.getElementById('olt-uplinks').value||0}</b> uplinks`;
+}
+function salvarOLT(){
   const P=getPop(popAtual);
-  const portas=+prompt('Quantas portas tem o DIO?','12')||12;
-  P.dios.push({id:uid('dio'),nome:'DIO '+(P.dios.length+1),portas,x:480+P.dios.length*30,y:120+P.dios.length*30});
-  salvar();renderPop();
+  const id=document.getElementById('olt-id').value;
+  const slots=Math.max(1,+document.getElementById('olt-slots').value||1);
+  const ppp=+document.getElementById('olt-ppp').value||8;
+  const uplinks=Math.max(0,+document.getElementById('olt-uplinks').value||0);
+  const portas=slots*ppp;
+  const nome=document.getElementById('olt-nome').value.trim()||('OLT '+portas+' Portas');
+  if(id){
+    const o=P.olts.find(x=>x.id===id);
+    Object.assign(o,{nome,slots,ppp,uplinks,portas});
+  }else{
+    P.olts.push({id:uid('olt'),nome,slots,ppp,uplinks,portas,placas:Array.from({length:slots},(_,i)=>({slot:i+1,habilitado:true})),x:120+P.olts.length*30,y:120+P.olts.length*30});
+  }
+  salvar();fecharModal('md-olt');renderPop();
+}
+
+/* ===== DIO com bandejas (12 portas cada) ===== */
+const DIO_CAPS=[12,24,36,48,72,144];
+function addDIO(){ abrirModalDIO(null) }
+function abrirModalDIO(id){
+  const P=getPop(popAtual);
+  const dio=id?P.dios.find(d=>d.id===id):null;
+  document.getElementById('dio-id').value=id||'';
+  document.getElementById('dio-titulo').textContent=dio?'🗄 Editar DIO':'🗄 Adicionar DIO';
+  const atual=dio?dio.portas:24;
+  document.getElementById('dio-opcoes').innerHTML=DIO_CAPS.map(cap=>{
+    const band=cap/12;
+    return `<div class="dio-opt ${cap===atual?'sel':''}" data-cap="${cap}" onclick="_dioSel(${cap})" style="border:1.5px solid ${cap===atual?'var(--accent)':'var(--border)'};border-radius:10px;padding:10px;text-align:center;cursor:pointer;background:${cap===atual?'rgba(60,179,113,.08)':'transparent'}">
+      <div style="font-size:18px;font-weight:700">${cap}</div><div style="font-size:10px;color:var(--text-dim)">${band} bandeja${band>1?'s':''}</div></div>`;
+  }).join('');
+  _dioResumo(atual);
+  abrirModal('md-dio');
+}
+let _dioCapSel=24;
+function _dioSel(cap){
+  _dioCapSel=cap;
+  document.querySelectorAll('#dio-opcoes .dio-opt').forEach(el=>{
+    const on=+el.dataset.cap===cap;
+    el.style.borderColor=on?'var(--accent)':'var(--border)';
+    el.style.background=on?'rgba(60,179,113,.08)':'transparent';
+  });
+  _dioResumo(cap);
+}
+function _dioResumo(cap){document.getElementById('dio-resumo').innerHTML=`<b>${cap}</b> portas · <b>${cap/12}</b> bandeja(s) de 12`}
+function salvarDIO(){
+  const P=getPop(popAtual);
+  const id=document.getElementById('dio-id').value;
+  const portas=_dioCapSel||24;
+  if(id){const d=P.dios.find(x=>x.id===id);d.portas=portas;d.bandejas=portas/12}
+  else P.dios.push({id:uid('dio'),nome:'DIO '+(P.dios.length+1),portas,bandejas:portas/12,x:480+P.dios.length*30,y:120+P.dios.length*30});
+  salvar();fecharModal('md-dio');renderPop();
 }
 function addSwitch(){
   const P=getPop(popAtual);
@@ -2118,7 +2269,7 @@ function togglePopConn(){
 function equipDim(t,e){
   if(t==='rack')return{w:e.w||320,h:e.h||520};
   if(t==='olt')return{w:Math.max(170,e.portas*18+30),h:74};
-  if(t==='dio')return{w:Math.max(170,e.portas*18+30),h:64};
+  if(t==='dio'){const band=e.bandejas||Math.ceil(e.portas/12);return{w:Math.max(190,12*18+30),h:40+band*24}}
   if(t==='switch')return{w:Math.max(190,Math.min(e.portas,24)*10+30),h:64};
   return{w:150,h:58}; // roteador
 }
@@ -2129,6 +2280,12 @@ function equipDe(id){
     if(e)return{t,e};
   }
   return null;
+}
+function posPortaDio(d0,porta){
+  const band=d0.bandejas||Math.ceil(d0.portas/12);
+  const b=Math.floor((porta-1)/12), i=((porta-1)%12)+1;
+  const by=d0.y+40+b*24;
+  return {x:d0.x+24+(i-1)*18+6, y:by};
 }
 function fibraNoDIO(dioId,porta){
   const F=getFus(popAtual);
@@ -2167,45 +2324,70 @@ function renderPop(){
   P.patches.forEach((pt,i)=>{
     const o=P.olts.find(x=>x.id===pt.olt),d=P.dios.find(x=>x.id===pt.dio);
     if(!o||!d)return;
-    const od=equipDim('olt',o),dd=equipDim('dio',d);
+    const od=equipDim('olt',o);
     const ax=o.x+15+(pt.oltPorta-1)*18+6, ay=o.y+od.h-12;
-    const bx=d.x+15+(pt.dioPorta-1)*18+6, by=d.y+dd.h-12;
-    s+=`<path class="patch-linha" d="M ${ax} ${ay} C ${ax} ${ay+50}, ${bx} ${by+50}, ${bx} ${by}" onclick="removerPatchPop(${i})"><title>Patch PON ${pt.oltPorta} (${o.nome}) ⇄ porta ${pt.dioPorta} (${d.nome}) — clique para remover</title></path>`;
+    const bp=posPortaDio(d,pt.dioPorta);
+    s+=`<path class="patch-linha" d="M ${ax} ${ay} C ${ax} ${ay+50}, ${bp.x} ${bp.y-50}, ${bp.x} ${bp.y}" onclick="removerPatchPop(${i})"><title>Patch PON ${pt.oltPorta} (${o.nome}) ⇄ porta ${pt.dioPorta} (${d.nome}) — clique para remover</title></path>`;
   });
-  // OLTs
+  // OLTs — chassi com slots/placas + uplinks
   P.olts.forEach(o=>{
+    const slots=o.slots||1, ppp=o.ppp||8, upl=o.uplinks??0;
     const d=equipDim('olt',o);
     maxX=Math.max(maxX,o.x+d.w+60);maxY=Math.max(maxY,o.y+d.h+120);
-    s+=`<g onmousedown="popIniciarDrag(event,'${o.id}')">
+    const livres=o.portas-P.patches.filter(p=>p.olt===o.id).length;
+    s+=`<g onmousedown="popIniciarDrag(event,'${o.id}')" ondblclick="abrirModalOLT('${o.id}')">
       <rect class="eq-body" x="${o.x}" y="${o.y}" width="${d.w}" height="${d.h}" rx="8"/>
-      <text class="eq-title" x="${o.x+12}" y="${o.y+18}">🖥 ${o.nome}</text>
-      <text class="eq-sub" x="${o.x+12}" y="${o.y+31}">${o.portas-P.patches.filter(p=>p.olt===o.id).length} PON livre(s)</text>
-      <text class="eq-x" x="${o.x+d.w-16}" y="${o.y+18}" onmousedown="event.stopPropagation()" onclick="removerEquipPop('${o.id}')">✕</text>`;
+      <rect x="${o.x}" y="${o.y}" width="4" height="${d.h}" rx="2" fill="#3CB371"/>
+      <text class="eq-title" x="${o.x+14}" y="${o.y+18}">🖥 ${o.nome}</text>
+      <text class="eq-sub" x="${o.x+14}" y="${o.y+31}">${slots} slot × ${ppp}p · ${livres}/${o.portas} PON livre${upl?' · '+upl+' uplink':''}</text>
+      <text class="eq-x" x="${o.x+d.w-30}" y="${o.y+18}" style="cursor:pointer;fill:var(--text-dim)" onmousedown="event.stopPropagation()" onclick="abrirModalOLT('${o.id}')">✎</text>
+      <text class="eq-x" x="${o.x+d.w-14}" y="${o.y+18}" onmousedown="event.stopPropagation()" onclick="removerEquipPop('${o.id}')">✕</text>`;
+    // portas agrupadas por slot
     for(let p=1;p<=o.portas;p++){
       const pat=P.patches.find(x=>x.olt===o.id&&x.oltPorta===p);
       const cx=o.x+15+(p-1)*18+6, cy=o.y+d.h-12;
-      s+=`<circle class="eq-porta ${popSel&&popSel.t==='olt'&&popSel.id===o.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5.5" fill="${pat?'#3CB371':'#3A4050'}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('olt','${o.id}',${p})"><title>PON ${p}${pat?' → '+((P.dios.find(x=>x.id===pat.dio)||{}).nome||'DIO')+' porta '+pat.dioPorta:' · livre'}</title></circle>
+      const slotN=Math.floor((p-1)/ppp)+1;
+      // separador de slot
+      if((p-1)%ppp===0&&p>1)s+=`<line x1="${cx-9}" y1="${cy-14}" x2="${cx-9}" y2="${cy+8}" stroke="#4A5568" stroke-width="1.5"/>`;
+      s+=`<circle class="eq-porta ${popSel&&popSel.t==='olt'&&popSel.id===o.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5.5" fill="${pat?'#3CB371':'#3A4050'}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('olt','${o.id}',${p})"><title>Slot ${slotN} · PON ${p}${pat?' → '+((P.dios.find(x=>x.id===pat.dio)||{}).nome||'DIO')+' porta '+pat.dioPorta:' · livre'}</title></circle>
       <text class="eq-porta-lbl" x="${cx}" y="${cy-9}">${p}</text>`;
+    }
+    // uplinks (retângulos SFP+ à direita)
+    for(let u=1;u<=upl;u++){
+      const ux=o.x+15+(o.portas)*18+4+(u-1)*16, uy=o.y+d.h-16;
+      s+=`<rect x="${ux}" y="${uy}" width="12" height="9" rx="1.5" fill="#7B2ED8" stroke="#0a0c10"><title>Uplink SFP+ U${u}</title></rect>
+      <text class="eq-porta-lbl" x="${ux+6}" y="${uy-3}" style="fill:#B98AE8">U${u}</text>`;
     }
     s+='</g>';
   });
-  // DIOs
+  // DIOs — bandejas de 12 portas empilhadas
   P.dios.forEach(d0=>{
-    const d=equipDim('dio',d0);
-    maxX=Math.max(maxX,d0.x+d.w+60);maxY=Math.max(maxY,d0.y+d.h+120);
-    s+=`<g onmousedown="popIniciarDrag(event,'${d0.id}')">
+    const band=d0.bandejas||Math.ceil(d0.portas/12);
+    const linhaW=12*18+30;
+    const d={w:Math.max(190,linhaW),h:40+band*24};
+    d0._dim=d;
+    maxX=Math.max(maxX,d0.x+d.w+60);maxY=Math.max(maxY,d0.y+d.h+80);
+    const usadas=P.patches.filter(p=>p.dio===d0.id).length;
+    s+=`<g onmousedown="popIniciarDrag(event,'${d0.id}')" ondblclick="abrirModalDIO('${d0.id}')">
       <rect class="eq-body" x="${d0.x}" y="${d0.y}" width="${d.w}" height="${d.h}" rx="8"/>
-      <text class="eq-title" x="${d0.x+12}" y="${d0.y+18}">🗄 ${d0.nome}</text>
-      <text class="eq-sub" x="${d0.x+110}" y="${d0.y+18}">fusões no plano do POP</text>
-      <text class="eq-x" x="${d0.x+d.w-16}" y="${d0.y+18}" onmousedown="event.stopPropagation()" onclick="removerEquipPop('${d0.id}')">✕</text>`;
-    for(let p=1;p<=d0.portas;p++){
-      const pat=P.patches.find(x=>x.dio===d0.id&&x.dioPorta===p);
-      const fib=fibraNoDIO(d0.id,p);
-      const cx=d0.x+15+(p-1)*18+6, cy=d0.y+d.h-12;
-      const cor=pat?'#3CB371':(fib?'#5B9BFF':'#3A4050');
-      const tip='Porta '+p+(fib?' · '+fib.txt:' · sem fibra fundida')+(pat?' · PON '+pat.oltPorta+' ('+((P.olts.find(x=>x.id===pat.olt)||{}).nome||'OLT')+')':' · sem patch');
-      s+=`<circle class="eq-porta ${popSel&&popSel.t==='dio'&&popSel.id===d0.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5.5" fill="${cor}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('dio','${d0.id}',${p})"><title>${tip}</title></circle>
-      <text class="eq-porta-lbl" x="${cx}" y="${cy-9}">${p}</text>`;
+      <rect x="${d0.x}" y="${d0.y}" width="4" height="${d.h}" rx="2" fill="#5B9BFF"/>
+      <text class="eq-title" x="${d0.x+14}" y="${d0.y+18}">🗄 ${d0.nome}</text>
+      <text class="eq-sub" x="${d0.x+14}" y="${d0.y+31}">${band} bandeja${band>1?'s':''} · ${d0.portas}P · ${usadas} patch</text>
+      <text class="eq-x" x="${d0.x+d.w-30}" y="${d0.y+18}" style="cursor:pointer;fill:var(--text-dim)" onmousedown="event.stopPropagation()" onclick="abrirModalDIO('${d0.id}')">✎</text>
+      <text class="eq-x" x="${d0.x+d.w-14}" y="${d0.y+18}" onmousedown="event.stopPropagation()" onclick="removerEquipPop('${d0.id}')">✕</text>`;
+    for(let b=0;b<band;b++){
+      const by=d0.y+40+b*24;
+      s+=`<text class="eq-porta-lbl" x="${d0.x+8}" y="${by+4}" style="fill:#5B9BFF;font-size:8px">B${b+1}</text>`;
+      for(let i=1;i<=12;i++){
+        const p=b*12+i;
+        if(p>d0.portas)break;
+        const pat=P.patches.find(x=>x.dio===d0.id&&x.dioPorta===p);
+        const fib=fibraNoDIO(d0.id,p);
+        const cx=d0.x+24+(i-1)*18+6, cy=by;
+        const cor=pat?'#3CB371':(fib?'#5B9BFF':'#3A4050');
+        const tip='Bandeja '+(b+1)+' · Porta '+p+(fib?' · '+fib.txt:' · sem fibra fundida')+(pat?' · PON '+pat.oltPorta+' ('+((P.olts.find(x=>x.id===pat.olt)||{}).nome||'OLT')+')':' · sem patch');
+        s+=`<circle class="eq-porta ${popSel&&popSel.t==='dio'&&popSel.id===d0.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5" fill="${cor}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('dio','${d0.id}',${p})"><title>${tip}</title></circle>`;
+      }
     }
     s+='</g>';
   });
