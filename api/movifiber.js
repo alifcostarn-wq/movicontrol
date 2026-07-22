@@ -60,6 +60,12 @@ export default async function handler(req, res) {
     if (acao === 'ixc-status')        return res.status(200).json(await ixcStatus(b.ixc_ids || []));
     if (acao === 'salvar-instalacao') return res.status(200).json(await salvarInstalacao(b));
     if (acao === 'debug-schema')      return res.status(200).json(await debugSchema());
+    if (acao === 'proj-listar')       return res.status(200).json(await projListar());
+    if (acao === 'proj-carregar')     return res.status(200).json(await projCarregar(b.id));
+    if (acao === 'proj-salvar')       return res.status(200).json(await projSalvar(b.projeto));
+    if (acao === 'proj-excluir')      return res.status(200).json(await projExcluir(b.id));
+    if (acao === 'cat-carregar')      return res.status(200).json(await catCarregar());
+    if (acao === 'cat-salvar')        return res.status(200).json(await catSalvar(b.dados));
     return res.status(400).json({ erro: 'acao desconhecida: ' + acao });
   } catch (e) {
     console.error('[movifiber-proxy]', e);
@@ -117,6 +123,70 @@ async function salvarInstalacao(b) {
   });
   if (!r.ok) throw new Error('Supabase RPC HTTP ' + r.status + ' — rodou a migration ftth_cliente_instalacao?');
   return { ok: true, instalacao: await r.json() };
+}
+
+// ---------------------- PROJETOS MOVIFIBER (nuvem) --------------------------
+const SB_PROJ = 'movifiber_projetos';
+const SB_CAT  = 'movifiber_catalogos';
+
+async function projListar() {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}` +
+    `?select=id,nome,centro_lat,centro_lng,qtd_elementos,qtd_cabos,atualizado_em&order=atualizado_em.desc`;
+  const r = await fetch(url, { headers: sbHeaders() });
+  if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+  return { projetos: await r.json() };
+}
+async function projCarregar(id) {
+  if (!id) throw new Error('id obrigatorio');
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}?id=eq.${encodeURIComponent(id)}&select=*`;
+  const r = await fetch(url, { headers: sbHeaders() });
+  if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+  const rows = await r.json();
+  return { projeto: rows[0] || null };
+}
+async function projSalvar(p) {
+  if (!p || !p.id) throw new Error('projeto invalido');
+  const centro = Array.isArray(p.centro) ? p.centro : [null, null];
+  const row = {
+    id: p.id, nome: p.nome || 'Projeto',
+    centro_lat: centro[0], centro_lng: centro[1],
+    dados: p,
+    qtd_elementos: (p.elementos || []).length,
+    qtd_cabos: (p.cabos || []).length,
+    atualizado_em: new Date().toISOString()
+  };
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(row)
+  });
+  if (!r.ok) throw new Error('Supabase salvar HTTP ' + r.status + ' ' + (await r.text()).slice(0,200));
+  return { ok: true, id: p.id };
+}
+async function projExcluir(id) {
+  if (!id) throw new Error('id obrigatorio');
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}?id=eq.${encodeURIComponent(id)}`;
+  const r = await fetch(url, { method: 'DELETE', headers: { ...sbHeaders(), Prefer: 'return=minimal' } });
+  if (!r.ok) throw new Error('Supabase excluir HTTP ' + r.status);
+  return { ok: true };
+}
+async function catCarregar() {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_CAT}?id=eq.global&select=dados`;
+  const r = await fetch(url, { headers: sbHeaders() });
+  if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+  const rows = await r.json();
+  return { dados: rows[0] ? rows[0].dados : null };
+}
+async function catSalvar(dados) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_CAT}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ id: 'global', dados, atualizado_em: new Date().toISOString() })
+  });
+  if (!r.ok) throw new Error('Supabase cat HTTP ' + r.status);
+  return { ok: true };
 }
 
 // ─────────── IXC (isolado): SO online + potencia ONU ───────────
