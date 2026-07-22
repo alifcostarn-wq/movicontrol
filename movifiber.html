@@ -431,6 +431,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div class="dr-head">
       <button class="voltar" onclick="voltarHome()">← Meus projetos</button>
       <b id="dr-nome-proj">Projeto</b>
+      <div id="nuvem-badge" style="display:none;font-size:10.5px;margin:2px 0 4px;color:var(--accent)">☁️ Salvo na nuvem</div>
       <div class="prog-bar"><i id="dr-prog" style="width:0%"></i></div>
       <div class="prog-txt" id="dr-prog-txt">0% implantado</div>
     </div>
@@ -912,6 +913,82 @@ const store={
 };
 let DB;
 try{DB=JSON.parse(store.get(STORE_KEY)||'{"projetos":[]}')}catch(e){DB={projetos:[]}}
+
+/* ===== NUVEM (Supabase via proxy isolado) ===== */
+const NUVEM={ ok:false, sincronizando:false, fila:new Set(), ultimoErro:null };
+function _proxyUrlNuvem(){
+  try{ if(typeof INTEG!=='undefined'&&INTEG.proxyUrl&&INTEG.proxyUrl.trim())return INTEG.proxyUrl.trim(); }catch(e){}
+  try{ if(location&&location.origin&&location.origin.startsWith('http'))return location.origin+'/api/movifiber'; }catch(e){}
+  return '/api/movifiber';
+}
+async function nuvemCall(body){
+  const r=await fetch(_proxyUrlNuvem(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const d=await r.json(); if(d.erro)throw new Error(d.erro); return d;
+}
+// carrega a lista de projetos da nuvem para DB.projetos (mantém local como fallback)
+async function nuvemCarregarLista(){
+  try{
+    const d=await nuvemCall({acao:'proj-listar'});
+    NUVEM.ok=true;NUVEM.ultimoErro=null;
+    // guarda só metadados; o conteúdo pesado é carregado sob demanda ao abrir
+    DB._nuvemLista=d.projetos||[];
+    // funde: para cada projeto na nuvem que não está em memória, cria stub
+    (d.projetos||[]).forEach(meta=>{
+      let p=DB.projetos.find(x=>x.id===meta.id);
+      if(!p){DB.projetos.push({id:meta.id,nome:meta.nome,centro:[meta.centro_lat,meta.centro_lng],criado:Date.now(),
+        elementos:[],cabos:[],areas:[],fusoes:{},pops:{},seq:{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0},_stub:true,
+        _qtdEl:meta.qtd_elementos,_qtdCb:meta.qtd_cabos,_atualizado:meta.atualizado_em})}
+      else {p._qtdEl=meta.qtd_elementos;p._qtdCb=meta.qtd_cabos;p._atualizado=meta.atualizado_em}
+    });
+    return true;
+  }catch(e){NUVEM.ok=false;NUVEM.ultimoErro=e.message;console.warn('[nuvem] lista:',e.message);return false}
+}
+// carrega o conteúdo completo de um projeto (quando abre um stub)
+async function nuvemCarregarProjeto(id){
+  const d=await nuvemCall({acao:'proj-carregar',id});
+  if(!d.projeto)return null;
+  const full=d.projeto.dados||{};
+  full.id=d.projeto.id;full.nome=d.projeto.nome;
+  if(!full.centro)full.centro=[d.projeto.centro_lat,d.projeto.centro_lng];
+  // normaliza campos que podem faltar
+  full.elementos=full.elementos||[];full.cabos=full.cabos||[];full.areas=full.areas||[];
+  full.fusoes=full.fusoes||{};full.pops=full.pops||{};full.clientes=full.clientes||[];
+  full.seq=full.seq||{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0};
+  const idx=DB.projetos.findIndex(x=>x.id===id);
+  if(idx>=0)DB.projetos[idx]=full;else DB.projetos.push(full);
+  return full;
+}
+// enfileira o projeto para salvar na nuvem (debounced)
+let _syncTimer=null;
+function nuvemAgendarSalvar(id){
+  if(!id)return;
+  NUVEM.fila.add(id);
+  clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(nuvemFlush,1200);
+}
+async function nuvemFlush(){
+  if(NUVEM.sincronizando||!NUVEM.fila.size)return;
+  NUVEM.sincronizando=true;
+  const ids=[...NUVEM.fila];NUVEM.fila.clear();
+  for(const id of ids){
+    const p=DB.projetos.find(x=>x.id===id);
+    if(!p||p._stub)continue;
+    try{
+      const limpo={...p};delete limpo._stub;delete limpo._qtdEl;delete limpo._qtdCb;delete limpo._atualizado;
+      await nuvemCall({acao:'proj-salvar',projeto:limpo});
+      NUVEM.ok=true;NUVEM.ultimoErro=null;
+      atualizarBadgeNuvem('salvo');
+    }catch(e){NUVEM.ok=false;NUVEM.ultimoErro=e.message;NUVEM.fila.add(id);atualizarBadgeNuvem('erro');console.warn('[nuvem] salvar:',e.message)}
+  }
+  NUVEM.sincronizando=false;
+}
+async function nuvemExcluir(id){ try{await nuvemCall({acao:'proj-excluir',id})}catch(e){console.warn('[nuvem] excluir:',e.message)} }
+function atualizarBadgeNuvem(estado){
+  const b=document.getElementById('nuvem-badge');if(!b)return;
+  const map={salvo:['☁️ Salvo na nuvem','var(--accent)'],erro:['⚠️ Só local (sem nuvem)','var(--warn)'],sync:['⏳ Sincronizando…','var(--text-dim)']};
+  const [txt,cor]=map[estado]||map.sync;b.textContent=txt;b.style.color=cor;b.style.display='inline-block';
+}
 const CAT_KEY='movifiber_catalogos_v1';
 const CAT_PADRAO={
   catCabos:[
@@ -975,6 +1052,9 @@ function salvar(){
     _estadoAtual=s;
   }
   store.set(STORE_KEY,JSON.stringify(DB));
+  if(projAtual&&projAtual.id&&!projAtual._todos&&projAtual.id!=='__multi__'){
+    atualizarBadgeNuvem('sync');nuvemAgendarSalvar(projAtual.id);
+  }
 }
 function aplicarEstado(s){
   const d=JSON.parse(s);
@@ -1106,7 +1186,7 @@ function criarProjeto(){
   if(!nome){toast('Informe o nome do projeto',true);return}
   const c=miniMapa._pin.getLatLng();
   const p={id:uid('prj'),nome,centro:[c.lat,c.lng],criado:Date.now(),elementos:[],cabos:[],areas:[],fusoes:{},pops:{},seq:{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0}};
-  DB.projetos.push(p);salvar();fecharModal('md-novo-projeto');abrirProjeto(p.id);
+  DB.projetos.push(p);salvar();nuvemAgendarSalvar(p.id);fecharModal('md-novo-projeto');abrirProjeto(p.id);
 }
 function voltarHome(){
   if(mapa)limparOverlaysSoltos();
@@ -1121,8 +1201,14 @@ function limparProjeto(){
 }
 
 /* ================= MAPA / EDITOR ================= */
-function abrirProjeto(id){
+async function abrirProjeto(id){
   projAtual=DB.projetos.find(p=>p.id===id);
+  // se o projeto veio só como stub da nuvem, baixa o conteúdo completo
+  if(projAtual&&projAtual._stub){
+    toast('Carregando projeto da nuvem…');
+    try{const full=await nuvemCarregarProjeto(id);if(full)projAtual=full}
+    catch(e){toast('Falha ao carregar da nuvem: '+e.message,true);return}
+  }
   document.getElementById('shell').style.display='none';
   clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
   if(!projAtual.clientes)projAtual.clientes=[];
@@ -3266,6 +3352,15 @@ document.querySelectorAll('#toolbar .tool').forEach(t=>{
 document.querySelectorAll('[data-i]').forEach(el=>{if(ICONS[el.dataset.i])el.innerHTML=ICONS[el.dataset.i]});
 renderHome();
 irPg('projetos');
+// carrega projetos da nuvem (com fallback: mantém os locais se offline)
+(async()=>{
+  const ok=await nuvemCarregarLista();
+  if(ok){renderHome();
+    // sobe pra nuvem projetos que só existem localmente (primeira migração)
+    const idsNuvem=new Set((DB._nuvemLista||[]).map(m=>m.id));
+    DB.projetos.filter(p=>!p._stub&&!idsNuvem.has(p.id)).forEach(p=>nuvemAgendarSalvar(p.id));
+  }
+})();
 
 </script>
 </body>
