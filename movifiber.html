@@ -325,7 +325,12 @@ input:focus,select:focus{border-color:var(--accent)}
 .splitter-shape.sel-sp .splitter-body{stroke:var(--accent);stroke-width:2.5;filter:drop-shadow(0 0 5px rgba(60,179,113,.6))}
 #fs-svg.sem-anim .fusao-luz,#fs-svg.sem-anim .fibra-luz{animation:none;display:none}
 .splitter-shape{cursor:move}
-.splitter-body{fill:var(--surface2);stroke:var(--text-dim);stroke-width:1.5}
+.splitter-body{fill:url(#spGrad);stroke:#4A5568;stroke-width:1.5}
+.splitter-body.des{stroke:#D4A027}
+.sc-adapter{fill:#2B3444;stroke:#5B9BFF;stroke-width:1}
+.sc-adapter.apc{stroke:#3CB371}
+.sc-adapter.upc{stroke:#5B9BFF}
+.sc-body-hl{fill:rgba(91,155,255,.06)}
 .splitter-lbl{fill:var(--text);font-size:10px;font-family:'DM Mono';text-anchor:middle}
 .porta-splitter{cursor:pointer;stroke:#fff;stroke-width:1}
 .porta-splitter:hover{r:6}
@@ -478,6 +483,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" data-modo="cabo" onclick="setModo('cabo')"><span class="ic">〰️</span>Cabo</button>
     <button class="tool" data-modo="reserva" onclick="setModo('reserva')"><span class="ic">➰</span>Reserva</button>
     <button class="tool" data-modo="area" onclick="setModo('area')"><span class="ic">⬠</span>Área</button>
+    <button class="tool" data-modo="regua" onclick="setModo('regua')"><span class="ic">📏</span>Régua</button>
     <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
     <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
   </div>
@@ -566,6 +572,27 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
             <option value="1:2">1:2 Desbalanceado</option>
           </select>
         </div>
+      </div>
+      <div id="el-campo-poste" style="display:none">
+        <div class="dr-sec" style="margin-top:8px">⚡ Dados do Poste</div>
+        <div class="linha2">
+          <div class="campo"><label>Proprietário</label>
+            <select id="pst-prop"><option>Concessionária</option><option>Provedor</option><option>Compartilhado</option><option>Particular</option></select></div>
+          <div class="campo"><label>Material</label>
+            <select id="pst-mat"><option>Concreto (DT)</option><option>Concreto (Circular)</option><option>Madeira</option><option>Aço</option><option>Fibra</option></select></div>
+        </div>
+        <div class="linha2">
+          <div class="campo"><label>Altura (m)</label>
+            <select id="pst-alt"><option value="">—</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option></select></div>
+          <div class="campo"><label>Esforço (daN)</label>
+            <select id="pst-esf"><option value="">—</option><option>150</option><option>300</option><option>400</option><option>600</option><option>1000</option></select></div>
+        </div>
+        <div class="linha2">
+          <div class="campo"><label>Nº de identificação</label><input id="pst-num" placeholder="Ex: CEB-01234"></div>
+          <div class="campo"><label>Transformador</label>
+            <select id="pst-trafo"><option value="nao">Não</option><option value="sim">Sim (com trafo)</option></select></div>
+        </div>
+        <div class="campo"><label>Ocupação / observações</label><input id="pst-obs" placeholder="Ex: já tem 2 cabos de TV, espaço para 1 fibra"></div>
       </div>
       <div class="info-box" id="el-info"></div>
     </div>
@@ -1253,6 +1280,7 @@ const HINTS={
   area:'<b>Área de cobertura:</b> clique os vértices do polígono · <b>Enter</b> finaliza',
   cliente:'<b>Adicionando Cliente:</b> clique no mapa — vincula automaticamente à CTO mais próxima com porta livre',
   poste:'<b>Adicionando Poste:</b> clique no mapa — cabos traçados depois "grudam" nos postes próximos',
+  regua:'<b>Régua:</b> clique para marcar pontos e medir a distância · duplo-clique ou Esc para finalizar',
   viab:'<b>Viabilidade:</b> clique em qualquer ponto do mapa para analisar o atendimento'
 };
 function attHint(){document.getElementById('hint').innerHTML=HINTS[modo]}
@@ -1277,6 +1305,7 @@ function setModo(m){
     toast('Visão "Todos os projetos" é somente leitura. Abra um projeto para editar.',true);
     m='navegar';
   }
+  if(m==='regua'&&modo!=='regua')reguaLimpar();
   modo=m;cancelarDesenho();
   renderSubbar();
   document.querySelectorAll('.tool').forEach(t=>t.classList.toggle('ativo',t.dataset.modo===m));
@@ -1287,7 +1316,7 @@ function setModo(m){
   });
   attHint();
   mapa.getContainer().style.cursor=m==='navegar'?'':'crosshair';
-  if(['cabo','area'].includes(m))mapa.doubleClickZoom.disable();else mapa.doubleClickZoom.enable();
+  if(['cabo','area','regua'].includes(m))mapa.doubleClickZoom.disable();else mapa.doubleClickZoom.enable();
 }
 function cliqueMapa(e){
   if(modo==='navegar')return;
@@ -1302,6 +1331,7 @@ function cliqueMapa(e){
     toast(nome+' adicionado com sucesso');
   }
   if(modo==='viab'){viabilidadePonto(ll);return}
+  if(modo==='regua'){reguaClique(ll);return}
   if(modo==='cabo'){
     const alt=e.originalEvent&&e.originalEvent.altKey;
     const cxSnap=alt?null:caixaProximaPx(ll,22);
@@ -1321,6 +1351,7 @@ function cliqueMapa(e){
   }
 }
 function finalizarDesenho(){
+  if(modo==='regua'){setModo('navegar');return}
   if(caboTemp&&caboTemp.pontos.length>1){
     projAtual.seq.cabo++;
     const pts=caboTemp.pontos;
@@ -1379,6 +1410,47 @@ function elementoProximo(ll,raio){
 }
 function nomeEl(id){const e=projAtual.elementos.find(x=>x.id===id);return e?e.nome:null}
 function medirCabo(pts){let m=0;for(let i=1;i<pts.length;i++)m+=mapa.distance(pts[i-1],pts[i]);return m}
+
+/* ===== RÉGUA DE MEDIÇÃO ===== */
+let reguaPts=[], reguaLayers=[];
+function reguaLimpar(){reguaLayers.forEach(l=>mapa.removeLayer(l));reguaLayers=[];reguaPts=[]}
+function reguaClique(ll){
+  reguaPts.push([ll.lat,ll.lng]);
+  reguaDesenhar();
+}
+function reguaDesenhar(){
+  reguaLayers.forEach(l=>mapa.removeLayer(l));reguaLayers=[];
+  if(reguaPts.length){
+    // linha
+    if(reguaPts.length>1){
+      reguaLayers.push(L.polyline(reguaPts,{color:'#FFD86B',weight:3,dashArray:'8 6',opacity:.95}).addTo(mapa));
+    }
+    // marcadores + rótulos de distância parcial
+    let acc=0;
+    reguaPts.forEach((p,i)=>{
+      if(i>0)acc+=mapa.distance(reguaPts[i-1],p);
+      const cor=i===0?'#3CB371':'#FFD86B';
+      reguaLayers.push(L.circleMarker(p,{radius:5,color:'#0B0D11',weight:2,fillColor:cor,fillOpacity:1}).addTo(mapa));
+      if(i>0){
+        const mid=[(reguaPts[i-1][0]+p[0])/2,(reguaPts[i-1][1]+p[1])/2];
+        const seg=mapa.distance(reguaPts[i-1],p);
+        reguaLayers.push(L.marker(mid,{icon:L.divIcon({className:'',html:`<div style="background:#1A1D26;border:1px solid #2C3040;border-radius:6px;padding:1px 6px;font-size:11px;font-family:monospace;color:#FFD86B;white-space:nowrap">${fmtDist(seg)}</div>`,iconSize:[0,0]})}).addTo(mapa));
+      }
+    });
+    // total no último ponto
+    if(reguaPts.length>1){
+      const last=reguaPts[reguaPts.length-1];
+      reguaLayers.push(L.marker(last,{icon:L.divIcon({className:'',html:`<div style="background:#3CB371;color:#08120C;border-radius:8px;padding:2px 9px;font-size:12px;font-weight:700;font-family:monospace;white-space:nowrap;transform:translateY(-22px)">Total: ${fmtDist(acc)}</div>`,iconSize:[0,0]})}).addTo(mapa));
+    }
+  }
+  // barra de status
+  const el=document.getElementById('hint');
+  if(el&&modo==='regua'){
+    const tot=reguaPts.length>1?medirCabo(reguaPts):0;
+    el.innerHTML=`<b style="color:#FFD86B">📏 Régua:</b> ${reguaPts.length} ponto(s) · <b class="mono">${fmtDist(tot)}</b> · <button class="btn sm" style="margin-left:6px" onclick="reguaLimpar();attHint()">Limpar</button>`;
+  }
+}
+function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':m.toFixed(1)+' m'}
 
 /* ================= RENDER MAPA ================= */
 function limparOverlaysSoltos(){
@@ -1474,12 +1546,24 @@ function popupElemento(e){
     const usadas=clientesDaCTO(e.id).length;
     ocup=`<div class="pp-ocup">Portas: <b class="mono">${usadas}/${tot}</b> (splitter ${e.splitter})<div class="bar"><i style="width:${usadas/tot*100}%"></i></div></div>`;
   }
+  let posteInfo='';
+  if(e.tipo==='poste'&&e.poste){
+    const p=e.poste;const bits=[];
+    if(p.proprietario)bits.push(p.proprietario);
+    if(p.material)bits.push(p.material);
+    if(p.altura)bits.push(p.altura+'m');
+    if(p.esforco)bits.push(p.esforco+' daN');
+    posteInfo=`<div class="pp-meta">${bits.join(' · ')||'sem dados'}</div>`
+      +(p.numero?`<div class="pp-meta mono">Nº ${p.numero}</div>`:'')
+      +(p.trafo==='sim'?`<div class="pp-meta" style="color:var(--warn)">⚡ Com transformador</div>`:'')
+      +(p.obs?`<div class="pp-meta" style="font-size:11px;color:var(--text-dim)">${p.obs}</div>`:'');
+  }
   let acoes=`<button class="btn sm" onclick="abrirModalElemento('${e.id}')">✏️ Editar</button>`;
   if(e.tipo==='pop')acoes+=`<button class="btn sm ghost" onclick="abrirEditorPop('${e.id}')">🖥 Equipamentos</button>`;
   if(['cto','ceo','pop'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirFusao('${e.id}')">🧵 Fusões</button>`;
   return `<div class="pp-title">${e.nome}<span class="pp-badge">${e.tipo.toUpperCase()}</span></div>
     <div class="pp-meta"><span class="tag ${e.status}">${labelStatus(e.status)}</span> · <span class="mono">${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}</span></div>
-    ${ocup}<div class="pp-acoes">${acoes}</div>`;
+    ${ocup}${posteInfo}<div class="pp-acoes">${acoes}</div>`;
 }
 function labelStatus(s){return{'projeto':'Em projeto','nao-implantado':'Não implantado','implantado':'Implantado','certificado':'Certificado'}[s]||s}
 function attProgresso(){
@@ -1548,6 +1632,16 @@ function abrirModalElemento(id){
   document.getElementById('el-nome').value=e.nome;
   document.getElementById('el-status').value=e.status;
   document.getElementById('el-campo-splitter').style.display=e.tipo==='cto'?'':'none';
+  // campos ricos do poste
+  const ehPoste=e.tipo==='poste';
+  document.getElementById('el-campo-poste').style.display=ehPoste?'':'none';
+  if(ehPoste){
+    const p=e.poste||{};
+    const sv=(id,v,d)=>{const el=document.getElementById(id);if(el)el.value=(v!=null&&v!=='')?v:(d||'')};
+    sv('pst-prop',p.proprietario,'Concessionária');sv('pst-mat',p.material,'Concreto (DT)');
+    sv('pst-alt',p.altura);sv('pst-esf',p.esforco);sv('pst-num',p.numero);
+    sv('pst-trafo',p.trafo,'nao');sv('pst-obs',p.obs);
+  }
   document.getElementById('el-splitter').innerHTML='<option value="">— sem splitter —</option>'+
     CAT.catSplit.filter(c=>c.tipo==='bal').map(c=>`<option value="${c.nome}">${c.nome}${c.con?' APC':''} · −${c.perdas[0]}dB</option>`).join('');
   document.getElementById('el-splitter').value=e.splitter||'';
@@ -1560,6 +1654,11 @@ function salvarElemento(){
   e.nome=document.getElementById('el-nome').value.trim()||e.nome;
   e.status=document.getElementById('el-status').value;
   if(e.tipo==='cto')e.splitter=document.getElementById('el-splitter').value;
+  if(e.tipo==='poste'){
+    const g=id=>{const el=document.getElementById(id);return el?el.value:''};
+    e.poste={proprietario:g('pst-prop'),material:g('pst-mat'),altura:g('pst-alt'),
+      esforco:g('pst-esf'),numero:g('pst-num'),trafo:g('pst-trafo'),obs:g('pst-obs')};
+  }
   salvar();renderTudo();fecharModal('md-elemento');toast('Alterações salvas');
 }
 function excluirElemento(){
@@ -1733,7 +1832,7 @@ function renderFusao(){
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
   let alt=Math.max(660,...Object.values(pos).map(p=>p.y+80));
   svg.setAttribute('viewBox','0 0 1180 '+alt);svg.style.minHeight=alt+'px';
-  let s='';
+  let s='<defs><linearGradient id="spGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A3140"/><stop offset="1" stop-color="#1A1D26"/></linearGradient></defs>';
   // blocos de cabos + fibras
   cabos.forEach(c=>{
     const b=pos['blk-'+c.id];if(!b)return;
@@ -1763,16 +1862,23 @@ function renderFusao(){
     const rot=sp.rot||0, sc=sp.scale||1, fl=sp.flip?-1:1;
     const tr=`transform="translate(${cx0} ${cy0}) rotate(${rot}) scale(${sc*fl} ${sc}) translate(${-cx0} ${-cy0})"`;
     const selSp=fsSelSp===sp.id?' sel-sp':'';
+    const conec=spConectorizado(sp);
+    const adpTipo=sp.adaptador||'APC';  // APC | UPC
+    const adpClass=adpTipo==='UPC'?'upc':'apc';
     s+=`<g class="splitter-shape${selSp}" ${tr} onmousedown="fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">
-      <polygon class="splitter-body" points="${sp.x},${sp.y+h/2-14} ${sp.x+50},${sp.y} ${sp.x+50},${sp.y+h} ${sp.x},${sp.y+h/2+14}" ${des?'style="stroke:#D4A027"':''}/>
-      <text class="splitter-lbl" x="${sp.x+25}" y="${sp.y+h+16}">${rotuloSp(sp)}${spConectorizado(sp)?' APC':''}${des?' DGO':''}</text>
+      <polygon class="splitter-body${des?' des':''}" points="${sp.x},${sp.y+h/2-14} ${sp.x+50},${sp.y} ${sp.x+50},${sp.y+h} ${sp.x},${sp.y+h/2+14}"/>
+      <text class="splitter-lbl" x="${sp.x+25}" y="${sp.y+h/2+4}" style="font-size:11px;font-weight:600">${rotuloSp(sp)}</text>
+      <text class="splitter-lbl" x="${sp.x+25}" y="${sp.y+h+16}">${conec?adpTipo+' ':''}${des?'DGO':(conec?'conectorizado':'fusão')}</text>
       <text class="splitter-lbl" x="${sp.x+25}" y="${sp.y-8}" style="fill:var(--danger);cursor:pointer" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
     s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x}" cy="${sp.y+h/2}" r="5" fill="#E2E0DB" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
     for(let p=1;p<=n;p++){
       const perda=perdaSpPorta(sp,p);
-      const lblP=des?(pcts[p-1]+'% · −'+perda.toFixed(1)+'dB'):('Saída '+p+' · −'+perda.toFixed(1)+'dB');
-      s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-'+p?'sel':''}" cx="${sp.x+50}" cy="${sp.y+6+(p-1)*13}" r="4.5" fill="${des?(p===1?'#D4A027':'#3CB371'):'#8B90A0'}" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})"><title>${lblP}</title></circle>`;
-      if(des)s+=`<text class="splitter-lbl" x="${sp.x+72}" y="${sp.y+9+(p-1)*13}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text>`;
+      const py=sp.y+6+(p-1)*13;
+      const lblP=(des?(pcts[p-1]+'% · '):('Saída '+p+' · '))+'−'+perda.toFixed(1)+'dB'+(conec?(' · adaptador SC/'+adpTipo):'');
+      // adaptador SC visível quando conectorizado
+      if(conec)s+=`<rect class="sc-adapter ${adpClass}" x="${sp.x+46}" y="${py-3.5}" width="9" height="7" rx="1.5"><title>Adaptador SC/${adpTipo}</title></rect>`;
+      s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-'+p?'sel':''}" cx="${sp.x+(conec?55:50)}" cy="${py}" r="4.5" fill="${des?(p===1?'#D4A027':'#3CB371'):'#8B90A0'}" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})"><title>${lblP}</title></circle>`;
+      if(des)s+=`<text class="splitter-lbl" x="${sp.x+(conec?77:72)}" y="${py+3}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text>`;
     }
     s+='</g>';
   });
@@ -1885,6 +1991,7 @@ function fsGirar(d){const sp=_spSel();if(!sp)return;sp.rot=((sp.rot||0)+d+360)%3
 function fsEspelhar(){const sp=_spSel();if(!sp)return;sp.flip=!sp.flip;salvar();renderFusao()}
 function fsEscala(d){const sp=_spSel();if(!sp)return;sp.scale=Math.max(.5,Math.min(2.5,(sp.scale||1)+d));salvar();renderFusao()}
 function fsResetTransform(){const sp=_spSel();if(!sp)return;sp.rot=0;sp.flip=false;sp.scale=1;salvar();renderFusao()}
+function fsTrocarAdaptador(){const sp=_spSel();if(!sp)return;sp.adaptador=(sp.adaptador==='UPC')?'APC':'UPC';salvar();renderFusao();renderFsToolbar()}
 function renderFsToolbar(){
   let tb=document.getElementById('fs-transform-bar');
   const sp=_spSel();
@@ -1903,6 +2010,7 @@ function renderFsToolbar(){
     `<button class="btn sm ghost" title="Diminuir" onclick="fsEscala(-.15)">−</button>`+
     `<button class="btn sm ghost" title="Aumentar" onclick="fsEscala(.15)">＋</button>`+
     `<button class="btn sm ghost" title="Resetar" onclick="fsResetTransform()">⭯</button>`+
+    (spConectorizado(sp)?`<span style="width:1px;height:16px;background:var(--border);margin:0 2px"></span><button class="btn sm ghost" title="Alternar adaptador SC/APC ↔ SC/UPC" onclick="fsTrocarAdaptador()">🔌 SC/${sp.adaptador||'APC'}</button>`:'')+
     `<button class="btn sm" title="Concluir" onclick="fsSelSp=null;renderFusao();renderFsToolbar()">✓</button>`;
 }
 function fsIniciarDrag(ev,id){
