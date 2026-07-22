@@ -503,9 +503,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button title="Refazer (Ctrl+Y)" onclick="refazer()">↪</button>
   </div>
   <div id="vazio-mapa">
-    <b>Projeto vazio — comece pela infraestrutura</b>
-    <p>1. Posicione o <b>POP</b> (central) no mapa<br>2. Adicione as <b>CTOs</b> nas esquinas de atendimento<br>3. Trace os <b>cabos</b> — eles conectam sozinhos ao passar perto</p>
-    <button class="btn" onclick="setModo('pop');this.parentElement.style.display='none'">🏢 Posicionar o POP</button>
+    <b>Projeto vazio — comece como preferir</b>
+    <p>Adicione <b>CTOs</b>, <b>postes</b> e <b>cabos</b> pela barra de ferramentas.<br>O POP é <b>opcional</b> — se a fibra vem de outro ponto/projeto, comece direto pela rede.<br>Você também pode <b>importar um KMZ/KML</b> (Google Earth ou IXC FiberDocs).</p>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="btn" onclick="setModo('cto');this.parentElement.parentElement.style.display='none'">📦 Começar pelas CTOs</button>
+      <button class="btn ghost" onclick="setModo('pop');this.parentElement.parentElement.style.display='none'">🏢 Posicionar POP</button>
+      <button class="btn ghost" onclick="abrirImportar();this.parentElement.parentElement.style.display='none'">📥 Importar KMZ/KML</button>
+    </div>
   </div>
 
   <div id="toolbar">
@@ -833,16 +837,18 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
   <div class="modal">
     <div class="md-head"><b>📥 Importar KMZ/KML</b><button class="x" onclick="fecharModal('md-importar')">✕</button></div>
     <div class="md-body">
-      <div class="info-box">Importe levantamentos do Google Earth: <b>pontos</b> viram elementos, <b>linhas</b> viram cabos e <b>polígonos</b> viram áreas de cobertura.</div>
+      <div class="info-box">Importe do <b>Google Earth</b> ou do <b>IXC FiberDocs</b>: pontos viram elementos, linhas viram cabos, polígonos viram áreas.</div>
       <div class="campo"><label>Importar pontos como</label>
         <select id="imp-tipo">
-          <option value="poste" selected>Postes</option>
+          <option value="auto" selected>🤖 Detectar automaticamente (ícone/nome — ideal p/ IXC FiberDocs)</option>
+          <option value="poste">Postes</option>
           <option value="cto">CTOs</option>
           <option value="ceo">CEOs</option>
           <option value="reserva">Reservas técnicas</option>
           <option value="cliente">Clientes</option>
         </select>
       </div>
+      <div class="info-box" style="font-size:11px">No modo automático: <b>caixa</b>→CTO · <b>caixa de emenda</b>→CEO · <b>pop</b>→POP · <b>poste</b>→Poste · <b>reserva</b>→Reserva · <b>cliente</b>→Cliente (ONUs duplicadas são ignoradas). Cabos: <b>BACKBONE/espessura≥4</b>→Backbone · <b>DROP/Cliente/linha preta</b>→Drop · resto→Distribuição. FO detectado do nome (ex: "6F").</div>
       <div class="campo"><label>Arquivo (.kml ou .kmz)</label><input type="file" id="imp-file" accept=".kml,.kmz" onchange="importarArquivo(event)"></div>
     </div>
   </div>
@@ -1756,21 +1762,14 @@ function renderTudo(){
     if(!camadasVisiveis[e.tipo])return;
     const lbl=e.tipo==='poste'?'':`<div class="lbl">${e.nome}</div>`;
     let ic;
-    if(e.tipo==='poste'){
-      // ícone do poste diferenciado por função de fixação (inovação de campo)
-      const fx=(e.poste&&e.poste.fixacao)||'passagem';
+    if(e.tipo==='poste'&&e.poste&&e.poste.fixacao){
+      // poste com o PIN PADRÃO + etiqueta pequena escrita (passagem/ancoragem/derivação)
+      const fx=e.poste.fixacao;
       const anc=fx.includes('ancoragem');
-      const deriv=fx==='derivacao';
-      // ancoragem = losango firme laranja/vermelho · passagem = círculo aberto verde · derivação = triângulo
-      const cor=anc?'#FF8A3C':(deriv?'#B98AE8':'#3CB371');
-      const glow=anc?'filter:drop-shadow(0 0 3px rgba(255,138,60,.8));':'';
-      let shape;
-      if(anc)shape=`<path d="M11 2 L20 11 L11 20 L2 11 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.5"/><path d="M11 6 L16 11 L11 16 L6 11 Z" fill="none" stroke="#0B0D11" stroke-width="1"/>`;
-      else if(deriv)shape=`<path d="M11 2 L20 19 L2 19 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.5"/>`;
-      else shape=`<circle cx="11" cy="11" r="8" fill="none" stroke="${cor}" stroke-width="3"/><circle cx="11" cy="11" r="2.5" fill="${cor}"/>`;
-      const svg=`<svg viewBox="0 0 22 22" width="20" height="20" style="${glow}">${shape}</svg>`;
-      const supBadge=(e.poste&&e.poste.suporte)?`<div style="position:absolute;top:-6px;right:-8px;background:#1A1D26;border:1px solid #2C3040;border-radius:4px;padding:0 3px;font-size:7px;color:#C9CDD6;white-space:nowrap">${e.poste.suporte}</div>`:'';
-      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}" style="position:relative">${svg}${supBadge}</div>`,iconSize:[22,22],iconAnchor:[11,11]});
+      const txt={passagem:'passagem',ancoragem:'ancoragem',derivacao:'derivação','passagem-ancoragem':'pass+anc'}[fx]||fx;
+      const cor=anc?'#FF8A3C':'#8B90A0';
+      const tag=`<div style="position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:1px;background:rgba(17,19,24,.85);border:1px solid #2C3040;border-radius:4px;padding:0 4px;font-size:7.5px;color:${cor};white-space:nowrap;line-height:1.5">${txt}${e.poste.suporte?' · '+e.poste.suporte:''}</div>`;
+      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}" style="position:relative"><div class="pin pin-poste">${ICONS.poste||''}</div>${tag}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
     }else{
       ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}">${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
     }
@@ -3145,12 +3144,53 @@ async function importarArquivo(ev){
     importarKML(kml);
   }catch(e){toast('Falha ao ler arquivo: '+e.message,true)}
 }
+/* Detecção automática de tipo pelo ícone (padrão IXC FiberDocs) ou pelo nome */
+function detectarTipoPonto(pm,nome){
+  const icTag=pm.getElementsByTagName('href')[0];
+  const ic=(icTag?icTag.textContent:'').toLowerCase();
+  // 1º pelo ícone (mais confiável — padrão FiberDocs/IXC)
+  if(ic){
+    if(ic.includes('onu'))return 'ignorar';               // ONU = duplicata do cliente (mesma coord)
+    if(ic.includes('pop'))return 'pop';
+    if(ic.includes('caixa-emenda')||ic.includes('emenda'))return 'ceo';
+    if(ic.includes('caixa'))return 'cto';
+    if(ic.includes('poste'))return 'poste';
+    if(ic.includes('reserva'))return 'reserva';
+    if(ic.includes('client'))return 'cliente';
+  }
+  // 2º pelo nome/descrição
+  const n=(nome||'').toUpperCase();
+  if(/\bPOP\b/.test(n))return 'pop';
+  if(/CEO|EMENDA/.test(n))return 'ceo';
+  if(/CTO|^R\d+[- ]/.test(n))return 'cto';
+  if(/POSTE/.test(n))return 'poste';
+  if(/RESERVA/.test(n))return 'reserva';
+  if(/CLIENTE/.test(n))return 'cliente';
+  return 'poste'; // fallback conservador
+}
+function detectarTipoCabo(pm,nome){
+  const n=(nome||'').toUpperCase();
+  const corTag=pm.getElementsByTagName('color')[0];
+  const wTag=pm.getElementsByTagName('width')[0];
+  const cor=(corTag?corTag.textContent:'').toLowerCase();
+  const w=wTag?+wTag.textContent:2;
+  let tipo;
+  if(/BACKBONE/.test(n)||w>=4)tipo='backbone';
+  else if(/DROP|CLIENTE/.test(n)||cor.endsWith('1e1f1e'))tipo='drop';
+  else tipo='distribuicao';
+  // FO do nome: "6F", "1FO", "12 FO"...
+  const mFo=n.match(/(\d+)\s*F[O\b]?/);
+  const fo=mFo?+mFo[1]:(tipo==='backbone'?12:(tipo==='drop'?1:12));
+  return {tipo,fo};
+}
 function importarKML(kml){
   const doc=new DOMParser().parseFromString(kml,'text/xml');
   if(doc.getElementsByTagName('parsererror').length){toast('KML inválido',true);return}
-  const tipoPonto=document.getElementById('imp-tipo').value;
+  const modoSel=document.getElementById('imp-tipo').value;
+  const auto=modoSel==='auto';
   const pms=[...doc.getElementsByTagName('Placemark')];
-  let nP=0,nC=0,nA=0;
+  let nP=0,nC=0,nA=0,nCli=0,nIgn=0;
+  const porTipo={};
   const coordsDe=el=>{
     const t=el.getElementsByTagName('coordinates')[0];
     if(!t)return [];
@@ -3161,29 +3201,43 @@ function importarKML(kml){
   };
   pms.forEach(pm=>{
     const nomeTag=pm.getElementsByTagName('name')[0];
-    const nome=nomeTag?nomeTag.textContent.trim():'';
+    let nome=nomeTag?nomeTag.textContent.trim():'';
+    if(/^registro sem nome$/i.test(nome))nome='';   // FiberDocs gera muitos "Registro sem nome"
     const pt=pm.getElementsByTagName('Point')[0];
     const ln=pm.getElementsByTagName('LineString')[0];
     const pg=pm.getElementsByTagName('Polygon')[0];
     if(pt){
       const c=coordsDe(pt)[0];
       if(!c)return;
+      const tipoPonto=auto?detectarTipoPonto(pm,nome):modoSel;
+      if(tipoPonto==='ignorar'){nIgn++;return}
       if(tipoPonto==='cliente'){
-        projAtual.seq.cliente++;
-        const cl={id:uid('cli'),nome:nome||('Cliente '+projAtual.seq.cliente),lat:c[0],lng:c[1],ctoId:null,porta:null};
+        // login do FiberDocs vem no ExtendedData "Login"
+        let login='';
+        [...pm.getElementsByTagName('Data')].forEach(d=>{
+          if((d.getAttribute('name')||'')==='Login'){const v=d.getElementsByTagName('value')[0];if(v)login=v.textContent.trim()}
+        });
+        projAtual.seq.cliente=(projAtual.seq.cliente||0)+1;
+        const cl={id:uid('cli'),nome:nome||('Cliente '+projAtual.seq.cliente),lat:c[0],lng:c[1],ctoId:null,porta:null,login:login||undefined};
         const cand=melhorCTO(c).find(x=>x.livres>0);
         if(cand){cl.ctoId=cand.c.id;cl.porta=proximaPorta(cand.c.id)}
-        projAtual.clientes.push(cl);
+        if(!projAtual.clientes)projAtual.clientes=[];
+        projAtual.clientes.push(cl);nCli++;
       } else {
-        projAtual.seq[tipoPonto]++;
-        projAtual.elementos.push({id:uid(tipoPonto),tipo:tipoPonto,nome:nome||(tipoPonto.toUpperCase()+'-'+projAtual.seq[tipoPonto]),lat:c[0],lng:c[1],status:'implantado',splitter:tipoPonto==='cto'?'1:8':''});
+        projAtual.seq[tipoPonto]=(projAtual.seq[tipoPonto]||0)+1;
+        const el={id:uid(tipoPonto),tipo:tipoPonto,nome:nome||(tipoPonto.toUpperCase()+'-'+projAtual.seq[tipoPonto]),lat:c[0],lng:c[1],status:'implantado',splitter:tipoPonto==='cto'?'1:8':''};
+        if(tipoPonto==='pop')projAtual.pops[el.id]={olts:[],dios:[],switches:[],roteadores:[],racks:[],patches:[],links:[]};
+        projAtual.elementos.push(el);
+        porTipo[tipoPonto]=(porTipo[tipoPonto]||0)+1;
       }
       nP++;
     } else if(ln){
       const pts=coordsDe(ln);
       if(pts.length<2)return;
+      const det=auto?detectarTipoCabo(pm,nome):{tipo:'distribuicao',fo:12};
       projAtual.seq.cabo++;
-      projAtual.cabos.push({id:uid('cabo'),nome:nome||('Cabo 12FO — '+projAtual.seq.cabo),fo:12,tipo:'distribuicao',status:'implantado',folga:cfg().folgaPadrao,pontos:pts,origemId:elementoProximo(pts[0]),destinoId:elementoProximo(pts[pts.length-1])});
+      projAtual.cabos.push({id:uid('cabo'),nome:nome||(det.tipo.toUpperCase()+' '+det.fo+'FO — '+projAtual.seq.cabo),fo:det.fo,tipo:det.tipo,status:'implantado',folga:cfg().folgaPadrao,pontos:pts,origemId:elementoProximo(pts[0]),destinoId:elementoProximo(pts[pts.length-1])});
+      porTipo['cabo-'+det.tipo]=(porTipo['cabo-'+det.tipo]||0)+1;
       nC++;
     } else if(pg){
       const ring=pg.getElementsByTagName('LinearRing')[0];
@@ -3194,10 +3248,16 @@ function importarKML(kml){
       nA++;
     }
   });
+  window.__impResumo={porTipo,nCli,nIgn};
   salvar();renderTudo();fecharModal('md-importar');
   const tudo=[...projAtual.elementos.map(e=>[e.lat,e.lng]),...projAtual.cabos.flatMap(c=>c.pontos)];
   if(tudo.length)mapa.fitBounds(tudo,{padding:[50,50]});
-  toast('Importado: '+nP+' ponto(s), '+nC+' cabo(s), '+nA+' área(s)');
+  const r=window.__impResumo||{porTipo:{},nCli:0,nIgn:0};
+  const nomesT={pop:'POP',cto:'CTO',ceo:'CEO',poste:'Poste',reserva:'Reserva','cabo-backbone':'Backbone','cabo-distribuicao':'Distribuição','cabo-drop':'Drop'};
+  const partes=Object.entries(r.porTipo).map(([t,q])=>q+' '+(nomesT[t]||t));
+  if(r.nCli)partes.push(r.nCli+' Cliente(s)');
+  if(nA)partes.push(nA+' Área(s)');
+  toast('✅ Importado: '+(partes.length?partes.join(' · '):nP+' pontos, '+nC+' cabos')+(r.nIgn?' · '+r.nIgn+' ONU(s) ignoradas':''));
 }
 
 /* ================= EXPORTAR ÁREA ================= */
