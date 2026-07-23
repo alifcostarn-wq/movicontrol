@@ -532,6 +532,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="dr-item" onclick="abrirExpArea()"><span class="ic">📤</span> Exportar Área</button>
       <button class="dr-item" onclick="setModo('viab')"><span class="ic">🎯</span> Testar Viabilidade</button>
       <button class="dr-item" onclick="setModo('otdr')"><span class="ic">📡</span> Simular OTDR</button>
+      <button class="dr-item" onclick="abrirMedicaoPON()"><span class="ic">🖥</span> Medição PON</button>
       <button class="dr-item" onclick="abrirMateriais()"><span class="ic">🧰</span> Lista de Materiais</button>
       <button class="dr-item" onclick="abrirRelArea()"><span class="ic">🗂️</span> Relatório por Área</button>
       <button class="dr-item" onclick="abrirPendencias()"><span class="ic">⚠️</span> Pendências <span class="badge" id="pend-badge" style="display:none"></span></button>
@@ -696,6 +697,30 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
             <option value="#FF3DA5">Rosa</option>
             <option value="#8A8A8A">Cinza</option>
           </select>
+        </div>
+        <div id="el-campo-rede" style="display:none">
+          <div class="dr-sec" style="margin-top:8px">📡 Rede óptica</div>
+          <div class="linha2">
+            <div class="campo"><label>Tecnologia</label>
+              <select id="el-tec">
+                <option value="">Herda do projeto</option>
+                <option value="gpon">GPON (ITU-T G.984)</option>
+                <option value="epon">EPON (IEEE 802.3ah)</option>
+                <option value="xgspon">XGS-PON (ITU-T G.9807)</option>
+              </select></div>
+            <div class="campo"><label>Tipo da caixa</label>
+              <select id="el-tipocaixa">
+                <option value="propria">Própria</option>
+                <option value="neutra">Neutra</option>
+                <option value="ambas">Ambas</option>
+              </select></div>
+          </div>
+          <div class="linha2">
+            <div class="campo"><label>OLT transmissora</label><select id="el-olt"></select></div>
+            <div class="campo"><label>Porta PON</label><input type="number" id="el-pon" min="1" max="256" placeholder="Ex: 3"></div>
+          </div>
+          <div class="campo"><label>Observações gerais</label><input id="el-obs-cx" placeholder="Ex: caixa em poste de esquina, chave 12"></div>
+          <div class="info-box" id="el-rede-info" style="margin-top:6px"></div>
         </div>
       </div>
       <div id="el-campo-poste" style="display:none">
@@ -912,6 +937,15 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <div class="campo"><label>Nome do projeto</label><input id="cf-nome"></div>
       <div class="linha2">
         <div class="campo"><label>TX da OLT (dBm)</label><input id="cf-tx" type="number" step="0.5"></div>
+        <div class="linha2">
+          <div class="campo"><label>Tecnologia PON do projeto</label>
+            <select id="cf-tec">
+              <option value="gpon">GPON (ITU-T G.984)</option>
+              <option value="epon">EPON (IEEE 802.3ah)</option>
+              <option value="xgspon">XGS-PON (ITU-T G.9807)</option>
+            </select></div>
+          <div class="campo"><label>OLT deste projeto</label><select id="cf-olt"></select></div>
+        </div>
         <div class="campo"><label>Folga padrão de cabo (%)</label><input id="cf-folga" type="number" min="0" max="50"></div>
       </div>
       <div class="linha2">
@@ -1389,6 +1423,29 @@ function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
 let camadasVisiveis={satelite:true,pop:true,cto:true,ceo:true,reserva:true,backbone:true,distribuicao:true,drop:true,area:true,cliente:true,poste:true,clienteone:false};
 let layerRefs={}, caboTemp=null, areaTemp=null;
+/* Tecnologias PON: TX típico da OLT e faixa de sensibilidade da ONU */
+const TECNOLOGIAS={
+  gpon:{nome:'GPON',norma:'ITU-T G.984',tx:3.0,rxMin:-27,rxMax:-8,taxa:'2,5G / 1,2G',split:'1:64'},
+  epon:{nome:'EPON',norma:'IEEE 802.3ah',tx:3.0,rxMin:-24,rxMax:-6,taxa:'1,25G / 1,25G',split:'1:32'},
+  xgspon:{nome:'XGS-PON',norma:'ITU-T G.9807',tx:4.0,rxMin:-28,rxMax:-9,taxa:'10G / 10G',split:'1:64'}
+};
+function tecDaCaixa(e){
+  const t=(e&&e.tecnologia)||cfg().tecnologia||'gpon';
+  return TECNOLOGIAS[t]?t:'gpon';
+}
+/* todas as OLTs do projeto (percorre os POPs) */
+function todasOLTs(){
+  const out=[];
+  Object.keys(projAtual.pops||{}).forEach(popId=>{
+    const el=projAtual.elementos.find(e=>e.id===popId);
+    ((projAtual.pops[popId]||{}).olts||[]).forEach(o=>out.push({olt:o,popId,popNome:el?el.nome:'POP'}));
+  });
+  return out;
+}
+function nomeOLT(oltId){
+  const x=todasOLTs().find(t=>t.olt.id===oltId);
+  return x?(x.olt.nome+' ('+x.popNome+')'):null;
+}
 const CORES_CABO={backbone:'#FFD400',distribuicao:'#2E86FF',drop:'#00D26A'};
 const ABNT=[
  {n:1,nome:'Verde',hex:'#1E9E4A'},{n:2,nome:'Amarela',hex:'#E8C818'},{n:3,nome:'Branca',hex:'#D8D8D8'},
@@ -1908,7 +1965,7 @@ function popupElemento(e){
         <div class="cto-cel"><span>Capacidade</span><b>${st.cap}</b></div>
         <div class="cto-cel"><span>Ocupadas</span><b style="color:#2E86FF">${st.ocupadas}</b></div>
         <div class="cto-cel"><span>Disponíveis</span><b style="color:#5FE0A0">${st.livres}</b></div>
-        <div class="cto-cel"><span>Logins</span><b>${st.logins}</b></div>
+        <div class="cto-cel"><span>Inativas</span><b style="color:${st.inativas?'#F87168':'var(--text)'}">${st.inativas}</b></div>
         <div class="cto-cel"><span>Online</span><b style="color:#00FF66">${st.online}</b></div>
         <div class="cto-cel"><span>Offline</span><b style="color:#F87168">${st.offline}</b></div>
       </div>
@@ -2015,6 +2072,25 @@ function abrirModalElemento(id){
   document.getElementById('el-campo-splitter').style.display=e.tipo==='cto'?'':'none';
   document.getElementById('el-campo-cor').style.display=e.tipo==='cto'?'':'none';
   if(e.tipo==='cto')document.getElementById('el-cor').value=e.cor||'';
+  const ehCaixa=e.tipo==='cto'||e.tipo==='ceo';
+  document.getElementById('el-campo-rede').style.display=ehCaixa?'':'none';
+  if(ehCaixa){
+    document.getElementById('el-tec').value=e.tecnologia||'';
+    document.getElementById('el-tipocaixa').value=e.tipoCaixa||'propria';
+    document.getElementById('el-pon').value=e.pon||'';
+    document.getElementById('el-obs-cx').value=e.obs||'';
+    const sel=document.getElementById('el-olt');
+    const olts=todasOLTs();
+    sel.innerHTML='<option value="">— não definida —</option>'
+      +(cfg().oltProjeto&&olts.some(o=>o.olt.id===cfg().oltProjeto)?'<option value="__proj">Usar a OLT do projeto ('+nomeOLT(cfg().oltProjeto)+')</option>':'')
+      +olts.map(o=>`<option value="${o.olt.id}">${o.olt.nome} — ${o.popNome} (${o.olt.portas||0}p)</option>`).join('');
+    sel.value=e.oltId||'';
+    if(!olts.length)sel.innerHTML='<option value="">Nenhuma OLT cadastrada — crie no editor do POP</option>';
+    _elRedeInfo();
+    document.getElementById('el-tec').onchange=_elRedeInfo;
+    document.getElementById('el-pon').oninput=_elRedeInfo;
+    sel.onchange=_elRedeInfo;
+  }
   // campos ricos do poste
   const ehPoste=e.tipo==='poste';
   document.getElementById('el-campo-poste').style.display=ehPoste?'':'none';
@@ -2035,6 +2111,20 @@ function abrirModalElemento(id){
   document.getElementById('el-info').innerHTML='Cabos vinculados: <b>'+(cabosLig.length?cabosLig.map(c=>c.nome).join(', '):'nenhum')+'</b><br>Coordenadas: <b class="mono">'+e.lat.toFixed(6)+', '+e.lng.toFixed(6)+'</b>';
   mapa.closePopup();abrirModal('md-elemento');
 }
+function _elRedeInfo(){
+  const box=document.getElementById('el-rede-info');
+  if(!box)return;
+  const tSel=document.getElementById('el-tec').value||cfg().tecnologia||'gpon';
+  const T=TECNOLOGIAS[tSel]||TECNOLOGIAS.gpon;
+  const oltV=document.getElementById('el-olt').value;
+  const oltId=oltV==='__proj'?cfg().oltProjeto:oltV;
+  const pon=document.getElementById('el-pon').value;
+  const herda=!document.getElementById('el-tec').value;
+  box.innerHTML=`<b>${T.nome}</b> · ${T.norma} · ${T.taxa}${herda?' <span style="color:var(--text-dim)">(herdada do projeto)</span>':''}<br>`
+    +`TX da OLT: <b>${T.tx.toFixed(1)} dBm</b> · sensibilidade da ONU: <b>${T.rxMin} a ${T.rxMax} dBm</b>`
+    +(oltId?`<br>Alimentada por <b>${nomeOLT(oltId)||'OLT'}</b>${pon?' · PON <b>'+pon+'</b>':' <span style="color:var(--warn)">· defina a porta PON</span>'}`
+           :`<br><span style="color:var(--text-dim)">Sem OLT definida — o orçamento óptico usará o TX padrão do projeto.</span>`);
+}
 function _pstFixMudou(){
   // dica visual: ancoragem costuma exigir suporte mais robusto
   const fx=document.getElementById('pst-fixacao').value;
@@ -2054,6 +2144,14 @@ function salvarElemento(){
   e.nome=document.getElementById('el-nome').value.trim()||e.nome;
   e.status=document.getElementById('el-status').value;
   if(e.tipo==='cto'){e.splitter=document.getElementById('el-splitter').value;e.cor=document.getElementById('el-cor').value||null}
+  if(e.tipo==='cto'||e.tipo==='ceo'){
+    e.tecnologia=document.getElementById('el-tec').value||null;
+    e.tipoCaixa=document.getElementById('el-tipocaixa').value||'propria';
+    const ov=document.getElementById('el-olt').value;
+    e.oltId=ov==='__proj'?(cfg().oltProjeto||null):(ov||null);
+    e.pon=+document.getElementById('el-pon').value||null;
+    e.obs=document.getElementById('el-obs-cx').value||null;
+  }
   if(e.tipo==='poste'){
     const g=id=>{const el=document.getElementById(id);return el?el.value:''};
     e.poste={proprietario:g('pst-prop'),material:g('pst-mat'),altura:g('pst-alt'),
@@ -3383,6 +3481,15 @@ function executarAutoPatch(){
 }
 
 /* ================= ORÇAMENTO ÓPTICO ================= */
+/* TX efetivo da caixa: se houver OLT/tecnologia definida usa o padrão da tecnologia, senão o TX do projeto */
+function txDaCaixa(ctoId){
+  const e=projAtual.elementos.find(x=>x.id===ctoId);
+  if(e&&(e.oltId||e.tecnologia||cfg().oltProjeto)){
+    const T=TECNOLOGIAS[tecDaCaixa(e)];
+    if(T)return {tx:T.tx,tec:T};
+  }
+  return {tx:cfg().tx,tec:null};
+}
 function calcOrcamento(ctoId){
   const F=getFus(ctoId);
   if(!F.splitters.length)return null;
@@ -3424,7 +3531,7 @@ function calcOrcamento(ctoId){
             const pat=P.patches.find(p=>p.dio===other.dio&&p.dioPorta===other.porta);
             if(pat){
               const o=P.olts.find(x=>x.id===pat.olt);
-              passos.push({nome:(o?o.nome:'OLT')+' · PON '+pat.oltPorta,sub:'Patch cord · TX +'+cfg().tx.toFixed(1)+' dBm',db:PERDAS.conector});total+=PERDAS.conector;
+              passos.push({nome:(o?o.nome:'OLT')+' · PON '+pat.oltPorta,sub:'Patch cord · TX +'+txDaCaixa(ctoId).tx.toFixed(1)+' dBm',db:PERDAS.conector});total+=PERDAS.conector;
             } else {
               passos.push({nome:'OLT',sub:'Porta '+other.porta+' do DIO sem patch',db:PERDAS.conector});total+=PERDAS.conector;
               aviso.push('Porta '+other.porta+' do '+(d?d.nome:'DIO')+' sem patch para OLT — abra o editor de POP.');
@@ -3435,7 +3542,7 @@ function calcOrcamento(ctoId){
           }
         } else {
           passos.push({nome:P.dios.length?P.dios[0].nome:'DIO',sub:'Conector · '+elOutra.nome,db:PERDAS.conector});total+=PERDAS.conector;
-          passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord · TX +'+cfg().tx.toFixed(1)+' dBm',db:PERDAS.conector});total+=PERDAS.conector;
+          passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord · TX +'+txDaCaixa(ctoId).tx.toFixed(1)+' dBm',db:PERDAS.conector});total+=PERDAS.conector;
           aviso.push('Fibra '+ponto.fib+' não fundida no DIO — abra "Fusões" do POP para montar o plano de fusão da bandeja.');
         }
         ponto=null;break;
@@ -3460,7 +3567,7 @@ function calcOrcamento(ctoId){
     }
   }
   const dropDb=0.1*PERDAS.fibraKm+PERDAS.fusao+2*PERDAS.conector;
-  const rx=cfg().tx-total-dropDb;
+  const rx=txDaCaixa(ctoId).tx-total-dropDb;
   return {sp,passos,total,dropDb,rx,aviso,caboIds};
 }
 function abrirOrcamento(){
@@ -3475,7 +3582,7 @@ function abrirOrcamento(){
       <span>${viavel?'✅ VIÁVEL':(quase?'⚠️ SINAL ALTO (atenuar)':'❌ INVIÁVEL')}</span>
       <span class="mono">RX est.: ${r.rx.toFixed(2)} dBm · atenuação ${(r.total+r.dropDb).toFixed(2)} dB</span>
     </div>
-    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Janela ideal da ONU: −15 a −25 dBm (TX OLT ${cfg().tx.toFixed(1)} dBm).</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">${(()=>{const t=txDaCaixa(ctoId);return t.tec?`Tecnologia <b>${t.tec.nome}</b> · sensibilidade da ONU: ${t.tec.rxMin} a ${t.tec.rxMax} dBm (TX OLT ${t.tx.toFixed(1)} dBm).`:`Janela ideal da ONU: −15 a −25 dBm (TX OLT ${t.tx.toFixed(1)} dBm).`})()}</div>
     ${r.aviso.length?`<div class="alerta-cto">⚠️ ${r.aviso.join('<br>⚠️ ')}</div>`:''}`;
   abrirModal('md-orcamento');
 }
@@ -4235,6 +4342,13 @@ function abrirConfig(){
   const c=cfg();
   document.getElementById('cf-nome').value=projAtual.nome;
   document.getElementById('cf-tx').value=c.tx;
+  document.getElementById('cf-tec').value=c.tecnologia||'gpon';
+  const selO=document.getElementById('cf-olt');
+  const olts=todasOLTs();
+  selO.innerHTML=olts.length
+    ?('<option value="">— não definida —</option>'+olts.map(o=>`<option value="${o.olt.id}">${o.olt.nome} — ${o.popNome}</option>`).join(''))
+    :'<option value="">Nenhuma OLT — cadastre no editor do POP</option>';
+  selO.value=c.oltProjeto||'';
   document.getElementById('cf-folga').value=c.folgaPadrao;
   document.getElementById('cf-rvinc').value=c.raioVinculo;
   document.getElementById('cf-rviab').value=c.raioViab;
@@ -4247,6 +4361,8 @@ function salvarConfig(){
   const c=cfg();
   projAtual.nome=document.getElementById('cf-nome').value.trim()||projAtual.nome;
   c.tx=+document.getElementById('cf-tx').value||3.0;
+  c.tecnologia=document.getElementById('cf-tec').value||'gpon';
+  c.oltProjeto=document.getElementById('cf-olt').value||null;
   c.folgaPadrao=+document.getElementById('cf-folga').value||10;
   c.raioVinculo=+document.getElementById('cf-rvinc').value||35;
   c.raioViab=+document.getElementById('cf-rviab').value||250;
@@ -4268,9 +4384,25 @@ function dadosIxcDoCliente(cl){
   return clientesOne.find(c=>(c.login||'').trim().toLowerCase()===lg)||null;
 }
 /* estatísticas completas da caixa (capacidade, ocupação e sinal das ONUs) */
+function portasInativas(id){const e=projAtual.elementos.find(x=>x.id===id);return (e&&e.portasInativas)||[]}
+function portaEstaInativa(id,p){return portasInativas(id).includes(p)}
+function togglePortaInativa(id,p){
+  const e=projAtual.elementos.find(x=>x.id===id);
+  if(!e)return;
+  if(!e.portasInativas)e.portasInativas=[];
+  const i=e.portasInativas.indexOf(p);
+  if(i>=0){e.portasInativas.splice(i,1);toast('Porta '+p+' reativada')}
+  else{
+    const ocupada=clientesDaCTO(id).some(c=>c.porta===p);
+    if(ocupada&&!confirm('A porta '+p+' está ocupada por um cliente.\n\nInativar mesmo assim (defeito)?'))return;
+    e.portasInativas.push(p);toast('Porta '+p+' inativada (defeito)');
+  }
+  salvar();renderTudo();abrirListaPortas(id);
+}
 function statsCTO(id){
   const cap=portasCTO(id);
   const cls=clientesDaCTO(id);
+  const inat=portasInativas(id).filter(p=>p<=cap);
   const itens=cls.map(cl=>({cl,ixc:dadosIxcDoCliente(cl)}));
   const comIxc=itens.filter(x=>x.ixc);
   const online=comIxc.filter(x=>x.ixc.online===true).length;
@@ -4278,7 +4410,9 @@ function statsCTO(id){
   const rxs=comIxc.map(x=>parseFloat(x.ixc.rx)).filter(v=>!isNaN(v));
   const txs=comIxc.map(x=>parseFloat(x.ixc.tx)).filter(v=>!isNaN(v));
   const med=a=>a.length?(a.reduce((s,v)=>s+v,0)/a.length):null;
-  return {cap,ocupadas:cls.length,livres:Math.max(0,cap-cls.length),itens,
+  const ocupInat=cls.filter(c=>inat.includes(c.porta)).length;
+  return {cap,ocupadas:cls.length,inativas:inat.length,
+    livres:Math.max(0,cap-cls.length-inat.length+ocupInat),itens,
     logins:cls.filter(c=>c.login).length,online,offline,
     rxMed:med(rxs),txMed:med(txs),
     rxMax:rxs.length?Math.max(...rxs):null,rxMin:rxs.length?Math.min(...rxs):null};
@@ -4290,6 +4424,57 @@ function _corRx(v){
   return '#5FE0A0';
 }
 function _fmtRx(v){return (v==null||isNaN(v))?'—':(v.toFixed(2)+' dBm')}
+/* ---------- Medição das portas PON das OLTs ---------- */
+function abrirMedicaoPON(){
+  const olts=todasOLTs();
+  if(!olts.length){abrirModalGenerico('📡 Medição PON','<div class="info-box">Nenhuma OLT cadastrada. Abra um <b>POP → 🖥 Equipamentos</b> e adicione uma OLT.</div>');return}
+  const tecProj=cfg().tecnologia||'gpon';
+  let html='';
+  olts.forEach(({olt,popNome})=>{
+    const nP=olt.portas||((olt.slots||1)*(olt.ppp||8));
+    let linhas='',totCx=0,totCli=0,usadas=0;
+    for(let p=1;p<=nP;p++){
+      const caixas=projAtual.elementos.filter(e=>['cto','ceo'].includes(e.tipo)&&e.oltId===olt.id&&e.pon===p);
+      if(!caixas.length)continue;
+      usadas++;
+      const cli=caixas.reduce((s,c)=>s+clientesDaCTO(c.id).length,0);
+      totCx+=caixas.length;totCli+=cli;
+      const T=TECNOLOGIAS[caixas[0].tecnologia||tecProj]||TECNOLOGIAS.gpon;
+      // RX estimado na caixa (caminho óptico projetado) e RX real das ONUs
+      const ests=caixas.map(c=>{const o=calcOrcamento(c.id);return o?o.rx:null}).filter(v=>v!=null);
+      const reais=[];
+      caixas.forEach(c=>clientesDaCTO(c.id).forEach(cl=>{
+        const ix=dadosIxcDoCliente(cl); const v=ix?parseFloat(ix.rx):NaN;
+        if(!isNaN(v))reais.push(v);
+      }));
+      const md=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
+      const est=md(ests), real=md(reais);
+      const desvio=(est!=null&&real!=null)?(real-est):null;
+      const alerta=desvio!=null&&Math.abs(desvio)>3;
+      linhas+=`<tr>
+        <td class="mono">PON ${p}</td>
+        <td>${caixas.map(c=>c.nome).join(', ')}</td>
+        <td class="mono">${cli}</td>
+        <td class="mono" style="font-size:10.5px">${T.nome}</td>
+        <td class="mono" style="color:${_corRx(est)}">${_fmtRx(est)}</td>
+        <td class="mono" style="color:${_corRx(real)}">${_fmtRx(real)}</td>
+        <td class="mono" style="color:${alerta?'#F87168':'var(--text-dim)'}">${desvio==null?'—':((desvio>0?'+':'')+desvio.toFixed(2)+' dB'+(alerta?' ⚠️':''))}</td></tr>`;
+    }
+    html+=`<div class="dr-sec" style="margin-top:10px">🖥 ${olt.nome} <span style="color:var(--text-dim);font-weight:400">— ${popNome}</span></div>
+      <div class="cto-grid" style="margin-bottom:8px">
+        <div class="cto-cel"><span>Portas PON</span><b>${nP}</b></div>
+        <div class="cto-cel"><span>PONs em uso</span><b style="color:#2E86FF">${usadas}</b></div>
+        <div class="cto-cel"><span>Caixas</span><b>${totCx}</b></div>
+        <div class="cto-cel"><span>Clientes</span><b style="color:#5FE0A0">${totCli}</b></div>
+        <div class="cto-cel"><span>Ocupação</span><b>${nP?Math.round(usadas/nP*100):0}%</b></div>
+      </div>`;
+    html+=linhas
+      ? `<table class="tbl"><thead><tr><th>Porta</th><th>Caixas</th><th>Clientes</th><th>Tec.</th><th>RX previsto</th><th>RX real</th><th>Desvio</th></tr></thead><tbody>${linhas}</tbody></table>`
+      : '<div class="info-box" style="font-size:11px">Nenhuma caixa vinculada a esta OLT. Edite uma CTO/CEO e informe a <b>OLT transmissora</b> e a <b>porta PON</b>.</div>';
+  });
+  html+='<div class="info-box" style="margin-top:10px;font-size:11px"><b>RX previsto</b> vem do caminho óptico projetado (splitters + fibra + conectores). <b>RX real</b> é a média das leituras das ONUs no IXC. Um <b>desvio</b> acima de 3 dB costuma indicar emenda ruim, curvatura ou conector sujo.</div>';
+  abrirModalGenerico('📡 Medição das portas PON',html);
+}
 /* ---------- Lista de portas da caixa (estilo IXC) ---------- */
 function abrirListaPortas(id){
   const el=projAtual.elementos.find(x=>x.id===id);
@@ -4301,8 +4486,12 @@ function abrirListaPortas(id){
   let linhas='';
   for(let p=1;p<=st.cap;p++){
     const it=porPorta[p];
-    if(!it){
-      linhas+=`<tr><td class="mono">${p}</td><td><span class="tag" style="background:rgba(60,179,113,.16);color:#5FE0A0">✓ Disponível</span></td><td colspan="5" style="color:var(--text-dim)">—</td></tr>`;
+    const inat=portaEstaInativa(id,p);
+    const acao=`<button class="btn sm ghost" style="padding:2px 8px;font-size:10.5px" onclick="togglePortaInativa('${id}',${p})">${inat?'✓ Reativar':'⛔ Inativar'}</button>`;
+    if(inat){
+      linhas+=`<tr style="opacity:.6"><td class="mono">${p}</td><td><span class="tag" style="background:rgba(248,113,104,.16);color:#F87168">⛔ Inativa</span></td><td colspan="4" style="color:var(--text-dim)">${it?('ocupada por '+(it.cl.nome||'cliente')):'defeito / bloqueada'}</td><td>${acao}</td></tr>`;
+    }else if(!it){
+      linhas+=`<tr><td class="mono">${p}</td><td><span class="tag" style="background:rgba(60,179,113,.16);color:#5FE0A0">✓ Disponível</span></td><td colspan="4" style="color:var(--text-dim)">—</td><td>${acao}</td></tr>`;
     }else{
       const ix=it.ixc;
       const stTxt=ix?(ix.online===true?'<span class="tag" style="background:rgba(0,255,102,.16);color:#00FF66">● Online</span>':(ix.online===false?'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● Offline</span>':'<span class="tag nao-implantado">Ocupada</span>')):'<span class="tag" style="background:rgba(46,134,255,.16);color:#2E86FF">Ocupada</span>';
@@ -4312,7 +4501,7 @@ function abrirListaPortas(id){
         <td class="mono">${it.cl.login||(ix&&ix.login)||'—'}</td>
         <td class="mono" style="font-size:10.5px">${ix&&ix.onu?ix.onu:'—'}</td>
         <td class="mono" style="color:${_corRx(rx)}">${_fmtRx(rx)}</td>
-        <td class="mono" style="font-size:10.5px">${isNaN(tx)?'—':tx.toFixed(2)}</td></tr>`;
+        <td class="mono" style="font-size:10.5px">${isNaN(tx)?'—':tx.toFixed(2)}</td><td>${acao}</td></tr>`;
     }
   }
   const semIxc=st.ocupadas&&!st.itens.some(x=>x.ixc);
@@ -4321,10 +4510,10 @@ function abrirListaPortas(id){
       <div class="cto-cel"><span>Capacidade</span><b>${st.cap}</b></div>
       <div class="cto-cel"><span>Ocupadas</span><b style="color:#2E86FF">${st.ocupadas}</b></div>
       <div class="cto-cel"><span>Disponíveis</span><b style="color:#5FE0A0">${st.livres}</b></div>
+      <div class="cto-cel"><span>Inativas</span><b style="color:#F87168">${st.inativas}</b></div>
       <div class="cto-cel"><span>Online</span><b style="color:#00FF66">${st.online}</b></div>
-      <div class="cto-cel"><span>Offline</span><b style="color:#F87168">${st.offline}</b></div>
     </div>
-    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX</th><th>TX</th></tr></thead><tbody>${linhas}</tbody></table>
+    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>
     ${semIxc?'<div class="info-box" style="margin-top:8px;font-size:11px">Sinal e status vêm do IXC. Ative a camada <b>Clientes (MoviOne)</b> no painel de elementos para carregar RX/TX e online/offline.</div>':''}`;
   abrirModalGenerico('📋 Portas de atendimento — '+el.nome,html);
 }
