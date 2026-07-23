@@ -378,6 +378,10 @@ input:focus,select:focus{border-color:var(--accent)}
 .cnx-item b{font-weight:600}
 .cnx-item small{color:var(--text-dim);display:block;font-size:10.5px}
 .cnx-vazio{padding:16px;text-align:center;color:var(--text-dim);font-size:12px}
+.cto-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:7px}
+.cto-cel{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:5px 7px;text-align:center}
+.cto-cel span{display:block;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.3px}
+.cto-cel b{font-size:13px;font-family:'DM Mono'}
 .tag-sangria{background:rgba(255,138,60,.18);color:#FF8A3C;border:1px solid rgba(255,138,60,.4);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;white-space:nowrap}
 .tag-ponta{background:rgba(46,134,255,.18);color:#2E86FF;border:1px solid rgba(46,134,255,.4);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;white-space:nowrap}
 .blk-mover{fill:transparent;cursor:move}
@@ -1897,9 +1901,22 @@ function renderTudo(){
 function popupElemento(e){
   let ocup='';
   if(e.tipo==='cto'&&e.splitter){
-    const tot=+e.splitter.split(':')[1];
-    const usadas=clientesDaCTO(e.id).length;
-    ocup=`<div class="pp-ocup">Portas: <b class="mono">${usadas}/${tot}</b> (splitter ${e.splitter})<div class="bar"><i style="width:${usadas/tot*100}%"></i></div></div>`;
+    const st=statsCTO(e.id);
+    const pct=st.cap?(st.ocupadas/st.cap*100):0;
+    ocup=`<div class="pp-ocup">Portas: <b class="mono">${st.ocupadas}/${st.cap}</b> (splitter ${e.splitter})<div class="bar"><i style="width:${pct}%"></i></div></div>
+      <div class="cto-grid">
+        <div class="cto-cel"><span>Capacidade</span><b>${st.cap}</b></div>
+        <div class="cto-cel"><span>Ocupadas</span><b style="color:#2E86FF">${st.ocupadas}</b></div>
+        <div class="cto-cel"><span>Disponíveis</span><b style="color:#5FE0A0">${st.livres}</b></div>
+        <div class="cto-cel"><span>Logins</span><b>${st.logins}</b></div>
+        <div class="cto-cel"><span>Online</span><b style="color:#00FF66">${st.online}</b></div>
+        <div class="cto-cel"><span>Offline</span><b style="color:#F87168">${st.offline}</b></div>
+      </div>
+      ${st.rxMed!=null?`<div class="cto-grid" style="margin-top:4px">
+        <div class="cto-cel"><span>RX médio</span><b style="color:${_corRx(st.rxMed)}">${_fmtRx(st.rxMed)}</b></div>
+        <div class="cto-cel"><span>RX melhor</span><b style="color:${_corRx(st.rxMax)}">${_fmtRx(st.rxMax)}</b></div>
+        <div class="cto-cel"><span>RX pior</span><b style="color:${_corRx(st.rxMin)}">${_fmtRx(st.rxMin)}</b></div>
+      </div>`:`<div class="pp-meta" style="font-size:10.5px;color:var(--text-dim)">Sem leituras de sinal — ative a camada Clientes (MoviOne)</div>`}`;
   }
   let posteInfo='';
   if(e.tipo==='poste'&&e.poste){
@@ -1923,6 +1940,7 @@ function popupElemento(e){
   }
   let acoes=`<button class="btn sm" onclick="abrirModalElemento('${e.id}')">✏️ Editar</button>`;
   if(e.tipo==='pop')acoes+=`<button class="btn sm ghost" onclick="abrirEditorPop('${e.id}')">🖥 Equipamentos</button>`;
+  if(e.tipo==='cto')acoes+=`<button class="btn sm ghost" onclick="abrirListaPortas('${e.id}')">📋 Portas</button>`;
   if(['cto','ceo','pop'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirFusao('${e.id}')">🧵 Fusões</button><button class="btn sm ghost" onclick="abrirMapaConexoes('${e.id}')">🔗 Conexões</button>`;
   return `<div class="pp-title">${e.nome}<span class="pp-badge">${e.tipo.toUpperCase()}</span></div>
     <div class="pp-meta"><span class="tag ${e.status}">${labelStatus(e.status)}</span> · <span class="mono">${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}</span></div>
@@ -4242,6 +4260,74 @@ function salvarConfig(){
 
 /* ================= CLIENTES ================= */
 function clientesDaCTO(id){return projAtual.clientes.filter(cl=>cl.ctoId===id)}
+/* casa o cliente do projeto com os dados vivos do MoviOne/IXC (por login) */
+function dadosIxcDoCliente(cl){
+  if(!cl)return null;
+  const lg=(cl.login||'').trim().toLowerCase();
+  if(!lg||typeof clientesOne==='undefined'||!clientesOne.length)return null;
+  return clientesOne.find(c=>(c.login||'').trim().toLowerCase()===lg)||null;
+}
+/* estatísticas completas da caixa (capacidade, ocupação e sinal das ONUs) */
+function statsCTO(id){
+  const cap=portasCTO(id);
+  const cls=clientesDaCTO(id);
+  const itens=cls.map(cl=>({cl,ixc:dadosIxcDoCliente(cl)}));
+  const comIxc=itens.filter(x=>x.ixc);
+  const online=comIxc.filter(x=>x.ixc.online===true).length;
+  const offline=comIxc.filter(x=>x.ixc.online===false).length;
+  const rxs=comIxc.map(x=>parseFloat(x.ixc.rx)).filter(v=>!isNaN(v));
+  const txs=comIxc.map(x=>parseFloat(x.ixc.tx)).filter(v=>!isNaN(v));
+  const med=a=>a.length?(a.reduce((s,v)=>s+v,0)/a.length):null;
+  return {cap,ocupadas:cls.length,livres:Math.max(0,cap-cls.length),itens,
+    logins:cls.filter(c=>c.login).length,online,offline,
+    rxMed:med(rxs),txMed:med(txs),
+    rxMax:rxs.length?Math.max(...rxs):null,rxMin:rxs.length?Math.min(...rxs):null};
+}
+function _corRx(v){
+  if(v==null||isNaN(v))return 'var(--text-dim)';
+  if(v>=-8||v<=-27)return '#F87168';
+  if(v<=-25)return '#E0913C';
+  return '#5FE0A0';
+}
+function _fmtRx(v){return (v==null||isNaN(v))?'—':(v.toFixed(2)+' dBm')}
+/* ---------- Lista de portas da caixa (estilo IXC) ---------- */
+function abrirListaPortas(id){
+  const el=projAtual.elementos.find(x=>x.id===id);
+  if(!el){toast('Caixa não encontrada',true);return}
+  const st=statsCTO(id);
+  if(!st.cap){abrirModalGenerico('📋 Portas — '+el.nome,'<div class="info-box">Esta caixa não tem splitter definido, então não há portas de atendimento.<br>Edite a caixa e escolha o splitter (1:8, 1:16...).</div>');return}
+  const porPorta={};
+  st.itens.forEach(x=>{if(x.cl.porta)porPorta[x.cl.porta]=x});
+  let linhas='';
+  for(let p=1;p<=st.cap;p++){
+    const it=porPorta[p];
+    if(!it){
+      linhas+=`<tr><td class="mono">${p}</td><td><span class="tag" style="background:rgba(60,179,113,.16);color:#5FE0A0">✓ Disponível</span></td><td colspan="5" style="color:var(--text-dim)">—</td></tr>`;
+    }else{
+      const ix=it.ixc;
+      const stTxt=ix?(ix.online===true?'<span class="tag" style="background:rgba(0,255,102,.16);color:#00FF66">● Online</span>':(ix.online===false?'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● Offline</span>':'<span class="tag nao-implantado">Ocupada</span>')):'<span class="tag" style="background:rgba(46,134,255,.16);color:#2E86FF">Ocupada</span>';
+      const rx=ix?parseFloat(ix.rx):NaN, tx=ix?parseFloat(ix.tx):NaN;
+      linhas+=`<tr><td class="mono">${p}</td><td>${stTxt}</td>
+        <td>${it.cl.nome||'—'}</td>
+        <td class="mono">${it.cl.login||(ix&&ix.login)||'—'}</td>
+        <td class="mono" style="font-size:10.5px">${ix&&ix.onu?ix.onu:'—'}</td>
+        <td class="mono" style="color:${_corRx(rx)}">${_fmtRx(rx)}</td>
+        <td class="mono" style="font-size:10.5px">${isNaN(tx)?'—':tx.toFixed(2)}</td></tr>`;
+    }
+  }
+  const semIxc=st.ocupadas&&!st.itens.some(x=>x.ixc);
+  const html=`
+    <div class="cto-grid" style="margin-bottom:10px">
+      <div class="cto-cel"><span>Capacidade</span><b>${st.cap}</b></div>
+      <div class="cto-cel"><span>Ocupadas</span><b style="color:#2E86FF">${st.ocupadas}</b></div>
+      <div class="cto-cel"><span>Disponíveis</span><b style="color:#5FE0A0">${st.livres}</b></div>
+      <div class="cto-cel"><span>Online</span><b style="color:#00FF66">${st.online}</b></div>
+      <div class="cto-cel"><span>Offline</span><b style="color:#F87168">${st.offline}</b></div>
+    </div>
+    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX</th><th>TX</th></tr></thead><tbody>${linhas}</tbody></table>
+    ${semIxc?'<div class="info-box" style="margin-top:8px;font-size:11px">Sinal e status vêm do IXC. Ative a camada <b>Clientes (MoviOne)</b> no painel de elementos para carregar RX/TX e online/offline.</div>':''}`;
+  abrirModalGenerico('📋 Portas de atendimento — '+el.nome,html);
+}
 function portasCTO(id){const e=projAtual.elementos.find(x=>x.id===id);return e&&e.splitter?+e.splitter.split(':')[1]:0}
 function melhorCTO(ll){
   return projAtual.elementos.filter(e=>e.tipo==='cto')
