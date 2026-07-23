@@ -362,6 +362,13 @@ input:focus,select:focus{border-color:var(--accent)}
 .splitter-body{fill:url(#spGrad);stroke:#4A5568;stroke-width:1.5}
 .splitter-body.des{stroke:#D4A027}
 .splitter-cap{fill:#3A4556;stroke:none}
+.blk-mover{fill:transparent;cursor:move}
+.blk-mover:hover{fill:rgba(60,179,113,.07)}
+.blk-resize{cursor:nwse-resize}
+.blk-resize rect{fill:#2A2F3A;stroke:#3D4453;stroke-width:1}
+.blk-resize path{stroke:#8B90A0;stroke-width:1.5;fill:none}
+.blk-resize:hover rect{fill:#2E4636;stroke:var(--accent)}
+.blk-resize:hover path{stroke:var(--accent)}
 .blk-unlink{cursor:pointer}
 .blk-unlink rect{fill:#2A2F3A;stroke:#3D4453;stroke-width:1}
 .blk-unlink text{fill:#8B90A0;font-size:11px;text-anchor:middle;pointer-events:none}
@@ -975,6 +982,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <select id="fs-add-split" style="width:190px;padding:7px 10px;font-size:12px"></select>
       <button class="fs-tool" onclick="addSplitterDoCatalogo()">+ Splitter</button>
       <button class="fs-tool" onclick="abrirVincularCabo()" title="Vincular um cabo existente a esta caixa">🔗 Vincular cabo</button>
+      <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Reorganizar</button>
       <span style="width:10px"></span>
       <select id="fs-status-el" style="width:150px;padding:7px 10px;font-size:12px" onchange="mudarStatusCaixaFusao(this.value)">
         <option value="projeto">Em projeto</option>
@@ -2274,16 +2282,26 @@ function abrirVincularCabo(){
 }
 function fsPos(){ // calcula posições de todos os pontos conectáveis
   const cabos=cabosDaCaixa(fsCaixa), pos={};
-  const esq=cabos.filter((c,i)=>i%2===0), dir=cabos.filter((c,i)=>i%2===1);
-  const H=(c)=>60+Math.min(c.fo,36)*20+16;
-  let y=70;
-  esq.forEach(c=>{pos['blk-'+c.id]={x:40,y,lado:'esq',h:H(c)};
-    for(let f=1;f<=c.fo;f++)pos['fib-'+c.id+'-'+f]={x:40+180+70,y:y+52+(f-1)*20};
-    y+=H(c)+34});
-  y=70;
-  dir.forEach(c=>{pos['blk-'+c.id]={x:920,y,lado:'dir',h:H(c)};
-    for(let f=1;f<=c.fo;f++)pos['fib-'+c.id+'-'+f]={x:920-70,y:y+52+(f-1)*20};
-    y+=H(c)+34});
+  const Fb=getFus(fsCaixa); if(!Fb.blocos)Fb.blocos={};
+  const autoY={esq:70,dir:70};
+  cabos.forEach((c,i)=>{
+    const ov=Fb.blocos[c.id]||{};
+    const esp=ov.esp||20;                 // espaçamento entre fibras
+    const bw=ov.w||180;                   // largura do bloco
+    const hB=60+Math.min(c.fo,36)*esp+16; // altura decorre do espaçamento
+    let x,y,lado;
+    if(ov.x!==undefined&&ov.y!==undefined){
+      x=ov.x;y=ov.y;
+      lado=(x+bw/2)<560?'esq':'dir';      // lado das fibras segue a posição
+    }else{
+      lado=(i%2===0)?'esq':'dir';
+      x=lado==='esq'?40:920;
+      y=autoY[lado];autoY[lado]+=hB+34;
+    }
+    pos['blk-'+c.id]={x,y,lado,h:hB,bw,esp};
+    const fx=lado==='esq'?x+bw+70:x-70;
+    for(let f=1;f<=c.fo;f++)pos['fib-'+c.id+'-'+f]={x:fx,y:y+52+(f-1)*esp};
+  });
   getFus(fsCaixa).splitters.forEach(sp=>{
     const n=nSaidasSp(sp), SLOT=18, W=64, h=n*SLOT+8, conec=spConectorizado(sp);
     // aplica a MESMA transformação usada no desenho, para o ponto de conexão bater com o visual
@@ -2325,20 +2343,29 @@ function renderFusao(){
   }
   const e=projAtual.elementos.find(x=>x.id===fsCaixa);
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
-  let alt=Math.max(660,...Object.values(pos).map(p=>p.y+80));
-  svg.setAttribute('viewBox','0 0 1180 '+alt);svg.style.minHeight=alt+'px';
+  // área cresce conforme os blocos são movidos/redimensionados
+  const vals=Object.values(pos);
+  let alt=Math.max(660,...vals.map(p=>p.y+(p.h||0)+80));
+  let larg=Math.max(1180,...vals.map(p=>p.x+(p.bw||0)+120));
+  svg.setAttribute('viewBox','0 0 '+larg+' '+alt);svg.style.minHeight=alt+'px';
   let s='<defs><linearGradient id="spGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A3140"/><stop offset="1" stop-color="#1A1D26"/></linearGradient></defs>';
   // blocos de cabos + fibras
   cabos.forEach(c=>{
     const b=pos['blk-'+c.id];if(!b)return;
-    const bw=180;
+    const bw=b.bw;
     s+=`<g><rect class="cabo-bloco" x="${b.x}" y="${b.y}" width="${bw}" height="${b.h}" rx="10"/>
-      <text class="cabo-titulo" x="${b.x+14}" y="${b.y+24}">${c.nome.toUpperCase().slice(0,18)}</text>
-      <text class="cabo-sub" x="${b.x+14}" y="${b.y+40}">${c.fo} FIBRAS · ${labelStatus(c.status)}</text>
+      <rect class="blk-mover" x="${b.x}" y="${b.y}" width="${bw}" height="46" rx="10" onmousedown="fsIniciarDragBloco(event,'${c.id}')"><title>Arraste para mover este bloco</title></rect>
+      <text class="cabo-titulo" x="${b.x+14}" y="${b.y+24}" style="pointer-events:none">${c.nome.toUpperCase().slice(0,18)}</text>
+      <text class="cabo-sub" x="${b.x+14}" y="${b.y+40}" style="pointer-events:none">${c.fo} FIBRAS · ${labelStatus(c.status)}</text>
       <g class="blk-unlink" onmousedown="event.stopPropagation()" onclick="desvincularCabo('${c.id}')">
         <rect x="${b.x+bw-30}" y="${b.y+10}" width="22" height="20" rx="5"/>
         <text x="${b.x+bw-19}" y="${b.y+24}">⛓</text>
         <title>Desvincular este cabo da caixa (remove também as fusões dele aqui)</title>
+      </g>
+      <g class="blk-resize" onmousedown="fsIniciarResizeBloco(event,'${c.id}')">
+        <rect x="${b.x+bw-16}" y="${b.y+b.h-16}" width="14" height="14" rx="3"/>
+        <path d="M ${b.x+bw-13} ${b.y+b.h-4} L ${b.x+bw-4} ${b.y+b.h-13} M ${b.x+bw-8} ${b.y+b.h-4} L ${b.x+bw-4} ${b.y+b.h-8}"/>
+        <title>Arraste para ajustar largura e espaçamento das fibras</title>
       </g>`;
     for(let f=1;f<=c.fo;f++){
       const cor=ABNT[(f-1)%12].hex, p=pos['fib-'+c.id+'-'+f];
@@ -2547,6 +2574,45 @@ function fsIniciarDrag(ev,id){
   const mv=e=>{const p=svgPoint(svg,e);sp.x=Math.round(p.x-fsDrag.dx);sp.y=Math.round(p.y-fsDrag.dy);renderFusao()};
   const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);fsDrag=null;salvar()};
   document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+}
+function _blocoOv(caboId){
+  const F=getFus(fsCaixa); if(!F.blocos)F.blocos={};
+  if(!F.blocos[caboId]){
+    const b=fsPos().pos['blk-'+caboId];
+    F.blocos[caboId]={x:b.x,y:b.y,w:b.bw,esp:b.esp};
+  }
+  return F.blocos[caboId];
+}
+function fsIniciarDragBloco(ev,caboId){
+  ev.stopPropagation();
+  const o=_blocoOv(caboId);
+  const svg=document.getElementById('fs-svg');
+  const p0=svgPoint(svg,ev);
+  const dx=p0.x-o.x, dy=p0.y-o.y;
+  const mv=e=>{const p=svgPoint(svg,e);o.x=Math.round(p.x-dx);o.y=Math.max(10,Math.round(p.y-dy));renderFusao()};
+  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);salvar()};
+  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+}
+function fsIniciarResizeBloco(ev,caboId){
+  ev.stopPropagation();
+  const o=_blocoOv(caboId);
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const nf=Math.min(c.fo,36);
+  const svg=document.getElementById('fs-svg');
+  const mv=e=>{
+    const p=svgPoint(svg,e);
+    o.w=Math.max(130,Math.min(380,Math.round(p.x-o.x)));
+    o.esp=Math.max(12,Math.min(44,Math.round((p.y-o.y-76)/nf)));
+    renderFusao();
+  };
+  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);salvar()};
+  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+}
+function fsReorganizarBlocos(){
+  const F=getFus(fsCaixa);
+  if(!F.blocos||!Object.keys(F.blocos).length){toast('Os blocos já estão na posição automática');return}
+  if(!confirm('Reorganizar os blocos de cabo na posição automática?'))return;
+  F.blocos={};salvar();renderFusao();toast('Blocos reorganizados');
 }
 function fsIniciarDragDio(ev,id){
   const d=getPop(fsCaixa).dios.find(x=>x.id===id);
