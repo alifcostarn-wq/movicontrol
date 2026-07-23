@@ -362,6 +362,11 @@ input:focus,select:focus{border-color:var(--accent)}
 .splitter-body{fill:url(#spGrad);stroke:#4A5568;stroke-width:1.5}
 .splitter-body.des{stroke:#D4A027}
 .splitter-cap{fill:#3A4556;stroke:none}
+.blk-unlink{cursor:pointer}
+.blk-unlink rect{fill:#2A2F3A;stroke:#3D4453;stroke-width:1}
+.blk-unlink text{fill:#8B90A0;font-size:11px;text-anchor:middle;pointer-events:none}
+.blk-unlink:hover rect{fill:#4A2126;stroke:var(--danger)}
+.blk-unlink:hover text{fill:#FF8A80}
 .sp-aba{cursor:pointer}
 .sp-aba rect{stroke:#0B0D11;stroke-width:1}
 .sp-aba:hover rect{filter:brightness(1.25)}
@@ -969,6 +974,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div id="fs-tools">
       <select id="fs-add-split" style="width:190px;padding:7px 10px;font-size:12px"></select>
       <button class="fs-tool" onclick="addSplitterDoCatalogo()">+ Splitter</button>
+      <button class="fs-tool" onclick="abrirVincularCabo()" title="Vincular um cabo existente a esta caixa">🔗 Vincular cabo</button>
       <span style="width:10px"></span>
       <select id="fs-status-el" style="width:150px;padding:7px 10px;font-size:12px" onchange="mudarStatusCaixaFusao(this.value)">
         <option value="projeto">Em projeto</option>
@@ -2204,6 +2210,68 @@ function abrirFusao(caixaId){
 function fecharFusao(){salvar();fsSelSp=null;renderFsToolbar();document.getElementById('tela-fusao').style.display='none';renderTudo()}
 function mudarStatusCaixaFusao(v){const e=projAtual.elementos.find(x=>x.id===fsCaixa);e.status=v;salvar();toast('Status: '+labelStatus(v))}
 function cabosDaCaixa(id){return projAtual.cabos.filter(c=>c.origemId===id||c.destinoId===id)}
+/* remove as fusões de uma caixa que referenciam um cabo (usado ao desvincular/retirar) */
+function purgarFusoesDoCabo(caixaId,caboId){
+  const F=projAtual.fusoes[caixaId];
+  if(!F||!F.fusoes)return 0;
+  const antes=F.fusoes.length;
+  F.fusoes=F.fusoes.filter(fu=>!((fu.a.t==='fibra'&&fu.a.cabo===caboId)||(fu.b.t==='fibra'&&fu.b.cabo===caboId)));
+  return antes-F.fusoes.length;
+}
+/* desvincula um cabo da caixa: limpa origem/destino e apaga as fusões daquele cabo na caixa */
+function desvincularCabo(caboId,caixaId,semConfirmar){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  if(!c)return;
+  const cx=caixaId||fsCaixa;
+  const nFus=(projAtual.fusoes[cx]&&projAtual.fusoes[cx].fusoes||[]).filter(fu=>(fu.a.t==='fibra'&&fu.a.cabo===caboId)||(fu.b.t==='fibra'&&fu.b.cabo===caboId)).length;
+  if(!semConfirmar){
+    const msg='Desvincular "'+c.nome+'" desta caixa?'+(nFus?('\n\nAtenção: '+nFus+' fusão(ões) deste cabo serão removidas.'):'');
+    if(!confirm(msg))return;
+  }
+  purgarFusoesDoCabo(cx,caboId);
+  if(c.origemId===cx)c.origemId=null;
+  if(c.destinoId===cx)c.destinoId=null;
+  salvar();
+  if(typeof renderFusao==='function'&&fsCaixa===cx)renderFusao();
+  if(mapa)renderTudo();
+  toast('Cabo desvinculado da caixa'+(nFus?(' · '+nFus+' fusão(ões) removidas'):''));
+}
+/* vincula um cabo à caixa pela ponta mais próxima */
+function vincularCabo(caboId,caixaId){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const el=projAtual.elementos.find(x=>x.id===(caixaId||fsCaixa));
+  if(!c||!el)return;
+  const cx=caixaId||fsCaixa;
+  const dIni=mapa.distance(c.pontos[0],[el.lat,el.lng]);
+  const dFim=mapa.distance(c.pontos[c.pontos.length-1],[el.lat,el.lng]);
+  if(dIni<=dFim)c.origemId=cx; else c.destinoId=cx;
+  salvar();
+  if(typeof renderFusao==='function'&&fsCaixa===cx)renderFusao();
+  if(mapa)renderTudo();
+  fecharModal('md-generico');
+  toast('"'+c.nome+'" vinculado a '+el.nome);
+}
+/* modal para escolher um cabo próximo e vincular */
+function abrirVincularCabo(){
+  const el=projAtual.elementos.find(x=>x.id===fsCaixa);
+  if(!el)return;
+  const jaLig=new Set(cabosDaCaixa(fsCaixa).map(c=>c.id));
+  const cands=projAtual.cabos.filter(c=>!jaLig.has(c.id)).map(c=>{
+    const d=Math.min(mapa.distance(c.pontos[0],[el.lat,el.lng]),mapa.distance(c.pontos[c.pontos.length-1],[el.lat,el.lng]));
+    return {c,d};
+  }).sort((a,b)=>a.d-b.d).slice(0,20);
+  let html;
+  if(!cands.length){
+    html='<div class="info-box">Todos os cabos do projeto já estão vinculados a esta caixa (ou não há cabos).</div>';
+  }else{
+    html='<div class="info-box">Escolha um cabo para vincular a <b>'+el.nome+'</b>. Será usada a ponta mais próxima da caixa.</div>'+
+      cands.map(x=>`<div class="orc-item" style="cursor:pointer" onclick="vincularCabo('${x.c.id}')">
+        <div class="orc-num" style="border-color:${x.d<50?'var(--accent)':'var(--border)'}">${x.d<50?'✓':'·'}</div>
+        <div class="orc-info"><b>${x.c.nome}</b><span>${x.c.fo}FO · ${x.c.tipo} · ponta a ${x.d.toFixed(0)} m da caixa</span></div>
+        <div class="orc-db">🔗</div></div>`).join('');
+  }
+  abrirModalGenerico('🔗 Vincular cabo a '+el.nome,html);
+}
 function fsPos(){ // calcula posições de todos os pontos conectáveis
   const cabos=cabosDaCaixa(fsCaixa), pos={};
   const esq=cabos.filter((c,i)=>i%2===0), dir=cabos.filter((c,i)=>i%2===1);
@@ -2244,6 +2312,17 @@ function ptKey(p){return p.t==='fibra'?('fib-'+p.cabo+'-'+p.fib):(p.t==='dio'?('
 function renderFusao(){
   const svg=document.getElementById('fs-svg');
   const {pos,cabos}=fsPos(), F=getFus(fsCaixa);
+  // limpeza defensiva: descarta fusões que apontam para cabos não vinculados a esta caixa
+  if(F.fusoes&&F.fusoes.length){
+    const idsOk=new Set(cabos.map(c=>c.id));
+    const antes=F.fusoes.length;
+    F.fusoes=F.fusoes.filter(fu=>{
+      const aOk=fu.a.t!=='fibra'||idsOk.has(fu.a.cabo);
+      const bOk=fu.b.t!=='fibra'||idsOk.has(fu.b.cabo);
+      return aOk&&bOk;
+    });
+    if(F.fusoes.length!==antes)salvar();
+  }
   const e=projAtual.elementos.find(x=>x.id===fsCaixa);
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
   let alt=Math.max(660,...Object.values(pos).map(p=>p.y+80));
@@ -2254,8 +2333,13 @@ function renderFusao(){
     const b=pos['blk-'+c.id];if(!b)return;
     const bw=180;
     s+=`<g><rect class="cabo-bloco" x="${b.x}" y="${b.y}" width="${bw}" height="${b.h}" rx="10"/>
-      <text class="cabo-titulo" x="${b.x+14}" y="${b.y+24}">${c.nome.toUpperCase().slice(0,20)}</text>
-      <text class="cabo-sub" x="${b.x+14}" y="${b.y+40}">${c.fo} FIBRAS · ${labelStatus(c.status)}</text>`;
+      <text class="cabo-titulo" x="${b.x+14}" y="${b.y+24}">${c.nome.toUpperCase().slice(0,18)}</text>
+      <text class="cabo-sub" x="${b.x+14}" y="${b.y+40}">${c.fo} FIBRAS · ${labelStatus(c.status)}</text>
+      <g class="blk-unlink" onmousedown="event.stopPropagation()" onclick="desvincularCabo('${c.id}')">
+        <rect x="${b.x+bw-30}" y="${b.y+10}" width="22" height="20" rx="5"/>
+        <text x="${b.x+bw-19}" y="${b.y+24}">⛓</text>
+        <title>Desvincular este cabo da caixa (remove também as fusões dele aqui)</title>
+      </g>`;
     for(let f=1;f<=c.fo;f++){
       const cor=ABNT[(f-1)%12].hex, p=pos['fib-'+c.id+'-'+f];
       const x1=b.lado==='esq'?b.x+bw:b.x, x2=p.x;
@@ -3992,8 +4076,17 @@ let editCabo=null, editMarkers=[];
 function relinkPontas(){
   if(!editCabo)return;
   const pts=editCabo.pontos;
+  const antesO=editCabo.origemId, antesD=editCabo.destinoId;
   editCabo.origemId=elementoProximo(pts[0]);
   editCabo.destinoId=elementoProximo(pts[pts.length-1]);
+  // se o cabo foi RETIRADO de alguma caixa, apaga as fusões órfãs dele naquela caixa
+  let removidas=0;
+  [antesO,antesD].forEach(cxAntes=>{
+    if(!cxAntes)return;
+    const aindaLigado=editCabo.origemId===cxAntes||editCabo.destinoId===cxAntes;
+    if(!aindaLigado)removidas+=purgarFusoesDoCabo(cxAntes,editCabo.id);
+  });
+  if(removidas)toast('Cabo retirado da caixa · '+removidas+' fusão(ões) removidas');
 }
 function editarTracado(id,silencioso){
   if(editCabo&&editCabo.id===id)return;
