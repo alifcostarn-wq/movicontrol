@@ -364,6 +364,20 @@ input:focus,select:focus{border-color:var(--accent)}
 .splitter-body{fill:url(#spGrad);stroke:#4A5568;stroke-width:1.5}
 .splitter-body.des{stroke:#D4A027}
 .splitter-cap{fill:#3A4556;stroke:none}
+.cnx-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.cnx-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);margin-left:auto;cursor:pointer}
+.cnx-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cnx-tit{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;text-align:center}
+.cnx-lista{border:1px solid var(--border);border-radius:10px;min-height:210px;max-height:300px;overflow:auto;background:var(--surface2)}
+.cnx-item{padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px}
+.cnx-item:last-child{border-bottom:none}
+.cnx-item:hover{background:rgba(60,179,113,.08)}
+.cnx-item.sel{background:rgba(60,179,113,.18);box-shadow:inset 3px 0 0 var(--accent)}
+.cnx-item b{font-weight:600}
+.cnx-item small{color:var(--text-dim);display:block;font-size:10.5px}
+.cnx-vazio{padding:16px;text-align:center;color:var(--text-dim);font-size:12px}
+.tag-sangria{background:rgba(255,138,60,.18);color:#FF8A3C;border:1px solid rgba(255,138,60,.4);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;white-space:nowrap}
+.tag-ponta{background:rgba(46,134,255,.18);color:#2E86FF;border:1px solid rgba(46,134,255,.4);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;white-space:nowrap}
 .blk-mover{fill:transparent;cursor:move}
 .blk-mover:hover{fill:rgba(60,179,113,.07)}
 .blk-resize{cursor:nwse-resize}
@@ -566,6 +580,26 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 <div id="ctx-menu"></div>
 
 <!-- ================= MODAL: VINCULAR CTO (MoviOne) ================= -->
+<div class="modal-bg" id="md-conexoes">
+  <div class="modal" style="max-width:920px">
+    <div class="md-head"><b>🔗 Mapa de Conexões — <span id="cnx-caixa"></span></b><button class="x" onclick="fecharModal('md-conexoes')">✕</button></div>
+    <div class="md-body">
+      <div class="info-box" style="margin-bottom:10px">Cabos que <b>terminam</b> na caixa entram como ponta. Cabos que apenas <b>passam por cima</b> entram como <b>sangria</b> (derivação de meio de vão): você funde só as fibras necessárias e o restante segue adiante.</div>
+      <div class="cnx-acoes">
+        <button class="btn sm" onclick="cnxConectar()">Conectar</button>
+        <button class="btn sm ghost" onclick="cnxConectarTodos()">Conectar todos</button>
+        <button class="btn sm ghost" onclick="cnxRemover()">Remover conexão selecionada</button>
+        <button class="btn sm ghost" onclick="cnxRemoverTodas()">Remover todas as conexões</button>
+        <label class="cnx-chk"><input type="checkbox" id="cnx-prox" checked onchange="cnxRender()"> Exibir cabos próximos</label>
+      </div>
+      <div class="cnx-cols">
+        <div><div class="cnx-tit">Elementos desconectados</div><div id="cnx-desc" class="cnx-lista"></div></div>
+        <div><div class="cnx-tit">Elementos conectados</div><div id="cnx-conn" class="cnx-lista"></div></div>
+      </div>
+    </div>
+    <div class="md-foot"><button class="btn" onclick="fecharModal('md-conexoes')">Concluir</button></div>
+  </div>
+</div>
 <div class="modal-bg" id="md-generico">
   <div class="modal" style="max-width:640px">
     <div class="md-head"><b id="mdg-titulo">Info</b><button class="x" onclick="fecharModal('md-generico')">✕</button></div>
@@ -990,7 +1024,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div id="fs-tools">
       <select id="fs-add-split" style="width:190px;padding:7px 10px;font-size:12px"></select>
       <button class="fs-tool" onclick="addSplitterDoCatalogo()">+ Splitter</button>
-      <button class="fs-tool" onclick="abrirVincularCabo()" title="Vincular um cabo existente a esta caixa">🔗 Vincular cabo</button>
+      <button class="fs-tool" onclick="abrirMapaConexoes()" title="Mapa de conexões: conectar cabos por ponta ou por sangria (passagem)">🔗 Conexões</button>
       <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Reorganizar</button>
       <span style="width:10px"></span>
       <select id="fs-status-el" style="width:150px;padding:7px 10px;font-size:12px" onchange="mudarStatusCaixaFusao(this.value)">
@@ -1789,7 +1823,8 @@ function renderTudo(){
         <div class="pp-meta">${c.tipo} · <span class="tag ${c.status}">${labelStatus(c.status)}</span></div>
         <div class="pp-meta mono">Geométrico: ${geo.toFixed(0)} m · Total: ${tot.toFixed(0)} m</div>
         <div class="pp-meta">${nomeEl(c.origemId)||'—'} ⇄ ${nomeEl(c.destinoId)||'—'}</div>
-        ${c.sangria?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria: ${c.sangria.fibrasNaCaixa} fibra(s) na caixa · ${c.sangria.fibrasSeguem} seguem</div>`:''}
+        ${c.sangria?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Rompido: ${c.sangria.fibrasNaCaixa} fibra(s) na caixa · ${c.sangria.fibrasSeguem} seguem</div>`:''}
+        ${(c.passagens&&c.passagens.length)?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria (passagem) em: ${c.passagens.map(id=>nomeEl(id)).filter(Boolean).join(', ')}</div>`:''}
         <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
   });
   // clientes MoviOne (localização + vínculo) · status IXC opcional
@@ -1886,7 +1921,7 @@ function popupElemento(e){
   }
   let acoes=`<button class="btn sm" onclick="abrirModalElemento('${e.id}')">✏️ Editar</button>`;
   if(e.tipo==='pop')acoes+=`<button class="btn sm ghost" onclick="abrirEditorPop('${e.id}')">🖥 Equipamentos</button>`;
-  if(['cto','ceo','pop'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirFusao('${e.id}')">🧵 Fusões</button>`;
+  if(['cto','ceo','pop'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirFusao('${e.id}')">🧵 Fusões</button><button class="btn sm ghost" onclick="abrirMapaConexoes('${e.id}')">🔗 Conexões</button>`;
   return `<div class="pp-title">${e.nome}<span class="pp-badge">${e.tipo.toUpperCase()}</span></div>
     <div class="pp-meta"><span class="tag ${e.status}">${labelStatus(e.status)}</span> · <span class="mono">${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}</span></div>
     ${ocup}${posteInfo}<div class="pp-acoes">${acoes}</div>`;
@@ -2226,7 +2261,53 @@ function abrirFusao(caixaId){
 }
 function fecharFusao(){salvar();fsSelSp=null;renderFsToolbar();document.getElementById('tela-fusao').style.display='none';renderTudo()}
 function mudarStatusCaixaFusao(v){const e=projAtual.elementos.find(x=>x.id===fsCaixa);e.status=v;salvar();toast('Status: '+labelStatus(v))}
-function cabosDaCaixa(id){return projAtual.cabos.filter(c=>c.origemId===id||c.destinoId===id)}
+function cabosDaCaixa(id){return projAtual.cabos.filter(c=>c.origemId===id||c.destinoId===id||(c.passagens||[]).includes(id))}
+/* como o cabo se relaciona com a caixa: 'ponta' (termina nela) ou 'sangria' (passa por cima) */
+function ligacaoCaboCaixa(c,caixaId){
+  if(c.origemId===caixaId||c.destinoId===caixaId)return 'ponta';
+  if((c.passagens||[]).includes(caixaId))return 'sangria';
+  return null;
+}
+/* distâncias do cabo até a caixa: pela ponta mais próxima e pelo traçado (meio de vão) */
+function distCaboCaixa(c,el){
+  const ll=[el.lat,el.lng];
+  const dIni=mapa.distance(c.pontos[0],ll);
+  const dFim=mapa.distance(c.pontos[c.pontos.length-1],ll);
+  let dTracado=Infinity;
+  for(let i=0;i<c.pontos.length-1;i++){
+    const pr=projetarNoSegmento(ll,c.pontos[i],c.pontos[i+1]);
+    const d=mapa.distance(ll,pr);
+    if(d<dTracado)dTracado=d;
+  }
+  const dPonta=Math.min(dIni,dFim);
+  return {dPonta,dTracado,pontaMaisPerto:dIni<=dFim?'origem':'destino',
+          tipo:dPonta<=Math.max(cfg().raioVinculo,25)?'ponta':'sangria',
+          d:Math.min(dPonta,dTracado)};
+}
+/* conecta um cabo à caixa: ponta vira origem/destino, passagem vira SANGRIA */
+function conectarCaboCaixa(caboId,caixaId){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const el=projAtual.elementos.find(x=>x.id===caixaId);
+  if(!c||!el)return null;
+  const cl=distCaboCaixa(c,el);
+  if(cl.tipo==='ponta'){
+    if(cl.pontaMaisPerto==='origem')c.origemId=caixaId; else c.destinoId=caixaId;
+  }else{
+    if(!c.passagens)c.passagens=[];
+    if(!c.passagens.includes(caixaId))c.passagens.push(caixaId);
+  }
+  return cl.tipo;
+}
+/* desconecta de todos os modos e limpa as fusões daquele cabo na caixa */
+function desconectarCaboCaixa(caboId,caixaId){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  if(!c)return 0;
+  const n=purgarFusoesDoCabo(caixaId,caboId);
+  if(c.origemId===caixaId)c.origemId=null;
+  if(c.destinoId===caixaId)c.destinoId=null;
+  if(c.passagens)c.passagens=c.passagens.filter(x=>x!==caixaId);
+  return n;
+}
 /* remove as fusões de uma caixa que referenciam um cabo (usado ao desvincular/retirar) */
 function purgarFusoesDoCabo(caixaId,caboId){
   const F=projAtual.fusoes[caixaId];
@@ -2245,9 +2326,7 @@ function desvincularCabo(caboId,caixaId,semConfirmar){
     const msg='Desvincular "'+c.nome+'" desta caixa?'+(nFus?('\n\nAtenção: '+nFus+' fusão(ões) deste cabo serão removidas.'):'');
     if(!confirm(msg))return;
   }
-  purgarFusoesDoCabo(cx,caboId);
-  if(c.origemId===cx)c.origemId=null;
-  if(c.destinoId===cx)c.destinoId=null;
+  desconectarCaboCaixa(caboId,cx);
   salvar();
   if(typeof renderFusao==='function'&&fsCaixa===cx)renderFusao();
   if(mapa)renderTudo();
@@ -2268,27 +2347,100 @@ function vincularCabo(caboId,caixaId){
   fecharModal('md-generico');
   toast('"'+c.nome+'" vinculado a '+el.nome);
 }
-/* modal para escolher um cabo próximo e vincular */
-function abrirVincularCabo(){
-  const el=projAtual.elementos.find(x=>x.id===fsCaixa);
-  if(!el)return;
-  const jaLig=new Set(cabosDaCaixa(fsCaixa).map(c=>c.id));
-  const cands=projAtual.cabos.filter(c=>!jaLig.has(c.id)).map(c=>{
-    const d=Math.min(mapa.distance(c.pontos[0],[el.lat,el.lng]),mapa.distance(c.pontos[c.pontos.length-1],[el.lat,el.lng]));
-    return {c,d};
-  }).sort((a,b)=>a.d-b.d).slice(0,20);
-  let html;
-  if(!cands.length){
-    html='<div class="info-box">Todos os cabos do projeto já estão vinculados a esta caixa (ou não há cabos).</div>';
-  }else{
-    html='<div class="info-box">Escolha um cabo para vincular a <b>'+el.nome+'</b>. Será usada a ponta mais próxima da caixa.</div>'+
-      cands.map(x=>`<div class="orc-item" style="cursor:pointer" onclick="vincularCabo('${x.c.id}')">
-        <div class="orc-num" style="border-color:${x.d<50?'var(--accent)':'var(--border)'}">${x.d<50?'✓':'·'}</div>
-        <div class="orc-info"><b>${x.c.nome}</b><span>${x.c.fo}FO · ${x.c.tipo} · ponta a ${x.d.toFixed(0)} m da caixa</span></div>
-        <div class="orc-db">🔗</div></div>`).join('');
-  }
-  abrirModalGenerico('🔗 Vincular cabo a '+el.nome,html);
+/* ================= MAPA DE CONEXÕES (estilo IXC) ================= */
+let cnxSelDesc=null, cnxSelConn=null;
+function abrirMapaConexoes(caixaId){
+  const cx=caixaId||fsCaixa;
+  const el=projAtual.elementos.find(x=>x.id===cx);
+  if(!el){toast('Caixa não encontrada',true);return}
+  window.__cnxCaixa=cx;
+  cnxSelDesc=null;cnxSelConn=null;
+  document.getElementById('cnx-caixa').textContent=el.nome;
+  cnxRender();
+  abrirModal('md-conexoes');
 }
+function cnxRender(){
+  const cx=window.__cnxCaixa;
+  const el=projAtual.elementos.find(x=>x.id===cx);
+  if(!el)return;
+  const soProximos=document.getElementById('cnx-prox').checked;
+  const RAIO=Math.max(cfg().raioVinculo*4,120);
+  const conectados=[],desconectados=[];
+  projAtual.cabos.forEach(c=>{
+    const lig=ligacaoCaboCaixa(c,cx);
+    const dc=distCaboCaixa(c,el);
+    if(lig)conectados.push({c,lig,dc});
+    else if(!soProximos||dc.d<=RAIO)desconectados.push({c,dc});
+  });
+  desconectados.sort((a,b)=>a.dc.d-b.dc.d);
+  const linha=(x,sel,lado)=>{
+    const c=x.c;
+    const tag=lado==='conn'
+      ? (x.lig==='sangria'?'<span class="tag-sangria">SANGRIA</span>':'<span class="tag-ponta">PONTA</span>')
+      : (x.dc.tipo==='sangria'?'<span class="tag-sangria">passagem</span>':'<span class="tag-ponta">ponta</span>');
+    const det=lado==='conn'
+      ? (x.lig==='sangria'?'derivação de meio de vão':'termina nesta caixa')
+      : (x.dc.tipo==='sangria'?('passa a '+x.dc.dTracado.toFixed(0)+' m'):('ponta a '+x.dc.dPonta.toFixed(0)+' m'));
+    return `<div class="cnx-item ${sel?'sel':''}" onclick="cnxSel('${lado}','${c.id}')">
+      <div style="flex:1"><b>${c.nome}</b><small>${c.fo}FO · ${c.tipo} · ${det}</small></div>${tag}</div>`;
+  };
+  document.getElementById('cnx-desc').innerHTML=desconectados.length
+    ? desconectados.map(x=>linha(x,cnxSelDesc===x.c.id,'desc')).join('')
+    : '<div class="cnx-vazio">Nenhum cabo desconectado'+(soProximos?' por perto':'')+'.</div>';
+  document.getElementById('cnx-conn').innerHTML=conectados.length
+    ? conectados.map(x=>linha(x,cnxSelConn===x.c.id,'conn')).join('')
+    : '<div class="cnx-vazio">Nenhum cabo conectado a esta caixa.</div>';
+}
+function cnxSel(lado,id){
+  if(lado==='desc'){cnxSelDesc=cnxSelDesc===id?null:id;cnxSelConn=null}
+  else{cnxSelConn=cnxSelConn===id?null:id;cnxSelDesc=null}
+  cnxRender();
+}
+function _cnxAtualiza(){
+  salvar();cnxRender();
+  if(typeof fsCaixa!=='undefined'&&fsCaixa===window.__cnxCaixa&&document.getElementById('tela-fusao').style.display!=='none')renderFusao();
+  if(mapa)renderTudo();
+}
+function cnxConectar(){
+  if(!cnxSelDesc){toast('Selecione um cabo na lista de desconectados',true);return}
+  const tipo=conectarCaboCaixa(cnxSelDesc,window.__cnxCaixa);
+  const nome=(projAtual.cabos.find(c=>c.id===cnxSelDesc)||{}).nome;
+  cnxSelDesc=null;_cnxAtualiza();
+  toast(tipo==='sangria'?('Sangria criada: "'+nome+'" passa pela caixa'):('"'+nome+'" conectado pela ponta'));
+}
+function cnxConectarTodos(){
+  const cx=window.__cnxCaixa;
+  const el=projAtual.elementos.find(x=>x.id===cx);
+  const soProximos=document.getElementById('cnx-prox').checked;
+  const RAIO=Math.max(cfg().raioVinculo*4,120);
+  const alvos=projAtual.cabos.filter(c=>!ligacaoCaboCaixa(c,cx)&&(!soProximos||distCaboCaixa(c,el).d<=RAIO));
+  if(!alvos.length){toast('Nenhum cabo para conectar',true);return}
+  let nS=0,nP=0;
+  alvos.forEach(c=>{conectarCaboCaixa(c.id,cx)==='sangria'?nS++:nP++});
+  cnxSelDesc=null;_cnxAtualiza();
+  toast('Conectados: '+nP+' por ponta · '+nS+' por sangria');
+}
+function cnxRemover(){
+  if(!cnxSelConn){toast('Selecione um cabo na lista de conectados',true);return}
+  const c=projAtual.cabos.find(x=>x.id===cnxSelConn);
+  const nF=(projAtual.fusoes[window.__cnxCaixa]&&projAtual.fusoes[window.__cnxCaixa].fusoes||[]).filter(fu=>(fu.a.t==='fibra'&&fu.a.cabo===cnxSelConn)||(fu.b.t==='fibra'&&fu.b.cabo===cnxSelConn)).length;
+  if(!confirm('Remover a conexão de "'+c.nome+'"?'+(nF?('\n\n'+nF+' fusão(ões) deste cabo serão removidas.'):'')))return;
+  desconectarCaboCaixa(cnxSelConn,window.__cnxCaixa);
+  cnxSelConn=null;_cnxAtualiza();
+  toast('Conexão removida'+(nF?(' · '+nF+' fusão(ões)'):''));
+}
+function cnxRemoverTodas(){
+  const cx=window.__cnxCaixa;
+  const lig=cabosDaCaixa(cx);
+  if(!lig.length){toast('Não há conexões nesta caixa',true);return}
+  if(!confirm('Remover TODAS as '+lig.length+' conexões desta caixa?\n\nTodas as fusões da caixa serão perdidas.'))return;
+  lig.forEach(c=>desconectarCaboCaixa(c.id,cx));
+  cnxSelConn=null;_cnxAtualiza();
+  toast(lig.length+' conexão(ões) removidas');
+}
+/* atalho antigo continua funcionando */
+function abrirVincularCabo(){abrirMapaConexoes(fsCaixa)}
+
 function fsPos(){ // calcula posições de todos os pontos conectáveis
   const cabos=cabosDaCaixa(fsCaixa), pos={};
   const Fb=getFus(fsCaixa); if(!Fb.blocos)Fb.blocos={};
@@ -2366,6 +2518,7 @@ function renderFusao(){
       <rect class="blk-mover" x="${b.x}" y="${b.y}" width="${bw}" height="46" rx="10" onmousedown="fsIniciarDragBloco(event,'${c.id}')"><title>Arraste para mover este bloco</title></rect>
       <text class="cabo-titulo" x="${b.x+14}" y="${b.y+24}" style="pointer-events:none">${c.nome.toUpperCase().slice(0,18)}</text>
       <text class="cabo-sub" x="${b.x+14}" y="${b.y+40}" style="pointer-events:none">${c.fo} FIBRAS · ${labelStatus(c.status)}</text>
+      ${ligacaoCaboCaixa(c,fsCaixa)==='sangria'?`<g style="pointer-events:none"><rect x="${b.x+14}" y="${b.y+46}" width="62" height="14" rx="3" fill="rgba(255,138,60,.18)" stroke="rgba(255,138,60,.5)"/><text x="${b.x+45}" y="${b.y+56}" style="fill:#FF8A3C;font-size:9px;font-weight:700;text-anchor:middle;font-family:'DM Mono'">✂ SANGRIA</text></g>`:''}
       <g class="blk-unlink" onmousedown="event.stopPropagation()" onclick="desvincularCabo('${c.id}')">
         <rect x="${b.x+bw-30}" y="${b.y+10}" width="22" height="20" rx="5"/>
         <text x="${b.x+bw-19}" y="${b.y+24}">⛓</text>
