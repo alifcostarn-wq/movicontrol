@@ -73,8 +73,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .cad-tab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 .cad-tab .ic svg{width:14px;height:14px;vertical-align:-2px}
 .tipo-tag{padding:2px 9px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.5px}
-.tipo-tag.backbone{background:rgba(232,200,24,.15);color:#E8C818}
-.tipo-tag.distribuicao{background:rgba(91,155,255,.15);color:#5B9BFF}
+.tipo-tag.backbone{background:rgba(255,212,0,.16);color:#FFD400}
+.tipo-tag.distribuicao{background:rgba(46,134,255,.16);color:#2E86FF}
 .tipo-tag.drop{background:var(--accent-glow);color:var(--accent)}
 
 /* ============ TELA HOME ============ */
@@ -338,6 +338,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .cabo-bloco{fill:var(--surface);stroke:var(--border)}
 .cabo-titulo{fill:var(--text);font-weight:700;font-size:13px;font-family:'DM Sans'}
 .cabo-sub{fill:var(--text-dim);font-size:10px;font-family:'DM Sans'}
+/* contorno escuro nos cabos: cores opacas e destacadas sobre a imagem de satélite */
+.cabo-linha{filter:drop-shadow(0 0 1.3px rgba(0,0,0,.95)) drop-shadow(0 0 2.5px rgba(0,0,0,.55))}
 .fibra-linha{stroke-width:3;cursor:pointer}
 .fibra-linha:hover{stroke-width:5}
 .fibra-ponto{cursor:pointer;stroke:#fff;stroke-width:1.5}
@@ -642,13 +644,16 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <div class="campo" id="el-campo-cor" style="display:none"><label>Cor do ícone da CTO</label>
           <select id="el-cor">
             <option value="">Padrão (azul)</option>
-            <option value="#1E5AD8">Azul</option>
-            <option value="#3CB371">Verde</option>
-            <option value="#E8C818">Amarelo</option>
-            <option value="#FF3B30">Vermelho</option>
-            <option value="#B98AE8">Roxo</option>
-            <option value="#FF8A3C">Laranja</option>
+            <option value="#2E86FF">Azul</option>
+            <option value="#123A8F">Azul escuro</option>
+            <option value="#00D26A">Verde</option>
+            <option value="#0E7A3C">Verde escuro</option>
+            <option value="#FFD400">Amarelo</option>
+            <option value="#FF2D20">Vermelho</option>
+            <option value="#A855F7">Roxo</option>
+            <option value="#FF7A00">Laranja</option>
             <option value="#00E5FF">Ciano</option>
+            <option value="#FF3DA5">Rosa</option>
             <option value="#8A8A8A">Cinza</option>
           </select>
         </div>
@@ -760,14 +765,18 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <div class="campo"><label>Cor da linha</label>
           <select id="cb-cor">
             <option value="">Automática (pelo tipo)</option>
-            <option value="#E8C818">Amarelo</option>
-            <option value="#5B9BFF">Azul</option>
-            <option value="#3CB371">Verde</option>
-            <option value="#FF3B30">Vermelho</option>
-            <option value="#B98AE8">Roxo</option>
-            <option value="#FF8A3C">Laranja</option>
+            <option value="#FFD400">Amarelo</option>
+            <option value="#2E86FF">Azul</option>
+            <option value="#123A8F">Azul escuro</option>
+            <option value="#00D26A">Verde</option>
+            <option value="#0E7A3C">Verde escuro</option>
+            <option value="#FF2D20">Vermelho</option>
+            <option value="#A855F7">Roxo</option>
+            <option value="#FF7A00">Laranja</option>
             <option value="#00E5FF">Ciano</option>
+            <option value="#FF3DA5">Rosa</option>
             <option value="#FFFFFF">Branco</option>
+            <option value="#111318">Preto</option>
           </select></div>
         <div class="campo"><label>Estilo</label>
           <select id="cb-estilo"><option value="">Automático</option><option value="solid">Sólida</option><option value="dash">Tracejada</option></select></div>
@@ -1340,7 +1349,7 @@ function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
 let camadasVisiveis={satelite:true,pop:true,cto:true,ceo:true,reserva:true,backbone:true,distribuicao:true,drop:true,area:true,cliente:true,poste:true,clienteone:false};
 let layerRefs={}, caboTemp=null, areaTemp=null;
-const CORES_CABO={backbone:'#E8C818',distribuicao:'#5B9BFF',drop:'#3CB371'};
+const CORES_CABO={backbone:'#FFD400',distribuicao:'#2E86FF',drop:'#00D26A'};
 const ABNT=[
  {n:1,nome:'Verde',hex:'#1E9E4A'},{n:2,nome:'Amarela',hex:'#E8C818'},{n:3,nome:'Branca',hex:'#D8D8D8'},
  {n:4,nome:'Azul',hex:'#1E5AD8'},{n:5,nome:'Vermelha',hex:'#D8261E'},{n:6,nome:'Violeta',hex:'#8B2ED8'},
@@ -1774,7 +1783,7 @@ function renderTudo(){
     const geo=medirCabo(c.pontos), tot=geo*(1+(c.folga||0)/100);
     const est=estiloCabo(c);
     const corCabo=c.cor||CORES_CABO[c.tipo];
-    layerRefs[c.id]=L.polyline(c.pontos,{color:corCabo,weight:est.weight,dashArray:est.dashArray,opacity:.95})
+    layerRefs[c.id]=L.polyline(c.pontos,{color:corCabo,weight:est.weight,dashArray:est.dashArray,opacity:1,className:'cabo-linha'})
       .on('click',(ev)=>{if(modo==='otdr'){if(ev&&ev.originalEvent)L.DomEvent.stop(ev);otdrClicarCabo(c);return}if(modo==='navegar')editarTracado(c.id,true)})
       .bindPopup(`<div class="pp-title">${c.nome}<span class="pp-badge">${c.fo}FO</span>${_tag}</div>
         <div class="pp-meta">${c.tipo} · <span class="tag ${c.status}">${labelStatus(c.status)}</span></div>
