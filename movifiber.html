@@ -362,6 +362,12 @@ input:focus,select:focus{border-color:var(--accent)}
 .splitter-body{fill:url(#spGrad);stroke:#4A5568;stroke-width:1.5}
 .splitter-body.des{stroke:#D4A027}
 .splitter-cap{fill:#3A4556;stroke:none}
+.sp-aba{cursor:pointer}
+.sp-aba rect{stroke:#0B0D11;stroke-width:1}
+.sp-aba:hover rect{filter:brightness(1.25)}
+.sp-aba.sel rect{stroke:var(--accent);stroke-width:2.5;filter:drop-shadow(0 0 4px rgba(60,179,113,.7))}
+.sp-aba-num{fill:#08120C;font-size:10px;font-weight:700;font-family:'DM Mono';text-anchor:middle;pointer-events:none}
+.fibra-num{font-size:8.5px;font-weight:700;font-family:'DM Mono';text-anchor:middle;pointer-events:none}
 .splitter-body.des ~ .splitter-cap,.splitter-shape .splitter-body.des+.splitter-cap{fill:#5A4A20}
 .splitter-lbl-big{fill:#EAF0F6;font-size:11px;font-weight:700;font-family:'DM Mono';text-anchor:middle}
 .sc-adapter{fill:#2B3444;stroke:#5B9BFF;stroke-width:1}
@@ -2211,9 +2217,11 @@ function fsPos(){ // calcula posições de todos os pontos conectáveis
     for(let f=1;f<=c.fo;f++)pos['fib-'+c.id+'-'+f]={x:920-70,y:y+52+(f-1)*20};
     y+=H(c)+34});
   getFus(fsCaixa).splitters.forEach(sp=>{
-    const n=nSaidasSp(sp), h=Math.max(n*14+16,44), bw=52, conec=spConectorizado(sp);
-    pos['sp-'+sp.id+'-0']={x:sp.x-12,y:sp.y+h/2};
-    for(let p=1;p<=n;p++)pos['sp-'+sp.id+'-'+p]={x:sp.x+bw+(conec?11:6),y:sp.y+16+(p-1)*14+7};
+    const n=nSaidasSp(sp), SLOT=18, W=64, h=n*SLOT+8, conec=spConectorizado(sp);
+    // aplica a MESMA transformação usada no desenho, para o ponto de conexão bater com o visual
+    const T=(x,y)=>spTransformar(sp,x,y,W,h);
+    pos['sp-'+sp.id+'-0']=T(sp.x-14, sp.y+h/2);
+    for(let p=1;p<=n;p++)pos['sp-'+sp.id+'-'+p]=T(sp.x+W+(conec?11:0), sp.y+4+(p-0.5)*SLOT);
   });
   const elCx=projAtual.elementos.find(x=>x.id===fsCaixa);
   if(elCx&&elCx.tipo==='pop'){
@@ -2223,6 +2231,14 @@ function fsPos(){ // calcula posições de todos os pontos conectáveis
     });
   }
   return {pos,cabos};
+}
+function spTransformar(sp,x,y,W,h){
+  // replica: translate(cx0 cy0) rotate(rot) scale(sc*fl, sc) translate(-cx0 -cy0)
+  const cx0=sp.x+W/2, cy0=sp.y+h/2;
+  const rad=((sp.rot||0)*Math.PI)/180, sc=sp.scale||1, fl=sp.flip?-1:1;
+  const dx=(x-cx0)*sc*fl, dy=(y-cy0)*sc;
+  const c=Math.cos(rad), sn=Math.sin(rad);
+  return {x:cx0+dx*c-dy*sn, y:cy0+dx*sn+dy*c};
 }
 function ptKey(p){return p.t==='fibra'?('fib-'+p.cabo+'-'+p.fib):(p.t==='dio'?('dio-'+p.dio+'-'+p.porta):('sp-'+p.sp+'-'+p.porta))}
 function renderFusao(){
@@ -2248,17 +2264,23 @@ function renderFusao(){
       const fk='fib-'+c.id+'-'+f;
       const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
       if(fuFib)s+=`<line class="fibra-luz" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"/>`;
-      s+=`<circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="5.5" fill="${cor}" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}})"/>`;
+      const claro=['#FFFFFF','#F2E205','#F5A623','#E8C818','#00E5FF','#7DE0FF','#FFD86B'].includes((cor||'').toUpperCase());
+      s+=`<g onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}})" style="cursor:pointer">
+        <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
+        <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}">${f}</text>
+        <title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title>
+      </g>`;
     }
     s+='</g>';
   });
-  // splitters — estilo FTTH Planner: corpo retangular, entrada à esquerda, saídas enfileiradas à direita
+  // splitters — layout FTTH Planner: cunha triangular, vértice/entrada à esquerda, abas numeradas na aresta direita
   F.splitters.forEach(sp=>{
-    const n=nSaidasSp(sp), h=Math.max(n*14+16,44);
+    const n=nSaidasSp(sp);
+    const SLOT=18, W=64;
+    const h=n*SLOT+8;
     const cat=splitCatDe(sp), des=cat&&cat.tipo==='des';
     const pcts=des?rotuloSp(sp).split('/'):null;
-    const bw=52;
-    const cx0=sp.x+bw/2, cy0=sp.y+h/2;
+    const cx0=sp.x+W/2, cy0=sp.y+h/2;
     const rot=sp.rot||0, sc=sp.scale||1, fl=sp.flip?-1:1;
     const tr=`transform="translate(${cx0} ${cy0}) rotate(${rot}) scale(${sc*fl} ${sc}) translate(${-cx0} ${-cy0})"`;
     const txtTr=`transform="translate(${cx0} ${cy0}) scale(${fl} 1) rotate(${-rot}) translate(${-cx0} ${-cy0})"`;
@@ -2267,25 +2289,33 @@ function renderFusao(){
     const adpTipo=sp.adaptador||'APC';
     const adpClass=adpTipo==='UPC'?'upc':'apc';
     const cyIn=sp.y+h/2;
-    s+=`<g class="splitter-shape${selSp}" ${tr} onmousedown="fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">`;
-    s+=`<line x1="${sp.x-12}" y1="${cyIn}" x2="${sp.x}" y2="${cyIn}" stroke="#5A6472" stroke-width="2.5"/>`;
-    s+=`<rect class="splitter-body${des?' des':''}" x="${sp.x}" y="${sp.y}" width="${bw}" height="${h}" rx="7"/>`;
-    s+=`<path class="splitter-cap" d="M ${sp.x+7} ${sp.y} h ${bw-14} a7 7 0 0 1 7 7 v 10 h ${-bw} v -10 a7 7 0 0 1 7 -7 z"/>`;
+    // grupo do CORPO (arrastável)
+    s+=`<g class="splitter-shape${selSp}" ${tr}>`;
+    s+=`<g onmousedown="fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">`;
+    s+=`<line x1="${sp.x-14}" y1="${cyIn}" x2="${sp.x}" y2="${cyIn}" stroke="#7A8494" stroke-width="2"/>`;
+    s+=`<polygon class="splitter-body${des?' des':''}" points="${sp.x},${cyIn} ${sp.x+W},${sp.y} ${sp.x+W},${sp.y+h}"/>`;
+    s+=`</g>`;
+    // rótulo abaixo (contra-transformado p/ ficar sempre legível)
     s+=`<g ${txtTr}>
-      <text class="splitter-lbl-big" x="${sp.x+bw/2}" y="${sp.y+13}">${rotuloSp(sp)}</text>
-      <text class="splitter-lbl" x="${sp.x+bw/2}" y="${sp.y+h+15}">${conec?'SC/'+adpTipo+' ':''}${des?'DGO':(conec?'conectorizado':'fusão')}</text>
-      <text class="splitter-lbl" x="${sp.x+bw/2}" y="${sp.y-7}" style="fill:var(--danger);cursor:pointer" onclick="removerSplitter(event,'${sp.id}')">✕</text>
+      <text class="splitter-lbl-big" x="${sp.x+W/2}" y="${sp.y+h+18}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}</text>
+      <text class="splitter-lbl" x="${sp.x+W/2}" y="${sp.y-8}" style="fill:var(--danger);cursor:pointer" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>
     </g>`;
-    s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x-12}" cy="${cyIn}" r="5" fill="#E2E0DB" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
+    // ENTRADA (vértice esquerdo)
+    s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x-14}" cy="${cyIn}" r="5.5" fill="#E2E0DB" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
+    // SAÍDAS: abas verdes numeradas na aresta direita (estilo Planner)
     for(let p=1;p<=n;p++){
       const perda=perdaSpPorta(sp,p);
-      const py=sp.y+16+(p-1)*14+7;
+      const py=sp.y+4+(p-0.5)*SLOT;
+      const sel=fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-'+p;
+      const corAba=des?(p===1?'#D4A027':'#2E9E63'):'#2E9E63';
       const lblP=(des?(pcts[p-1]+'% · '):('Saída '+p+' · '))+'−'+perda.toFixed(1)+'dB'+(conec?(' · SC/'+adpTipo):'');
-      const px=sp.x+bw+(conec?11:6);
-      s+=`<line x1="${sp.x+bw}" y1="${py}" x2="${px}" y2="${py}" stroke="#5A6472" stroke-width="2"/>`;
-      if(conec)s+=`<rect class="sc-adapter ${adpClass}" x="${sp.x+bw+1}" y="${py-3.5}" width="9" height="7" rx="1.5"><title>Adaptador SC/${adpTipo}</title></rect>`;
-      s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-'+p?'sel':''}" cx="${px}" cy="${py}" r="4.5" fill="${des?(p===1?'#D4A027':'#3CB371'):'#8B90A0'}" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})"><title>${lblP}</title></circle>`;
-      if(des)s+=`<g ${txtTr}><text class="splitter-lbl" x="${px+16}" y="${py+3}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text></g>`;
+      s+=`<g class="sp-aba${sel?' sel':''}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})">
+        <rect x="${sp.x+W-15}" y="${py-8}" width="15" height="16" rx="2.5" fill="${corAba}"/>
+        <g ${txtTr}><text class="sp-aba-num" x="${sp.x+W-7.5}" y="${py+3.5}">${p}</text></g>
+        <title>${lblP}</title>
+      </g>`;
+      if(conec)s+=`<rect class="sc-adapter ${adpClass}" x="${sp.x+W+2}" y="${py-3.5}" width="9" height="7" rx="1.5"><title>Adaptador SC/${adpTipo}</title></rect>`;
+      if(des)s+=`<g ${txtTr}><text class="splitter-lbl" x="${sp.x+W+(conec?15:6)}" y="${py+3}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text></g>`;
     }
     s+='</g>';
   });
@@ -2300,7 +2330,7 @@ function renderFusao(){
       for(let p=1;p<=d.portas;p++){
         const cy=d.fy+30+(p-1)*16;
         const pat=getPop(fsCaixa).patches.find(x=>x.dio===d.id&&x.dioPorta===p);
-        s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Porta ${p}${pat?' · patch PON '+pat.oltPorta:''}</title></circle>
+        s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Porta ${p}${pat?' · patch PON '+pat.oltPorta:''}</title></circle>
         <text class="cabo-sub" x="${d.fx+12}" y="${cy+3.5}" style="font-family:'DM Mono';font-size:9px">${p}${pat?' ⇄ PON '+pat.oltPorta:''}</text>`;
       }
       s+='</g>';
