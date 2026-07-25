@@ -533,6 +533,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="dr-item" onclick="setModo('viab')"><span class="ic">🎯</span> Testar Viabilidade</button>
       <button class="dr-item" onclick="setModo('otdr')"><span class="ic">📡</span> Simular OTDR</button>
       <button class="dr-item" onclick="abrirMedicaoPON()"><span class="ic">🖥</span> Medição PON</button>
+      <button class="dr-item" onclick="limparClientesNaoMoviOne(false)||toast('Nenhum cliente antigo — todos vêm do MoviOne')"><span class="ic">🧹</span> Limpar clientes antigos (KML)</button>
       <button class="dr-item" onclick="abrirMateriais()"><span class="ic">🧰</span> Lista de Materiais</button>
       <button class="dr-item" onclick="abrirRelArea()"><span class="ic">🗂️</span> Relatório por Área</button>
       <button class="dr-item" onclick="abrirPendencias()"><span class="ic">⚠️</span> Pendências <span class="badge" id="pend-badge" style="display:none"></span></button>
@@ -987,10 +988,9 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
           <option value="cto">CTOs</option>
           <option value="ceo">CEOs</option>
           <option value="reserva">Reservas técnicas</option>
-          <option value="cliente">Clientes</option>
         </select>
       </div>
-      <div class="info-box" style="font-size:11px">No modo automático: <b>caixa</b>→CTO · <b>caixa de emenda</b>→CEO · <b>pop</b>→POP · <b>poste</b>→Poste · <b>reserva</b>→Reserva · <b>cliente</b>→Cliente (ONUs duplicadas são ignoradas). Cabos: <b>BACKBONE/espessura≥4</b>→Backbone · <b>DROP/Cliente/linha preta</b>→Drop · resto→Distribuição. FO detectado do nome (ex: "6F").</div>
+      <div class="info-box" style="font-size:11px">No modo automático: <b>caixa</b>→CTO · <b>caixa de emenda</b>→CEO · <b>pop</b>→POP · <b>poste</b>→Poste · <b>reserva</b>→Reserva · <b>cliente</b>/<b>ONU</b>→ignorados (os clientes vêm do MoviOne). Cabos: <b>BACKBONE/espessura≥4</b>→Backbone · <b>DROP/Cliente/linha preta</b>→Drop · resto→Distribuição. FO detectado do nome (ex: "6F").</div>
       <div class="campo"><label>Arquivo (.kml ou .kmz)</label><input type="file" id="imp-file" accept=".kml,.kmz" onchange="importarArquivo(event)"></div>
     </div>
   </div>
@@ -1654,6 +1654,7 @@ async function abrirProjeto(id){
   document.getElementById('shell').style.display='none';
   clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
   if(!projAtual.clientes)projAtual.clientes=[];
+  limparClientesNaoMoviOne(true);   // MoviOne é a fonte única de clientes
   if(projAtual.seq.cliente===undefined)projAtual.seq.cliente=0;
   if(projAtual.seq.poste===undefined)projAtual.seq.poste=0;
   cfg();
@@ -1894,6 +1895,7 @@ function limparOverlaysSoltos(){
 }
 function renderTudo(){
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
+  calcularEspalhamento();
   // áreas
   if(camadasVisiveis.area)projAtual.areas.forEach(a=>{
     layerRefs[a.id]=L.polygon(a.pontos,{color:'#3CB371',weight:2,fillOpacity:.10})
@@ -1924,12 +1926,15 @@ function renderTudo(){
     const glow=online?'filter:drop-shadow(0 0 3px #00FF66) drop-shadow(0 0 8px #00FF66) drop-shadow(0 0 14px rgba(0,255,102,.8));':'';
     const stroke=online?'#00FF66':'#0B0D11';
     const casa=`<svg viewBox="0 0 24 24" width="26" height="26" style="${glow}"><path d="M12 3l9 8h-2.5v8h-13v-8H3z" fill="${cor}" stroke="${stroke}" stroke-width="1.2"/></svg>`;
-    const ic=L.divIcon({className:'',html:`<div>${casa}</div>`,iconSize:[26,26],iconAnchor:[13,19]});
+    const nAp=aprox('mo:'+c.id);
+    const selo=nAp?`<div style="position:absolute;top:-4px;right:-6px;background:#E0913C;color:#0B0D11;border-radius:3px;font-size:7.5px;font-weight:700;padding:0 3px;line-height:1.5">≈</div>`:'';
+    const ic=L.divIcon({className:'',html:`<div style="position:relative">${casa}${selo}</div>`,iconSize:[26,26],iconAnchor:[13,19]});
     const badge=c.online===null||c.online===undefined?'<span class="tag nao-implantado">status IXC não carregado</span>':(online?'<span class="tag" style="background:rgba(0,255,102,.18);color:#00FF66;font-weight:700;text-shadow:0 0 6px rgba(0,255,102,.6)">● ONLINE</span>':'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● OFFLINE</span>');
     const rxTxt=c.rx!=null?`<div class="pp-meta mono">ONU RX <b style="color:${c.rx>=-27&&c.rx<=-8?'var(--accent)':'var(--danger)'}">${c.rx.toFixed(1)} dBm</b>${c.tx!=null?' · TX '+c.tx.toFixed(1):''}${c.onu?' · '+c.onu:''}</div>`:'';
-    const mk=L.marker([c.lat,c.lng],{icon:ic}).bindPopup(`
+    const mk=L.marker(posCliente('mo:'+c.id,c.lat,c.lng),{icon:ic}).bindPopup(`
       <div class="pp-title">🏠 ${c.nome}<span class="pp-badge">MOVIONE</span></div>
       <div class="pp-meta">${badge}${c.login?' · <span class="mono">'+c.login+'</span>':''}</div>
+      ${nAp?`<div class="pp-meta" style="color:#E0913C;font-size:11px">≈ Localização aproximada — ${nAp} clientes com a mesma coordenada no MoviOne. Ajuste o endereço/GPS no cadastro para posicionar corretamente.</div>`:''}
       ${rxTxt}
       <div class="pp-meta" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">
         <b>Caixa (CTO):</b> ${c.caixa||'<span style="color:var(--warn)">não vinculada</span>'}<br>
@@ -1944,15 +1949,20 @@ function renderTudo(){
   });
   // clientes
   if(camadasVisiveis.cliente)projAtual.clientes.forEach(cl=>{
+    // se este cliente veio do MoviOne e a camada do MoviOne está ligada,
+    // quem desenha é ela (tem status online/RX). Evita o ícone duplicado.
+    if(cl._moId&&camadasVisiveis.clienteone&&clientesOne.some(c=>String(c.id)===String(cl._moId)))return;
     const ic=L.divIcon({className:'',html:`<div class="mk"><div class="pin" style="background:${cl.ctoId?'#1A7C4A':'#8A8A8A'};width:20px;height:20px">${ICONS.cliente_v}</div></div>`,iconSize:[20,20],iconAnchor:[10,10]});
-    const mk=L.marker([cl.lat,cl.lng],{icon:ic,draggable:true});
+    const mk=L.marker(posCliente('lo:'+cl.id,cl.lat,cl.lng),{icon:ic,draggable:true});
     mk.on('dragend',ev=>{const p=ev.target.getLatLng();cl.lat=p.lat;cl.lng=p.lng;salvar();renderTudo()});
     mk.bindPopup(`<div class="pp-title">${cl.nome}<span class="pp-badge">CLIENTE</span></div>
       <div class="pp-meta">${cl.ctoId?('Atendido por <b>'+(nomeEl(cl.ctoId)||'?')+'</b> · porta <b class="mono">'+cl.porta+'</b>'):'<span style="color:var(--warn)">⚠️ Sem CTO vinculada</span>'}</div>
-      <div class="pp-acoes">
+      ${cl._moId
+        ? '<div class="pp-meta" style="font-size:11px;color:var(--text-dim)">Vínculo gerenciado no <b>MoviOne</b> (aba Logins do cliente).</div>'
+        : `<div class="pp-acoes">
         <button class="btn sm ghost" onclick="revincularCliente('${cl.id}')">🔄 Revincular</button>
         <button class="btn sm danger" onclick="excluirCliente('${cl.id}')">Excluir</button>
-      </div>`);
+      </div>`}`);
     layerRefs[cl.id]=mk.addTo(mapa);
   });
   // elementos
@@ -3876,9 +3886,11 @@ function importarKML(kml){
     if(pt){
       const c=coordsDe(pt)[0];
       if(!c)return;
-      const tipoPonto=auto?detectarTipoPonto(pm,nome):modoSel;
+      let tipoPonto=auto?detectarTipoPonto(pm,nome):modoSel;
+      // clientes não são mais importados do KML: vêm do MoviOne (vínculo projeto+CTO+porta)
+      if(tipoPonto==='cliente'){nCli++;return}
       if(tipoPonto==='ignorar'){nIgn++;return}
-      if(tipoPonto==='cliente'){
+      if(false){
         // login do FiberDocs vem no ExtendedData "Login"
         let login='';
         [...pm.getElementsByTagName('Data')].forEach(d=>{
@@ -3922,7 +3934,7 @@ function importarKML(kml){
   const r=window.__impResumo||{porTipo:{},nCli:0,nIgn:0};
   const nomesT={pop:'POP',cto:'CTO',ceo:'CEO',poste:'Poste',reserva:'Reserva','cabo-backbone':'Backbone','cabo-distribuicao':'Distribuição','cabo-drop':'Drop'};
   const partes=Object.entries(r.porTipo).map(([t,q])=>q+' '+(nomesT[t]||t));
-  if(r.nCli)partes.push(r.nCli+' Cliente(s)');
+  if(r.nCli)partes.push(r.nCli+' cliente(s) ignorados (vêm do MoviOne)');
   if(nA)partes.push(nA+' Área(s)');
   toast('✅ Importado: '+(partes.length?partes.join(' · '):nP+' pontos, '+nC+' cabos')+(r.nIgn?' · '+r.nIgn+' ONU(s) ignoradas':''));
 }
@@ -4129,7 +4141,13 @@ async function carregarClientesMoviOne(){
       +(fora?(' · ⚠️ '+fora+' apontam para caixa de outro projeto'):''));
     const bb=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(bb,{padding:[60,60]});
     // consulta o IXC: casinhas ficam verde (online) / vermelho (offline)
-    if(clientesOne.some(c=>c.ixcId))await atualizarStatusIXC();
+    if(clientesOne.some(c=>c.ixcId)){
+      await atualizarStatusIXC();
+      // o login só existe após o IXC responder — refaz o casamento para absorver
+      // clientes que vieram do KML com o mesmo login
+      sincronizarVinculosMoviOne();
+      renderTudo();
+    }
   }catch(e){
     camadasVisiveis.clienteone=false;renderCamadas();
     toast('Falha ao carregar clientes: '+e.message,true);
@@ -4161,6 +4179,63 @@ function aplicarClientesMoviOne(lista){
 /* Traz o vínculo (caixa + porta) salvo no MoviOne para dentro do projeto.
    Sem isso a porta nunca aparece ocupada: a ocupação é lida de projAtual.clientes,
    e o vínculo vivia só em clientesOne (camada do mapa). */
+/* Muitos clientes do MoviOne não têm geolocalização individual e compartilham a
+   mesma coordenada (centro da cidade/bairro). Sem tratamento eles se empilham num
+   único pixel. Aqui eles são distribuídos em espiral ao redor do ponto original. */
+let _espalha={};
+function calcularEspalhamento(){
+  _espalha={};
+  const grupos={};
+  const add=(k,lat,lng)=>{
+    if(lat==null||lng==null||isNaN(lat)||isNaN(lng))return;
+    const key=(+lat).toFixed(5)+','+(+lng).toFixed(5);
+    (grupos[key]=grupos[key]||[]).push({k,lat:+lat,lng:+lng});
+  };
+  if(typeof clientesOne!=='undefined')clientesOne.forEach(c=>add('mo:'+c.id,c.lat,c.lng));
+  Object.values(grupos).forEach(g=>_distribuir(g));
+  // camada local (usada quando a do MoviOne está desligada) agrupa em separado
+  const gl={};
+  ((projAtual&&projAtual.clientes)||[]).forEach(cl=>{
+    if(cl.lat==null||cl.lng==null||isNaN(cl.lat)||isNaN(cl.lng))return;
+    const key=(+cl.lat).toFixed(5)+','+(+cl.lng).toFixed(5);
+    (gl[key]=gl[key]||[]).push({k:'lo:'+cl.id,lat:+cl.lat,lng:+cl.lng});
+  });
+  Object.values(gl).forEach(g=>_distribuir(g));
+}
+function _distribuir(g){
+  {
+    if(g.length<2)return;
+    g.forEach((it,i)=>{
+      const anel=Math.floor(i/8), pos=i%8;
+      const R=0.00009*(anel+1);
+      const ang=(2*Math.PI*pos)/8+anel*0.4;
+      const corr=Math.max(0.2,Math.cos(it.lat*Math.PI/180));
+      _espalha[it.k]={lat:it.lat+R*Math.sin(ang),lng:it.lng+R*Math.cos(ang)/corr,n:g.length};
+    });
+  }
+}
+function posCliente(k,lat,lng){const o=_espalha[k];return o?[o.lat,o.lng]:[lat,lng]}
+function aprox(k){return _espalha[k]?_espalha[k].n:0}
+/* Os clientes do MoviFiber vêm exclusivamente do MoviOne (vínculo projeto+CTO+porta).
+   Registros antigos importados do KML/criados à mão são descartados. */
+function limparClientesNaoMoviOne(silencioso){
+  if(!projAtual||!projAtual.clientes)return 0;
+  const antes=projAtual.clientes.length;
+  projAtual.clientes=projAtual.clientes.filter(cl=>!!cl._moId);
+  const n=antes-projAtual.clientes.length;
+  if(n){
+    salvar();
+    if(!silencioso)renderTudo();
+    if(!projAtual._avisouLimpezaKML){
+      projAtual._avisouLimpezaKML=true;
+      toast(n+' cliente(s) antigos (KML) removidos — os clientes agora vêm do MoviOne');
+    }
+  }
+  return n;
+}
+function _normNome(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
 function sincronizarVinculosMoviOne(){
   if(!projAtual)return 0;
   if(!projAtual.clientes)projAtual.clientes=[];
@@ -4176,8 +4251,15 @@ function sincronizarVinculosMoviOne(){
     if(!c.caixaId||!c.porta)return;
     if(!idsEl.has(c.caixaId)){foraDoProjeto++;return}   // caixa não pertence a este projeto
     const lg=(c.login||'').trim().toLowerCase();
+    const nm=_normNome(c.nome);
+    // casa o cliente do MoviOne com um já existente no projeto (evita duplicar o do KML).
+    // O login só chega depois da consulta ao IXC, então há vários critérios.
     let cl=projAtual.clientes.find(x=>String(x._moId)===String(c.id))
-        ||(lg?projAtual.clientes.find(x=>(x.login||'').trim().toLowerCase()===lg):null);
+        ||(lg?projAtual.clientes.find(x=>(x.login||'').trim().toLowerCase()===lg):null)
+        // mesma CTO + mesma porta = mesma instalação
+        ||projAtual.clientes.find(x=>!x._moId&&x.ctoId===c.caixaId&&x.porta===c.porta)
+        // mesmo nome (normalizado, sem acento/caixa)
+        ||(nm?projAtual.clientes.find(x=>!x._moId&&_normNome(x.nome)===nm):null);
     if(!cl){cl={id:uid('cli'),nome:c.nome||'Cliente',lat:c.lat,lng:c.lng};projAtual.clientes.push(cl);mudou=true}
     if(cl.ctoId!==c.caixaId||cl.porta!==c.porta||String(cl._moId)!==String(c.id))mudou=true;
     cl._moId=String(c.id);cl.ctoId=c.caixaId;cl.porta=c.porta;
