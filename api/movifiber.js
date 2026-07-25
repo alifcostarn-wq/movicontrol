@@ -77,32 +77,56 @@ export default async function handler(req, res) {
 function sbHeaders() {
   return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` };
 }
+// Busca paginada: o PostgREST do Supabase corta a resposta em 1000 linhas
+// (db-max-rows), mesmo pedindo limit maior. Sem paginar, registros somem em silencio.
+async function sbGetAll(baseUrl, pageSize = 1000) {
+  const out = [];
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  for (let off = 0; off <= 200000; off += pageSize) {
+    const r = await fetch(`${baseUrl}${sep}limit=${pageSize}&offset=${off}`, { headers: sbHeaders() });
+    if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+    const page = await r.json();
+    out.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return out;
+}
 async function clientesMoviOne(projeto) {
-  // embute a instalacao (FK cliente_id -> clientes) via PostgREST
-  let url = `${process.env.SUPABASE_URL}/rest/v1/${SB_CLIENTES}` +
-    `?select=${SB_ID},${SB_NOME},${SB_IXCID},${SB_LOGIN},${SB_LAT},${SB_LNG},` +
-    `${SB_INSTAL}(projeto_ftth,caixa_id,caixa_nome,porta)` +
-    `&${SB_LAT}=not.is.null&${SB_LNG}=not.is.null&limit=20000`;
-  const r = await fetch(url, { headers: sbHeaders() });
-  if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
-  let rows = await r.json();
-  const out = rows.map(x => {
-    const inst = Array.isArray(x[SB_INSTAL]) ? x[SB_INSTAL][0] : x[SB_INSTAL];
-    return {
-      id_cliente: x[SB_ID],
-      nome: x[SB_NOME],
-      ixc_id: x[SB_IXCID],
-      login: x[SB_LOGIN],
-      latitude: +x[SB_LAT],
-      longitude: +x[SB_LNG],
-      projeto: inst ? inst.projeto_ftth : null,
-      caixa_id: inst ? inst.caixa_id : null,
-      caixa: inst ? inst.caixa_nome : null,
-      porta: inst ? inst.porta : null
-    };
-  });
+  // Consulta a partir do VINCULO (poucas linhas) embutindo o cliente.
+  // Antes partia de "clientes" (1900+ linhas) e o corte de 1000 do PostgREST
+  // escondia quem estivesse depois dessa posicao (ex.: cliente na linha 1058).
+  const base = `${process.env.SUPABASE_URL}/rest/v1/${SB_INSTAL}` +
+    `?select=projeto_ftth,caixa_id,caixa_nome,porta,` +
+    `${SB_CLIENTES}!${SB_INSTAL}_cliente_id_fkey(${SB_ID},${SB_NOME},${SB_IXCID},${SB_LOGIN},${SB_LAT},${SB_LNG})` +
+    `&order=id.asc`;
+  const rows = await sbGetAll(base);
+  let semCoord = 0;
+  const out = [];
+  for (const x of rows) {
+    const c = Array.isArray(x[SB_CLIENTES]) ? x[SB_CLIENTES][0] : x[SB_CLIENTES];
+    if (!c) continue;
+    const lat = c[SB_LAT], lng = c[SB_LNG];
+    if (lat == null || lng == null) semCoord++;
+    out.push({
+      id_cliente: c[SB_ID],
+      nome: c[SB_NOME],
+      ixc_id: c[SB_IXCID],
+      login: c[SB_LOGIN],
+      latitude: lat == null ? null : +lat,
+      longitude: lng == null ? null : +lng,
+      projeto: x.projeto_ftth,
+      caixa_id: x.caixa_id,
+      caixa: x.caixa_nome,
+      porta: x.porta
+    });
+  }
   const filtrados = projeto ? out.filter(c => String(c.projeto) === String(projeto)) : out;
-  return { clientes: filtrados, total: filtrados.length, projetos: projetosDistintos(out) };
+  return {
+    clientes: filtrados,
+    total: filtrados.length,
+    sem_coordenada: filtrados.filter(c => c.latitude == null || c.longitude == null).length,
+    projetos: projetosDistintos(out)
+  };
 }
 function projetosDistintos(lista) {
   const set = new Map();
