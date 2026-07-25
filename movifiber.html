@@ -1923,9 +1923,10 @@ function renderTudo(){
     // cor: cinza = status não carregado · VERDE CLARO vivo = online · vermelho = offline
     const online=c.online===true;
     const cor=c.online===null||c.online===undefined?'#8B90A0':(online?'#00FF66':'#F87168');
-    const glow=online?'filter:drop-shadow(0 0 3px #00FF66) drop-shadow(0 0 8px #00FF66) drop-shadow(0 0 14px rgba(0,255,102,.8));':'';
-    const stroke=online?'#00FF66':'#0B0D11';
-    const casa=`<svg viewBox="0 0 24 24" width="26" height="26" style="${glow}"><path d="M12 3l9 8h-2.5v8h-13v-8H3z" fill="${cor}" stroke="${stroke}" stroke-width="1.2"/></svg>`;
+    // contorno escuro sempre visível (sem ele a casa "estoura" na foto de satélite);
+    // brilho bem mais discreto que antes, só para diferenciar online de relance
+    const glow=online?'filter:drop-shadow(0 0 3px rgba(0,255,102,.55));':'';
+    const casa=`<svg viewBox="0 0 24 24" width="24" height="24" style="${glow}"><path d="M12 3l9 8h-2.5v8h-13v-8H3z" fill="${cor}" stroke="#0B0D11" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
     const nAp=aprox('mo:'+c.id);
     const selo=nAp?`<div style="position:absolute;top:-4px;right:-6px;background:#E0913C;color:#0B0D11;border-radius:3px;font-size:7.5px;font-weight:700;padding:0 3px;line-height:1.5">≈</div>`:'';
     const ic=L.divIcon({className:'',html:`<div style="position:relative">${casa}${selo}</div>`,iconSize:[26,26],iconAnchor:[13,19]});
