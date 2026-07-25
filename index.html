@@ -12545,11 +12545,19 @@ function _ftthMudouProjeto(){
   spo.innerHTML='<option value="">—</option>';spo.disabled=true;
   if(!p){sc.innerHTML='<option value="">—</option>';sc.disabled=true;return}
   const ctos=(p.elementos||[]).filter(e=>e.tipo==='cto');
+  const hint=document.getElementById('ftth-hint');
+  if(!ctos.length){
+    // projeto veio da nuvem só como resumo: as caixas ainda não estão neste navegador
+    sc.innerHTML='<option value="">— nenhuma caixa carregada —</option>';sc.disabled=true;
+    if(hint)hint.innerHTML='⚠️ As caixas deste projeto ainda não foram carregadas neste navegador. Abra o projeto <b>uma vez</b> no MoviFiber (nesta mesma máquina) e recarregue esta tela.';
+    return;
+  }
+  if(hint)hint.textContent=ctos.length+' caixa(s) neste projeto. As portas já ocupadas aparecem marcadas.';
   sc.innerHTML='<option value="">— selecione a caixa —</option>'+
     ctos.map(c=>`<option value="${escHtml(c.id)}">${escHtml(c.nome||'')}${c.splitter?' ('+c.splitter+')':''}</option>`).join('');
   sc.disabled=false;
 }
-function _ftthMudouCaixa(){
+async function _ftthMudouCaixa(){
   const p=_ftthProjSelecionado();
   const ctoId=document.getElementById('ftth-sel-caixa')?.value||'';
   const spo=document.getElementById('ftth-sel-porta');
@@ -12557,12 +12565,35 @@ function _ftthMudouCaixa(){
   const cto=(p.elementos||[]).find(e=>e.id===ctoId);
   const n=cto&&cto.splitter?(+String(cto.splitter).split(':')[1]||16):16;
   const ocupadas={};
-  (p.clientes||[]).forEach(cl=>{if(cl.ctoId===ctoId&&cl.porta)ocupadas[cl.porta]=cl.nome});
+  // (a) o que houver no projeto local (pode estar desatualizado/stub)
+  (p.clientes||[]).forEach(cl=>{if(cl.ctoId===ctoId&&cl.porta)ocupadas[cl.porta]=cl.nome||'cliente'});
+  // (b) FONTE DE VERDADE: os vínculos gravados no banco desta caixa
+  spo.innerHTML='<option value="">carregando portas…</option>';spo.disabled=true;
+  const meuId=parseInt(_ftthInst&&_ftthInst.cliente_id);
+  try{
+    const {data:insts}=await sbClient.from('ftth_cliente_instalacao')
+      .select('cliente_id,porta').eq('caixa_id',ctoId);
+    const ids=[...new Set((insts||[]).map(r=>r.cliente_id).filter(v=>v!=null))];
+    let nomes={};
+    if(ids.length){
+      const {data:cs}=await sbClient.from('clientes').select('id,razao').in('id',ids);
+      (cs||[]).forEach(c=>{nomes[c.id]=c.razao});
+    }
+    (insts||[]).forEach(r=>{
+      if(!r.porta)return;
+      ocupadas[r.porta]=(!isNaN(meuId)&&r.cliente_id===meuId)
+        ? '__EU__'
+        : (nomes[r.cliente_id]||('cliente #'+r.cliente_id));
+    });
+  }catch(e){ console.warn('[ftth] ocupação:',e.message) }
   spo.innerHTML='<option value="">—</option>'+Array.from({length:n},(_,i)=>{
     const pn=i+1;
-    return `<option value="${pn}">Porta ${String(pn).padStart(2,'0')}${ocupadas[pn]?' · ocupada ('+escHtml(ocupadas[pn])+')':''}</option>`;
+    const oc=ocupadas[pn];
+    const sufixo=!oc?'':(oc==='__EU__'?' · (este cliente)':' · ocupada ('+escHtml(oc)+')');
+    return `<option value="${pn}">Porta ${String(pn).padStart(2,'0')}${sufixo}</option>`;
   }).join('');
   spo.disabled=false;
+  if(_ftthInst&&_ftthInst.caixa_id===ctoId&&_ftthInst.porta)spo.value=String(_ftthInst.porta);
 }
 async function _ftthCarregar(cli){
   _ftthInst=null;
@@ -12577,8 +12608,8 @@ async function _ftthCarregar(cli){
     if(sp&&data.projeto_ftth&&[...sp.options].some(o=>o.value===data.projeto_ftth)){
       sp.value=data.projeto_ftth;_ftthMudouProjeto();
       const sc=document.getElementById('ftth-sel-caixa');
-      if(data.caixa_id&&[...sc.options].some(o=>o.value===data.caixa_id)){sc.value=data.caixa_id;_ftthMudouCaixa()}
-      else if(data.caixa_nome){const op=[...sc.options].find(o=>o.text.split(' (')[0]===data.caixa_nome);if(op){sc.value=op.value;_ftthMudouCaixa()}}
+      if(data.caixa_id&&[...sc.options].some(o=>o.value===data.caixa_id)){sc.value=data.caixa_id;await _ftthMudouCaixa()}
+      else if(data.caixa_nome){const op=[...sc.options].find(o=>o.text.split(' (')[0]===data.caixa_nome);if(op){sc.value=op.value;await _ftthMudouCaixa()}}
       const spo=document.getElementById('ftth-sel-porta');
       if(data.porta&&spo)spo.value=String(data.porta);
     }
@@ -12598,6 +12629,12 @@ async function _ftthSalvar(){
   if(!p||!ctoId){showToast('Selecione o projeto e a caixa (CTO).');return}
   const cto=(p.elementos||[]).find(e=>e.id===ctoId);
   try{
+    if(porta){
+      const {data:ja}=await sbClient.from('ftth_cliente_instalacao')
+        .select('cliente_id').eq('caixa_id',ctoId).eq('porta',porta);
+      const outro=(ja||[]).find(r=>r.cliente_id!==cid);
+      if(outro&&!confirm('A porta '+porta+' de '+(cto?cto.nome:'')+' já está ocupada pelo cliente #'+outro.cliente_id+'.\n\nVincular assim mesmo?'))return;
+    }
     const {error}=await sbClient.rpc('ftth_upsert_instalacao',{
       p_cliente_id:cid, p_projeto:String(p.nome||''),
       p_caixa_id:ctoId, p_caixa_nome:cto?cto.nome:null, p_porta:porta
