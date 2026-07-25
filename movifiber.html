@@ -1934,6 +1934,7 @@ function renderTudo(){
     const mk=L.marker(posCliente('mo:'+c.id,c.lat,c.lng),{icon:ic}).bindPopup(`
       <div class="pp-title">🏠 ${c.nome}<span class="pp-badge">MOVIONE</span></div>
       <div class="pp-meta">${badge}${c.login?' · <span class="mono">'+c.login+'</span>':''}</div>
+      ${c.semCoord?`<div class="pp-meta" style="color:#E0913C;font-size:11px">📍 Sem GPS no cadastro do MoviOne — exibido na posição da caixa.</div>`:''}
       ${nAp?`<div class="pp-meta" style="color:#E0913C;font-size:11px">≈ Localização aproximada — ${nAp} clientes com a mesma coordenada no MoviOne. Ajuste o endereço/GPS no cadastro para posicionar corretamente.</div>`:''}
       ${rxTxt}
       <div class="pp-meta" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">
@@ -4135,9 +4136,11 @@ async function carregarClientesMoviOne(){
     const semCaixa=clientesOne.filter(c=>!c.caixa).length;
     const vinc=clientesOne.filter(c=>c.caixaId&&c.porta).length;
     const fora=window.__vincFora||0;
+    const semGps=clientesOne.filter(c=>c.semCoord).length;
     toast(clientesOne.length+' cliente(s) do projeto'
       +(vinc?(' · '+vinc+' com caixa/porta'):'')
       +(semCaixa?(' · '+semCaixa+' sem caixa'):'')
+      +(semGps?(' · 📍 '+semGps+' sem GPS (na caixa)'):'')
       +(fora?(' · ⚠️ '+fora+' apontam para caixa de outro projeto'):''));
     const bb=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(bb,{padding:[60,60]});
     // consulta o IXC: casinhas ficam verde (online) / vermelho (offline)
@@ -4157,21 +4160,28 @@ function aplicarClientesMoviOne(lista){
   const statusPrev={};
   clientesOne.forEach(c=>{if(c.online!=null||c.rx!=null)statusPrev[c.id]={online:c.online,rx:c.rx,tx:c.tx,onu:c.onu,login:c.login}});
   clientesOne=lista
-    .filter(c=>c.latitude!=null&&c.longitude!=null)
     .map(c=>{
       const id=String(c.id_cliente);
       const st=statusPrev[id]||{};
+      let lat=c.latitude==null?null:+c.latitude, lng=c.longitude==null?null:+c.longitude, semCoord=false;
+      if(lat==null||lng==null||isNaN(lat)||isNaN(lng)){
+        // vinculado mas sem GPS no cadastro: posiciona na própria caixa para não sumir
+        const cx=projAtual&&projAtual.elementos.find(e=>e.id===c.caixa_id);
+        if(!cx)return null;
+        lat=cx.lat;lng=cx.lng;semCoord=true;
+      }
       return{
         id,idCliente:c.id_cliente,ixcId:c.ixc_id,
         nome:c.nome||'Cliente',
-        lat:+c.latitude,lng:+c.longitude,
+        lat,lng,semCoord,
         projeto:c.projeto||null,
         caixa:c.caixa||null,caixaId:c.caixa_id||null,porta:c.porta??null,
         login:c.login||st.login||null,
         online:st.online!==undefined?st.online:null,   // null = status IXC ainda não carregado
         rx:st.rx??null,tx:st.tx??null,onu:st.onu??null
       };
-    });
+    })
+    .filter(Boolean);
   store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
   sincronizarVinculosMoviOne();
   renderTudo();
