@@ -4121,7 +4121,12 @@ async function carregarClientesMoviOne(){
       return;
     }
     const semCaixa=clientesOne.filter(c=>!c.caixa).length;
-    toast(clientesOne.length+' cliente(s) do projeto'+(semCaixa?(' · '+semCaixa+' sem caixa'):''));
+    const vinc=clientesOne.filter(c=>c.caixaId&&c.porta).length;
+    const fora=window.__vincFora||0;
+    toast(clientesOne.length+' cliente(s) do projeto'
+      +(vinc?(' · '+vinc+' com caixa/porta'):'')
+      +(semCaixa?(' · '+semCaixa+' sem caixa'):'')
+      +(fora?(' · ⚠️ '+fora+' apontam para caixa de outro projeto'):''));
     const bb=clientesOne.map(c=>[c.lat,c.lng]);mapa.fitBounds(bb,{padding:[60,60]});
     // consulta o IXC: casinhas ficam verde (online) / vermelho (offline)
     if(clientesOne.some(c=>c.ixcId))await atualizarStatusIXC();
@@ -4150,7 +4155,41 @@ function aplicarClientesMoviOne(lista){
       };
     });
   store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
+  sincronizarVinculosMoviOne();
   renderTudo();
+}
+/* Traz o vínculo (caixa + porta) salvo no MoviOne para dentro do projeto.
+   Sem isso a porta nunca aparece ocupada: a ocupação é lida de projAtual.clientes,
+   e o vínculo vivia só em clientesOne (camada do mapa). */
+function sincronizarVinculosMoviOne(){
+  if(!projAtual)return 0;
+  if(!projAtual.clientes)projAtual.clientes=[];
+  const idsEl=new Set(projAtual.elementos.map(e=>e.id));
+  let mudou=false, aplicados=0, foraDoProjeto=0;
+  // 1) descarta vínculos do MoviOne que foram removidos de lá
+  const vivos=new Set(clientesOne.filter(c=>c.caixaId&&c.porta).map(c=>String(c.id)));
+  const antes=projAtual.clientes.length;
+  projAtual.clientes=projAtual.clientes.filter(cl=>!cl._moId||vivos.has(String(cl._moId)));
+  if(projAtual.clientes.length!==antes)mudou=true;
+  // 2) aplica os vínculos atuais
+  clientesOne.forEach(c=>{
+    if(!c.caixaId||!c.porta)return;
+    if(!idsEl.has(c.caixaId)){foraDoProjeto++;return}   // caixa não pertence a este projeto
+    const lg=(c.login||'').trim().toLowerCase();
+    let cl=projAtual.clientes.find(x=>String(x._moId)===String(c.id))
+        ||(lg?projAtual.clientes.find(x=>(x.login||'').trim().toLowerCase()===lg):null);
+    if(!cl){cl={id:uid('cli'),nome:c.nome||'Cliente',lat:c.lat,lng:c.lng};projAtual.clientes.push(cl);mudou=true}
+    if(cl.ctoId!==c.caixaId||cl.porta!==c.porta||String(cl._moId)!==String(c.id))mudou=true;
+    cl._moId=String(c.id);cl.ctoId=c.caixaId;cl.porta=c.porta;
+    if(c.nome)cl.nome=c.nome;
+    if(c.login)cl.login=c.login;
+    if(c.lat!=null)cl.lat=c.lat;
+    if(c.lng!=null)cl.lng=c.lng;
+    aplicados++;
+  });
+  if(mudou)salvar();
+  window.__vincFora=foraDoProjeto;
+  return aplicados;
 }
 
 /* 2) IXC (isolado): online + potência ONU */
