@@ -1141,6 +1141,17 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
           <div class="campo"><label>Uplinks (SFP+)</label><input type="number" id="olt-uplinks" min="0" max="8" value="2"></div>
           <div class="campo"><label>Nome</label><input id="olt-nome" placeholder="Auto"></div>
         </div>
+        <div class="dr-sec" style="margin-top:6px">🔦 Potência óptica de saída</div>
+        <div class="linha2">
+          <div class="campo"><label>TX do transceptor (dBm)</label>
+            <input id="olt-tx" placeholder="ex: 2.8 — deixe vazio p/ usar o típico" oninput="_oltTxInfo()"></div>
+          <div class="campo"><label>Origem do valor</label>
+            <select id="olt-tx-fonte">
+              <option value="datasheet">Datasheet do GBIC</option>
+              <option value="medido">Medido com power meter</option>
+            </select></div>
+        </div>
+        <div class="info-box" id="olt-tx-info" style="margin-top:6px"></div>
         <div class="info-box" id="olt-resumo">Total: 8 portas PON</div>
       </div>
       <div class="md-foot">
@@ -2158,8 +2169,14 @@ function _elRedeInfo(){
   const oltId=oltV==='__proj'?cfg().oltProjeto:oltV;
   const pon=document.getElementById('el-pon').value;
   const herda=!document.getElementById('el-tec').value;
+  const oltObj=oltId?(todasOLTs().find(o=>o.olt.id===oltId)||{}).olt:null;
+  const txReal=(oltObj&&oltObj.txPorta&&pon&&oltObj.txPorta[pon]!=null)?+oltObj.txPorta[pon]
+              :((oltObj&&oltObj.tx!=null&&oltObj.tx!=='')?+oltObj.tx:null);
   box.innerHTML=`<b>${T.nome}</b> · ${T.norma} · ${T.taxa}${herda?' <span style="color:var(--text-dim)">(herdada do projeto)</span>':''}<br>`
-    +`TX da OLT: <b>${T.tx.toFixed(1)} dBm</b> · sensibilidade da ONU: <b>${T.rxMin} a ${T.rxMax} dBm</b>`
+    +`TX da OLT: `+(txReal!=null
+        ?`<b style="color:#5FE0A0">✔ ${txReal.toFixed(2)} dBm</b> <span style="color:var(--text-dim)">(real)</span>`
+        :`<b style="color:#E0913C">≈ ${T.tx.toFixed(1)} dBm</b> <span style="color:var(--text-dim)">(típico, não medido)</span>`)
+    +` · sensibilidade da ONU: <b>${T.rxMin} a ${T.rxMax} dBm</b>`
     +(oltId?`<br>Alimentada por <b>${nomeOLT(oltId)||'OLT'}</b>${pon?' · PON <b>'+pon+'</b>':' <span style="color:var(--warn)">· defina a porta PON</span>'}`
            :`<br><span style="color:var(--text-dim)">Sem OLT definida — o orçamento óptico usará o TX padrão do projeto.</span>`);
 }
@@ -3032,8 +3049,22 @@ function abrirModalOLT(id){
   document.getElementById('olt-ppp').value=olt?olt.ppp||8:8;
   document.getElementById('olt-uplinks').value=olt?olt.uplinks??2:2;
   document.getElementById('olt-nome').value=olt?olt.nome:'';
+  document.getElementById('olt-tx').value=(olt&&olt.tx!=null&&olt.tx!=='')?olt.tx:'';
+  document.getElementById('olt-tx-fonte').value=(olt&&olt.txFonte)||'datasheet';
+  _oltTxInfo();
   _oltCalc();
   abrirModal('md-olt');
+}
+function _oltTxInfo(){
+  const box=document.getElementById('olt-tx-info');if(!box)return;
+  const v=String(document.getElementById('olt-tx').value||'').trim().replace(',','.');
+  const tecP=TECNOLOGIAS[cfg().tecnologia||'gpon']||TECNOLOGIAS.gpon;
+  if(v===''||isNaN(+v)){
+    box.innerHTML=`Sem valor informado: os cálculos usarão o <b>típico de ${tecP.nome} (${tecP.tx.toFixed(1)} dBm)</b>, que é um valor de catálogo — <b>não medido</b>. Informar o TX real do transceptor torna o orçamento óptico confiável.`;
+  }else{
+    const d=(+v)-tecP.tx;
+    box.innerHTML=`TX real <b>${(+v).toFixed(2)} dBm</b> · ${Math.abs(d)<0.05?'igual ao':(d>0?'<b>+'+d.toFixed(2)+' dB acima do</b>':'<b>'+d.toFixed(2)+' dB abaixo do</b>')} típico de ${tecP.nome}. Todas as caixas desta OLT passam a calcular com este valor.`;
+  }
 }
 function _oltPreset(){
   const id=document.getElementById('olt-modelo').value;
@@ -3059,11 +3090,14 @@ function salvarOLT(){
   const uplinks=Math.max(0,+document.getElementById('olt-uplinks').value||0);
   const portas=slots*ppp;
   const nome=document.getElementById('olt-nome').value.trim()||('OLT '+portas+' Portas');
+  const txRaw=String(document.getElementById('olt-tx').value||'').trim().replace(',','.');
+  const tx=(txRaw===''||isNaN(+txRaw))?null:+txRaw;
+  const txFonte=document.getElementById('olt-tx-fonte').value||'datasheet';
   if(id){
     const o=P.olts.find(x=>x.id===id);
-    Object.assign(o,{nome,slots,ppp,uplinks,portas});
+    Object.assign(o,{nome,slots,ppp,uplinks,portas,tx,txFonte});
   }else{
-    P.olts.push({id:uid('olt'),nome,slots,ppp,uplinks,portas,placas:Array.from({length:slots},(_,i)=>({slot:i+1,habilitado:true})),x:120+P.olts.length*30,y:120+P.olts.length*30});
+    P.olts.push({id:uid('olt'),nome,slots,ppp,uplinks,portas,tx,txFonte,placas:Array.from({length:slots},(_,i)=>({slot:i+1,habilitado:true})),x:120+P.olts.length*30,y:120+P.olts.length*30});
   }
   salvar();fecharModal('md-olt');renderPop();
 }
@@ -3522,14 +3556,29 @@ function executarAutoPatch(){
 
 /* ================= ORÇAMENTO ÓPTICO ================= */
 /* TX efetivo da caixa: se houver OLT/tecnologia definida usa o padrão da tecnologia, senão o TX do projeto */
+/* TX efetivo da caixa, com PROCEDÊNCIA do valor:
+   1. medido/informado na porta PON  2. informado na OLT
+   3. típico da tecnologia (catálogo) 4. padrão do projeto
+   As duas primeiras são valores reais; as demais são estimativas. */
 function txDaCaixa(ctoId){
   const e=projAtual.elementos.find(x=>x.id===ctoId);
-  if(e&&(e.oltId||e.tecnologia||cfg().oltProjeto)){
-    const T=TECNOLOGIAS[tecDaCaixa(e)];
-    if(T)return {tx:T.tx,tec:T};
-  }
-  return {tx:cfg().tx,tec:null};
+  const T=e?TECNOLOGIAS[tecDaCaixa(e)]:null;
+  const oltId=(e&&e.oltId)||cfg().oltProjeto||null;
+  const reg=oltId?todasOLTs().find(o=>o.olt.id===oltId):null;
+  const olt=reg?reg.olt:null;
+  if(olt&&e&&e.pon&&olt.txPorta&&olt.txPorta[e.pon]!=null&&!isNaN(+olt.txPorta[e.pon]))
+    return {tx:+olt.txPorta[e.pon],tec:T,olt,real:true,fonte:'porta',
+            rotulo:'medido na PON '+e.pon+' de '+olt.nome};
+  if(olt&&olt.tx!=null&&olt.tx!==''&&!isNaN(+olt.tx))
+    return {tx:+olt.tx,tec:T,olt,real:true,fonte:'olt',
+            rotulo:(olt.txFonte==='medido'?'medido':'datasheet')+' do transceptor da '+olt.nome};
+  if(T&&e&&(e.oltId||e.tecnologia||cfg().oltProjeto))
+    return {tx:T.tx,tec:T,olt,real:false,fonte:'tipico',
+            rotulo:'típico de '+T.nome+' — valor de catálogo, não medido'};
+  return {tx:cfg().tx,tec:null,olt:null,real:false,fonte:'projeto',
+          rotulo:'padrão do projeto — não medido'};
 }
+function seloTx(t){return t.real?'✔':'≈'}
 function calcOrcamento(ctoId){
   const F=getFus(ctoId);
   if(!F.splitters.length)return null;
@@ -3571,7 +3620,7 @@ function calcOrcamento(ctoId){
             const pat=P.patches.find(p=>p.dio===other.dio&&p.dioPorta===other.porta);
             if(pat){
               const o=P.olts.find(x=>x.id===pat.olt);
-              passos.push({nome:(o?o.nome:'OLT')+' · PON '+pat.oltPorta,sub:'Patch cord · TX +'+txDaCaixa(ctoId).tx.toFixed(1)+' dBm',db:PERDAS.conector});total+=PERDAS.conector;
+              passos.push({nome:(o?o.nome:'OLT')+' · PON '+pat.oltPorta,sub:'Patch cord · TX '+seloTx(txDaCaixa(ctoId))+' '+txDaCaixa(ctoId).tx.toFixed(2)+' dBm ('+txDaCaixa(ctoId).rotulo+')',db:PERDAS.conector});total+=PERDAS.conector;
             } else {
               passos.push({nome:'OLT',sub:'Porta '+other.porta+' do DIO sem patch',db:PERDAS.conector});total+=PERDAS.conector;
               aviso.push('Porta '+other.porta+' do '+(d?d.nome:'DIO')+' sem patch para OLT — abra o editor de POP.');
@@ -3582,7 +3631,7 @@ function calcOrcamento(ctoId){
           }
         } else {
           passos.push({nome:P.dios.length?P.dios[0].nome:'DIO',sub:'Conector · '+elOutra.nome,db:PERDAS.conector});total+=PERDAS.conector;
-          passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord · TX +'+txDaCaixa(ctoId).tx.toFixed(1)+' dBm',db:PERDAS.conector});total+=PERDAS.conector;
+          passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord · TX '+seloTx(txDaCaixa(ctoId))+' '+txDaCaixa(ctoId).tx.toFixed(2)+' dBm ('+txDaCaixa(ctoId).rotulo+')',db:PERDAS.conector});total+=PERDAS.conector;
           aviso.push('Fibra '+ponto.fib+' não fundida no DIO — abra "Fusões" do POP para montar o plano de fusão da bandeja.');
         }
         ponto=null;break;
@@ -3622,7 +3671,12 @@ function abrirOrcamento(){
       <span>${viavel?'✅ VIÁVEL':(quase?'⚠️ SINAL ALTO (atenuar)':'❌ INVIÁVEL')}</span>
       <span class="mono">RX est.: ${r.rx.toFixed(2)} dBm · atenuação ${(r.total+r.dropDb).toFixed(2)} dB</span>
     </div>
-    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">${(()=>{const t=txDaCaixa(ctoId);return t.tec?`Tecnologia <b>${t.tec.nome}</b> · sensibilidade da ONU: ${t.tec.rxMin} a ${t.tec.rxMax} dBm (TX OLT ${t.tx.toFixed(1)} dBm).`:`Janela ideal da ONU: −15 a −25 dBm (TX OLT ${t.tx.toFixed(1)} dBm).`})()}</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">${(()=>{const t=txDaCaixa(ctoId);
+      const base=t.tec?`Tecnologia <b>${t.tec.nome}</b> · sensibilidade da ONU: ${t.tec.rxMin} a ${t.tec.rxMax} dBm.`:`Janela ideal da ONU: −15 a −25 dBm.`;
+      const proc=t.real
+        ? `<span style="color:#5FE0A0">✔ TX ${t.tx.toFixed(2)} dBm — ${t.rotulo}.</span>`
+        : `<span style="color:#E0913C">≈ TX ${t.tx.toFixed(2)} dBm — ${t.rotulo}. Informe o TX real do transceptor no cadastro da OLT para tornar este cálculo confiável.</span>`;
+      return base+'<br>'+proc})()}</div>
     ${r.aviso.length?`<div class="alerta-cto">⚠️ ${r.aviso.join('<br>⚠️ ')}</div>`:''}`;
   abrirModal('md-orcamento');
 }
@@ -4603,6 +4657,21 @@ function _corRx(v){
 }
 function _fmtRx(v){return (v==null||isNaN(v))?'—':(v.toFixed(2)+' dBm')}
 /* ---------- Medição das portas PON das OLTs ---------- */
+/* TX medido de uma porta PON específica (cada PON tem seu próprio transceptor) */
+function setTxPon(oltId,porta,valor){
+  const reg=todasOLTs().find(o=>o.olt.id===oltId);
+  if(!reg)return;
+  const olt=reg.olt;
+  if(!olt.txPorta)olt.txPorta={};
+  const v=String(valor==null?'':valor).trim().replace(',','.');
+  if(v===''){delete olt.txPorta[porta];toast('PON '+porta+': voltou a usar o TX da OLT/tecnologia')}
+  else{
+    const n=+v;
+    if(isNaN(n)){toast('Informe um número em dBm (ex: 2.8)',true);return}
+    olt.txPorta[porta]=n;toast('PON '+porta+': TX real '+n.toFixed(2)+' dBm gravado');
+  }
+  salvar();abrirMedicaoPON();
+}
 function abrirMedicaoPON(){
   const olts=todasOLTs();
   if(!olts.length){abrirModalGenerico('📡 Medição PON','<div class="info-box">Nenhuma OLT cadastrada. Abra um <b>POP → 🖥 Equipamentos</b> e adicione uma OLT.</div>');return}
@@ -4629,16 +4698,27 @@ function abrirMedicaoPON(){
       const est=md(ests), real=md(reais);
       const desvio=(est!=null&&real!=null)?(real-est):null;
       const alerta=desvio!=null&&Math.abs(desvio)>3;
+      const txP=(olt.txPorta&&olt.txPorta[p]!=null)?olt.txPorta[p]:'';
+      const txEfe=txDaCaixa(caixas[0].id);
       linhas+=`<tr>
         <td class="mono">PON ${p}</td>
         <td>${caixas.map(c=>c.nome).join(', ')}</td>
         <td class="mono">${cli}</td>
-        <td class="mono" style="font-size:10.5px">${T.nome}</td>
+        <td><input value="${txP}" placeholder="${txEfe.tx.toFixed(2)}" title="TX medido nesta porta PON (dBm). Vazio = usa o da OLT/tecnologia."
+             onchange="setTxPon('${olt.id}',${p},this.value)"
+             style="width:64px;padding:3px 5px;border-radius:5px;border:1px solid ${txEfe.real?'#3CB371':'var(--border)'};background:var(--surface);color:${txEfe.real?'#5FE0A0':'var(--text-dim)'};font-family:'DM Mono';font-size:11px;text-align:center"></td>
         <td class="mono" style="color:${_corRx(est)}">${_fmtRx(est)}</td>
         <td class="mono" style="color:${_corRx(real)}">${_fmtRx(real)}</td>
         <td class="mono" style="color:${alerta?'#F87168':'var(--text-dim)'}">${desvio==null?'—':((desvio>0?'+':'')+desvio.toFixed(2)+' dB'+(alerta?' ⚠️':''))}</td></tr>`;
     }
+    const txOlt=(olt.tx!=null&&olt.tx!=='')?+olt.tx:null;
+    const tecOlt=TECNOLOGIAS[tecProj]||TECNOLOGIAS.gpon;
     html+=`<div class="dr-sec" style="margin-top:10px">🖥 ${olt.nome} <span style="color:var(--text-dim);font-weight:400">— ${popNome}</span></div>
+      <div class="info-box" style="margin-bottom:8px;font-size:11.5px">`
+      +(txOlt!=null
+        ? `🔦 TX do transceptor: <b style="color:#5FE0A0">✔ ${txOlt.toFixed(2)} dBm</b> (${olt.txFonte==='medido'?'medido com power meter':'datasheet do GBIC'}) — os cálculos desta OLT usam potência real.`
+        : `🔦 TX do transceptor <b style="color:#E0913C">não informado</b> — usando o típico de ${tecOlt.nome} (${tecOlt.tx.toFixed(1)} dBm), valor de catálogo. Edite a OLT e informe o TX real para o cálculo ficar confiável.`)
+      +`</div>
       <div class="cto-grid" style="margin-bottom:8px">
         <div class="cto-cel"><span>Portas PON</span><b>${nP}</b></div>
         <div class="cto-cel"><span>PONs em uso</span><b style="color:#2E86FF">${usadas}</b></div>
@@ -4647,10 +4727,10 @@ function abrirMedicaoPON(){
         <div class="cto-cel"><span>Ocupação</span><b>${nP?Math.round(usadas/nP*100):0}%</b></div>
       </div>`;
     html+=linhas
-      ? `<table class="tbl"><thead><tr><th>Porta</th><th>Caixas</th><th>Clientes</th><th>Tec.</th><th>RX previsto</th><th>RX real</th><th>Desvio</th></tr></thead><tbody>${linhas}</tbody></table>`
+      ? `<table class="tbl"><thead><tr><th>Porta</th><th>Caixas</th><th>Clientes</th><th>TX (dBm)</th><th>RX previsto</th><th>RX real</th><th>Desvio</th></tr></thead><tbody>${linhas}</tbody></table>`
       : '<div class="info-box" style="font-size:11px">Nenhuma caixa vinculada a esta OLT. Edite uma CTO/CEO e informe a <b>OLT transmissora</b> e a <b>porta PON</b>.</div>';
   });
-  html+='<div class="info-box" style="margin-top:10px;font-size:11px"><b>RX previsto</b> vem do caminho óptico projetado (splitters + fibra + conectores). <b>RX real</b> é a média das leituras das ONUs no IXC. Um <b>desvio</b> acima de 3 dB costuma indicar emenda ruim, curvatura ou conector sujo.</div>';
+  html+='<div class="info-box" style="margin-top:10px;font-size:11px">✔ = potência real (medida/datasheet) · ≈ = valor típico de catálogo.<br><b>RX previsto</b> vem do caminho óptico projetado (splitters + fibra + conectores). <b>RX real</b> é a média das leituras das ONUs no IXC. Um <b>desvio</b> acima de 3 dB costuma indicar emenda ruim, curvatura ou conector sujo.</div>';
   abrirModalGenerico('📡 Medição das portas PON',html);
 }
 /* ---------- Lista de portas da caixa (estilo IXC) ---------- */
