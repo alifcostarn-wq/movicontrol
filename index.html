@@ -2498,7 +2498,7 @@ textarea.cp-form-input{resize:vertical}
             <thead><tr>
               <th>Nome</th>
               <th>E-mail</th>
-              <th>Perfil</th>
+              <th>Perfil</th><th>MoviFiber</th>
               <th>Cadastrado em</th>
               <th></th>
             </tr></thead>
@@ -13457,6 +13457,17 @@ async function excluirUsuario(id){
   showToast('Usuário excluído com sucesso.');
 }
 
+async function toggleMovifiber(id, liberado, el){
+  if(el)el.disabled=true;
+  const { error } = await sbClient.rpc('admin_set_movifiber',{ p_id:id, p_liberado:liberado });
+  if(el)el.disabled=false;
+  if(error){
+    if(el)el.checked=!liberado;
+    showToast('Erro ao alterar acesso: '+error.message, true);
+    return;
+  }
+  showToast(liberado?'✅ Acesso ao MoviFiber liberado.':'Acesso ao MoviFiber removido.');
+}
 async function renderUsuarios(){
   const { data: usuariosRaw, error } = await sbClient.from('perfis').select('*').order('criado_em',{ascending:true});
   // Esconde técnicos da lista do sistema financeiro (gerenciados na aba Técnicos)
@@ -13465,13 +13476,18 @@ async function renderUsuarios(){
   const perfilCor={admin:'s-recebido',operador:'s-a-receber',visualizador:'s-a-pagar',user:'s-a-pagar'};
   const tb=document.getElementById('tbody-usuarios');
   if(!tb)return;
-  if(error){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Erro ao carregar usuários.</td></tr>';return;}
+  if(error){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Erro ao carregar usuários.</td></tr>';return;}
   const eu = (await sbClient.auth.getUser()).data?.user?.id;
   tb.innerHTML=usuarios.map(u=>`
     <tr>
       <td><b>${u.nome||'—'}</b></td>
       <td class="td-muted">${u.email||'—'}</td>
       <td><span class="status-badge ${perfilCor[u.perfil]||''}">${perfilLabel[u.perfil]||u.perfil}</span></td>
+      <td>${u.perfil==='admin'
+        ? '<span class="status-badge s-recebido" title="Administradores sempre têm acesso">🧵 sempre</span>'
+        : `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text3)">
+             <input type="checkbox" ${u.movifiber?'checked':''} onchange="toggleMovifiber('${u.id}',this.checked,this)"> liberado
+           </label>`}</td>
       <td class="td-muted td-mono">${u.criado_em?new Date(u.criado_em).toLocaleDateString('pt-BR'):'—'}</td>
       <td><div class="action-btns">
         <button class="action-btn" title="Editar" onclick="editarUsuario('${u.id}','${(u.nome||'').replace(/'/g,"\\'")}','${u.email||''}','${u.perfil||''}')">
