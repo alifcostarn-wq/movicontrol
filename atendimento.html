@@ -454,6 +454,15 @@ select.transf{
 .wa-sub{font-size:11.5px;color:var(--text-low);margin-bottom:18px;}
 .wa-actions{display:flex;gap:9px;justify-content:center;}
 
+/* ============ ABAS DE CONFIGURAÇÕES ============ */
+.cfg-tabs{display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--line);padding-bottom:0;}
+.cfg-tab{
+  font-size:12.5px;font-weight:700;color:var(--text-low);padding:9px 4px 11px;cursor:pointer;
+  border-bottom:2.5px solid transparent;margin-bottom:-1px;
+}
+.cfg-tab.on{color:var(--green-deep);border-bottom-color:var(--green);}
+.cfg-tab:hover:not(.on){color:var(--text);}
+
 /* ============ LOGIN — "rede de conversas" ============ */
 #tela-login{
   --lg-bg0:#f2faf6; --lg-bg1:#e3f4ea;
@@ -874,10 +883,6 @@ select.transf{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L11 16M17 7.5L13 16M7.5 6h9"/></svg>
         Fluxo do Bot
       </div>
-      <div class="nav-item" data-view="integracoes" id="navIntegracoes" style="display:none;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v3.2M17.5 21v.01M14.3 17.5h6.4"/></svg>
-        Integrações
-      </div>
       <div class="nav-item" data-view="conversas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
         Conversas
@@ -1207,7 +1212,6 @@ async function carregarTudo(){
   state.conversas = (j.conversas||[]).map(mapearConversa);
   state.agendamentos = (j.agendamentos||[]).map(a=>({ id:a.id, convId:a.conversa_id, texto:a.texto, quando: fmtQuando(a.quando) }));
   meuSetor = USUARIO.setor || 'todos';
-  if(USUARIO.admin){ const ni=$('#navIntegracoes'); if(ni) ni.style.display=''; }
   await recarregarChat();
 }
 
@@ -1308,6 +1312,7 @@ async function sair(){
 
 let filtroTag=null, filtroRisco=false, busca='', view='kanban', modalId=null, meuSetor='todos', ciAtivo='canal:Geral', ciEmThread=false;
 let flowSelected=null, flowConnecting=null, flowDrag=null, flowZoom=1;
+let configTab='regras';
 
 /* ================= HELPERS ================= */
 const $=s=>document.querySelector(s);
@@ -1624,12 +1629,29 @@ function renderAux(){
     a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const at=state.atalhos[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'atalhos',remover:at.id}).then(()=>{ state.atalhos=state.atalhos.filter(x=>x!==at); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
   }
   else if(view==='config'){
-    a.innerHTML=`<div class="viewbox"><h2>Auto-responder por palavra-chave</h2><div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>
-      ${state.rules.map((r,i)=>`<div class="rule-line"><span class="rule-kw">"${esc(r.kw)}"</span><span class="rule-arrow">→</span><span class="rule-desc">${esc(r.acao)}</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
-      <div class="add-row"><input id="rKw" placeholder="Palavra-chave..." style="flex:0 0 160px;"><input id="rAc" placeholder="Ação/resposta automática..."><button class="btn primary" id="addR">Adicionar</button></div>
-      <div class="ia-note" style="margin-top:16px;">🔌 <b>Ponto de extensão IA:</b> quando ativada, a IA será consultada quando nenhuma palavra-chave ou opção de menu corresponder — este cadastro continua valendo como camada prioritária (mais barata e previsível).</div></div>`;
-    $('#addR').onclick=()=>{ const k=$('#rKw').value.trim(),ac=$('#rAc').value.trim(); if(k&&ac){ chamar('catalogo.salvar',{tipo:'regras',registro:{palavra:k,acao:ac}}).then(j=>{state.rules.push({id:j.registro.id,kw:k,acao:ac});renderAux();}).catch(err=>toast('Falha: '+err.message)); } };
-    a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const rg=state.rules[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'regras',remover:rg.id}).then(()=>{ state.rules=state.rules.filter(x=>x!==rg); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
+    a.innerHTML=`<div class="viewbox">
+      <h2>Configurações</h2>
+      <div class="cfg-tabs" id="cfgTabs">
+        <div class="cfg-tab ${configTab==='regras'?'on':''}" data-tab="regras">Auto-responder</div>
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
+      </div>
+      <div id="cfgBody"></div>
+    </div>`;
+    a.querySelectorAll('.cfg-tab').forEach(el=>el.onclick=()=>{
+      if(configTab==='integracoes' && el.dataset.tab!=='integracoes') pararPollWA();
+      configTab=el.dataset.tab; renderAux();
+    });
+    const body=$('#cfgBody');
+    if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
+      renderIntegracoes(body);
+    } else {
+      body.innerHTML=`<div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>
+        ${state.rules.map((r,i)=>`<div class="rule-line"><span class="rule-kw">"${esc(r.kw)}"</span><span class="rule-arrow">→</span><span class="rule-desc">${esc(r.acao)}</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
+        <div class="add-row"><input id="rKw" placeholder="Palavra-chave..." style="flex:0 0 160px;"><input id="rAc" placeholder="Ação/resposta automática..."><button class="btn primary" id="addR">Adicionar</button></div>
+        <div class="ia-note" style="margin-top:16px;">🔌 <b>Ponto de extensão IA:</b> quando ativada, a IA será consultada quando nenhuma palavra-chave ou opção de menu corresponder — este cadastro continua valendo como camada prioritária (mais barata e previsível).</div>`;
+      $('#addR').onclick=()=>{ const k=$('#rKw').value.trim(),ac=$('#rAc').value.trim(); if(k&&ac){ chamar('catalogo.salvar',{tipo:'regras',registro:{palavra:k,acao:ac}}).then(j=>{state.rules.push({id:j.registro.id,kw:k,acao:ac});renderAux();}).catch(err=>toast('Falha: '+err.message)); } };
+      body.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const rg=state.rules[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'regras',remover:rg.id}).then(()=>{ state.rules=state.rules.filter(x=>x!==rg); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
+    }
   }
   else if(view==='conversas'){
     a.innerHTML=`<div class="viewbox" style="max-width:900px;"><h2>Conversas</h2><div class="vsub">Todas as conversas, mais recentes primeiro.</div>
@@ -1676,24 +1698,18 @@ function renderAux(){
   else if(view==='fluxo'){
     renderFluxo(a);
   }
-  else if(view==='integracoes'){
-    renderIntegracoes(a);
-  }
 }
 
-/* ================= INTEGRAÇÕES (WhatsApp) ================= */
+/* ================= INTEGRAÇÕES (WhatsApp) — vive dentro da aba de Configurações ================= */
 let _waPoll=null;
 function pararPollWA(){ if(_waPoll){ clearInterval(_waPoll); _waPoll=null; } }
 
-async function renderIntegracoes(a){
-  a.innerHTML=`<div class="viewbox" style="max-width:640px;">
-    <h2>Integrações</h2>
-    <div class="vsub">Conexão do WhatsApp usada pelo MoviTalk (Evolution API).</div>
+async function renderIntegracoes(body){
+  body.innerHTML=`<div class="vsub">Conexão do WhatsApp usada pelo MoviTalk (Evolution API).</div>
     <div class="wa-card" id="waCard">
       <div class="wa-status-row mid" id="waStatusRow"><span class="wa-status-dot"></span>Verificando conexão…</div>
       <div id="waBody"></div>
-    </div>
-  </div>`;
+    </div>`;
   await atualizarStatusWA();
 }
 
@@ -1767,7 +1783,8 @@ async function mostrarQR(){
     const j=await chamar('whatsapp.qrcode',{});
     const box=$('#waQrBox');
     if(j.conectado){ await atualizarStatusWA(); return; }
-    if(box) box.innerHTML=`<img src="data:image/png;base64,${j.base64}" alt="QR Code do WhatsApp">`;
+    const puro = j.base64 && j.base64.includes(',') ? j.base64.split(',').pop() : j.base64;
+    if(box) box.innerHTML=`<img src="data:image/png;base64,${puro}" alt="QR Code do WhatsApp">`;
   }catch(err){
     const box=$('#waQrBox');
     if(box) box.innerHTML=`<span class="wa-load" style="color:var(--red)">Falha ao gerar: ${esc(err.message)}</span>`;
@@ -2117,6 +2134,7 @@ document.querySelectorAll('.nav-item').forEach(el=>el.onclick=()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
   if(view==='integracoes' && el.dataset.view!=='integracoes') pararPollWA();
+  if(view==='config' && el.dataset.view!=='config') pararPollWA();
   view=el.dataset.view; renderAll();
   abrirGaveta(false);              // no celular, fecha a gaveta ao escolher
 });
