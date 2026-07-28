@@ -1061,8 +1061,9 @@ export default async function handler(req, res) {
         const r = await fetch(`${e.EVO_URL}/instance/connect/${e.EVO_INST}`, { headers: { apikey: e.EVO_KEY } });
         const d = await r.json();
         if (!r.ok) return res.status(500).json({ ok: false, error: d?.response?.message?.[0] || d?.message || 'Falha ao gerar QR Code.' });
-        const base64 = d?.base64 || d?.qrcode?.base64 || null;
-        if (!base64) return res.status(200).json({ ok: true, conectado: true }); // já conectado, sem QR novo
+        const base64bruto = d?.base64 || d?.qrcode?.base64 || null;
+        if (!base64bruto) return res.status(200).json({ ok: true, conectado: true }); // já conectado, sem QR novo
+        const base64 = base64bruto.includes(',') ? base64bruto.split(',').pop() : base64bruto;
         return res.status(200).json({ ok: true, base64 });
       }
 
