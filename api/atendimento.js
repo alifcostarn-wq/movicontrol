@@ -1029,6 +1029,49 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, fluxo: f });
       }
 
+      // ===== Integração WhatsApp (Evolution API) — tudo dentro do app, sem terminal =====
+      case 'whatsapp.status': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        try {
+          const r = await fetch(`${e.EVO_URL}/instance/connectionState/${e.EVO_INST}`, { headers: { apikey: e.EVO_KEY } });
+          const d = await r.json();
+          if (r.status === 404) return res.status(200).json({ ok: true, existe: false, status: 'nao_criada' });
+          return res.status(200).json({ ok: true, existe: true, status: d?.instance?.state || d?.state || 'desconhecido' });
+        } catch (err) {
+          return res.status(200).json({ ok: true, existe: false, status: 'erro', detalhe: err.message });
+        }
+      }
+
+      case 'whatsapp.criar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const r0 = await fetch(`${e.EVO_URL}/instance/connectionState/${e.EVO_INST}`, { headers: { apikey: e.EVO_KEY } });
+        if (r0.status !== 404) return res.status(200).json({ ok: true, ja_existia: true });
+        const r = await fetch(`${e.EVO_URL}/instance/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+          body: JSON.stringify({ instanceName: e.EVO_INST, integration: 'WHATSAPP-BAILEYS', qrcode: true }),
+        });
+        const d = await r.json();
+        if (!r.ok) return res.status(500).json({ ok: false, error: d?.response?.message?.[0] || d?.message || 'Falha ao criar instância.' });
+        return res.status(200).json({ ok: true, criada: true });
+      }
+
+      case 'whatsapp.qrcode': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const r = await fetch(`${e.EVO_URL}/instance/connect/${e.EVO_INST}`, { headers: { apikey: e.EVO_KEY } });
+        const d = await r.json();
+        if (!r.ok) return res.status(500).json({ ok: false, error: d?.response?.message?.[0] || d?.message || 'Falha ao gerar QR Code.' });
+        const base64 = d?.base64 || d?.qrcode?.base64 || null;
+        if (!base64) return res.status(200).json({ ok: true, conectado: true }); // já conectado, sem QR novo
+        return res.status(200).json({ ok: true, base64 });
+      }
+
+      case 'whatsapp.desconectar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        await fetch(`${e.EVO_URL}/instance/logout/${e.EVO_INST}`, { method: 'DELETE', headers: { apikey: e.EVO_KEY } });
+        return res.status(200).json({ ok: true });
+      }
+
       // dry-run: testa o fluxo sem WhatsApp e sem gravar nada
       case 'fluxo.simular': {
         const fluxo = body.fluxo || await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
