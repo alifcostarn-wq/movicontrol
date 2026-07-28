@@ -2486,6 +2486,14 @@ textarea.cp-form-input{resize:vertical}
       <span class="nav-badge" style="background:#3CB371;color:#08120C">↗</span>
     </button>
     </div>
+    <button class="nav-section" data-group="atendimento" onclick="navToggleGroup(this)">Atendimento<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="nav-group" id="nav-group-atendimento">
+    <button class="nav-item" data-tooltip="Centro de Atendimento (WhatsApp)" onclick="abrirAtendimento()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20l1-4.9A8.4 8.4 0 1 1 21 11.5z"/></svg>
+      <span class="nav-label">Centro de Atendimento</span>
+      <span class="nav-badge" style="background:#3CB371;color:#08120C">↗</span>
+    </button>
+    </div>
     <button class="nav-section" id="nav-sec-admin" data-group="sistema" onclick="navToggleGroup(this)" style="display:none">Sistema<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
     <div class="nav-group" id="nav-group-sistema">
     <button class="nav-item" id="nav-usuarios" data-page="usuarios" data-tooltip="Usuários" onclick="navTo('usuarios',this)" style="display:none">
@@ -2556,7 +2564,7 @@ textarea.cp-form-input{resize:vertical}
             <thead><tr>
               <th>Nome</th>
               <th>E-mail</th>
-              <th>Perfil</th><th>MoviFiber</th>
+              <th>Perfil</th><th>MoviFiber</th><th>Atendimento</th>
               <th>Cadastrado em</th>
               <th></th>
             </tr></thead>
@@ -13526,6 +13534,45 @@ async function toggleMovifiber(id, liberado, el){
   }
   showToast(liberado?'✅ Acesso ao MoviFiber liberado.':'Acesso ao MoviFiber removido.');
 }
+
+// ══════════════════════════════════════════════════════════════
+//  CENTRO DE ATENDIMENTO (WhatsApp) — módulo separado, abre em nova aba.
+//  Mesmo padrão do MoviFiber: acesso liberado no cadastro de usuários.
+//  Isolado: se o atendimento cair, o MoviControl continua funcionando.
+// ══════════════════════════════════════════════════════════════
+async function abrirAtendimento(){
+  try{
+    const { data:{ user } } = await sbClient.auth.getUser();
+    if(!user){ showToast('Faça login primeiro.', true); return; }
+    const { data:ok, error } = await sbClient.rpc('tem_atendimento',{ p_id:user.id });
+    if(error) throw error;
+    if(ok!==true){
+      showToast('Seu usuário não tem acesso ao Centro de Atendimento.', true);
+      return;
+    }
+    window.open('/atendimento.html','_blank');
+  }catch(e){
+    showToast('Erro ao verificar acesso: '+e.message, true);
+  }
+}
+
+async function toggleAtendimento(id, liberado, el){
+  if(el)el.disabled=true;
+  const { error } = await sbClient.rpc('admin_set_atendimento',{ p_id:id, p_liberado:liberado });
+  if(el)el.disabled=false;
+  if(error){
+    if(el)el.checked=!liberado;
+    showToast('Erro ao alterar acesso: '+error.message, true);
+    return;
+  }
+  showToast(liberado?'✅ Acesso ao Atendimento liberado.':'Acesso ao Atendimento removido.');
+}
+
+async function setAtendSetor(id, setor){
+  const { error } = await sbClient.rpc('admin_set_atend_setor',{ p_id:id, p_setor: setor || null });
+  if(error){ showToast('Erro ao definir setor: '+error.message, true); return; }
+  showToast(setor ? ('Atendente passa a ver só o setor '+setor) : 'Atendente passa a ver todos os setores.');
+}
 async function renderUsuarios(){
   const { data: usuariosRaw, error } = await sbClient.from('perfis').select('*').order('criado_em',{ascending:true});
   // Esconde técnicos da lista do sistema financeiro (gerenciados na aba Técnicos)
@@ -13546,6 +13593,20 @@ async function renderUsuarios(){
         : `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text3)">
              <input type="checkbox" ${u.movifiber?'checked':''} onchange="toggleMovifiber('${u.id}',this.checked,this)"> liberado
            </label>`}</td>
+      <td>
+        ${u.perfil==='admin'
+          ? '<span class="status-badge s-recebido" title="Administradores sempre têm acesso">💬 sempre</span>'
+          : `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text3)">
+               <input type="checkbox" ${u.atendimento?'checked':''} onchange="toggleAtendimento('${u.id}',this.checked,this)"> liberado
+             </label>`}
+        <select onchange="setAtendSetor('${u.id}',this.value)" title="Setor que este atendente enxerga"
+                style="margin-left:6px;font-size:10px;padding:2px 4px;border-radius:5px">
+          <option value="" ${!u.atend_setor?'selected':''}>todos</option>
+          <option ${u.atend_setor==='Suporte'?'selected':''}>Suporte</option>
+          <option ${u.atend_setor==='Financeiro'?'selected':''}>Financeiro</option>
+          <option ${u.atend_setor==='Vendas'?'selected':''}>Vendas</option>
+        </select>
+      </td>
       <td class="td-muted td-mono">${u.criado_em?new Date(u.criado_em).toLocaleDateString('pt-BR'):'—'}</td>
       <td><div class="action-btns">
         <button class="action-btn" title="Editar" onclick="editarUsuario('${u.id}','${(u.nome||'').replace(/'/g,"\\'")}','${u.email||''}','${u.perfil||''}')">
