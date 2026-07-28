@@ -439,6 +439,21 @@ select.transf{
 .flow-field input:focus,.flow-field select:focus,.flow-field textarea:focus{border-color:var(--green);}
 .flow-hint{font-size:10.5px;color:var(--text-low);background:#f7f9fb;border:1px dashed var(--line);border-radius:8px;padding:9px 10px;line-height:1.5;margin-top:14px;}
 
+/* ============ INTEGRAÇÕES (WhatsApp) ============ */
+.wa-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px;max-width:480px;margin:0 auto;text-align:center;}
+.wa-status-row{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:99px;margin-bottom:20px;}
+.wa-status-row.on{background:var(--green-soft);color:var(--green-deep);}
+.wa-status-row.off{background:#fee2e2;color:#b91c1c;}
+.wa-status-row.mid{background:#fef3c7;color:#92400e;}
+.wa-status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+.wa-status-row.on .wa-status-dot{animation:lgBadgePulse 2.2s ease-out infinite;}
+.wa-qr-box{width:240px;height:240px;margin:0 auto 18px;border:1.5px dashed var(--line);border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fafcfb;}
+.wa-qr-box img{width:100%;height:100%;object-fit:contain;}
+.wa-qr-box .wa-load{font-size:11.5px;color:var(--text-low);}
+.wa-num{font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px;}
+.wa-sub{font-size:11.5px;color:var(--text-low);margin-bottom:18px;}
+.wa-actions{display:flex;gap:9px;justify-content:center;}
+
 /* ============ LOGIN — "rede de conversas" ============ */
 #tela-login{
   --lg-bg0:#f2faf6; --lg-bg1:#e3f4ea;
@@ -859,6 +874,10 @@ select.transf{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L11 16M17 7.5L13 16M7.5 6h9"/></svg>
         Fluxo do Bot
       </div>
+      <div class="nav-item" data-view="integracoes" id="navIntegracoes" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v3.2M17.5 21v.01M14.3 17.5h6.4"/></svg>
+        Integrações
+      </div>
       <div class="nav-item" data-view="conversas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
         Conversas
@@ -1188,6 +1207,7 @@ async function carregarTudo(){
   state.conversas = (j.conversas||[]).map(mapearConversa);
   state.agendamentos = (j.agendamentos||[]).map(a=>({ id:a.id, convId:a.conversa_id, texto:a.texto, quando: fmtQuando(a.quando) }));
   meuSetor = USUARIO.setor || 'todos';
+  if(USUARIO.admin){ const ni=$('#navIntegracoes'); if(ni) ni.style.display=''; }
   await recarregarChat();
 }
 
@@ -1656,6 +1676,108 @@ function renderAux(){
   else if(view==='fluxo'){
     renderFluxo(a);
   }
+  else if(view==='integracoes'){
+    renderIntegracoes(a);
+  }
+}
+
+/* ================= INTEGRAÇÕES (WhatsApp) ================= */
+let _waPoll=null;
+function pararPollWA(){ if(_waPoll){ clearInterval(_waPoll); _waPoll=null; } }
+
+async function renderIntegracoes(a){
+  a.innerHTML=`<div class="viewbox" style="max-width:640px;">
+    <h2>Integrações</h2>
+    <div class="vsub">Conexão do WhatsApp usada pelo MoviTalk (Evolution API).</div>
+    <div class="wa-card" id="waCard">
+      <div class="wa-status-row mid" id="waStatusRow"><span class="wa-status-dot"></span>Verificando conexão…</div>
+      <div id="waBody"></div>
+    </div>
+  </div>`;
+  await atualizarStatusWA();
+}
+
+function pintarStatus(status){
+  const row=$('#waStatusRow'); if(!row) return;
+  const map={
+    open:      {cls:'on',  txt:'Conectado'},
+    connecting:{cls:'mid', txt:'Aguardando leitura do QR Code'},
+    close:     {cls:'off', txt:'Desconectado'},
+    nao_criada:{cls:'off', txt:'Nenhuma instância criada ainda'},
+    erro:      {cls:'off', txt:'Não foi possível falar com a Evolution API'},
+  };
+  const m=map[status]||{cls:'mid',txt:status};
+  row.className='wa-status-row '+m.cls;
+  row.innerHTML=`<span class="wa-status-dot"></span>${esc(m.txt)}`;
+}
+
+async function atualizarStatusWA(){
+  const body=$('#waBody'); if(!body) return;
+  try{
+    const j=await chamar('whatsapp.status',{});
+    if(!j.existe){
+      pintarStatus('nao_criada');
+      body.innerHTML=`<p style="font-size:12.5px;color:var(--text-mid);margin:0 0 16px;line-height:1.6;">
+        Ainda não existe nenhuma instância do WhatsApp configurada nesta Evolution API.</p>
+        <button class="btn primary" id="btnCriarWA">Criar instância e conectar</button>`;
+      $('#btnCriarWA').onclick=criarInstanciaWA;
+      pararPollWA();
+      return;
+    }
+    pintarStatus(j.status);
+    if(j.status==='open'){
+      body.innerHTML=`<div class="wa-num">✅ WhatsApp conectado</div>
+        <div class="wa-sub">O MoviTalk já está recebendo e enviando mensagens por este número.</div>
+        <div class="wa-actions"><button class="fbtn" id="btnDesconWA">Desconectar este número</button></div>`;
+      $('#btnDesconWA').onclick=desconectarWA;
+      pararPollWA();
+    } else {
+      // desconectada ou conectando: mostra o QR e fica de olho até conectar
+      await mostrarQR();
+      if(!_waPoll) _waPoll=setInterval(async()=>{
+        const s=await chamar('whatsapp.status',{}).catch(()=>null);
+        if(s && s.status==='open'){ pararPollWA(); await atualizarStatusWA(); }
+      },4000);
+    }
+  }catch(err){
+    pintarStatus('erro');
+    body.innerHTML=`<p style="font-size:12px;color:var(--red);">${esc(err.message)}</p>`;
+    pararPollWA();
+  }
+}
+
+async function criarInstanciaWA(){
+  const body=$('#waBody');
+  body.innerHTML=`<p style="font-size:12px;color:var(--text-low);">Criando instância…</p>`;
+  try{ await chamar('whatsapp.criar',{}); await atualizarStatusWA(); }
+  catch(err){ body.innerHTML=`<p style="font-size:12px;color:var(--red);">${esc(err.message)}</p>`; }
+}
+
+async function mostrarQR(){
+  const body=$('#waBody'); if(!body) return;
+  body.innerHTML=`
+    <div class="wa-qr-box" id="waQrBox"><span class="wa-load">Gerando QR Code…</span></div>
+    <p style="font-size:11.5px;color:var(--text-low);line-height:1.6;max-width:340px;margin:0 auto 14px;">
+      Abra o WhatsApp no celular que será o número oficial da MoviOn →
+      <b>Aparelhos conectados</b> → <b>Conectar um aparelho</b> → aponte a câmera para o código acima.
+    </p>
+    <div class="wa-actions"><button class="fbtn" id="btnNovoQR">🔄 Gerar novo QR Code</button></div>`;
+  $('#btnNovoQR').onclick=mostrarQR;
+  try{
+    const j=await chamar('whatsapp.qrcode',{});
+    const box=$('#waQrBox');
+    if(j.conectado){ await atualizarStatusWA(); return; }
+    if(box) box.innerHTML=`<img src="data:image/png;base64,${j.base64}" alt="QR Code do WhatsApp">`;
+  }catch(err){
+    const box=$('#waQrBox');
+    if(box) box.innerHTML=`<span class="wa-load" style="color:var(--red)">Falha ao gerar: ${esc(err.message)}</span>`;
+  }
+}
+
+async function desconectarWA(){
+  if(!confirm('Desconectar este número do MoviTalk? Será preciso escanear o QR Code de novo depois.')) return;
+  try{ await chamar('whatsapp.desconectar',{}); await atualizarStatusWA(); }
+  catch(err){ toast('Falha: '+err.message); }
 }
 
 function renderChatInterno(a){
@@ -1993,7 +2115,9 @@ $('#drawerBack').onclick=()=>abrirGaveta(false);
 
 document.querySelectorAll('.nav-item').forEach(el=>el.onclick=()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
-  el.classList.add('active'); view=el.dataset.view; renderAll();
+  el.classList.add('active');
+  if(view==='integracoes' && el.dataset.view!=='integracoes') pararPollWA();
+  view=el.dataset.view; renderAll();
   abrirGaveta(false);              // no celular, fecha a gaveta ao escolher
 });
 $('#search').oninput=e=>{ busca=e.target.value.toLowerCase(); renderBoard(); };
