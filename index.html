@@ -1631,125 +1631,164 @@ body:not(.valores-ocultos) .val-monetario{
 .banco-sel-btn:hover{border-color:var(--text3)}
 .banco-sel-btn.act{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* ======== AUTH — LOGIN & CADASTRO ======== */
+/* ======== AUTH — SALA DE CONTROLE ======== */
 #auth-screen{
   display:none;position:fixed;inset:0;z-index:9999;
-  background:#F4F3EF;
-  align-items:center;justify-content:center;
+  background:#07090D;align-items:center;justify-content:center;padding:20px;
+  overflow:hidden;
+  --au-verde:#3CB371;--au-luz:#5FE0A0;--au-linha:#1D2430;
+  --au-txt:#E8ECF3;--au-fraco:#79839A;
 }
 #auth-screen.visible{display:flex}
-.auth-wrapper{
-  display:flex;width:860px;max-width:98vw;min-height:520px;
-  background:#fff;border-radius:18px;overflow:hidden;
-  box-shadow:0 8px 48px rgba(26,25,22,0.13);
-  border:1px solid #E4E2DC;
+/* malha da rede ao fundo — assinantes conectados, dados em movimento */
+#auth-screen .malha{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.9}
+#auth-screen .malha svg{width:100%;height:100%;display:block}
+#auth-screen .enlace{stroke:#27374A;stroke-width:1;fill:none}
+/* rota acesa: o tráfego percorrendo o enlace */
+#auth-screen .rota{
+  stroke:var(--au-luz);stroke-width:1.6;fill:none;stroke-linecap:round;
+  stroke-dasharray:var(--tr) var(--vao);stroke-dashoffset:var(--vao);
+  animation:au-fluir var(--dur) linear infinite var(--atr);opacity:0;
 }
+@keyframes au-fluir{
+  0%{stroke-dashoffset:var(--vao);opacity:0}
+  8%{opacity:.9}88%{opacity:.9}
+  100%{stroke-dashoffset:calc(-1 * var(--comp));opacity:0}
+}
+#auth-screen .pacote{fill:#DFFFF0}
+#auth-screen .no{fill:#141C28;stroke:#33415A;stroke-width:1.4}
+#auth-screen .no-ativo{fill:var(--au-luz);stroke:none;animation:au-pulsar 3s ease-in-out infinite}
+@keyframes au-pulsar{0%,100%{opacity:.4}50%{opacity:1}}
+/* halo do assinante conectado */
+#auth-screen .halo{fill:none;stroke:var(--au-verde);stroke-width:1.2;opacity:0;animation:au-halo 3.6s ease-out infinite}
+@keyframes au-halo{0%{r:4;opacity:.55}70%{opacity:0}100%{r:16;opacity:0}}
+/* ondas de propagação a partir dos pontos de presença */
+#auth-screen .onda{fill:none;stroke:var(--au-verde);stroke-width:1.4;opacity:0;animation:au-onda 5s ease-out infinite}
+@keyframes au-onda{0%{r:8;opacity:.5;stroke-width:2}60%{opacity:.12}100%{r:180;opacity:0;stroke-width:.4}}
+#auth-screen .pop{fill:var(--au-luz)}
+/* brilho ambiente — a luz da operação */
+#auth-screen .aurora{
+  position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(60% 45% at 18% 78%,rgba(60,179,113,.14),transparent 70%),
+    radial-gradient(50% 40% at 84% 16%,rgba(0,180,216,.10),transparent 72%);
+  animation:au-aurora 12s ease-in-out infinite alternate;
+}
+@keyframes au-aurora{0%{opacity:.75;transform:scale(1)}100%{opacity:1;transform:scale(1.06)}}
+/* varredura diagonal, como um monitor de operações */
+#auth-screen .varredura{
+  position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(115deg,transparent 42%,rgba(60,179,113,.055) 50%,transparent 58%);
+  background-size:280% 280%;animation:au-varrer 9s linear infinite;
+}
+@keyframes au-varrer{0%{background-position:120% 0}100%{background-position:-40% 0}}
+#auth-screen .grade{
+  position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(#111A26 1px,transparent 1px),linear-gradient(90deg,#111A26 1px,transparent 1px);
+  background-size:52px 52px;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 50%,#000 20%,transparent 78%);
+  mask-image:radial-gradient(ellipse at 50% 50%,#000 20%,transparent 78%);
+}
+.auth-wrapper{
+  position:relative;z-index:3;
+  display:flex;width:900px;max-width:98vw;min-height:540px;
+  background:rgba(13,17,24,.86);border-radius:20px;overflow:hidden;
+  border:1px solid var(--au-linha);backdrop-filter:blur(20px);
+  box-shadow:0 40px 100px -25px rgba(0,0,0,.95);
+  animation:au-entrar .85s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes au-entrar{from{opacity:0;transform:translateY(26px) scale(.975)}to{opacity:1;transform:none}}
 .auth-panel{
-  width:320px;flex-shrink:0;
-  background:#1A1916;
-  padding:36px 28px;
-  display:flex;flex-direction:column;justify-content:space-between;
-  position:relative;overflow:hidden;
+  width:340px;flex-shrink:0;background:linear-gradient(165deg,#0C121B 0%,#0A0F16 100%);
+  padding:34px 30px;display:flex;flex-direction:column;justify-content:space-between;
+  position:relative;overflow:hidden;border-right:1px solid var(--au-linha);
 }
 .auth-panel::before{
-  content:'';position:absolute;top:-80px;left:-80px;
-  width:280px;height:280px;border-radius:50%;
-  background:rgba(45,140,87,0.08);pointer-events:none;
+  content:'';position:absolute;top:-120px;right:-120px;width:320px;height:320px;border-radius:50%;
+  background:radial-gradient(circle,rgba(60,179,113,.16),transparent 68%);pointer-events:none;
+  animation:au-respirar 6s ease-in-out infinite;
 }
-.auth-panel::after{
-  content:'';position:absolute;bottom:-50px;right:-50px;
-  width:180px;height:180px;border-radius:50%;
-  background:rgba(45,140,87,0.06);pointer-events:none;
-}
-.auth-brand{position:relative;z-index:1}
-.auth-logo-row{display:flex;align-items:center;gap:13px;margin-bottom:14px}
-.auth-logo-img{width:56px;height:56px;object-fit:contain;border-radius:12px}
-.auth-brand-name{font-family:'Nunito',sans-serif;font-size:26px;font-weight:800;color:#FFD600;letter-spacing:-0.5px;line-height:1}
-.auth-brand-tag{font-size:10px;color:rgba(255,255,255,0.35);margin-top:3px;letter-spacing:0.5px}
+@keyframes au-respirar{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.12)}}
+.auth-brand{position:relative;z-index:2}
+.auth-logo-row{display:flex;align-items:center;gap:11px;margin-bottom:16px}
+.auth-logo-img{width:40px;height:40px;border-radius:10px;object-fit:cover;border:1px solid var(--au-linha)}
+.auth-brand-name{font-size:21px;font-weight:700;color:var(--au-txt);letter-spacing:-.02em;line-height:1.1}
+.auth-brand-tag{font-size:11px;color:var(--au-fraco);margin-top:2px}
 .auth-system-badge{
-  display:inline-flex;align-items:center;gap:7px;margin-top:14px;
-  font-family:'Nunito',sans-serif;font-size:18px;font-weight:800;
-  color:#fff;letter-spacing:-0.3px;
+  display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;
+  background:rgba(60,179,113,.1);border:1px solid rgba(60,179,113,.28);
+  color:var(--au-luz);font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
 }
-.auth-system-badge-dot{
-  width:8px;height:8px;border-radius:50%;
-  background:linear-gradient(135deg,#FFD600,#FF9800);
-  flex-shrink:0;
+.auth-system-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--au-luz);animation:au-bater 2s ease-in-out infinite}
+@keyframes au-bater{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(95,224,160,.55)}50%{opacity:.6;box-shadow:0 0 0 6px rgba(95,224,160,0)}}
+.auth-panel-info{position:relative;z-index:2}
+.auth-panel-title{font-size:19px;font-weight:600;color:var(--au-txt);line-height:1.4;letter-spacing:-.015em;margin:0 0 8px}
+.auth-panel-sub{font-size:12.5px;color:var(--au-fraco);line-height:1.65;margin:0}
+.auth-panel-copy{font-size:10.5px;color:#4E5769;position:relative;z-index:2;margin:0}
+.auth-form-area{flex:1;padding:44px 42px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.auth-form-title{font-size:23px;font-weight:700;color:var(--au-txt);letter-spacing:-.02em;margin-bottom:5px}
+.auth-form-sub{font-size:13px;color:var(--au-fraco);margin-bottom:28px}
+.auth-field{margin-bottom:17px}
+.auth-label{
+  display:block;font-size:10px;font-weight:600;color:var(--au-fraco);margin-bottom:7px;
+  letter-spacing:.12em;text-transform:uppercase;transition:color .2s;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
 }
-.auth-system-badge-line{
-  display:block;height:1px;width:28px;
-  background:rgba(255,255,255,0.18);margin-bottom:10px;
+.auth-field:focus-within .auth-label{color:var(--au-luz)}
+.auth-input-wrap{position:relative;display:flex;align-items:center}
+.auth-input-icon{position:absolute;left:13px;display:flex;color:#5A657B;transition:color .2s;pointer-events:none}
+.auth-input-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.auth-field:focus-within .auth-input-icon{color:var(--au-luz)}
+.auth-input,.auth-select{
+  width:100%;padding:12px 13px 12px 38px;border-radius:10px;
+  border:1px solid var(--au-linha);background:rgba(255,255,255,.028);color:var(--au-txt);
+  font-size:14px;font-family:inherit;transition:border-color .2s,background .2s,box-shadow .2s;
 }
-.auth-panel-info{position:relative;z-index:1}
-.auth-panel-title{font-size:13.5px;font-weight:500;color:rgba(255,255,255,0.85);margin-bottom:6px;line-height:1.5}
-.auth-panel-sub{font-size:11px;color:rgba(255,255,255,0.35);line-height:1.7}
-.auth-panel-copy{font-size:10px;color:rgba(255,255,255,0.18);position:relative;z-index:1}
-
-.auth-form-area{
-  flex:1;padding:42px 36px;
-  display:flex;flex-direction:column;justify-content:center;
+.auth-input::placeholder{color:#49536A}
+.auth-input:focus,.auth-select:focus{
+  outline:none;border-color:rgba(60,179,113,.55);background:rgba(60,179,113,.05);
+  box-shadow:0 0 0 3px rgba(60,179,113,.09);
 }
-.auth-form-title{font-size:18px;font-weight:700;color:#1A1916;margin-bottom:4px}
-.auth-form-sub{font-size:12px;color:#6B6861;margin-bottom:28px}
-.auth-field{margin-bottom:14px}
-.auth-label{font-size:10.5px;font-weight:700;color:#6B6861;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:5px}
-.auth-input-wrap{position:relative}
-.auth-input{
-  width:100%;height:42px;padding:0 12px 0 38px;
-  border:1px solid #E4E2DC;border-radius:8px;
-  background:#F9F8F6;color:#1A1916;
-  font-family:'DM Sans',sans-serif;font-size:13px;
-  outline:none;transition:border 0.13s,background 0.13s;
-}
-.auth-input:focus{border-color:#2D8C57;background:#fff;box-shadow:0 0 0 3px rgba(45,140,87,0.08)}
-.auth-input-icon{
-  position:absolute;left:11px;top:50%;transform:translateY(-50%);
-  width:15px;height:15px;color:#A8A59E;pointer-events:none;
-  display:flex;align-items:center;justify-content:center;
-}
-.auth-input-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.auth-btn{
-  width:100%;height:43px;margin-top:6px;
-  background:#1A5C3A;color:#fff;border:none;border-radius:8px;
-  font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;
-  cursor:pointer;transition:background 0.13s,transform 0.1s;
-  display:flex;align-items:center;justify-content:center;gap:8px;
-}
-.auth-btn:hover{background:#155030}
-.auth-btn:active{transform:scale(0.98)}
-.auth-error{
-  display:none;margin-top:12px;padding:9px 13px;
-  background:#FBF0EE;border:1px solid #F5C4C0;border-radius:7px;
-  font-size:12px;color:#C23B2A;text-align:center;
-}
-.auth-error.show{display:block}
-.auth-link{
-  font-size:11.5px;color:#1A5C3A;cursor:pointer;
-  background:none;border:none;font-family:'DM Sans',sans-serif;
-  font-weight:500;text-decoration:underline;padding:0;
-  margin-top:14px;display:block;text-align:center;
-}
-.auth-link:hover{color:#155030}
-
-/* ---- Tela de cadastro ---- */
-.auth-form-page{display:none}
-.auth-form-page.active{display:block}
-
-/* ---- Seletor de perfil ---- */
-.auth-select{
-  width:100%;height:42px;padding:0 12px 0 38px;
-  border:1px solid #E4E2DC;border-radius:8px;
-  background:#F9F8F6;color:#1A1916;
-  font-family:'DM Sans',sans-serif;font-size:13px;
-  outline:none;appearance:none;cursor:pointer;
-  transition:border 0.13s;
-}
-.auth-select:focus{border-color:#2D8C57;background:#fff;box-shadow:0 0 0 3px rgba(45,140,87,0.08)}
-.auth-select-arrow{
-  position:absolute;right:11px;top:50%;transform:translateY(-50%);
-  color:#A8A59E;pointer-events:none;
-}
+.auth-select{appearance:none;padding-left:13px;cursor:pointer}
+.auth-select option{background:#0D1118;color:var(--au-txt)}
+.auth-select-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#5A657B;pointer-events:none}
 .auth-select-arrow svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.auth-error{
+  display:none;background:rgba(255,107,96,.09);border:1px solid rgba(255,107,96,.3);
+  color:#FF9A92;border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:15px;
+}
+.auth-error.visible{display:block;animation:au-tremer .42s ease}
+@keyframes au-tremer{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+.auth-btn{
+  position:relative;overflow:hidden;width:100%;margin-top:6px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:13px;border-radius:10px;border:none;background:var(--au-verde);color:#06130C;
+  font-size:14.5px;font-weight:600;font-family:inherit;cursor:pointer;
+  transition:filter .2s,box-shadow .22s,transform .16s;
+}
+.auth-btn:hover:not(:disabled){filter:brightness(1.08);box-shadow:0 10px 28px -8px rgba(60,179,113,.55)}
+.auth-btn:active:not(:disabled){transform:translateY(1px)}
+.auth-btn:disabled{opacity:.55;cursor:progress}
+.auth-btn::after{content:'';position:absolute;inset:0;left:-100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent)}
+.auth-btn:hover:not(:disabled)::after{animation:au-passar .8s ease}
+@keyframes au-passar{to{left:100%}}
+.auth-link{
+  background:none;border:none;color:var(--au-fraco);font-size:12.5px;font-family:inherit;
+  cursor:pointer;margin-top:16px;padding:0;transition:color .2s;
+}
+.auth-link:hover{color:var(--au-luz)}
+.auth-form-page{display:none}
+.auth-form-page.active{display:block;animation:au-surgir .5s ease both}
+@keyframes au-surgir{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (max-width:760px){
+  .auth-wrapper{flex-direction:column;min-height:0}
+  .auth-panel{width:100%;border-right:none;border-bottom:1px solid var(--au-linha);padding:26px}
+  .auth-panel-info{display:none}
+  .auth-form-area{padding:30px 24px}
+}
+@media (prefers-reduced-motion:reduce){
+  #auth-screen *,#auth-screen *::before,#auth-screen *::after{animation:none!important;transition:none!important}
+}
 
 /* Tabela de usuários */
 #page-usuarios{display:none}
@@ -2198,6 +2237,10 @@ textarea.cp-form-input{resize:vertical}
 
 <!-- ========== TELA DE AUTENTICAÇÃO ========== -->
 <div id="auth-screen" class="visible">
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="grade" aria-hidden="true"></div>
+  <div class="malha" aria-hidden="true"><svg id="au-malha" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice"></svg></div>
+  <div class="varredura" aria-hidden="true"></div>
   <div class="auth-wrapper">
     <!-- Painel lateral -->
     <div class="auth-panel">
@@ -2215,8 +2258,8 @@ textarea.cp-form-input{resize:vertical}
         </span>
       </div>
       <div class="auth-panel-info">
-        <p class="auth-panel-title">Gestão financeira completa para sua empresa.</p>
-        <p class="auth-panel-sub">Controle receitas, despesas, fluxo de caixa e muito mais com segurança.</p>
+        <p class="auth-panel-title">O centro de operações da MoviOn.</p>
+        <p class="auth-panel-sub">Clientes, rede, atendimento e financeiro — tudo em um lugar só.</p>
       </div>
       <p class="auth-panel-copy">© 2026 MoviOn · Todos os direitos reservados.</p>
     </div>
@@ -19485,5 +19528,86 @@ async function asnExcluirModelo(id){
 }
 </script>
 <!-- ============ FIM MÓDULO ASSINATURA ELETRÔNICA PRÓPRIA ============ -->
+
+<script>
+/* ===== Tela de entrada: malha de assinantes conectados ===== */
+(function(){
+  var svg=document.getElementById('au-malha');
+  if(!svg)return;
+  var W=1440,H=900,N=30,nos=[],partes=[];
+  for(var i=0;i<N;i++){
+    nos.push({x:60+Math.random()*(W-120),y:60+Math.random()*(H-120),ativo:Math.random()<0.5});
+  }
+  // liga cada nó aos dois vizinhos mais próximos — topologia plausível
+  var chaves=[];
+  nos.forEach(function(a,i){
+    nos.map(function(b,j){return{j:j,d:Math.hypot(a.x-b.x,a.y-b.y)}})
+       .filter(function(o){return o.j!==i}).sort(function(p,q){return p.d-q.d}).slice(0,2)
+       .forEach(function(o){
+          var k=i<o.j?i+'-'+o.j:o.j+'-'+i;
+          if(chaves.indexOf(k)<0){chaves.push(k);partes.push([nos[i],nos[o.j]])}
+       });
+  });
+  // três pontos de presença: de onde o sinal se propaga
+  var pops=[nos[3],nos[Math.floor(N/2)],nos[N-4]];
+
+  var s='<defs>'
+    +'<filter id="au-bloom" x="-60%" y="-60%" width="220%" height="220%">'
+    +'<feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'
+    +'</filter></defs>';
+
+  // 1) malha base
+  partes.forEach(function(p){
+    s+='<line class="enlace" x1="'+p[0].x.toFixed(0)+'" y1="'+p[0].y.toFixed(0)+'" x2="'+p[1].x.toFixed(0)+'" y2="'+p[1].y.toFixed(0)+'"/>';
+  });
+
+  // 2) tudo que brilha vai num grupo com bloom
+  s+='<g filter="url(#au-bloom)">';
+
+  // ondas de propagação dos pontos de presença
+  pops.forEach(function(p,i){
+    for(var k=0;k<3;k++){
+      s+='<circle class="onda" cx="'+p.x.toFixed(0)+'" cy="'+p.y.toFixed(0)+'" r="8" style="animation-delay:'+(i*1.5+k*1.65).toFixed(2)+'s"/>';
+    }
+    s+='<circle class="pop" cx="'+p.x.toFixed(0)+'" cy="'+p.y.toFixed(0)+'" r="4.5"/>';
+  });
+
+  // rotas acesas: o tráfego percorrendo os enlaces
+  partes.forEach(function(p,i){
+    if(i%2)return;
+    var comp=Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y);
+    s+='<line class="rota" x1="'+p[0].x.toFixed(0)+'" y1="'+p[0].y.toFixed(0)+'" x2="'+p[1].x.toFixed(0)+'" y2="'+p[1].y.toFixed(0)+'"'
+      +' style="--comp:'+comp.toFixed(0)+'px;--tr:'+Math.max(18,comp*0.22).toFixed(0)+'px;--vao:'+comp.toFixed(0)+'px;'
+      +'--dur:'+(3.2+Math.random()*3.4).toFixed(2)+'s;--atr:'+(Math.random()*7).toFixed(2)+'s"/>';
+  });
+
+  // pacotes viajando — "você em movimento"
+  partes.forEach(function(p,i){
+    if(i%3)return;
+    var dur=(4+Math.random()*4).toFixed(1), atraso=(Math.random()*6).toFixed(1);
+    s+='<circle class="pacote" r="2.4">'
+      +'<animate attributeName="cx" from="'+p[0].x.toFixed(0)+'" to="'+p[1].x.toFixed(0)+'" dur="'+dur+'s" begin="'+atraso+'s" repeatCount="indefinite"/>'
+      +'<animate attributeName="cy" from="'+p[0].y.toFixed(0)+'" to="'+p[1].y.toFixed(0)+'" dur="'+dur+'s" begin="'+atraso+'s" repeatCount="indefinite"/>'
+      +'<animate attributeName="opacity" values="0;1;1;0" dur="'+dur+'s" begin="'+atraso+'s" repeatCount="indefinite"/>'
+      +'</circle>';
+  });
+
+  // assinantes conectados, com halo
+  nos.forEach(function(n,i){
+    if(!n.ativo)return;
+    s+='<circle class="halo" cx="'+n.x.toFixed(0)+'" cy="'+n.y.toFixed(0)+'" r="4" style="animation-delay:'+(i*0.28%3.6).toFixed(2)+'s"/>';
+    s+='<circle class="no-ativo" cx="'+n.x.toFixed(0)+'" cy="'+n.y.toFixed(0)+'" r="3.2" style="animation-delay:'+(i*0.19).toFixed(2)+'s"/>';
+  });
+  s+='</g>';
+
+  // assinantes offline ficam apagados, fora do brilho
+  nos.forEach(function(n){
+    if(n.ativo)return;
+    s+='<circle class="no" cx="'+n.x.toFixed(0)+'" cy="'+n.y.toFixed(0)+'" r="3"/>';
+  });
+
+  svg.innerHTML=s;
+})();
+</script>
 </body>
 </html>
