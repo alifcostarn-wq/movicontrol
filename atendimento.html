@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="MoviTalk">
 <title>MoviTalk · MoviOn</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
   --green:#00a859;
@@ -439,36 +439,124 @@ select.transf{
 .flow-field input:focus,.flow-field select:focus,.flow-field textarea:focus{border-color:var(--green);}
 .flow-hint{font-size:10.5px;color:var(--text-low);background:#f7f9fb;border:1px dashed var(--line);border-radius:8px;padding:9px 10px;line-height:1.5;margin-top:14px;}
 
-/* ============ LOGIN ============ */
+/* ============ LOGIN — "rede de conversas" ============ */
 #tela-login{
+  --lg-bg0:#f2faf6; --lg-bg1:#e3f4ea;
+  --lg-pulse:#00a859; --lg-brand:#00a859;
+  --lg-ink:#0c2b1c; --lg-ink-dim:#4a6b5b;
+  --lg-card-bg:rgba(255,255,255,.86); --lg-card-line:rgba(0,168,89,.22);
   position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(135deg,#00351f 0%,#00693c 55%,#00a859 100%);
+  overflow:hidden;font-family:'Inter',sans-serif;
+  background:
+    radial-gradient(60% 55% at 62% 38%,rgba(0,168,89,.14),transparent 60%),
+    radial-gradient(70% 60% at 20% 85%,rgba(0,168,89,.10),transparent 60%),
+    linear-gradient(160deg,var(--lg-bg0) 0%,var(--lg-bg1) 55%,#d8f0e2 100%);
 }
+.lg-stage{position:absolute;inset:0;z-index:0;}
+.lg-fiber{position:absolute;inset:0;width:100%;height:100%;}
+.lg-fiber .ls{fill:none;stroke:url(#lgGradLine);stroke-width:1.3;stroke-linecap:round;
+  stroke-dasharray:100;stroke-dashoffset:100;animation:lgDraw 1.6s cubic-bezier(.16,.8,.24,1) forwards;}
+.lg-fiber .ls:nth-child(2){animation-delay:.08s;}
+.lg-fiber .ls:nth-child(3){animation-delay:.16s;}
+.lg-fiber .ls:nth-child(4){animation-delay:.05s;}
+.lg-fiber .ls:nth-child(5){animation-delay:.22s;}
+.lg-fiber .ls:nth-child(6){animation-delay:.12s;}
+.lg-node{fill:var(--lg-pulse);opacity:0;filter:drop-shadow(0 0 6px var(--lg-pulse));animation:lgNode .6s ease-out 1.4s forwards;}
+@keyframes lgDraw{to{stroke-dashoffset:0;}}
+@keyframes lgNode{to{opacity:.9;}}
+.lg-orbs{position:absolute;inset:0;}
+.lg-chanicos{position:absolute;inset:0;}
+.lg-cico{position:absolute;color:var(--lg-ink-dim);animation:lgIconFloat ease-in-out infinite;}
+.lg-cico svg{width:100%;height:100%;display:block;}
+@keyframes lgIconFloat{
+  0%,100%{transform:translateY(0) rotate(-4deg);opacity:.12;}
+  50%{transform:translateY(-15px) rotate(4deg);opacity:.22;}
+}
+.lg-orbs span{
+  position:absolute;width:9px;height:7px;border-radius:6px 6px 6px 2px;background:var(--lg-pulse);opacity:0;
+  box-shadow:0 0 7px 1px rgba(0,168,89,.35);animation:lgFloat 9s ease-in-out infinite;
+}
+.lg-orbs span:nth-child(1){top:18%;left:12%;animation-delay:.2s;}
+.lg-orbs span:nth-child(2){top:70%;left:8%;animation-delay:2.1s;}
+.lg-orbs span:nth-child(3){top:26%;left:88%;animation-delay:1.1s;}
+.lg-orbs span:nth-child(4){top:78%;left:82%;animation-delay:3.4s;}
+.lg-orbs span:nth-child(5){top:50%;left:6%;animation-delay:4.6s;}
+.lg-orbs span:nth-child(6){top:12%;left:55%;animation-delay:2.8s;}
+@keyframes lgFloat{
+  0%{opacity:0;transform:translateY(0) scale(.6);}
+  15%{opacity:.55;} 50%{opacity:.85;transform:translateY(-22px) scale(1);} 85%{opacity:.3;}
+  100%{opacity:0;transform:translateY(-46px) scale(.6);}
+}
+.lg-typing{display:inline-flex;align-items:center;gap:3px;margin-left:7px;}
+.lg-typing span{width:3.5px;height:3.5px;border-radius:50%;background:var(--lg-ink-dim);animation:lgTyping 1.3s ease-in-out infinite;}
+.lg-typing span:nth-child(2){animation-delay:.15s;} .lg-typing span:nth-child(3){animation-delay:.3s;}
+@keyframes lgTyping{0%,60%,100%{opacity:.3;transform:translateY(0);} 30%{opacity:1;transform:translateY(-2px);}}
 .lg-card{
-  width:360px;background:#fff;border-radius:18px;padding:30px 28px;box-shadow:0 24px 60px rgba(0,0,0,.28);
+  position:relative;z-index:2;width:378px;
+  background:var(--lg-card-bg);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+  border:1px solid var(--lg-card-line);border-radius:20px;padding:30px 28px 26px;
+  box-shadow:0 24px 55px rgba(10,60,35,.14),0 2px 8px rgba(10,60,35,.06);
+  opacity:0;filter:blur(6px);transform:translateY(16px);
+  animation:lgCardIn .75s cubic-bezier(.16,.8,.24,1) .28s forwards;
 }
-.lg-logo{text-align:center;margin-bottom:22px;}
-.lg-logo .word{font-size:27px;font-weight:800;letter-spacing:-.5px;color:var(--text);}
-.lg-logo .o-dot{color:var(--green);}
-.lg-logo .sub{font-size:9.5px;font-weight:700;letter-spacing:.14em;color:var(--text-low);margin-top:3px;}
-.lg-f{margin-bottom:13px;}
-.lg-f label{display:block;font-size:11px;font-weight:700;color:var(--text-mid);margin-bottom:5px;}
-.lg-f input{
-  width:100%;border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;
-  font-family:inherit;font-size:13.5px;outline:none;color:var(--text);
+@keyframes lgCardIn{to{opacity:1;filter:blur(0);transform:translateY(0);}}
+.lg-badge{
+  display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;
+  font-size:9.5px;font-weight:500;letter-spacing:.05em;color:#0a7d45;
+  background:rgba(0,168,89,.08);border:1px solid rgba(0,168,89,.22);
+  padding:4px 10px 4px 8px;border-radius:99px;margin-bottom:18px;
 }
-.lg-f input:focus{border-color:var(--green);}
-#lg-btn{
-  width:100%;background:var(--green);color:#fff;border:none;border-radius:10px;padding:12px;
-  font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:6px;
+.lg-dot{width:6px;height:6px;border-radius:50%;background:var(--lg-pulse);animation:lgBadgePulse 2.2s ease-out infinite;}
+@keyframes lgBadgePulse{
+  0%{box-shadow:0 0 0 0 rgba(0,168,89,.45);} 70%{box-shadow:0 0 0 6px rgba(0,168,89,0);}
+  100%{box-shadow:0 0 0 0 rgba(0,168,89,0);}
 }
-#lg-btn:hover{background:var(--green-deep);}
-#lg-btn:disabled{opacity:.6;cursor:not-allowed;}
+.lg-logo{display:flex;align-items:center;gap:11px;margin-bottom:24px;}
+.lg-logo-ico{
+  width:38px;height:38px;flex-shrink:0;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(145deg,var(--lg-brand),#00d97a);color:#04120d;box-shadow:0 6px 18px rgba(0,168,89,.35);
+}
+.lg-logo-ico svg{width:19px;height:19px;}
+.lg-logo .word{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--lg-ink);line-height:1;}
+.lg-accent{color:var(--lg-pulse);}
+.lg-logo .sub{font-size:10.5px;color:var(--lg-ink-dim);margin-top:3px;}
 #lg-erro{
-  display:none;background:#fee2e2;color:#991b1b;border-radius:9px;padding:10px 12px;
-  font-size:11.5px;line-height:1.5;margin-bottom:13px;
+  display:none;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.28);color:#b91c1c;
+  border-radius:11px;padding:10px 12px;font-size:11.5px;line-height:1.55;margin-bottom:15px;
 }
 #lg-erro.show{display:block;}
+.lg-f{margin-bottom:14px;}
+.lg-f label{display:block;font-size:10.5px;font-weight:600;letter-spacing:.03em;color:var(--lg-ink-dim);margin-bottom:6px;}
+.lg-input-wrap{
+  position:relative;display:flex;align-items:center;
+  border:1.5px solid rgba(10,60,35,.13);border-radius:11px;background:rgba(10,60,35,.03);
+  transition:border-color .2s,box-shadow .2s,background .2s;
+}
+.lg-input-wrap:focus-within{border-color:var(--lg-pulse);background:rgba(0,168,89,.05);box-shadow:0 0 0 3px rgba(0,168,89,.12);}
+.lg-ico{width:16px;height:16px;margin-left:13px;color:var(--lg-ink-dim);flex-shrink:0;transition:color .2s;}
+.lg-input-wrap:focus-within .lg-ico{color:var(--lg-pulse);}
+.lg-f input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--lg-ink);font-family:inherit;font-size:13.5px;padding:11px 13px 11px 9px;}
+.lg-f input::placeholder{color:rgba(74,107,91,.5);}
+#lg-btn{
+  width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+  background:linear-gradient(120deg,var(--lg-brand) 0%,#00c46e 50%,var(--lg-brand) 100%);
+  background-size:220% 100%;background-position:0% 0%;color:#04140d;border:none;border-radius:11px;padding:12.5px;
+  font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:8px;
+  box-shadow:0 10px 24px rgba(0,168,89,.28);transition:background-position .5s ease,transform .15s ease,box-shadow .2s ease;
+}
+#lg-btn svg{width:15px;height:15px;transition:transform .2s ease;}
+#lg-btn:hover{background-position:100% 0%;transform:translateY(-1px);box-shadow:0 14px 30px rgba(0,168,89,.38);}
+#lg-btn:hover svg{transform:translateX(3px);}
+#lg-btn:active{transform:translateY(0);}
+#lg-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
+.lg-foot{text-align:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.03em;color:rgba(74,107,91,.75);margin-top:20px;display:flex;align-items:center;justify-content:center;}
+@media (prefers-reduced-motion: reduce){
+  .lg-fiber .ls,.lg-node,.lg-card,.lg-orbs span,.lg-dot,.lg-cico{animation:none !important;}
+  .lg-fiber .ls{stroke-dashoffset:0;opacity:.4;} .lg-node{opacity:.9;}
+  .lg-card{opacity:1;filter:none;transform:none;}
+  .lg-pulses,.lg-orbs{display:none;}
+  .lg-cico{opacity:.14;}
+}
 .usr-rodape{padding:10px;border-top:1px solid rgba(255,255,255,.16);margin-top:auto;}
 .usr-chip{display:flex;align-items:center;gap:8px;color:#fff;font-size:11.5px;}
 .usr-chip .un{font-weight:700;}
@@ -636,17 +724,100 @@ select.transf{
 
 <!-- ================= LOGIN ================= -->
 <div id="tela-login">
-  <div class="lg-card">
-    <div class="lg-logo">
-      <div class="word">Movi<span style="color:var(--green)">Talk</span></div>
-      <div class="sub">MOVION · CENTRO DE ATENDIMENTO</div>
+  <div class="lg-stage" aria-hidden="true">
+    <svg class="lg-fiber" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="lgGradLine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#00a859" stop-opacity="0"/>
+          <stop offset="55%" stop-color="#00a859" stop-opacity=".28"/>
+          <stop offset="100%" stop-color="#00a859" stop-opacity=".55"/>
+        </linearGradient>
+        <radialGradient id="lgGradPulse" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#0a7d45" stop-opacity="1"/>
+          <stop offset="45%" stop-color="#00c46e" stop-opacity=".9"/>
+          <stop offset="100%" stop-color="#00c46e" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <g class="lg-strands">
+        <path class="ls" pathLength="100" d="M -50 -50 C 200 40, 360 160, 500 300"/>
+        <path class="ls" pathLength="100" d="M 1050 -50 C 800 40, 640 160, 500 300"/>
+        <path class="ls" pathLength="100" d="M -50 650 C 200 560, 360 440, 500 300"/>
+        <path class="ls" pathLength="100" d="M 1050 650 C 800 560, 640 440, 500 300"/>
+        <path class="ls" pathLength="100" d="M -60 300 C 140 300, 320 300, 500 300"/>
+        <path class="ls" pathLength="100" d="M 1060 300 C 860 300, 680 300, 500 300"/>
+      </g>
+      <circle class="lg-node" cx="500" cy="300" r="3.4"/>
+      <g class="lg-pulses">
+        <circle r="3" fill="url(#lgGradPulse)"><animateMotion dur="3.4s" begin="0.6s" repeatCount="indefinite" path="M -50 -50 C 200 40, 360 160, 500 300"/></circle>
+        <circle r="2.6" fill="url(#lgGradPulse)"><animateMotion dur="4.1s" begin="1.4s" repeatCount="indefinite" path="M 1050 -50 C 800 40, 640 160, 500 300"/></circle>
+        <circle r="3" fill="url(#lgGradPulse)"><animateMotion dur="3.8s" begin="2.1s" repeatCount="indefinite" path="M -50 650 C 200 560, 360 440, 500 300"/></circle>
+        <circle r="2.4" fill="url(#lgGradPulse)"><animateMotion dur="3.1s" begin=".2s" repeatCount="indefinite" path="M 1050 650 C 800 560, 640 440, 500 300"/></circle>
+        <circle r="2.8" fill="url(#lgGradPulse)"><animateMotion dur="2.7s" begin="1.8s" repeatCount="indefinite" path="M -60 300 C 140 300, 320 300, 500 300"/></circle>
+        <circle r="2.6" fill="url(#lgGradPulse)"><animateMotion dur="3.5s" begin=".9s" repeatCount="indefinite" path="M 1060 300 C 860 300, 680 300, 500 300"/></circle>
+      </g>
+    </svg>
+    <div class="lg-chanicos" aria-hidden="true">
+      <div class="lg-cico" style="top:8%;left:8%;width:36px;height:36px;animation-duration:12s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3.5C7.3 3.5 3.5 6.9 3.5 11c0 2 1 3.9 2.6 5.2L5.3 20l4.4-1.3c.7.2 1.5.3 2.3.3 4.7 0 8.5-3.4 8.5-7.5S16.7 3.5 12 3.5z"/><path d="M9.2 9.7c.3-.6.8-.6 1.1-.1l.4.7c.2.3.1.7-.1 1l-.3.3c-.2.2-.2.5 0 .7.5.8 1.3 1.5 2.1 1.9.3.1.5.1.7-.1l.3-.3c.3-.3.6-.3 1-.1l.7.3c.5.3.6.8.1 1.1-.9.6-2.1.6-3.3 0-1.5-.8-2.7-2-3.4-3.4-.3-.7-.2-1.5.2-2z"/></svg>
+      </div>
+      <div class="lg-cico" style="top:70%;left:6%;width:30px;height:30px;animation-duration:14s;animation-delay:1.4s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1.1-.2 1.2.5 2.5.8 3.9.8.6 0 1 .4 1 1v3.4c0 .6-.4 1-1 1C11.6 21.2 2.8 12.4 2.8 1.6c0-.6.4-1 1-1H7.2c.6 0 1 .4 1 1 0 1.4.3 2.7.8 3.9.2.4.1.8-.2 1.1L6.6 10.8z"/></svg>
+      </div>
+      <div class="lg-cico" style="top:13%;left:86%;width:40px;height:40px;animation-duration:11s;animation-delay:.6s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="18" height="13" rx="3.5"/><path d="M8.3 7l1.3-2.3h4.8L15.7 7"/><circle cx="12" cy="13.5" r="3.3"/></svg>
+      </div>
+      <div class="lg-cico" style="top:78%;left:83%;width:32px;height:32px;animation-duration:13s;animation-delay:2.1s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 3L3 10.5l7 2.7M21 3l-3.3 17-7.7-6.8M21 3L10 13.4"/></svg>
+      </div>
+      <div class="lg-cico" style="top:43%;left:3%;width:24px;height:24px;animation-duration:15s;animation-delay:.9s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3.5C7.3 3.5 3.5 6.9 3.5 11c0 2 1 3.9 2.6 5.2L5.3 20l4.4-1.3c.7.2 1.5.3 2.3.3 4.7 0 8.5-3.4 8.5-7.5S16.7 3.5 12 3.5z"/><path d="M9.2 9.7c.3-.6.8-.6 1.1-.1l.4.7c.2.3.1.7-.1 1l-.3.3c-.2.2-.2.5 0 .7.5.8 1.3 1.5 2.1 1.9.3.1.5.1.7-.1l.3-.3c.3-.3.6-.3 1-.1l.7.3c.5.3.6.8.1 1.1-.9.6-2.1.6-3.3 0-1.5-.8-2.7-2-3.4-3.4-.3-.7-.2-1.5.2-2z"/></svg>
+      </div>
+      <div class="lg-cico" style="top:38%;left:92%;width:27px;height:27px;animation-duration:12.5s;animation-delay:1.8s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1.1-.2 1.2.5 2.5.8 3.9.8.6 0 1 .4 1 1v3.4c0 .6-.4 1-1 1C11.6 21.2 2.8 12.4 2.8 1.6c0-.6.4-1 1-1H7.2c.6 0 1 .4 1 1 0 1.4.3 2.7.8 3.9.2.4.1.8-.2 1.1L6.6 10.8z"/></svg>
+      </div>
     </div>
+    <div class="lg-orbs"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="lg-card">
+    <div class="lg-badge">
+      <span class="lg-dot"></span>WhatsApp · conectado
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;margin-left:2px;"><path d="M5 12.5a11 11 0 0114 0M8.5 15.5a6.5 6.5 0 017 0M12 18.5h.01"/></svg>
+    </div>
+    <div class="lg-logo">
+      <span class="lg-logo-ico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20l1-4.9A8.4 8.4 0 1 1 21 11.5z"/></svg>
+      </span>
+      <div>
+        <div class="word">Movi<span class="lg-accent">Talk</span></div>
+        <div class="sub">Central de Atendimento</div>
+      </div>
+    </div>
+
     <div id="lg-erro"></div>
+
     <form id="lg-form" autocomplete="on">
-      <div class="lg-f"><label>E-mail</label><input id="lg-email" type="email" autocomplete="username" placeholder="voce@movion.com.br"></div>
-      <div class="lg-f"><label>Senha</label><input id="lg-senha" type="password" autocomplete="current-password" placeholder="••••••••"></div>
-      <button id="lg-btn" type="submit">Entrar</button>
+      <div class="lg-f">
+        <label for="lg-email">E-mail</label>
+        <div class="lg-input-wrap">
+          <svg class="lg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6.5l9 6 9-6M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>
+          <input id="lg-email" type="email" autocomplete="username" placeholder="voce@movion.com.br">
+        </div>
+      </div>
+      <div class="lg-f">
+        <label for="lg-senha">Senha</label>
+        <div class="lg-input-wrap">
+          <svg class="lg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
+          <input id="lg-senha" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+      </div>
+      <button id="lg-btn" type="submit">
+        <span>Entrar</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
     </form>
+
+    <div class="lg-foot">Sincronizando conversas<span class="lg-typing"><span></span><span></span><span></span></span></div>
   </div>
 </div>
 
