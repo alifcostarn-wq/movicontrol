@@ -1739,18 +1739,33 @@ body:not(.valores-ocultos) .val-monetario{
 .auth-input-icon{position:absolute;left:13px;display:flex;color:#5A657B;transition:color .2s;pointer-events:none}
 .auth-input-icon svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .auth-field:focus-within .auth-input-icon{color:var(--au-luz)}
-.auth-input,.auth-select{
+/* escopado no #auth-screen: a regra global de input[type=email] tem especificidade
+   maior que uma classe simples e deixava o texto escuro sobre o fundo escuro */
+#auth-screen .auth-input,#auth-screen .auth-select{
   width:100%;padding:12px 13px 12px 38px;border-radius:10px;
   border:1px solid var(--au-linha);background:rgba(255,255,255,.028);color:var(--au-txt);
-  font-size:14px;font-family:inherit;transition:border-color .2s,background .2s,box-shadow .2s;
+  font-size:14px;font-family:inherit;caret-color:var(--au-luz);
+  transition:border-color .2s,background .2s,box-shadow .2s;
 }
-.auth-input::placeholder{color:#49536A}
-.auth-input:focus,.auth-select:focus{
+#auth-screen .auth-input::placeholder{color:#49536A;opacity:1}
+#auth-screen .auth-input:focus,#auth-screen .auth-select:focus{
   outline:none;border-color:rgba(60,179,113,.55);background:rgba(60,179,113,.05);
   box-shadow:0 0 0 3px rgba(60,179,113,.09);
 }
-.auth-select{appearance:none;padding-left:13px;cursor:pointer}
-.auth-select option{background:#0D1118;color:var(--au-txt)}
+#auth-screen .auth-select{appearance:none;-webkit-appearance:none;padding-left:13px;cursor:pointer}
+#auth-screen .auth-select option{background:#0D1118;color:var(--au-txt)}
+/* e-mail salvo pelo navegador: sem isto o preenchimento automático volta a
+   pintar o campo de branco com texto claro por cima */
+#auth-screen .auth-input:-webkit-autofill,
+#auth-screen .auth-input:-webkit-autofill:hover,
+#auth-screen .auth-input:-webkit-autofill:focus,
+#auth-screen .auth-input:-webkit-autofill:active{
+  -webkit-text-fill-color:var(--au-txt) !important;
+  -webkit-box-shadow:0 0 0 1000px #101720 inset !important;
+  box-shadow:0 0 0 1000px #101720 inset !important;
+  caret-color:var(--au-luz);
+  transition:background-color 9999s ease-in-out 0s;
+}
 .auth-select-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#5A657B;pointer-events:none}
 .auth-select-arrow svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .auth-error{
