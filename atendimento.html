@@ -450,6 +450,7 @@ select.transf{
 .wa-qr-box{width:240px;height:240px;margin:0 auto 18px;border:1.5px dashed var(--line);border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fafcfb;}
 .wa-qr-box img{width:100%;height:100%;object-fit:contain;}
 .wa-qr-box .wa-load{font-size:11.5px;color:var(--text-low);}
+.wa-qr-timer{font-size:10.5px;color:var(--text-low);font-weight:600;}
 .wa-num{font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px;}
 .wa-sub{font-size:11.5px;color:var(--text-low);margin-bottom:18px;}
 .wa-actions{display:flex;gap:9px;justify-content:center;}
@@ -1701,8 +1702,8 @@ function renderAux(){
 }
 
 /* ================= INTEGRAÇÕES (WhatsApp) — vive dentro da aba de Configurações ================= */
-let _waPoll=null;
-function pararPollWA(){ if(_waPoll){ clearInterval(_waPoll); _waPoll=null; } }
+let _waPoll=null, _waQrTimer=null;
+function pararPollWA(){ if(_waPoll){ clearInterval(_waPoll); _waPoll=null; } if(_waQrTimer){ clearTimeout(_waQrTimer); _waQrTimer=null; } }
 
 async function renderIntegracoes(body){
   body.innerHTML=`<div class="vsub">Conexão do WhatsApp usada pelo MoviTalk (Evolution API).</div>
@@ -1773,22 +1774,40 @@ async function mostrarQR(){
   const body=$('#waBody'); if(!body) return;
   body.innerHTML=`
     <div class="wa-qr-box" id="waQrBox"><span class="wa-load">Gerando QR Code…</span></div>
-    <p style="font-size:11.5px;color:var(--text-low);line-height:1.6;max-width:340px;margin:0 auto 14px;">
+    <div class="wa-qr-timer" id="waQrTimer"></div>
+    <p style="font-size:11.5px;color:var(--text-low);line-height:1.6;max-width:340px;margin:8px auto 14px;">
       Abra o WhatsApp no celular que será o número oficial da MoviOn →
       <b>Aparelhos conectados</b> → <b>Conectar um aparelho</b> → aponte a câmera para o código acima.
+      <br>Por segurança do WhatsApp, o código expira sozinho e é renovado automaticamente.
     </p>
-    <div class="wa-actions"><button class="fbtn" id="btnNovoQR">🔄 Gerar novo QR Code</button></div>`;
-  $('#btnNovoQR').onclick=mostrarQR;
+    <div class="wa-actions"><button class="fbtn" id="btnNovoQR">🔄 Gerar novo QR Code agora</button></div>`;
+  $('#btnNovoQR').onclick=()=>{ if(_waQrTimer){ clearTimeout(_waQrTimer); _waQrTimer=null; } mostrarQR(); };
+  if(_waQrTimer){ clearTimeout(_waQrTimer); _waQrTimer=null; }
   try{
     const j=await chamar('whatsapp.qrcode',{});
     const box=$('#waQrBox');
     if(j.conectado){ await atualizarStatusWA(); return; }
     const puro = j.base64 && j.base64.includes(',') ? j.base64.split(',').pop() : j.base64;
     if(box) box.innerHTML=`<img src="data:image/png;base64,${puro}" alt="QR Code do WhatsApp">`;
+    iniciarContagemQR(25);
   }catch(err){
     const box=$('#waQrBox');
     if(box) box.innerHTML=`<span class="wa-load" style="color:var(--red)">Falha ao gerar: ${esc(err.message)}</span>`;
   }
+}
+
+// renova o QR sozinho pouco antes de expirar, sem o atendente precisar clicar em nada
+function iniciarContagemQR(segundos){
+  let restam=segundos;
+  const lbl=$('#waQrTimer');
+  const tick=()=>{
+    const el=$('#waQrTimer'); if(!el) return; // saiu da tela
+    el.textContent = restam>0 ? `renovando em ${restam}s…` : 'renovando…';
+    if(restam<=0){ if(_waQrTimer){ clearTimeout(_waQrTimer); } mostrarQR(); return; }
+    restam--;
+    _waQrTimer=setTimeout(tick,1000);
+  };
+  if(lbl) tick();
 }
 
 async function desconectarWA(){
