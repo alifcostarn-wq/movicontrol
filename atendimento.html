@@ -2,8 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MoviOn · Atendimento ao Cliente</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#00a859">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MoviTalk">
+<title>MoviTalk · MoviOn</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -479,6 +483,153 @@ select.transf{
   background:var(--bg);font-size:13px;color:var(--text-mid);font-weight:600;
 }
 #carregando.show{display:flex;}
+
+/* ============================================================
+   MOBILE — celular em pé (até 860px)
+   ============================================================ */
+.only-mobile{display:none;}
+.drawer-back{display:none;}
+
+@media (max-width:860px){
+  body{font-size:15px;}
+  .only-mobile{display:inline-flex;}
+  .no-mobile{display:none !important;}
+
+  /* --- layout base vira coluna única --- */
+  .app{grid-template-columns:1fr;height:100dvh;}
+
+  /* --- sidebar vira gaveta --- */
+  .sidebar{
+    position:fixed;top:0;left:0;bottom:0;width:264px;z-index:120;
+    transform:translateX(-100%);transition:transform .22s ease;
+    overflow-y:auto;padding-bottom:20px;
+  }
+  .sidebar.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.4);}
+  .drawer-back{
+    display:block;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:110;
+    opacity:0;pointer-events:none;transition:opacity .22s;
+  }
+  .drawer-back.open{opacity:1;pointer-events:auto;}
+  .nav-item{padding:13px 12px;font-size:14.5px;}
+
+  /* --- header compacto --- */
+  .header{padding:11px 14px;gap:9px;flex-wrap:wrap;}
+  .h-title{gap:10px;}
+  .wa-badge{width:36px;height:36px;border-radius:11px;}
+  .wa-badge svg{width:19px;height:19px;}
+  .h-title h1{font-size:17px;}
+  .h-title p{display:none;}
+  .search-box{order:5;width:100%;flex:1 0 100%;padding:10px 13px;}
+  .btn{padding:10px 13px;font-size:13px;}
+  #btnNovo{font-size:0;padding:10px 14px;}
+  #btnNovo::before{content:'＋ Novo';font-size:13px;}
+  .hamb{
+    display:flex;align-items:center;justify-content:center;width:38px;height:38px;
+    border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;flex-shrink:0;
+  }
+  .hamb svg{width:19px;height:19px;stroke:var(--text);}
+
+  .content{padding:14px;}
+
+  /* --- KPIs: rolagem horizontal --- */
+  .kpis{
+    display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;
+    margin:0 -14px 16px;padding:0 14px 4px;-webkit-overflow-scrolling:touch;
+  }
+  .kpis::-webkit-scrollbar{display:none;}
+  .kpi{flex:0 0 152px;scroll-snap-align:start;padding:13px;}
+  .kpi-ico{width:38px;height:38px;border-radius:10px;}
+  .kpi-ico svg{width:19px;height:19px;}
+  .kpi-num{font-size:21px;}
+  .kpi-lbl{font-size:11px;}
+
+  /* --- Kanban: colunas deslizam na horizontal --- */
+  .board{
+    display:flex !important;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
+    margin:0 -14px;padding:0 14px 8px;-webkit-overflow-scrolling:touch;
+  }
+  .board::-webkit-scrollbar{display:none;}
+  .column{flex:0 0 84vw;scroll-snap-align:center;max-height:none;}
+  .col-body{max-height:calc(100dvh - 300px);}
+  .card-c{padding:14px;}
+  .cc-name{font-size:14.5px;}
+  .cc-msg{font-size:13px;}
+
+  /* --- Modal ocupa a tela toda --- */
+  .overlay{padding:0;}
+  .modal{
+    width:100%;height:100dvh;max-height:100dvh;border-radius:0;
+    grid-template-columns:1fr;grid-template-rows:auto 1fr;
+  }
+  .m-chat{border-right:none;}
+  .m-chat.oculto{display:none;}
+  .m-side{display:none;padding:14px;}
+  .m-side.visivel{display:block;}
+  .m-quick{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;}
+  .m-quick::-webkit-scrollbar{display:none;}
+  .mq{flex-shrink:0;}
+  .mb{max-width:84%;font-size:14px;}
+  .m-composer input{font-size:16px;}   /* 16px evita o zoom automático do iOS */
+  .m-thread{padding:14px;}
+  .acts{grid-template-columns:1fr;}
+  .m-abas{
+    display:flex;gap:6px;padding:9px 14px 0;border-bottom:1px solid var(--line);
+  }
+  .m-aba{
+    flex:1;text-align:center;font-size:12.5px;font-weight:700;padding:9px 4px;
+    border-radius:9px 9px 0 0;cursor:pointer;color:var(--text-mid);border-bottom:2.5px solid transparent;
+  }
+  .m-aba.on{color:var(--green-deep);border-bottom-color:var(--green);background:var(--green-soft);}
+
+  /* --- Chat interno: lista OU thread, nunca os dois --- */
+  .ci-wrap{grid-template-columns:1fr;height:calc(100dvh - 190px);}
+  .ci-list{border-right:none;border-bottom:1px solid var(--line);}
+  .ci-wrap.emThread .ci-list{display:none;}
+  .ci-wrap:not(.emThread) .ci-main{display:none;}
+  .ci-msg{max-width:82%;}
+  .ci-composer input{font-size:16px;}
+  .ci-voltar{
+    display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;
+    color:var(--green-deep);background:var(--green-soft);border:none;border-radius:8px;
+    padding:6px 11px;cursor:pointer;margin-right:4px;font-family:inherit;
+  }
+
+  /* --- Fluxo do bot: canvas continua, painel vira rodapé --- */
+  .flow-wrap{height:calc(100dvh - 175px);}
+  .flow-body{flex-direction:column;}
+  .flow-side{width:auto;border-left:none;border-top:1px solid var(--line);max-height:44%;}
+  .flow-toolbar{gap:6px;padding:9px 12px;}
+  .fbtn{padding:8px 10px;font-size:11px;}
+  .flow-canvas-outer{min-height:210px;}
+
+  /* --- telas auxiliares --- */
+  .viewbox{padding:16px;}
+  .rule-line{flex-wrap:wrap;gap:7px;}
+  .add-row{flex-direction:column;}
+  .add-row input{flex:1 1 auto !important;}
+  .igrid{grid-template-columns:1fr;}
+  .toast{left:14px;right:14px;bottom:14px;transform:translateY(90px);text-align:center;}
+  .toast.show{transform:translateY(0);}
+
+  /* --- login --- */
+  .lg-card{width:100%;max-width:380px;margin:16px;padding:26px 22px;}
+  .lg-f input{font-size:16px;}
+}
+
+/* celular pequeno */
+@media (max-width:400px){
+  .column{flex:0 0 89vw;}
+  .h-title h1{font-size:16px;}
+}
+
+/* celular deitado: aproveita a largura */
+@media (max-width:860px) and (orientation:landscape){
+  .column{flex:0 0 46vw;}
+  .modal{grid-template-columns:1fr 300px;grid-template-rows:1fr;}
+  .m-side{display:block;}
+  .m-chat.oculto{display:flex;}
+  .m-abas{display:none;}
+}
 </style>
 </head>
 <body>
@@ -487,8 +638,8 @@ select.transf{
 <div id="tela-login">
   <div class="lg-card">
     <div class="lg-logo">
-      <div class="word">Movi<span class="o-dot">O</span>n</div>
-      <div class="sub">CENTRO DE ATENDIMENTO</div>
+      <div class="word">Movi<span style="color:var(--green)">Talk</span></div>
+      <div class="sub">MOVION · CENTRO DE ATENDIMENTO</div>
     </div>
     <div id="lg-erro"></div>
     <form id="lg-form" autocomplete="on">
@@ -501,13 +652,15 @@ select.transf{
 
 <div id="carregando">Carregando atendimentos…</div>
 
+<div class="drawer-back" id="drawerBack"></div>
+
 <div class="app" id="shell" style="display:none">
 
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="logo">
-      <div class="word">Movi<span class="o-dot">O</span>n</div>
-      <div class="sub">ATENDIMENTO WHATSAPP</div>
+      <div class="word">Movi<span class="o-dot">T</span>alk</div>
+      <div class="sub">CENTRO DE ATENDIMENTO</div>
     </div>
     <div class="sector-switch">
       <div class="sector-lbl">Setor</div>
@@ -566,13 +719,16 @@ select.transf{
   <!-- MAIN -->
   <div class="main">
     <header class="header">
+      <button class="hamb only-mobile" id="btnMenu" aria-label="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
       <div class="h-title">
         <div class="wa-badge">
           <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-8.6 15.1L2 22l5.1-1.3A10 10 0 1012 2zm5.5 14.1c-.2.7-1.3 1.3-1.8 1.3-.5.1-1 .2-3.4-.7-2.9-1.1-4.7-4-4.9-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.2c.1.2.1.4 0 .6l-.4.6-.5.5c-.2.2-.3.4-.1.7.2.3.8 1.4 1.8 2.2 1.3 1.1 2.3 1.5 2.7 1.6.3.2.5.1.7-.1l.9-1c.2-.3.4-.2.7-.1l2.1 1c.3.2.5.3.6.4 0 .2 0 .7-.2 1.3z"/></svg>
         </div>
         <div>
-          <h1>Atendimento ao Cliente</h1>
-          <p>Organize e gerencie seus atendimentos</p>
+          <h1>MoviTalk</h1>
+          <p>Central de atendimento ao cliente</p>
         </div>
       </div>
       <div class="h-spacer"></div>
@@ -914,7 +1070,7 @@ async function fazerLogin(ev){
     const { data:ok } = await sb.rpc('tem_atendimento', { p_id:data.user.id });
     if(ok!==true){
       await sb.auth.signOut();
-      _lgErro('Seu usuário <b>não tem acesso liberado</b> ao Centro de Atendimento.<br>Peça a um administrador para marcar <b>“Atendimento”</b> no cadastro de usuários do MoviOne.');
+      _lgErro('Seu usuário <b>não tem acesso liberado</b> ao Centro de Atendimento.<br>Peça a um administrador para marcar <b>“Atendimento”</b> no cadastro de usuários do MoviOn.');
       return;
     }
     await entrar(data.session);
@@ -954,12 +1110,12 @@ function renderUsuarioRodape(){
 }
 
 async function sair(){
-  if(!confirm('Sair do Centro de Atendimento?')) return;
+  if(!confirm('Sair do MoviTalk?')) return;
   try{ const sb=_sb(); if(sb) await sb.auth.signOut(); }catch(e){}
   location.reload();
 }
 
-let filtroTag=null, filtroRisco=false, busca='', view='kanban', modalId=null, meuSetor='todos', ciAtivo='canal:Geral';
+let filtroTag=null, filtroRisco=false, busca='', view='kanban', modalId=null, meuSetor='todos', ciAtivo='canal:Geral', ciEmThread=false;
 let flowSelected=null, flowConnecting=null, flowDrag=null, flowZoom=1;
 
 /* ================= HELPERS ================= */
@@ -1094,6 +1250,10 @@ function openModal(id){
   const timeline = buildTimeline(c);
 
   $('#modal').innerHTML=`
+  <div class="m-abas only-mobile">
+    <div class="m-aba on" data-aba="chat">💬 Conversa</div>
+    <div class="m-aba" data-aba="cliente">👤 Cliente</div>
+  </div>
   <div class="m-chat">
     <div class="m-head">
       <div class="cc-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
@@ -1155,6 +1315,10 @@ function openModal(id){
       </div>
     </div>
     <div class="ms-sec">
+      <h3>Situação do atendimento</h3>
+      <select class="transf" id="mColuna">${COLS.map(k=>`<option value="${k.id}" ${k.id===c.col?'selected':''}>${k.nome}</option>`).join('')}</select>
+    </div>
+    <div class="ms-sec">
       <h3>Setor</h3>
       <select class="transf" id="mSetor">${SETORES.map(s=>`<option ${s.id===c.setor?'selected':''}>${s.id}</option>`).join('')}</select>
     </div>
@@ -1206,6 +1370,19 @@ function openModal(id){
   });
   // transferir
   $('#mTransf').onchange=e=>{ c.atendente=e.target.value; const p=EQUIPE.find(x=>x.nome===c.atendente); api.patchConversa(c,{atendente_id:p?p.id:null}); renderAll(); toast('Transferido para '+c.atendente); };
+  // abas mobile
+  document.querySelectorAll('.m-aba').forEach(el=>el.onclick=()=>{
+    const alvo=el.dataset.aba;
+    document.querySelectorAll('.m-aba').forEach(x=>x.classList.toggle('on',x===el));
+    $('#modal').querySelector('.m-chat').classList.toggle('oculto',alvo!=='chat');
+    $('#modal').querySelector('.m-side').classList.toggle('visivel',alvo==='cliente');
+  });
+  // mover de coluna (no celular substitui o arrastar)
+  $('#mColuna').onchange=e=>{
+    c.col=e.target.value;
+    api.patchConversa(c,{coluna:c.col});
+    renderAll(); toast('→ '+COLS.find(k=>k.id===c.col).nome);
+  };
   // setor
   $('#mSetor').onchange=e=>{ c.setor=e.target.value; api.patchConversa(c,{setor:c.setor}); renderAll(); toast('Movido para o setor '+c.setor); };
   // notas
@@ -1273,7 +1450,7 @@ function renderAux(){
     a.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>openModal(+el.dataset.id));
   }
   else if(view==='contatos'){
-    a.innerHTML=`<div class="viewbox" style="max-width:900px;"><h2>Contatos</h2><div class="vsub">Números vinculados ao cadastro de clientes do moviOn.</div>
+    a.innerHTML=`<div class="viewbox" style="max-width:900px;"><h2>Contatos</h2><div class="vsub">Números vinculados ao cadastro de clientes do MoviOn.</div>
       ${state.conversas.map(c=>`<div class="rule-line"><div class="cc-av" style="background:${avColor(c.id)};width:30px;height:30px;font-size:11px;">${ini(c.nome)}</div><span class="rule-kw" style="background:#eef2f6;color:var(--text);">${esc(c.nome)}</span><span class="rule-desc">${esc(c.fone)} · ${esc(c.cliente.plano)} · ${esc(c.cliente.contrato)}</span></div>`).join('')}</div>`;
   }
   else if(view==='relatorios'){
@@ -1314,7 +1491,7 @@ function renderChatInterno(a){
   const [tipo,nome]=ciAtivo.split(':');
   const thread = tipo==='canal' ? (state.chatInterno.canais[nome]||[]) : (state.chatInterno.dm[nome]||[]);
   const outros = ATENDENTES.filter(x=>x!==(USUARIO&&USUARIO.nome) && x!=='— Bot —');
-  a.innerHTML=`<div class="ci-wrap">
+  a.innerHTML=`<div class="ci-wrap${ciEmThread?' emThread':''}">
     <div class="ci-list">
       <div class="ci-sec-lbl">Canais por setor</div>
       <div class="ci-item ${ciAtivo==='canal:Geral'?'on':''}" data-ci="canal:Geral"><span class="ci-dot" style="background:#94a3b8"></span>Geral</div>
@@ -1323,7 +1500,7 @@ function renderChatInterno(a){
       ${outros.map(nm=>`<div class="ci-item ${ciAtivo==='dm:'+nm?'on':''}" data-ci="dm:${esc(nm)}"><span class="ci-av" style="background:${avColor(nm.length)}">${ini(nm)}</span>${esc(nm)}</div>`).join('')}
     </div>
     <div class="ci-main">
-      <div class="ci-head">${tipo==='canal'?'# ':'💬 '}${esc(nome)}</div>
+      <div class="ci-head"><button class="ci-voltar only-mobile" id="ciVoltar">‹ Voltar</button>${tipo==='canal'?'# ':'💬 '}${esc(nome)}</div>
       <div class="ci-thread" id="ciThread">
         ${thread.length?thread.map(m=>`<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${esc(m.x)}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
           :'<div class="sched-empty" style="align-self:center;">Nenhuma mensagem ainda. Comece a conversa!</div>'}
@@ -1334,7 +1511,8 @@ function renderChatInterno(a){
       </div>
     </div>
   </div>`;
-  a.querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>{ ciAtivo=el.dataset.ci; renderChatInterno(a); });
+  a.querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>{ ciAtivo=el.dataset.ci; ciEmThread=true; renderChatInterno(a); });
+  const volt=$('#ciVoltar'); if(volt) volt.onclick=()=>{ ciEmThread=false; renderChatInterno(a); };
   const th=$('#ciThread'); if(th) th.scrollTop=99999;
   const sendCi=()=>{
     const v=$('#ciInput').value.trim(); if(!v)return;
@@ -1635,9 +1813,17 @@ function bindFlowNodeOnly(a,id){
 }
 
 /* ================= NAV / HEADER ================= */
+function abrirGaveta(abrir){
+  document.querySelector('.sidebar').classList.toggle('open',abrir);
+  $('#drawerBack').classList.toggle('open',abrir);
+}
+$('#btnMenu').onclick=()=>abrirGaveta(!document.querySelector('.sidebar').classList.contains('open'));
+$('#drawerBack').onclick=()=>abrirGaveta(false);
+
 document.querySelectorAll('.nav-item').forEach(el=>el.onclick=()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active'); view=el.dataset.view; renderAll();
+  abrirGaveta(false);              // no celular, fecha a gaveta ao escolher
 });
 $('#search').oninput=e=>{ busca=e.target.value.toLowerCase(); renderBoard(); };
 $('#btnFiltros').onclick=()=>{ const fb=$('#filterbar'); fb.style.display=fb.style.display==='none'?'flex':'none'; };
