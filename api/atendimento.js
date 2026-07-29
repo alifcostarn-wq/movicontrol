@@ -224,6 +224,18 @@ async function assinarMidia(e, caminho, segundos = 3600) {
   return d?.signedURL ? `${e.SUPA_URL}/storage/v1${d.signedURL}` : null;
 }
 
+// Busca o cadastro pelo id do IXC — usado quando o atendente vincula manualmente
+async function acharClientePorIxcId(e, ixcId) {
+  const cli = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=ixc_id,nome,razao,cnpj,ativo,ixc_status&limit=1`);
+  if (!cli) return null;
+  let contrato = null;
+  try {
+    const ctr = await sb(e, `clientes_contratos?select=plano,status_contrato,status_acesso,valor,velocidade_mbps,data_ativacao,pago_ate&ixc_cliente_id=eq.${encodeURIComponent(ixcId)}&order=id.desc&limit=1`);
+    contrato = (ctr || [])[0] || null;
+  } catch { /* segue sem contrato */ }
+  return { cliente: cli, contrato };
+}
+
 // ============================================================================
 // IDENTIFICAÇÃO DO CLIENTE — por CPF/CNPJ
 // Telefone NÃO identifica: o número que manda mensagem pode ser do cônjuge,
@@ -295,14 +307,19 @@ async function acharClientePorDocumento(e, doc) {
 // ============================================================================
 const CONECTORES = {
 
-  // PORTEIRO: pede e confere o CPF/CNPJ. Nada financeiro passa sem isso.
+  // PORTEIRO: se o número JÁ está vinculado a um cadastro (vínculo feito à mão
+  // por um atendente), nem pergunta — o bot já sabe quem é. Senão, pede o CPF,
+  // que vale só para este atendimento e fica como SUGESTÃO de vínculo.
   async identificar_cpf({ e, conversa, vars, texto }) {
-    // já identificado nesta conversa? não pede de novo
-    if (vars.cliente_id || conversa.cliente_ixc_id) {
-      return { resultado: 'ok', variaveis: { cliente_id: vars.cliente_id || conversa.cliente_ixc_id } };
+    // vínculo permanente: segue direto
+    if (conversa.cliente_ixc_id) {
+      return { resultado: 'ok', variaveis: { cliente_id: conversa.cliente_ixc_id } };
     }
+    // já identificou nesta mesma conversa: não repete a pergunta
+    if (vars.cliente_id) return { resultado: 'ok', variaveis: { cliente_id: vars.cliente_id } };
+
     const doc = soDigitos(texto);
-    if (doc.length < 11) return { resultado: 'aguardando' };          // ainda não mandou / mandou incompleto
+    if (doc.length < 11) return { resultado: 'aguardando' };
     if (!documentoValido(doc)) {
       return { resultado: 'invalido', anexoTexto: 'Esse CPF não parece válido. Confira os números e envie novamente. 🔢' };
     }
@@ -315,27 +332,13 @@ const CONECTORES = {
     return {
       resultado: 'ok',
       variaveis: {
-        cliente_id: cliente.ixc_id,
+        cliente_id: cliente.ixc_id,       // vale só nesta sessão do fluxo
         cliente_nome: primeiro,
         plano: contrato?.plano || '',
       },
-      patchConversa: {
-        cliente_ixc_id: String(cliente.ixc_id),
-        contato_nome: cliente.nome || cliente.razao || conversa.contato_nome,
-        cliente_snapshot: {
-          id: cliente.ixc_id,
-          nome: cliente.nome || cliente.razao,
-          cpf: cliente.cnpj,
-          ativo: cliente.ativo,
-          plano: contrato?.plano || null,
-          velocidade: contrato?.velocidade_mbps || null,
-          contrato: contrato?.status_contrato || null,
-          acesso: contrato?.status_acesso || null,
-          valor: contrato?.valor || null,
-          desde: contrato?.data_ativacao || null,
-          pago_ate: contrato?.pago_ate || null,
-        },
-      },
+      // NÃO grava cliente_ixc_id: vínculo é ato manual do atendente.
+      // Grava só a sugestão, para o painel oferecer "vincular com um clique".
+      patchConversa: { cliente_sugerido_id: String(cliente.ixc_id), cliente_sugerido_nome: cliente.nome || cliente.razao || null },
       anexoTexto: `Tudo certo, ${primeiro}! ✅`,
     };
   },
@@ -1200,6 +1203,65 @@ export default async function handler(req, res) {
           });
         }
         return res.status(200).json({ ok: true, conversa: c });
+      }
+
+      // ===== Vínculo manual número ↔ cadastro do cliente =====
+      case 'clientes.buscar': {
+        const termo = String(body.termo || '').trim();
+        if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
+        const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_buscar_clientes`, {
+          method: 'POST',
+          headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_termo: termo, p_limite: 20 }),
+        });
+        if (!r.ok) return res.status(500).json({ ok: false, error: 'Falha na busca de clientes.' });
+        return res.status(200).json({ ok: true, clientes: await r.json() });
+      }
+
+      case 'conversas.vincular': {
+        const id = Number(body.conversa_id);
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!id || !ixcId) return res.status(400).json({ ok: false, error: 'conversa_id e cliente_ixc_id obrigatórios.' });
+
+        const dados = await acharClientePorIxcId(e, ixcId);
+        if (!dados) return res.status(404).json({ ok: false, error: 'Cliente não encontrado no cadastro.' });
+
+        // o mesmo número não pode ficar preso a dois cadastros
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=contato_fone`);
+        const cli = dados.cliente, ctr = dados.contrato;
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            cliente_ixc_id: ixcId,
+            cliente_sugerido_id: null,
+            cliente_sugerido_nome: null,
+            contato_nome: cli.nome || cli.razao,
+            vinculado_em: new Date().toISOString(),
+            vinculado_por: user.id,
+            cliente_snapshot: {
+              id: cli.ixc_id, nome: cli.nome || cli.razao, cpf: cli.cnpj, ativo: cli.ativo,
+              plano: ctr?.plano || null, velocidade: ctr?.velocidade_mbps || null,
+              contrato: ctr?.status_contrato || null, acesso: ctr?.status_acesso || null,
+              valor: ctr?.valor || null, desde: ctr?.data_ativacao || null, pago_ate: ctr?.pago_ate || null,
+            },
+            updated_by: user.id,
+          },
+        });
+        // a partir daqui o bot já sabe quem é: sessão antiga não vale mais
+        if (c) await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true, cliente: cli });
+      }
+
+      case 'conversas.desvincular': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório.' });
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=contato_fone`);
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { cliente_ixc_id: null, cliente_snapshot: null, vinculado_em: null, vinculado_por: null, updated_by: user.id },
+        });
+        if (c) await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true });
       }
 
       case 'mensagens.listar': {
