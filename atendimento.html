@@ -439,6 +439,23 @@ select.transf{
 .flow-field input:focus,.flow-field select:focus,.flow-field textarea:focus{border-color:var(--green);}
 .flow-hint{font-size:10.5px;color:var(--text-low);background:#f7f9fb;border:1px dashed var(--line);border-radius:8px;padding:9px 10px;line-height:1.5;margin-top:14px;}
 
+/* ============ BARRA DE SELEÇÃO DE BOTS ============ */
+.flow-botbar{
+  display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;
+}
+.flow-botbar select{
+  font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--card);color:var(--text);max-width:280px;
+}
+.bot-badge{font-size:10px;font-weight:800;letter-spacing:.03em;padding:4px 10px;border-radius:99px;background:#f1f5f9;color:var(--text-low);}
+.bot-badge.on{background:var(--green-soft);color:var(--green-deep);}
+.fbtn.solid{background:var(--green);color:#fff;border-color:var(--green);}
+.fbtn.solid:hover{background:var(--green-deep);color:#fff;}
+.fbtn.danger{color:var(--red);border-color:#fecaca;}
+.fbtn.danger:hover{background:#fee2e2;color:var(--red);}
+.fbtn:disabled{opacity:.45;cursor:not-allowed;}
+.fbtn:disabled:hover{background:var(--card);color:var(--text);}
+
 /* ============ INTEGRAÇÕES (WhatsApp) ============ */
 .wa-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px;max-width:480px;margin:0 auto;text-align:center;}
 .wa-status-row{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:99px;margin-bottom:20px;}
@@ -1168,7 +1185,30 @@ const api = {
     await chamar('conversas.devolver_bot', { conversa_id:c.id });
   },
   async salvarFluxo(){
-    await chamar('fluxo.salvar', { id: state.fluxo.id||null, nodes: state.fluxo.nodes, edges: state.fluxo.edges });
+    if(!state.fluxo.id) throw new Error('Nenhum bot selecionado para salvar.');
+    const j = await chamar('fluxo.salvar', { id: state.fluxo.id, nodes: state.fluxo.nodes, edges: state.fluxo.edges, versao: state.fluxo.versao||1 });
+    if(j.fluxo) state.fluxo.versao = j.fluxo.versao;
+  },
+  async listarBots(){
+    const j = await chamar('fluxo.listar', {});
+    return j.fluxos||[];
+  },
+  async obterBot(id){
+    const j = await chamar('fluxo.obter', { id });
+    return j.fluxo;
+  },
+  async criarBot(nome, opts){
+    const j = await chamar('fluxo.criar', { nome, ...opts });
+    return j.fluxo;
+  },
+  async renomearBot(id, nome){
+    await chamar('fluxo.renomear', { id, nome });
+  },
+  async ativarBot(id){
+    await chamar('fluxo.ativar', { id });
+  },
+  async excluirBot(id){
+    await chamar('fluxo.excluir', { id });
   },
   async criarAgendamento(conversaId, texto, quando){
     const j = await chamar('agendamentos.criar', { conversa_id:conversaId, texto, quando });
@@ -1191,24 +1231,33 @@ function fmtQuando(iso){
   return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toTimeString().slice(0,5);
 }
 
-/* o canvas dispara muitas alterações seguidas (arrastar, digitar):
-   agrupa tudo e sobe uma vez só, 1,2s depois da última mexida */
-let _tFluxo=null, _salvandoFluxo=false;
+/* O canvas dispara muitas alterações seguidas (arrastar, digitar, conectar).
+   Antes isso salvava sozinho a cada 1,2s — agora só MARCA como "não salvo";
+   quem grava de fato é o botão 💾 Salvar, do jeito que foi pedido. */
+let fluxoSujo=false;
 function agendarSalvarFluxo(){
-  if(!USUARIO || !USUARIO.admin) return;      // atendente comum não publica fluxo
-  clearTimeout(_tFluxo);
-  const ind=$('#flowStatus'); if(ind) ind.textContent='alterações não salvas…';
-  _tFluxo=setTimeout(async()=>{
-    if(_salvandoFluxo) return agendarSalvarFluxo();
-    _salvandoFluxo=true;
-    try{
-      await api.salvarFluxo();
-      const el=$('#flowStatus'); if(el) el.textContent='✓ publicado';
-    }catch(err){
-      const el=$('#flowStatus'); if(el) el.textContent='✕ falha ao salvar';
-      toast('Falha ao publicar fluxo: '+err.message);
-    }finally{ _salvandoFluxo=false; }
-  },1200);
+  fluxoSujo=true;
+  const ind=$('#flowStatus'); if(ind){ ind.textContent='● alterações não salvas'; ind.style.color='#b45309'; }
+  const btn=$('#btnSalvarFluxo'); if(btn) btn.disabled=false;
+}
+
+async function salvarFluxoAgora(){
+  const btn=$('#btnSalvarFluxo'); const ind=$('#flowStatus');
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+  try{
+    await api.salvarFluxo();
+    fluxoSujo=false;
+    if(ind){ ind.textContent='✓ salvo'; ind.style.color='var(--green-deep)'; }
+    if(btn){ btn.textContent='💾 Salvar'; btn.disabled=true; }
+    // reflete o novo "salvo em" na lista de bots, se já carregada
+    const item=fluxosLista.find(f=>f.id===state.fluxo.id);
+    if(item) item.updated_at=new Date().toISOString();
+    toast('Bot salvo');
+  }catch(err){
+    if(ind){ ind.textContent='✕ falha ao salvar'; ind.style.color='var(--red)'; }
+    if(btn){ btn.textContent='💾 Salvar'; btn.disabled=false; }
+    toast('Falha ao salvar: '+err.message);
+  }
 }
 
 /* --- mapeamento servidor -> forma que as telas já esperam --- */
@@ -1991,35 +2040,77 @@ const CONECTORES={
   enviar_contrato:{lbl:'Enviar contrato',ico:'📑',desc:'Envia o contrato do cliente em PDF'},
 };
 function fnEl(id){ return document.querySelector(`.flow-node[data-fid="${id}"]`); }
-function renderFluxo(a){
-  const nodes=state.fluxo.nodes, edges=state.fluxo.edges;
-  if(!nodes.length){
-    a.innerHTML=`<div class="viewbox" style="max-width:640px;"><h2>Nenhum fluxo publicado</h2>
-      <div class="vsub">O bot só responde depois que existir um fluxo ativo no banco.</div>
-      ${USUARIO.admin
-        ? `<p style="font-size:12.5px;color:var(--text-mid);line-height:1.6;margin:12px 0 16px;">
-             Posso publicar o fluxo de exemplo — ${FLUXO_INICIAL.nodes.length} blocos cobrindo suporte,
-             financeiro e vendas, com encaminhamento por setor e pesquisa de satisfação.
-             Depois é só editar no canvas.</p>
-           <button class="btn primary" id="btnPubInicial">Publicar fluxo inicial</button>`
-        : `<p style="font-size:12.5px;color:var(--text-mid);margin-top:12px;">Peça a um administrador para publicar o fluxo.</p>`}
+let fluxoAtualId=null, fluxosLista=[];
+
+async function renderFluxo(a){
+  if(!fluxosLista.length){
+    try{ fluxosLista = await api.listarBots(); }catch(err){ toast('Falha ao listar bots: '+err.message); }
+  }
+
+  // nenhum bot existe ainda: oferece criar o de exemplo (já publicado) ou do zero
+  if(!fluxosLista.length){
+    a.innerHTML=`<div class="viewbox" style="max-width:640px;"><h2>Nenhum bot criado ainda</h2>
+      <div class="vsub">Crie o primeiro bot para o canal de atendimento responder.</div>
+      ${USUARIO.admin ? `
+        <p style="font-size:12.5px;color:var(--text-mid);line-height:1.6;margin:12px 0 16px;">
+          Posso criar o bot de exemplo — ${FLUXO_INICIAL.nodes.length} blocos cobrindo suporte, financeiro
+          e vendas, com identificação por CPF e encaminhamento por setor. Já entra publicado em produção;
+          depois é só editar.</p>
+        <button class="btn primary" id="btnPubInicial">Criar e publicar bot de exemplo</button>
+        <button class="fbtn" id="btnNovoVazio" style="margin-left:8px;">Começar do zero</button>
+      ` : `<p style="font-size:12.5px;color:var(--text-mid);margin-top:12px;">Peça a um administrador para criar o primeiro bot.</p>`}
       </div>`;
     const b=$('#btnPubInicial');
     if(b) b.onclick=async()=>{
-      b.disabled=true; b.textContent='Publicando…';
+      b.disabled=true; b.textContent='Criando…';
       try{
-        state.fluxo.nodes=JSON.parse(JSON.stringify(FLUXO_INICIAL.nodes));
-        state.fluxo.edges=JSON.parse(JSON.stringify(FLUXO_INICIAL.edges));
-        await api.salvarFluxo();
-        const j=await chamar('fluxo.obter',{});
-        if(j.fluxo) state.fluxo.id=j.fluxo.id;
-        renderFluxo(a); toast('Fluxo publicado — o bot já está ativo.');
-      }catch(err){ b.disabled=false; b.textContent='Publicar fluxo inicial'; toast('Falha: '+err.message); }
+        const f=await api.criarBot('Bot principal', { nodes:FLUXO_INICIAL.nodes, edges:FLUXO_INICIAL.edges });
+        await api.ativarBot(f.id);
+        fluxosLista=[]; fluxoAtualId=f.id; state.fluxo=null;
+        renderFluxo(a); toast('Bot criado e publicado em produção 🎉');
+      }catch(err){ b.disabled=false; b.textContent='Criar e publicar bot de exemplo'; toast('Falha: '+err.message); }
+    };
+    const bv=$('#btnNovoVazio');
+    if(bv) bv.onclick=async()=>{
+      bv.disabled=true;
+      try{
+        const f=await api.criarBot('Novo bot');
+        fluxosLista=[]; fluxoAtualId=f.id; state.fluxo=null;
+        renderFluxo(a); toast('Bot criado como rascunho — publique quando estiver pronto.');
+      }catch(err){ bv.disabled=false; toast('Falha: '+err.message); }
     };
     return;
   }
+
+  if(!fluxoAtualId){
+    const ativo=fluxosLista.find(f=>f.ativo);
+    fluxoAtualId = ativo ? ativo.id : fluxosLista[0].id;
+  }
+  if(!state.fluxo || state.fluxo.id!==fluxoAtualId){
+    try{
+      const f=await api.obterBot(fluxoAtualId);
+      state.fluxo = f ? {id:f.id,nome:f.nome,ativo:f.ativo,versao:f.versao,nodes:f.nodes||[],edges:f.edges||[]} : {id:fluxoAtualId,nome:'',ativo:false,nodes:[],edges:[]};
+      flowSelected=null; flowConnecting=null; fluxoSujo=false;
+    }catch(err){ toast('Falha ao carregar bot: '+err.message); }
+  }
+
+  const nodes=state.fluxo.nodes, edges=state.fluxo.edges;
+  const podeEditar=!!(USUARIO&&USUARIO.admin);
+
   a.innerHTML=`<div class="flow-wrap">
+    <div class="flow-botbar">
+      <select id="botSelect">${fluxosLista.map(f=>`<option value="${f.id}" ${f.id===fluxoAtualId?'selected':''}>${f.ativo?'🟢':'⚪'} ${esc(f.nome)} · ${f.blocos} blocos</option>`).join('')}</select>
+      <span class="bot-badge ${state.fluxo.ativo?'on':''}">${state.fluxo.ativo?'✓ Em produção':'Rascunho'}</span>
+      ${podeEditar?`
+        <button class="fbtn" id="btnRenomearBot">✎ Renomear</button>
+        <button class="fbtn" id="btnDuplicarBot">⧉ Duplicar</button>
+        ${!state.fluxo.ativo?`<button class="fbtn solid" id="btnAtivarBot">🚀 Publicar em produção</button>`:''}
+        <button class="fbtn" id="btnNovoBotVazio">+ Novo bot</button>
+        <button class="fbtn danger" id="btnExcluirBot" ${state.fluxo.ativo?'disabled title="Em produção — publique outro bot antes de excluir este"':''}>🗑 Excluir</button>
+      `:''}
+    </div>
     <div class="flow-toolbar">
+      ${podeEditar?`
       <span class="ftlabel">Adicionar bloco:</span>
       <button class="fbtn" data-addnode="menu">💬 Menu</button>
       <button class="fbtn" data-addnode="mensagem">📝 Mensagem</button>
@@ -2028,11 +2119,14 @@ function renderFluxo(a){
       <button class="fbtn" data-addnode="setor">🏷️ Encaminhar setor</button>
       <button class="fbtn" data-addnode="fim">🏁 Fim</button>
       <button class="fbtn" data-addnode="ia">🔌 IA</button>
+      `:'<span class="ftlabel" style="color:var(--text-low);">Modo leitura — apenas administradores editam</span>'}
       <span style="flex:1;"></span>
       <div class="fzoom"><button id="fzOut">−</button><span class="fz-val" id="fzVal">100%</span><button id="fzIn">+</button></div>
-      <span class="ftlabel" id="flowStatus" style="color:var(--green-deep);min-width:118px;">✓ publicado</span>
+      ${podeEditar?`
+      <button class="fbtn solid" id="btnSalvarFluxo" ${fluxoSujo?'':'disabled'}>💾 Salvar</button>
+      <span class="ftlabel" id="flowStatus" style="min-width:130px;color:${fluxoSujo?'#b45309':'var(--green-deep)'};">${fluxoSujo?'● alterações não salvas':'✓ salvo'}</span>
       <button class="fbtn warn" id="flowCancelConn" style="display:none;">✕ Cancelar conexão</button>
-      <span class="ftlabel" style="color:var(--text-low);">Arraste os blocos · 🔗 conecta · ⧉ duplica</span>
+      `:''}
     </div>
     <div class="flow-body">
       <div class="flow-canvas-outer" id="flowOuter">
@@ -2044,9 +2138,82 @@ function renderFluxo(a){
       <div class="flow-side" id="flowSide">${flowSideHTML()}</div>
     </div>
   </div>`;
-  bindFlowEvents(a);
+  bindBotBar(a);
+  if(podeEditar) bindFlowEvents(a);
   requestAnimationFrame(drawFlowEdges);
 }
+
+function bindBotBar(a){
+  const trocar=async(id)=>{
+    fluxoAtualId=id; state.fluxo=null; flowSelected=null; flowConnecting=null;
+    await renderFluxo(a);
+  };
+
+  const sel=$('#botSelect');
+  if(sel) sel.onchange=()=>{
+    const destino=Number(sel.value);
+    if(fluxoSujo && !confirm('Este bot tem alterações não salvas. Trocar mesmo assim e perdê-las?')){ sel.value=fluxoAtualId; return; }
+    trocar(destino);
+  };
+
+  const bRen=$('#btnRenomearBot');
+  if(bRen) bRen.onclick=async()=>{
+    const novo=prompt('Novo nome do bot:', state.fluxo.nome||''); if(!novo||!novo.trim()) return;
+    try{ await api.renomearBot(state.fluxo.id, novo.trim()); state.fluxo.nome=novo.trim(); fluxosLista=[]; renderFluxo(a); toast('Bot renomeado'); }
+    catch(err){ toast('Falha: '+err.message); }
+  };
+
+  const bDup=$('#btnDuplicarBot');
+  if(bDup) bDup.onclick=async()=>{
+    const nome=prompt('Nome do novo bot (cópia):', (state.fluxo.nome||'Bot')+' (cópia)'); if(!nome||!nome.trim()) return;
+    bDup.disabled=true;
+    try{
+      const f=await api.criarBot(nome.trim(), { duplicar_de: state.fluxo.id });
+      fluxosLista=[]; await trocar(f.id);
+      toast('Bot duplicado — edite à vontade, o original em produção não muda.');
+    }catch(err){ bDup.disabled=false; toast('Falha: '+err.message); }
+  };
+
+  const bAtiv=$('#btnAtivarBot');
+  if(bAtiv) bAtiv.onclick=async()=>{
+    if(fluxoSujo){
+      if(!confirm('Existem alterações não salvas neste bot. Salvar antes de publicar?')) return;
+      try{ await salvarFluxoAgora(); }catch(err){ return; }
+    }
+    if(!confirm(`Publicar "${state.fluxo.nome}" em produção?\n\nEle passa a responder no canal imediatamente. O bot que está em produção agora vira rascunho.`)) return;
+    bAtiv.disabled=true; bAtiv.textContent='Publicando…';
+    try{
+      await api.ativarBot(state.fluxo.id);
+      fluxosLista=[]; state.fluxo.ativo=true;
+      renderFluxo(a); toast('🚀 Bot publicado em produção!');
+    }catch(err){ bAtiv.disabled=false; bAtiv.textContent='🚀 Publicar em produção'; toast('Falha: '+err.message); }
+  };
+
+  const bNovo=$('#btnNovoBotVazio');
+  if(bNovo) bNovo.onclick=async()=>{
+    const nome=prompt('Nome do novo bot:','Novo bot'); if(!nome||!nome.trim()) return;
+    try{
+      const f=await api.criarBot(nome.trim());
+      fluxosLista=[]; await trocar(f.id);
+      toast('Bot criado como rascunho — publique quando estiver pronto.');
+    }catch(err){ toast('Falha: '+err.message); }
+  };
+
+  const bExc=$('#btnExcluirBot');
+  if(bExc && !bExc.disabled) bExc.onclick=async()=>{
+    if(!confirm(`Excluir definitivamente o bot "${state.fluxo.nome}"?\n\nEssa ação não pode ser desfeita.`)) return;
+    bExc.disabled=true;
+    try{
+      await api.excluirBot(state.fluxo.id);
+      fluxosLista=[]; fluxoAtualId=null; state.fluxo=null;
+      renderFluxo(a); toast('Bot excluído.');
+    }catch(err){ bExc.disabled=false; toast('Falha: '+err.message); }
+  };
+
+  const bSalvar=$('#btnSalvarFluxo');
+  if(bSalvar) bSalvar.onclick=salvarFluxoAgora;
+}
+
 function flowNodeHTML(n){
   const t=FLOW_TIPOS[n.tipo];
   const typeStyle = n.tipo==='setor' ? `style="background:${corSetor(n.setor)}"` : '';
@@ -2054,10 +2221,11 @@ function flowNodeHTML(n){
   return `<div class="flow-node ${n.tipo==='ia'?'ia-node':''} ${n.tipo==='acao'?'acao-node':''} ${flowSelected===n.id?'selected':''} ${flowConnecting===n.id?'connecting':''}" data-fid="${n.id}" style="left:${n.x}px;top:${n.y}px;">
     <div class="fn-top">
       <span class="fn-type ${n.tipo}" ${typeStyle}>${t.lbl}${n.tipo==='setor'?' · '+esc(n.setor):''}</span>
+      ${USUARIO&&USUARIO.admin?`
       <div class="fn-actions">
         <span class="fn-ico" data-conn="${n.id}" title="Conectar a outro bloco">🔗</span>
         ${n.tipo!=='inicio'?`<span class="fn-ico" data-dup="${n.id}" title="Duplicar bloco">⧉</span><span class="fn-ico" data-del="${n.id}" title="Excluir bloco">✕</span>`:''}
-      </div>
+      </div>`:''}
     </div>
     <div class="fn-title">${conn?conn.ico+' ':''}${esc(n.titulo)}</div>
     ${conn?`<div class="fn-conn-desc">⚙ ${esc(conn.lbl)} — ${esc(conn.desc)}</div>`:''}
@@ -2266,6 +2434,10 @@ $('#drawerBack').onclick=()=>abrirGaveta(false);
 document.querySelectorAll('.nav-item').forEach(el=>el.onclick=()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
   el.classList.add('active');
+  if(view==='fluxo' && el.dataset.view!=='fluxo' && fluxoSujo){
+    if(!confirm('Você tem alterações não salvas no bot. Sair mesmo assim e perdê-las?')) return;
+    fluxoSujo=false;
+  }
   if(view==='integracoes' && el.dataset.view!=='integracoes') pararPollWA();
   if(view==='config' && el.dataset.view!=='config') pararPollWA();
   view=el.dataset.view; renderAll();
