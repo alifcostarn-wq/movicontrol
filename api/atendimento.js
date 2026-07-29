@@ -122,19 +122,38 @@ async function logFluxo(e, reg) {
 // ============================================================================
 // EVOLUTION API — envio
 // ============================================================================
-async function waEnviar(e, fone, texto) {
+// `opts.quoted` = { wa_id, texto, fromMe } da mensagem citada. A Evolution
+// precisa da key original para o WhatsApp renderizar o balão de resposta.
+async function waEnviar(e, fone, texto, opts = {}) {
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
     throw new Error('Evolution API não configurada (EVOLUTION_URL / EVOLUTION_APIKEY / EVOLUTION_INSTANCE).');
+  }
+  const numero = normalizarFone(fone);
+  const corpo = { number: numero, text: texto };
+  if (opts.quoted && opts.quoted.wa_id) {
+    corpo.quoted = {
+      key: {
+        id: opts.quoted.wa_id,
+        remoteJid: `${numero}@s.whatsapp.net`,
+        fromMe: !!opts.quoted.fromMe,
+      },
+      message: { conversation: String(opts.quoted.texto || '').slice(0, 500) },
+    };
   }
   const r = await fetch(`${e.EVO_URL}/message/sendText/${e.EVO_INST}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
     // Evolution v2. Em v1 o corpo é { number, textMessage: { text } }.
-    body: JSON.stringify({ number: normalizarFone(fone), text: texto }),
+    body: JSON.stringify(corpo),
   });
   const txt = await r.text();
   if (!r.ok) throw new Error(`Evolution ${r.status}: ${txt.slice(0, 300)}`);
   try { return JSON.parse(txt); } catch { return { raw: txt }; }
+}
+
+// O id que o WhatsApp devolve é o que permite CITAR essa mensagem depois.
+function idDaEvolution(resp) {
+  return resp?.key?.id || resp?.data?.key?.id || resp?.messageId || resp?.id || null;
 }
 
 // ============================================================================
@@ -1566,7 +1585,11 @@ export default async function handler(req, res) {
         // o bot para onde estava: sessão apagada para não retomar sozinho
         await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
         if (body.avisar_cliente) {
-          const aviso = `Olá! Aqui é ${user.nome}, da MoviOn. Assumi seu atendimento e já vou te ajudar. 👋`;
+          // O cliente fala com o SETOR, não com a pessoa. Expor o nome do
+          // atendente cria vínculo pessoal indevido e vira cobrança direta
+          // quando outro colega assume depois.
+          const setorAtual = c.setor || user.setor || 'Suporte';
+          const aviso = `Olá! Aqui é o setor ${setorAtual} da MoviOn. Assumimos seu atendimento e já vamos te ajudar. 👋`;
           try {
             await waEnviar(e, c.contato_fone, aviso);
             await sb(e, 'atend_mensagens', {
@@ -1614,6 +1637,58 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      // ===== Transferência de setor (com aviso opcional ao cliente) =====
+      case 'conversas.transferir': {
+        const id = Number(body.conversa_id);
+        const destino = String(body.setor || '').trim();
+        if (!id || !destino) return res.status(400).json({ ok: false, error: 'conversa_id e setor obrigatórios.' });
+
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+        const setores = await sb(e, 'atend_setores?select=nome');
+        const validos = (setores || []).map(s => s.nome);
+        if (validos.length && !validos.includes(destino)) {
+          return res.status(400).json({ ok: false, error: `Setor inválido. Disponíveis: ${validos.join(', ')}` });
+        }
+        if (destino === c.setor) return res.status(400).json({ ok: false, error: 'A conversa já está nesse setor.' });
+
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            setor: destino,
+            // quem transfere solta a conversa: o novo setor escolhe o responsável
+            atendente_id: null,
+            bot_ativo: false,
+            coluna: c.coluna === 'resolvidos' ? 'atendimento' : c.coluna,
+            updated_by: user.id,
+          },
+        });
+
+        if (body.avisar_cliente) {
+          const aviso = `Estou transferindo seu atendimento para o setor ${destino}. Em instantes alguém continua com você. 🔄`;
+          try {
+            const env = await waEnviar(e, c.contato_fone, aviso);
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: id, direcao: 'out', conteudo: aviso, autor_id: user.id, wa_id: idDaEvolution(env) },
+            });
+          } catch (err) { console.error('[atendimento]', err.message); }
+        }
+        // trilha interna: quem transferiu, de onde, para onde
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            conversa_id: id, direcao: 'sys', autor_id: user.id,
+            conteudo: `${user.nome || 'Atendente'} transferiu de ${c.setor || '—'} para ${destino}`,
+          },
+        });
+        await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true, setor: destino });
+      }
+
       case 'mensagens.enviar': {
         const id = Number(body.conversa_id);
         const texto = String(body.texto || '').trim();
@@ -1625,10 +1700,26 @@ export default async function handler(req, res) {
           return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
         }
 
-        await waEnviar(e, c.contato_fone, texto);
+        // responder citando: busca a mensagem original para pegar o wa_id
+        let citada = null;
+        if (body.responde_a) {
+          citada = await sbUm(e,
+            `atend_mensagens?id=eq.${Number(body.responde_a)}&conversa_id=eq.${id}&select=id,wa_id,conteudo,direcao`);
+        }
+
+        const env = await waEnviar(e, c.contato_fone, texto, citada ? {
+          quoted: { wa_id: citada.wa_id, texto: citada.conteudo, fromMe: citada.direcao !== 'in' },
+        } : {});
+
         await sb(e, 'atend_mensagens', {
           method: 'POST', prefer: 'return=minimal',
-          body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id },
+          body: {
+            conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id,
+            wa_id: idDaEvolution(env),
+            responde_a: citada ? citada.id : null,
+            quote_texto: citada ? String(citada.conteudo || '').slice(0, 300) : null,
+            quote_direcao: citada ? citada.direcao : null,
+          },
         });
         // atendente humano assumiu: o bot para de responder nesta conversa
         await sb(e, `atend_conversas?id=eq.${id}`, {
