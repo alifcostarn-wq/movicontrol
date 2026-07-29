@@ -307,6 +307,76 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
   border-radius:7px;padding:6px 9px;margin-top:7px;line-height:1.4;
 }
 
+/* ============ RESPONDER MENSAGEM (citação estilo WhatsApp) ============ */
+.mb{position:relative;}
+.mb-reply{
+  position:absolute;top:4px;right:6px;width:22px;height:22px;border-radius:6px;
+  display:none;align-items:center;justify-content:center;cursor:pointer;
+  background:rgba(255,255,255,.94);border:1px solid var(--line);font-size:11px;
+  box-shadow:var(--shadow);
+}
+.mb:hover .mb-reply{display:flex;}
+.mb-reply:hover{border-color:var(--green);}
+.mb.in .mb-reply{right:auto;left:calc(100% + 6px);}
+.mb-quote{
+  border-left:3px solid var(--green);background:rgba(0,0,0,.05);
+  border-radius:7px;padding:6px 9px;margin-bottom:6px;cursor:pointer;
+}
+.mb-quote .qa{font-size:9.5px;font-weight:800;color:var(--green-deep);text-transform:uppercase;letter-spacing:.03em;}
+.mb-quote .qt{
+  font-size:11.5px;color:var(--text-mid);line-height:1.4;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.mb.destacada{animation:pisca 1.1s ease;}
+@keyframes pisca{0%,100%{box-shadow:var(--shadow);}35%{box-shadow:0 0 0 3px var(--green);}}
+
+.reply-bar{
+  display:flex;align-items:center;gap:9px;margin:0 16px;padding:8px 11px;
+  border-left:3px solid var(--green);background:var(--green-soft);border-radius:8px;flex-shrink:0;
+}
+.reply-bar .rb-l{flex:1;min-width:0;}
+.reply-bar .rb-a{font-size:9.5px;font-weight:800;color:var(--green-deep);text-transform:uppercase;letter-spacing:.03em;}
+.reply-bar .rb-t{
+  font-size:11.5px;color:var(--text-mid);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.reply-bar .rb-x{
+  border:none;background:transparent;cursor:pointer;font-size:15px;color:var(--text-mid);
+  padding:0 4px;font-family:inherit;flex-shrink:0;
+}
+.reply-bar .rb-x:hover{color:var(--red);}
+
+/* ============ TRANSFERIR SETOR ============ */
+.bb-btn.transf{background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;}
+.bb-btn.transf:hover{background:#d6e6fd;}
+.tr-overlay{
+  position:fixed;inset:0;z-index:320;background:rgba(15,23,42,.5);
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.tr-modal{
+  background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);
+  width:min(420px,100%);padding:20px;
+}
+.tr-modal h3{font-size:16px;font-weight:800;margin-bottom:4px;}
+.tr-modal .tr-sub{font-size:12px;color:var(--text-mid);margin-bottom:16px;line-height:1.5;}
+.tr-lista{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
+.tr-op{
+  display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:10px;
+  border:1.5px solid var(--line);background:var(--card);cursor:pointer;font-family:inherit;
+  font-size:13.5px;font-weight:700;color:var(--text);text-align:left;width:100%;
+}
+.tr-op:hover{border-color:var(--green);background:var(--green-soft);}
+.tr-op.atual{opacity:.5;cursor:not-allowed;}
+.tr-op.atual:hover{border-color:var(--line);background:var(--card);}
+.tr-op .tr-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.tr-op .tr-tag{margin-left:auto;font-size:9.5px;font-weight:800;color:var(--text-low);}
+.tr-avisar{
+  display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-mid);
+  padding:10px 12px;background:#f7f9fb;border-radius:9px;margin-bottom:14px;cursor:pointer;
+}
+.tr-avisar input{width:16px;height:16px;accent-color:var(--green);cursor:pointer;}
+.tr-acts{display:flex;gap:8px;justify-content:flex-end;}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -1275,14 +1345,18 @@ const api = {
     try{ await chamar('conversas.atualizar', { id:c.id, ...campos }); }
     catch(err){ toast('Falha ao salvar: '+err.message); await recarregarConversas(); }
   },
-  async enviarMensagem(c, texto){
-    await chamar('mensagens.enviar', { conversa_id:c.id, texto });
+  async enviarMensagem(c, texto, respondeA){
+    await chamar('mensagens.enviar', { conversa_id:c.id, texto, responde_a: respondeA||null });
+  },
+  async transferirSetor(c, setor, avisar){
+    await chamar('conversas.transferir', { conversa_id:c.id, setor, avisar_cliente: !!avisar });
   },
   async carregarMensagens(c){
     const j = await chamar('mensagens.listar', { conversa_id:c.id });
     c.msgs = (j.mensagens||[]).map(m=>({
-      t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
+      id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
       tipo: m.tipo || 'texto', link: m.midia_link || null,
+      respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
     }));
     return c.msgs;
   },
@@ -1829,6 +1903,79 @@ function blocoChamados(c){
       ||'<div style="font-size:11.5px;color:var(--text-low)">Nenhum chamado recente</div>'}`;
 }
 
+/* ===== RESPONDER MENSAGEM (citação) ===== */
+let respondendoA = null;   // { id, texto, autor } da mensagem citada
+
+function pintarBarraResposta(c){
+  const el=$('#mReplyBar'); if(!el) return;
+  if(!respondendoA){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="reply-bar">
+    <div class="rb-l">
+      <div class="rb-a">Respondendo ${esc(respondendoA.autor)}</div>
+      <div class="rb-t">${esc(respondendoA.texto)}</div>
+    </div>
+    <button class="rb-x" id="rbCancelar" title="Cancelar resposta">✕</button>
+  </div>`;
+  const x=$('#rbCancelar');
+  if(x) x.onclick=()=>{ respondendoA=null; pintarBarraResposta(c); const i=$('#mInput'); if(i) i.focus(); };
+}
+
+function iniciarResposta(c, msgId){
+  const m=c.msgs.find(x=>String(x.id)===String(msgId));
+  if(!m) return;
+  respondendoA={
+    id:m.id,
+    texto:String(m.x||'(anexo)').replace(/\n/g,' ').slice(0,120),
+    autor:m.t==='in'?c.nome:'você',
+  };
+  pintarBarraResposta(c);
+  const i=$('#mInput'); if(i) i.focus();
+}
+
+/* ===== TRANSFERIR SETOR ===== */
+function abrirTransferencia(c){
+  const ov=document.createElement('div');
+  ov.className='tr-overlay';
+  ov.innerHTML=`<div class="tr-modal">
+    <h3>Transferir atendimento</h3>
+    <div class="tr-sub">A conversa está em <b>${esc(c.setor||'—')}</b>. Escolha o setor de destino.</div>
+    <div class="tr-lista">
+      ${SETORES.map(s=>`
+        <button class="tr-op ${s.id===c.setor?'atual':''}" data-setor="${esc(s.id)}" ${s.id===c.setor?'disabled':''}>
+          <span class="tr-dot" style="background:${s.cor}"></span>${esc(s.id)}
+          ${s.id===c.setor?'<span class="tr-tag">ATUAL</span>':''}
+        </button>`).join('')}
+    </div>
+    <label class="tr-avisar"><input type="checkbox" id="trAvisar" checked>
+      Avisar o cliente no WhatsApp sobre a transferência</label>
+    <div class="tr-acts"><button class="vinc-btn" id="trCancelar">Cancelar</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=ev=>{ if(ev.target===ov) ov.remove(); };
+  ov.querySelector('#trCancelar').onclick=()=>ov.remove();
+
+  ov.querySelectorAll('[data-setor]').forEach(btn=>{
+    if(btn.disabled) return;
+    btn.onclick=async()=>{
+      const destino=btn.dataset.setor;
+      const avisar=ov.querySelector('#trAvisar').checked;
+      ov.querySelectorAll('.tr-op').forEach(b=>b.disabled=true);
+      btn.textContent='Transferindo…';
+      try{
+        await api.transferirSetor(c, destino, avisar);
+        ov.remove();
+        await recarregarConversas();
+        const at=state.conversas.find(x=>x.id===c.id);
+        if(at){ at._msgsCarregadas=false; openModal(at.id); }
+        toast('Transferido para '+destino);
+      }catch(err){
+        ov.remove();
+        toast('Falha: '+err.message);
+      }
+    };
+  });
+}
+
 function openModal(id){
   modalId=id;
   const c=state.conversas.find(x=>x.id===id);
@@ -1882,6 +2029,7 @@ function openModal(id){
       <span class="bb-dot"></span>
       <span class="bb-txt">${c.botAtivo===false ? '👤 Você está no comando' : '🤖 Bot atendendo'}</span>
       <div class="bb-acts">
+        <button class="bb-btn transf" id="mTransferir">🔄 Transferir setor</button>
         ${c.botAtivo===false
           ? `<button class="bb-btn" id="mDevolver">Devolver ao bot</button>`
           : `<button class="bb-btn solid" id="mAssumir">Assumir atendimento</button>`}
@@ -1891,8 +2039,15 @@ function openModal(id){
     <div class="m-thread" id="mThread">
       ${c.msgs.map(m=>m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
-        :`<div class="mb ${m.t}">${m.t==='bot'?'<span class="bt">● Bot</span>':''}${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<span class="tm">${esc(m.h||'')}</span></div>`).join('')}
+        :`<div class="mb ${m.t}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
+            m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
+              <div class="qa">${m.quoteDirecao==='in'?esc(c.nome):'Você'}</div>
+              <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
+          }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<span class="tm">${esc(m.h||'')}</span>${
+            m.id?`<span class="mb-reply" data-responder="${m.id}" title="Responder">↩</span>`:''
+          }</div>`).join('')}
     </div>
+    <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
       <input id="mInput" placeholder="Digite uma mensagem...">
@@ -1989,19 +2144,41 @@ function openModal(id){
   $('#overlay').classList.add('open');
   $('#mClose').onclick=closeModal;
   $('#mThread').scrollTop=99999;
+  pintarBarraResposta(c);
+
+  // responder mensagem: botão ↩ na bolha
+  document.querySelectorAll('[data-responder]').forEach(el=>el.onclick=ev=>{
+    ev.stopPropagation();
+    iniciarResposta(c, el.dataset.responder);
+  });
+  // clicar na citação leva até a mensagem original
+  document.querySelectorAll('[data-irpara]').forEach(el=>el.onclick=ev=>{
+    ev.stopPropagation();
+    const alvo=document.querySelector(`[data-msgid="${el.dataset.irpara}"]`);
+    if(!alvo){ toast('Mensagem original fora da janela carregada'); return; }
+    alvo.scrollIntoView({behavior:'smooth',block:'center'});
+    alvo.classList.add('destacada');
+    setTimeout(()=>alvo.classList.remove('destacada'),1200);
+  });
+  // transferir de setor
+  const bTransf=$('#mTransferir');
+  if(bTransf) bTransf.onclick=()=>abrirTransferencia(c);
 
   // quick replies (só os que têm data-i; o botão "Agendar" tem handler próprio abaixo)
   document.querySelectorAll('.mq[data-i]').forEach(el=>el.onclick=()=>{ $('#mInput').value=state.atalhos[+el.dataset.i].m; $('#mInput').focus(); });
   // send
   const send=()=>{
     const v=$('#mInput').value.trim(); if(!v)return;
-    c.msgs.push({t:'out',x:v,h:new Date().toTimeString().slice(0,5)});
+    const citada=respondendoA;
+    c.msgs.push({t:'out',x:v,h:new Date().toTimeString().slice(0,5),
+      quoteTexto:citada?citada.texto:null, quoteDirecao:citada&&citada.autor!=='você'?'in':'out'});
     c.preview='Você: '+v;
     if(c.col==='novos'){ c.col='atendimento'; }
     c.atendente=USUARIO.nome; c.botAtivo=false;
     $('#mInput').value='';
+    respondendoA=null;
     openModal(c.id); renderAll();
-    api.enviarMensagem(c,v).catch(err=>toast('Falha ao enviar: '+err.message));
+    api.enviarMensagem(c,v,citada?citada.id:null).catch(err=>toast('Falha ao enviar: '+err.message));
   };
   $('#mSend').onclick=send;
   $('#mInput').onkeydown=e=>{ if(e.key==='Enter') send(); };
@@ -2141,7 +2318,7 @@ function openModal(id){
       .catch(err=>toast('Falha: '+err.message));
   });
 }
-function closeModal(){ $('#overlay').classList.remove('open'); modalId=null; renderAll(); }
+function closeModal(){ $('#overlay').classList.remove('open'); modalId=null; respondendoA=null; renderAll(); }
 $('#overlay').onclick=e=>{ if(e.target.id==='overlay') closeModal(); };
 
 /* ================= AUX VIEWS ================= */
