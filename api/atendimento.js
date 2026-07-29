@@ -174,6 +174,57 @@ function acharPix(obj, prof = 0) {
 }
 
 // ============================================================================
+// MÍDIA — baixa da Evolution e guarda no Storage do Supabase
+// O webhook vem com base64:false, então o arquivo precisa ser buscado à parte.
+// ============================================================================
+async function baixarMidia(e, waId) {
+  const r = await fetch(`${e.EVO_URL}/chat/getBase64FromMediaMessage/${e.EVO_INST}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+    body: JSON.stringify({ message: { key: { id: waId } }, convertToMp4: false }),
+  });
+  if (!r.ok) throw new Error(`Evolution mídia ${r.status}`);
+  const d = await r.json();
+  const b64 = d?.base64 || d?.media || null;
+  if (!b64) throw new Error('Evolution não devolveu o arquivo');
+  return {
+    base64: b64.includes(',') ? b64.split(',').pop() : b64,
+    mimetype: d?.mimetype || 'application/octet-stream',
+    fileName: d?.fileName || null,
+  };
+}
+
+const EXT_POR_MIME = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+  'application/pdf': 'pdf', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'video/mp4': 'mp4',
+};
+
+async function guardarMidia(e, conversaId, waId, arq) {
+  const ext = EXT_POR_MIME[arq.mimetype.split(';')[0]] || 'bin';
+  const caminho = `conversas/${conversaId}/${Date.now()}-${(waId || 'sem-id').slice(-12)}.${ext}`;
+  const bytes = Buffer.from(arq.base64, 'base64');
+  const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
+    method: 'POST',
+    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': arq.mimetype },
+    body: bytes,
+  });
+  if (!r.ok) throw new Error(`Storage ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  return caminho;
+}
+
+// gera link temporário para o atendente abrir o anexo
+async function assinarMidia(e, caminho, segundos = 3600) {
+  const r = await fetch(`${e.SUPA_URL}/storage/v1/object/sign/atendimento/${caminho}`, {
+    method: 'POST',
+    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresIn: segundos }),
+  });
+  if (!r.ok) return null;
+  const d = await r.json();
+  return d?.signedURL ? `${e.SUPA_URL}/storage/v1${d.signedURL}` : null;
+}
+
+// ============================================================================
 // IDENTIFICAÇÃO DO CLIENTE — por CPF/CNPJ
 // Telefone NÃO identifica: o número que manda mensagem pode ser do cônjuge,
 // do filho ou de um funcionário. Dado financeiro só sai após o CPF conferir.
@@ -777,15 +828,31 @@ async function tratarWebhook(e, body) {
     });
   }
 
+  // anexo (comprovante, foto do equipamento, PDF): baixa e guarda
+  let caminhoMidia = null;
+  if (tipo !== 'texto' && waId) {
+    try {
+      const arq = await baixarMidia(e, waId);
+      caminhoMidia = await guardarMidia(e, conversa.id, waId, arq);
+    } catch (err) {
+      console.error('[atendimento] falha ao guardar mídia:', err.message);
+      await logFluxo(e, { conversa_id: conversa.id, contato_fone: fone, erro: 'midia: ' + err.message });
+    }
+  }
+
   // grava a mensagem recebida
+  const rotulo = { imagem: '📷 Imagem', audio: '🎤 Áudio', video: '🎬 Vídeo', documento: '📎 Documento', localizacao: '📍 Localização' }[tipo] || '';
   await sb(e, 'atend_mensagens', {
     method: 'POST', prefer: 'return=minimal',
-    body: { conversa_id: conversa.id, direcao: 'in', conteudo: texto || `[${tipo}]`, tipo, wa_id: waId },
+    body: {
+      conversa_id: conversa.id, direcao: 'in',
+      conteudo: texto || rotulo, tipo, wa_id: waId, midia_url: caminhoMidia,
+    },
   });
   await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
     method: 'PATCH', prefer: 'return=minimal',
     body: {
-      ultima_msg: (texto || `[${tipo}]`).slice(0, 200),
+      ultima_msg: (texto || rotulo).slice(0, 200),
       ultima_msg_em: new Date().toISOString(),
       nao_lidas: (conversa.nao_lidas || 0) + 1,
     },
@@ -793,7 +860,11 @@ async function tratarWebhook(e, body) {
 
   // humano assumiu → bot fica quieto
   if (conversa.bot_ativo === false) return { ok: true, bot: 'inativo', conversa_id: conversa.id };
-  if (!texto) return { ok: true, bot: 'sem texto para interpretar', conversa_id: conversa.id };
+
+  // Anexo sem legenda não tem o que interpretar: fica guardado e visível no
+  // painel para o atendente abrir e decidir. O bot NÃO é desligado — se o
+  // cliente voltar a escrever, o fluxo continua de onde parou.
+  if (!texto) return { ok: true, bot: 'anexo recebido, aguardando texto', conversa_id: conversa.id };
 
   const fluxo = await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
   if (!fluxo) return { ok: true, bot: 'nenhum fluxo ativo', conversa_id: conversa.id };
@@ -837,6 +908,32 @@ async function tratarCron(e) {
     }
   }
 
+  // ---- encerra conversas paradas com o BOT em espera ----
+  // Só mexe em conversa onde o bot está no comando: se um humano assumiu,
+  // ele decide quando encerrar, não o relógio.
+  const minutos = Number(process.env.ATEND_INATIVIDADE_MIN || 30);
+  const limite = new Date(Date.now() - minutos * 60000).toISOString();
+  const paradas = await sb(e,
+    `atend_conversas?bot_ativo=is.true&coluna=in.(novos,atendimento)&deleted_at=is.null` +
+    `&ultima_msg_em=lt.${limite}&select=id,contato_fone&limit=40`);
+  let encerradas = 0;
+
+  for (const c of (paradas || [])) {
+    const despedida = 'Como não tivemos retorno, vou encerrar este atendimento por aqui. 👋\n' +
+      'Se precisar, é só mandar outra mensagem que começamos de novo. A MoviOn agradece! 💚';
+    try { await waEnviar(e, c.contato_fone, despedida); } catch (err) { console.error('[atendimento]', err.message); }
+    await sb(e, 'atend_mensagens', {
+      method: 'POST', prefer: 'return=minimal',
+      body: { conversa_id: c.id, direcao: 'bot', conteudo: despedida },
+    });
+    await sb(e, `atend_conversas?id=eq.${c.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
+    });
+    await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+    encerradas++;
+  }
+
   let sessoes = 0;
   try {
     const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_limpar_sessoes`, {
@@ -847,7 +944,7 @@ async function tratarCron(e) {
     sessoes = await r.json();
   } catch { /* não crítico */ }
 
-  return { ok: true, enviados, falhas, sessoes_expiradas: sessoes };
+  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas, sessoes_expiradas: sessoes };
 }
 
 // ============================================================================
@@ -1081,7 +1178,82 @@ export default async function handler(req, res) {
         if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório' });
         const msgs = await sb(e,
           `atend_mensagens?conversa_id=eq.${id}&select=*&order=created_at.asc&limit=${Math.min(Number(body.limite) || 300, 1000)}`);
+        // assina os anexos para o atendente conseguir abrir
+        for (const m of (msgs || [])) {
+          if (m.midia_url) m.midia_link = await assinarMidia(e, m.midia_url).catch(() => null);
+        }
         return res.status(200).json({ ok: true, mensagens: msgs });
+      }
+
+      // atendente assume a conversa mesmo com o bot no comando
+      case 'conversas.assumir': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório' });
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            bot_ativo: false,
+            atendente_id: user.id,
+            setor: c.setor || user.setor || 'Suporte',
+            coluna: c.coluna === 'resolvidos' ? 'atendimento' : (c.coluna === 'novos' ? 'atendimento' : c.coluna),
+            nao_lidas: 0,
+            updated_by: user.id,
+          },
+        });
+        // o bot para onde estava: sessão apagada para não retomar sozinho
+        await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+        if (body.avisar_cliente) {
+          const aviso = `Olá! Aqui é ${user.nome}, da MoviOn. Assumi seu atendimento e já vou te ajudar. 👋`;
+          try {
+            await waEnviar(e, c.contato_fone, aviso);
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: id, direcao: 'out', conteudo: aviso, autor_id: user.id },
+            });
+          } catch (err) { console.error('[atendimento]', err.message); }
+        }
+        return res.status(200).json({ ok: true });
+      }
+
+      // encerra manualmente, com despedida opcional
+      case 'conversas.finalizar': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório' });
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+        if (body.mensagem) {
+          try {
+            await waEnviar(e, c.contato_fone, String(body.mensagem));
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: id, direcao: 'out', conteudo: String(body.mensagem), autor_id: user.id },
+            });
+          } catch (err) { console.error('[atendimento]', err.message); }
+        }
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, updated_by: user.id },
+        });
+        await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true });
+      }
+
+      // devolve o controle para o bot
+      case 'conversas.devolver_bot': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório' });
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal', body: { bot_ativo: true, updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true });
       }
 
       case 'mensagens.enviar': {
