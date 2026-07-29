@@ -810,9 +810,11 @@ async function tratarWebhook(e, body) {
     if (jaTem) return { ok: true, ignorado: 'duplicada' };
   }
 
-  // acha ou cria a conversa (reaproveita a aberta; resolvida gera uma nova)
+  // acha ou cria a conversa. Uma por telefone, para sempre — igual ao Evotrix:
+  // se já resolveu antes, REABRE a mesma conversa e mantém todo o histórico.
+  // Nunca cria um card novo pra quem já é conhecido pelo número.
   let conversa = await sbUm(e,
-    `atend_conversas?contato_fone=eq.${fone}&coluna=neq.resolvidos&deleted_at=is.null&select=*&limit=1`);
+    `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=*&limit=1`);
 
   if (!conversa) {
     conversa = await sbUm(e, 'atend_conversas', {
@@ -826,6 +828,14 @@ async function tratarWebhook(e, body) {
         nao_lidas: 1,
       },
     });
+  } else if (conversa.coluna === 'resolvidos') {
+    // reabre: volta pra fila, sem perder tags/notas/histórico
+    await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { coluna: 'novos', bot_ativo: true },
+    });
+    conversa.coluna = 'novos';
+    conversa.bot_ativo = true;
   }
 
   // anexo (comprovante, foto do equipamento, PDF): baixa e guarda
@@ -1140,10 +1150,29 @@ export default async function handler(req, res) {
         const texto = String(body.texto || '').trim();
         if (!fone || fone.length < 12) return res.status(400).json({ ok: false, error: 'Telefone inválido. Use DDD + número.' });
 
-        // já existe conversa aberta com esse número? reaproveita
+        // já existe conversa com esse número (mesmo resolvida)? reaproveita — nunca duplica
         const existente = await sbUm(e,
-          `atend_conversas?contato_fone=eq.${fone}&coluna=neq.resolvidos&deleted_at=is.null&select=*&limit=1`);
-        if (existente) return res.status(200).json({ ok: true, conversa: existente, reaproveitada: true });
+          `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=*&limit=1`);
+        if (existente) {
+          if (existente.coluna === 'resolvidos') {
+            await sb(e, `atend_conversas?id=eq.${existente.id}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: { coluna: 'atendimento', bot_ativo: false, atendente_id: user.id, setor: existente.setor || body.setor || user.setor || 'Vendas' },
+            });
+          }
+          if (texto) {
+            await waEnviar(e, fone, texto);
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: existente.id, direcao: 'out', conteudo: texto, autor_id: user.id },
+            });
+            await sb(e, `atend_conversas?id=eq.${existente.id}`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: { ultima_msg: 'Você: ' + texto.slice(0, 180), ultima_msg_em: new Date().toISOString() },
+            });
+          }
+          return res.status(200).json({ ok: true, conversa: existente, reaproveitada: true });
+        }
 
         const c = await sbUm(e, 'atend_conversas', {
           method: 'POST',
