@@ -111,9 +111,9 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .content{flex:1;overflow:auto;padding:20px 26px;}
 
 /* ============ KPIs ============ */
-.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:11px;margin-bottom:18px;}
 .kpi{
-  display:flex;align-items:center;gap:13px;padding:16px;border-radius:var(--radius);
+  display:flex;align-items:center;gap:10px;padding:13px;border-radius:var(--radius);min-width:0;
 }
 .kpi.g{background:var(--green-soft);}
 .kpi.b{background:var(--blue-soft);}
@@ -147,32 +147,33 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .flabel{font-size:11px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
 
 /* ============ BOARD ============ */
-.board{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:14px;align-items:start;}
+.board{display:grid;grid-template-columns:repeat(5,minmax(210px,1fr));gap:12px;align-items:stretch;}
 .column{
   background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
-  border-top:4px solid transparent;display:flex;flex-direction:column;max-height:calc(100vh - 320px);
+  border-top:4px solid transparent;display:flex;flex-direction:column;
+  height:calc(100vh - 290px);min-height:260px;
 }
 .column[data-col="novos"]{border-top-color:var(--green);}
 .column[data-col="fila"]{border-top-color:var(--red);}
 .column[data-col="atendimento"]{border-top-color:var(--blue);}
 .column[data-col="aguardando"]{border-top-color:var(--orange);}
 .column[data-col="resolvidos"]{border-top-color:var(--green);}
-.col-head{display:flex;align-items:center;gap:9px;padding:15px 16px 11px;}
-.col-head h2{font-size:14.5px;font-weight:800;flex:1;}
-.col-count{font-size:11px;font-weight:800;color:#fff;border-radius:10px;padding:2px 8px;}
+.col-head{display:flex;align-items:flex-start;gap:8px;padding:13px 14px 10px;min-height:56px;}
+.col-head h2{font-size:13.5px;font-weight:800;flex:1;line-height:1.25;min-width:0;}
+.col-count{font-size:11px;font-weight:800;color:#fff;border-radius:10px;padding:2px 8px;flex-shrink:0;}
 .column[data-col="novos"] .col-count{background:var(--green);}
 .column[data-col="fila"] .col-count{background:var(--red);}
 .column[data-col="atendimento"] .col-count{background:var(--blue);}
 .column[data-col="aguardando"] .col-count{background:var(--orange);}
 .column[data-col="resolvidos"] .col-count{background:var(--green);}
 .col-menu{color:var(--text-low);cursor:pointer;font-weight:800;letter-spacing:1px;}
-.col-body{flex:1;overflow-y:auto;padding:2px 12px 8px;display:flex;flex-direction:column;gap:10px;min-height:60px;}
+.col-body{flex:1;overflow-y:auto;padding:2px 11px 8px;display:flex;flex-direction:column;gap:9px;min-height:0;}
 .col-body.dragover{background:var(--green-soft);border-radius:10px;}
-.col-foot{padding:10px;text-align:center;font-size:12.5px;font-weight:700;color:var(--green);cursor:pointer;}
+.col-foot{padding:9px;text-align:center;font-size:12px;font-weight:700;color:var(--green);cursor:pointer;flex-shrink:0;}
 
 /* ============ CARD ============ */
 .card-c{
-  background:#fbfcfd;border:1px solid var(--line);border-radius:12px;padding:13px 13px 11px;
+  background:#fbfcfd;border:1px solid var(--line);border-radius:12px;padding:11px 11px 9px;
   cursor:grab;transition:box-shadow .15s,transform .15s;
 }
 .card-c:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px);}
@@ -330,15 +331,18 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 
 /* ============ RESPONDER MENSAGEM (citação estilo WhatsApp) ============ */
 .mb{position:relative;}
+/* O botao fica NO FLUXO, dentro da bolha. Antes era position:absolute fora dela
+   e sumia quando o mouse cruzava o vao de 6px sem hover. */
+.mb-foot{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:5px;}
 .mb-reply{
-  position:absolute;top:4px;right:6px;width:22px;height:22px;border-radius:6px;
-  display:none;align-items:center;justify-content:center;cursor:pointer;
-  background:rgba(255,255,255,.94);border:1px solid var(--line);font-size:11px;
-  box-shadow:var(--shadow);
+  display:inline-flex;align-items:center;gap:4px;font-family:inherit;
+  font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--line);background:rgba(255,255,255,.75);color:var(--text-mid);
+  opacity:.5;transition:opacity .12s,border-color .12s,color .12s;white-space:nowrap;
 }
-.mb:hover .mb-reply{display:flex;}
-.mb-reply:hover{border-color:var(--green);}
-.mb.in .mb-reply{right:auto;left:calc(100% + 6px);}
+.mb:hover .mb-reply{opacity:1;}
+.mb-reply:hover{border-color:var(--green);color:var(--green-deep);background:#fff;opacity:1;}
+.mb-foot .tm{margin-top:0 !important;}
 .mb-quote{
   border-left:3px solid var(--green);background:rgba(0,0,0,.05);
   border-radius:7px;padding:6px 9px;margin-bottom:6px;cursor:pointer;
@@ -914,8 +918,10 @@ select.transf{
     margin:0 -14px;padding:0 14px 8px;-webkit-overflow-scrolling:touch;
   }
   .board::-webkit-scrollbar{display:none;}
-  .column{flex:0 0 86vw;scroll-snap-align:center;max-height:none;}
+  .column{flex:0 0 86vw;scroll-snap-align:center;max-height:none;height:auto;min-height:0;}
   .col-body{max-height:calc(100dvh - 300px);}
+  .col-head{min-height:0;}
+  .kpis{display:flex;}
   .card-c{padding:14px;}
   .cc-name{font-size:14.5px;}
   .cc-msg{font-size:13px;}
@@ -2110,9 +2116,9 @@ function openModal(id){
             m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
               <div class="qa">${m.quoteDirecao==='in'?esc(c.nome):'Você'}</div>
               <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
-          }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<span class="tm">${esc(m.h||'')}</span>${
-            m.id?`<span class="mb-reply" data-responder="${m.id}" title="Responder">↩</span>`:''
-          }</div>`).join('')}
+          }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${
+            m.id?`<button class="mb-reply" data-responder="${m.id}" title="Responder esta mensagem">↩ responder</button>`:''
+          }<span class="tm">${esc(m.h||'')}</span></div></div>`).join('')}
     </div>
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
