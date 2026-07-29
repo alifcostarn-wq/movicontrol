@@ -988,9 +988,11 @@ function corSetor(s){ return (SETORES.find(x=>x.id===s)||{cor:'#94a3b8'}).cor; }
 const FLUXO_INICIAL = {
     nodes:[
       {id:1,tipo:'inicio',titulo:'Cliente inicia conversa',texto:'',x:20,y:790},
-      {id:2,tipo:'acao',conector:'consultar_cliente',titulo:'Identificar cliente',texto:'Olá! 👋 Sou o assistente virtual da MoviOn.',x:250,y:790},
+      {id:2,tipo:'mensagem',titulo:'Saudação',texto:'Olá! 👋 Sou o assistente virtual da MoviOn.',x:250,y:790},
       {id:3,tipo:'menu',titulo:'Menu principal',texto:'Como posso ajudar?\n1️⃣ Suporte técnico\n2️⃣ Financeiro\n3️⃣ Planos e contratação\n4️⃣ Falar com atendente',x:495,y:790},
 
+      {id:60,tipo:'acao',conector:'identificar_cpf',titulo:'Identificar (Suporte)',texto:'Para sua segurança, me informe o CPF do titular do contrato (só os números). 🪪',x:600,y:300},
+      {id:61,tipo:'acao',conector:'identificar_cpf',titulo:'Identificar (Financeiro)',texto:'Para sua segurança, me informe o CPF do titular do contrato (só os números). 🪪',x:600,y:640},
       {id:10,tipo:'menu',titulo:'Sub-menu Suporte',texto:'Qual o problema?\n1️⃣ Sem conexão\n2️⃣ Internet lenta\n3️⃣ Wi-Fi / equipamento\n4️⃣ Outro assunto',x:760,y:110},
       {id:11,tipo:'acao',conector:'consultar_bloqueio',titulo:'Verificar bloqueio',texto:'',x:1010,y:15},
       {id:12,tipo:'acao',conector:'enviar_fatura',titulo:'Aviso de bloqueio + 2ª via',texto:'Identifiquei que há faturas em aberto e o serviço está temporariamente bloqueado. Estou te enviando a 2ª via. 💳',x:1260,y:0},
@@ -1024,8 +1026,8 @@ const FLUXO_INICIAL = {
     edges:[
       {id:1,from:1,to:2,label:''},
       {id:2,from:2,to:3,label:''},
-      {id:3,from:3,to:10,label:'1 · Suporte'},
-      {id:4,from:3,to:20,label:'2 · Financeiro'},
+      {id:3,from:3,to:60,label:'1 · Suporte'},
+      {id:4,from:3,to:61,label:'2 · Financeiro'},
       {id:5,from:3,to:30,label:'3 · Vendas'},
       {id:6,from:3,to:50,label:'4 · atendente'},
       {id:7,from:3,to:51,label:'não reconhecido'},
@@ -1060,6 +1062,10 @@ const FLUXO_INICIAL = {
       {id:36,from:30,to:34,label:'3 · upgrade'},
       {id:37,from:40,to:3,label:'1 · sim'},
       {id:38,from:40,to:41,label:'2 · não'},
+      {id:60,from:60,to:10,label:'ok'},
+      {id:61,from:60,to:50,label:'nao_encontrado'},
+      {id:62,from:61,to:20,label:'ok'},
+      {id:63,from:61,to:23,label:'nao_encontrado'},
       {id:39,from:41,to:42,label:'1'},
       {id:40,from:41,to:42,label:'2'},
       {id:41,from:41,to:42,label:'3'},
@@ -1867,7 +1873,7 @@ const FLOW_TIPOS={
   ia:{lbl:'IA',cor:'#8b5cf6'},
 };
 const CONECTORES={
-  consultar_cliente:{lbl:'Consultar cliente',ico:'🔎',desc:'Identifica o cliente pelo número no MoviControl: nome, plano, contrato e situação financeira'},
+  identificar_cpf:{lbl:'Identificar por CPF',ico:'🪪',desc:'Pede o CPF ao cliente, valida e localiza o cadastro. Obrigatório antes de liberar qualquer dado financeiro'},
   consultar_bloqueio:{lbl:'Consultar bloqueio',ico:'🔒',desc:'Verifica se a conexão está bloqueada por débito'},
   enviar_fatura:{lbl:'Enviar 2ª via da fatura',ico:'📄',desc:'Busca a fatura em aberto no MoviControl e envia o PDF na conversa'},
   enviar_pix:{lbl:'Enviar Pix copia e cola',ico:'💠',desc:'Gera o código Pix do valor em aberto, com baixa automática após pagamento'},
