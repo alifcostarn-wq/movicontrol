@@ -305,6 +305,241 @@ async function acharClientePorDocumento(e, doc) {
 //   { resultado, variaveis, anexoTexto, patchConversa }
 // `resultado` é o que escolhe a aresta de saída (ex: 'sim' / 'nao').
 // ============================================================================
+// ============================================================================
+// PAINEL DO CLIENTE — leitura AO VIVO do IXC
+// ----------------------------------------------------------------------------
+// Por que nada disso entra em cliente_snapshot: o snapshot é tirado UMA vez, no
+// momento em que o atendente vincula o cadastro, e nunca mais é atualizado. Ele
+// serve para dado estável (nome, CPF, plano). Fatura, bloqueio e sessão PPPoE
+// mudam a toda hora — precisam ser lidos na hora em que o painel abre, senão o
+// atendente olha para um retrato do passado e informa o cliente errado.
+// ============================================================================
+
+// O IXC devolve data ora como 'YYYY-MM-DD', ora com hora junto, ora no formato BR.
+function parseDataIXC(v) {
+  const s = String(v ?? '').trim();
+  if (!s || s.startsWith('0000')) return null;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2}))?/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function ehHoje(d) {
+  if (!d) return false;
+  const h = new Date();
+  return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth() && d.getDate() === h.getDate();
+}
+
+function diasCorridos(de, ate) {
+  if (!de || !ate) return 0;
+  const a = new Date(de.getFullYear(), de.getMonth(), de.getDate());
+  const b = new Date(ate.getFullYear(), ate.getMonth(), ate.getDate());
+  return Math.round((b - a) / 86400000);
+}
+
+// Os nomes de coluna do Radius mudam entre versões do IXC — pega a 1ª que existir
+function pick(obj, ...chaves) {
+  for (const k of chaves) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return null;
+}
+
+const pad2 = n => String(n).padStart(2, '0');
+function fmtDataBR(d) { return d ? `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}` : null; }
+function fmtHoraBR(d) { return d ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : null; }
+function fmtDataHoraBR(d) { return d ? `${fmtDataBR(d)} ${fmtHoraBR(d)}` : null; }
+
+// ---- FINANCEIRO -----------------------------------------------------------
+// R = recebido/pago, C = cancelado. Qualquer outro status está em aberto.
+async function financeiroAoVivo(e, ixcId) {
+  const d = await ixc(e, 'fn_areceber', {
+    qtype: 'fn_areceber.id_cliente', query: String(ixcId), oper: '=', rp: '100',
+    sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
+  });
+  const todas = d.registros || [];
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+
+  const abertas = todas.filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
+
+  const itens = abertas.map(f => {
+    const venc = parseDataIXC(f.data_vencimento);
+    const atraso = venc ? Math.max(0, diasCorridos(venc, hoje)) : 0;
+    return {
+      id: f.id,
+      documento: pick(f, 'documento', 'numero_documento'),
+      valor: Number(f.valor || 0),
+      valor_aberto: Number(pick(f, 'valor_aberto') ?? f.valor ?? 0),
+      vencimento: fmtDataBR(venc),
+      atraso,
+      vencida: atraso > 0,
+      status: String(f.status || '').toUpperCase(),
+      linha_digitavel: pick(f, 'linha_digitavel'),
+      link: pick(f, 'gateway_link'),
+    };
+  });
+
+  const vencidas = itens.filter(i => i.vencida);
+  const aVencer = itens.filter(i => !i.vencida);
+
+  const pagas = todas
+    .filter(f => String(f.status || '').toUpperCase() === 'R')
+    .map(f => ({
+      valor: Number(pick(f, 'valor_recebido') ?? f.valor ?? 0),
+      data: fmtDataBR(parseDataIXC(pick(f, 'data_recebimento', 'data_pagamento', 'data_vencimento'))),
+    }))
+    .slice(-3).reverse();
+
+  return {
+    faturas: itens.length,
+    valor_aberto: itens.reduce((s, i) => s + i.valor_aberto, 0),
+    vencidas: vencidas.length,
+    valor_vencido: vencidas.reduce((s, i) => s + i.valor_aberto, 0),
+    atraso: vencidas.reduce((m, i) => Math.max(m, i.atraso), 0),
+    proximo_vencimento: (aVencer[0] || vencidas[0] || {}).vencimento || null,
+    itens: itens.slice(0, 8),
+    ultimos_pagamentos: pagas,
+  };
+}
+
+// ---- CONTRATOS / BLOQUEIO -------------------------------------------------
+// status_internet: A = ativo | B / CM / FA = bloqueios | D = desativado
+async function contratosAoVivo(e, ixcId) {
+  const d = await ixc(e, 'cliente_contrato', {
+    qtype: 'cliente_contrato.id_cliente', query: String(ixcId), oper: '=', rp: '20',
+  });
+  const regs = d.registros || [];
+  const MOTIVO = { B: 'Bloqueio manual', CM: 'Bloqueio por atraso', FA: 'Bloqueio financeiro', D: 'Desativado' };
+  const bloqueado = regs.some(c => ['B', 'CM', 'FA'].includes(String(c.status_internet || '').toUpperCase()));
+  return {
+    bloqueado,
+    itens: regs.map(c => {
+      const si = String(c.status_internet || '').toUpperCase();
+      return {
+        id: c.id,
+        descricao: pick(c, 'contrato', 'descricao') || `Contrato #${c.id}`,
+        status: String(c.status || '').toUpperCase(),
+        status_internet: si,
+        motivo: MOTIVO[si] || (si === 'A' ? 'Ativo' : si || '—'),
+      };
+    }),
+  };
+}
+
+// ---- CONEXÃO (Radius / PPPoE) --------------------------------------------
+async function conexaoAoVivo(e, ixcId) {
+  const d = await ixc(e, 'radusuarios', {
+    qtype: 'radusuarios.id_cliente', query: String(ixcId), oper: '=', rp: '20',
+  });
+  const regs = d.registros || [];
+  const logins = [];
+
+  for (const r of regs) {
+    const login = pick(r, 'login', 'usuario', 'username') || '—';
+    const on = String(pick(r, 'online', 'status_online') || '').toUpperCase();
+    const item = {
+      id: r.id,
+      login,
+      online: on === 'S' || on === 'SIM' || on === '1',
+      ativo: String(pick(r, 'ativo') || 'S').toUpperCase() !== 'N',
+      ip: pick(r, 'ip', 'enderecoip', 'ultimo_ip', 'ip_utilizado'),
+      mac: pick(r, 'mac', 'mac_address', 'onu_mac'),
+      concentrador: pick(r, 'id_concentrador', 'nas', 'nasid'),
+      quedas_hoje: null, ultima_queda: null, motivo_ultima_queda: null, online_desde: null,
+      accounting_erro: null,
+    };
+    try {
+      Object.assign(item, await sessoesDoDia(e, ixcId, login));
+    } catch (err) {
+      item.accounting_erro = String(err.message || err).slice(0, 160);
+    }
+    logins.push(item);
+  }
+  return { logins };
+}
+
+// Uma "queda" é uma sessão PPPoE que ENCERROU hoje. Sessão sem fim = a atual.
+async function sessoesDoDia(e, ixcId, login) {
+  const d = await ixc(e, 'radpop_radaccounting', {
+    qtype: 'radpop_radaccounting.id_cliente', query: String(ixcId), oper: '=', rp: '200',
+    sortname: 'radpop_radaccounting.inicioconexao', sortorder: 'desc',
+  });
+  const regs = (d.registros || []).filter(r => {
+    const u = String(pick(r, 'login', 'nomeusuario', 'username', 'usuario') || '');
+    return !u || !login || u === login;
+  });
+
+  let quedas = 0, ultima = null, motivo = null, desde = null;
+  for (const r of regs) {
+    const ini = parseDataIXC(pick(r, 'inicioconexao', 'acctstarttime', 'start_time', 'data_inicio'));
+    const fim = parseDataIXC(pick(r, 'fimconexao', 'acctstoptime', 'stop_time', 'data_fim'));
+    if (fim && ehHoje(fim)) {
+      quedas++;
+      if (!ultima || fim > ultima) {
+        ultima = fim;
+        motivo = pick(r, 'terminacaocausa', 'acctterminatecause', 'causa_termino');
+      }
+    }
+    if (!fim && ini && (!desde || ini > desde)) desde = ini;
+  }
+  return {
+    quedas_hoje: quedas,
+    ultima_queda: fmtDataHoraBR(ultima),
+    motivo_ultima_queda: motivo,
+    online_desde: fmtDataHoraBR(desde),
+  };
+}
+
+// ---- CHAMADOS -------------------------------------------------------------
+async function chamadosAoVivo(e, ixcId) {
+  const d = await ixc(e, 'su_ticket', {
+    qtype: 'su_ticket.id_cliente', query: String(ixcId), oper: '=', rp: '30',
+    sortname: 'su_ticket.id', sortorder: 'desc',
+  });
+  const limite = new Date(); limite.setDate(limite.getDate() - 30); limite.setHours(0, 0, 0, 0);
+  const itens = (d.registros || []).map(t => {
+    const dt = parseDataIXC(pick(t, 'data_criacao', 'datacriacao', 'data', 'data_abertura'));
+    const st = String(pick(t, 'status', 'su_status') || '').toUpperCase();
+    return {
+      id: t.id,
+      titulo: String(pick(t, 'titulo', 'assunto', 'mensagem') || `Chamado #${t.id}`).slice(0, 80),
+      data: fmtDataBR(dt),
+      aberto: !['F', 'C', 'S'].includes(st),
+      _dt: dt,
+    };
+  });
+  return {
+    total30: itens.filter(i => i._dt && i._dt >= limite).length,
+    abertos: itens.filter(i => i.aberto).length,
+    itens: itens.slice(0, 5).map(({ _dt, ...r }) => r),
+  };
+}
+
+// Uma consulta lenta ou um endpoint indisponível não pode derrubar o painel
+// inteiro: cada bloco falha sozinho e o front mostra o que conseguiu ler.
+async function montarPainelCliente(e, ixcId) {
+  const [fin, ctr, cx, ch] = await Promise.allSettled([
+    financeiroAoVivo(e, ixcId),
+    contratosAoVivo(e, ixcId),
+    conexaoAoVivo(e, ixcId),
+    chamadosAoVivo(e, ixcId),
+  ]);
+  const ok = r => (r.status === 'fulfilled' ? r.value : null);
+  const erro = r => (r.status === 'rejected' ? String(r.reason?.message || r.reason).slice(0, 180) : null);
+  return {
+    financeiro: ok(fin),
+    contratos: ok(ctr),
+    conexao: ok(cx),
+    chamados: ok(ch),
+    erros: { financeiro: erro(fin), contratos: erro(ctr), conexao: erro(cx), chamados: erro(ch) },
+    lido_em: new Date().toISOString(),
+  };
+}
+
 const CONECTORES = {
 
   // PORTEIRO: se o número JÁ está vinculado a um cadastro (vínculo feito à mão
@@ -1206,6 +1441,38 @@ export default async function handler(req, res) {
       }
 
       // ===== Vínculo manual número ↔ cadastro do cliente =====
+      // ===== Painel 360 do cliente — dados ao vivo do IXC =====
+      case 'cliente.painel': {
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        const painel = await montarPainelCliente(e, ixcId);
+        return res.status(200).json({ ok: true, ...painel });
+      }
+
+      // Descobre os nomes reais das colunas nesta instalação do IXC.
+      // Os campos do Radius mudam entre versões; em vez de adivinhar, o admin
+      // roda isto uma vez e confere o retorno cru de um registro.
+      case 'ixc.diagnostico': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const endpoint = String(body.endpoint || 'radusuarios').replace(/[^a-z0-9_]/gi, '');
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        try {
+          const d = await ixc(e, endpoint, {
+            qtype: `${endpoint}.id_cliente`, query: String(ixcId), oper: '=', rp: '1',
+          });
+          const reg = (d.registros || [])[0] || null;
+          return res.status(200).json({
+            ok: true, endpoint,
+            total: d.total ?? null,
+            campos: reg ? Object.keys(reg) : [],
+            exemplo: reg,
+          });
+        } catch (err) {
+          return res.status(200).json({ ok: true, endpoint, erro: err.message });
+        }
+      }
+
       case 'clientes.buscar': {
         const termo = String(body.termo || '').trim();
         if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
