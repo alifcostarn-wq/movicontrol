@@ -246,6 +246,67 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 }
 .m-send svg{width:17px;height:17px;fill:#fff;}
 
+/* ============ PAINEL FINANCEIRO + CONEXÃO (dados ao vivo do IXC) ============ */
+.ms-sec h3 .ms-tag{
+  float:right;font-size:9px;font-weight:800;letter-spacing:.03em;padding:2px 7px;border-radius:5px;
+  background:#eef2f6;color:var(--text-mid);text-transform:none;letter-spacing:0;
+}
+.ms-sec h3 .ms-tag.live{background:var(--green-soft);color:var(--green-deep);}
+.ms-load{font-size:11.5px;color:var(--text-low);padding:6px 0;}
+.ms-erro{
+  font-size:11px;color:#b45309;background:var(--orange-soft);border:1px solid #fcd9a4;
+  border-radius:8px;padding:8px 10px;line-height:1.45;
+}
+.fin-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.fin-item{
+  display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;
+  border:1px solid var(--line);background:#fbfcfd;
+}
+.fin-item.vencida{border-color:#fecaca;background:#fff6f6;}
+.fin-item .fi-l{flex:1;min-width:0;}
+.fin-item .fi-v{font-size:12.5px;font-weight:800;color:var(--text);}
+.fin-item .fi-d{font-size:10.5px;color:var(--text-low);font-weight:600;margin-top:2px;}
+.fin-item.vencida .fi-d{color:var(--red);}
+.fin-badge{font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:6px;flex-shrink:0;}
+.fin-badge.ok{background:var(--green-soft);color:var(--green-deep);}
+.fin-badge.venc{background:var(--red-soft);color:var(--red);}
+.fin-copy{
+  font-size:9.5px;font-weight:800;padding:4px 8px;border-radius:6px;cursor:pointer;flex-shrink:0;
+  border:1px solid var(--line);background:var(--card);color:var(--text-mid);font-family:inherit;
+}
+.fin-copy:hover{border-color:var(--green);color:var(--green-deep);}
+.fin-tot{
+  display:flex;justify-content:space-between;align-items:baseline;padding:9px 11px;border-radius:9px;
+  background:#f7f9fb;border:1px solid var(--line);margin-top:8px;
+}
+.fin-tot .ft-l{font-size:10px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.04em;}
+.fin-tot .ft-v{font-size:15px;font-weight:800;}
+
+/* --- conexão / PPPoE --- */
+.con-card{border:1px solid var(--line);border-radius:11px;padding:11px;margin-bottom:8px;background:#fbfcfd;}
+.con-head{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+.con-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.con-dot.on{background:var(--green);box-shadow:0 0 0 3px var(--green-soft);}
+.con-dot.off{background:var(--red);box-shadow:0 0 0 3px var(--red-soft);}
+.con-login{font-size:12.5px;font-weight:800;font-family:'JetBrains Mono',monospace;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.con-st{font-size:9.5px;font-weight:800;padding:3px 9px;border-radius:6px;flex-shrink:0;}
+.con-st.on{background:var(--green-soft);color:var(--green-deep);}
+.con-st.off{background:var(--red-soft);color:var(--red);}
+.con-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.con-cell{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;}
+.con-cell .cl{font-size:9px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.03em;}
+.con-cell .cv{font-size:12px;font-weight:800;margin-top:2px;word-break:break-all;}
+.con-cell.wide{grid-column:1 / -1;}
+.con-cell .cv.mono{font-family:'JetBrains Mono',monospace;font-size:11.5px;}
+.quedas-0{color:var(--green-deep);}
+.quedas-med{color:#b45309;}
+.quedas-alta{color:var(--red);}
+.con-alerta{
+  font-size:10.5px;font-weight:700;color:var(--red);background:var(--red-soft);
+  border-radius:7px;padding:6px 9px;margin-top:7px;line-height:1.4;
+}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -1225,6 +1286,13 @@ const api = {
     }));
     return c.msgs;
   },
+  async carregarPainel(c){
+    const id = c.clienteVinculado && c.clienteVinculado.id;
+    if(!id) return null;
+    const j = await chamar('cliente.painel', { cliente_ixc_id: id });
+    c.painel = j;
+    return j;
+  },
   async assumir(c, avisar){
     await chamar('conversas.assumir', { conversa_id:c.id, avisar_cliente: !!avisar });
   },
@@ -1359,6 +1427,9 @@ async function recarregarConversas(){
     if (antiga) {
       nova.msgs = antiga.msgs;
       nova._msgsCarregadas = antiga._msgsCarregadas;
+      nova.painel = antiga.painel;
+      nova._painelCarregado = antiga._painelCarregado;
+      nova.painelErro = antiga.painelErro;
     }
     return nova;
   });
@@ -1664,6 +1735,100 @@ function midiaHTML(m){
     <span class="md-ico">${ico}</span>Abrir anexo</a></div>`;
 }
 
+/* ===== PAINEL AO VIVO DO IXC: financeiro + conexão + chamados ===== */
+function fmtR$(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
+
+function blocoFinanceiro(c){
+  const p=c.painel;
+  if(c.painelErro) return `<div class="ms-erro">Não consegui ler o financeiro no IXC.<br><b>${esc(c.painelErro)}</b></div>`;
+  if(!p) return `<div class="ms-load">Consultando o IXC…</div>`;
+  if(p.erros&&p.erros.financeiro) return `<div class="ms-erro">Financeiro indisponível no IXC.<br><b>${esc(p.erros.financeiro)}</b></div>`;
+  const f=p.financeiro;
+  if(!f) return `<div class="ms-load">Sem dados financeiros.</div>`;
+
+  if(!f.faturas) return `<div class="fin-tot" style="background:var(--green-soft);border-color:#bfe9d4;">
+    <span class="ft-l" style="color:var(--green-deep)">Nenhuma fatura em aberto</span>
+    <span class="ft-v" style="color:var(--green-deep)">✅ Em dia</span></div>`;
+
+  const cor = f.vencidas ? 'var(--red)' : 'var(--text)';
+  return `
+    <div class="igrid">
+      <div class="icell"><div class="il">Em aberto</div><div class="iv" style="color:${cor}">${f.faturas} · ${fmtR$(f.valor_aberto)}</div></div>
+      <div class="icell"><div class="il">Vencidas</div><div class="iv" style="color:${f.vencidas?'var(--red)':'var(--green-deep)'}">${f.vencidas} · ${fmtR$(f.valor_vencido)}</div></div>
+      <div class="icell"><div class="il">Dias de atraso</div><div class="iv" style="color:${f.atraso?'#b45309':'var(--green-deep)'}">${f.atraso} dias</div></div>
+      <div class="icell"><div class="il">Próx. vencimento</div><div class="iv">${esc(f.proximo_vencimento||'—')}</div></div>
+    </div>
+    <div class="fin-list">
+      ${f.itens.map(i=>`
+        <div class="fin-item ${i.vencida?'vencida':''}">
+          <div class="fi-l">
+            <div class="fi-v">${fmtR$(i.valor_aberto)}</div>
+            <div class="fi-d">Vence ${esc(i.vencimento||'—')}${i.vencida?` · ${i.atraso}d em atraso`:''}${i.documento?' · doc '+esc(i.documento):''}</div>
+          </div>
+          <span class="fin-badge ${i.vencida?'venc':'ok'}">${i.vencida?'VENCIDA':'A VENCER'}</span>
+          ${i.linha_digitavel?`<button class="fin-copy" data-copia="${esc(i.linha_digitavel)}">copiar</button>`:''}
+        </div>`).join('')}
+    </div>
+    <div class="fin-tot">
+      <span class="ft-l">Total em aberto</span>
+      <span class="ft-v" style="color:${cor}">${fmtR$(f.valor_aberto)}</span>
+    </div>
+    ${f.ultimos_pagamentos&&f.ultimos_pagamentos.length?`
+      <div style="font-size:10.5px;color:var(--text-low);margin-top:9px;line-height:1.6;">
+        <b>Últimos pagamentos:</b><br>
+        ${f.ultimos_pagamentos.map(x=>`${esc(x.data||'—')} · ${fmtR$(x.valor)}`).join('<br>')}
+      </div>`:''}`;
+}
+
+function blocoConexao(c){
+  const p=c.painel;
+  if(c.painelErro) return `<div class="ms-erro">Não consegui ler a conexão no IXC.</div>`;
+  if(!p) return `<div class="ms-load">Consultando o Radius…</div>`;
+  if(p.erros&&p.erros.conexao) return `<div class="ms-erro">Radius indisponível.<br><b>${esc(p.erros.conexao)}</b></div>`;
+  const cx=p.conexao;
+  if(!cx||!cx.logins||!cx.logins.length) return `<div class="ms-load">Nenhum login PPPoE encontrado para este cliente.</div>`;
+
+  return cx.logins.map(l=>{
+    const q=l.quedas_hoje;
+    const clsQ = q===null?'':(q===0?'quedas-0':(q<=3?'quedas-med':'quedas-alta'));
+    return `
+    <div class="con-card">
+      <div class="con-head">
+        <span class="con-dot ${l.online?'on':'off'}"></span>
+        <span class="con-login">${esc(l.login)}</span>
+        <span class="con-st ${l.online?'on':'off'}">${l.online?'ONLINE':'OFFLINE'}</span>
+      </div>
+      <div class="con-grid">
+        <div class="con-cell">
+          <div class="cl">Quedas hoje</div>
+          <div class="cv ${clsQ}">${q===null?'—':q}</div>
+        </div>
+        <div class="con-cell">
+          <div class="cl">${l.online?'Conectado desde':'Última queda'}</div>
+          <div class="cv" style="font-size:11px;">${esc((l.online?l.online_desde:l.ultima_queda)||'—')}</div>
+        </div>
+        ${l.ip?`<div class="con-cell"><div class="cl">IP</div><div class="cv mono">${esc(l.ip)}</div></div>`:''}
+        ${l.mac?`<div class="con-cell"><div class="cl">MAC</div><div class="cv mono">${esc(l.mac)}</div></div>`:''}
+        ${l.motivo_ultima_queda?`<div class="con-cell wide"><div class="cl">Motivo da última queda</div><div class="cv" style="font-size:11px;">${esc(l.motivo_ultima_queda)}</div></div>`:''}
+        ${!l.ativo?`<div class="con-cell wide"><div class="cl">Login</div><div class="cv" style="color:var(--red)">DESATIVADO no Radius</div></div>`:''}
+      </div>
+      ${q!==null&&q>3?`<div class="con-alerta">⚠ ${q} quedas hoje — instabilidade no enlace. Vale abrir chamado técnico.</div>`:''}
+      ${l.accounting_erro?`<div class="ms-erro" style="margin-top:7px;">Histórico de sessões indisponível: ${esc(l.accounting_erro)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function blocoChamados(c){
+  const p=c.painel;
+  if(!p) return `<div class="ms-load">Consultando…</div>`;
+  if(p.erros&&p.erros.chamados) return `<div class="ms-erro">Chamados indisponíveis.</div>`;
+  const ch=p.chamados;
+  if(!ch) return `<div style="font-size:11.5px;color:var(--text-low)">Sem dados.</div>`;
+  return `<div class="sup-sum"><span class="n">${ch.total30}</span><span class="l">chamados no período${ch.abertos?` · ${ch.abertos} em aberto`:''}</span></div>
+    ${ch.itens.map(s=>`<div class="sup-line"><div><div class="st">${esc(s.titulo)}</div><div class="sd">${esc(s.data||'—')}</div></div><span class="ss ${s.aberto?'ab':'ok'}">${s.aberto?'ABERTO':'RESOLVIDO'}</span></div>`).join('')
+      ||'<div style="font-size:11.5px;color:var(--text-low)">Nenhum chamado recente</div>'}`;
+}
+
 function openModal(id){
   modalId=id;
   const c=state.conversas.find(x=>x.id===id);
@@ -1676,9 +1841,24 @@ function openModal(id){
       .catch(err=>{ c._msgsCarregadas=false; toast('Falha ao carregar mensagens: '+err.message); });
   }
   if(c.unread){ c.unread=0; api.patchConversa(c,{nao_lidas:0}); }
+  // painel financeiro/técnico: lido ao vivo no IXC, não do snapshot congelado
+  if(c.clienteVinculado && !c._painelCarregado){
+    c._painelCarregado=true;
+    api.carregarPainel(c)
+      .then(()=>{ if(modalId===id) openModal(id); })
+      .catch(err=>{ c._painelCarregado=false; c.painelErro=err.message; if(modalId===id) openModal(id); });
+  }
   const cl=c.cliente;
-  const pillFin = cl.lead?'':(cl.atraso>0?`<div class="pill warn"><div class="pl">Financeiro</div><div class="pv">Atrasado</div></div>`:`<div class="pill ok"><div class="pl">Financeiro</div><div class="pv">Em dia</div></div>`);
-  const pillBloq = cl.lead?'':(cl.bloqueado?`<div class="pill bad"><div class="pl">Bloqueio</div><div class="pv">Sim</div></div>`:`<div class="pill ok"><div class="pl">Bloqueio</div><div class="pv">Não</div></div>`);
+  // quando o painel ao vivo já respondeu, ele manda; o snapshot é só o fallback
+  const pv = c.painel || null;
+  const finLive = pv && pv.financeiro;
+  const ctrLive = pv && pv.contratos;
+  const emAtraso = finLive ? finLive.vencidas > 0 : cl.atraso > 0;
+  const estaBloq = ctrLive ? ctrLive.bloqueado : cl.bloqueado;
+  const pillFin = cl.lead?'':(emAtraso
+    ?`<div class="pill bad"><div class="pl">Financeiro</div><div class="pv">${finLive?finLive.vencidas+' vencida'+(finLive.vencidas>1?'s':''):'Atrasado'}</div></div>`
+    :`<div class="pill ok"><div class="pl">Financeiro</div><div class="pv">Em dia</div></div>`);
+  const pillBloq = cl.lead?'':(estaBloq?`<div class="pill bad"><div class="pl">Bloqueio</div><div class="pv">Sim</div></div>`:`<div class="pill ok"><div class="pl">Bloqueio</div><div class="pv">Não</div></div>`);
   const pillCont = `<div class="pill ${cl.contrato==='Ativo'?'ok':(cl.lead?'ok':'warn')}"><div class="pl">Contrato</div><div class="pv">${esc(cl.contrato)}</div></div>`;
 
   const meusAg = state.agendamentos.filter(a=>a.convId===c.id);
@@ -1749,13 +1929,12 @@ function openModal(id){
     <div class="ms-sec"><div class="pills">${pillCont}${pillFin}${pillBloq}</div></div>
     ${cl.lead?'':`
     <div class="ms-sec">
-      <h3>Financeiro</h3>
-      <div class="igrid">
-        <div class="icell"><div class="il">Faturas em aberto</div><div class="iv" style="color:${cl.faturas?'var(--red)':'var(--green-deep)'}">${cl.faturas} · R$ ${cl.valor.toFixed(2).replace('.',',')}</div></div>
-        <div class="icell"><div class="il">Dias de atraso</div><div class="iv" style="color:${cl.atraso?'#b45309':'var(--green-deep)'}">${cl.atraso} dias</div></div>
-        <div class="icell"><div class="il">Vencimento</div><div class="iv">${esc(cl.vencimento||'—')}</div></div>
-        <div class="icell"><div class="il">Previsão de bloqueio</div><div class="iv" style="color:${cl.atraso?'var(--red)':'var(--green-deep)'}">${esc(cl.previsaoBloqueio||'—')}</div></div>
-      </div>
+      <h3>Financeiro <span class="ms-tag live" id="finTag">${c.painel?'ao vivo':'…'}</span></h3>
+      ${blocoFinanceiro(c)}
+    </div>
+    <div class="ms-sec">
+      <h3>Conexão do cliente <span class="ms-tag live">PPPoE</span></h3>
+      ${blocoConexao(c)}
     </div>
     <div class="ms-sec">
       <h3>Ações rápidas</h3>
@@ -1765,11 +1944,11 @@ function openModal(id){
         <div class="act" data-act="Contrato aberto">📑 Ver contrato</div>
         <div class="act" data-act="Extrato enviado">📊 Extrato</div>
       </div>
+      <button class="vinc-btn" id="mRecarregarPainel" style="width:100%;margin-top:7px;">🔄 Atualizar dados do IXC</button>
     </div>
     <div class="ms-sec">
       <h3>Suporte · últimos 30 dias</h3>
-      <div class="sup-sum"><span class="n">${cl.sup30}</span><span class="l">chamados no período</span></div>
-      ${c.sups.map(s=>`<div class="sup-line"><div><div class="st">${esc(s.n)}</div><div class="sd">${esc(s.d)}</div></div><span class="ss ${s.s}">${s.s==='ab'?'ABERTO':'RESOLVIDO'}</span></div>`).join('')||'<div style="font-size:11.5px;color:var(--text-low)">Nenhum chamado recente</div>'}
+      ${blocoChamados(c)}
     </div>`}
     <div class="ms-sec">
       <h3>Como chegou aqui</h3>
@@ -1877,6 +2056,20 @@ function openModal(id){
     if(!confirm('Desvincular este número do cadastro?\n\nO bot volta a pedir o CPF quando esse número entrar em contato.')) return;
     try{ await api.desvincular(c); await recarregarEAbrir(); toast('Número desvinculado'); }
     catch(err){ toast('Falha: '+err.message); }
+  };
+
+  // copiar linha digitável direto do card da fatura
+  document.querySelectorAll('[data-copia]').forEach(el=>el.onclick=async()=>{
+    try{ await navigator.clipboard.writeText(el.dataset.copia); toast('Linha digitável copiada'); }
+    catch{ toast('Não consegui copiar — copie manualmente'); }
+  });
+  // releitura sob demanda do IXC (fatura paga agora, conexão que acabou de voltar)
+  const bPainel=$('#mRecarregarPainel');
+  if(bPainel) bPainel.onclick=async()=>{
+    bPainel.disabled=true; bPainel.textContent='Consultando o IXC…';
+    c.painelErro=null;
+    try{ await api.carregarPainel(c); openModal(c.id); toast('Dados atualizados'); }
+    catch(err){ c.painelErro=err.message; openModal(c.id); toast('Falha: '+err.message); }
   };
 
   // controle do bot: assumir / devolver / finalizar
