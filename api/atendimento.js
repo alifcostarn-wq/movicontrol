@@ -1289,29 +1289,94 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      // lista todos os bots (rascunhos + o que está em produção)
+      case 'fluxo.listar': {
+        const lista = await sb(e, 'atend_fluxos?select=id,nome,ativo,versao,updated_at,nodes&order=ativo.desc,updated_at.desc');
+        return res.status(200).json({
+          ok: true,
+          fluxos: (lista || []).map(f => ({ id: f.id, nome: f.nome, ativo: f.ativo, versao: f.versao, updated_at: f.updated_at, blocos: (f.nodes || []).length })),
+        });
+      }
+
+      // conteúdo de um bot específico (ou o ativo, se não passar id — mantém o app funcionando)
       case 'fluxo.obter': {
-        const f = await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
+        const f = body.id
+          ? await sbUm(e, `atend_fluxos?id=eq.${Number(body.id)}&select=*`)
+          : await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
         return res.status(200).json({ ok: true, fluxo: f });
       }
 
+      // cria um bot novo (rascunho, não entra em produção sozinho)
+      case 'fluxo.criar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores criam bots.' });
+        const nome = String(body.nome || '').trim() || 'Novo bot';
+        let nodes = [{ id: 1, tipo: 'inicio', titulo: 'Cliente inicia conversa', texto: '', x: 40, y: 200 }];
+        let edges = [];
+        if (Array.isArray(body.nodes) && body.nodes.length) {
+          nodes = body.nodes; edges = Array.isArray(body.edges) ? body.edges : [];
+        } else if (body.duplicar_de) {
+          const origem = await sbUm(e, `atend_fluxos?id=eq.${Number(body.duplicar_de)}&select=nodes,edges`);
+          if (origem) { nodes = origem.nodes; edges = origem.edges; }
+        }
+        const f = await sbUm(e, 'atend_fluxos', {
+          method: 'POST', body: { nome, nodes, edges, ativo: false, updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true, fluxo: f });
+      }
+
+      // salva o CONTEÚDO (nodes/edges) — nunca mexe em quem está em produção
       case 'fluxo.salvar': {
-        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores editam o fluxo.' });
-        const { nodes, edges, nome, id } = body;
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores editam bots.' });
+        const id = Number(body.id);
+        const { nodes, edges } = body;
+        if (!id) return res.status(400).json({ ok: false, error: 'id do bot é obrigatório.' });
         if (!Array.isArray(nodes) || !Array.isArray(edges)) {
           return res.status(400).json({ ok: false, error: 'nodes e edges obrigatórios.' });
         }
         if (!nodes.some(n => n.tipo === 'inicio')) {
-          return res.status(400).json({ ok: false, error: 'O fluxo precisa de um bloco de início.' });
+          return res.status(400).json({ ok: false, error: 'O bot precisa de um bloco de início.' });
         }
-        const payload = { nome: nome || 'Fluxo principal', nodes, edges, ativo: true, updated_by: user.id, updated_at: new Date().toISOString() };
-        let f;
-        if (id) {
-          f = await sbUm(e, `atend_fluxos?id=eq.${Number(id)}`, { method: 'PATCH', body: payload });
-        } else {
-          await sb(e, 'atend_fluxos?ativo=is.true', { method: 'PATCH', body: { ativo: false }, prefer: 'return=minimal' });
-          f = await sbUm(e, 'atend_fluxos', { method: 'POST', body: payload });
-        }
+        const f = await sbUm(e, `atend_fluxos?id=eq.${id}`, {
+          method: 'PATCH',
+          body: { nodes, edges, updated_by: user.id, updated_at: new Date().toISOString(), versao: (body.versao || 1) + 1 },
+        });
         return res.status(200).json({ ok: true, fluxo: f });
+      }
+
+      case 'fluxo.renomear': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const id = Number(body.id);
+        const nome = String(body.nome || '').trim();
+        if (!id || !nome) return res.status(400).json({ ok: false, error: 'id e nome são obrigatórios.' });
+        const f = await sbUm(e, `atend_fluxos?id=eq.${id}`, { method: 'PATCH', body: { nome } });
+        return res.status(200).json({ ok: true, fluxo: f });
+      }
+
+      // publica em produção: só este passa a valer no canal, os demais viram rascunho
+      case 'fluxo.ativar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores publicam bots.' });
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id é obrigatório.' });
+        const alvo = await sbUm(e, `atend_fluxos?id=eq.${id}&select=nodes`);
+        if (!alvo) return res.status(404).json({ ok: false, error: 'Bot não encontrado.' });
+        if (!(alvo.nodes || []).some(n => n.tipo === 'inicio')) {
+          return res.status(400).json({ ok: false, error: 'Esse bot não tem bloco de início — não pode ser publicado assim.' });
+        }
+        await sb(e, 'atend_fluxos?ativo=is.true', { method: 'PATCH', body: { ativo: false }, prefer: 'return=minimal' });
+        const f = await sbUm(e, `atend_fluxos?id=eq.${id}`, { method: 'PATCH', body: { ativo: true } });
+        return res.status(200).json({ ok: true, fluxo: f });
+      }
+
+      case 'fluxo.excluir': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id é obrigatório.' });
+        const alvo = await sbUm(e, `atend_fluxos?id=eq.${id}&select=ativo`);
+        if (alvo && alvo.ativo) {
+          return res.status(400).json({ ok: false, error: 'Este bot está em produção — ative outro antes de excluir este.' });
+        }
+        await sb(e, `atend_fluxos?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true });
       }
 
       // ===== Integração WhatsApp (Evolution API) — tudo dentro do app, sem terminal =====
