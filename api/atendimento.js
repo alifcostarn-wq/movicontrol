@@ -174,6 +174,69 @@ function acharPix(obj, prof = 0) {
 }
 
 // ============================================================================
+// IDENTIFICAÇÃO DO CLIENTE — por CPF/CNPJ
+// Telefone NÃO identifica: o número que manda mensagem pode ser do cônjuge,
+// do filho ou de um funcionário. Dado financeiro só sai após o CPF conferir.
+// ============================================================================
+function soDigitos(v) { return String(v ?? '').replace(/\D/g, ''); }
+
+function cpfValido(cpf) {
+  const d = soDigitos(cpf);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += parseInt(d[i]) * (10 - i);
+  let r = (s * 10) % 11; if (r === 10) r = 0;
+  if (r !== parseInt(d[9])) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += parseInt(d[i]) * (11 - i);
+  r = (s * 10) % 11; if (r === 10) r = 0;
+  return r === parseInt(d[10]);
+}
+
+function cnpjValido(cnpj) {
+  const d = soDigitos(cnpj);
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = (base, pesos) => {
+    const s = base.split('').reduce((acc, n, i) => acc + parseInt(n) * pesos[i], 0);
+    const r = s % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  const d1 = calc(d.slice(0, 12), [5,4,3,2,9,8,7,6,5,4,3,2]);
+  const d2 = calc(d.slice(0, 13), [6,5,4,3,2,9,8,7,6,5,4,3,2]);
+  return d1 === parseInt(d[12]) && d2 === parseInt(d[13]);
+}
+
+function documentoValido(v) {
+  const d = soDigitos(v);
+  if (d.length === 11) return cpfValido(d);
+  if (d.length === 14) return cnpjValido(d);
+  return false;
+}
+
+// Busca na base já sincronizada do IXC, via função no banco que ignora máscara
+// dos dois lados (comparar com LIKE não funciona: "01524626430" não é substring
+// de "015.246.264-30").
+async function acharClientePorDocumento(e, doc) {
+  const d = soDigitos(doc);
+  const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_cliente_por_documento`, {
+    method: 'POST',
+    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_doc: d }),
+  });
+  if (!r.ok) throw new Error(`Falha ao consultar cadastro (${r.status})`);
+  const linhas = await r.json();
+  const c = Array.isArray(linhas) ? linhas[0] : null;
+  if (!c) return null;
+  return {
+    cliente: { ixc_id: c.ixc_id, nome: c.nome, razao: c.razao, cnpj: c.cnpj, ativo: c.ativo, ixc_status: c.ixc_status },
+    contrato: c.plano || c.status_contrato ? {
+      plano: c.plano, status_contrato: c.status_contrato, status_acesso: c.status_acesso,
+      valor: c.valor, velocidade_mbps: c.velocidade_mbps, data_ativacao: c.data_ativacao, pago_ate: c.pago_ate,
+    } : null,
+  };
+}
+
+// ============================================================================
 // CONECTORES — o que o bot sabe fazer sozinho
 // Cada um recebe { e, conversa, vars, texto } e devolve:
 //   { resultado, variaveis, anexoTexto, patchConversa }
@@ -181,33 +244,60 @@ function acharPix(obj, prof = 0) {
 // ============================================================================
 const CONECTORES = {
 
-  async consultar_cliente({ e, conversa }) {
-    const vars = {}, patch = {};
-    for (const f of variantesFone(conversa.contato_fone)) {
-      const d = await ixc(e, 'cliente', {
-        qtype: 'cliente.telefone_celular', query: f.replace(/^55/, ''), oper: '=', rp: '1',
-      });
-      const c = (d.registros || [])[0];
-      if (c) {
-        vars.cliente_nome = (c.razao || '').split(' ')[0];
-        vars.cliente_id = c.id;
-        patch.cliente_ixc_id = String(c.id);
-        patch.contato_nome = c.razao || conversa.contato_nome;
-        patch.cliente_snapshot = { id: c.id, razao: c.razao, cpf: c.cnpj_cpf, ativo: c.ativo };
-        return { resultado: 'cliente', variaveis: vars, patchConversa: patch };
-      }
+  // PORTEIRO: pede e confere o CPF/CNPJ. Nada financeiro passa sem isso.
+  async identificar_cpf({ e, conversa, vars, texto }) {
+    // já identificado nesta conversa? não pede de novo
+    if (vars.cliente_id || conversa.cliente_ixc_id) {
+      return { resultado: 'ok', variaveis: { cliente_id: vars.cliente_id || conversa.cliente_ixc_id } };
     }
-    return { resultado: 'lead', variaveis: { cliente_nome: '' } };
+    const doc = soDigitos(texto);
+    if (doc.length < 11) return { resultado: 'aguardando' };          // ainda não mandou / mandou incompleto
+    if (!documentoValido(doc)) {
+      return { resultado: 'invalido', anexoTexto: 'Esse CPF não parece válido. Confira os números e envie novamente. 🔢' };
+    }
+    const achado = await acharClientePorDocumento(e, doc);
+    if (!achado) {
+      return { resultado: 'nao_encontrado', anexoTexto: 'Não localizei nenhum cadastro com esse CPF. Vou te encaminhar para um atendente conferir. 👤' };
+    }
+    const { cliente, contrato } = achado;
+    const primeiro = String(cliente.nome || cliente.razao || '').trim().split(/\s+/)[0];
+    return {
+      resultado: 'ok',
+      variaveis: {
+        cliente_id: cliente.ixc_id,
+        cliente_nome: primeiro,
+        plano: contrato?.plano || '',
+      },
+      patchConversa: {
+        cliente_ixc_id: String(cliente.ixc_id),
+        contato_nome: cliente.nome || cliente.razao || conversa.contato_nome,
+        cliente_snapshot: {
+          id: cliente.ixc_id,
+          nome: cliente.nome || cliente.razao,
+          cpf: cliente.cnpj,
+          ativo: cliente.ativo,
+          plano: contrato?.plano || null,
+          velocidade: contrato?.velocidade_mbps || null,
+          contrato: contrato?.status_contrato || null,
+          acesso: contrato?.status_acesso || null,
+          valor: contrato?.valor || null,
+          desde: contrato?.data_ativacao || null,
+          pago_ate: contrato?.pago_ate || null,
+        },
+      },
+      anexoTexto: `Tudo certo, ${primeiro}! ✅`,
+    };
   },
 
   async consultar_bloqueio({ e, conversa, vars }) {
     const id = vars.cliente_id || conversa.cliente_ixc_id;
-    if (!id) return { resultado: 'nao' };
+    if (!id) return { resultado: 'sem_cliente' };
+    // status de acesso é crítico e muda a toda hora: consulta o IXC ao vivo
     const d = await ixc(e, 'cliente_contrato', {
       qtype: 'cliente_contrato.id_cliente', query: String(id), oper: '=', rp: '20',
     });
     const contratos = d.registros || [];
-    // status_internet: 'A' ativo | 'B'/'CM'/'FA' bloqueios | 'D' desativado
+    // status_internet: A=ativo | B/CM/FA=bloqueios | D=desativado
     const bloqueado = contratos.some(c => ['B', 'CM', 'FA'].includes(String(c.status_internet || '').toUpperCase()));
     return {
       resultado: bloqueado ? 'sim' : 'nao',
@@ -218,19 +308,25 @@ const CONECTORES = {
 
   async enviar_fatura({ e, conversa, vars }) {
     const id = vars.cliente_id || conversa.cliente_ixc_id;
-    if (!id) return { resultado: 'sem_cliente', anexoTexto: 'Não localizei seu cadastro pelo número. Vou te encaminhar para um atendente.' };
+    if (!id) return { resultado: 'sem_cliente' };
     const d = await ixc(e, 'fn_areceber', {
       qtype: 'fn_areceber.id_cliente', query: String(id), oper: '=', rp: '50',
       sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
     });
-    const abertas = (d.registros || []).filter(f => String(f.status || '').toUpperCase() === 'A');
+    // R=recebido/pago, C=cancelado — qualquer outro está em aberto
+    const abertas = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
     if (!abertas.length) return { resultado: 'sem_debito', anexoTexto: 'Não encontrei faturas em aberto. Está tudo em dia! ✅' };
     const f = abertas[0];
-    const link = `${e.IXC_URL}/boleto/${f.id}`;
+    const linhas = [
+      `Vencimento: ${f.data_vencimento}`,
+      `Valor: ${fmtMoeda(f.valor)}`,
+      f.linha_digitavel ? `\nLinha digitável:\n${f.linha_digitavel}` : '',
+      f.gateway_link ? `\n${f.gateway_link}` : '',
+    ].filter(Boolean);
     return {
       resultado: 'ok',
-      variaveis: { fatura_id: f.id, fatura_valor: fmtMoeda(f.valor), fatura_venc: f.data_vencimento },
-      anexoTexto: `Vencimento: ${f.data_vencimento}\nValor: ${fmtMoeda(f.valor)}\n${link}`,
+      variaveis: { fatura_id: f.id, fatura_valor: fmtMoeda(f.valor), fatura_venc: f.data_vencimento, faturas_abertas: abertas.length },
+      anexoTexto: linhas.join('\n'),
     };
   },
 
@@ -243,7 +339,7 @@ const CONECTORES = {
         qtype: 'fn_areceber.id_cliente', query: String(id), oper: '=', rp: '50',
         sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
       });
-      const ab = (d.registros || []).filter(f => String(f.status || '').toUpperCase() === 'A');
+      const ab = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
       if (!ab.length) return { resultado: 'sem_debito', anexoTexto: 'Você não tem faturas em aberto. ✅' };
       faturaId = ab[0].id;
     }
@@ -259,7 +355,7 @@ const CONECTORES = {
     const r = await ixc(e, 'su_ticket', {
       id_cliente: String(id),
       titulo: 'Atendimento WhatsApp — abertura automática',
-      mensagem: `Chamado aberto pelo bot.\nÚltima mensagem: ${vars.ultima_msg || '—'}`,
+      mensagem: `Chamado aberto pelo bot (MoviTalk).\nÚltima mensagem do cliente: ${vars.ultima_msg || '—'}`,
       id_assunto: process.env.IXC_ASSUNTO_PADRAO || '1',
       prioridade: 'M',
       origem_endereco: 'M',
@@ -279,7 +375,6 @@ const CONECTORES = {
     if (endereco.length < 8) {
       return { resultado: 'aguardando', anexoTexto: '' };
     }
-    // Consulta as CTOs do MoviFiber no Supabase (proximidade textual por bairro).
     try {
       const termo = encodeURIComponent(normalizarTxt(endereco).split(/[,\-]/)[0].slice(0, 40));
       const ctos = await sb(e, `ftth_cliente_instalacao?select=caixa_nome&limit=1&caixa_nome=ilike.*${termo}*`);
@@ -307,6 +402,8 @@ const CONECTORES = {
   // executa a liberação. Por isso aqui ele transborda para o Financeiro até
   // que a rotina da Central seja portada para este proxy.
   async desbloqueio_confianca({ conversa, vars }) {
+    const id = vars.cliente_id || conversa.cliente_ixc_id;
+    if (!id) return { resultado: 'sem_cliente' };
     return {
       resultado: 'manual',
       anexoTexto: 'Vou pedir para o Financeiro liberar seu acesso de confiança agora mesmo.',
@@ -489,9 +586,25 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
           if (corpo.trim()) out.enviar.push({ texto: corpo, node: no.id });
           out.logs.push({ node_id: no.id, node_tipo: 'acao', conector: no.conector, entrada: texto, resultado, ms: Date.now() - t0 });
 
-          // conector pediu um dado do cliente: para e espera a resposta
-          if (resultado === 'aguardando') {
-            out.sessao = { node_atual: no.id, aguardando: 'texto_livre', variaveis: vars, tentativas: 0 };
+          // conector pediu um dado do cliente: para e espera a resposta.
+          // 'invalido' também espera (ex.: CPF com dígito errado), mas conta
+          // tentativas para não prender o cliente num vai-e-vem infinito.
+          if (resultado === 'aguardando' || resultado === 'invalido') {
+            const tent = resultado === 'invalido' ? Number(sessao?.tentativas || 0) + 1 : 0;
+            if (tent >= MAX_TENTATIVAS) {
+              out.enviar.push({ texto: 'Não consegui confirmar seus dados. Vou te passar para um atendente. 👤' });
+              // se o bloco tem uma saída "não encontrado", usa o setor dela —
+              // assim quem travou no Financeiro cai no Financeiro, não no Suporte
+              const saidaNE = arestas.find(a => /nao encontrado|nao_encontrado/.test(normalizarTxt(a.label)));
+              const destino = saidaNE ? nodes.get(Number(saidaNE.to)) : null;
+              out.patch.coluna = 'atendimento';
+              out.patch.bot_ativo = false;
+              out.patch.setor = (destino && destino.tipo === 'setor' && destino.setor)
+                || out.patch.setor || conversa.setor || 'Suporte';
+              out.limparSessao = true;
+              return out;
+            }
+            out.sessao = { node_atual: no.id, aguardando: 'texto_livre', variaveis: vars, tentativas: tent };
             return out;
           }
         } catch (err) {
