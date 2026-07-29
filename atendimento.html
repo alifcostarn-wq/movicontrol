@@ -456,6 +456,56 @@ select.transf{
 .fbtn:disabled{opacity:.45;cursor:not-allowed;}
 .fbtn:disabled:hover{background:var(--card);color:var(--text);}
 
+/* ============ VÍNCULO CLIENTE ↔ NÚMERO ============ */
+.vinc-box{border:1px solid var(--line);border-radius:11px;padding:12px;text-align:center;}
+.vinc-box.vazio{border-style:dashed;}
+.vinc-none{font-size:12px;color:var(--text-low);margin-bottom:10px;}
+.vinc-nome{font-size:13.5px;font-weight:800;color:var(--text);line-height:1.35;}
+.vinc-sub{font-size:11px;color:var(--text-low);margin-top:3px;}
+.vinc-acts{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
+.vinc-btn{
+  font-family:inherit;font-size:11px;font-weight:700;padding:7px 12px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--line);background:var(--card);color:var(--text);
+}
+.vinc-btn:hover{border-color:var(--green);color:var(--green-deep);}
+.vinc-btn.solid{background:var(--green);color:#fff;border-color:var(--green);}
+.vinc-btn.solid:hover{background:var(--green-deep);color:#fff;}
+.vinc-btn.desf{color:var(--red);border-color:#fecaca;}
+.vinc-btn.desf:hover{background:#fee2e2;color:var(--red);}
+.vinc-sug{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px;margin-top:9px;text-align:left;}
+.vinc-sug .vs-t{font-size:10px;font-weight:800;color:#92400e;letter-spacing:.03em;margin-bottom:4px;}
+.vinc-sug .vs-n{font-size:12.5px;font-weight:700;color:var(--text);}
+
+/* modal de busca de cliente */
+.cli-overlay{
+  position:fixed;inset:0;z-index:420;background:rgba(15,23,42,.5);
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.cli-modal{
+  background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-lg);
+  width:100%;max-width:620px;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;
+}
+.cli-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;}
+.cli-head h3{font-size:15px;font-weight:800;flex:1;}
+.cli-busca{display:flex;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line);}
+.cli-busca input{
+  flex:1;border:1.5px solid var(--line);border-radius:9px;padding:10px 13px;
+  font-family:inherit;font-size:13.5px;outline:none;
+}
+.cli-busca input:focus{border-color:var(--green);}
+.cli-lista{flex:1;overflow-y:auto;padding:8px 10px 14px;}
+.cli-item{
+  display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:10px;cursor:pointer;
+  border:1px solid transparent;
+}
+.cli-item:hover{background:#f2f5f8;border-color:var(--line);}
+.cli-item .ci-info{flex:1;min-width:0;}
+.cli-item .ci-nome{font-size:13px;font-weight:700;color:var(--text);}
+.cli-item .ci-end{font-size:11px;color:var(--text-low);margin-top:2px;}
+.cli-item .ci-tag{font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:6px;background:#eef2f6;color:var(--text-low);flex-shrink:0;}
+.cli-item .ci-tag.on{background:var(--green-soft);color:var(--green-deep);}
+.cli-vazio{text-align:center;padding:34px 16px;font-size:12.5px;color:var(--text-low);}
+
 /* ============ INTEGRAÇÕES (WhatsApp) ============ */
 .wa-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px;max-width:480px;margin:0 auto;text-align:center;}
 .wa-status-row{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:99px;margin-bottom:20px;}
@@ -1184,6 +1234,17 @@ const api = {
   async devolverBot(c){
     await chamar('conversas.devolver_bot', { conversa_id:c.id });
   },
+  async buscarClientes(termo){
+    const j = await chamar('clientes.buscar', { termo });
+    return j.clientes||[];
+  },
+  async vincular(c, ixcId){
+    const j = await chamar('conversas.vincular', { conversa_id:c.id, cliente_ixc_id:ixcId });
+    return j.cliente;
+  },
+  async desvincular(c){
+    await chamar('conversas.desvincular', { conversa_id:c.id });
+  },
   async salvarFluxo(){
     if(!state.fluxo.id) throw new Error('Nenhum bot selecionado para salvar.');
     const j = await chamar('fluxo.salvar', { id: state.fluxo.id, nodes: state.fluxo.nodes, edges: state.fluxo.edges, versao: state.fluxo.versao||1 });
@@ -1279,6 +1340,13 @@ function mapearConversa(c){
       sup30: snap.sup30||0, recorrente: snap.recorrente, lead: !c.cliente_ixc_id,
     },
     msgs: [], sups: snap.sups||[],
+    clienteVinculado: c.cliente_ixc_id ? {
+      id: c.cliente_ixc_id, nome: snap.nome || c.contato_nome,
+      cpf: snap.cpf || null, plano: snap.plano || null,
+    } : null,
+    sugestao: (!c.cliente_ixc_id && c.cliente_sugerido_id) ? {
+      id: c.cliente_sugerido_id, nome: c.cliente_sugerido_nome || ('cadastro #'+c.cliente_sugerido_id),
+    } : null,
   };
 }
 
@@ -1523,6 +1591,57 @@ function cardHTML(c,col){
   </div>`;
 }
 
+/* ================= VINCULAR CLIENTE AO NÚMERO (manual) ================= */
+function abrirBuscaCliente(c, aoVincular){
+  const ov=document.createElement('div');
+  ov.className='cli-overlay';
+  ov.innerHTML=`<div class="cli-modal">
+    <div class="cli-head"><h3>Selecionar Cliente</h3><button class="m-close" id="cliFechar">✕</button></div>
+    <div class="cli-busca">
+      <input id="cliTermo" placeholder="Nome, CPF/CNPJ ou telefone..." autocomplete="off">
+      <button class="btn primary" id="cliBuscar">Buscar</button>
+    </div>
+    <div class="cli-lista" id="cliLista">
+      <div class="cli-vazio">Digite o nome do cliente, o CPF ou o telefone para localizar o cadastro.</div>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=ev=>{ if(ev.target===ov) ov.remove(); };
+  ov.querySelector('#cliFechar').onclick=()=>ov.remove();
+
+  const inp=ov.querySelector('#cliTermo');
+  const lista=ov.querySelector('#cliLista');
+  inp.focus();
+
+  const buscar=async()=>{
+    const termo=inp.value.trim();
+    if(termo.length<2){ lista.innerHTML='<div class="cli-vazio">Digite ao menos 2 caracteres.</div>'; return; }
+    lista.innerHTML='<div class="cli-vazio">Buscando…</div>';
+    try{
+      const res=await api.buscarClientes(termo);
+      if(!res.length){ lista.innerHTML='<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado</div>'; return; }
+      lista.innerHTML=res.map(cl=>`
+        <div class="cli-item" data-ixc="${esc(cl.ixc_id)}">
+          <div class="cc-av" style="background:${avColor(Number(cl.ixc_id)||1)}">${ini(cl.nome||'?')}</div>
+          <div class="ci-info">
+            <div class="ci-nome">${esc(cl.nome||'—')}</div>
+            <div class="ci-end">${esc(cl.endereco||'sem endereço')}${cl.cnpj?' · '+esc(cl.cnpj):''}</div>
+          </div>
+          <span class="ci-tag ${cl.ativo?'on':''}">${cl.ativo?'ATIVO':'INATIVO'}</span>
+        </div>`).join('');
+      lista.querySelectorAll('[data-ixc]').forEach(el=>el.onclick=async()=>{
+        const nome=el.querySelector('.ci-nome').textContent;
+        if(!confirm(`Vincular o número ${c.fone} ao cadastro de ${nome}?\n\nA partir de agora o bot não vai mais pedir CPF nesse número.`)) return;
+        lista.innerHTML='<div class="cli-vazio">Vinculando…</div>';
+        try{ await aoVincular(el.dataset.ixc); ov.remove(); }
+        catch(err){ toast('Falha: '+err.message); buscar(); }
+      });
+    }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
+  };
+  ov.querySelector('#cliBuscar').onclick=buscar;
+  inp.onkeydown=ev=>{ if(ev.key==='Enter') buscar(); };
+}
+
 /* ================= MODAL ================= */
 // Anexo recebido do cliente: imagem abre ampliada, PDF/doc abre em aba nova,
 // áudio toca no próprio painel.
@@ -1592,6 +1711,32 @@ function openModal(id){
     </div>
   </div>
   <div class="m-side">
+    <div class="ms-sec">
+      <h3>Cadastro do cliente</h3>
+      ${c.clienteVinculado ? `
+        <div class="vinc-box">
+          <div class="vinc-nome">${esc(c.clienteVinculado.nome||c.nome)}</div>
+          <div class="vinc-sub">${c.clienteVinculado.cpf?esc(c.clienteVinculado.cpf):''}${c.clienteVinculado.plano?' · '+esc(c.clienteVinculado.plano):''}</div>
+          <div class="vinc-acts">
+            <button class="vinc-btn" id="mTrocarCli">Trocar cadastro</button>
+            <button class="vinc-btn desf" id="mDesvincular">Desvincular</button>
+          </div>
+        </div>
+      ` : `
+        <div class="vinc-box vazio">
+          <div class="vinc-none">Nenhum cliente associado!</div>
+          <button class="vinc-btn solid" id="mVincular">🔎 Associar a um cadastro</button>
+          ${c.sugestao ? `
+            <div class="vinc-sug">
+              <div class="vs-t">CPF INFORMADO AO BOT APONTA PARA:</div>
+              <div class="vs-n">${esc(c.sugestao.nome)}</div>
+              <div class="vinc-acts" style="justify-content:flex-start;">
+                <button class="vinc-btn solid" id="mAceitarSug">Vincular este cadastro</button>
+              </div>
+            </div>` : ''}
+        </div>
+      `}
+    </div>
     <div class="ms-sec"><div class="pills">${pillCont}${pillFin}${pillBloq}</div></div>
     ${cl.lead?'':`
     <div class="ms-sec">
@@ -1700,6 +1845,31 @@ function openModal(id){
     api.patchConversa(c,{coluna:c.col});
     renderAll(); toast('→ '+COLS.find(k=>k.id===c.col).nome);
   };
+  // vínculo do número com o cadastro do cliente (sempre manual)
+  const recarregarEAbrir=async()=>{ await recarregarConversas(); const at=state.conversas.find(x=>x.id===c.id); if(at) openModal(at.id); };
+  const vincular=async(ixc)=>{ await api.vincular(c, ixc); await recarregarEAbrir(); toast('Número vinculado ao cadastro'); };
+
+  const bVinc=$('#mVincular');
+  if(bVinc) bVinc.onclick=()=>abrirBuscaCliente(c, vincular);
+
+  const bTroca=$('#mTrocarCli');
+  if(bTroca) bTroca.onclick=()=>abrirBuscaCliente(c, vincular);
+
+  const bSug=$('#mAceitarSug');
+  if(bSug) bSug.onclick=async()=>{
+    if(!confirm(`Vincular o número ${c.fone} ao cadastro de ${c.sugestao.nome}?\n\nO bot deixa de pedir CPF nesse número.`)) return;
+    bSug.disabled=true;
+    try{ await vincular(c.sugestao.id); }
+    catch(err){ bSug.disabled=false; toast('Falha: '+err.message); }
+  };
+
+  const bDesv=$('#mDesvincular');
+  if(bDesv) bDesv.onclick=async()=>{
+    if(!confirm('Desvincular este número do cadastro?\n\nO bot volta a pedir o CPF quando esse número entrar em contato.')) return;
+    try{ await api.desvincular(c); await recarregarEAbrir(); toast('Número desvinculado'); }
+    catch(err){ toast('Falha: '+err.message); }
+  };
+
   // controle do bot: assumir / devolver / finalizar
   const bAssumir=$('#mAssumir');
   if(bAssumir) bAssumir.onclick=async()=>{
