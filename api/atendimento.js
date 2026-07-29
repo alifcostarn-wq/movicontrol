@@ -844,7 +844,11 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         noId = Number(fb.to);
       } else if (tentativas >= MAX_TENTATIVAS) {
         out.enviar.push({ texto: 'Não consegui entender. Vou te passar para um atendente. 👤' });
-        out.patch = { coluna: 'atendimento', bot_ativo: false, setor: conversa.setor || 'Suporte' };
+        out.patch = {
+          coluna: 'fila', bot_ativo: false, setor: conversa.setor || 'Suporte',
+          atendente_id: null, fila_desde: new Date().toISOString(),
+          assumido_em: null, assumido_por: null,
+        };
         out.limparSessao = true;
         return out;
       } else {
@@ -905,8 +909,12 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
               // assim quem travou no Financeiro cai no Financeiro, não no Suporte
               const saidaNE = arestas.find(a => /nao encontrado|nao_encontrado/.test(normalizarTxt(a.label)));
               const destino = saidaNE ? nodes.get(Number(saidaNE.to)) : null;
-              out.patch.coluna = 'atendimento';
+              out.patch.coluna = 'fila';
               out.patch.bot_ativo = false;
+              out.patch.atendente_id = null;
+              out.patch.fila_desde = new Date().toISOString();
+              out.patch.assumido_em = null;
+              out.patch.assumido_por = null;
               out.patch.setor = (destino && destino.tipo === 'setor' && destino.setor)
                 || out.patch.setor || conversa.setor || 'Suporte';
               out.limparSessao = true;
@@ -942,8 +950,14 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
 
       case 'setor': {
         out.patch.setor = no.setor || conversa.setor || 'Suporte';
-        out.patch.coluna = 'atendimento';
+        // vai para a FILA, não para "em atendimento": ninguém assumiu ainda.
+        // O relógio de espera começa aqui e só para quando um humano assume.
+        out.patch.coluna = 'fila';
         out.patch.bot_ativo = false;
+        out.patch.atendente_id = null;
+        out.patch.fila_desde = new Date().toISOString();
+        out.patch.assumido_em = null;
+        out.patch.assumido_por = null;
         out.enviar.push({ texto: `Encaminhando para o setor ${out.patch.setor}. Um atendente continua com você em instantes. 👤`, node: no.id });
         out.logs.push({ node_id: no.id, node_tipo: 'setor', resultado: out.patch.setor });
         out.limparSessao = true;
@@ -1440,6 +1454,9 @@ export default async function handler(req, res) {
             setor: body.setor || user.setor || 'Vendas',
             atendente_id: user.id,
             bot_ativo: false,             // iniciado por humano: o bot não interfere
+            // já nasce assumida: quem abriu é o responsável, sem tempo de fila
+            assumido_em: new Date().toISOString(),
+            assumido_por: user.id,
             created_by: user.id,
             ultima_msg_em: new Date().toISOString(),
           },
@@ -1577,7 +1594,11 @@ export default async function handler(req, res) {
             bot_ativo: false,
             atendente_id: user.id,
             setor: c.setor || user.setor || 'Suporte',
-            coluna: c.coluna === 'resolvidos' ? 'atendimento' : (c.coluna === 'novos' ? 'atendimento' : c.coluna),
+            coluna: 'atendimento',
+            // marca a assunção só na primeira vez: se outro atendente reassume
+            // depois, o tempo de espera original do cliente não pode ser apagado
+            assumido_em: c.assumido_em || new Date().toISOString(),
+            assumido_por: c.assumido_por || user.id,
             nao_lidas: 0,
             updated_by: user.id,
           },
@@ -1659,10 +1680,14 @@ export default async function handler(req, res) {
           method: 'PATCH', prefer: 'return=minimal',
           body: {
             setor: destino,
-            // quem transfere solta a conversa: o novo setor escolhe o responsável
+            // quem transfere solta a conversa: ela volta para a FILA e o novo
+            // setor precisa assumir — o relógio de espera reinicia para eles
             atendente_id: null,
             bot_ativo: false,
-            coluna: c.coluna === 'resolvidos' ? 'atendimento' : c.coluna,
+            coluna: 'fila',
+            fila_desde: new Date().toISOString(),
+            assumido_em: null,
+            assumido_por: null,
             updated_by: user.id,
           },
         });
@@ -1722,12 +1747,16 @@ export default async function handler(req, res) {
           },
         });
         // atendente humano assumiu: o bot para de responder nesta conversa
+        // responder é assumir na prática — registra a assunção se ainda não houve
+        const eraFila = c.coluna === 'novos' || c.coluna === 'fila';
         await sb(e, `atend_conversas?id=eq.${id}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body: {
             bot_ativo: false,
-            coluna: c.coluna === 'novos' ? 'atendimento' : c.coluna,
+            coluna: eraFila ? 'atendimento' : c.coluna,
             atendente_id: c.atendente_id || user.id,
+            assumido_em: c.assumido_em || new Date().toISOString(),
+            assumido_por: c.assumido_por || user.id,
             ultima_msg: 'Você: ' + texto.slice(0, 180),
             ultima_msg_em: new Date().toISOString(),
             nao_lidas: 0,
