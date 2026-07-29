@@ -464,6 +464,39 @@ select.transf{
 .cfg-tab.on{color:var(--green-deep);border-bottom-color:var(--green);}
 .cfg-tab:hover:not(.on){color:var(--text);}
 
+/* ============ CONTROLE DO BOT + ANEXOS ============ */
+.bot-bar{
+  display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid var(--line);
+  background:#fffbeb;font-size:11.5px;color:#92400e;flex-wrap:wrap;
+}
+.bot-bar.humano{background:var(--green-soft);color:var(--green-deep);}
+.bot-bar .bb-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
+.bot-bar .bb-txt{font-weight:700;}
+.bot-bar .bb-acts{margin-left:auto;display:flex;gap:6px;}
+.bb-btn{
+  font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border-radius:8px;cursor:pointer;
+  border:1px solid currentColor;background:transparent;color:inherit;
+}
+.bb-btn:hover{background:rgba(0,0,0,.05);}
+.bb-btn.solid{background:var(--green);color:#fff;border-color:var(--green);}
+.bb-btn.solid:hover{background:var(--green-deep);}
+.bb-btn.fim{background:#fff;color:var(--red);border-color:#fecaca;}
+.bb-btn.fim:hover{background:#fee2e2;}
+.mb-midia{margin-top:6px;}
+.mb-midia img{max-width:100%;border-radius:9px;display:block;cursor:zoom-in;}
+.mb-doc{
+  display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;
+  background:rgba(0,0,0,.05);text-decoration:none;color:inherit;font-size:12px;font-weight:600;
+}
+.mb-doc:hover{background:rgba(0,0,0,.09);}
+.mb-doc .md-ico{font-size:17px;}
+.mb-audio{width:230px;max-width:100%;margin-top:4px;}
+.midia-lightbox{
+  position:fixed;inset:0;z-index:400;background:rgba(8,20,14,.88);display:flex;
+  align-items:center;justify-content:center;padding:24px;cursor:zoom-out;
+}
+.midia-lightbox img{max-width:100%;max-height:100%;border-radius:12px;}
+
 /* ============ LOGIN — "rede de conversas" ============ */
 #tela-login{
   --lg-bg0:#f2faf6; --lg-bg1:#e3f4ea;
@@ -1120,9 +1153,19 @@ const api = {
   async carregarMensagens(c){
     const j = await chamar('mensagens.listar', { conversa_id:c.id });
     c.msgs = (j.mensagens||[]).map(m=>({
-      t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5)
+      t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
+      tipo: m.tipo || 'texto', link: m.midia_link || null,
     }));
     return c.msgs;
+  },
+  async assumir(c, avisar){
+    await chamar('conversas.assumir', { conversa_id:c.id, avisar_cliente: !!avisar });
+  },
+  async finalizar(c, mensagem){
+    await chamar('conversas.finalizar', { conversa_id:c.id, mensagem: mensagem||null });
+  },
+  async devolverBot(c){
+    await chamar('conversas.devolver_bot', { conversa_id:c.id });
   },
   async salvarFluxo(){
     await chamar('fluxo.salvar', { id: state.fluxo.id||null, nodes: state.fluxo.nodes, edges: state.fluxo.edges });
@@ -1432,6 +1475,18 @@ function cardHTML(c,col){
 }
 
 /* ================= MODAL ================= */
+// Anexo recebido do cliente: imagem abre ampliada, PDF/doc abre em aba nova,
+// áudio toca no próprio painel.
+function midiaHTML(m){
+  if(!m.link) return '';
+  if(m.tipo==='imagem') return `<div class="mb-midia"><img src="${esc(m.link)}" alt="Imagem enviada pelo cliente" data-zoom="${esc(m.link)}"></div>`;
+  if(m.tipo==='audio')  return `<div class="mb-midia"><audio class="mb-audio" controls src="${esc(m.link)}"></audio></div>`;
+  if(m.tipo==='video')  return `<div class="mb-midia"><video class="mb-audio" controls src="${esc(m.link)}"></video></div>`;
+  const ico = m.tipo==='documento' ? '📄' : '📎';
+  return `<div class="mb-midia"><a class="mb-doc" href="${esc(m.link)}" target="_blank" rel="noopener">
+    <span class="md-ico">${ico}</span>Abrir anexo</a></div>`;
+}
+
 function openModal(id){
   modalId=id;
   const c=state.conversas.find(x=>x.id===id);
@@ -1466,10 +1521,20 @@ function openModal(id){
       </div>
       <button class="m-close" id="mClose">✕</button>
     </div>
+    <div class="bot-bar ${c.botAtivo===false?'humano':''}">
+      <span class="bb-dot"></span>
+      <span class="bb-txt">${c.botAtivo===false ? '👤 Você está no comando' : '🤖 Bot atendendo'}</span>
+      <div class="bb-acts">
+        ${c.botAtivo===false
+          ? `<button class="bb-btn" id="mDevolver">Devolver ao bot</button>`
+          : `<button class="bb-btn solid" id="mAssumir">Assumir atendimento</button>`}
+        ${c.col!=='resolvidos' ? `<button class="bb-btn fim" id="mFinalizar">Finalizar</button>` : ''}
+      </div>
+    </div>
     <div class="m-thread" id="mThread">
       ${c.msgs.map(m=>m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
-        :`<div class="mb ${m.t}">${m.t==='bot'?'<span class="bt">● Bot</span>':''}${esc(m.x).replace(/\n/g,'<br>')}<span class="tm">${esc(m.h||'')}</span></div>`).join('')}
+        :`<div class="mb ${m.t}">${m.t==='bot'?'<span class="bt">● Bot</span>':''}${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<span class="tm">${esc(m.h||'')}</span></div>`).join('')}
     </div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
@@ -1586,6 +1651,49 @@ function openModal(id){
     api.patchConversa(c,{coluna:c.col});
     renderAll(); toast('→ '+COLS.find(k=>k.id===c.col).nome);
   };
+  // controle do bot: assumir / devolver / finalizar
+  const bAssumir=$('#mAssumir');
+  if(bAssumir) bAssumir.onclick=async()=>{
+    const avisar=confirm('Assumir este atendimento?\n\nOK = avisa o cliente que você entrou na conversa\nCancelar = assume em silêncio');
+    bAssumir.disabled=true;
+    try{
+      await api.assumir(c, avisar);
+      c.botAtivo=false; c.atendente=USUARIO.nome;
+      if(c.col==='novos') c.col='atendimento';
+      await api.carregarMensagens(c);
+      openModal(c.id); renderAll(); toast('Atendimento assumido');
+    }catch(err){ bAssumir.disabled=false; toast('Falha: '+err.message); }
+  };
+
+  const bDevolver=$('#mDevolver');
+  if(bDevolver) bDevolver.onclick=async()=>{
+    if(!confirm('Devolver esta conversa para o bot? Ele volta a responder automaticamente.')) return;
+    try{ await api.devolverBot(c); c.botAtivo=true; openModal(c.id); renderAll(); toast('Bot reativado'); }
+    catch(err){ toast('Falha: '+err.message); }
+  };
+
+  const bFim=$('#mFinalizar');
+  if(bFim) bFim.onclick=async()=>{
+    const msg=prompt('Finalizar atendimento.\n\nMensagem de despedida (deixe em branco para encerrar sem avisar):',
+      'Atendimento encerrado. Qualquer coisa é só chamar. A MoviOn agradece! 💚');
+    if(msg===null) return;
+    bFim.disabled=true;
+    try{
+      await api.finalizar(c, msg.trim()||null);
+      c.col='resolvidos'; c.botAtivo=true;
+      closeModal(); renderAll(); toast('Atendimento finalizado');
+    }catch(err){ bFim.disabled=false; toast('Falha: '+err.message); }
+  };
+
+  // clicar na imagem abre ampliada
+  document.querySelectorAll('[data-zoom]').forEach(el=>el.onclick=()=>{
+    const lb=document.createElement('div');
+    lb.className='midia-lightbox';
+    lb.innerHTML=`<img src="${el.dataset.zoom}" alt="Anexo ampliado">`;
+    lb.onclick=()=>lb.remove();
+    document.body.appendChild(lb);
+  });
+
   // setor
   $('#mSetor').onchange=e=>{ c.setor=e.target.value; api.patchConversa(c,{setor:c.setor}); renderAll(); toast('Movido para o setor '+c.setor); };
   // notas
