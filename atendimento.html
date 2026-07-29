@@ -130,6 +130,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .kpi-num{font-size:24px;font-weight:800;line-height:1;}
 .kpi-lbl{font-size:12px;color:var(--text-mid);font-weight:600;margin-top:3px;}
 .kpi.p .kpi-lbl{color:var(--purple);}
+.kpi.r .kpi-ico{background:var(--red-soft);}
+.kpi.r .kpi-ico svg{stroke:var(--red);fill:none;stroke-width:2;}
+.kpi.r .kpi-num{color:var(--red);}
+.kpi.r .kpi-lbl{color:var(--red);}
 
 /* ============ FILTER BAR ============ */
 .filterbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
@@ -143,12 +147,13 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .flabel{font-size:11px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
 
 /* ============ BOARD ============ */
-.board{display:grid;grid-template-columns:repeat(4,minmax(250px,1fr));gap:16px;align-items:start;}
+.board{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:14px;align-items:start;}
 .column{
   background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
   border-top:4px solid transparent;display:flex;flex-direction:column;max-height:calc(100vh - 320px);
 }
 .column[data-col="novos"]{border-top-color:var(--green);}
+.column[data-col="fila"]{border-top-color:var(--red);}
 .column[data-col="atendimento"]{border-top-color:var(--blue);}
 .column[data-col="aguardando"]{border-top-color:var(--orange);}
 .column[data-col="resolvidos"]{border-top-color:var(--green);}
@@ -156,6 +161,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .col-head h2{font-size:14.5px;font-weight:800;flex:1;}
 .col-count{font-size:11px;font-weight:800;color:#fff;border-radius:10px;padding:2px 8px;}
 .column[data-col="novos"] .col-count{background:var(--green);}
+.column[data-col="fila"] .col-count{background:var(--red);}
 .column[data-col="atendimento"] .col-count{background:var(--blue);}
 .column[data-col="aguardando"] .col-count{background:var(--orange);}
 .column[data-col="resolvidos"] .col-count{background:var(--green);}
@@ -187,8 +193,23 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .cc-foot{display:flex;align-items:center;gap:7px;}
 .cc-wa{width:17px;height:17px;fill:var(--green);flex-shrink:0;}
 .cc-att{font-size:10.5px;color:var(--text-low);font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cc-espera{display:flex;align-items:center;gap:6px;padding:6px 9px;border-radius:8px;
+  background:#f7f9fb;border:1px solid var(--line);margin-bottom:8px;}
+.cc-espera .ce-l{font-size:10px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.03em;}
+.cc-espera .ce-v{font-size:12.5px;font-weight:800;color:var(--text);margin-left:auto;}
+.cc-espera.alerta{background:var(--orange-soft);border-color:#fcd9a4;}
+.cc-espera.alerta .ce-v{color:#b45309;}
+.cc-espera.critico{background:var(--red-soft);border-color:#fecaca;}
+.cc-espera.critico .ce-v{color:var(--red);}
+.cc-assumir{
+  width:100%;font-family:inherit;font-size:12px;font-weight:800;padding:9px;border-radius:9px;
+  border:none;background:var(--green);color:#fff;cursor:pointer;margin-bottom:9px;
+}
+.cc-assumir:hover{background:var(--green-deep);}
+.cc-assumir:disabled{opacity:.6;cursor:wait;}
 .cc-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:7px;}
 .cc-status.novo{background:var(--green-soft);color:var(--green-deep);}
+.cc-status.fila{background:var(--red-soft);color:var(--red);}
 .cc-status.atend{background:var(--blue-soft);color:#1d4ed8;}
 .cc-status.aguard{background:var(--orange-soft);color:#b45309;}
 .cc-status.resolv{background:var(--green-soft);color:var(--green-deep);}
@@ -893,7 +914,7 @@ select.transf{
     margin:0 -14px;padding:0 14px 8px;-webkit-overflow-scrolling:touch;
   }
   .board::-webkit-scrollbar{display:none;}
-  .column{flex:0 0 84vw;scroll-snap-align:center;max-height:none;}
+  .column{flex:0 0 86vw;scroll-snap-align:center;max-height:none;}
   .col-body{max-height:calc(100dvh - 300px);}
   .card-c{padding:14px;}
   .cc-name{font-size:14.5px;}
@@ -1200,6 +1221,7 @@ select.transf{
 /* ================= DATA ================= */
 const COLS = [
   {id:'novos', nome:'Novos'},
+  {id:'fila', nome:'Aguardando atendimento'},
   {id:'atendimento', nome:'Em atendimento'},
   {id:'aguardando', nome:'Aguardando cliente'},
   {id:'resolvidos', nome:'Resolvidos'},
@@ -1473,6 +1495,7 @@ function mapearConversa(c){
     unread:c.nao_lidas||0, tags:c.tags||[], notas:c.notas||'', rating:c.rating,
     atendente: c.atendente_id ? ((EQUIPE.find(p=>p.id===c.atendente_id)||{}).nome||'—') : '— Bot —',
     setor: c.setor||'Suporte', preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
+    filaDesde: c.fila_desde||null, assumidoEm: c.assumido_em||null,
     cliente:{
       plano: snap.plano||'—', desde: snap.desde||'—',
       contrato: snap.contrato || (c.cliente_ixc_id?'Ativo':'Lead'),
@@ -1655,13 +1678,21 @@ const WA_PATH='M12 2a10 10 0 00-8.6 15.1L2 22l5.1-1.3A10 10 0 1012 2zm5.5 14.1c-
 function renderKpis(){
   const c=state.conversas;
   const n=c.filter(x=>x.col==='novos').length;
+  const fila=c.filter(x=>x.col==='fila');
   const a=c.filter(x=>x.col==='atendimento').length;
   const g=c.filter(x=>x.col==='aguardando').length;
   const r=c.filter(x=>x.col==='resolvidos').length;
+  // a maior espera da fila é o número que exige ação agora
+  const piorEspera=fila.reduce((m,x)=>{
+    if(!x.filaDesde) return m;
+    return Math.max(m,(Date.now()-new Date(x.filaDesde).getTime())/60000);
+  },0);
+  const esperaLbl=fila.length?(piorEspera<1?'agora':(piorEspera<60?Math.floor(piorEspera)+' min':Math.floor(piorEspera/60)+'h')):'—';
   const ratings=c.filter(x=>x.rating); 
   const media=ratings.length? (ratings.reduce((s,x)=>s+x.rating,0)/ratings.length).toFixed(1).replace('.',',') : '—';
   $('#kpis').innerHTML=`
-    <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${n}</div><div class="kpi-lbl">Novos</div></div></div>
+    <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${n}</div><div class="kpi-lbl">No bot</div></div></div>
+    <div class="kpi ${fila.length?'r':'g'}"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${fila.length}</div><div class="kpi-lbl">Aguardando atend.${fila.length?` · ${esperaLbl}`:''}</div></div></div>
     <div class="kpi b"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${a}</div><div class="kpi-lbl">Em atendimento</div></div></div>
     <div class="kpi o"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${g}</div><div class="kpi-lbl">Aguardando</div></div></div>
     <div class="kpi p"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div><div><div class="kpi-num">${r}</div><div class="kpi-lbl">Resolvidos</div></div></div>
@@ -1687,7 +1718,7 @@ function passa(c){
   return true;
 }
 function statusBadge(col){
-  return {novos:['novo','Novo'],atendimento:['atend','Atendimento'],aguardando:['aguard','Aguardando'],resolvidos:['resolv','Resolvido']}[col];
+  return {novos:['novo','No bot'],fila:['fila','Na fila'],atendimento:['atend','Atendimento'],aguardando:['aguard','Aguard. cliente'],resolvidos:['resolv','Resolvido']}[col]||['novo',col];
 }
 function renderBoard(){
   const b=$('#board');
@@ -1703,6 +1734,20 @@ function renderBoard(){
   }).join('');
 
   // events
+  b.querySelectorAll('[data-assumir]').forEach(btn=>{
+    btn.onclick=async ev=>{
+      ev.stopPropagation();          // não abre o modal ao assumir pelo card
+      const c=state.conversas.find(x=>x.id===+btn.dataset.assumir);
+      if(!c) return;
+      const avisar=confirm(`Assumir o atendimento de ${c.nome}?\n\nOK = avisa o cliente que o setor entrou na conversa\nCancelar = assume em silêncio`);
+      btn.disabled=true; btn.textContent='Assumindo…';
+      try{
+        await api.assumir(c, avisar);
+        await recarregarConversas();
+        toast('Atendimento assumido');
+      }catch(err){ btn.disabled=false; btn.textContent='✋ Assumir atendimento'; toast('Falha: '+err.message); }
+    };
+  });
   b.querySelectorAll('.card-c').forEach(el=>{
     el.onclick=()=>openModal(+el.dataset.id);
     el.ondragstart=e=>{ e.dataTransfer.setData('text/plain',el.dataset.id); el.classList.add('dragging'); };
@@ -1719,6 +1764,22 @@ function renderBoard(){
     };
   });
 }
+// Há quanto tempo o cliente espera por um humano. É o número que vira métrica
+// de cobrança do time, então aparece no card antes de alguém abrir a conversa.
+function esperaTexto(c){
+  if(!c.filaDesde) return null;
+  const min=Math.floor((Date.now()-new Date(c.filaDesde).getTime())/60000);
+  if(min<1) return 'agora';
+  if(min<60) return min+' min';
+  const h=Math.floor(min/60);
+  return h<24 ? `${h}h${String(min%60).padStart(2,'0')}` : `${Math.floor(h/24)}d`;
+}
+function esperaClasse(c){
+  if(!c.filaDesde) return '';
+  const min=(Date.now()-new Date(c.filaDesde).getTime())/60000;
+  return min>=15 ? 'critico' : (min>=5 ? 'alerta' : '');
+}
+
 function cardHTML(c,col){
   const [cls,lbl]=statusBadge(col);
   const flags=[];
@@ -1726,6 +1787,7 @@ function cardHTML(c,col){
   else if(c.cliente.atraso>0) flags.push(`<span class="cc-tag risk">ATRASADO ${c.cliente.atraso}D</span>`);
   if(c.cliente.recorrente) flags.push(`<span class="cc-tag warn">${esc(c.cliente.recorrente.toUpperCase())}</span>`);
   const tags=c.tags.map(t=>`<span class="cc-tag">${esc(t)}</span>`).join('');
+  const espera=col==='fila'?esperaTexto(c):null;
   return `<div class="card-c" draggable="true" data-id="${c.id}">
     <div class="cc-top">
       <div class="cc-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
@@ -1735,6 +1797,11 @@ function cardHTML(c,col){
     </div>
     <div class="cc-msg">${esc(c.preview)}</div>
     ${(flags.length||tags)?`<div class="cc-tags">${flags.join('')}${tags}</div>`:''}
+    ${col==='fila'?`
+      <div class="cc-espera ${esperaClasse(c)}">
+        <span class="ce-l">⏱ esperando há</span><span class="ce-v">${esc(espera||'—')}</span>
+      </div>
+      <button class="cc-assumir" data-assumir="${c.id}">✋ Assumir atendimento</button>`:''}
     <div class="cc-foot">
       <svg class="cc-wa" viewBox="0 0 24 24"><path d="${WA_PATH}"/></svg>
       <span class="cc-att">${esc(c.atendente)}</span>
@@ -3035,6 +3102,14 @@ setInterval(async()=>{
     if(session) TOKEN = session.access_token;
   }catch(e){}
 }, 10*60*1000);
+
+/* O tempo de espera precisa andar sozinho: sem isso o número congela no valor
+   de quando a tela foi montada e o atendente acha que ninguém está esperando. */
+setInterval(()=>{
+  if(view!=='kanban') return;
+  if(!state.conversas.some(c=>c.col==='fila')) return;
+  renderKpis(); renderBoard();
+}, 30000);
 
 /* ================= RENDER ALL ================= */
 function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); }
