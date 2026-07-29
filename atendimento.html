@@ -1352,7 +1352,16 @@ function mapearConversa(c){
 
 async function recarregarConversas(){
   const j = await chamar('conversas.listar', {});
-  state.conversas = (j.conversas||[]).map(mapearConversa);
+  const anteriores = new Map(state.conversas.map(c => [c.id, c]));
+  state.conversas = (j.conversas||[]).map(c => {
+    const nova = mapearConversa(c);
+    const antiga = anteriores.get(nova.id);
+    if (antiga) {
+      nova.msgs = antiga.msgs;
+      nova._msgsCarregadas = antiga._msgsCarregadas;
+    }
+    return nova;
+  });
   renderAll();
 }
 
