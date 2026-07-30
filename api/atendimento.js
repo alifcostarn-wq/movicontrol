@@ -452,9 +452,9 @@ async function financeiroAoVivo(e, ixcId) {
   const pagas = todas
     .filter(f => String(f.status || '').toUpperCase() === 'R')
     .map(f => ({
-      valor: Number(pick(f, 'valor_baixado', 'valor_recebido') ?? f.valor ?? 0),
-      data: fmtDataBR(parseDataIXC(pick(f, 'data_baixa', 'data_recebimento', 'data_pagamento',
-                                          'data_liquidacao', 'data_credito', 'data_pgto', 'data_vencimento'))),
+      valor: Number(pick(f, 'valor_recebido', 'pagamento_valor', 'valor_baixado') ?? f.valor ?? 0),
+      data: fmtDataBR(parseDataIXC(pick(f, 'pagamento_data', 'baixa_data', 'credito_data',
+                                          'data_recebimento', 'data_pagamento', 'data_vencimento'))),
     }))
     .slice(-3).reverse();
 
@@ -520,6 +520,7 @@ async function conexaoAoVivo(e, ixcId) {
       Object.assign(item, await sessoesDoDia(e, ixcId, login));
     } catch (err) {
       item.accounting_erro = String(err.message || err).slice(0, 160);
+      item.accounting_tentativas = err.tentativas || null;
     }
     logins.push(item);
   }
@@ -527,22 +528,45 @@ async function conexaoAoVivo(e, ixcId) {
 }
 
 // Uma "queda" é uma sessão PPPoE que ENCERROU hoje. Sessão sem fim = a atual.
-// O nome da tabela de accounting muda entre versões do IXC, então tentamos em
-// cascata e devolvemos qual funcionou — sem isso, "0 quedas" fica indistinguível
-// de "não consegui ler o histórico", que são coisas bem diferentes.
-const ENDPOINTS_ACCT = ['radpop_radaccounting', 'radacct', 'radpop_radacct', 'radaccounting'];
+// O accounting é a parte mais instável do webservice do IXC: o nome da tabela E
+// o campo de busca mudam entre versões (o FreeRADIUS indexa por username, não
+// por id_cliente). Tentamos as combinações e guardamos o erro de cada uma —
+// sem isso, "não respondeu" não diz qual das duas coisas está errada.
+const TENTATIVAS_ACCT = [
+  ['radpop_radaccounting', 'id_cliente'],
+  ['radpop_radaccounting', 'login'],
+  ['radpop_radaccounting', 'nomeusuario'],
+  ['radacct', 'username'],
+  ['radacct', 'id_cliente'],
+  ['radpop_radacct', 'id_cliente'],
+  ['radpop_radacct', 'login'],
+  ['radusuarios_online', 'id_cliente'],
+];
 
 async function sessoesDoDia(e, ixcId, login) {
-  let d = null, usado = null, ultimoErro = null;
-  for (const ep of ENDPOINTS_ACCT) {
+  let d = null, usado = null;
+  const erros = [];
+
+  for (const [ep, campo] of TENTATIVAS_ACCT) {
+    // campos de login precisam do login; os de id, do id do cliente
+    const valor = /login|usuario|username/i.test(campo) ? login : String(ixcId);
+    if (!valor || valor === '—') continue;
     try {
       const r = await ixc(e, ep, {
-        qtype: `${ep}.id_cliente`, query: String(ixcId), oper: '=', rp: '200',
+        qtype: `${ep}.${campo}`, query: valor, oper: '=', rp: '200',
       });
-      if (r && Array.isArray(r.registros)) { d = r; usado = ep; break; }
-    } catch (err) { ultimoErro = `${ep}: ${err.message}`; }
+      if (r && Array.isArray(r.registros)) { d = r; usado = `${ep}.${campo}`; break; }
+      erros.push(`${ep}.${campo}: sem lista de registros`);
+    } catch (err) {
+      erros.push(`${ep}.${campo}: ${String(err.message).slice(0, 90)}`);
+    }
   }
-  if (!d) throw new Error(ultimoErro || 'Nenhum endpoint de accounting respondeu.');
+
+  if (!d) {
+    const err = new Error('Nenhuma combinação de accounting respondeu.');
+    err.tentativas = erros;
+    throw err;
+  }
 
   const todos = d.registros || [];
   const regs = todos.filter(r => {
@@ -552,8 +576,11 @@ async function sessoesDoDia(e, ixcId, login) {
 
   let quedas = 0, ultima = null, motivo = null, desde = null;
   for (const r of regs) {
-    const ini = parseDataIXC(pick(r, 'inicioconexao', 'acctstarttime', 'start_time', 'data_inicio', 'data_conexao'));
-    const fim = parseDataIXC(pick(r, 'fimconexao', 'acctstoptime', 'stop_time', 'data_fim', 'data_desconexao'));
+    // o IXC inverte nomes (ver pagamento_data): tentamos as duas ordens
+    const ini = parseDataIXC(pick(r, 'inicioconexao', 'conexao_data', 'inicio_data',
+                                     'acctstarttime', 'start_time', 'data_inicio', 'data_conexao'));
+    const fim = parseDataIXC(pick(r, 'fimconexao', 'desconexao_data', 'fim_data',
+                                     'acctstoptime', 'stop_time', 'data_fim', 'data_desconexao'));
     if (fim && ehHoje(fim)) {
       quedas++;
       if (!ultima || fim > ultima) {
@@ -564,7 +591,7 @@ async function sessoesDoDia(e, ixcId, login) {
     if (!fim && ini && (!desde || ini > desde)) desde = ini;
   }
 
-  // se veio registro mas nenhuma data foi lida, o nome do campo é outro
+  // veio registro mas nenhuma data foi lida: o nome do campo é outro
   const diag = (todos.length && !ultima && !desde)
     ? { endpoint: usado, registros: todos.length, campos: Object.keys(todos[0]) }
     : null;
@@ -1991,9 +2018,10 @@ export default async function handler(req, res) {
           .filter(f => String(f.status || '').toUpperCase() === 'R')
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
-            // o IXC nomeia a liquidação como "baixa" — daí a ordem dos candidatos
-            const pag = parseDataIXC(pick(f, 'data_baixa', 'data_recebimento', 'data_pagamento',
-                                          'data_liquidacao', 'data_credito', 'data_pgto'));
+            // nomes confirmados nesta instalação: o IXC inverte a ordem
+            // (pagamento_data / baixa_data / credito_data)
+            const pag = parseDataIXC(pick(f, 'pagamento_data', 'baixa_data', 'credito_data',
+                                          'data_recebimento', 'data_pagamento'));
             const emi = parseDataIXC(pick(f, 'data_emissao', 'data_criacao'));
             return {
               id: f.id,
@@ -2002,10 +2030,10 @@ export default async function handler(req, res) {
               vencimento: fmtDataBR(venc),
               pagamento: fmtDataBR(pag),
               valor: Number(f.valor || 0),
-              valor_pago: Number(pick(f, 'valor_baixado', 'valor_recebido') ?? f.valor ?? 0),
+              valor_pago: Number(pick(f, 'valor_recebido', 'pagamento_valor', 'valor_baixado') ?? f.valor ?? 0),
               // atraso real: só conta se pagou depois do vencimento
               atraso: (venc && pag) ? Math.max(0, diasCorridos(venc, pag)) : null,
-              forma: pick(f, 'forma_recebimento', 'tipo_recebimento'),
+              forma: pick(f, 'tipo_recebimento', 'forma_recebimento'),
             };
           })
           .slice(0, 24);
