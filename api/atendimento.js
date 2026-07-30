@@ -527,6 +527,43 @@ async function conexaoAoVivo(e, ixcId) {
   return { logins };
 }
 
+// Motivos de desconexão do RADIUS (Acct-Terminate-Cause). Traduzir importa mais
+// do que parece: o código diz de que LADO está o problema, e é isso que decide
+// se o atendente orienta o cliente ou abre chamado para a rede.
+//   origem 'cliente' = algo na ponta do assinante
+//   origem 'rede'    = algo na infra do provedor (candidato a chamado)
+//   origem 'normal'  = encerramento esperado, não é falha
+const MOTIVO_QUEDA = {
+  'lost-carrier':        ['Perda de sinal', 'O enlace caiu fisicamente: roteador/ONU desligado, falta de energia ou rompimento na fibra. É a causa mais comum.', 'cliente'],
+  'user-request':        ['Cliente desconectou', 'O próprio equipamento do cliente encerrou a conexão — normalmente reinício do roteador.', 'cliente'],
+  'lost-service':        ['Serviço interrompido', 'O serviço caiu no lado da rede durante a sessão.', 'rede'],
+  'idle-timeout':        ['Inatividade', 'A sessão ficou sem tráfego e foi encerrada por tempo ocioso.', 'normal'],
+  'session-timeout':     ['Tempo de sessão expirado', 'Renovação normal de sessão PPPoE, feita por política do concentrador.', 'normal'],
+  'admin-reset':         ['Reiniciado pela operadora', 'Alguém derrubou a sessão pelo painel — desbloqueio, troca de plano ou suporte.', 'rede'],
+  'admin-reboot':        ['Concentrador reiniciado', 'O equipamento da operadora foi reiniciado, derrubando as sessões.', 'rede'],
+  'nas-request':         ['Encerrado pelo concentrador', 'O concentrador encerrou a sessão por decisão própria.', 'rede'],
+  'nas-reboot':          ['Concentrador reiniciado', 'O concentrador caiu ou foi reiniciado.', 'rede'],
+  'nas-error':           ['Falha no concentrador', 'Erro no equipamento da operadora. Se repetir, é problema de rede.', 'rede'],
+  'port-error':          ['Erro na porta', 'Falha na porta de acesso do concentrador.', 'rede'],
+  'port-suspended':      ['Porta suspensa', 'A porta foi suspensa administrativamente.', 'rede'],
+  'port-preempted':      ['Porta reassumida', 'A porta foi tomada por outra sessão.', 'rede'],
+  'port-unneeded':       ['Porta liberada', 'Encerramento normal por porta não mais necessária.', 'normal'],
+  'service-unavailable': ['Serviço indisponível', 'O serviço não estava disponível no momento da conexão.', 'rede'],
+  'user-error':          ['Erro de autenticação', 'Falha nas credenciais PPPoE — senha trocada ou configuração errada no roteador.', 'cliente'],
+  'host-request':        ['Encerrado pelo sistema', 'Encerramento solicitado pelo host.', 'normal'],
+  'callback':            ['Callback', 'Sessão encerrada para retorno de chamada.', 'normal'],
+};
+
+function traduzirMotivoQueda(bruto) {
+  const s = String(bruto || '').trim();
+  if (!s) return null;
+  // aceita 'Lost-Carrier', 'lost_carrier', 'LOST CARRIER' e o código numérico
+  const chave = s.toLowerCase().replace(/[\s_]+/g, '-');
+  const m = MOTIVO_QUEDA[chave];
+  if (m) return { codigo: s, rotulo: m[0], ajuda: m[1], origem: m[2] };
+  return { codigo: s, rotulo: s, ajuda: 'Código de desconexão não catalogado.', origem: 'normal' };
+}
+
 // Uma "queda" é uma sessão PPPoE que ENCERROU hoje. Sessão sem fim = a atual.
 // O accounting é a parte mais instável do webservice do IXC: o nome da tabela E
 // o campo de busca mudam entre versões (o FreeRADIUS indexa por username, não
@@ -599,7 +636,7 @@ async function sessoesDoDia(e, ixcId, login) {
   return {
     quedas_hoje: quedas,
     ultima_queda: fmtDataHoraBR(ultima),
-    motivo_ultima_queda: motivo,
+    motivo_ultima_queda: traduzirMotivoQueda(motivo),
     online_desde: fmtDataHoraBR(desde),
     acct_endpoint: usado,
     acct_registros: todos.length,
