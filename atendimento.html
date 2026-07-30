@@ -402,6 +402,28 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .tr-avisar input{width:16px;height:16px;accent-color:var(--green);cursor:pointer;}
 .tr-acts{display:flex;gap:8px;justify-content:flex-end;}
 
+/* ---- chamados / O.S. do MoviOn ---- */
+.ch-item{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:7px;background:#fbfcfd;}
+.ch-item.aberto{border-color:#fecaca;background:#fff6f6;}
+.ch-top{display:flex;align-items:center;gap:7px;margin-bottom:5px;}
+.ch-tipo{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:#eef2f6;color:var(--text-mid);
+  font-family:'JetBrains Mono',monospace;}
+.ch-tipo.os{background:var(--blue-soft);color:#1d4ed8;}
+.ch-etapa{margin-left:auto;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:6px;}
+.ch-etapa.ab{background:var(--red-soft);color:var(--red);}
+.ch-etapa.ok{background:var(--green-soft);color:var(--green-deep);}
+.ch-tit{font-size:12px;font-weight:700;line-height:1.35;color:var(--text);}
+.ch-meta{font-size:10.5px;color:var(--text-low);margin-top:3px;line-height:1.4;}
+
+/* ---- risquinhos de entrega/leitura ---- */
+.ck{display:inline-flex;align-items:center;margin-left:4px;vertical-align:middle;}
+.ck svg{width:14px;height:11px;stroke-width:2.2;fill:none;stroke:currentColor;}
+.ck.pendente{color:var(--text-low);opacity:.55;}
+.ck.enviado{color:var(--text-low);}
+.ck.entregue{color:var(--text-mid);}
+.ck.lido{color:#2196f3;}
+.ck.erro{color:var(--red);}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -1385,6 +1407,7 @@ const api = {
       id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
       tipo: m.tipo || 'texto', link: m.midia_link || null,
       respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
+      status: m.status || null,
     }));
     return c.msgs;
   },
@@ -1500,7 +1523,7 @@ function mapearConversa(c){
     col:c.coluna, hora: c.ultima_msg_em ? new Date(c.ultima_msg_em).toTimeString().slice(0,5) : '',
     unread:c.nao_lidas||0, tags:c.tags||[], notas:c.notas||'', rating:c.rating,
     atendente: c.atendente_id ? ((EQUIPE.find(p=>p.id===c.atendente_id)||{}).nome||'—') : '— Bot —',
-    setor: c.setor||'Suporte', preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
+    setor: c.setor||null, preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
     filaDesde: c.fila_desde||null, assumidoEm: c.assumido_em||null,
     cliente:{
       plano: snap.plano||'—', desde: snap.desde||'—',
@@ -1577,6 +1600,16 @@ function ligarRealtime(){
       if(!c) return;
       if(modalId===c.id){ await api.carregarMensagens(c); openModal(c.id); }
       if(p.new.direcao==='in') tocarAlerta();
+    })
+    // ACK de entrega/leitura chega como UPDATE: sem isso o risquinho ficaria
+    // congelado no estado do momento em que a thread foi carregada
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'atend_mensagens' }, (p)=>{
+      const c = state.conversas.find(x=>x.id===p.new.conversa_id);
+      if(!c || !c.msgs) return;
+      const m = c.msgs.find(x=>x.id===p.new.id);
+      if(!m || m.status===p.new.status) return;
+      m.status = p.new.status;
+      if(modalId===c.id) openModal(c.id);
     })
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'atend_chat_interno' }, ()=>{
       recarregarChat().catch(()=>{});
@@ -1798,7 +1831,7 @@ function cardHTML(c,col){
     <div class="cc-top">
       <div class="cc-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
       <div class="cc-name">${esc(c.nome)}</div>
-      <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'')}"></span>
+      <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor — fila geral')}"></span>
       <div class="cc-time">${esc(c.hora)}</div>
     </div>
     <div class="cc-msg">${esc(c.preview)}</div>
@@ -1971,9 +2004,33 @@ function blocoChamados(c){
   if(p.erros&&p.erros.chamados) return `<div class="ms-erro">Chamados indisponíveis.</div>`;
   const ch=p.chamados;
   if(!ch) return `<div style="font-size:11.5px;color:var(--text-low)">Sem dados.</div>`;
-  return `<div class="sup-sum"><span class="n">${ch.total30}</span><span class="l">chamados no período${ch.abertos?` · ${ch.abertos} em aberto`:''}</span></div>
-    ${ch.itens.map(s=>`<div class="sup-line"><div><div class="st">${esc(s.titulo)}</div><div class="sd">${esc(s.data||'—')}</div></div><span class="ss ${s.aberto?'ab':'ok'}">${s.aberto?'ABERTO':'RESOLVIDO'}</span></div>`).join('')
-      ||'<div style="font-size:11.5px;color:var(--text-low)">Nenhum chamado recente</div>'}`;
+  return `<div class="sup-sum"><span class="n">${ch.total30}</span><span class="l">chamados no período${ch.abertos?` · <b style="color:var(--red)">${ch.abertos} em aberto</b>`:''}</span></div>
+    ${ch.itens.map(s=>`
+      <div class="ch-item ${s.aberto?'aberto':''}">
+        <div class="ch-top">
+          <span class="ch-tipo ${s.origem}">${s.origem==='os'?'O.S.':'ATEND'} #${esc(String(s.id))}</span>
+          <span class="ch-etapa ${s.aberto?'ab':'ok'}">${esc(s.etapa)}</span>
+        </div>
+        <div class="ch-tit">${esc(s.titulo)}</div>
+        <div class="ch-meta">Aberto em ${esc(s.data||'—')}${
+          s.agendada_para?` · <b>agendado ${esc(s.agendada_para)}</b>`:''}${
+          s.tecnico?` · téc. ${esc(String(s.tecnico))}`:''}</div>
+      </div>`).join('')
+      ||'<div style="font-size:11.5px;color:var(--text-low)">Nenhum chamado recente</div>'}
+    ${ch.erro_os?`<div class="ms-erro" style="margin-top:7px;">O.S. indisponíveis: ${esc(ch.erro_os)}</div>`:''}`;
+}
+
+/* ===== RISQUINHOS DE ENTREGA/LEITURA (só em mensagens que saíram) ===== */
+function checkHTML(m){
+  if(m.t==='in'||m.t==='sys') return '';
+  const st=m.status||'enviado';
+  const rotulo={pendente:'Enviando…',enviado:'Enviado',entregue:'Entregue no aparelho',lido:'Lido pelo cliente',erro:'Falha no envio'}[st]||'Enviado';
+  if(st==='erro') return `<span class="ck erro" title="${rotulo}">⚠</span>`;
+  // um risquinho = saiu daqui; dois = chegou no aparelho; dois azuis = leu
+  const duplo = st==='entregue'||st==='lido';
+  return `<span class="ck ${st}" title="${rotulo}"><svg viewBox="0 0 18 12">
+    <path d="M1 6.5l3.2 3.2L10.5 2.5"/>${duplo?'<path d="M7.5 9.7L13.8 2.5"/>':''}
+  </svg></span>`;
 }
 
 /* ===== RESPONDER MENSAGEM (citação) ===== */
@@ -2082,7 +2139,6 @@ function openModal(id){
   const pillCont = `<div class="pill ${cl.contrato==='Ativo'?'ok':(cl.lead?'ok':'warn')}"><div class="pl">Contrato</div><div class="pv">${esc(cl.contrato)}</div></div>`;
 
   const meusAg = state.agendamentos.filter(a=>a.convId===c.id);
-  const timeline = buildTimeline(c);
 
   $('#modal').innerHTML=`
   <div class="m-abas only-mobile">
@@ -2094,7 +2150,7 @@ function openModal(id){
       <div class="cc-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
       <div class="m-hinfo">
         <div class="m-hname">${esc(c.nome)}<span class="rename-ico" id="mRename" title="Renomear contato">✎</span></div>
-        <div class="m-hsub"><span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor||'—')}</span> · ${esc(c.fone)} · ${cl.lead?'lead':'cliente desde '+esc(cl.desde)+' · '+esc(cl.plano)}</div>
+        <div class="m-hsub"><span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor||'Sem setor')}</span> · ${esc(c.fone)} · ${cl.lead?'lead':'cliente desde '+esc(cl.desde)+' · '+esc(cl.plano)}</div>
       </div>
       <button class="m-close" id="mClose">✕</button>
     </div>
@@ -2118,7 +2174,7 @@ function openModal(id){
               <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
           }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${
             m.id?`<button class="mb-reply" data-responder="${m.id}" title="Responder esta mensagem">↩ responder</button>`:''
-          }<span class="tm">${esc(m.h||'')}</span></div></div>`).join('')}
+          }<span class="tm">${esc(m.h||'')}${checkHTML(m)}</span></div></div>`).join('')}
     </div>
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
@@ -2178,10 +2234,6 @@ function openModal(id){
       <h3>Suporte · últimos 30 dias</h3>
       ${blocoChamados(c)}
     </div>`}
-    <div class="ms-sec">
-      <h3>Como chegou aqui</h3>
-      <div class="tl">${timeline.map((t,i)=>`<div class="tl-row ${i===timeline.length-1?'on':''}"><div class="tl-d"></div><div class="tl-t">${esc(t.txt)}<span class="tl-h">${esc(t.h||'')}</span></div></div>`).join('')}</div>
-    </div>
     <div class="ms-sec">
       <h3>Mensagens agendadas</h3>
       ${meusAg.map(ag=>`<div class="sched-item"><div><div class="sc-txt">${esc(ag.texto)}</div><div class="sc-time">${esc(ag.quando)}</div></div><span class="sc-cancel" data-agcancel="${ag.id}">✕</span></div>`).join('')||'<div class="sched-empty">Nenhuma agendada para esta conversa.</div>'}
@@ -2243,7 +2295,7 @@ function openModal(id){
   const send=()=>{
     const v=$('#mInput').value.trim(); if(!v)return;
     const citada=respondendoA;
-    c.msgs.push({t:'out',x:v,h:new Date().toTimeString().slice(0,5),
+    c.msgs.push({t:'out',x:v,h:new Date().toTimeString().slice(0,5),status:'pendente',
       quoteTexto:citada?citada.texto:null, quoteDirecao:citada&&citada.autor!=='você'?'in':'out'});
     c.preview='Você: '+v;
     if(c.col==='novos'){ c.col='atendimento'; }
