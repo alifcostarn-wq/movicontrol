@@ -259,7 +259,10 @@ async function baixarMidia(e, waId) {
 
 const EXT_POR_MIME = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-  'application/pdf': 'pdf', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'video/mp4': 'mp4',
+  'application/pdf': 'pdf', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+  'audio/aac': 'aac', 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/3gpp': '3gp',
+  // figurinha do WhatsApp é webp (estática ou animada)
+  'application/vnd.ms-excel': 'xls', 'text/plain': 'txt',
 };
 
 async function guardarMidia(e, conversaId, waId, arq) {
@@ -1398,9 +1401,11 @@ async function tratarWebhook(e, body) {
   ).trim();
 
   let tipo = 'texto';
-  if (msg.imageMessage) tipo = 'imagem';
+  if (msg.stickerMessage) tipo = 'figurinha';
+  else if (msg.imageMessage) tipo = 'imagem';
   else if (msg.audioMessage) tipo = 'audio';
-  else if (msg.videoMessage) tipo = 'video';
+  // o WhatsApp manda GIF como vídeo com gifPlayback: sem isso vira vídeo comum
+  else if (msg.videoMessage) tipo = msg.videoMessage.gifPlayback ? 'gif' : 'video';
   else if (msg.documentMessage) tipo = 'documento';
   else if (msg.locationMessage) tipo = 'localizacao';
 
