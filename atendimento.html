@@ -1749,6 +1749,7 @@ async function carregarTudo(){
   ETIQ_ID = Object.fromEntries((j.etiquetas||[]).map(t=>[t.nome,t.id]));
   state.tags     = (j.etiquetas||[]).map(t=>t.nome);
   state.atalhos  = (j.atalhos||[]).map(a=>({ id:a.id, t:a.titulo, m:a.mensagem }));
+  state.avaliacoes = j.avaliacoes || { media:null, total:0 };
   state.rules    = (j.regras||[]).map(r=>({ id:r.id, kw:r.palavra, acao:r.acao }));
   state.fluxo    = j.fluxo ? { id:j.fluxo.id, nodes:j.fluxo.nodes||[], edges:j.fluxo.edges||[] } : { nodes:[], edges:[] };
   state.conversas = (j.conversas||[]).map(mapearConversa);
@@ -1914,15 +1915,18 @@ function renderKpis(){
     return Math.max(m,(Date.now()-new Date(x.filaDesde).getTime())/60000);
   },0);
   const esperaLbl=fila.length?(piorEspera<1?'agora':(piorEspera<60?Math.floor(piorEspera)+' min':Math.floor(piorEspera/60)+'h')):'—';
-  const ratings=c.filter(x=>x.rating); 
-  const media=ratings.length? (ratings.reduce((s,x)=>s+x.rating,0)/ratings.length).toFixed(1).replace('.',',') : '—';
+  // média do histórico (atend_avaliacoes). O rating na conversa é zerado a cada
+  // novo atendimento, então contá-lo aqui daria um número menor que o real.
+  const av = state.avaliacoes || {};
+  const media = av.total ? Number(av.media).toFixed(1).replace('.',',') : '—';
+  const qtdAv = av.total || 0;
   $('#kpis').innerHTML=`
     <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${n}</div><div class="kpi-lbl">No bot</div></div></div>
     <div class="kpi ${fila.length?'r':'g'}"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${fila.length}</div><div class="kpi-lbl">Aguardando atend.${fila.length?` · ${esperaLbl}`:''}</div></div></div>
     <div class="kpi b"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${a}</div><div class="kpi-lbl">Em atendimento</div></div></div>
     <div class="kpi o"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${g}</div><div class="kpi-lbl">Aguardando</div></div></div>
     <div class="kpi p"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div><div><div class="kpi-num">${r}</div><div class="kpi-lbl">Resolvidos</div></div></div>
-    <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1L3.2 9.4l6.1-.9L12 3z"/></svg></div><div><div class="kpi-num">${media}</div><div class="kpi-lbl">Avaliação média</div></div></div>`;
+    <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1L3.2 9.4l6.1-.9L12 3z"/></svg></div><div><div class="kpi-num">${media}</div><div class="kpi-lbl">Avaliação média${qtdAv?` · ${qtdAv}`:''}</div></div></div>`;
 }
 
 /* ================= FILTER BAR ================= */
