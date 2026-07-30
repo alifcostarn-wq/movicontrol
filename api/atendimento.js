@@ -179,6 +179,50 @@ async function ixc(e, endpoint, params = {}, metodo = 'listar') {
 
 // O gateway (Sulcredi/IXC) devolve o PIX aninhado em profundidade variável.
 // Procura recursivamente qualquer string EMV que comece com "0002".
+// Envio de arquivo (boleto em PDF) e imagem (QR do Pix) pela Evolution.
+// `media` vai em base64 puro, sem o prefixo data:.
+async function waEnviarMidia(e, fone, { base64, tipo = 'document', mimetype, nomeArquivo, legenda }) {
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
+  const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
+  if (!limpo) throw new Error('Arquivo vazio.');
+  const r = await fetch(`${e.EVO_URL}/message/sendMedia/${e.EVO_INST}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+    body: JSON.stringify({
+      number: normalizarFone(fone),
+      mediatype: tipo,                        // 'document' | 'image'
+      mimetype: mimetype || (tipo === 'image' ? 'image/png' : 'application/pdf'),
+      media: limpo,
+      fileName: nomeArquivo || 'arquivo.pdf',
+      caption: legenda || '',
+    }),
+  });
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`Evolution ${r.status}: ${txt.slice(0, 300)}`);
+  try { return JSON.parse(txt); } catch { return { raw: txt }; }
+}
+
+// O IXC devolve o PDF do boleto em base64, mas a chave muda por versão.
+function acharBase64(obj, prof = 0) {
+  if (!obj || prof > 8) return null;
+  if (typeof obj === 'string') {
+    const s = obj.replace(/^data:[^;]+;base64,/, '').trim();
+    return s.length > 500 && /^[A-Za-z0-9+/=\r\n]+$/.test(s) ? s : null;
+  }
+  if (Array.isArray(obj)) {
+    for (const it of obj) { const r = acharBase64(it, prof + 1); if (r) return r; }
+    return null;
+  }
+  if (typeof obj === 'object') {
+    // dá preferência às chaves mais prováveis antes de varrer o resto
+    for (const k of ['arquivo', 'base64', 'pdf', 'boleto', 'file', 'conteudo']) {
+      if (obj[k]) { const r = acharBase64(obj[k], prof + 1); if (r) return r; }
+    }
+    for (const v of Object.values(obj)) { const r = acharBase64(v, prof + 1); if (r) return r; }
+  }
+  return null;
+}
+
 function acharPix(obj, prof = 0) {
   if (!obj || prof > 8) return null;
   if (typeof obj === 'string') return /^0002[0-9A-Za-z]/.test(obj.trim()) && obj.length > 60 ? obj.trim() : null;
@@ -1717,6 +1761,222 @@ export default async function handler(req, res) {
         } catch (err) {
           return res.status(200).json({ ok: true, endpoint, erro: err.message });
         }
+      }
+
+      // ===== AÇÕES RÁPIDAS: faturas, contrato, extrato =====
+
+      // lista as faturas em aberto para o atendente escolher qual enviar
+      case 'cliente.faturas': {
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        const d = await ixc(e, 'fn_areceber', {
+          qtype: 'fn_areceber.id_cliente', query: ixcId, oper: '=', rp: '100',
+          sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
+        });
+        const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+        const itens = (d.registros || [])
+          .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()))
+          .map(f => {
+            const venc = parseDataIXC(f.data_vencimento);
+            const atraso = venc ? Math.max(0, diasCorridos(venc, hoje)) : 0;
+            return {
+              id: f.id,
+              documento: pick(f, 'documento', 'numero_documento'),
+              valor: Number(pick(f, 'valor_aberto') ?? f.valor ?? 0),
+              vencimento: fmtDataBR(venc),
+              atraso, vencida: atraso > 0,
+              tem_linha: !!pick(f, 'linha_digitavel'),
+              linha_digitavel: pick(f, 'linha_digitavel'),
+              link: pick(f, 'gateway_link'),
+            };
+          });
+        return res.status(200).json({ ok: true, faturas: itens });
+      }
+
+      // envia a cobrança escolhida ao cliente: PDF, Pix ou código de barras
+      case 'fatura.enviar': {
+        const id = Number(body.conversa_id);
+        const faturaId = String(body.fatura_id || '').trim();
+        const tipo = String(body.tipo || '').trim();          // pdf | pix | barras
+        if (!id || !faturaId) return res.status(400).json({ ok: false, error: 'conversa_id e fatura_id obrigatórios.' });
+        if (!['pdf', 'pix', 'barras'].includes(tipo)) return res.status(400).json({ ok: false, error: 'tipo inválido.' });
+
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+
+        const registrar = async (conteudo, tipoMsg = 'texto') => {
+          await sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: { conversa_id: id, direcao: 'out', conteudo, autor_id: user.id, tipo: tipoMsg, status: 'enviado' },
+          });
+        };
+
+        if (tipo === 'pdf') {
+          const r = await ixc(e, 'get_boleto', {
+            boletos: faturaId, juros: 'N', multa: 'N', atualiza_boleto: 'N',
+            tipo_boleto: 'arquivo', base64: 'S',
+          }, 'listar');
+          const b64 = acharBase64(r);
+          if (!b64) return res.status(200).json({ ok: false, error: 'O IXC não retornou o PDF do boleto. Verifique se a fatura tem boleto gerado.' });
+          const legenda = String(body.legenda || '').trim() || 'Segue sua fatura em PDF. 📄';
+          await waEnviarMidia(e, c.contato_fone, {
+            base64: b64, tipo: 'document', mimetype: 'application/pdf',
+            nomeArquivo: `fatura-${faturaId}.pdf`, legenda,
+          });
+          await registrar(`📄 Fatura #${faturaId} enviada em PDF`, 'documento');
+        }
+
+        if (tipo === 'pix') {
+          const g = await ixc(e, 'get_pix', { id_areceber: faturaId }, 'listar');
+          const pix = acharPix(g);
+          if (!pix) return res.status(200).json({ ok: false, error: 'Não consegui gerar o Pix desta fatura no IXC.' });
+          // se o IXC devolver a imagem do QR junto, manda também
+          const qr = acharBase64(g);
+          if (qr) {
+            try {
+              await waEnviarMidia(e, c.contato_fone, {
+                base64: qr, tipo: 'image', mimetype: 'image/png',
+                nomeArquivo: 'pix.png', legenda: 'QR Code para pagamento via Pix 💠',
+              });
+              await registrar('💠 QR Code do Pix enviado', 'imagem');
+            } catch (err) { console.error('[atendimento] qr pix:', err.message); }
+          }
+          const texto = 'Pix copia e cola 💠\nA baixa é automática após o pagamento.\n\n' + pix;
+          const env = await waEnviar(e, c.contato_fone, texto);
+          await sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
+          });
+        }
+
+        if (tipo === 'barras') {
+          const linha = String(body.linha_digitavel || '').trim();
+          if (!linha) return res.status(200).json({ ok: false, error: 'Esta fatura não tem linha digitável no IXC.' });
+          const texto = 'Código de barras da sua fatura 🧾\n\n' + linha;
+          const env = await waEnviar(e, c.contato_fone, texto);
+          await sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
+          });
+        }
+
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            ultima_msg: 'Você: cobrança enviada', ultima_msg_em: new Date().toISOString(),
+            bot_ativo: false, atendente_id: c.atendente_id || user.id,
+            assumido_em: c.assumido_em || new Date().toISOString(),
+            assumido_por: c.assumido_por || user.id,
+            setor: c.setor || user.setor || null,
+            coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
+            updated_by: user.id,
+          },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // resumo estratégico do contrato — só para o atendente ver, não envia nada
+      case 'cliente.contrato': {
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+
+        const [cli, ctr] = await Promise.all([
+          ixc(e, 'cliente', { qtype: 'cliente.id', query: ixcId, oper: '=', rp: '1' }).catch(() => null),
+          ixc(e, 'cliente_contrato', { qtype: 'cliente_contrato.id_cliente', query: ixcId, oper: '=', rp: '20' }),
+        ]);
+        const c0 = cli && cli.registros ? cli.registros[0] : null;
+        const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+
+        const contratos = (ctr.registros || []).map(k => {
+          const ativ = parseDataIXC(pick(k, 'data_ativacao', 'data_ativacao_contrato'));
+          const renov = parseDataIXC(pick(k, 'data_renovacao', 'data_renovacao_contrato'));
+          const fim = parseDataIXC(pick(k, 'data_cancelamento', 'data_encerramento'));
+          const meses = Number(pick(k, 'tempo_contrato', 'meses_contrato', 'fidelidade') || 0);
+          // fidelidade: conta a partir da renovação se houver, senão da ativação
+          const base = renov || ativ;
+          let fimFidelidade = null, emFidelidade = null;
+          if (base && meses > 0) {
+            fimFidelidade = new Date(base); fimFidelidade.setMonth(fimFidelidade.getMonth() + meses);
+            emFidelidade = fimFidelidade > hoje;
+          }
+          return {
+            id: k.id,
+            descricao: pick(k, 'contrato', 'descricao') || `Contrato #${k.id}`,
+            plano: pick(k, 'contrato', 'plano', 'descricao_aux'),
+            status: String(pick(k, 'status') || '').toUpperCase(),
+            status_internet: String(pick(k, 'status_internet') || '').toUpperCase(),
+            ativacao: fmtDataBR(ativ),
+            renovacao: fmtDataBR(renov),
+            encerramento: fmtDataBR(fim),
+            dia_vencimento: pick(k, 'dia_vencimento', 'vencimento'),
+            valor: Number(pick(k, 'valor', 'valor_contrato') || 0) || null,
+            meses_fidelidade: meses || null,
+            fim_fidelidade: fmtDataBR(fimFidelidade),
+            em_fidelidade: emFidelidade,
+            dias_para_fim_fidelidade: fimFidelidade ? diasCorridos(hoje, fimFidelidade) : null,
+            tempo_casa_meses: ativ ? Math.floor(diasCorridos(ativ, hoje) / 30) : null,
+          };
+        });
+
+        return res.status(200).json({
+          ok: true,
+          cliente: c0 ? {
+            nome: pick(c0, 'razao', 'nome'),
+            documento: pick(c0, 'cnpj_cpf', 'cnpj'),
+            cadastro: fmtDataBR(parseDataIXC(pick(c0, 'data_cadastro', 'data_criacao'))),
+            email: pick(c0, 'email'),
+            telefone: pick(c0, 'telefone_celular', 'whatsapp', 'fone'),
+            cidade: pick(c0, 'cidade_nome', 'cidade'),
+          } : null,
+          contratos,
+        });
+      }
+
+      // extrato: histórico de faturas já pagas
+      case 'cliente.extrato': {
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        const d = await ixc(e, 'fn_areceber', {
+          qtype: 'fn_areceber.id_cliente', query: ixcId, oper: '=', rp: '200',
+          sortname: 'fn_areceber.data_vencimento', sortorder: 'desc',
+        });
+        const pagas = (d.registros || [])
+          .filter(f => String(f.status || '').toUpperCase() === 'R')
+          .map(f => {
+            const venc = parseDataIXC(f.data_vencimento);
+            const pag = parseDataIXC(pick(f, 'data_recebimento', 'data_pagamento'));
+            const emi = parseDataIXC(pick(f, 'data_emissao', 'data_criacao'));
+            return {
+              id: f.id,
+              documento: pick(f, 'documento'),
+              emissao: fmtDataBR(emi),
+              vencimento: fmtDataBR(venc),
+              pagamento: fmtDataBR(pag),
+              valor: Number(f.valor || 0),
+              valor_pago: Number(pick(f, 'valor_recebido') ?? f.valor ?? 0),
+              // atraso real: só conta se pagou depois do vencimento
+              atraso: (venc && pag) ? Math.max(0, diasCorridos(venc, pag)) : null,
+              forma: pick(f, 'forma_recebimento', 'tipo_recebimento'),
+            };
+          })
+          .slice(0, 24);
+
+        const comAtraso = pagas.filter(p => p.atraso !== null);
+        return res.status(200).json({
+          ok: true,
+          pagamentos: pagas,
+          resumo: {
+            total_pago: pagas.reduce((s, p) => s + p.valor_pago, 0),
+            quantidade: pagas.length,
+            em_atraso: comAtraso.filter(p => p.atraso > 0).length,
+            atraso_medio: comAtraso.length
+              ? Math.round(comAtraso.reduce((s, p) => s + p.atraso, 0) / comAtraso.length)
+              : 0,
+          },
+        });
       }
 
       case 'clientes.buscar': {
