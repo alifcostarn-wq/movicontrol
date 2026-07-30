@@ -513,78 +513,111 @@ async function sessoesDoDia(e, ixcId, login) {
   };
 }
 
-// ---- CHAMADOS E ORDENS DE SERVIÇO ---------------------------------------
-// Duas fontes no IXC: su_ticket é o atendimento (aba "Atendimentos") e
-// su_oss_chamado é a O.S. (aba "O.S."). A etapa que o atendente precisa
-// informar ao cliente ("técnico a caminho", "agendada") vive na O.S.
-const STATUS_TICKET = {
-  N: 'Novo', A: 'Aberto', EA: 'Em andamento', P: 'Pendente',
-  AG: 'Aguardando', S: 'Solucionado', F: 'Finalizado', C: 'Cancelado',
+// ---- CHAMADOS E O.S. — módulo de campo do MoviOn -------------------------
+// A fonte NÃO é o IXC: chamado e O.S. vivem no próprio Supabase (campo_chamados
+// / campo_os), e a trilha de etapas em campo_chamados_historico. O vínculo com
+// o cliente é campo_chamados.cliente_id = clientes.ixc_id (texto).
+// Os rótulos abaixo seguem os do módulo (index.html) e os do app do técnico —
+// 'aberto' aqui NÃO é "recém-aberto": significa que o chamado virou O.S.
+const ETAPA_CHAMADO = {
+  novo: 'Novo', atribuido: 'Técnico atribuído', assumido: 'Técnico assumiu',
+  analisando: 'Em análise', andamento: 'Em andamento',
+  aberto: 'Aberto (virou O.S.)', transferido: 'Virou visita técnica',
+  concluido: 'Concluído', cancelado: 'Cancelado',
 };
-const STATUS_OS = {
-  A: 'Aberta', AG: 'Agendada', EN: 'Encaminhada', AS: 'Assumida',
-  EX: 'Em execução', F: 'Finalizada', C: 'Cancelada', RAG: 'Reagendada',
+const ETAPA_OS = {
+  aberta: 'Aberta', assumida: 'Técnico designado', executando: 'Técnico no local',
+  reagendada: 'Reagendada', finalizada: 'Visita concluída',
+  concluida: 'Concluída', cancelada: 'Cancelada',
 };
-const ABERTOS_TICKET = ['N', 'A', 'EA', 'P', 'AG'];
-const ABERTAS_OS = ['A', 'AG', 'EN', 'AS', 'EX', 'RAG'];
+const CHAMADO_ENCERRADO = ['concluido', 'cancelado'];
+const OS_ENCERRADA = ['finalizada', 'concluida', 'cancelada'];
+
+function rotuloEtapa(mapa, st) {
+  const k = String(st || '').trim().toLowerCase();
+  return mapa[k] || (k ? k.charAt(0).toUpperCase() + k.slice(1) : 'Sem etapa');
+}
 
 async function chamadosAoVivo(e, ixcId) {
-  const [tk, os] = await Promise.allSettled([
-    ixc(e, 'su_ticket', {
-      qtype: 'su_ticket.id_cliente', query: String(ixcId), oper: '=', rp: '30',
-      sortname: 'su_ticket.id', sortorder: 'desc',
-    }),
-    ixc(e, 'su_oss_chamado', {
-      qtype: 'su_oss_chamado.id_cliente', query: String(ixcId), oper: '=', rp: '30',
-      sortname: 'su_oss_chamado.id', sortorder: 'desc',
-    }),
+  const id = String(ixcId);
+  const [chamados, ordens] = await Promise.all([
+    sb(e, `campo_chamados?cliente_id=eq.${encodeURIComponent(id)}` +
+          `&select=id,descricao,status,prioridade,data,created_at,concluido_em,tecnico_nome,os_id,solucao_tecnica` +
+          `&order=created_at.desc&limit=20`),
+    sb(e, `campo_os?cliente_id=eq.${encodeURIComponent(id)}` +
+          `&select=id,numero,descricao,status,data,tecnico_nome,reagendado_em,reagendado_motivo,chamado_id` +
+          `&order=data.desc&limit=20`),
   ]);
 
-  const limite = new Date(); limite.setDate(limite.getDate() - 30); limite.setHours(0, 0, 0, 0);
+  // trilha de etapas: última movimentação de cada chamado
+  const ids = (chamados || []).map(c => c.id);
+  let historico = [];
+  if (ids.length) {
+    historico = await sb(e,
+      `campo_chamados_historico?chamado_id=in.(${ids.join(',')})` +
+      `&select=chamado_id,status,registrado_em&order=registrado_em.desc&limit=200`) || [];
+  }
+  const ultimaEtapa = new Map();
+  const totalEtapas = new Map();
+  for (const h of historico) {
+    if (!ultimaEtapa.has(h.chamado_id)) ultimaEtapa.set(h.chamado_id, h);
+    totalEtapas.set(h.chamado_id, (totalEtapas.get(h.chamado_id) || 0) + 1);
+  }
 
-  const tickets = (tk.status === 'fulfilled' ? tk.value.registros || [] : []).map(t => {
-    const dt = parseDataIXC(pick(t, 'data_criacao', 'datacriacao', 'data', 'data_abertura'));
-    const st = String(pick(t, 'status', 'su_status') || '').toUpperCase();
+  const limite = new Date(); limite.setDate(limite.getDate() - 30); limite.setHours(0, 0, 0, 0);
+  const osPorId = new Map((ordens || []).map(o => [o.id, o]));
+
+  const itensCh = (chamados || []).map(c => {
+    const st = String(c.status || '').toLowerCase();
+    const ult = ultimaEtapa.get(c.id);
+    const dt = parseDataIXC(c.created_at || c.data);
+    const os = c.os_id ? osPorId.get(c.os_id) : null;
     return {
-      origem: 'ticket',
-      id: t.id,
-      titulo: String(pick(t, 'titulo', 'assunto', 'mensagem') || `Atendimento #${t.id}`).slice(0, 90),
+      origem: 'chamado',
+      id: c.id,
+      titulo: String(c.descricao || `Chamado #${c.id}`).slice(0, 90),
       data: fmtDataBR(dt),
-      status: st,
-      etapa: STATUS_TICKET[st] || st || '—',
-      aberto: ABERTOS_TICKET.includes(st),
-      prioridade: pick(t, 'prioridade'),
+      // quando o chamado já virou O.S., a etapa real está na O.S.
+      etapa: os ? rotuloEtapa(ETAPA_OS, os.status) : rotuloEtapa(ETAPA_CHAMADO, ult ? ult.status : st),
+      etapa_em: ult ? fmtDataHoraBR(parseDataIXC(ult.registrado_em)) : null,
+      movimentacoes: totalEtapas.get(c.id) || 0,
+      aberto: !CHAMADO_ENCERRADO.includes(st),
+      prioridade: c.prioridade || null,
+      tecnico: (os && os.tecnico_nome) || c.tecnico_nome || null,
+      os_numero: os ? (os.numero || os.id) : null,
+      reagendado: os && os.reagendado_em ? fmtDataHoraBR(parseDataIXC(os.reagendado_em)) : null,
+      motivo_reagendamento: os ? os.reagendado_motivo : null,
+      solucao: c.solucao_tecnica ? String(c.solucao_tecnica).slice(0, 160) : null,
       _dt: dt,
     };
   });
 
-  const ordens = (os.status === 'fulfilled' ? os.value.registros || [] : []).map(o => {
-    const dt = parseDataIXC(pick(o, 'data_abertura', 'data_criacao', 'data'));
-    const ag = parseDataIXC(pick(o, 'data_agenda', 'data_agendamento', 'data_prevista'));
-    const st = String(pick(o, 'status') || '').toUpperCase();
+  // O.S. avulsa (instalação, por exemplo) não tem chamado de origem
+  const itensOs = (ordens || []).filter(o => !o.chamado_id).map(o => {
+    const st = String(o.status || '').toLowerCase();
+    const dt = parseDataIXC(o.data);
     return {
       origem: 'os',
-      id: o.id,
-      titulo: String(pick(o, 'mensagem', 'assunto', 'setor') || `O.S. #${o.id}`).slice(0, 90),
+      id: o.numero || o.id,
+      titulo: String(o.descricao || `O.S. #${o.numero || o.id}`).slice(0, 90),
       data: fmtDataBR(dt),
-      status: st,
-      etapa: STATUS_OS[st] || st || '—',
-      aberto: ABERTAS_OS.includes(st),
-      agendada_para: ag ? fmtDataHoraBR(ag) : null,
-      tecnico: pick(o, 'id_tecnico', 'tecnico'),
+      etapa: rotuloEtapa(ETAPA_OS, st),
+      aberto: !OS_ENCERRADA.includes(st),
+      tecnico: o.tecnico_nome || null,
+      reagendado: o.reagendado_em ? fmtDataHoraBR(parseDataIXC(o.reagendado_em)) : null,
+      motivo_reagendamento: o.reagendado_motivo || null,
       _dt: dt,
     };
   });
 
-  const todos = [...ordens, ...tickets].sort((a, b) => (b._dt || 0) - (a._dt || 0));
+  const todos = [...itensCh, ...itensOs].sort((a, b) => (b._dt || 0) - (a._dt || 0));
   const abertos = todos.filter(i => i.aberto);
 
   return {
     total30: todos.filter(i => i._dt && i._dt >= limite).length,
     abertos: abertos.length,
-    // os em aberto vêm primeiro: é o que o atendente precisa para orientar
+    // em aberto primeiro: é o que o atendente precisa para orientar o cliente
     itens: [...abertos, ...todos.filter(i => !i.aberto)].slice(0, 6).map(({ _dt, ...r }) => r),
-    erro_os: os.status === 'rejected' ? String(os.reason?.message || os.reason).slice(0, 120) : null,
   };
 }
 
