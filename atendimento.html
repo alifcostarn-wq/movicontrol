@@ -2059,6 +2059,11 @@ function blocoConexao(c){
       </div>
       ${q!==null&&q>3?`<div class="con-alerta">⚠ ${q} quedas hoje — instabilidade no enlace. Vale abrir chamado técnico.</div>`:''}
       ${l.accounting_erro?`<div class="ms-erro" style="margin-top:7px;">Histórico de sessões indisponível: ${esc(l.accounting_erro)}</div>`:''}
+      ${l.acct_diag&&USUARIO&&USUARIO.admin?`<div class="ms-erro" style="margin-top:7px;">
+        <b>Datas de sessão não reconhecidas</b> (${esc(l.acct_diag.endpoint)}, ${l.acct_diag.registros} registros).
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:5px;line-height:1.6;">${esc(l.acct_diag.campos.join(', '))}</div>
+      </div>`:''}
+      ${l.acct_registros===0&&!l.accounting_erro?`<div class="ms-load" style="font-size:10.5px;padding:4px 0;">Sem histórico de sessões no IXC para este cliente.</div>`:''}
     </div>`;
   }).join('');
 }
@@ -2196,7 +2201,16 @@ function htmlContrato(j){
 function htmlExtrato(j){
   const ps=j.pagamentos||[], r=j.resumo||{};
   if(!ps.length) return `<div class="pn-load">Nenhum pagamento registrado.</div>`;
-  return `
+  // o IXC não devolveu a data com nenhum dos nomes conhecidos: mostra ao admin
+  // quais campos existem, para acertar o mapeamento em vez de adivinhar
+  const dg=j.diagnostico&&USUARIO&&USUARIO.admin?`
+    <div class="ms-erro" style="margin-bottom:12px;">
+      <b>Data de pagamento não reconhecida.</b> Campos de data neste IXC:
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:6px;line-height:1.7;">
+        ${Object.entries(j.diagnostico.candidatos||{}).map(([k,v])=>`${esc(k)} = ${esc(String(v))}`).join('<br>')||'(nenhum)'}
+      </div>
+    </div>`:'';
+  return dg+`
     <div class="ex-resumo">
       <div class="ex-r"><div class="n">${r.quantidade||0}</div><div class="l">Faturas pagas</div></div>
       <div class="ex-r"><div class="n">${fmtR$(r.total_pago||0)}</div><div class="l">Total pago</div></div>
@@ -2374,7 +2388,7 @@ function openModal(id){
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
-      <textarea id="mInput" rows="1" placeholder="Digite uma mensagem...   (Shift+Enter quebra linha)"></textarea>
+      <textarea id="mInput" rows="1" placeholder="Digite uma mensagem..."></textarea>
       <button class="m-send" id="mSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
     </div>
   </div>
