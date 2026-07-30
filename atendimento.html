@@ -532,6 +532,41 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
   border:1px solid #fcd9a4;border-radius:9px;padding:10px 12px;margin-bottom:14px;
 }
 
+/* ---- figurinha e GIF ---- */
+.mb-sticker{max-width:140px;max-height:140px;background:none !important;border:none !important;}
+.mb-gif{position:relative;display:inline-block;}
+.mb-gif video{max-width:230px;border-radius:10px;display:block;}
+.mb-gif .gif-tag{
+  position:absolute;left:7px;bottom:7px;background:rgba(0,0,0,.65);color:#fff;
+  font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;letter-spacing:.04em;
+}
+
+/* ---- seletor de emoji ---- */
+.emo-btn{
+  width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);
+  cursor:pointer;font-size:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  padding:0;line-height:1;
+}
+.emo-btn:hover{border-color:var(--green);background:var(--green-soft);}
+.emo-pop{
+  position:absolute;bottom:calc(100% + 8px);left:0;width:min(346px,88vw);
+  background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-lg);
+  z-index:40;overflow:hidden;
+}
+.emo-cats{display:flex;gap:2px;padding:7px 8px 0;border-bottom:1px solid var(--line);overflow-x:auto;}
+.emo-cat{
+  border:none;background:transparent;cursor:pointer;font-size:15px;padding:5px 8px;border-radius:7px;
+  font-family:inherit;flex-shrink:0;opacity:.55;
+}
+.emo-cat.on{opacity:1;background:var(--green-soft);}
+.emo-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:8px;max-height:250px;overflow-y:auto;}
+.emo-i{
+  border:none;background:transparent;cursor:pointer;font-size:19px;padding:5px 0;border-radius:7px;
+  font-family:inherit;line-height:1;
+}
+.emo-i:hover{background:var(--green-soft);}
+.m-composer{position:relative;}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -2059,6 +2094,10 @@ function abrirBuscaCliente(c, aoVincular){
 // áudio toca no próprio painel.
 function midiaHTML(m){
   if(!m.link) return '';
+  // figurinha: sem moldura nem fundo, como no WhatsApp (webp pode ser animado)
+  if(m.tipo==='figurinha') return `<div class="mb-midia"><img class="mb-sticker" src="${esc(m.link)}" alt="Figurinha" data-zoom="${esc(m.link)}"></div>`;
+  // GIF: toca sozinho em loop e sem som — vídeo com controles descaracteriza
+  if(m.tipo==='gif') return `<div class="mb-midia mb-gif"><video src="${esc(m.link)}" autoplay loop muted playsinline></video><span class="gif-tag">GIF</span></div>`;
   if(m.tipo==='imagem') return `<div class="mb-midia"><img src="${esc(m.link)}" alt="Imagem enviada pelo cliente" data-zoom="${esc(m.link)}"></div>`;
   if(m.tipo==='audio')  return `<div class="mb-midia"><audio class="mb-audio" controls src="${esc(m.link)}"></audio></div>`;
   if(m.tipo==='video')  return `<div class="mb-midia"><video class="mb-audio" controls src="${esc(m.link)}"></video></div>`;
@@ -2414,6 +2453,46 @@ function abrirTransferencia(c){
   });
 }
 
+/* ===== SELETOR DE EMOJI ===== */
+// lista embutida: sem CDN, funciona offline e não depende de terceiros
+// Catálogo completo (1.660 emojis, 9 categorias). Gerado a partir da base
+// oficial Unicode/CLDR, sem variações de tom de pele — igual ao painel do
+// WhatsApp. Embutido no arquivo: sem CDN e sem dependência externa.
+const EMOJIS=[{i:"😀",n:"Rostos",e:["☹️", "☺️", "😀", "😁", "😂", "😃", "😄", "😅", "😆", "😇", "😈", "😉", "😊", "😋", "😌", "😍", "😎", "😏", "😐", "😑", "😒", "😓", "😔", "😕", "😖", "😗", "😘", "😙", "😚", "😛", "😜", "😝", "😞", "😟", "😠", "😡", "😢", "😣", "😤", "😥", "😦", "😧", "😨", "😩", "😪", "😫", "😬", "😭", "😮", "😯", "😰", "😱", "😲", "😳", "😴", "😵", "😶", "😷", "😸", "😹", "😺", "😻", "😼", "😽", "😾", "😿", "🙀", "🙁", "🙂", "🙃", "🙄", "🙅", "🙆", "🙇", "🙈", "🙉", "🙊", "🙋", "🙌", "🙍", "🙎", "🙏", "🤐", "🤑", "🤒", "🤓", "🤔", "🤕", "🤖", "🤗", "🤘", "🤙", "🤚", "🤛", "🤜", "🤝", "🤞", "🤟", "🤠", "🤡", "🤢", "🤣", "🤤", "🤥", "🤦", "🤧", "🤨", "🤩", "🤪", "🤫", "🤬", "🤭", "🤮", "🤯", "🥰", "🥱", "🥲", "🥳", "🥴", "🥵", "🥶", "🥷", "🥸", "🥹", "🥺", "🥻", "🥼", "🥽", "🥾", "🥿", "🧐", "🫠", "🫡", "🫢", "🫣", "🫤", "🫥", "🫦", "🫧", "🫨"]},{i:"🧑",n:"Pessoas",e:["☝️", "✊", "✋", "✌️", "✍️", "👀", "👁️", "👂", "👃", "👄", "👅", "👆", "👇", "👈", "👉", "👊", "👋", "👌", "👍", "👎", "👏", "👐", "👤", "👥", "👦", "👧", "👨", "👩", "👪", "👫", "👬", "👭", "👮", "👯", "👰", "👱", "👲", "👳", "👴", "👵", "👶", "👷", "👸", "👹", "👺", "👻", "👼", "👽", "👾", "👿", "💀", "💁", "💂", "💃", "💄", "💅", "💆", "💇", "🖐️", "🖕", "🖖", "🤰", "🤱", "🤲", "🤳", "🤴", "🤵", "🤶", "🤷", "🤸", "🤹", "🤺", "🤼", "🤽", "🤾", "🦰", "🦱", "🦲", "🦳", "🦴", "🦵", "🦶", "🦷", "🦸", "🦹", "🦺", "🦻", "🦼", "🦽", "🦾", "🦿", "🧀", "🧁", "🧂", "🧃", "🧄", "🧅", "🧆", "🧇", "🧈", "🧉", "🧊", "🧋", "🧌", "🧍", "🧎", "🧏", "🧑", "🧒", "🧓", "🧔", "🧕", "🧖", "🧗", "🧘", "🧙", "🧚", "🧛", "🧜", "🧝", "🧞", "🧟", "🫀", "🫁", "🫂", "🫃", "🫄", "🫅", "🫆", "🫈", "🫍", "🫎", "🫏", "🫐", "🫑", "🫒", "🫓", "🫔", "🫕", "🫖", "🫗", "🫘", "🫙", "🫚", "🫛", "🫜", "🫟", "🫩", "🫪", "🫯", "🫰", "🫱", "🫲", "🫳", "🫴", "🫵", "🫶", "🫷", "🫸"]},{i:"🐶",n:"Animais",e:["☀️", "☁️", "☂️", "☃️", "☄️", "☎️", "☑️", "☔", "☕", "☘️", "☠️", "☢️", "☣️", "☦️", "☪️", "☮️", "☯️", "☸️", "♀️", "♂️", "♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓", "♟️", "♠️", "♣️", "♥️", "♦️", "♨️", "♻️", "♾️", "♿", "⚒️", "⚓", "⚔️", "⚕️", "⚖️", "⚗️", "⚙️", "⚛️", "⚜️", "⚠️", "⚡", "⚧️", "⚪", "⚫", "⚰️", "⚱️", "⚽", "⚾", "⛄", "⛅", "⛈️", "🌀", "🌁", "🌂", "🌃", "🌄", "🌅", "🌆", "🌇", "🌈", "🌉", "🌊", "🌋", "🌌", "🌍", "🌎", "🌏", "🌐", "🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘", "🌙", "🌚", "🌛", "🌜", "🌝", "🌞", "🌟", "🌠", "🌡️", "🌤️", "🌥️", "🌦️", "🌧️", "🌨️", "🌩️", "🌪️", "🌫️", "🌬️", "🌰", "🌱", "🌲", "🌳", "🌴", "🌵", "🌶️", "🌷", "🌸", "🌹", "🌺", "🌻", "🌼", "🌽", "🌾", "🌿", "🍀", "🍁", "🍂", "🍃", "🍄", "🐀", "🐁", "🐂", "🐃", "🐄", "🐅", "🐆", "🐇", "🐈", "🐉", "🐊", "🐋", "🐌", "🐍", "🐎", "🐏", "🐐", "🐑", "🐒", "🐓", "🐔", "🐕", "🐖", "🐗", "🐘", "🐙", "🐚", "🐛", "🐜", "🐝", "🐞", "🐟", "🐠", "🐡", "🐢", "🐣", "🐤", "🐥", "🐦", "🐧", "🐨", "🐩", "🐪", "🐫", "🐬", "🐭", "🐮", "🐯", "🐰", "🐱", "🐲", "🐳", "🐴", "🐵", "🐶", "🐷", "🐸", "🐹", "🐺", "🐻", "🐼", "🐽", "🐾", "🐿️", "🕊️", "🦀", "🦁", "🦂", "🦃", "🦄", "🦅", "🦆", "🦇", "🦈", "🦉", "🦊", "🦋", "🦌", "🦍", "🦎", "🦏", "🦐", "🦑", "🦒", "🦓", "🦔", "🦕", "🦖", "🦗", "🦘", "🦙", "🦚", "🦛", "🦜", "🦝", "🦞", "🦟", "🦠", "🦡", "🦢", "🦣", "🦤", "🦥", "🦦", "🦧", "🦨", "🦩", "🦪", "🦫", "🦬", "🦭", "🦮", "🪰", "🪱", "🪲", "🪳", "🪴", "🪵", "🪶", "🪷", "🪸", "🪹", "🪺", "🪻", "🪼", "🪽", "🪾", "🪿"]},{i:"🍔",n:"Comida",e:["🍅", "🍆", "🍇", "🍈", "🍉", "🍊", "🍋", "🍌", "🍍", "🍎", "🍏", "🍐", "🍑", "🍒", "🍓", "🍔", "🍕", "🍖", "🍗", "🍘", "🍙", "🍚", "🍛", "🍜", "🍝", "🍞", "🍟", "🍠", "🍡", "🍢", "🍣", "🍤", "🍥", "🍦", "🍧", "🍨", "🍩", "🍪", "🍫", "🍬", "🍭", "🍮", "🍯", "🍰", "🍱", "🍲", "🍳", "🍴", "🍵", "🍶", "🍷", "🍸", "🍹", "🍺", "🍻", "🍼", "🍽️", "🍾", "🍿", "🥐", "🥑", "🥒", "🥓", "🥔", "🥕", "🥖", "🥗", "🥘", "🥙", "🥚", "🥛", "🥜", "🥝", "🥞", "🥟", "🥠", "🥡", "🥢", "🥣", "🥤", "🥥", "🥦", "🥧", "🥨", "🥩", "🥪", "🥫", "🥬", "🥭", "🥮", "🥯"]},{i:"⚽",n:"Atividades",e:["⛳", "⛷️", "⛸️", "⛹️", "🎀", "🎁", "🎂", "🎃", "🎄", "🎅", "🎆", "🎇", "🎈", "🎉", "🎊", "🎋", "🎌", "🎍", "🎎", "🎏", "🎐", "🎑", "🎒", "🎓", "🎖️", "🎗️", "🎙️", "🎚️", "🎛️", "🎞️", "🎟️", "🎠", "🎡", "🎢", "🎣", "🎤", "🎥", "🎦", "🎧", "🎨", "🎩", "🎪", "🎫", "🎬", "🎭", "🎮", "🎯", "🎰", "🎱", "🎲", "🎳", "🎴", "🎵", "🎶", "🎷", "🎸", "🎹", "🎺", "🎻", "🎼", "🎽", "🎾", "🎿", "🏀", "🏁", "🏂", "🏃", "🏄", "🏅", "🏆", "🏇", "🏈", "🏉", "🏊", "🏋️", "🏌️", "🏍️", "🏎️", "🏏", "🏐", "🏑", "🏒", "🏓", "🏔️", "🏕️", "🏖️", "🏗️", "🏘️", "🏙️", "🏚️", "🏛️", "🏜️", "🏝️", "🏞️", "🏟️", "🏠", "🏡", "🏢", "🏣", "🏤", "🏥", "🏦", "🏧", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏮", "🏯", "🏰", "🤿", "🥀", "🥁", "🥂", "🥃", "🥄", "🥅", "🥇", "🥈", "🥉", "🥊", "🥋", "🥌", "🥍", "🥎", "🥏", "🧩", "🧪", "🧫", "🧬", "🧭", "🧮", "🧯", "🧰"]},{i:"🚗",n:"Viagem",e:["⛩️", "⛪", "⛰️", "⛱️", "⛲", "⛴️", "⛵", "⛺", "🗺️", "🗻", "🗼", "🗽", "🗾", "🗿", "🚀", "🚁", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇", "🚈", "🚉", "🚊", "🚋", "🚌", "🚍", "🚎", "🚏", "🚐", "🚑", "🚒", "🚓", "🚔", "🚕", "🚖", "🚗", "🚘", "🚙", "🚚", "🚛", "🚜", "🚝", "🚞", "🚟", "🚠", "🚡", "🚢", "🚣", "🚤", "🚥", "🚦", "🚧", "🚨", "🚩", "🚪", "🚫", "🚬", "🚭", "🚮", "🚯", "🚰", "🚱", "🚲", "🚳", "🚴", "🚵", "🚶", "🚷", "🚸", "🚹", "🚺", "🚻", "🚼", "🚽", "🚾", "🚿", "🛀", "🛁", "🛂", "🛃", "🛄", "🛅", "🛰️", "🛳️", "🛴", "🛵", "🛶", "🛷", "🛸", "🛹", "🛺", "🛻", "🛼"]},{i:"💡",n:"Objetos",e:["⌚", "⌛", "⌨️", "💠", "💡", "💢", "💣", "💤", "💥", "💦", "💧", "💨", "💩", "💪", "💫", "💬", "💭", "💮", "💯", "💰", "💱", "💲", "💳", "💴", "💵", "💶", "💷", "💸", "💹", "💺", "💻", "💼", "💽", "💾", "💿", "📀", "📁", "📂", "📃", "📄", "📅", "📆", "📇", "📈", "📉", "📊", "📋", "📌", "📍", "📎", "📏", "📐", "📑", "📒", "📓", "📔", "📕", "📖", "📗", "📘", "📙", "📚", "📛", "📜", "📝", "📞", "📟", "📠", "📡", "📢", "📣", "📤", "📥", "📦", "📧", "📨", "📩", "📪", "📫", "📬", "📭", "📮", "📯", "📰", "📱", "📲", "📳", "📴", "📵", "📶", "📷", "📸", "📹", "📺", "📻", "📼", "📽️", "📿", "🔊", "🔋", "🔌", "🔍", "🔎", "🔏", "🔐", "🔑", "🔒", "🔓", "🔔", "🔕", "🔖", "🔗", "🔘", "🔙", "🔚", "🔛", "🔜", "🔝", "🔞", "🔟", "🔠", "🔡", "🔢", "🔣", "🔤", "🔥", "🔦", "🔧", "🔨", "🔩", "🔪", "🔫", "🔬", "🔭", "🔮", "🔯", "🔰", "🔱", "🔲", "🔳", "🔴", "🔵", "🔶", "🔷", "🔸", "🔹", "🔺", "🔻", "🔼", "🔽", "🖇️", "🖊️", "🖋️", "🖌️", "🖍️", "🧱", "🧲", "🧳", "🧴", "🧵", "🧶", "🧷", "🧸", "🧹", "🧺", "🧻", "🧼", "🧽", "🧾", "🧿", "🩰", "🩱", "🩲", "🩳", "🩴", "🩵", "🩶", "🩷", "🩸", "🩹", "🩺", "🩻", "🩼", "🪀", "🪁", "🪂", "🪃", "🪄", "🪅", "🪆", "🪇", "🪈", "🪉", "🪊", "🪎", "🪏", "🪐", "🪑", "🪒", "🪓", "🪔", "🪕", "🪖", "🪗", "🪘", "🪙", "🪚", "🪛", "🪜", "🪝", "🪞", "🪟", "🪠", "🪡", "🪢", "🪣", "🪤", "🪥", "🪦", "🪧", "🪨", "🪩"]},{i:"❤️",n:"Símbolos",e:["‼️", "⁉️", "↔️", "↕️", "↖️", "↗️", "↘️", "↙️", "↩️", "↪️", "✂️", "✅", "✈️", "✉️", "✏️", "✒️", "✔️", "✖️", "✝️", "✡️", "✨", "✳️", "✴️", "❄️", "❇️", "❌", "❎", "❓", "❔", "❕", "❗", "❣️", "❤️", "➕", "➖", "➗", "➡️", "➰", "➿", "⬅️", "⬆️", "⬇️", "⬛", "⬜", "⭐", "⭕", "🀄", "🃏", "🆑", "🆒", "🆓", "🆔", "🆕", "🆖", "🆗", "🆘", "🆙", "🆚", "💓", "💔", "💕", "💖", "💗", "💘", "💙", "💚", "💛", "💜", "💝", "💞", "💟", "🔀", "🔁", "🔂", "🔃", "🔄", "🔅", "🔆", "🔇", "🔈", "🔉", "🖤", "🤌", "🤍", "🤎", "🤏", "©️", "®️", "™️", "ℹ️", "⏏️", "⏩", "⏪", "⏫", "⏬", "⏭️", "⏮️", "⏯️", "⏰", "⏱️", "⏲️", "⏳", "⏸️", "⏹️", "⏺️", "Ⓜ️", "▪️", "▫️", "▶️", "◀️", "◻️", "◼️", "◽", "◾", "⛎", "⛏️", "⛑️", "⛓️", "⛔", "⛽", "⤴️", "⤵️", "〰️", "〽️", "㊗️", "㊙️", "🅰️", "🅱️", "🅾️", "🅿️", "🆎", "🈁", "🈂️", "🈚", "🈯", "🈲", "🈳", "🈴", "🈵", "🈶", "🈷️", "🈸", "🈹", "🈺", "🉐", "🉑", "🌭", "🌮", "🌯", "🏳️", "🏴", "🏵️", "🏷️", "🏸", "🏹", "🏺", "👑", "👒", "👓", "👔", "👕", "👖", "👗", "👘", "👙", "👚", "👛", "👜", "👝", "👞", "👟", "👠", "👡", "👢", "👣", "💈", "💉", "💊", "💋", "💌", "💍", "💎", "💏", "💐", "💑", "💒", "🕉️", "🕋", "🕌", "🕍", "🕎", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚", "🕛", "🕜", "🕝", "🕞", "🕟", "🕠", "🕡", "🕢", "🕣", "🕤", "🕥", "🕦", "🕧", "🕯️", "🕰️", "🕳️", "🕴️", "🕵️", "🕶️", "🕷️", "🕸️", "🕹️", "🕺", "🖥️", "🖨️", "🖱️", "🖲️", "🖼️", "🗂️", "🗃️", "🗄️", "🗑️", "🗒️", "🗓️", "🗜️", "🗝️", "🗞️", "🗡️", "🗣️", "🗨️", "🗯️", "🗳️", "🛋️", "🛌", "🛍️", "🛎️", "🛏️", "🛐", "🛑", "🛒", "🛕", "🛖", "🛗", "🛘", "🛜", "🛝", "🛞", "🛟", "🛠️", "🛡️", "🛢️", "🛣️", "🛤️", "🛥️", "🛩️", "🛫", "🛬", "🟠", "🟡", "🟢", "🟣", "🟤", "🟥", "🟦", "🟧", "🟨", "🟩", "🟪", "🟫", "🟰", "🦯", "🧠", "🧡", "🧢", "🧣", "🧤", "🧥", "🧦", "🧧", "🧨", "🪪", "🪫", "🪬", "🪭", "🪮", "🪯"]},{i:"🏳️",n:"Bandeiras",e:["🏳️", "🏴", "🏁", "🚩", "🏳️‍🌈", "🏴‍☠️", "🇦🇨", "🇦🇩", "🇦🇪", "🇦🇫", "🇦🇬", "🇦🇮", "🇦🇱", "🇦🇲", "🇦🇴", "🇦🇶", "🇦🇷", "🇦🇸", "🇦🇹", "🇦🇺", "🇦🇼", "🇦🇽", "🇦🇿", "🇧🇦", "🇧🇧", "🇧🇩", "🇧🇪", "🇧🇫", "🇧🇬", "🇧🇭", "🇧🇮", "🇧🇯", "🇧🇱", "🇧🇲", "🇧🇳", "🇧🇴", "🇧🇶", "🇧🇷", "🇧🇸", "🇧🇹", "🇧🇻", "🇧🇼", "🇧🇾", "🇧🇿", "🇨🇦", "🇨🇨", "🇨🇩", "🇨🇫", "🇨🇬", "🇨🇭", "🇨🇮", "🇨🇰", "🇨🇱", "🇨🇲", "🇨🇳", "🇨🇴", "🇨🇵", "🇨🇶", "🇨🇷", "🇨🇺", "🇨🇻", "🇨🇼", "🇨🇽", "🇨🇾", "🇨🇿", "🇩🇪", "🇩🇬", "🇩🇯", "🇩🇰", "🇩🇲", "🇩🇴", "🇩🇿", "🇪🇦", "🇪🇨", "🇪🇪", "🇪🇬", "🇪🇭", "🇪🇷", "🇪🇸", "🇪🇹", "🇪🇺", "🇫🇮", "🇫🇯", "🇫🇰", "🇫🇲", "🇫🇴", "🇫🇷", "🇬🇦", "🇬🇧", "🇬🇩", "🇬🇪", "🇬🇫", "🇬🇬", "🇬🇭", "🇬🇮", "🇬🇱", "🇬🇲", "🇬🇳", "🇬🇵", "🇬🇶", "🇬🇷", "🇬🇸", "🇬🇹", "🇬🇺", "🇬🇼", "🇬🇾", "🇭🇰", "🇭🇲", "🇭🇳", "🇭🇷", "🇭🇹", "🇭🇺", "🇮🇨", "🇮🇩", "🇮🇪", "🇮🇱", "🇮🇲", "🇮🇳", "🇮🇴", "🇮🇶", "🇮🇷", "🇮🇸", "🇮🇹", "🇯🇪", "🇯🇲", "🇯🇴", "🇯🇵", "🇰🇪", "🇰🇬", "🇰🇭", "🇰🇮", "🇰🇲", "🇰🇳", "🇰🇵", "🇰🇷", "🇰🇼", "🇰🇾", "🇰🇿", "🇱🇦", "🇱🇧", "🇱🇨", "🇱🇮", "🇱🇰", "🇱🇷", "🇱🇸", "🇱🇹", "🇱🇺", "🇱🇻", "🇱🇾", "🇲🇦", "🇲🇨", "🇲🇩", "🇲🇪", "🇲🇫", "🇲🇬", "🇲🇭", "🇲🇰", "🇲🇱", "🇲🇲", "🇲🇳", "🇲🇴", "🇲🇵", "🇲🇶", "🇲🇷", "🇲🇸", "🇲🇹", "🇲🇺", "🇲🇻", "🇲🇼", "🇲🇽", "🇲🇾", "🇲🇿", "🇳🇦", "🇳🇨", "🇳🇪", "🇳🇫", "🇳🇬", "🇳🇮", "🇳🇱", "🇳🇴", "🇳🇵", "🇳🇷", "🇳🇺", "🇳🇿", "🇴🇲", "🇵🇦", "🇵🇪", "🇵🇫", "🇵🇬", "🇵🇭", "🇵🇰", "🇵🇱", "🇵🇲", "🇵🇳", "🇵🇷", "🇵🇸", "🇵🇹", "🇵🇼", "🇵🇾", "🇶🇦", "🇷🇪", "🇷🇴", "🇷🇸", "🇷🇺", "🇷🇼", "🇸🇦", "🇸🇧", "🇸🇨", "🇸🇩", "🇸🇪", "🇸🇬", "🇸🇭", "🇸🇮", "🇸🇯", "🇸🇰", "🇸🇱", "🇸🇲", "🇸🇳", "🇸🇴", "🇸🇷", "🇸🇸", "🇸🇹", "🇸🇻", "🇸🇽", "🇸🇾", "🇸🇿", "🇹🇦", "🇹🇨", "🇹🇩", "🇹🇫", "🇹🇬", "🇹🇭", "🇹🇯", "🇹🇰", "🇹🇱", "🇹🇲", "🇹🇳", "🇹🇴", "🇹🇷", "🇹🇹", "🇹🇻", "🇹🇼", "🇹🇿", "🇺🇦", "🇺🇬", "🇺🇲", "🇺🇳", "🇺🇸", "🇺🇾", "🇺🇿", "🇻🇦", "🇻🇨", "🇻🇪", "🇻🇬", "🇻🇮", "🇻🇳", "🇻🇺", "🇼🇫", "🇼🇸", "🇽🇰", "🇾🇪", "🇾🇹", "🇿🇦", "🇿🇲", "🇿🇼"]}];
+
+function abrirEmojis(anchorBtn, textarea, onInsert){
+  const antigo = document.querySelector('.emo-pop');
+  if(antigo){ antigo.remove(); return; }          // clicar de novo fecha
+  let cat = 0;
+  const pop = document.createElement('div');
+  pop.className = 'emo-pop';
+  const desenhar = ()=>{
+    pop.innerHTML = `
+      <div class="emo-cats">${EMOJIS.map((g,i)=>`<button class="emo-cat ${i===cat?'on':''}" data-cat="${i}" title="${g.n}">${g.i}</button>`).join('')}</div>
+      <div class="emo-grid">${EMOJIS[cat].e.map(x=>`<button class="emo-i" data-emo="${x}">${x}</button>`).join('')}</div>`;
+    pop.querySelectorAll('[data-cat]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); cat=+b.dataset.cat; desenhar(); });
+    pop.querySelectorAll('[data-emo]').forEach(b=>b.onclick=ev=>{
+      ev.stopPropagation();
+      // insere na posição do cursor, não no fim: o atendente pode estar no meio da frase
+      const t=textarea, p=t.selectionStart ?? t.value.length;
+      t.value = t.value.slice(0,p) + b.dataset.emo + t.value.slice(t.selectionEnd ?? p);
+      const novo = p + b.dataset.emo.length;
+      t.focus(); t.setSelectionRange(novo,novo);
+      if(onInsert) onInsert(novo);
+    });
+  };
+  desenhar();
+  anchorBtn.parentElement.appendChild(pop);
+  // fecha ao clicar fora
+  setTimeout(()=>{
+    const fora = ev=>{
+      if(pop.contains(ev.target) || ev.target===anchorBtn) return;
+      pop.remove(); document.removeEventListener('click', fora);
+    };
+    document.addEventListener('click', fora);
+  },0);
+}
+
 /* ===== STATUS DO WHATSAPP DA EMPRESA ===== */
 const ST_CORES = ['#00A859','#0F766E','#1D4ED8','#7C3AED','#B91C1C','#B45309','#0F172A','#475569'];
 
@@ -2603,6 +2682,7 @@ function openModal(id){
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
+      <button class="emo-btn" id="mEmoji" type="button" title="Emojis">😊</button>
       <textarea id="mInput" rows="1" placeholder="Digite uma mensagem..."></textarea>
       <button class="m-send" id="mSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
     </div>
@@ -2705,6 +2785,13 @@ function openModal(id){
     inp.onkeyup=()=>{ c._cursor=inp.selectionStart; };
     inp.onclick=()=>{ c._cursor=inp.selectionStart; };
     inp.onfocus=()=>{ c._digitando=true; };
+    const bEmo=$('#mEmoji');
+    if(bEmo) bEmo.onclick=ev=>{
+      ev.stopPropagation();
+      abrirEmojis(bEmo, inp, pos=>{
+        c.rascunho=inp.value; c._cursor=pos; c._digitando=true; cresce();
+      });
+    };
     inp.onblur=()=>{ c._digitando=false; };
     // devolve o foco e o cursor exatamente onde estavam antes do re-render
     if(c._digitando){
