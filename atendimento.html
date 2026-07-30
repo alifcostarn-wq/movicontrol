@@ -1471,14 +1471,21 @@ const api = {
     await chamar('conversas.transferir', { conversa_id:c.id, setor, avisar_cliente: !!avisar });
   },
   async carregarMensagens(c){
-    const j = await chamar('mensagens.listar', { conversa_id:c.id });
-    c.msgs = (j.mensagens||[]).map(m=>({
+    const id = c.id;
+    const j = await chamar('mensagens.listar', { conversa_id:id });
+    const msgs = (j.mensagens||[]).map(m=>({
       id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
       tipo: m.tipo || 'texto', link: m.midia_link || null,
       respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
       status: m.status || null,
     }));
-    return c.msgs;
+    // Durante o await, o realtime pode ter recriado a lista de conversas e
+    // trocado este objeto. Escrever só no `c` original faria a thread nova
+    // cair num objeto órfão — e o modal seguiria mostrando a versão antiga.
+    const atual = state.conversas.find(x=>x.id===id);
+    if(atual && atual!==c){ atual.msgs = msgs; atual._msgsCarregadas = true; }
+    c.msgs = msgs; c._msgsCarregadas = true;
+    return msgs;
   },
   async carregarPainel(c){
     const id = c.clienteVinculado && c.clienteVinculado.id;
@@ -1669,10 +1676,15 @@ function ligarRealtime(){
       try{ await recarregarConversas(); }catch(e){}
     })
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'atend_mensagens' }, async (p)=>{
-      const c = state.conversas.find(x=>x.id===p.new.conversa_id);
-      if(!c) return;
-      if(modalId===c.id){ await api.carregarMensagens(c); openModal(c.id); }
+      const id = p.new.conversa_id;
       if(p.new.direcao==='in') tocarAlerta();
+      const c = state.conversas.find(x=>x.id===id);
+      if(!c) return;
+      c._msgsCarregadas = false;          // chegou coisa nova: a thread está velha
+      if(modalId!==id) return;            // conversa fechada: recarrega quando abrir
+      try{ await api.carregarMensagens(c); }catch{ return; }
+      // rebusca depois do await: o objeto pode ter sido trocado nesse meio-tempo
+      if(modalId===id && state.conversas.some(x=>x.id===id)) openModal(id);
     })
     // ACK de entrega/leitura chega como UPDATE: sem isso o risquinho ficaria
     // congelado no estado do momento em que a thread foi carregada
