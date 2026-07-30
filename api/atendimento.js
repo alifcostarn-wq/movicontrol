@@ -1286,16 +1286,35 @@ async function tratarWebhook(e, body) {
   if (!fluxo) return { ok: true, bot: 'nenhum fluxo ativo', conversa_id: conversa.id };
 
   const sessao = await sbUm(e, `atend_sessoes?contato_fone=eq.${fone}&select=*&limit=1`);
-  const sessaoValida = sessao && new Date(sessao.expira_em) > new Date() ? sessao : null;
+  let sessaoValida = sessao && new Date(sessao.expira_em) > new Date() ? sessao : null;
 
-  // Pesquisa disparada por atendente humano: a resposta é a nota, não uma nova
-  // demanda. Captura, agradece e encerra sem jogar o cliente de volta no menu.
+  // ---- Pesquisa de satisfação pendente ----
+  // Dois relógios diferentes:
+  //  • insistir_ate (15 min): dentro dele, qualquer outra mensagem recebe um
+  //    lembrete e NÃO cai no bot — a conversa fica presa na pesquisa.
+  //  • expira_em (24h): mesmo depois dos 15 min, se o cliente mandar SÓ a nota
+  //    (viu a mensagem mais tarde), ela ainda é registrada. Qualquer outra
+  //    coisa aí já é demanda nova e vai direto para o bot.
   if (sessaoValida && sessaoValida.aguardando === 'rating_humano') {
-    const n = parseInt(String(texto).replace(/\D/g, ''), 10);
-    await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
-    if (n >= 1 && n <= 5) {
+    // "caiu 5 vezes hoje" não pode virar nota 5: só aceita a mensagem que é o
+    // número em si, tolerando pontuação e emoji de estrela.
+    const limpo = String(texto).trim().toLowerCase()
+      .replace(/^(nota|voto|avaliacao|avaliação)\s*:?\s*/i, '')
+      .replace(/[\s.!,;:⭐️🌟*_-]/g, '');
+    const ehNota = /^[1-5]$/.test(limpo);
+    const vars = sessaoValida.variaveis || {};
+    const insistirAte = vars.insistir_ate ? new Date(vars.insistir_ate) : null;
+    const aindaInsistindo = insistirAte && new Date() < insistirAte;
+
+    if (ehNota) {
+      const n = Number(limpo);
+      await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+      sessaoValida = null;
+      // garantirConversa() reabriu a conversa ao receber a mensagem; como isto
+      // é só a nota, ela volta para resolvidos em vez de poluir o Kanban.
       await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
-        method: 'PATCH', prefer: 'return=minimal', body: { rating: n },
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { rating: n, coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
       });
       const agrade = n >= 4
         ? 'Obrigado pela avaliação! 💚 Ficamos felizes em ajudar.'
@@ -1309,7 +1328,36 @@ async function tratarWebhook(e, body) {
       } catch (err) { console.error('[atendimento]', err.message); }
       return { ok: true, rating: n, conversa_id: conversa.id };
     }
-    // não respondeu número: segue o fluxo normal do bot com essa mensagem
+
+    if (aindaInsistindo) {
+      const lembretes = Number(sessaoValida.tentativas || 0);
+      // no máximo 2 lembretes: além disso vira insistência chata
+      if (lembretes < 2) {
+        const aviso = 'Por favor, responda nossa pesquisa de satisfação com um número de 1 a 5. 🙏\n\n'
+          + '1️⃣ Muito ruim  2️⃣ Ruim  3️⃣ Regular  4️⃣ Bom  5️⃣ Excelente';
+        try {
+          const env = await waEnviar(e, fone, aviso);
+          await sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: { conversa_id: conversa.id, direcao: 'bot', conteudo: aviso, wa_id: idDaEvolution(env), status: 'enviado' },
+          });
+        } catch (err) { console.error('[atendimento]', err.message); }
+      }
+      await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { tentativas: lembretes + 1, updated_at: new Date().toISOString() },
+      });
+      // conversa segue resolvida: pesquisa pendente não é atendimento aberto
+      await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
+      });
+      return { ok: true, pesquisa_pendente: true, conversa_id: conversa.id };
+    }
+
+    // passou dos 15 min e não é nota: encerra a pesquisa e libera o bot
+    await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+    sessaoValida = null;
   }
 
   const out = await rodarFluxo(e, { fluxo, sessao: sessaoValida, conversa, texto });
@@ -1812,8 +1860,10 @@ export default async function handler(req, res) {
         // mais importa medir. Só não repergunta se o cliente já deu nota.
         let pesquisaEnviada = false;
         if (body.pesquisa !== false && !c.rating) {
+          // mensagem única: já encerra e pede a nota, sem um "atendimento
+          // encerrado" separado antes
           const texto = String(body.texto_pesquisa || '').trim()
-            || 'Antes de encerrar, como você avalia nosso atendimento? 😊\n\n'
+            || 'Para melhorar nosso serviço, como você avalia nosso atendimento? 😊\n\n'
              + '1️⃣ Muito ruim\n2️⃣ Ruim\n3️⃣ Regular\n4️⃣ Bom\n5️⃣ Excelente\n\n'
              + 'Responda com o número de 1 a 5.';
           try {
@@ -1822,7 +1872,8 @@ export default async function handler(req, res) {
               method: 'POST', prefer: 'return=minimal',
               body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
-            // sessão aguardando a nota: a próxima mensagem do cliente vira rating
+            // dois relógios: 15 min de insistência, 24h para aceitar a nota
+            const minInsistir = Number(process.env.ATEND_PESQUISA_MIN || 15);
             await sb(e, 'atend_sessoes?on_conflict=contato_fone', {
               method: 'POST',
               headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -1831,7 +1882,10 @@ export default async function handler(req, res) {
                 conversa_id: id,
                 node_atual: null,
                 aguardando: 'rating_humano',
-                variaveis: { origem: 'finalizacao_humana' },
+                variaveis: {
+                  origem: 'finalizacao_humana',
+                  insistir_ate: new Date(Date.now() + minInsistir * 60000).toISOString(),
+                },
                 tentativas: 0,
                 expira_em: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
                 updated_at: new Date().toISOString(),
