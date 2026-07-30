@@ -2220,6 +2220,77 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, avatar_url: url, cache: false });
       }
 
+      // ===== STATUS DO WHATSAPP DA EMPRESA =====
+      case 'status.listar': {
+        const itens = await sb(e, 'atend_status?select=*&order=publicado_em.desc&limit=30');
+        return res.status(200).json({ ok: true, status: itens || [] });
+      }
+
+      case 'status.publicar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores publicam status.' });
+        if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
+          return res.status(400).json({ ok: false, error: 'Evolution API não configurada.' });
+        }
+        const tipo = ['text', 'image', 'video'].includes(body.tipo) ? body.tipo : 'text';
+        const conteudo = String(body.conteudo || '').trim();
+        if (!conteudo) return res.status(400).json({ ok: false, error: 'Conteúdo obrigatório.' });
+        if (tipo === 'text' && conteudo.length > 700) {
+          return res.status(400).json({ ok: false, error: 'Status de texto suporta até 700 caracteres.' });
+        }
+        if (tipo !== 'text' && !/^https?:\/\//.test(conteudo)) {
+          return res.status(400).json({ ok: false, error: 'Para imagem/vídeo, informe uma URL pública.' });
+        }
+
+        const lista = Array.isArray(body.destinatarios) ? body.destinatarios.filter(Boolean) : [];
+        const paraTodos = !lista.length;
+
+        const payload = {
+          type: tipo,
+          content: conteudo,
+          allContacts: paraTodos,
+        };
+        if (tipo === 'text') {
+          payload.backgroundColor = body.cor_fundo || '#00A859';
+          payload.font = Number.isFinite(+body.fonte) ? Number(body.fonte) : 1;
+        } else if (body.legenda) {
+          payload.caption = String(body.legenda).slice(0, 700);
+        }
+        if (!paraTodos) {
+          payload.statusJidList = lista.map(n => {
+            const f = normalizarFone(n);
+            return f.includes('@') ? f : `${f}@s.whatsapp.net`;
+          });
+        }
+
+        let erro = null;
+        try {
+          const r = await fetch(`${e.EVO_URL}/message/sendStatus/${e.EVO_INST}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+            body: JSON.stringify(payload),
+          });
+          const txt = await r.text();
+          if (!r.ok) erro = `Evolution ${r.status}: ${txt.slice(0, 250)}`;
+        } catch (err) {
+          erro = String(err.message).slice(0, 250);
+        }
+
+        // registra mesmo em caso de falha: a tentativa faz parte do histórico
+        await sb(e, 'atend_status', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            tipo, conteudo, legenda: body.legenda || null,
+            cor_fundo: payload.backgroundColor || null, fonte: payload.font ?? null,
+            destino: paraTodos ? 'todos' : 'lista',
+            destinatarios: paraTodos ? null : lista,
+            publicado_por: user.id, erro,
+          },
+        });
+
+        if (erro) return res.status(200).json({ ok: false, error: erro });
+        return res.status(200).json({ ok: true });
+      }
+
       case 'clientes.buscar': {
         const termo = String(body.termo || '').trim();
         if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
