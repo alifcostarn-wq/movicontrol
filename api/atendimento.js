@@ -513,28 +513,78 @@ async function sessoesDoDia(e, ixcId, login) {
   };
 }
 
-// ---- CHAMADOS -------------------------------------------------------------
+// ---- CHAMADOS E ORDENS DE SERVIÇO ---------------------------------------
+// Duas fontes no IXC: su_ticket é o atendimento (aba "Atendimentos") e
+// su_oss_chamado é a O.S. (aba "O.S."). A etapa que o atendente precisa
+// informar ao cliente ("técnico a caminho", "agendada") vive na O.S.
+const STATUS_TICKET = {
+  N: 'Novo', A: 'Aberto', EA: 'Em andamento', P: 'Pendente',
+  AG: 'Aguardando', S: 'Solucionado', F: 'Finalizado', C: 'Cancelado',
+};
+const STATUS_OS = {
+  A: 'Aberta', AG: 'Agendada', EN: 'Encaminhada', AS: 'Assumida',
+  EX: 'Em execução', F: 'Finalizada', C: 'Cancelada', RAG: 'Reagendada',
+};
+const ABERTOS_TICKET = ['N', 'A', 'EA', 'P', 'AG'];
+const ABERTAS_OS = ['A', 'AG', 'EN', 'AS', 'EX', 'RAG'];
+
 async function chamadosAoVivo(e, ixcId) {
-  const d = await ixc(e, 'su_ticket', {
-    qtype: 'su_ticket.id_cliente', query: String(ixcId), oper: '=', rp: '30',
-    sortname: 'su_ticket.id', sortorder: 'desc',
-  });
+  const [tk, os] = await Promise.allSettled([
+    ixc(e, 'su_ticket', {
+      qtype: 'su_ticket.id_cliente', query: String(ixcId), oper: '=', rp: '30',
+      sortname: 'su_ticket.id', sortorder: 'desc',
+    }),
+    ixc(e, 'su_oss_chamado', {
+      qtype: 'su_oss_chamado.id_cliente', query: String(ixcId), oper: '=', rp: '30',
+      sortname: 'su_oss_chamado.id', sortorder: 'desc',
+    }),
+  ]);
+
   const limite = new Date(); limite.setDate(limite.getDate() - 30); limite.setHours(0, 0, 0, 0);
-  const itens = (d.registros || []).map(t => {
+
+  const tickets = (tk.status === 'fulfilled' ? tk.value.registros || [] : []).map(t => {
     const dt = parseDataIXC(pick(t, 'data_criacao', 'datacriacao', 'data', 'data_abertura'));
     const st = String(pick(t, 'status', 'su_status') || '').toUpperCase();
     return {
+      origem: 'ticket',
       id: t.id,
-      titulo: String(pick(t, 'titulo', 'assunto', 'mensagem') || `Chamado #${t.id}`).slice(0, 80),
+      titulo: String(pick(t, 'titulo', 'assunto', 'mensagem') || `Atendimento #${t.id}`).slice(0, 90),
       data: fmtDataBR(dt),
-      aberto: !['F', 'C', 'S'].includes(st),
+      status: st,
+      etapa: STATUS_TICKET[st] || st || '—',
+      aberto: ABERTOS_TICKET.includes(st),
+      prioridade: pick(t, 'prioridade'),
       _dt: dt,
     };
   });
+
+  const ordens = (os.status === 'fulfilled' ? os.value.registros || [] : []).map(o => {
+    const dt = parseDataIXC(pick(o, 'data_abertura', 'data_criacao', 'data'));
+    const ag = parseDataIXC(pick(o, 'data_agenda', 'data_agendamento', 'data_prevista'));
+    const st = String(pick(o, 'status') || '').toUpperCase();
+    return {
+      origem: 'os',
+      id: o.id,
+      titulo: String(pick(o, 'mensagem', 'assunto', 'setor') || `O.S. #${o.id}`).slice(0, 90),
+      data: fmtDataBR(dt),
+      status: st,
+      etapa: STATUS_OS[st] || st || '—',
+      aberto: ABERTAS_OS.includes(st),
+      agendada_para: ag ? fmtDataHoraBR(ag) : null,
+      tecnico: pick(o, 'id_tecnico', 'tecnico'),
+      _dt: dt,
+    };
+  });
+
+  const todos = [...ordens, ...tickets].sort((a, b) => (b._dt || 0) - (a._dt || 0));
+  const abertos = todos.filter(i => i.aberto);
+
   return {
-    total30: itens.filter(i => i._dt && i._dt >= limite).length,
-    abertos: itens.filter(i => i.aberto).length,
-    itens: itens.slice(0, 5).map(({ _dt, ...r }) => r),
+    total30: todos.filter(i => i._dt && i._dt >= limite).length,
+    abertos: abertos.length,
+    // os em aberto vêm primeiro: é o que o atendente precisa para orientar
+    itens: [...abertos, ...todos.filter(i => !i.aberto)].slice(0, 6).map(({ _dt, ...r }) => r),
+    erro_os: os.status === 'rejected' ? String(os.reason?.message || os.reason).slice(0, 120) : null,
   };
 }
 
@@ -845,7 +895,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
       } else if (tentativas >= MAX_TENTATIVAS) {
         out.enviar.push({ texto: 'Não consegui entender. Vou te passar para um atendente. 👤' });
         out.patch = {
-          coluna: 'fila', bot_ativo: false, setor: conversa.setor || 'Suporte',
+          // sem setor definido: entra na fila geral, visível a todos os setores
+          coluna: 'fila', bot_ativo: false, setor: conversa.setor || null,
           atendente_id: null, fila_desde: new Date().toISOString(),
           assumido_em: null, assumido_por: null,
         };
@@ -916,7 +967,7 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
               out.patch.assumido_em = null;
               out.patch.assumido_por = null;
               out.patch.setor = (destino && destino.tipo === 'setor' && destino.setor)
-                || out.patch.setor || conversa.setor || 'Suporte';
+                || out.patch.setor || conversa.setor || null;
               out.limparSessao = true;
               return out;
             }
@@ -949,7 +1000,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
       }
 
       case 'setor': {
-        out.patch.setor = no.setor || conversa.setor || 'Suporte';
+        // no.setor vazio = nó "falar com atendente": deixa sem setor de propósito
+        out.patch.setor = no.setor || conversa.setor || null;
         // vai para a FILA, não para "em atendimento": ninguém assumiu ainda.
         // O relógio de espera começa aqui e só para quando um humano assume.
         out.patch.coluna = 'fila';
@@ -1039,10 +1091,60 @@ async function aplicarResultado(e, conversa, out) {
 }
 
 // ============================================================================
+// ACK — confirmação de entrega/leitura vinda do WhatsApp
+// ----------------------------------------------------------------------------
+// A Evolution manda o status ora como número (Baileys: 2=entregue, 3=lido,
+// 4=tocado), ora como string ('DELIVERY_ACK', 'READ'). Tratamos os dois.
+// Só avançamos o status: um ACK atrasado de "entregue" não pode rebaixar uma
+// mensagem que já está marcada como lida.
+// ============================================================================
+const PESO_STATUS = { pendente: 0, enviado: 1, entregue: 2, lido: 3, erro: 9 };
+
+function normalizarAck(v) {
+  const s = String(v ?? '').toUpperCase();
+  if (s === '4' || s === '3' || s.includes('READ') || s.includes('PLAYED')) return 'lido';
+  if (s === '2' || s.includes('DELIVERY') || s.includes('DELIVERED')) return 'entregue';
+  if (s === '1' || s.includes('SENT') || s.includes('SERVER')) return 'enviado';
+  if (s.includes('ERROR') || s.includes('FAIL')) return 'erro';
+  return null;
+}
+
+async function tratarAckMensagem(e, body) {
+  // o payload varia: pode vir um objeto ou um array de updates
+  const bruto = body.data || body.message || body;
+  const itens = Array.isArray(bruto) ? bruto : [bruto];
+  let aplicados = 0;
+
+  for (const d of itens) {
+    const waId = d?.key?.id || d?.keyId || d?.id || null;
+    const novo = normalizarAck(d?.status ?? d?.update?.status ?? d?.ack);
+    if (!waId || !novo) continue;
+
+    const msg = await sbUm(e, `atend_mensagens?wa_id=eq.${encodeURIComponent(waId)}&select=id,status`);
+    if (!msg) continue;                                   // mensagem não é nossa
+    if (PESO_STATUS[novo] <= PESO_STATUS[msg.status || 'pendente']) continue;  // não retrocede
+
+    await sb(e, `atend_mensagens?id=eq.${msg.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { status: novo, status_em: new Date().toISOString() },
+    });
+    aplicados++;
+  }
+  return { ok: true, acks: aplicados };
+}
+
+// ============================================================================
 // WEBHOOK — mensagem recebida da Evolution API
 // ============================================================================
 async function tratarWebhook(e, body) {
   const evento = String(body.event || body.type || '').toLowerCase();
+
+  // ACK do WhatsApp: entregue / lido. Chega como messages.update, que antes
+  // era descartado pelo filtro abaixo — é o que alimenta os risquinhos.
+  if (evento.includes('messages.update') || evento.includes('messages_update')) {
+    return await tratarAckMensagem(e, body);
+  }
+
   if (evento && !evento.includes('messages.upsert') && !evento.includes('messages_upsert')) {
     return { ok: true, ignorado: `evento ${evento}` };
   }
@@ -1153,6 +1255,30 @@ async function tratarWebhook(e, body) {
   const sessao = await sbUm(e, `atend_sessoes?contato_fone=eq.${fone}&select=*&limit=1`);
   const sessaoValida = sessao && new Date(sessao.expira_em) > new Date() ? sessao : null;
 
+  // Pesquisa disparada por atendente humano: a resposta é a nota, não uma nova
+  // demanda. Captura, agradece e encerra sem jogar o cliente de volta no menu.
+  if (sessaoValida && sessaoValida.aguardando === 'rating_humano') {
+    const n = parseInt(String(texto).replace(/\D/g, ''), 10);
+    await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+    if (n >= 1 && n <= 5) {
+      await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+        method: 'PATCH', prefer: 'return=minimal', body: { rating: n },
+      });
+      const agrade = n >= 4
+        ? 'Obrigado pela avaliação! 💚 Ficamos felizes em ajudar.'
+        : 'Obrigado pela avaliação. Vamos usar seu retorno para melhorar. 🙏';
+      try {
+        const env = await waEnviar(e, fone, agrade);
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: { conversa_id: conversa.id, direcao: 'bot', conteudo: agrade, wa_id: idDaEvolution(env), status: 'enviado' },
+        });
+      } catch (err) { console.error('[atendimento]', err.message); }
+      return { ok: true, rating: n, conversa_id: conversa.id };
+    }
+    // não respondeu número: segue o fluxo normal do bot com essa mensagem
+  }
+
   const out = await rodarFluxo(e, { fluxo, sessao: sessaoValida, conversa, texto });
   await aplicarResultado(e, conversa, out);
 
@@ -1172,10 +1298,10 @@ async function tratarCron(e) {
     const c = await sbUm(e, `atend_conversas?id=eq.${ag.conversa_id}&select=id,contato_fone`);
     if (!c) continue;
     try {
-      await waEnviar(e, c.contato_fone, ag.texto);
+      const env = await waEnviar(e, c.contato_fone, ag.texto);
       await sb(e, 'atend_mensagens', {
         method: 'POST', prefer: 'return=minimal',
-        body: { conversa_id: c.id, direcao: 'out', conteudo: ag.texto },
+        body: { conversa_id: c.id, direcao: 'out', conteudo: ag.texto, wa_id: idDaEvolution(env), status: 'enviado' },
       });
       await sb(e, `atend_agendamentos?id=eq.${ag.id}`, {
         method: 'PATCH', prefer: 'return=minimal', body: { enviado_em: new Date().toISOString(), erro: null },
@@ -1260,9 +1386,12 @@ async function autenticar(e, req) {
 }
 
 // filtro PostgREST de setor conforme o papel
+// Conversa SEM setor (cliente não escolheu, ou pediu atendente direto) fica
+// visível para todo mundo: quem assumir é que define o setor. Por isso o filtro
+// é "meu setor OU nenhum setor", não só o meu.
 function filtroSetor(user) {
   if (user.admin || !user.setor) return '';
-  return `&setor=eq.${encodeURIComponent(user.setor)}`;
+  return `&or=(setor.eq.${encodeURIComponent(user.setor)},setor.is.null)`;
 }
 
 // ============================================================================
@@ -1432,10 +1561,10 @@ export default async function handler(req, res) {
             });
           }
           if (texto) {
-            await waEnviar(e, fone, texto);
+            const env = await waEnviar(e, fone, texto);
             await sb(e, 'atend_mensagens', {
               method: 'POST', prefer: 'return=minimal',
-              body: { conversa_id: existente.id, direcao: 'out', conteudo: texto, autor_id: user.id },
+              body: { conversa_id: existente.id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
             await sb(e, `atend_conversas?id=eq.${existente.id}`, {
               method: 'PATCH', prefer: 'return=minimal',
@@ -1463,10 +1592,10 @@ export default async function handler(req, res) {
         });
 
         if (texto) {
-          await waEnviar(e, fone, texto);
+          const env = await waEnviar(e, fone, texto);
           await sb(e, 'atend_mensagens', {
             method: 'POST', prefer: 'return=minimal',
-            body: { conversa_id: c.id, direcao: 'out', conteudo: texto, autor_id: user.id },
+            body: { conversa_id: c.id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
           });
           await sb(e, `atend_conversas?id=eq.${c.id}`, {
             method: 'PATCH', prefer: 'return=minimal',
@@ -1593,7 +1722,9 @@ export default async function handler(req, res) {
           body: {
             bot_ativo: false,
             atendente_id: user.id,
-            setor: c.setor || user.setor || 'Suporte',
+            // conversa da fila geral (sem setor): quem assume traz para o seu setor,
+            // e a partir daí ela some da visão dos outros setores
+            setor: c.setor || user.setor || null,
             coluna: 'atendimento',
             // marca a assunção só na primeira vez: se outro atendente reassume
             // depois, o tempo de espera original do cliente não pode ser apagado
@@ -1609,13 +1740,15 @@ export default async function handler(req, res) {
           // O cliente fala com o SETOR, não com a pessoa. Expor o nome do
           // atendente cria vínculo pessoal indevido e vira cobrança direta
           // quando outro colega assume depois.
-          const setorAtual = c.setor || user.setor || 'Suporte';
-          const aviso = `Olá! Aqui é o setor ${setorAtual} da MoviOn. Assumimos seu atendimento e já vamos te ajudar. 👋`;
+          const setorAtual = c.setor || user.setor || null;
+          const aviso = setorAtual
+            ? `Olá! Aqui é o setor ${setorAtual} da MoviOn. Assumimos seu atendimento e já vamos te ajudar. 👋`
+            : `Olá! Aqui é a MoviOn. Assumimos seu atendimento e já vamos te ajudar. 👋`;
           try {
-            await waEnviar(e, c.contato_fone, aviso);
+            const env = await waEnviar(e, c.contato_fone, aviso);
             await sb(e, 'atend_mensagens', {
               method: 'POST', prefer: 'return=minimal',
-              body: { conversa_id: id, direcao: 'out', conteudo: aviso, autor_id: user.id },
+              body: { conversa_id: id, direcao: 'out', conteudo: aviso, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
           } catch (err) { console.error('[atendimento]', err.message); }
         }
@@ -1633,19 +1766,57 @@ export default async function handler(req, res) {
         }
         if (body.mensagem) {
           try {
-            await waEnviar(e, c.contato_fone, String(body.mensagem));
+            const env = await waEnviar(e, c.contato_fone, String(body.mensagem));
             await sb(e, 'atend_mensagens', {
               method: 'POST', prefer: 'return=minimal',
-              body: { conversa_id: id, direcao: 'out', conteudo: String(body.mensagem), autor_id: user.id },
+              body: { conversa_id: id, direcao: 'out', conteudo: String(body.mensagem), autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
           } catch (err) { console.error('[atendimento]', err.message); }
         }
+
+        // Pesquisa de satisfação: antes só existia no fim do fluxo do bot, então
+        // atendimento encerrado por humano nunca era avaliado — justamente o que
+        // mais importa medir. Só não repergunta se o cliente já deu nota.
+        let pesquisaEnviada = false;
+        if (body.pesquisa !== false && !c.rating) {
+          const texto = String(body.texto_pesquisa || '').trim()
+            || 'Antes de encerrar, como você avalia nosso atendimento? 😊\n\n'
+             + '1️⃣ Muito ruim\n2️⃣ Ruim\n3️⃣ Regular\n4️⃣ Bom\n5️⃣ Excelente\n\n'
+             + 'Responda com o número de 1 a 5.';
+          try {
+            const env = await waEnviar(e, c.contato_fone, texto);
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
+            });
+            // sessão aguardando a nota: a próxima mensagem do cliente vira rating
+            await sb(e, 'atend_sessoes?on_conflict=contato_fone', {
+              method: 'POST',
+              headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+              body: {
+                contato_fone: c.contato_fone,
+                conversa_id: id,
+                node_atual: null,
+                aguardando: 'rating_humano',
+                variaveis: { origem: 'finalizacao_humana' },
+                tentativas: 0,
+                expira_em: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            });
+            pesquisaEnviada = true;
+          } catch (err) { console.error('[atendimento]', err.message); }
+        }
+
         await sb(e, `atend_conversas?id=eq.${id}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, updated_by: user.id },
         });
-        await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
-        return res.status(200).json({ ok: true });
+        // se estamos esperando a nota, a sessão precisa sobreviver
+        if (!pesquisaEnviada) {
+          await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+        }
+        return res.status(200).json({ ok: true, pesquisa: pesquisaEnviada });
       }
 
       // devolve o controle para o bot
@@ -1698,7 +1869,7 @@ export default async function handler(req, res) {
             const env = await waEnviar(e, c.contato_fone, aviso);
             await sb(e, 'atend_mensagens', {
               method: 'POST', prefer: 'return=minimal',
-              body: { conversa_id: id, direcao: 'out', conteudo: aviso, autor_id: user.id, wa_id: idDaEvolution(env) },
+              body: { conversa_id: id, direcao: 'out', conteudo: aviso, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
           } catch (err) { console.error('[atendimento]', err.message); }
         }
@@ -1740,7 +1911,7 @@ export default async function handler(req, res) {
           method: 'POST', prefer: 'return=minimal',
           body: {
             conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id,
-            wa_id: idDaEvolution(env),
+            wa_id: idDaEvolution(env), status: 'enviado',
             responde_a: citada ? citada.id : null,
             quote_texto: citada ? String(citada.conteudo || '').slice(0, 300) : null,
             quote_direcao: citada ? citada.direcao : null,
@@ -1755,6 +1926,7 @@ export default async function handler(req, res) {
             bot_ativo: false,
             coluna: eraFila ? 'atendimento' : c.coluna,
             atendente_id: c.atendente_id || user.id,
+            setor: c.setor || user.setor || null,
             assumido_em: c.assumido_em || new Date().toISOString(),
             assumido_por: c.assumido_por || user.id,
             ultima_msg: 'Você: ' + texto.slice(0, 180),
