@@ -881,19 +881,68 @@ const CONECTORES = {
     return { resultado: 'ok', variaveis: { pix }, anexoTexto: pix };
   },
 
+  // Abre o chamado no MÓDULO DE CAMPO (campo_chamados), não no su_ticket do
+  // IXC: é de lá que o painel do atendente e o app do técnico leem. Gravar no
+  // IXC fazia o chamado sumir — ninguém no fluxo de atendimento o enxergava.
   async abrir_chamado({ e, conversa, vars }) {
-    const id = vars.cliente_id || conversa.cliente_ixc_id;
-    if (!id) return { resultado: 'sem_cliente' };
-    const r = await ixc(e, 'su_ticket', {
-      id_cliente: String(id),
-      titulo: 'Atendimento WhatsApp — abertura automática',
-      mensagem: `Chamado aberto pelo bot (MoviTalk).\nÚltima mensagem do cliente: ${vars.ultima_msg || '—'}`,
-      id_assunto: process.env.IXC_ASSUNTO_PADRAO || '1',
-      prioridade: 'M',
-      origem_endereco: 'M',
-      status: 'N',
-    }, 'inserir');
-    const chamado = r?.id || r?.registro?.id || null;
+    const ixcId = vars.cliente_id || conversa.cliente_ixc_id || null;
+    const snap = conversa.cliente_snapshot || {};
+    const nome = snap.nome || conversa.contato_nome || conversa.contato_fone || 'Cliente WhatsApp';
+
+    // endereço e login ajudam o técnico; se o IXC não responder, segue sem eles
+    let endereco = null, login = null;
+    if (ixcId) {
+      try {
+        const c = await ixc(e, 'cliente', { qtype: 'cliente.id', query: String(ixcId), oper: '=', rp: '1' });
+        const c0 = (c.registros || [])[0];
+        if (c0) {
+          endereco = [pick(c0, 'endereco', 'logradouro'), pick(c0, 'numero'),
+                      pick(c0, 'bairro'), pick(c0, 'cidade_nome', 'cidade')]
+                     .filter(Boolean).join(', ') || null;
+        }
+      } catch { /* segue sem endereço */ }
+      try {
+        const r = await ixc(e, 'radusuarios', { qtype: 'radusuarios.id_cliente', query: String(ixcId), oper: '=', rp: '1' });
+        login = pick((r.registros || [])[0] || {}, 'login', 'usuario', 'username');
+      } catch { /* segue sem login */ }
+    }
+
+    const hoje = new Date();
+    const dataBR = `${hoje.getFullYear()}-${pad2(hoje.getMonth() + 1)}-${pad2(hoje.getDate())}`;
+
+    let criado = null;
+    try {
+      const r = await sb(e, 'campo_chamados', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: {
+          cliente: String(nome).slice(0, 120),
+          cliente_id: ixcId ? String(ixcId) : null,
+          telefone: conversa.contato_fone || null,
+          endereco,
+          login_cliente: login,
+          descricao: `[Bot MoviTalk] ${vars.ultima_msg || 'Cliente solicitou atendimento técnico pelo WhatsApp.'}`.slice(0, 500),
+          prioridade: 'media',
+          status: 'novo',
+          data: dataBR,
+        },
+      });
+      criado = Array.isArray(r) ? r[0] : r;
+    } catch (err) {
+      console.error('[atendimento] abrir_chamado:', err.message);
+      return { resultado: 'erro', anexoTexto: '' };
+    }
+
+    const chamado = criado && criado.id ? criado.id : null;
+    if (chamado) {
+      // o módulo espera a trilha desde a criação: sem isso o painel mostra
+      // "Sem etapa" e o app do técnico não notifica o cliente
+      await sb(e, 'campo_chamados_historico', {
+        method: 'POST', prefer: 'return=minimal',
+        body: { chamado_id: chamado, status: 'novo' },
+      }).catch(err => console.error('[atendimento] historico:', err.message));
+    }
+
     return {
       resultado: chamado ? 'ok' : 'erro',
       variaveis: { chamado_id: chamado },
@@ -1772,9 +1821,22 @@ export default async function handler(req, res) {
           sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1'),
           sb(e, `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}&order=ultima_msg_em.desc.nullslast&limit=300`),
         ]);
+        // média de satisfação vem do HISTÓRICO: conversas.rating guarda só a nota
+        // do atendimento atual e é zerada a cada reabertura, então sozinho ele
+        // subestimaria a média (contaria só quem nunca voltou a falar conosco)
+        let avaliacoes = { media: null, total: 0 };
+        try {
+          const notas = await sb(e,
+            'atend_avaliacoes?select=rating&order=created_at.desc&limit=1000');
+          if (Array.isArray(notas) && notas.length) {
+            const soma = notas.reduce((a, x) => a + Number(x.rating || 0), 0);
+            avaliacoes = { media: soma / notas.length, total: notas.length };
+          }
+        } catch (err) { console.error('[atendimento] avaliacoes:', err.message); }
+
         const agendamentos = await sb(e,
           `atend_agendamentos?select=id,conversa_id,texto,quando,enviado_em&enviado_em=is.null&order=quando&limit=200`);
-        return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos });
+        return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos, avaliacoes });
       }
 
       case 'agendamentos.criar': {
