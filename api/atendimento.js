@@ -527,34 +527,56 @@ async function conexaoAoVivo(e, ixcId) {
 }
 
 // Uma "queda" é uma sessão PPPoE que ENCERROU hoje. Sessão sem fim = a atual.
+// O nome da tabela de accounting muda entre versões do IXC, então tentamos em
+// cascata e devolvemos qual funcionou — sem isso, "0 quedas" fica indistinguível
+// de "não consegui ler o histórico", que são coisas bem diferentes.
+const ENDPOINTS_ACCT = ['radpop_radaccounting', 'radacct', 'radpop_radacct', 'radaccounting'];
+
 async function sessoesDoDia(e, ixcId, login) {
-  const d = await ixc(e, 'radpop_radaccounting', {
-    qtype: 'radpop_radaccounting.id_cliente', query: String(ixcId), oper: '=', rp: '200',
-    sortname: 'radpop_radaccounting.inicioconexao', sortorder: 'desc',
-  });
-  const regs = (d.registros || []).filter(r => {
+  let d = null, usado = null, ultimoErro = null;
+  for (const ep of ENDPOINTS_ACCT) {
+    try {
+      const r = await ixc(e, ep, {
+        qtype: `${ep}.id_cliente`, query: String(ixcId), oper: '=', rp: '200',
+      });
+      if (r && Array.isArray(r.registros)) { d = r; usado = ep; break; }
+    } catch (err) { ultimoErro = `${ep}: ${err.message}`; }
+  }
+  if (!d) throw new Error(ultimoErro || 'Nenhum endpoint de accounting respondeu.');
+
+  const todos = d.registros || [];
+  const regs = todos.filter(r => {
     const u = String(pick(r, 'login', 'nomeusuario', 'username', 'usuario') || '');
     return !u || !login || u === login;
   });
 
   let quedas = 0, ultima = null, motivo = null, desde = null;
   for (const r of regs) {
-    const ini = parseDataIXC(pick(r, 'inicioconexao', 'acctstarttime', 'start_time', 'data_inicio'));
-    const fim = parseDataIXC(pick(r, 'fimconexao', 'acctstoptime', 'stop_time', 'data_fim'));
+    const ini = parseDataIXC(pick(r, 'inicioconexao', 'acctstarttime', 'start_time', 'data_inicio', 'data_conexao'));
+    const fim = parseDataIXC(pick(r, 'fimconexao', 'acctstoptime', 'stop_time', 'data_fim', 'data_desconexao'));
     if (fim && ehHoje(fim)) {
       quedas++;
       if (!ultima || fim > ultima) {
         ultima = fim;
-        motivo = pick(r, 'terminacaocausa', 'acctterminatecause', 'causa_termino');
+        motivo = pick(r, 'terminacaocausa', 'acctterminatecause', 'causa_termino', 'motivo_desconexao');
       }
     }
     if (!fim && ini && (!desde || ini > desde)) desde = ini;
   }
+
+  // se veio registro mas nenhuma data foi lida, o nome do campo é outro
+  const diag = (todos.length && !ultima && !desde)
+    ? { endpoint: usado, registros: todos.length, campos: Object.keys(todos[0]) }
+    : null;
+
   return {
     quedas_hoje: quedas,
     ultima_queda: fmtDataHoraBR(ultima),
     motivo_ultima_queda: motivo,
     online_desde: fmtDataHoraBR(desde),
+    acct_endpoint: usado,
+    acct_registros: todos.length,
+    acct_diag: diag,
   };
 }
 
@@ -1964,7 +1986,8 @@ export default async function handler(req, res) {
           qtype: 'fn_areceber.id_cliente', query: ixcId, oper: '=', rp: '200',
           sortname: 'fn_areceber.data_vencimento', sortorder: 'desc',
         });
-        const pagas = (d.registros || [])
+        const brutos = d.registros || [];
+        const pagas = brutos
           .filter(f => String(f.status || '').toUpperCase() === 'R')
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
@@ -1988,9 +2011,26 @@ export default async function handler(req, res) {
           .slice(0, 24);
 
         const comAtraso = pagas.filter(p => p.atraso !== null);
+        // Se NENHUM pagamento teve data reconhecida, o nome do campo nesta
+        // instalação é outro. Em vez de mostrar "—" para sempre, devolvemos as
+        // chaves que parecem data para o admin ver e ajustarmos na hora.
+        let diagnostico = null;
+        if (pagas.length && pagas.every(p => !p.pagamento)) {
+          const amostra = brutos.find(f => String(f.status || '').toUpperCase() === 'R') || brutos[0];
+          if (amostra) {
+            diagnostico = {
+              motivo: 'Nenhuma data de pagamento reconhecida',
+              candidatos: Object.keys(amostra)
+                .filter(k => /data|dt_|pag|baixa|receb|credit|liquid/i.test(k))
+                .reduce((o, k) => { o[k] = amostra[k]; return o; }, {}),
+              todos_os_campos: Object.keys(amostra),
+            };
+          }
+        }
         return res.status(200).json({
           ok: true,
           pagamentos: pagas,
+          diagnostico,
           resumo: {
             total_pago: pagas.reduce((s, p) => s + p.valor_pago, 0),
             quantidade: pagas.length,
