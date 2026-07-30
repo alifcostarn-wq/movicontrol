@@ -274,11 +274,13 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 }
 .mq:hover{background:#d3f2e2;}
 .m-composer{display:flex;gap:9px;padding:12px 16px 16px;align-items:center;flex-shrink:0;}
-.m-composer input{
+.m-composer textarea{
   flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 14px;
-  font-family:inherit;font-size:13px;outline:none;
+  font-family:inherit;font-size:13px;outline:none;resize:none;line-height:1.45;
+  min-height:42px;max-height:132px;overflow-y:auto;display:block;
 }
-.m-composer input:focus{border-color:var(--green);}
+.m-composer textarea:focus{border-color:var(--green);}
+.m-composer{align-items:flex-end;}
 .m-send{
   width:42px;height:42px;border-radius:11px;background:var(--green);border:none;cursor:pointer;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
@@ -1032,7 +1034,7 @@ select.transf{
   .m-quick::-webkit-scrollbar{display:none;}
   .mq{flex-shrink:0;}
   .mb{max-width:84%;font-size:14px;}
-  .m-composer input{font-size:16px;}   /* 16px evita o zoom automático do iOS */
+  .m-composer textarea{font-size:16px;}   /* 16px evita o zoom automático do iOS */
   .m-thread{padding:14px;}
   .acts{grid-template-columns:1fr;}
   .m-abas{
@@ -1615,6 +1617,10 @@ async function recarregarConversas(){
       nova.painel = antiga.painel;
       nova._painelCarregado = antiga._painelCarregado;
       nova.painelErro = antiga.painelErro;
+      // rascunho: o atendente pode estar digitando enquanto isto roda
+      nova.rascunho = antiga.rascunho;
+      nova._cursor = antiga._cursor;
+      nova._digitando = antiga._digitando;
     }
     return nova;
   });
@@ -2368,7 +2374,7 @@ function openModal(id){
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
-      <input id="mInput" placeholder="Digite uma mensagem...">
+      <textarea id="mInput" rows="1" placeholder="Digite uma mensagem...   (Shift+Enter quebra linha)"></textarea>
       <button class="m-send" id="mSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
     </div>
   </div>
@@ -2459,6 +2465,26 @@ function openModal(id){
   $('#mThread').scrollTop=99999;
   pintarBarraResposta(c);
 
+  // O modal é remontado inteiro sempre que chega mensagem nova (realtime).
+  // Sem isto, o texto que o atendente está escrevendo é destruído junto —
+  // por isso o rascunho vive na conversa, não no DOM.
+  const inp=$('#mInput');
+  if(inp){
+    const cresce=()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,132)+'px'; };
+    if(c.rascunho){ inp.value=c.rascunho; cresce(); }
+    inp.oninput=()=>{ c.rascunho=inp.value; c._cursor=inp.selectionStart; cresce(); };
+    inp.onkeyup=()=>{ c._cursor=inp.selectionStart; };
+    inp.onclick=()=>{ c._cursor=inp.selectionStart; };
+    inp.onfocus=()=>{ c._digitando=true; };
+    inp.onblur=()=>{ c._digitando=false; };
+    // devolve o foco e o cursor exatamente onde estavam antes do re-render
+    if(c._digitando){
+      inp.focus();
+      const p=c._cursor!=null?c._cursor:inp.value.length;
+      try{ inp.setSelectionRange(p,p); }catch{}
+    }
+  }
+
   // responder mensagem: botão ↩ na bolha
   document.querySelectorAll('[data-responder]').forEach(el=>el.onclick=ev=>{
     ev.stopPropagation();
@@ -2478,7 +2504,12 @@ function openModal(id){
   if(bTransf) bTransf.onclick=()=>abrirTransferencia(c);
 
   // quick replies (só os que têm data-i; o botão "Agendar" tem handler próprio abaixo)
-  document.querySelectorAll('.mq[data-i]').forEach(el=>el.onclick=()=>{ $('#mInput').value=state.atalhos[+el.dataset.i].m; $('#mInput').focus(); });
+  document.querySelectorAll('.mq[data-i]').forEach(el=>el.onclick=()=>{
+    const t=$('#mInput'); t.value=state.atalhos[+el.dataset.i].m;
+    c.rascunho=t.value; c._digitando=true;
+    t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,132)+'px';
+    t.focus(); t.setSelectionRange(t.value.length,t.value.length); c._cursor=t.value.length;
+  });
   // send
   const send=()=>{
     const v=$('#mInput').value.trim(); if(!v)return;
@@ -2489,12 +2520,17 @@ function openModal(id){
     if(c.col==='novos'){ c.col='atendimento'; }
     c.atendente=USUARIO.nome; c.botAtivo=false;
     $('#mInput').value='';
+    $('#mInput').style.height='auto';
+    c.rascunho=''; c._cursor=null;
     respondendoA=null;
     openModal(c.id); renderAll();
     api.enviarMensagem(c,v,citada?citada.id:null).catch(err=>toast('Falha ao enviar: '+err.message));
   };
   $('#mSend').onclick=send;
-  $('#mInput').onkeydown=e=>{ if(e.key==='Enter') send(); };
+  // Enter envia; Shift+Enter (ou Ctrl/Cmd+Enter) quebra linha
+  $('#mInput').onkeydown=e=>{
+    if(e.key==='Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey){ e.preventDefault(); send(); }
+  };
   // ações rápidas
   document.querySelectorAll('[data-painel]').forEach(el=>el.onclick=()=>abrirPainelAcao(c, el.dataset.painel));
   // tags toggle
