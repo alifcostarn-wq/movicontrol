@@ -343,6 +343,14 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .quedas-0{color:var(--green-deep);}
 .quedas-med{color:#b45309;}
 .quedas-alta{color:var(--red);}
+.mq-box{border-radius:8px;padding:8px 10px;margin-top:7px;line-height:1.45;}
+.mq-box .mq-t{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;opacity:.75;}
+.mq-box .mq-r{font-size:13px;font-weight:800;margin-top:2px;}
+.mq-box .mq-a{font-size:10.5px;margin-top:4px;opacity:.9;}
+.mq-box .mq-c{font-size:9px;font-family:'JetBrains Mono',monospace;margin-top:4px;opacity:.6;}
+.mq-box.cliente{background:var(--orange-soft);color:#92400e;border:1px solid #fcd9a4;}
+.mq-box.rede{background:var(--red-soft);color:var(--red);border:1px solid #fecaca;}
+.mq-box.normal{background:#f7f9fb;color:var(--text-mid);border:1px solid var(--line);}
 .con-alerta{
   font-size:10.5px;font-weight:700;color:var(--red);background:var(--red-soft);
   border-radius:7px;padding:6px 9px;margin-top:7px;line-height:1.4;
@@ -2054,7 +2062,13 @@ function blocoConexao(c){
         </div>
         ${l.ip?`<div class="con-cell"><div class="cl">IP</div><div class="cv mono">${esc(l.ip)}</div></div>`:''}
         ${l.mac?`<div class="con-cell"><div class="cl">MAC</div><div class="cv mono">${esc(l.mac)}</div></div>`:''}
-        ${l.motivo_ultima_queda?`<div class="con-cell wide"><div class="cl">Motivo da última queda</div><div class="cv" style="font-size:11px;">${esc(l.motivo_ultima_queda)}</div></div>`:''}
+        ${l.motivo_ultima_queda?`<div class="con-cell wide" style="padding:0;border:none;background:none;">
+          <div class="mq-box ${esc(l.motivo_ultima_queda.origem||'normal')}">
+            <div class="mq-t">Motivo da última queda${l.motivo_ultima_queda.origem==='rede'?' · possível falha na rede':l.motivo_ultima_queda.origem==='cliente'?' · lado do cliente':''}</div>
+            <div class="mq-r">${esc(l.motivo_ultima_queda.rotulo)}</div>
+            <div class="mq-a">${esc(l.motivo_ultima_queda.ajuda)}</div>
+            <div class="mq-c">${esc(l.motivo_ultima_queda.codigo)}</div>
+          </div></div>`:''}
         ${!l.ativo?`<div class="con-cell wide"><div class="cl">Login</div><div class="cv" style="color:var(--red)">DESATIVADO no Radius</div></div>`:''}
       </div>
       ${q!==null&&q>3?`<div class="con-alerta">⚠ ${q} quedas hoje — instabilidade no enlace. Vale abrir chamado técnico.</div>`:''}
