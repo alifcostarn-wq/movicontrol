@@ -506,6 +506,32 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .ex-atraso{font-weight:800;color:var(--red);}
 .ex-ok{font-weight:800;color:var(--green-deep);}
 
+/* ---- status do WhatsApp ---- */
+.st-wrap{display:grid;grid-template-columns:1fr 240px;gap:18px;align-items:start;}
+.st-preview{
+  border-radius:14px;padding:22px 18px;min-height:190px;display:flex;align-items:center;
+  justify-content:center;text-align:center;color:#fff;font-weight:700;line-height:1.5;
+  white-space:pre-wrap;word-break:break-word;box-shadow:var(--shadow);
+}
+.st-cores{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;}
+.st-cor{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+.st-cor.on{border-color:var(--text);}
+.st-txt{
+  width:100%;min-height:110px;border:1px solid var(--line);border-radius:11px;padding:12px 14px;
+  font-family:inherit;font-size:13.5px;resize:vertical;outline:none;line-height:1.5;
+}
+.st-txt:focus{border-color:var(--green);}
+.st-conta{font-size:11px;color:var(--text-low);text-align:right;margin-top:4px;}
+.st-hist{margin-top:22px;}
+.st-item{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:8px;background:#fbfcfd;}
+.st-item.falhou{border-color:#fecaca;background:#fff6f6;}
+.st-item .sh-t{font-size:12.5px;line-height:1.45;white-space:pre-wrap;}
+.st-item .sh-m{font-size:10.5px;color:var(--text-low);margin-top:5px;}
+.st-aviso{
+  font-size:11.5px;line-height:1.55;background:var(--orange-soft);color:#92400e;
+  border:1px solid #fcd9a4;border-radius:9px;padding:10px 12px;margin-bottom:14px;
+}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -995,6 +1021,8 @@ select.transf{
   .h-title p{display:none;}
   .search-box{order:5;width:100%;flex:1 0 100%;padding:10px 13px;}
   .btn{padding:10px 13px;font-size:13px;}
+  #btnStatus{font-size:0;padding:10px 12px;}
+  #btnStatus svg{margin:0;}
   #btnNovo{font-size:0;padding:10px 14px;}
   #btnNovo::before{content:'＋ Novo';font-size:13px;}
   .hamb{
@@ -1287,6 +1315,10 @@ select.transf{
       <button class="btn" id="btnFiltros">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M7 12h10M10 19h4"/></svg>
         Filtros
+      </button>
+      <button class="btn" id="btnStatus" title="Publicar status no WhatsApp da empresa">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="4 2.4"/><circle cx="12" cy="12" r="3.4"/></svg>
+        Status
       </button>
       <button class="btn primary" id="btnNovo">＋ Novo Atendimento</button>
     </header>
@@ -1767,6 +1799,13 @@ async function entrar(session){
     $('#sectorSel').value = meuSetor;
     $('#carregando').classList.remove('show');
     $('#shell').style.display='';
+    // status é comunicação institucional: só admin publica. Precisa ser aqui,
+    // depois do login — no carregamento do script USUARIO ainda não existe.
+    const bSt=$('#btnStatus');
+    if(bSt){
+      if(USUARIO&&USUARIO.admin) bSt.onclick=()=>abrirStatusWA();
+      else bSt.style.display='none';
+    }
     renderAll();
     ligarRealtime();
   }catch(e){
@@ -2364,6 +2403,95 @@ function abrirTransferencia(c){
       }
     };
   });
+}
+
+/* ===== STATUS DO WHATSAPP DA EMPRESA ===== */
+const ST_CORES = ['#00A859','#0F766E','#1D4ED8','#7C3AED','#B91C1C','#B45309','#0F172A','#475569'];
+
+function abrirStatusWA(){
+  let cor = ST_CORES[0], enviando = false;
+  const ov = document.createElement('div');
+  ov.className = 'tr-overlay';
+  ov.innerHTML = `<div class="pn-modal" style="width:min(760px,100%);">
+    <div class="pn-head"><h3>📢 Publicar status</h3><button class="pn-x" id="stX">✕</button></div>
+    <div class="pn-body">
+      <div class="st-aviso">
+        <b>Quem vê:</b> só clientes que têm o número da empresa salvo na agenda.
+        Não substitui o aviso direto na conversa — use como reforço.
+      </div>
+      <div class="st-wrap">
+        <div>
+          <textarea class="st-txt" id="stTexto" maxlength="700"
+            placeholder="Ex: Estamos com uma instabilidade na região do Centro. Nossa equipe já está atuando e a previsão de normalização é até as 18h."></textarea>
+          <div class="st-conta"><span id="stCount">0</span>/700</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-low);margin-top:10px;">COR DE FUNDO</div>
+          <div class="st-cores" id="stCores">
+            ${ST_CORES.map((c,i)=>`<div class="st-cor ${i===0?'on':''}" data-cor="${c}" style="background:${c}"></div>`).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-low);margin-bottom:7px;">PRÉVIA</div>
+          <div class="st-preview" id="stPrev" style="background:${cor}">Digite o texto…</div>
+          <button class="btn primary" id="stEnviar" style="width:100%;margin-top:12px;">Publicar status</button>
+        </div>
+      </div>
+      <div class="st-hist">
+        <div style="font-size:11px;font-weight:700;color:var(--text-low);margin-bottom:9px;">PUBLICADOS RECENTEMENTE</div>
+        <div id="stHist"><div class="pn-load">Carregando…</div></div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const fechar=()=>ov.remove();
+  ov.onclick=e=>{ if(e.target===ov) fechar(); };
+  ov.querySelector('#stX').onclick=fechar;
+
+  const txt=ov.querySelector('#stTexto'), prev=ov.querySelector('#stPrev'), cont=ov.querySelector('#stCount');
+  const pintar=()=>{
+    prev.textContent = txt.value.trim() || 'Digite o texto…';
+    prev.style.background = cor;
+    prev.style.opacity = txt.value.trim() ? '1' : '.55';
+    cont.textContent = txt.value.length;
+    // texto curto fica maior, como no WhatsApp
+    prev.style.fontSize = txt.value.length<60?'19px':txt.value.length<180?'15px':'13px';
+  };
+  txt.oninput=pintar; pintar(); txt.focus();
+
+  ov.querySelectorAll('[data-cor]').forEach(el=>el.onclick=()=>{
+    cor=el.dataset.cor;
+    ov.querySelectorAll('.st-cor').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on'); pintar();
+  });
+
+  const hist=ov.querySelector('#stHist');
+  const carregarHist=()=>chamar('status.listar',{})
+    .then(j=>{
+      const st=j.status||[];
+      hist.innerHTML = st.length ? st.map(x=>`
+        <div class="st-item ${x.erro?'falhou':''}">
+          <div class="sh-t">${esc(String(x.conteudo).slice(0,200))}</div>
+          <div class="sh-m">${esc(new Date(x.publicado_em).toLocaleString('pt-BR'))}
+            · ${x.destino==='todos'?'todos os contatos':'lista'}
+            ${x.erro?`· <b style="color:var(--red)">falhou: ${esc(x.erro.slice(0,80))}</b>`:''}</div>
+        </div>`).join('') : '<div style="font-size:12px;color:var(--text-low)">Nenhum status publicado ainda.</div>';
+    })
+    .catch(()=>{ hist.innerHTML='<div style="font-size:12px;color:var(--text-low)">Não consegui carregar o histórico.</div>'; });
+  carregarHist();
+
+  const btn=ov.querySelector('#stEnviar');
+  btn.onclick=async()=>{
+    const v=txt.value.trim();
+    if(!v){ toast('Escreva o texto do status'); txt.focus(); return; }
+    if(enviando) return;
+    if(!confirm('Publicar este status no WhatsApp da empresa?')) return;
+    enviando=true; btn.disabled=true; btn.textContent='Publicando…';
+    try{
+      const r=await chamar('status.publicar',{ tipo:'text', conteudo:v, cor_fundo:cor, fonte:1 });
+      if(r.ok===false){ toast('Falha: '+(r.error||'erro desconhecido')); carregarHist(); }
+      else { toast('Status publicado'); txt.value=''; pintar(); carregarHist(); }
+    }catch(err){ toast('Falha: '+err.message); }
+    enviando=false; btn.disabled=false; btn.textContent='Publicar status';
+  };
 }
 
 function openModal(id){
