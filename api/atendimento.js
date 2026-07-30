@@ -452,8 +452,9 @@ async function financeiroAoVivo(e, ixcId) {
   const pagas = todas
     .filter(f => String(f.status || '').toUpperCase() === 'R')
     .map(f => ({
-      valor: Number(pick(f, 'valor_recebido') ?? f.valor ?? 0),
-      data: fmtDataBR(parseDataIXC(pick(f, 'data_recebimento', 'data_pagamento', 'data_vencimento'))),
+      valor: Number(pick(f, 'valor_baixado', 'valor_recebido') ?? f.valor ?? 0),
+      data: fmtDataBR(parseDataIXC(pick(f, 'data_baixa', 'data_recebimento', 'data_pagamento',
+                                          'data_liquidacao', 'data_credito', 'data_pgto', 'data_vencimento'))),
     }))
     .slice(-3).reverse();
 
@@ -1749,14 +1750,34 @@ export default async function handler(req, res) {
         if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
         try {
           const d = await ixc(e, endpoint, {
-            qtype: `${endpoint}.id_cliente`, query: String(ixcId), oper: '=', rp: '1',
+            qtype: `${endpoint}.id_cliente`, query: String(ixcId), oper: '=', rp: '30',
           });
-          const reg = (d.registros || [])[0] || null;
+          const regs = d.registros || [];
+          // filtro opcional: ex. { campo:'status', valor:'R' } para achar uma
+          // fatura JÁ PAGA e descobrir como o IXC nomeia a data de baixa
+          const campo = String(body.filtro_campo || '').trim();
+          const valor = String(body.filtro_valor || '').trim().toUpperCase();
+          const alvo = campo
+            ? regs.find(r => String(r[campo] ?? '').toUpperCase() === valor)
+            : regs[0];
+          if (!alvo) {
+            return res.status(200).json({
+              ok: true, endpoint, total: d.total ?? null,
+              aviso: campo ? `Nenhum registro com ${campo}=${valor} nos ${regs.length} lidos.` : 'Sem registros.',
+              campos: regs[0] ? Object.keys(regs[0]) : [],
+            });
+          }
+          // destaca as chaves que parecem data/valor: encurta a caça ao nome certo
+          const chaves = Object.keys(alvo);
           return res.status(200).json({
             ok: true, endpoint,
             total: d.total ?? null,
-            campos: reg ? Object.keys(reg) : [],
-            exemplo: reg,
+            campos: chaves,
+            datas_preenchidas: chaves.filter(k => /data|dt_|venc|baixa|pag|receb|liquid/i.test(k))
+              .reduce((o, k) => { o[k] = alvo[k]; return o; }, {}),
+            valores: chaves.filter(k => /valor|vlr/i.test(k))
+              .reduce((o, k) => { o[k] = alvo[k]; return o; }, {}),
+            exemplo: alvo,
           });
         } catch (err) {
           return res.status(200).json({ ok: true, endpoint, erro: err.message });
@@ -1947,7 +1968,9 @@ export default async function handler(req, res) {
           .filter(f => String(f.status || '').toUpperCase() === 'R')
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
-            const pag = parseDataIXC(pick(f, 'data_recebimento', 'data_pagamento'));
+            // o IXC nomeia a liquidação como "baixa" — daí a ordem dos candidatos
+            const pag = parseDataIXC(pick(f, 'data_baixa', 'data_recebimento', 'data_pagamento',
+                                          'data_liquidacao', 'data_credito', 'data_pgto'));
             const emi = parseDataIXC(pick(f, 'data_emissao', 'data_criacao'));
             return {
               id: f.id,
@@ -1956,7 +1979,7 @@ export default async function handler(req, res) {
               vencimento: fmtDataBR(venc),
               pagamento: fmtDataBR(pag),
               valor: Number(f.valor || 0),
-              valor_pago: Number(pick(f, 'valor_recebido') ?? f.valor ?? 0),
+              valor_pago: Number(pick(f, 'valor_baixado', 'valor_recebido') ?? f.valor ?? 0),
               // atraso real: só conta se pagou depois do vencimento
               atraso: (venc && pag) ? Math.max(0, diasCorridos(venc, pag)) : null,
               forma: pick(f, 'forma_recebimento', 'tipo_recebimento'),
