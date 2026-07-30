@@ -39,7 +39,24 @@
 html,body{height:100%;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow:hidden;font-size:14px;}
 
-.app{display:grid;grid-template-columns:196px 1fr;height:100vh;}
+.app{display:grid;grid-template-columns:196px 1fr;height:100vh;transition:grid-template-columns .18s ease;}
+.app.slim{grid-template-columns:60px 1fr;}
+/* recolhida: some tudo que é texto, sobram os ícones centralizados */
+.app.slim .logo .word,.app.slim .logo .sub,.app.slim .setor-box,
+.app.slim .nav-item span,.app.slim .usr-rodape .u-txt{display:none;}
+.app.slim .nav-item{justify-content:center;padding:12px 0;gap:0;}
+.app.slim .nav-item svg{width:19px;height:19px;}
+.app.slim .logo{padding:0 0 18px;text-align:center;}
+.app.slim .usr-rodape{justify-content:center;}
+.sb-toggle{
+  position:absolute;top:14px;right:-11px;width:22px;height:22px;border-radius:50%;
+  border:1px solid var(--line);background:var(--card);color:var(--text-mid);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-family:inherit;
+  box-shadow:var(--shadow);z-index:6;padding:0;line-height:1;
+}
+.sb-toggle:hover{color:var(--green-deep);border-color:var(--green);}
+.sidebar{position:relative;}
+
 
 /* ============ SIDEBAR ============ */
 .sidebar{
@@ -1187,6 +1204,7 @@ select.transf{
 
   <!-- SIDEBAR -->
   <aside class="sidebar">
+    <button class="sb-toggle" id="sbToggle" title="Recolher menu">◀</button>
     <div class="logo">
       <div class="word">Movi<span class="o-dot">T</span>alk</div>
       <div class="sub">CENTRO DE ATENDIMENTO</div>
@@ -1201,45 +1219,33 @@ select.transf{
       </select>
     </div>
     <nav class="nav" id="nav">
-      <div class="nav-item active" data-view="kanban">
+      <div class="nav-item active" data-view="kanban" title="Kanban">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-        Kanban
+<span>Kanban</span>
       </div>
-      <div class="nav-item" data-view="agendamentos">
+      <div class="nav-item" data-view="agendamentos" title="Agendamentos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
-        Agendamentos
+<span>Agendamentos</span>
       </div>
-      <div class="nav-item" data-view="chatinterno">
+      <div class="nav-item" data-view="chatinterno" title="Chat Interno">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
-        Chat Interno
+<span>Chat Interno</span>
       </div>
-      <div class="nav-item" data-view="fluxo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L11 16M17 7.5L13 16M7.5 6h9"/></svg>
-        Fluxo do Bot
-      </div>
-      <div class="nav-item" data-view="conversas">
+      <div class="nav-item" data-view="conversas" title="Conversas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
-        Conversas
+<span>Conversas</span>
       </div>
-      <div class="nav-item" data-view="contatos">
+      <div class="nav-item" data-view="contatos" title="Contatos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
-        Contatos
+<span>Contatos</span>
       </div>
-      <div class="nav-item" data-view="etiquetas">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L11 3H4v7l9.6 10.4a2 2 0 002.8 0l4.2-4.2a2 2 0 000-2.8z"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/></svg>
-        Etiquetas
-      </div>
-      <div class="nav-item" data-view="atalhos">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>
-        Atalhos
-      </div>
-      <div class="nav-item" data-view="relatorios">
+      <div class="nav-item" data-view="relatorios" title="Relatórios">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-        Relatórios
+<span>Relatórios</span>
       </div>
-      <div class="nav-item" data-view="config">
+      <div class="nav-item" data-view="config" title="Configurações">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.9 2.9l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.2a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.9-2.9l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.2a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.9-2.9l.1.1a1.7 1.7 0 001.9.3h.1a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.2a1.7 1.7 0 001 1.5h.1a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.9 2.9l-.1.1a1.7 1.7 0 00-.3 1.9v.1a1.7 1.7 0 001.5 1h.2a2 2 0 110 4h-.2a1.7 1.7 0 00-1.5 1z"/></svg>
-        Configurações
+<span>Configurações</span>
       </div>
     </nav>
     <div class="usr-rodape" id="usr-rodape"></div>
@@ -2627,40 +2633,54 @@ function closeModal(){ $('#overlay').classList.remove('open'); modalId=null; res
 $('#overlay').onclick=e=>{ if(e.target.id==='overlay') closeModal(); };
 
 /* ================= AUX VIEWS ================= */
+function renderEtiquetas(a, emb){
+    // dentro de Configurações a moldura e o título já existem: não repete
+    a.innerHTML=`<div class="${emb?'':'viewbox'}">${emb?'':'<h2>Etiquetas</h2>'}<div class="vsub">Categorize conversas e filtre o Kanban por etiqueta.</div>
+      ${state.tags.map((t,i)=>`<div class="rule-line"><span class="rule-kw">${esc(t)}</span><span class="rule-desc">${state.conversas.filter(c=>c.tags.includes(t)).length} conversa(s)</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
+      <div class="add-row"><input id="newTag" placeholder="Nova etiqueta..."><button class="btn primary" id="addTag">Adicionar</button></div></div>`;
+    $('#addTag').onclick=()=>{ const v=$('#newTag').value.trim(); if(v && !state.tags.includes(v)){ chamar('catalogo.salvar',{tipo:'etiquetas',registro:{nome:v}}).then(j=>{ETIQ_ID[v]=j.registro.id;state.tags.push(v);renderAux();}).catch(err=>toast('Falha: '+err.message)); } };
+    a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const t=state.tags[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'etiquetas',remover:ETIQ_ID[t]}).then(()=>{ state.tags.splice(state.tags.indexOf(t),1); delete ETIQ_ID[t]; state.conversas.forEach(c=>c.tags=c.tags.filter(x=>x!==t)); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
+}
+
+function renderAtalhos(a, emb){
+    a.innerHTML=`<div class="${emb?'':'viewbox'}">${emb?'':'<h2>Atalhos (respostas rápidas)</h2>'}<div class="vsub">Aparecem acima do campo de mensagem em toda conversa.</div>
+      ${state.atalhos.map((x,i)=>`<div class="rule-line"><span class="rule-kw">⚡ ${esc(x.t)}</span><span class="rule-desc">${esc(x.m)}</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
+      <div class="add-row"><input id="atT" placeholder="Título..." style="flex:0 0 160px;"><input id="atM" placeholder="Mensagem..."><button class="btn primary" id="addAt">Adicionar</button></div></div>`;
+    $('#addAt').onclick=()=>{ const t=$('#atT').value.trim(),m=$('#atM').value.trim(); if(t&&m){ chamar('catalogo.salvar',{tipo:'atalhos',registro:{titulo:t,mensagem:m}}).then(j=>{state.atalhos.push({id:j.registro.id,t,m});renderAux();}).catch(err=>toast('Falha: '+err.message)); } };
+    a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const at=state.atalhos[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'atalhos',remover:at.id}).then(()=>{ state.atalhos=state.atalhos.filter(x=>x!==at); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
+}
+
 function renderAux(){
   const a=$('#auxview'); const b=$('#board'); const fb=$('#filterbar'); const k=$('#kpis');
   if(view==='kanban'){ a.style.display='none'; b.style.display='grid'; k.style.display='grid'; return; }
   b.style.display='none'; fb.style.display='none'; k.style.display=view==='relatorios'?'grid':'none';
   a.style.display='block';
-  if(view==='etiquetas'){
-    a.innerHTML=`<div class="viewbox"><h2>Etiquetas</h2><div class="vsub">Categorize conversas e filtre o Kanban por etiqueta.</div>
-      ${state.tags.map((t,i)=>`<div class="rule-line"><span class="rule-kw">${esc(t)}</span><span class="rule-desc">${state.conversas.filter(c=>c.tags.includes(t)).length} conversa(s)</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
-      <div class="add-row"><input id="newTag" placeholder="Nova etiqueta..."><button class="btn primary" id="addTag">Adicionar</button></div></div>`;
-    $('#addTag').onclick=()=>{ const v=$('#newTag').value.trim(); if(v && !state.tags.includes(v)){ chamar('catalogo.salvar',{tipo:'etiquetas',registro:{nome:v}}).then(j=>{ETIQ_ID[v]=j.registro.id;state.tags.push(v);renderAux();}).catch(err=>toast('Falha: '+err.message)); } };
-    a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const t=state.tags[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'etiquetas',remover:ETIQ_ID[t]}).then(()=>{ state.tags.splice(state.tags.indexOf(t),1); delete ETIQ_ID[t]; state.conversas.forEach(c=>c.tags=c.tags.filter(x=>x!==t)); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
-  }
-  else if(view==='atalhos'){
-    a.innerHTML=`<div class="viewbox"><h2>Atalhos (respostas rápidas)</h2><div class="vsub">Aparecem acima do campo de mensagem em toda conversa.</div>
-      ${state.atalhos.map((x,i)=>`<div class="rule-line"><span class="rule-kw">⚡ ${esc(x.t)}</span><span class="rule-desc">${esc(x.m)}</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
-      <div class="add-row"><input id="atT" placeholder="Título..." style="flex:0 0 160px;"><input id="atM" placeholder="Mensagem..."><button class="btn primary" id="addAt">Adicionar</button></div></div>`;
-    $('#addAt').onclick=()=>{ const t=$('#atT').value.trim(),m=$('#atM').value.trim(); if(t&&m){ chamar('catalogo.salvar',{tipo:'atalhos',registro:{titulo:t,mensagem:m}}).then(j=>{state.atalhos.push({id:j.registro.id,t,m});renderAux();}).catch(err=>toast('Falha: '+err.message)); } };
-    a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const at=state.atalhos[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'atalhos',remover:at.id}).then(()=>{ state.atalhos=state.atalhos.filter(x=>x!==at); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
-  }
+  if(view==='etiquetas'){ renderEtiquetas(a); }
+  else if(view==='atalhos'){ renderAtalhos(a); }
   else if(view==='config'){
-    a.innerHTML=`<div class="viewbox">
-      <h2>Configurações</h2>
-      <div class="cfg-tabs" id="cfgTabs">
+    const abas=`<div class="cfg-tabs" id="cfgTabs">
         <div class="cfg-tab ${configTab==='regras'?'on':''}" data-tab="regras">Auto-responder</div>
+        <div class="cfg-tab ${configTab==='fluxo'?'on':''}" data-tab="fluxo">🔀 Fluxo do Bot</div>
+        <div class="cfg-tab ${configTab==='atalhos'?'on':''}" data-tab="atalhos">⚡ Atalhos</div>
+        <div class="cfg-tab ${configTab==='etiquetas'?'on':''}" data-tab="etiquetas">🏷️ Etiquetas</div>
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
-      </div>
-      <div id="cfgBody"></div>
-    </div>`;
+      </div>`;
+    // o editor de fluxo precisa da largura toda: fica FORA da moldura
+    a.innerHTML = configTab==='fluxo'
+      ? `<div class="viewbox" style="margin-bottom:12px;padding-bottom:14px;"><h2>Configurações</h2>${abas}</div><div id="cfgBody"></div>`
+      : `<div class="viewbox"><h2>Configurações</h2>${abas}<div id="cfgBody"></div></div>`;
     a.querySelectorAll('.cfg-tab').forEach(el=>el.onclick=()=>{
       if(configTab==='integracoes' && el.dataset.tab!=='integracoes') pararPollWA();
       configTab=el.dataset.tab; renderAux();
     });
     const body=$('#cfgBody');
-    if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
+    if(configTab==='fluxo'){
+      // o editor de fluxo ocupa a tela toda: sem a moldura de "viewbox"
+      renderFluxo(body);
+    }
+    else if(configTab==='atalhos'){ renderAtalhos(body, true); }
+    else if(configTab==='etiquetas'){ renderEtiquetas(body, true); }
+    else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);
     } else {
       body.innerHTML=`<div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>
@@ -3350,6 +3370,23 @@ setInterval(()=>{
 }, 30000);
 
 /* ================= RENDER ALL ================= */
+/* ===== SIDEBAR RECOLHÍVEL ===== */
+// A preferência fica no próprio usuário (via userPrefs no bootstrap não existe),
+// então guardamos em memória de sessão: recolher é decisão de tela, não de dado.
+let sidebarSlim = false;
+function aplicarSlim(){
+  const shell=$('#shell'), btn=$('#sbToggle');
+  if(!shell) return;
+  shell.classList.toggle('slim', sidebarSlim);
+  if(btn){ btn.textContent = sidebarSlim ? '▶' : '◀'; btn.title = sidebarSlim ? 'Expandir menu' : 'Recolher menu'; }
+  // o Kanban tem altura calculada: precisa remedir depois da transição
+  setTimeout(()=>{ if(view==='kanban') renderBoard(); }, 200);
+}
+(function(){
+  const b=$('#sbToggle');
+  if(b) b.onclick=()=>{ sidebarSlim=!sidebarSlim; aplicarSlim(); };
+})();
+
 function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); }
 /* o render inicial acontece depois do login, em entrar() */
 </script>
