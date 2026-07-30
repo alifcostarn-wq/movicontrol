@@ -1479,12 +1479,21 @@ function _sb(){
 }
 
 /* chamada única ao proxy */
-async function chamar(acao, dados){
-  const r = await fetch(API, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+TOKEN },
-    body: JSON.stringify({ acao, ...(dados||{}) })
-  });
+async function chamar(acao, dados, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms||45000);
+  let r;
+  try{
+    r = await fetch(API, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+TOKEN },
+      body: JSON.stringify({ acao, ...(dados||{}) }),
+      signal: ctrl.signal
+    });
+  }catch(err){
+    if(err.name==='AbortError') throw new Error('O servidor demorou demais para responder. Tente de novo.');
+    throw err;
+  }finally{ clearTimeout(t); }
   const j = await r.json().catch(()=>({ok:false,error:'Resposta inválida do servidor.'}));
   if(!j.ok) throw new Error(j.error||('Erro '+r.status));
   return j;
@@ -2469,11 +2478,25 @@ function abrirStatusWA(){
       const st=j.status||[];
       hist.innerHTML = st.length ? st.map(x=>`
         <div class="st-item ${x.erro?'falhou':''}">
-          <div class="sh-t">${esc(String(x.conteudo).slice(0,200))}</div>
-          <div class="sh-m">${esc(new Date(x.publicado_em).toLocaleString('pt-BR'))}
-            · ${x.destino==='todos'?'todos os contatos':'lista'}
-            ${x.erro?`· <b style="color:var(--red)">falhou: ${esc(x.erro.slice(0,80))}</b>`:''}</div>
+          <div style="display:flex;align-items:flex-start;gap:9px;">
+            <div style="flex:1;min-width:0;">
+              <div class="sh-t">${esc(String(x.conteudo).slice(0,200))}</div>
+              <div class="sh-m">${esc(new Date(x.publicado_em).toLocaleString('pt-BR'))}
+                · ${x.destino==='todos'?'todos os contatos':'lista'}
+                ${x.erro?`· <b style="color:var(--red)">falhou: ${esc(x.erro.slice(0,80))}</b>`:''}</div>
+            </div>
+            <button class="fin-copy" data-delst="${x.id}" title="Excluir status">🗑 excluir</button>
+          </div>
         </div>`).join('') : '<div style="font-size:12px;color:var(--text-low)">Nenhum status publicado ainda.</div>';
+      hist.querySelectorAll('[data-delst]').forEach(b=>b.onclick=async()=>{
+        if(!confirm('Excluir este status?\n\nSe já passou de 24h ou o WhatsApp não permitir, ele sai apenas do histórico daqui.')) return;
+        b.disabled=true; b.textContent='excluindo…';
+        try{
+          const r=await chamar('status.excluir',{ status_id:Number(b.dataset.delst) });
+          toast(r.aviso || 'Status excluído');
+        }catch(err){ toast('Falha: '+err.message); }
+        carregarHist();
+      });
     })
     .catch(()=>{ hist.innerHTML='<div style="font-size:12px;color:var(--text-low)">Não consegui carregar o histórico.</div>'; });
   carregarHist();
@@ -2486,11 +2509,16 @@ function abrirStatusWA(){
     if(!confirm('Publicar este status no WhatsApp da empresa?')) return;
     enviando=true; btn.disabled=true; btn.textContent='Publicando…';
     try{
-      const r=await chamar('status.publicar',{ tipo:'text', conteudo:v, cor_fundo:cor, fonte:1 });
-      if(r.ok===false){ toast('Falha: '+(r.error||'erro desconhecido')); carregarHist(); }
-      else { toast('Status publicado'); txt.value=''; pintar(); carregarHist(); }
-    }catch(err){ toast('Falha: '+err.message); }
-    enviando=false; btn.disabled=false; btn.textContent='Publicar status';
+      await chamar('status.publicar',{ tipo:'text', conteudo:v, cor_fundo:cor, fonte:1 }, 30000);
+      toast('Status publicado'); txt.value=''; pintar();
+    }catch(err){
+      toast('Falha: '+err.message);
+    }finally{
+      // finally garante que o botão volte mesmo se algo estourar no meio:
+      // travar em "Publicando…" esconde o erro e não deixa tentar de novo
+      enviando=false; btn.disabled=false; btn.textContent='Publicar status';
+      carregarHist();
+    }
   };
 }
 
