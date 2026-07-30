@@ -533,6 +533,13 @@ async function conexaoAoVivo(e, ixcId) {
 //   origem 'cliente' = algo na ponta do assinante
 //   origem 'rede'    = algo na infra do provedor (candidato a chamado)
 //   origem 'normal'  = encerramento esperado, não é falha
+// Pesquisa de satisfação: o mesmo texto para encerramento por bot e por humano
+const TEXTO_PESQUISA =
+  'Para melhorar nosso serviço, como você avalia nosso atendimento? 😊\n\n' +
+  '1️⃣ Muito ruim\n2️⃣ Ruim\n3️⃣ Regular\n4️⃣ Bom\n5️⃣ Excelente\n\n' +
+  'Responda com o número de 1 a 5.';
+const MIN_INSISTIR_PESQUISA = () => Number(process.env.ATEND_PESQUISA_MIN || 15);
+
 const MOTIVO_QUEDA = {
   'lost-carrier':        ['Perda de sinal', 'O enlace caiu fisicamente: roteador/ONU desligado, falta de energia ou rompimento na fibra. É a causa mais comum.', 'cliente'],
   'user-request':        ['Cliente desconectou', 'O próprio equipamento do cliente encerrou a conexão — normalmente reinício do roteador.', 'cliente'],
@@ -1186,7 +1193,26 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         out.patch.coluna = 'resolvidos';
         out.patch.bot_ativo = true;
         out.logs.push({ node_id: no.id, node_tipo: 'fim' });
-        out.limparSessao = true;
+
+        // Todo atendimento concluído é avaliado — a pesquisa mede ESTE
+        // atendimento. Só encerramento por inatividade fica de fora (o cliente
+        // sumiu, não houve atendimento a avaliar). Para pular num nó específico,
+        // basta marcar pesquisa:false nele no editor de fluxo.
+        if (no.pesquisa !== false && !conversa.rating) {
+          out.enviar.push({ texto: TEXTO_PESQUISA, node: no.id });
+          out.sessao = {
+            node_atual: null,
+            aguardando: 'rating_humano',
+            variaveis: {
+              origem: 'fim_bot',
+              insistir_ate: new Date(Date.now() + MIN_INSISTIR_PESQUISA() * 60000).toISOString(),
+            },
+            tentativas: 0,
+          };
+          out.limparSessao = false;
+        } else {
+          out.limparSessao = true;
+        }
         return out;
       }
 
@@ -1366,13 +1392,16 @@ async function tratarWebhook(e, body) {
       },
     });
   } else if (conversa.coluna === 'resolvidos') {
-    // reabre: volta pra fila, sem perder tags/notas/histórico
+    // reabre: volta pra fila, sem perder tags/notas/histórico.
+    // rating volta a null porque começa um atendimento NOVO — a nota antiga já
+    // está preservada em atend_avaliacoes e não deve bloquear a próxima pesquisa
     await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
       method: 'PATCH', prefer: 'return=minimal',
-      body: { coluna: 'novos', bot_ativo: true },
+      body: { coluna: 'novos', bot_ativo: true, rating: null },
     });
     conversa.coluna = 'novos';
     conversa.bot_ativo = true;
+    conversa.rating = null;
   }
 
   // anexo (comprovante, foto do equipamento, PDF): baixa e guarda
@@ -1447,9 +1476,19 @@ async function tratarWebhook(e, body) {
         method: 'PATCH', prefer: 'return=minimal',
         body: { rating: n, coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
       });
-      const agrade = n >= 4
+      // série histórica: sobrevive à reabertura da conversa
+      await sb(e, 'atend_avaliacoes', {
+        method: 'POST', prefer: 'return=minimal',
+        body: {
+          conversa_id: conversa.id, contato_fone: fone, rating: n,
+          origem: vars.origem || 'finalizacao_humana',
+          atendente_id: conversa.atendente_id || null, setor: conversa.setor || null,
+        },
+      }).catch(err => console.error('[atendimento] avaliacao:', err.message));
+      const agrade = (n >= 4
         ? 'Obrigado pela avaliação! 💚 Ficamos felizes em ajudar.'
-        : 'Obrigado pela avaliação. Vamos usar seu retorno para melhorar. 🙏';
+        : 'Obrigado pela avaliação. Vamos usar seu retorno para melhorar. 🙏')
+        + '\n\nSeu atendimento foi encerrado. Se precisar de algo, é só mandar uma mensagem que começamos de novo. 👋';
       try {
         const env = await waEnviar(e, fone, agrade);
         await sb(e, 'atend_mensagens', {
@@ -1553,6 +1592,35 @@ async function tratarCron(e) {
     encerradas++;
   }
 
+  // ---- pesquisa de satisfação sem resposta ----
+  // A conversa já está em "resolvidos", então o encerramento por inatividade
+  // acima não a alcança. Passada a janela de insistência, avisa o cliente que
+  // encerrou e libera o bot — senão ele ficaria preso na pesquisa até 24h.
+  let pesquisasEncerradas = 0;
+  try {
+    const pend2 = await sb(e,
+      `atend_sessoes?aguardando=eq.rating_humano&select=contato_fone,conversa_id,variaveis&limit=60`);
+    const agoraMs = Date.now();
+    for (const sx of (pend2 || [])) {
+      const ate = sx.variaveis && sx.variaveis.insistir_ate ? new Date(sx.variaveis.insistir_ate).getTime() : 0;
+      if (!ate || agoraMs < ate) continue;                  // ainda dentro da janela
+      const msg = 'Não recebemos sua avaliação, tudo bem. 🙂\n'
+        + 'Seu atendimento foi encerrado. Se precisar de algo, é só mandar uma mensagem. A MoviOn agradece! 💚';
+      try {
+        const env = await waEnviar(e, sx.contato_fone, msg);
+        if (sx.conversa_id) {
+          await sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: { conversa_id: sx.conversa_id, direcao: 'bot', conteudo: msg, wa_id: idDaEvolution(env), status: 'enviado' },
+          });
+        }
+      } catch (err) { console.error('[atendimento]', err.message); }
+      await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(sx.contato_fone)}`,
+        { method: 'DELETE', prefer: 'return=minimal' });
+      pesquisasEncerradas++;
+    }
+  } catch (err) { console.error('[atendimento] pesquisa cron:', err.message); }
+
   let sessoes = 0;
   try {
     const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_limpar_sessoes`, {
@@ -1563,7 +1631,8 @@ async function tratarCron(e) {
     sessoes = await r.json();
   } catch { /* não crítico */ }
 
-  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas, sessoes_expiradas: sessoes };
+  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
+           pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes };
 }
 
 // ============================================================================
@@ -2250,10 +2319,7 @@ export default async function handler(req, res) {
         if (body.pesquisa !== false && !c.rating) {
           // mensagem única: já encerra e pede a nota, sem um "atendimento
           // encerrado" separado antes
-          const texto = String(body.texto_pesquisa || '').trim()
-            || 'Para melhorar nosso serviço, como você avalia nosso atendimento? 😊\n\n'
-             + '1️⃣ Muito ruim\n2️⃣ Ruim\n3️⃣ Regular\n4️⃣ Bom\n5️⃣ Excelente\n\n'
-             + 'Responda com o número de 1 a 5.';
+          const texto = String(body.texto_pesquisa || '').trim() || TEXTO_PESQUISA;
           try {
             const env = await waEnviar(e, c.contato_fone, texto);
             await sb(e, 'atend_mensagens', {
@@ -2261,7 +2327,7 @@ export default async function handler(req, res) {
               body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
             // dois relógios: 15 min de insistência, 24h para aceitar a nota
-            const minInsistir = Number(process.env.ATEND_PESQUISA_MIN || 15);
+            const minInsistir = MIN_INSISTIR_PESQUISA();
             await sb(e, 'atend_sessoes?on_conflict=contato_fone', {
               method: 'POST',
               headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
