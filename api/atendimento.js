@@ -1280,6 +1280,28 @@ async function aplicarResultado(e, conversa, out) {
   }
 }
 
+// Foto de perfil do WhatsApp. Nem todo contato tem — e quem restringe a foto
+// nas configurações de privacidade simplesmente não devolve nada, o que é um
+// resultado válido (não é erro) e vira o avatar de iniciais de sempre.
+async function waFotoPerfil(e, fone) {
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return null;
+  const numero = normalizarFone(fone);
+  try {
+    const r = await fetch(`${e.EVO_URL}/chat/fetchProfilePictureUrl/${e.EVO_INST}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+      body: JSON.stringify({ number: numero }),
+    });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const url = j?.profilePictureUrl || j?.profilePicUrl || j?.url || null;
+    return (typeof url === 'string' && /^https?:\/\//.test(url)) ? url : null;
+  } catch (err) {
+    console.error('[atendimento] foto perfil:', err.message);
+    return null;
+  }
+}
+
 // ============================================================================
 // ACK — confirmação de entrega/leitura vinda do WhatsApp
 // ----------------------------------------------------------------------------
@@ -2174,6 +2196,28 @@ export default async function handler(req, res) {
               : 0,
           },
         });
+      }
+
+      // busca/revalida a foto de perfil do WhatsApp de uma conversa
+      case 'conversa.avatar': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório.' });
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=id,contato_fone,avatar_url,avatar_em`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+
+        // O link do CDN da Meta expira; revalidamos a cada 12h para não ficar
+        // batendo na Evolution a cada abertura de conversa.
+        const HORAS = 12;
+        const fresco = c.avatar_em && (Date.now() - new Date(c.avatar_em).getTime()) < HORAS * 3600 * 1000;
+        if (fresco && !body.forcar) {
+          return res.status(200).json({ ok: true, avatar_url: c.avatar_url, cache: true });
+        }
+        const url = await waFotoPerfil(e, c.contato_fone);
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { avatar_url: url, avatar_em: new Date().toISOString() },
+        });
+        return res.status(200).json({ ok: true, avatar_url: url, cache: false });
       }
 
       case 'clientes.buscar': {
