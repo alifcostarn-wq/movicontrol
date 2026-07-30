@@ -2058,7 +2058,13 @@ function blocoConexao(c){
         ${!l.ativo?`<div class="con-cell wide"><div class="cl">Login</div><div class="cv" style="color:var(--red)">DESATIVADO no Radius</div></div>`:''}
       </div>
       ${q!==null&&q>3?`<div class="con-alerta">⚠ ${q} quedas hoje — instabilidade no enlace. Vale abrir chamado técnico.</div>`:''}
-      ${l.accounting_erro?`<div class="ms-erro" style="margin-top:7px;">Histórico de sessões indisponível: ${esc(l.accounting_erro)}</div>`:''}
+      ${l.accounting_erro?`<div class="ms-erro" style="margin-top:7px;">
+        Histórico de sessões indisponível.
+        ${l.accounting_tentativas&&USUARIO&&USUARIO.admin?`
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;margin-top:6px;line-height:1.65;">
+            ${l.accounting_tentativas.map(t=>esc(t)).join('<br>')}
+          </div>`:''}
+      </div>`:''}
       ${l.acct_diag&&USUARIO&&USUARIO.admin?`<div class="ms-erro" style="margin-top:7px;">
         <b>Datas de sessão não reconhecidas</b> (${esc(l.acct_diag.endpoint)}, ${l.acct_diag.registros} registros).
         <div style="font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:5px;line-height:1.6;">${esc(l.acct_diag.campos.join(', '))}</div>
