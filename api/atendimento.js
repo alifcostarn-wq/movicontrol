@@ -140,7 +140,7 @@ async function waEnviar(e, fone, texto, opts = {}) {
       message: { conversation: String(opts.quoted.texto || '').slice(0, 500) },
     };
   }
-  const r = await fetch(`${e.EVO_URL}/message/sendText/${e.EVO_INST}`, {
+  const r = await fetchComPrazo(`${e.EVO_URL}/message/sendText/${e.EVO_INST}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
     // Evolution v2. Em v1 o corpo é { number, textMessage: { text } }.
@@ -163,7 +163,7 @@ function idDaEvolution(resp) {
 async function ixc(e, endpoint, params = {}, metodo = 'listar') {
   if (!e.IXC_USER || !e.IXC_TOKEN) throw new Error('IXC não configurado (IXC_USER / IXC_TOKEN).');
   const auth = Buffer.from(`${e.IXC_USER}:${e.IXC_TOKEN}`).toString('base64');
-  const r = await fetch(`${e.IXC_URL}/webservice/v1/${endpoint}`, {
+  const r = await fetchComPrazo(`${e.IXC_URL}/webservice/v1/${endpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -185,7 +185,7 @@ async function waEnviarMidia(e, fone, { base64, tipo = 'document', mimetype, nom
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
   const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!limpo) throw new Error('Arquivo vazio.');
-  const r = await fetch(`${e.EVO_URL}/message/sendMedia/${e.EVO_INST}`, {
+  const r = await fetchComPrazo(`${e.EVO_URL}/message/sendMedia/${e.EVO_INST}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
     body: JSON.stringify({
@@ -1280,6 +1280,22 @@ async function aplicarResultado(e, conversa, out) {
   }
 }
 
+// Fetch com prazo. Sem isto, uma API externa lenta segura a function até o
+// limite de execução da Vercel — o usuário vê "carregando" para sempre e não
+// há erro nenhum no log. Melhor falhar rápido e dizer o que houve.
+async function fetchComPrazo(url, opts = {}, ms = 20000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Tempo esgotado após ${Math.round(ms / 1000)}s`);
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // Foto de perfil do WhatsApp. Nem todo contato tem — e quem restringe a foto
 // nas configurações de privacidade simplesmente não devolve nada, o que é um
 // resultado válido (não é erro) e vira o avatar de iniciais de sempre.
@@ -1287,7 +1303,7 @@ async function waFotoPerfil(e, fone) {
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return null;
   const numero = normalizarFone(fone);
   try {
-    const r = await fetch(`${e.EVO_URL}/chat/fetchProfilePictureUrl/${e.EVO_INST}`, {
+    const r = await fetchComPrazo(`${e.EVO_URL}/chat/fetchProfilePictureUrl/${e.EVO_INST}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
       body: JSON.stringify({ number: numero }),
@@ -2222,7 +2238,7 @@ export default async function handler(req, res) {
 
       // ===== STATUS DO WHATSAPP DA EMPRESA =====
       case 'status.listar': {
-        const itens = await sb(e, 'atend_status?select=*&order=publicado_em.desc&limit=30');
+        const itens = await sb(e, 'atend_status?excluido_em=is.null&select=*&order=publicado_em.desc&limit=30');
         return res.status(200).json({ ok: true, status: itens || [] });
       }
 
@@ -2262,15 +2278,16 @@ export default async function handler(req, res) {
           });
         }
 
-        let erro = null;
+        let erro = null, waId = null;
         try {
-          const r = await fetch(`${e.EVO_URL}/message/sendStatus/${e.EVO_INST}`, {
+          const r = await fetchComPrazo(`${e.EVO_URL}/message/sendStatus/${e.EVO_INST}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
             body: JSON.stringify(payload),
-          });
+          }, 25000);
           const txt = await r.text();
           if (!r.ok) erro = `Evolution ${r.status}: ${txt.slice(0, 250)}`;
+          else { try { waId = idDaEvolution(JSON.parse(txt)); } catch { /* sem id: não dá para excluir depois */ } }
         } catch (err) {
           erro = String(err.message).slice(0, 250);
         }
@@ -2283,12 +2300,47 @@ export default async function handler(req, res) {
             cor_fundo: payload.backgroundColor || null, fonte: payload.font ?? null,
             destino: paraTodos ? 'todos' : 'lista',
             destinatarios: paraTodos ? null : lista,
-            publicado_por: user.id, erro,
+            publicado_por: user.id, erro, wa_id: waId,
           },
         });
 
         if (erro) return res.status(200).json({ ok: false, error: erro });
         return res.status(200).json({ ok: true });
+      }
+
+      case 'status.excluir': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const sid = Number(body.status_id);
+        if (!sid) return res.status(400).json({ ok: false, error: 'status_id obrigatório.' });
+        const st = await sbUm(e, `atend_status?id=eq.${sid}&select=*`);
+        if (!st) return res.status(404).json({ ok: false, error: 'Status não encontrado.' });
+
+        let aviso = null;
+        if (st.wa_id) {
+          try {
+            const r = await fetchComPrazo(`${e.EVO_URL}/chat/deleteMessageForEveryone/${e.EVO_INST}`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+              body: JSON.stringify({
+                id: st.wa_id, remoteJid: 'status@broadcast', fromMe: true,
+              }),
+            }, 15000);
+            if (!r.ok) {
+              const t = await r.text();
+              aviso = `O WhatsApp não aceitou apagar (${r.status}). Removido só do histórico. ${t.slice(0, 120)}`;
+            }
+          } catch (err) {
+            aviso = `Falha ao apagar no WhatsApp: ${String(err.message).slice(0, 120)}. Removido só do histórico.`;
+          }
+        } else {
+          aviso = 'Este status foi publicado sem id do WhatsApp, então só foi removido do histórico.';
+        }
+
+        await sb(e, `atend_status?id=eq.${sid}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { excluido_em: new Date().toISOString() },
+        });
+        return res.status(200).json({ ok: true, aviso });
       }
 
       case 'clientes.buscar': {
