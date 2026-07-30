@@ -198,8 +198,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .cc-top{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
 .cc-av{
   width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  color:#fff;font-weight:800;font-size:12px;flex-shrink:0;
+  color:#fff;font-weight:800;font-size:12px;flex-shrink:0;position:relative;overflow:hidden;
 }
+/* a foto cobre as iniciais; se o link do CDN expirar, o onerror a remove
+   e as iniciais reaparecem sozinhas — sem buraco no layout */
+.cc-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
 .cc-name{font-size:13.5px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cc-time{font-size:11px;color:var(--text-low);font-weight:600;flex-shrink:0;}
 .cc-msg{font-size:12.5px;color:var(--text-mid);line-height:1.45;margin-bottom:9px;
@@ -1487,6 +1490,12 @@ const api = {
     c.msgs = msgs; c._msgsCarregadas = true;
     return msgs;
   },
+  async buscarAvatar(c){
+    const j = await chamar('conversa.avatar', { conversa_id:c.id });
+    c.avatarUrl = j.avatar_url || null;
+    c.avatarEm = new Date().toISOString();
+    return j.avatar_url;
+  },
   async carregarPainel(c){
     const id = c.clienteVinculado && c.clienteVinculado.id;
     if(!id) return null;
@@ -1601,6 +1610,7 @@ function mapearConversa(c){
     atendente: c.atendente_id ? ((EQUIPE.find(p=>p.id===c.atendente_id)||{}).nome||'—') : '— Bot —',
     setor: c.setor||null, preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
     filaDesde: c.fila_desde||null, assumidoEm: c.assumido_em||null,
+    avatarUrl: c.avatar_url||null, avatarEm: c.avatar_em||null,
     cliente:{
       plano: snap.plano||'—', desde: snap.desde||'—',
       contrato: snap.contrato || (c.cliente_ixc_id?'Ativo':'Lead'),
@@ -1633,6 +1643,9 @@ async function recarregarConversas(){
       nova._painelCarregado = antiga._painelCarregado;
       nova.painelErro = antiga.painelErro;
       // rascunho: o atendente pode estar digitando enquanto isto roda
+      nova.avatarUrl = nova.avatarUrl || antiga.avatarUrl;
+      nova.avatarEm = nova.avatarEm || antiga.avatarEm;
+      nova._avatarBuscando = antiga._avatarBuscando;
       nova.rascunho = antiga.rascunho;
       nova._cursor = antiga._cursor;
       nova._digitando = antiga._digitando;
@@ -1785,6 +1798,12 @@ let configTab='regras';
 /* ================= HELPERS ================= */
 const $=s=>document.querySelector(s);
 function ini(n){ return n.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase(); }
+// iniciais + foto do WhatsApp por cima (quando existir)
+function avatarHTML(c, extra){
+  const foto = c && c.avatarUrl
+    ? `<img src="${esc(c.avatarUrl)}" alt="" loading="lazy" onerror="this.remove()">` : '';
+  return `<div class="cc-av" style="background:${avColor(c.id)}${extra?';'+extra:''}">${ini(c.nome)}${foto}</div>`;
+}
 function avColor(id){ return AV_COLORS[id % AV_COLORS.length]; }
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -1914,7 +1933,7 @@ function cardHTML(c,col){
   const espera=col==='fila'?esperaTexto(c):null;
   return `<div class="card-c" draggable="true" data-id="${c.id}">
     <div class="cc-top">
-      <div class="cc-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
+      ${avatarHTML(c)}
       <div class="cc-name">${esc(c.nome)}</div>
       <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor — fila geral')}"></span>
       <div class="cc-time">${esc(c.hora)}</div>
@@ -2359,6 +2378,14 @@ function openModal(id){
       .catch(err=>{ c._msgsCarregadas=false; toast('Falha ao carregar mensagens: '+err.message); });
   }
   if(c.unread){ c.unread=0; api.patchConversa(c,{nao_lidas:0}); }
+  // foto do WhatsApp: busca na 1ª abertura e revalida a cada 12h (o link expira)
+  const avatarVelho = !c.avatarEm || (Date.now()-new Date(c.avatarEm).getTime()) > 12*3600*1000;
+  if(avatarVelho && !c._avatarBuscando){
+    c._avatarBuscando=true;
+    api.buscarAvatar(c)
+      .then(u=>{ c._avatarBuscando=false; if(u && modalId===id){ openModal(id); renderAll(); } })
+      .catch(()=>{ c._avatarBuscando=false; });
+  }
   // painel financeiro/técnico: lido ao vivo no IXC, não do snapshot congelado
   if(c.clienteVinculado && !c._painelCarregado){
     c._painelCarregado=true;
@@ -2388,7 +2415,7 @@ function openModal(id){
   </div>
   <div class="m-chat">
     <div class="m-head">
-      <div class="cc-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
+      ${avatarHTML(c)}
       <div class="m-hinfo">
         <div class="m-hname">${esc(c.nome)}<span class="rename-ico" id="mRename" title="Renomear contato">✎</span></div>
         <div class="m-hsub"><span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor||'Sem setor')}</span> · ${esc(c.fone)} · ${cl.lead?'lead':'cliente desde '+esc(cl.desde)+' · '+esc(cl.plano)}</div>
