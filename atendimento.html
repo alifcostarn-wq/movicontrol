@@ -425,6 +425,57 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .ck.lido{color:#2196f3;}
 .ck.erro{color:var(--red);}
 
+/* ---- painéis das ações rápidas ---- */
+.pn-modal{background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);
+  width:min(560px,100%);max-height:min(640px,90vh);display:flex;flex-direction:column;}
+.pn-head{display:flex;align-items:center;gap:10px;padding:16px 18px 12px;border-bottom:1px solid var(--line);flex-shrink:0;}
+.pn-head h3{font-size:16px;font-weight:800;flex:1;}
+.pn-x{border:none;background:transparent;cursor:pointer;font-size:19px;color:var(--text-mid);font-family:inherit;}
+.pn-x:hover{color:var(--red);}
+.pn-body{flex:1;overflow-y:auto;padding:14px 18px 18px;min-height:0;}
+.pn-load{font-size:12.5px;color:var(--text-low);padding:18px 0;text-align:center;}
+
+.fv-item{border:1.5px solid var(--line);border-radius:11px;padding:12px;margin-bottom:9px;cursor:pointer;background:var(--card);}
+.fv-item:hover{border-color:var(--green);}
+.fv-item.sel{border-color:var(--green);background:var(--green-soft);}
+.fv-item.venc{border-color:#fecaca;}
+.fv-item.venc.sel{border-color:var(--red);background:var(--red-soft);}
+.fv-top{display:flex;align-items:baseline;gap:9px;}
+.fv-val{font-size:17px;font-weight:800;}
+.fv-tag{margin-left:auto;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:6px;}
+.fv-tag.ok{background:var(--green-soft);color:var(--green-deep);}
+.fv-tag.venc{background:var(--red-soft);color:var(--red);}
+.fv-sub{font-size:11.5px;color:var(--text-low);margin-top:3px;}
+.fv-envios{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+.fv-btn{font-family:inherit;font-size:12px;font-weight:800;padding:12px 8px;border-radius:10px;
+  border:1.5px solid var(--line);background:var(--card);cursor:pointer;color:var(--text);line-height:1.4;}
+.fv-btn:hover{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);}
+.fv-btn:disabled{opacity:.5;cursor:not-allowed;}
+.fv-aviso{font-size:11.5px;color:var(--text-low);text-align:center;margin-top:10px;}
+
+.ct-bloco{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:11px;background:#fbfcfd;}
+.ct-tit{font-size:14px;font-weight:800;margin-bottom:3px;}
+.ct-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:11px;}
+.ct-c{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;}
+.ct-c .l{font-size:9.5px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.03em;}
+.ct-c .v{font-size:13px;font-weight:800;margin-top:2px;}
+.ct-c.wide{grid-column:1/-1;}
+.ct-fid{border-radius:9px;padding:9px 11px;margin-top:10px;font-size:12px;font-weight:700;line-height:1.45;}
+.ct-fid.dentro{background:var(--orange-soft);color:#b45309;}
+.ct-fid.fora{background:var(--green-soft);color:var(--green-deep);}
+
+.ex-resumo{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:13px;}
+.ex-r{background:#f7f9fb;border:1px solid var(--line);border-radius:9px;padding:9px;text-align:center;}
+.ex-r .n{font-size:15px;font-weight:800;}
+.ex-r .l{font-size:9px;font-weight:700;color:var(--text-low);text-transform:uppercase;margin-top:2px;letter-spacing:.02em;}
+.ex-tab{width:100%;border-collapse:collapse;font-size:11.5px;}
+.ex-tab th{text-align:left;font-size:9.5px;font-weight:800;color:var(--text-low);text-transform:uppercase;
+  padding:6px 5px;border-bottom:1px solid var(--line);letter-spacing:.03em;}
+.ex-tab td{padding:8px 5px;border-bottom:1px solid var(--line);}
+.ex-tab tr:hover{background:#f7f9fb;}
+.ex-atraso{font-weight:800;color:var(--red);}
+.ex-ok{font-weight:800;color:var(--green-deep);}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -440,6 +491,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .icell .il{font-size:9.5px;font-weight:700;color:var(--text-low);text-transform:uppercase;}
 .icell .iv{font-size:12.5px;font-weight:800;margin-top:2px;}
 .acts{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.acts .act.hi{grid-column:1/-1;}  /* enviar fatura é a ação principal: linha inteira */
 .act{
   display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;font-weight:700;
   padding:9px 6px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;
@@ -2027,6 +2079,130 @@ function blocoChamados(c){
 `;
 }
 
+/* ===== AÇÕES RÁPIDAS: faturas, contrato, extrato ===== */
+function abrirPainelAcao(c, qual){
+  if(!c.clienteVinculado){ toast('Vincule um cadastro antes'); return; }
+  const titulos={faturas:'📄 Enviar fatura',contrato:'📑 Contrato do cliente',extrato:'📊 Extrato de pagamentos'};
+  const ov=document.createElement('div');
+  ov.className='tr-overlay';
+  ov.innerHTML=`<div class="pn-modal">
+    <div class="pn-head"><h3>${titulos[qual]}</h3><button class="pn-x" id="pnX">✕</button></div>
+    <div class="pn-body" id="pnBody"><div class="pn-load">Consultando o IXC…</div></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const fechar=()=>ov.remove();
+  ov.onclick=ev=>{ if(ev.target===ov) fechar(); };
+  ov.querySelector('#pnX').onclick=fechar;
+  const body=ov.querySelector('#pnBody');
+
+  const acao={faturas:'cliente.faturas',contrato:'cliente.contrato',extrato:'cliente.extrato'}[qual];
+  chamar(acao,{cliente_ixc_id:c.clienteVinculado.id})
+    .then(j=>{
+      if(qual==='faturas') pintarFaturas(c,body,j,fechar);
+      else if(qual==='contrato') body.innerHTML=htmlContrato(j);
+      else body.innerHTML=htmlExtrato(j);
+    })
+    .catch(err=>{ body.innerHTML=`<div class="ms-erro">Falha: ${esc(err.message)}</div>`; });
+}
+
+function pintarFaturas(c, body, j, fechar){
+  const fs=j.faturas||[];
+  if(!fs.length){ body.innerHTML=`<div class="pn-load">✅ Nenhuma fatura em aberto — cliente em dia.</div>`; return; }
+  let sel=fs[0].id;
+  const desenhar=()=>{
+    const f=fs.find(x=>String(x.id)===String(sel));
+    body.innerHTML=`
+      ${fs.map(x=>`
+        <div class="fv-item ${x.vencida?'venc':''} ${String(x.id)===String(sel)?'sel':''}" data-fat="${x.id}">
+          <div class="fv-top">
+            <span class="fv-val">${fmtR$(x.valor)}</span>
+            <span class="fv-tag ${x.vencida?'venc':'ok'}">${x.vencida?`${x.atraso}D EM ATRASO`:'A VENCER'}</span>
+          </div>
+          <div class="fv-sub">Vence ${esc(x.vencimento||'—')}${x.documento?` · doc ${esc(String(x.documento))}`:''}</div>
+        </div>`).join('')}
+      <div class="fv-envios">
+        <button class="fv-btn" data-env="pdf">📄<br>PDF da fatura</button>
+        <button class="fv-btn" data-env="pix">💠<br>Pix + QR Code</button>
+        <button class="fv-btn" data-env="barras" ${f&&f.tem_linha?'':'disabled'}>🧾<br>Código de barras</button>
+      </div>
+      <div class="fv-aviso">${f&&!f.tem_linha?'Esta fatura não tem linha digitável no IXC.':'Será enviado ao WhatsApp do cliente.'}</div>`;
+
+    body.querySelectorAll('[data-fat]').forEach(el=>el.onclick=()=>{ sel=el.dataset.fat; desenhar(); });
+    body.querySelectorAll('[data-env]').forEach(btn=>btn.onclick=async()=>{
+      const f2=fs.find(x=>String(x.id)===String(sel));
+      body.querySelectorAll('[data-env]').forEach(b=>b.disabled=true);
+      btn.innerHTML='Enviando…';
+      try{
+        const r=await chamar('fatura.enviar',{
+          conversa_id:c.id, fatura_id:f2.id, tipo:btn.dataset.env,
+          linha_digitavel:f2.linha_digitavel||null,
+        });
+        if(r.ok===false){ toast(r.error||'Não foi possível enviar'); desenhar(); return; }
+        fechar();
+        c._msgsCarregadas=false;
+        await api.carregarMensagens(c);
+        openModal(c.id); renderAll();
+        toast('Enviado ao cliente');
+      }catch(err){ toast('Falha: '+err.message); desenhar(); }
+    });
+  };
+  desenhar();
+}
+
+function htmlContrato(j){
+  const cli=j.cliente, cs=j.contratos||[];
+  if(!cs.length&&!cli) return `<div class="pn-load">Nenhum contrato encontrado.</div>`;
+  return `
+    ${cli?`<div class="ct-bloco">
+      <div class="ct-tit">${esc(cli.nome||'—')}</div>
+      <div class="ct-grid">
+        <div class="ct-c"><div class="l">Documento</div><div class="v">${esc(cli.documento||'—')}</div></div>
+        <div class="ct-c"><div class="l">Cliente desde</div><div class="v">${esc(cli.cadastro||'—')}</div></div>
+        ${cli.telefone?`<div class="ct-c"><div class="l">Telefone</div><div class="v">${esc(cli.telefone)}</div></div>`:''}
+        ${cli.cidade?`<div class="ct-c"><div class="l">Cidade</div><div class="v">${esc(cli.cidade)}</div></div>`:''}
+        ${cli.email?`<div class="ct-c wide"><div class="l">E-mail</div><div class="v" style="font-size:12px;">${esc(cli.email)}</div></div>`:''}
+      </div>
+    </div>`:''}
+    ${cs.map(k=>`
+      <div class="ct-bloco">
+        <div class="ct-tit">${esc(k.descricao)}</div>
+        <div class="ct-grid">
+          <div class="ct-c"><div class="l">Ativação</div><div class="v">${esc(k.ativacao||'—')}</div></div>
+          <div class="ct-c"><div class="l">Renovação</div><div class="v">${esc(k.renovacao||'—')}</div></div>
+          <div class="ct-c"><div class="l">Vencimento mensal</div><div class="v">${k.dia_vencimento?'dia '+esc(String(k.dia_vencimento)):'—'}</div></div>
+          <div class="ct-c"><div class="l">Mensalidade</div><div class="v">${k.valor?fmtR$(k.valor):'—'}</div></div>
+          <div class="ct-c"><div class="l">Status internet</div><div class="v" style="color:${k.status_internet==='A'?'var(--green-deep)':'var(--red)'}">${esc(k.status_internet||'—')}</div></div>
+          <div class="ct-c"><div class="l">Tempo de casa</div><div class="v">${k.tempo_casa_meses!=null?k.tempo_casa_meses+' meses':'—'}</div></div>
+          ${k.encerramento?`<div class="ct-c wide"><div class="l">Encerrado em</div><div class="v" style="color:var(--red)">${esc(k.encerramento)}</div></div>`:''}
+        </div>
+        ${k.em_fidelidade===true?`<div class="ct-fid dentro">🔒 Em fidelidade até ${esc(k.fim_fidelidade||'—')} — faltam ${k.dias_para_fim_fidelidade} dias (${k.meses_fidelidade} meses de contrato). Cancelamento pode gerar multa.</div>`
+         :k.em_fidelidade===false?`<div class="ct-fid fora">✅ Fora de fidelidade desde ${esc(k.fim_fidelidade||'—')} — sem multa por cancelamento.</div>`
+         :`<div class="ct-fid fora" style="background:#f7f9fb;color:var(--text-mid);">Fidelidade não informada no contrato.</div>`}
+      </div>`).join('')}`;
+}
+
+function htmlExtrato(j){
+  const ps=j.pagamentos||[], r=j.resumo||{};
+  if(!ps.length) return `<div class="pn-load">Nenhum pagamento registrado.</div>`;
+  return `
+    <div class="ex-resumo">
+      <div class="ex-r"><div class="n">${r.quantidade||0}</div><div class="l">Faturas pagas</div></div>
+      <div class="ex-r"><div class="n">${fmtR$(r.total_pago||0)}</div><div class="l">Total pago</div></div>
+      <div class="ex-r"><div class="n" style="color:${r.em_atraso?'var(--red)':'var(--green-deep)'}">${r.em_atraso||0}</div><div class="l">Pagas em atraso</div></div>
+      <div class="ex-r"><div class="n" style="color:${r.atraso_medio>5?'#b45309':'var(--green-deep)'}">${r.atraso_medio||0}d</div><div class="l">Atraso médio</div></div>
+    </div>
+    <table class="ex-tab">
+      <thead><tr><th>Emissão</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Atraso</th></tr></thead>
+      <tbody>${ps.map(p=>`<tr>
+        <td>${esc(p.emissao||'—')}</td>
+        <td>${esc(p.vencimento||'—')}</td>
+        <td>${esc(p.pagamento||'—')}</td>
+        <td><b>${fmtR$(p.valor_pago)}</b></td>
+        <td class="${p.atraso>0?'ex-atraso':'ex-ok'}">${p.atraso==null?'—':(p.atraso>0?p.atraso+'d':'em dia')}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+}
+
 /* ===== RISQUINHOS DE ENTREGA/LEITURA (só em mensagens que saíram) ===== */
 function checkHTML(m){
   if(m.t==='in'||m.t==='sys') return '';
@@ -2230,10 +2406,9 @@ function openModal(id){
     <div class="ms-sec">
       <h3>Ações rápidas</h3>
       <div class="acts">
-        <div class="act hi" data-act="Fatura enviada via WhatsApp">📄 Enviar fatura</div>
-        <div class="act" data-act="2ª via do boleto enviada">💳 2ª via boleto</div>
-        <div class="act" data-act="Contrato aberto">📑 Ver contrato</div>
-        <div class="act" data-act="Extrato enviado">📊 Extrato</div>
+        <div class="act hi" data-painel="faturas">📄 Enviar fatura</div>
+        <div class="act" data-painel="contrato">📑 Ver contrato</div>
+        <div class="act" data-painel="extrato">📊 Extrato</div>
       </div>
       <button class="vinc-btn" id="mRecarregarPainel" style="width:100%;margin-top:7px;">🔄 Atualizar dados do IXC</button>
     </div>
@@ -2315,12 +2490,7 @@ function openModal(id){
   $('#mSend').onclick=send;
   $('#mInput').onkeydown=e=>{ if(e.key==='Enter') send(); };
   // ações rápidas
-  document.querySelectorAll('.act').forEach(el=>el.onclick=()=>{
-    const txt='📎 '+el.dataset.act+'.';
-    c.msgs.push({t:'out',x:txt,h:new Date().toTimeString().slice(0,5)});
-    openModal(c.id); toast(el.dataset.act);
-    api.enviarMensagem(c,txt).catch(err=>toast('Falha: '+err.message));
-  });
+  document.querySelectorAll('[data-painel]').forEach(el=>el.onclick=()=>abrirPainelAcao(c, el.dataset.painel));
   // tags toggle
   document.querySelectorAll('[data-tg]').forEach(el=>el.onclick=()=>{
     const t=el.dataset.tg;
