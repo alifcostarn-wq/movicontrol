@@ -1069,12 +1069,46 @@ function escolherAresta(arestas, resultado) {
     });
     if (casada) return casada;
   }
+  // saída neutra (sem rótulo) é continuação natural do fluxo: pode seguir
   const semLabel = arestas.find(a => !String(a.label || '').trim());
-  return semLabel || arestas[0];
+  if (semLabel) return semLabel;
+  // Nenhuma saída casa e TODAS são rotuladas: o motor não sabe para onde ir.
+  // Antes ele devolvia arestas[0] — um chute pela ordem de gravação no banco,
+  // que foi o que desviou um atendimento de Suporte para o Financeiro.
+  // Sem certeza, é melhor parar e entregar a um humano.
+  return null;
 }
 
 function arestaFallback(arestas) {
   return arestas.find(a => /nao reconhec|fallback|\bia\b/.test(normalizarTxt(a.label))) || null;
+}
+
+/**
+ * Setores que existem neste fluxo (tirados dos próprios blocos "setor").
+ * Evita depender de lista fixa no código: se o cliente criar outro setor no
+ * editor, ele passa a ser reconhecido automaticamente.
+ */
+function setoresDoFluxo(nodes) {
+  const s = new Set();
+  for (const n of nodes.values()) if (n.tipo === 'setor' && n.setor) s.add(n.setor);
+  return [...s];
+}
+
+/**
+ * Descobre a qual setor pertence o caminho que o CLIENTE escolheu.
+ * A intenção dele é a fonte de verdade: quem clicou em "Suporte técnico" tem
+ * que terminar no Suporte, mesmo que um conector falhe no meio do caminho.
+ */
+function inferirSetorEscolhido(aresta, noDestino, setores) {
+  if (!setores.length) return null;
+  // destino é um bloco de setor: informação explícita, melhor que adivinhar
+  if (noDestino && noDestino.tipo === 'setor' && noDestino.setor) return noDestino.setor;
+  const textos = [aresta && aresta.label, noDestino && noDestino.titulo].filter(Boolean).map(normalizarTxt);
+  for (const s of setores) {
+    const alvo = normalizarTxt(s);
+    if (textos.some(t => t.includes(alvo))) return s;
+  }
+  return null;
 }
 
 /**
@@ -1085,6 +1119,7 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
   const { nodes, saidas } = indexarFluxo(fluxo);
   const out = { enviar: [], logs: [], patch: {}, sessao: null, limparSessao: false };
   const vars = { ...(sessao?.variaveis || {}), ultima_msg: texto };
+  const setores = setoresDoFluxo(nodes);
 
   // ---- 1. Ponto de partida -------------------------------------------------
   let noId = null;
@@ -1106,6 +1141,14 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         }
       }
       noId = Number(escolhida.to);
+      // guarda o setor do caminho escolhido pelo cliente. É esta variável que
+      // manda em qualquer transbordo daqui pra frente — sem ela, uma falha de
+      // rede no meio do fluxo jogava o cliente num setor pela ordem em que as
+      // arestas estavam salvas no banco (foi o que mandou Suporte pro Financeiro).
+      {
+        const alvo = inferirSetorEscolhido(escolhida, nodes.get(Number(escolhida.to)), setores);
+        if (alvo) vars.setor_intencao = alvo;
+      }
     } else if (noMenu.tipo === 'acao' || sessao.aguardando === 'texto_livre') {
       // o bloco pediu texto livre (ex.: endereço) — reexecuta com o que chegou
       noId = noMenu.id;
@@ -1118,8 +1161,10 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
       } else if (tentativas >= MAX_TENTATIVAS) {
         out.enviar.push({ texto: 'Não consegui entender. Vou te passar para um atendente. 👤' });
         out.patch = {
-          // sem setor definido: entra na fila geral, visível a todos os setores
-          coluna: 'fila', bot_ativo: false, setor: conversa.setor || null,
+          // respeita o que o cliente pediu; só cai na fila geral se ele nunca
+          // chegou a escolher um caminho
+          coluna: 'fila', bot_ativo: false,
+          setor: vars.setor_intencao || conversa.setor || null,
           atendente_id: null, fila_desde: new Date().toISOString(),
           assumido_em: null, assumido_por: null,
         };
@@ -1190,7 +1235,7 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
               out.patch.assumido_em = null;
               out.patch.assumido_por = null;
               out.patch.setor = (destino && destino.tipo === 'setor' && destino.setor)
-                || out.patch.setor || conversa.setor || null;
+                || vars.setor_intencao || out.patch.setor || conversa.setor || null;
               out.limparSessao = true;
               return out;
             }
@@ -1200,6 +1245,29 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         } catch (err) {
           out.logs.push({ node_id: no.id, node_tipo: 'acao', conector: no.conector, erro: err.message, ms: Date.now() - t0 });
           resultado = 'erro';
+
+          // O cliente NUNCA pode ficar em silêncio quando um conector falha —
+          // isso foi o que causou o "roteamento aleatório": sem mensagem, o
+          // atendente via o bot pular direto pra um setor sem explicação
+          // nenhuma. Se existir uma aresta dedicada a erro no fluxo, ela é
+          // respeitada; senão, escala direto pra humano, sem depender da
+          // ORDEM das arestas no banco (antes caía em arestas[0] por acaso).
+          out.enviar.push({
+            texto: 'Tive uma instabilidade para consultar seu cadastro agora. Vou te encaminhar para um atendente humano continuar. 👤',
+            node: no.id,
+          });
+          const saidaErro = arestas.find(a => /\berro\b|falha|instabilidade/.test(normalizarTxt(a.label)));
+          if (!saidaErro) {
+            out.patch.coluna = 'fila';
+            out.patch.bot_ativo = false;
+            out.patch.atendente_id = null;
+            out.patch.fila_desde = new Date().toISOString();
+            out.patch.assumido_em = null;
+            out.patch.assumido_por = null;
+            out.patch.setor = vars.setor_intencao || out.patch.setor || conversa.setor || null;
+            out.limparSessao = true;
+            return out;
+          }
         }
         break;
       }
@@ -1233,7 +1301,12 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         out.patch.fila_desde = new Date().toISOString();
         out.patch.assumido_em = null;
         out.patch.assumido_por = null;
-        out.enviar.push({ texto: `Encaminhando para o setor ${out.patch.setor}. Um atendente continua com você em instantes. 👤`, node: no.id });
+        out.enviar.push({
+          texto: out.patch.setor
+            ? `Encaminhando para o setor ${out.patch.setor}. Um atendente continua com você em instantes. 👤`
+            : 'Encaminhando para um atendente. Já já alguém continua com você. 👤',
+          node: no.id,
+        });
         out.logs.push({ node_id: no.id, node_tipo: 'setor', resultado: out.patch.setor });
         out.limparSessao = true;
         return out;
@@ -1273,7 +1346,25 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
     }
 
     const prox = escolherAresta(arestas, resultado);
-    if (!prox) break;
+    if (!prox) {
+      // fim de ramo legítimo (nó sem saídas) x indecisão do motor
+      if (arestas.length) {
+        out.enviar.push({
+          texto: 'Não consegui concluir esse passo automaticamente. Vou te encaminhar para um atendente. 👤',
+          node: no.id,
+        });
+        out.logs.push({ node_id: no.id, node_tipo: no.tipo, resultado, erro: 'sem aresta compatível' });
+        out.patch.coluna = 'fila';
+        out.patch.bot_ativo = false;
+        out.patch.atendente_id = null;
+        out.patch.fila_desde = new Date().toISOString();
+        out.patch.assumido_em = null;
+        out.patch.assumido_por = null;
+        out.patch.setor = vars.setor_intencao || out.patch.setor || conversa.setor || null;
+        out.limparSessao = true;
+      }
+      break;
+    }
     noId = Number(prox.to);
   }
 
