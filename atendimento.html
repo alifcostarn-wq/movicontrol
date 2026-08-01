@@ -567,6 +567,30 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .emo-i:hover{background:var(--green-soft);}
 .m-composer{position:relative;}
 
+/* ---- saídas do conector no editor de fluxo ---- */
+.conn-saidas{border:1px solid var(--line);border-radius:10px;padding:11px;margin:12px 0;background:#fbfcfd;}
+.conn-saidas .cs-tit{font-size:11px;font-weight:800;color:var(--text);margin-bottom:3px;}
+.conn-saidas .cs-sub{font-size:10.5px;color:var(--text-low);line-height:1.45;margin-bottom:8px;}
+.conn-saidas .cs-tags{display:flex;flex-wrap:wrap;gap:5px;}
+.cs-tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;padding:3px 8px;
+  border-radius:6px;background:var(--green-soft);color:var(--green-deep);}
+.cs-tag.err{background:var(--orange-soft);color:#92400e;}
+.conn-saidas .cs-nota{font-size:10.5px;color:var(--text-mid);line-height:1.5;margin-top:8px;}
+.conn-saidas .cs-alerta{font-size:10.5px;line-height:1.5;margin-top:8px;padding:7px 9px;border-radius:7px;
+  background:var(--red-soft);color:var(--red);}
+
+/* ---- envio de anexo ---- */
+.anexo-bar{
+  display:flex;align-items:center;gap:9px;margin:0 16px;padding:9px 11px;
+  border-left:3px solid var(--blue);background:var(--blue-soft);border-radius:8px;flex-shrink:0;
+}
+.anexo-bar .ab-i{font-size:17px;flex-shrink:0;}
+.anexo-bar .ab-l{flex:1;min-width:0;}
+.anexo-bar .ab-n{font-size:12px;font-weight:700;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.anexo-bar .ab-s{font-size:10.5px;color:var(--text-mid);margin-top:1px;}
+.anexo-bar .ab-x{border:none;background:transparent;cursor:pointer;font-size:15px;color:var(--text-mid);padding:0 4px;font-family:inherit;}
+.anexo-bar .ab-x:hover{color:var(--red);}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -1546,6 +1570,13 @@ const api = {
   async enviarMensagem(c, texto, respondeA){
     await chamar('mensagens.enviar', { conversa_id:c.id, texto, responde_a: respondeA||null });
   },
+  async enviarMidia(c, arq, legenda){
+    const base64 = await lerArquivo(arq);
+    await chamar('mensagens.enviar_midia', {
+      conversa_id:c.id, base64, mimetype:arq.type||'application/octet-stream',
+      nome:arq.name||'arquivo', legenda:legenda||'',
+    }, 60000);   // upload é lento: prazo maior que o padrão
+  },
   async transferirSetor(c, setor, avisar){
     await chamar('conversas.transferir', { conversa_id:c.id, setor, avisar_cliente: !!avisar });
   },
@@ -1722,6 +1753,7 @@ async function recarregarConversas(){
       nova.avatarUrl = nova.avatarUrl || antiga.avatarUrl;
       nova.avatarEm = nova.avatarEm || antiga.avatarEm;
       nova._avatarBuscando = antiga._avatarBuscando;
+      nova._anexo = antiga._anexo;
       nova.rascunho = antiga.rascunho;
       nova._cursor = antiga._cursor;
       nova._digitando = antiga._digitando;
@@ -2605,6 +2637,67 @@ function abrirStatusWA(){
   };
 }
 
+/* ===== ENVIO DE ANEXOS ===== */
+// A function da Vercel aceita ~4,5 MB de corpo e base64 infla o arquivo em 33%.
+// Foto de celular moderna tem 5-12 MB — sem reduzir antes, o envio falharia
+// sempre. Além disso, guardar o original ocuparia storage à toa.
+const ANEXO_MAX_BYTES = 3 * 1024 * 1024;   // ~4 MB depois do base64
+
+function lerArquivo(blob){
+  return new Promise((ok,err)=>{
+    const r=new FileReader();
+    r.onload=()=>ok(String(r.result).split(',')[1]);
+    r.onerror=()=>err(new Error('Não consegui ler o arquivo.'));
+    r.readAsDataURL(blob);
+  });
+}
+
+async function comprimirImagem(file){
+  // GIF animado perde a animação no canvas; webp é figurinha. Ambos passam direto.
+  if(/gif|webp/i.test(file.type)) return file;
+  try{
+    const url=URL.createObjectURL(file);
+    const img=await new Promise((ok,err)=>{
+      const i=new Image();
+      i.onload=()=>ok(i); i.onerror=()=>err(new Error('imagem inválida'));
+      i.src=url;
+    });
+    const MAX=1600;
+    let {naturalWidth:w, naturalHeight:h}=img;
+    const escala = Math.max(w,h)>MAX ? MAX/Math.max(w,h) : 1;
+    w=Math.round(w*escala); h=Math.round(h*escala);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(img,0,0,w,h);
+    URL.revokeObjectURL(url);
+    let q=0.82, blob=null;
+    // reduz a qualidade até caber; para em 0.5 para não virar borrão
+    for(let i=0;i<4;i++){
+      blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
+      if(blob && blob.size<=ANEXO_MAX_BYTES) break;
+      q-=0.12; if(q<0.5) break;
+    }
+    if(blob && blob.size<file.size) return new File([blob], file.name.replace(/\.\w+$/,'')+'.jpg', {type:'image/jpeg'});
+    return file;
+  }catch{ return file; }   // se algo falhar, tenta mandar o original
+}
+
+function pintarBarraAnexo(c, arq, estado){
+  const el=$('#mReplyBar'); if(!el) return;
+  if(!arq){ pintarBarraResposta(c); return; }
+  const kb = arq.size>1048576 ? (arq.size/1048576).toFixed(1)+' MB' : Math.round(arq.size/1024)+' KB';
+  const ico = /^image\//.test(arq.type)?'🖼️':/^video\//.test(arq.type)?'🎬':/^audio\//.test(arq.type)?'🎵':'📄';
+  el.innerHTML=`<div class="anexo-bar">
+    <span class="ab-i">${ico}</span>
+    <div class="ab-l">
+      <div class="ab-n">${esc(arq.name)}</div>
+      <div class="ab-s">${estado||('pronto para enviar · '+kb)}</div>
+    </div>
+    ${estado?'':'<button class="ab-x" id="abX" title="Cancelar">✕</button>'}
+  </div>`;
+  const x=$('#abX');
+  if(x) x.onclick=()=>{ c._anexo=null; pintarBarraResposta(c); };
+}
+
 function openModal(id){
   modalId=id;
   const c=state.conversas.find(x=>x.id===id);
@@ -2686,6 +2779,8 @@ function openModal(id){
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
+      <button class="emo-btn" id="mAnexo" type="button" title="Enviar arquivo">📎</button>
+      <input type="file" id="mArquivo" style="display:none" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip">
       <button class="emo-btn" id="mEmoji" type="button" title="Emojis">😊</button>
       <textarea id="mInput" rows="1" placeholder="Digite uma mensagem..."></textarea>
       <button class="m-send" id="mSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
@@ -2789,6 +2884,40 @@ function openModal(id){
     inp.onkeyup=()=>{ c._cursor=inp.selectionStart; };
     inp.onclick=()=>{ c._cursor=inp.selectionStart; };
     inp.onfocus=()=>{ c._digitando=true; };
+    inp.onpaste=async ev=>{
+      const it=[...(ev.clipboardData&&ev.clipboardData.items||[])].find(x=>x.type.startsWith('image/'));
+      if(!it) return;                       // texto normal segue o caminho padrão
+      ev.preventDefault();
+      const f=it.getAsFile(); if(!f) return;
+      pintarBarraAnexo(c,f,'preparando imagem…');
+      const arq=await comprimirImagem(new File([f],'print.png',{type:f.type}));
+      if(arq.size>ANEXO_MAX_BYTES){ toast('Imagem grande demais.'); pintarBarraResposta(c); return; }
+      c._anexo=arq; pintarBarraAnexo(c,arq);
+    };
+    const bAnx=$('#mAnexo'), inpArq=$('#mArquivo');
+    if(bAnx&&inpArq){
+      bAnx.onclick=()=>inpArq.click();
+      inpArq.onchange=async ()=>{
+        const f=inpArq.files&&inpArq.files[0];
+        inpArq.value='';                       // permite reescolher o mesmo arquivo
+        if(!f) return;
+        let arq=f;
+        if(/^image\//.test(f.type)){
+          pintarBarraAnexo(c,f,'preparando imagem…');
+          arq=await comprimirImagem(f);
+        }
+        if(arq.size>ANEXO_MAX_BYTES){
+          const mb=(arq.size/1048576).toFixed(1);
+          toast(`Arquivo de ${mb} MB é grande demais (limite ~3 MB).`);
+          c._anexo=null; pintarBarraResposta(c); return;
+        }
+        c._anexo=arq;
+        pintarBarraAnexo(c,arq);
+        inp.focus();
+      };
+    }
+    if(c._anexo) pintarBarraAnexo(c, c._anexo);
+
     const bEmo=$('#mEmoji');
     if(bEmo) bEmo.onclick=ev=>{
       ev.stopPropagation();
@@ -2796,7 +2925,17 @@ function openModal(id){
         c.rascunho=inp.value; c._cursor=pos; c._digitando=true; cresce();
       });
     };
-    inp.onblur=()=>{ c._digitando=false; };
+    inp.onblur=ev=>{
+      // clicar em enviar/emoji/anexo tira o foco do campo, mas o atendente
+      // continua escrevendo ali — sem esta checagem o cursor não voltava e
+      // era preciso clicar no campo de novo a cada mensagem enviada
+      const alvo=ev&&ev.relatedTarget;
+      if(alvo&&alvo.closest&&alvo.closest('.m-composer')) return;
+      c._digitando=false;
+    };
+    // no computador o campo já abre pronto para digitar; no celular não, senão
+    // o teclado sobe e cobre a conversa antes de o atendente ler o histórico
+    if(!c._digitando && window.innerWidth>900 && !('ontouchstart' in window)) c._digitando=true;
     // devolve o foco e o cursor exatamente onde estavam antes do re-render
     if(c._digitando){
       inp.focus();
@@ -2831,8 +2970,33 @@ function openModal(id){
     t.focus(); t.setSelectionRange(t.value.length,t.value.length); c._cursor=t.value.length;
   });
   // send
-  const send=()=>{
-    const v=$('#mInput').value.trim(); if(!v)return;
+  const send=async ()=>{
+    const v=$('#mInput').value.trim();
+    const anexo=c._anexo;
+    if(!v && !anexo) return;
+
+    // com anexo, o texto digitado vira legenda da mídia
+    if(anexo){
+      c._anexo=null;
+      $('#mInput').value=''; $('#mInput').style.height='auto';
+      c.rascunho=''; c._cursor=null; respondendoA=null; c._digitando=true;
+      pintarBarraAnexo(c, anexo, 'enviando…');
+      try{
+        await api.enviarMidia(c, anexo, v);
+        c._msgsCarregadas=false;
+        await api.carregarMensagens(c);
+        if(c.col==='novos'||c.col==='fila') c.col='atendimento';
+        c.atendente=USUARIO.nome; c.botAtivo=false;
+        openModal(c.id); renderAll();
+      }catch(err){
+        // devolve o arquivo para o atendente tentar de novo, sem reescolher
+        c._anexo=anexo;
+        pintarBarraAnexo(c, anexo);
+        toast('Falha ao enviar arquivo: '+err.message);
+      }
+      return;
+    }
+
     const citada=respondendoA;
     c.msgs.push({t:'out',x:v,h:new Date().toTimeString().slice(0,5),status:'pendente',
       quoteTexto:citada?citada.texto:null, quoteDirecao:citada&&citada.autor!=='você'?'in':'out'});
@@ -2843,6 +3007,7 @@ function openModal(id){
     $('#mInput').style.height='auto';
     c.rascunho=''; c._cursor=null;
     respondendoA=null;
+    c._digitando=true;          // mantém o cursor no campo para a próxima mensagem
     openModal(c.id); renderAll();
     api.enviarMensagem(c,v,citada?citada.id:null).catch(err=>toast('Falha ao enviar: '+err.message));
   };
@@ -3260,15 +3425,31 @@ const FLOW_TIPOS={
   ia:{lbl:'IA',cor:'#8b5cf6'},
 };
 const CONECTORES={
-  identificar_cpf:{lbl:'Identificar por CPF',ico:'🪪',desc:'Pede o CPF ao cliente, valida e localiza o cadastro. Obrigatório antes de liberar qualquer dado financeiro'},
-  consultar_bloqueio:{lbl:'Consultar bloqueio',ico:'🔒',desc:'Verifica se a conexão está bloqueada por débito'},
-  enviar_fatura:{lbl:'Enviar 2ª via da fatura',ico:'📄',desc:'Busca a fatura em aberto no MoviControl e envia o PDF na conversa'},
-  enviar_pix:{lbl:'Enviar Pix copia e cola',ico:'💠',desc:'Gera o código Pix do valor em aberto, com baixa automática após pagamento'},
-  desbloqueio_confianca:{lbl:'Desbloqueio de confiança',ico:'🔓',desc:'Libera a conexão por 48h (respeitando regras de elegibilidade)'},
-  abrir_chamado:{lbl:'Abrir chamado',ico:'🎫',desc:'Cria chamado na Central de Chamados já vinculado à conversa'},
-  consultar_viabilidade:{lbl:'Consultar viabilidade',ico:'📍',desc:'Verifica cobertura FTTH no endereço informado pelo cliente'},
-  enviar_contrato:{lbl:'Enviar contrato',ico:'📑',desc:'Envia o contrato do cliente em PDF'},
+  identificar_cpf:{lbl:'Identificar por CPF',ico:'🪪',desc:'Pede o CPF ao cliente, valida e localiza o cadastro. Obrigatório antes de liberar qualquer dado financeiro',
+    saidas:['ok','nao_encontrado'],
+    nota:'Se o número já estiver vinculado a um cadastro, segue direto sem perguntar.'},
+  consultar_bloqueio:{lbl:'Consultar bloqueio',ico:'🔒',desc:'Verifica no IXC se a conexão está bloqueada por débito',
+    saidas:['sim','nao'],
+    nota:'Ligue também uma saída "erro": se o IXC não responder, o bot escala para um humano em vez de adivinhar.'},
+  enviar_fatura:{lbl:'Enviar 2ª via da fatura',ico:'📄',desc:'Envia PDF do boleto, Pix copia e cola e código de barras — cada um em sua mensagem. Com mais de uma fatura em aberto, lista para o cliente escolher qual pagar',
+    saidas:['ok','sem_debito'],
+    nota:'A escolha da fatura é tratada dentro do próprio bloco: não precisa criar menu para isso.'},
+  enviar_pix:{lbl:'Enviar Pix copia e cola',ico:'💠',desc:'Gera o código Pix da fatura em aberto e envia sozinho na mensagem, para o cliente copiar sem levar texto junto',
+    saidas:['ok','sem_debito','erro']},
+  desbloqueio_confianca:{lbl:'Desbloqueio de confiança',ico:'🔓',desc:'⚠ Ainda NÃO libera sozinho: encaminha o pedido para o Financeiro executar',
+    saidas:['manual'],
+    nota:'O desbloqueio só funciona pela Central do Assinante, que ainda não foi integrada. Ligue a saída "manual" ao bloco de setor Financeiro.'},
+  abrir_chamado:{lbl:'Abrir chamado',ico:'🎫',desc:'Cria o chamado no módulo de Chamados e Suporte do MoviOn, visível no painel do atendente e no app do técnico',
+    saidas:['ok','erro']},
+  consultar_viabilidade:{lbl:'Consultar viabilidade',ico:'📍',desc:'Pede o endereço e verifica cobertura FTTH na base de instalações',
+    saidas:['sim','nao']},
+  enviar_contrato:{lbl:'Enviar contrato',ico:'📑',desc:'Envia o link do contrato do cliente no IXC',
+    saidas:['ok']},
 };
+// Saída aceita por QUALQUER bloco de ação: quando o conector falha (IXC fora
+// do ar, timeout), o motor procura uma aresta "erro". Se não existir, escala
+// para um atendente humano no setor que o cliente escolheu.
+const SAIDA_ERRO='erro';
 function fnEl(id){ return document.querySelector(`.flow-node[data-fid="${id}"]`); }
 let fluxoAtualId=null, fluxosLista=[];
 
@@ -3476,6 +3657,33 @@ function flowSideHTML(){
         <div><div class="co-lbl">${esc(c.lbl)}</div><div class="co-desc">${esc(c.desc)}</div></div>
       </div>`).join('')}
     </div>`;
+    // Sem isto quem monta o fluxo tinha que adivinhar o rótulo da aresta —
+    // errar o nome faz o bloco não encontrar saída e o atendimento parar.
+    const cSel = CONECTORES[n.conector];
+    if(cSel){
+      const saidas=[...(cSel.saidas||[]), SAIDA_ERRO];
+      fields+=`<div class="conn-saidas">
+        <div class="cs-tit">Saídas deste bloco</div>
+        <div class="cs-sub">Crie uma conexão para cada resultado e use exatamente estes nomes no rótulo:</div>
+        <div class="cs-tags">${saidas.map(x=>`<span class="cs-tag ${x===SAIDA_ERRO?'err':''}">${esc(x)}</span>`).join('')}</div>
+        <div class="cs-nota"><b>erro</b> é opcional: sem ela, falha de conexão com o IXC encaminha o cliente para um atendente humano automaticamente.</div>
+        ${cSel.nota?`<div class="cs-nota">${esc(cSel.nota)}</div>`:''}
+        ${(()=>{
+          // rótulo que o conector nunca produz = aresta morta. O motor não
+          // encontra saída e o atendimento trava — foi assim que um cliente
+          // do Suporte acabou no Financeiro.
+          const semAcento=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+          const validos=[...(cSel.saidas||[]), SAIDA_ERRO].map(semAcento);
+          const orfas=state.fluxo.edges.filter(e=>e.from===n.id).filter(e=>{
+            const l=semAcento(e.label).replace(/^\s*\d+\s*[·.\-)]?\s*/,'').trim();
+            if(!l) return false;                       // sem rótulo = segue sempre
+            return !validos.some(v=>l.includes(v)||v.includes(l));
+          });
+          return orfas.length?`<div class="cs-alerta">⚠ ${orfas.length} conexão(ões) com rótulo que este bloco nunca gera:
+            ${orfas.map(e=>`<b>${esc(e.label)}</b>`).join(', ')}. Elas nunca serão seguidas.</div>`:'';
+        })()}
+      </div>`;
+    }
   }
   if(n.tipo==='menu'||n.tipo==='mensagem'||n.tipo==='ia'||n.tipo==='condicao'||n.tipo==='fim'||n.tipo==='acao'){
     fields+=`<div class="flow-field"><label>${n.tipo==='condicao'?'Regra da condição':'Mensagem enviada ao cliente'+(n.tipo==='acao'?' (junto com a ação)':'')}</label><textarea id="fTexto">${esc(n.texto||'')}</textarea></div>`;
