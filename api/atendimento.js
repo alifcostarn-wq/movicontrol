@@ -838,7 +838,12 @@ const CONECTORES = {
     };
   },
 
-  async enviar_fatura({ e, conversa, vars }) {
+  // 2ª via completa: PDF + Pix + código de barras, cada um em SUA mensagem.
+  // Separado de propósito: no celular o cliente precisa segurar o balão para
+  // copiar, e se Pix e código de barras vierem juntos ele copia os dois e o
+  // app do banco não reconhece. Antes só saía a linha digitável no meio de um
+  // texto — inútil para quem paga pelo aplicativo.
+  async enviar_fatura({ e, conversa, vars, texto }) {
     const id = vars.cliente_id || conversa.cliente_ixc_id;
     if (!id) return { resultado: 'sem_cliente' };
     const d = await ixc(e, 'fn_areceber', {
@@ -848,17 +853,107 @@ const CONECTORES = {
     // R=recebido/pago, C=cancelado — qualquer outro está em aberto
     const abertas = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
     if (!abertas.length) return { resultado: 'sem_debito', anexoTexto: 'Não encontrei faturas em aberto. Está tudo em dia! ✅' };
-    const f = abertas[0];
-    const linhas = [
-      `Vencimento: ${f.data_vencimento}`,
-      `Valor: ${fmtMoeda(f.valor)}`,
-      f.linha_digitavel ? `\nLinha digitável:\n${f.linha_digitavel}` : '',
-      f.gateway_link ? `\n${f.gateway_link}` : '',
-    ].filter(Boolean);
+
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const rotulo = (x, i) => {
+      const v = parseDataIXC(x.data_vencimento);
+      const at = v ? Math.max(0, diasCorridos(v, hoje)) : 0;
+      return `${i + 1}️⃣ ${fmtMoeda(x.valor)} — vence ${fmtDataBR(v) || x.data_vencimento}`
+           + (at > 0 ? ` (${at}d em atraso)` : '');
+    };
+
+    let f = null;
+    if (abertas.length === 1) {
+      f = abertas[0];
+    } else if (Array.isArray(vars.faturas_opcoes) && vars.faturas_opcoes.length) {
+      // reexecução: a mensagem que chegou agora é a escolha do cliente
+      const n = parseInt(String(texto || '').replace(/\D/g, ''), 10);
+      if (!(n >= 1 && n <= vars.faturas_opcoes.length)) {
+        return {
+          resultado: 'invalido',
+          anexoTexto: `Responda com o número da fatura, de 1 a ${vars.faturas_opcoes.length}. 🔢`,
+        };
+      }
+      f = abertas.find(x => String(x.id) === String(vars.faturas_opcoes[n - 1])) || null;
+      if (!f) {
+        // pagou entre a listagem e a escolha: relista em vez de mandar boleto pago
+        return {
+          resultado: 'aguardando',
+          variaveis: { faturas_opcoes: abertas.map(x => String(x.id)) },
+          mensagens: [{ texto: 'Essa fatura não está mais em aberto. Escolha uma das atuais:\n\n'
+            + abertas.map(rotulo).join('\n') + '\n\nResponda com o número.' }],
+        };
+      }
+    } else {
+      // primeira passagem com mais de uma fatura: o cliente escolhe qual pagar
+      const lista = abertas.slice(0, 8);
+      return {
+        resultado: 'aguardando',
+        variaveis: { faturas_opcoes: lista.map(x => String(x.id)) },
+        mensagens: [{
+          texto: `Você tem ${abertas.length} faturas em aberto. Qual você quer pagar?\n\n`
+            + lista.map(rotulo).join('\n')
+            + (abertas.length > lista.length ? `\n\n(mostrando as ${lista.length} mais antigas)` : '')
+            + '\n\nResponda com o número.',
+        }],
+      };
+    }
+
+    const venc = parseDataIXC(f.data_vencimento);
+    const atraso = venc ? Math.max(0, diasCorridos(venc, hoje)) : 0;
+    const mensagens = [];
+
+    // 1) resumo — situa o cliente antes dos códigos
+    const resumo = [
+      `Fatura de ${fmtMoeda(f.valor)}`,
+      `Vencimento: ${fmtDataBR(venc) || f.data_vencimento}${atraso > 0 ? ` (${atraso} dia${atraso > 1 ? 's' : ''} em atraso)` : ''}`,
+      abertas.length > 1 ? `(você tem ${abertas.length} faturas em aberto)` : '',
+      f.gateway_link ? `\nPagar pelo site:\n${f.gateway_link}` : '',
+    ].filter(Boolean).join('\n');
+    mensagens.push({ texto: resumo });
+
+    // 2) PDF do boleto
+    try {
+      const b = await ixc(e, 'get_boleto', {
+        boletos: String(f.id), juros: 'N', multa: 'N', atualiza_boleto: 'N',
+        tipo_boleto: 'arquivo', base64: 'S',
+      }, 'listar');
+      const b64 = acharBase64(b);
+      if (b64) {
+        mensagens.push({
+          texto: 'Boleto em PDF 📄',
+          rotulo: '📄 Boleto em PDF',
+          midia: { base64: b64, tipo: 'document', mimetype: 'application/pdf', nomeArquivo: `fatura-${f.id}.pdf` },
+        });
+      }
+    } catch (err) { console.error('[atendimento] boleto pdf:', err.message); }
+
+    // 3) Pix copia e cola — sozinho na mensagem, para copiar de uma vez
+    try {
+      const g = await ixc(e, 'get_pix', { id_areceber: String(f.id) }, 'listar');
+      const pix = acharPix(g);
+      if (pix) {
+        mensagens.push({ texto: 'Pix copia e cola 💠 (baixa automática após o pagamento)' });
+        mensagens.push({ texto: pix });
+      }
+    } catch (err) { console.error('[atendimento] pix:', err.message); }
+
+    // 4) código de barras — também isolado
+    if (f.linha_digitavel) {
+      mensagens.push({ texto: 'Código de barras 🧾' });
+      mensagens.push({ texto: String(f.linha_digitavel) });
+    }
+
+
     return {
       resultado: 'ok',
-      variaveis: { fatura_id: f.id, fatura_valor: fmtMoeda(f.valor), fatura_venc: f.data_vencimento, faturas_abertas: abertas.length },
-      anexoTexto: linhas.join('\n'),
+      variaveis: {
+        fatura_id: f.id, fatura_valor: fmtMoeda(f.valor),
+        fatura_venc: fmtDataBR(venc) || f.data_vencimento,
+        faturas_abertas: abertas.length,
+        faturas_opcoes: null,   // zera: nova 2ª via nesta sessão pergunta de novo
+      },
+      mensagens,
     };
   },
 
@@ -878,7 +973,9 @@ const CONECTORES = {
     const g = await ixc(e, 'get_pix', { id_areceber: String(faturaId) }, 'listar');
     const pix = acharPix(g);
     if (!pix) return { resultado: 'erro', anexoTexto: 'Não consegui gerar o Pix agora. Vou te encaminhar para o Financeiro.' };
-    return { resultado: 'ok', variaveis: { pix }, anexoTexto: pix };
+    // o código vai SOZINHO: colado ao texto do nó, o cliente copiava a frase
+    // junto e o app do banco recusava
+    return { resultado: 'ok', variaveis: { pix }, mensagens: [{ texto: pix }] };
   },
 
   // Abre o chamado no MÓDULO DE CAMPO (campo_chamados), não no su_ticket do
@@ -1128,7 +1225,12 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
   if (sessao?.node_atual && nodes.has(Number(sessao.node_atual))) {
     const noMenu = nodes.get(Number(sessao.node_atual));
     const arestas = saidas.get(noMenu.id) || [];
-    const escolhida = casarOpcao(arestas, texto);
+    // Quando um CONECTOR pediu um dado (CPF, número da fatura, endereço), a
+    // resposta é dele — não pode ser confundida com opção de menu. Sem esta
+    // guarda, "2" para escolher a 2ª fatura poderia casar com uma aresta
+    // rotulada "2 · ..." e pular o conector inteiro.
+    const aguardandoConector = sessao.aguardando === 'texto_livre';
+    const escolhida = aguardandoConector ? null : casarOpcao(arestas, texto);
 
     if (escolhida) {
       // menu com `captura` guarda a resposta do cliente (ex.: nota de 1 a 5)
@@ -1215,6 +1317,10 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
           const prompt = (no.id === retomando) ? '' : montarTexto(no.texto, vars);
           const corpo = [prompt, r.anexoTexto].filter(x => x && String(x).trim()).join('\n');
           if (corpo.trim()) out.enviar.push({ texto: corpo, node: no.id });
+          // conector que devolve várias mensagens (ex.: 2ª via = PDF + Pix +
+          // código de barras). Cada uma vai separada para o cliente conseguir
+          // copiar o código certo sem levar texto junto.
+          for (const m of (r.mensagens || [])) out.enviar.push({ ...m, node: no.id });
           out.logs.push({ node_id: no.id, node_tipo: 'acao', conector: no.conector, entrada: texto, resultado, ms: Date.now() - t0 });
 
           // conector pediu um dado do cliente: para e espera a resposta.
@@ -1376,22 +1482,44 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
 // ============================================================================
 async function aplicarResultado(e, conversa, out) {
   // 1. mensagens
-  for (const m of out.enviar) {
-    let erro = null;
-    try { await waEnviar(e, conversa.contato_fone, m.texto); }
-    catch (err) { erro = err.message; console.error('[atendimento] envio falhou:', err.message); }
+  for (let i = 0; i < out.enviar.length; i++) {
+    const m = out.enviar[i];
+    let erro = null, env = null;
+    try {
+      // item com mídia (PDF do boleto, QR do Pix). Sem isto o bot só sabia
+      // mandar texto — era por isso que a 2ª via saía como linha digitável solta.
+      if (m.midia) {
+        env = await waEnviarMidia(e, conversa.contato_fone, {
+          base64: m.midia.base64, tipo: m.midia.tipo || 'document',
+          mimetype: m.midia.mimetype, nomeArquivo: m.midia.nomeArquivo, legenda: m.texto || '',
+        });
+      } else {
+        env = await waEnviar(e, conversa.contato_fone, m.texto);
+      }
+    } catch (err) { erro = err.message; console.error('[atendimento] envio falhou:', err.message); }
     await sb(e, 'atend_mensagens', {
       method: 'POST', prefer: 'return=minimal',
-      body: { conversa_id: conversa.id, direcao: 'bot', conteudo: m.texto, node_id: m.node || null },
+      body: {
+        conversa_id: conversa.id, direcao: 'bot',
+        conteudo: m.texto || m.rotulo || '', node_id: m.node || null,
+        tipo: m.midia ? (m.midia.tipo === 'image' ? 'imagem' : 'documento') : 'texto',
+        wa_id: env ? idDaEvolution(env) : null,
+        status: erro ? 'erro' : 'enviado',
+      },
     });
     if (erro) await logFluxo(e, { conversa_id: conversa.id, contato_fone: conversa.contato_fone, node_id: m.node || null, erro });
+    // pausa entre mensagens: envios no mesmo instante chegam fora de ordem no
+    // aparelho e parecem spam. Não espera depois da última — cada 100ms conta
+    // no limite de execução da function.
+    if (i < out.enviar.length - 1) await new Promise(r => setTimeout(r, 600));
   }
 
   // 2. patch da conversa
   if (Object.keys(out.patch).length) {
     const patch = { ...out.patch };
     if (out.enviar.length) {
-      patch.ultima_msg = out.enviar[out.enviar.length - 1].texto.slice(0, 200);
+      const ult = out.enviar[out.enviar.length - 1];
+      patch.ultima_msg = String(ult.texto || ult.rotulo || '').slice(0, 200);
       patch.ultima_msg_em = new Date().toISOString();
     }
     await sb(e, `atend_conversas?id=eq.${conversa.id}`, { method: 'PATCH', body: patch, prefer: 'return=minimal' });
@@ -2499,6 +2627,71 @@ export default async function handler(req, res) {
           body: { excluido_em: new Date().toISOString() },
         });
         return res.status(200).json({ ok: true, aviso });
+      }
+
+      // atendente envia arquivo/imagem/vídeo para o cliente
+      case 'mensagens.enviar_midia': {
+        const id = Number(body.conversa_id);
+        const bruto = String(body.base64 || '').replace(/^data:[^;]+;base64,/, '');
+        const mimetype = String(body.mimetype || 'application/octet-stream').split(';')[0];
+        const nome = String(body.nome || 'arquivo').slice(0, 120);
+        const legenda = String(body.legenda || '').trim();
+        if (!id || !bruto) return res.status(400).json({ ok: false, error: 'conversa_id e arquivo obrigatórios.' });
+
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+
+        const bytes = Buffer.from(bruto, 'base64');
+        if (!bytes.length) return res.status(400).json({ ok: false, error: 'Arquivo vazio ou corrompido.' });
+        if (bytes.length > 16 * 1024 * 1024) {
+          return res.status(400).json({ ok: false, error: 'Arquivo acima de 16 MB — o WhatsApp não aceita.' });
+        }
+
+        const tipo = mimetype.startsWith('image/') ? (mimetype === 'image/webp' ? 'figurinha' : 'imagem')
+                   : mimetype.startsWith('video/') ? 'video'
+                   : mimetype.startsWith('audio/') ? 'audio' : 'documento';
+        const evoTipo = tipo === 'imagem' || tipo === 'figurinha' ? 'image'
+                      : tipo === 'video' ? 'video'
+                      : tipo === 'audio' ? 'audio' : 'document';
+
+        // envia primeiro: se o WhatsApp recusar, não deixa arquivo órfão no storage
+        const env = await waEnviarMidia(e, c.contato_fone, {
+          base64: bruto, tipo: evoTipo, mimetype, nomeArquivo: nome, legenda,
+        });
+
+        // guarda no storage para o painel conseguir exibir depois
+        let caminho = null;
+        try {
+          caminho = await guardarMidia(e, id, idDaEvolution(env) || `out-${Date.now()}`, { base64: bruto, mimetype });
+        } catch (err) { console.error('[atendimento] storage midia:', err.message); }
+
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            conversa_id: id, direcao: 'out', autor_id: user.id,
+            conteudo: legenda || nome, tipo, midia_url: caminho,
+            wa_id: idDaEvolution(env), status: 'enviado',
+          },
+        });
+
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            ultima_msg: 'Você: ' + (legenda || `📎 ${nome}`).slice(0, 180),
+            ultima_msg_em: new Date().toISOString(),
+            bot_ativo: false,
+            atendente_id: c.atendente_id || user.id,
+            setor: c.setor || user.setor || null,
+            assumido_em: c.assumido_em || new Date().toISOString(),
+            assumido_por: c.assumido_por || user.id,
+            coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
+            nao_lidas: 0, updated_by: user.id,
+          },
+        });
+        return res.status(200).json({ ok: true, tipo });
       }
 
       case 'clientes.buscar': {
