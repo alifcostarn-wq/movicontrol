@@ -2057,6 +2057,13 @@ textarea.cp-form-input{resize:vertical}
 .cob-meta-linha b{font-size:15px;font-weight:800}
 .cob-meta-linha span{font-size:10.5px;color:var(--text3,#64748b);margin-top:1px}
 .cob-campo select{border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:12.5px}
+
+.cob-cab-acao{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.cob-auto-on{font-size:11px;font-weight:800;background:#DCFCE7;color:#166534;padding:4px 10px;border-radius:7px}
+.cob-prog{background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:11px;padding:12px 14px;margin-bottom:14px}
+.cob-prog-bar{height:10px;background:#F1F5F9;border-radius:6px;overflow:hidden}
+.cob-prog-bar div{height:100%;background:linear-gradient(90deg,#2563EB,#06B6D4);transition:width .3s}
+.cob-prog-txt{font-size:12px;font-weight:700;color:var(--text3,#64748b);margin-top:8px;display:flex;align-items:center}
 /* ── PAINEL DE COBRANÇA ─────────────────────────────────────────────── */
 .cob-alertas{background:#FEF3C7;border:1px solid #FCD34D;border-radius:11px;padding:11px 14px;margin-bottom:16px}
 .cob-alertas div{font-size:12.5px;line-height:1.7;color:#92400E}
@@ -18328,7 +18335,8 @@ function COB_cfg(){
     hora_inicio:'08:00', hora_fim:'20:00', dias_semana:[1,2,3,4,5,6],
     limite_diario:150, intervalo_segundos:8, cooldown_dias:3,
     max_por_cliente_mes:6, valor_minimo:5, pausar_tudo:false, respeitar_optout:true, assinatura:'',
-    meta_ativa:false, meta_tipo:'valor', meta_valor:0, meta_percentual:30
+    meta_ativa:false, meta_tipo:'valor', meta_valor:0, meta_percentual:30,
+    auto_faturamento:false, auto_risco:false, auto_recuperacao:false, auto_max_dias_perfil:7
   }, COB_state.config||{});
 }
 
@@ -18364,8 +18372,14 @@ async function ifRenderCobranca(trilha){
   cobCorpo().innerHTML=`
     <div class="cob-cab" style="--tc:${_T.cor}">
       <div class="cob-cab-ico">${_T.ico}</div>
-      <div><div class="cob-cab-tit">${_T.lbl}</div><div class="cob-cab-sub">${_T.desc}</div></div>
+      <div style="flex:1"><div class="cob-cab-tit">${_T.lbl}</div><div class="cob-cab-sub">${_T.desc}</div></div>
+      <div class="cob-cab-acao">
+        ${COB_cfg()['auto_'+tr]?'<span class="cob-auto-on" title="O servidor envia sozinho dentro da janela configurada">🤖 automático ligado</span>':''}
+        <button class="btn if-btn-primario" id="cob-lote" ${fila.filter(x=>!x.bloqueio).length?'':'disabled'}
+          onclick="cobEnviarLote('${tr}')">⚡ Enviar em lote (${fila.filter(x=>!x.bloqueio).length})</button>
+      </div>
     </div>
+    <div id="cob-lote-prog"></div>
     <div class="if-cards" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
       <div class="if-card" style="background:linear-gradient(135deg,#F59E0B,#EF4444)"><div class="if-card-lab">Ações pendentes</div><div class="if-card-val">${fila.length}</div><div class="if-card-sub">na régua hoje</div></div>
       <div class="if-card" style="background:linear-gradient(135deg,#EF4444,#EC4899)"><div class="if-card-lab">Valor em cobrança</div><div class="if-card-val">${brlS(valorFila)}</div><div class="if-card-sub">faturas na fila</div></div>
@@ -18801,6 +18815,18 @@ async function cobCarregarBase(msgEl){
   ifProcessar(regs);
 }
 
+async function cobEnviarPerfis(){
+  const perfis=ifPerfisFiltrados().map(pf=>({
+    ixcId:String(pf.ixcId), nome:pf.nome, fone:ifFoneNorm(pf.fone||''), grupo:pf.grupo,
+    score:pf.sc?.score, probAtraso:pf.prob?.probAtraso, probRecup:pf.prob?.probRecup,
+    freqAtraso:pf.p?.freqAtraso, medianaAtraso:Math.round(pf.p?.medianaAtraso||0),
+    seqEmDia:pf.p?.seqEmDia, nPagas:pf.p?.nPagas, tendencia:pf.p?.tendencia,
+  })).filter(p=>p.fone);
+  if(!perfis.length) return;
+  await ifCobAPI('cobranca.perfis.salvar',{perfis});
+  COB_state.perfisEnviados=perfis.length;
+}
+
 async function renderCobrancaModulo(){
   const el = document.getElementById('cob-conteudo');
   if(!el) return;
@@ -18815,6 +18841,9 @@ async function renderCobrancaModulo(){
     COB_state.prontas = true;
     if(!IF_state.geradoEm){ if(msg) msg.textContent='Buscando faturas no IXC…'; await cobCarregarBase(msg); }
     COB_state.baseOk = true;
+    // O automático roda no servidor, que não calcula score. Mandamos o retrato
+    // de risco daqui para que as duas decisões sigam a MESMA regra.
+    cobEnviarPerfis().catch(e=>console.error('[cobrança] snapshot:',e.message));
   }catch(e){
     console.error('[cobrança]', e);
     el.innerHTML = `<div class="if-hero"><div class="if-hero-inner">
@@ -18910,6 +18939,25 @@ function cobRenderRegua(){
           <div class="cob-campo"><span>Valor mínimo da fatura para cobrar</span>
             <div>R$ <input type="number" id="cf-vm" min="0" step="1" value="${cfg.valor_minimo}"></div></div>
           <div class="cob-nota">Insistir na mesma pessoa é o que gera bloqueio e denúncia — estes limites valem mais que qualquer texto bem escrito.</div>
+        </div>
+
+        <div class="cob-box">
+          <div class="cob-lab">🤖 Envio automático</div>
+          <div class="cob-nota" style="margin:0 0 9px">
+            Com a trilha ligada, o servidor envia sozinho dentro da janela de horário —
+            sem ninguém abrir o sistema. Desligada, a trilha só sai pelo botão de lote ou linha a linha.
+          </div>
+          ${Object.entries(COB_TRILHAS).map(([k,v])=>`
+            <label class="cob-check"><input type="checkbox" id="cf-au-${k}" ${cfg['auto_'+k]?'checked':''}>
+              ${v.ico} ${v.lbl}</label>`).join('')}
+          <div class="cob-nota">
+            <b>Sugestão:</b> comece ligando só Faturamento e Risco. Recuperação é onde o
+            julgamento humano mais vale — vale manter manual até confiar nos textos.
+          </div>
+          <div class="cob-nota" style="margin-top:6px">
+            O automático pausa sozinho se o perfil de risco dos clientes ficar
+            desatualizado (abra este módulo de tempos em tempos para renová-lo).
+          </div>
         </div>
 
         <div class="cob-box">
@@ -19059,6 +19107,9 @@ async function cobSalvarConfigUI(){
       pausar_tudo:g('cf-pz').checked, assinatura:g('cf-as').value.trim(),
       meta_ativa:g('cf-ma').checked, meta_tipo:g('cf-mt').value,
       meta_valor:+g('cf-mv').value, meta_percentual:+g('cf-mp').value,
+      auto_faturamento:g('cf-au-faturamento').checked,
+      auto_risco:g('cf-au-risco').checked,
+      auto_recuperacao:g('cf-au-recuperacao').checked,
     });
     showToast('Configuração salva!');
     cobRenderTudo();
@@ -19121,6 +19172,59 @@ function cobBoasPraticas(){
     </ul></details>`;
 }
 
+
+/* Envio em lote: percorre as liberadas respeitando o intervalo e o teto do dia.
+   Cada linha é enviada por uma chamada separada — se uma falhar, as outras
+   seguem, e o operador vê exatamente onde parou. */
+async function cobEnviarLote(trilha){
+  const cfg=COB_cfg();
+  const fila=ifFilaCobranca(trilha).filter(x=>!x.bloqueio);
+  if(!fila.length){ showToast('Nada liberado para enviar nesta trilha.',true); return; }
+
+  const jaHoje=(window.IF_COB.log||[]).filter(x=>x.status!=='erro'&&String(x.quando).slice(0,10)===hoje()).length;
+  const teto=Math.max(0,Number(cfg.limite_diario||150)-jaHoje);
+  if(!teto){ showToast('Limite diário de envios já foi atingido.',true); return; }
+  const lote=fila.slice(0,teto);
+  const seg=Math.max(1,Number(cfg.intervalo_segundos||8));
+
+  if(!confirm(`Enviar ${lote.length} cobrança(s) da trilha ${COB_TRILHAS[trilha].lbl}?\n\n`
+    +`Intervalo de ${seg}s entre cada uma — leva cerca de ${Math.ceil(lote.length*seg/60)} min.\n`
+    +`${fila.length>teto?`\nATENÇÃO: ${fila.length-teto} ficarão para amanhã pelo limite diário.\n`:''}`
+    +`\nNão feche esta aba durante o envio.`)) return;
+
+  const btn=document.getElementById('cob-lote'); if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const prog=document.getElementById('cob-lote-prog');
+  let ok=0, dup=0, err=0, parar=false;
+  const pintar=(i)=>{ if(!prog) return;
+    prog.innerHTML=`<div class="cob-prog">
+      <div class="cob-prog-bar"><div style="width:${Math.round(i/lote.length*100)}%"></div></div>
+      <div class="cob-prog-txt">${i} de ${lote.length} · ✅ ${ok} enviadas${dup?` · ↻ ${dup} já enviadas antes`:''}${err?` · ❌ ${err} falharam`:''}
+        <button class="btn" style="font-size:10.5px;margin-left:10px" onclick="window._cobParar=true">Parar</button></div>
+    </div>`; };
+  window._cobParar=false; pintar(0);
+
+  for(let i=0;i<lote.length;i++){
+    if(window._cobParar){ parar=true; break; }
+    const it=lote[i];
+    try{
+      const fat=(it.pf.fats||[]).find(f=>String(f.id)===String(it.fat.id));
+      const r=await ifCobAPI('cobranca.enviar',{
+        fone:ifFoneNorm(it.pf.fone), texto:it.msg,
+        fatura_id:String(it.fat.id), etapa_id:String(it.etapa.id), etapa_nome:it.etapa.nome,
+        cliente_ixc_id:String(it.pf.ixcId), cliente_nome:it.pf.nome,
+        valor:fat?.valor??null, vencimento:fat?.venc??null, canal:'lote',
+        anexar_boleto:it.etapa.anexar_boleto===true, anexar_pix:it.etapa.anexar_pix===true});
+      if(r.duplicado) dup++; else ok++;
+      ifCobLogAdd({fatId:it.fat.id,etapaId:it.etapa.id,etapaNome:it.etapa.nome,
+        cliente:it.pf.nome,ixcId:String(it.pf.ixcId),canal:'lote',quando:new Date().toISOString()});
+    }catch(e){ err++; console.error('[lote]',it.pf.nome,e.message); }
+    pintar(i+1);
+    if(i<lote.length-1 && !window._cobParar) await new Promise(r=>setTimeout(r,seg*1000));
+  }
+  showToast(`${parar?'Interrompido':'Concluído'}: ${ok} enviada(s)${err?`, ${err} falha(s)`:''}.`, err>0);
+  await ifCobCarregar(true);
+  cobRenderTudo();
+}
 
 /* ── ABA PAINEL — visão macro para começar o dia ────────────────────────────
    Ordem pensada como um gestor de cobrança olha: primeiro o que exige ação
