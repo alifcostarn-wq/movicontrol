@@ -2694,6 +2694,228 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, tipo });
       }
 
+      // ===== INTEGRAÇÃO COM A INTELIGÊNCIA FINANCEIRA (MoviOn) =====
+      // O MoviOn é dono da régua e decide QUEM cobrar e COM QUE TEXTO.
+      // O MoviTalk é o canal: entrega, registra na conversa e guarda o histórico.
+
+      case 'cobranca.regua.listar': {
+        const itens = await sb(e, 'atend_cobranca_regua?select=*&order=dias.asc');
+        return res.status(200).json({ ok: true, regua: itens || [] });
+      }
+
+      case 'cobranca.regua.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores editam a régua.' });
+        const etapas = Array.isArray(body.regua) ? body.regua : null;
+        if (!etapas) return res.status(400).json({ ok: false, error: 'regua deve ser uma lista.' });
+        for (const et of etapas) {
+          if (!et.etapa_id || !et.nome || !et.tpl) {
+            return res.status(400).json({ ok: false, error: 'Cada etapa precisa de etapa_id, nome e tpl.' });
+          }
+        }
+        // remove só o que saiu; não apaga tudo antes, para não deixar a régua
+        // vazia se o insert falhar no meio
+        const atuais = await sb(e, 'atend_cobranca_regua?select=etapa_id');
+        const mantidos = new Set(etapas.map(x => String(x.etapa_id)));
+        for (const a of (atuais || [])) {
+          if (!mantidos.has(String(a.etapa_id))) {
+            await sb(e, `atend_cobranca_regua?etapa_id=eq.${encodeURIComponent(a.etapa_id)}`,
+              { method: 'DELETE', prefer: 'return=minimal' });
+          }
+        }
+        await sb(e, 'atend_cobranca_regua?on_conflict=etapa_id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: etapas.map((x, i) => ({
+            etapa_id: String(x.etapa_id), dias: Number(x.dias) || 0,
+            nome: String(x.nome), tpl: String(x.tpl),
+            cor: x.cor || null, ativo: x.ativo !== false,
+            canal: x.canal || 'whatsapp',
+            valor_min: x.valor_min != null && x.valor_min !== '' ? Number(x.valor_min) : null,
+            valor_max: x.valor_max != null && x.valor_max !== '' ? Number(x.valor_max) : null,
+            grupos: Array.isArray(x.grupos) && x.grupos.length ? x.grupos : null,
+            risco_min: x.risco_min != null && x.risco_min !== '' ? Number(x.risco_min) : null,
+            risco_max: x.risco_max != null && x.risco_max !== '' ? Number(x.risco_max) : null,
+            hora_inicio: x.hora_inicio || null, hora_fim: x.hora_fim || null,
+            dias_semana: Array.isArray(x.dias_semana) && x.dias_semana.length ? x.dias_semana : null,
+            observacao: x.observacao || null, ordem: i,
+            updated_at: new Date().toISOString(), updated_by: user.id,
+          })),
+        });
+        return res.status(200).json({ ok: true, total: etapas.length });
+      }
+
+      case 'cobranca.config.obter': {
+        const cfg = await sbUm(e, 'atend_cobranca_config?id=eq.1&select=dados');
+        const opt = await sb(e, 'atend_cobranca_optout?select=*&order=criado_em.desc&limit=500');
+        return res.status(200).json({ ok: true, config: (cfg && cfg.dados) || {}, optout: opt || [] });
+      }
+
+      case 'cobranca.config.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const dados = body.config && typeof body.config === 'object' ? body.config : null;
+        if (!dados) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        await sb(e, 'atend_cobranca_config?id=eq.1', {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { dados, updated_at: new Date().toISOString(), updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'cobranca.optout': {
+        const fone = normalizarFone(String(body.fone || ''));
+        if (!fone) return res.status(400).json({ ok: false, error: 'fone obrigatório.' });
+        if (body.remover) {
+          await sb(e, `atend_cobranca_optout?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+          return res.status(200).json({ ok: true, removido: true });
+        }
+        await sb(e, 'atend_cobranca_optout?on_conflict=contato_fone', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: {
+            contato_fone: fone,
+            cliente_ixc_id: body.cliente_ixc_id ? String(body.cliente_ixc_id) : null,
+            motivo: body.motivo || null, criado_por: user.id,
+          },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'cobranca.envios.listar': {
+        const desde = String(body.desde || '').trim();
+        const filtro = desde ? `&enviado_em=gte.${encodeURIComponent(desde)}` : '';
+        const itens = await sb(e,
+          `atend_cobranca_envios?select=*${filtro}&order=enviado_em.desc&limit=${Number(body.limite) || 2000}`);
+        return res.status(200).json({ ok: true, envios: itens || [] });
+      }
+
+      // Entrega de uma cobrança já decidida pelo MoviOn
+      case 'cobranca.enviar': {
+        const fone = normalizarFone(String(body.fone || ''));
+        const texto = String(body.texto || '').trim();
+        const faturaId = String(body.fatura_id || '').trim();
+        const etapaId = String(body.etapa_id || '').trim();
+        if (!fone || !texto || !faturaId || !etapaId) {
+          return res.status(400).json({ ok: false, error: 'fone, texto, fatura_id e etapa_id são obrigatórios.' });
+        }
+
+        // Trava de duplicidade no servidor: o MoviOn pode ser aberto em duas
+        // máquinas e a mesma linha da fila ser clicada duas vezes.
+        const jaFoi = await sbUm(e,
+          `atend_cobranca_envios?fatura_id=eq.${encodeURIComponent(faturaId)}` +
+          `&etapa_id=eq.${encodeURIComponent(etapaId)}&status=eq.enviado&select=id,enviado_em`);
+        if (jaFoi && !body.forcar) {
+          return res.status(200).json({ ok: true, duplicado: true, enviado_em: jaFoi.enviado_em });
+        }
+
+        const nome = String(body.cliente_nome || '').trim() || fone;
+        const ixcId = body.cliente_ixc_id ? String(body.cliente_ixc_id) : null;
+
+        // acha a conversa do cliente ou cria uma, para a cobrança entrar na
+        // mesma thread que o atendente enxerga
+        let c = await sbUm(e, `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=*&limit=1`);
+        if (!c) {
+          const nova = await sb(e, 'atend_conversas', {
+            method: 'POST',
+            headers: { Prefer: 'return=representation' },
+            body: {
+              contato_fone: fone, contato_nome: nome,
+              coluna: 'aguardando', setor: 'Financeiro',
+              bot_ativo: true, cliente_ixc_id: ixcId,
+              created_by: user.id,
+            },
+          });
+          c = Array.isArray(nova) ? nova[0] : nova;
+        }
+
+        let env = null, erro = null;
+        // registro manual: o operador já mandou pelo wa.me, então só gravamos.
+        // Sem isto o cliente receberia a mesma cobrança duas vezes.
+        const somenteRegistrar = body.somente_registrar === true;
+        if (!somenteRegistrar) {
+          try { env = await waEnviar(e, fone, texto); }
+          catch (err) { erro = String(err.message).slice(0, 250); }
+        }
+
+        if (!erro && !somenteRegistrar && c) {
+          await sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: {
+              conversa_id: c.id, direcao: 'out', conteudo: texto, autor_id: user.id,
+              wa_id: idDaEvolution(env), status: 'enviado',
+            },
+          });
+          // Não rouba atendimento em andamento: se um humano já está na
+          // conversa, só atualiza a prévia. Se estava resolvida ou nova, vai
+          // para "aguardando cliente" — cobrança não é fila de atendimento.
+          const patch = {
+            ultima_msg: 'Cobrança: ' + texto.slice(0, 160),
+            ultima_msg_em: new Date().toISOString(),
+            updated_by: user.id,
+          };
+          if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
+          if (!c.cliente_ixc_id && ixcId) patch.cliente_ixc_id = ixcId;
+          await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+        }
+
+        // registra sempre — inclusive falha, para o operador ver e repetir
+        await sb(e, 'atend_cobranca_envios', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            fatura_id: faturaId, etapa_id: etapaId,
+            etapa_nome: body.etapa_nome || null,
+            cliente_ixc_id: ixcId, cliente_nome: nome, contato_fone: fone,
+            conversa_id: c ? c.id : null, canal: body.canal || 'whatsapp',
+            valor: body.valor != null ? Number(body.valor) : null,
+            vencimento: body.vencimento || null,
+            texto, wa_id: env ? idDaEvolution(env) : null,
+            status: erro ? 'erro' : 'enviado', erro,
+            enviado_por: user.id,
+          },
+        });
+
+        if (erro) return res.status(200).json({ ok: false, error: erro });
+        return res.status(200).json({ ok: true, conversa_id: c ? c.id : null });
+      }
+
+      // Migração única do que já existe em localStorage
+      case 'cobranca.importar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        let regua = 0, envios = 0;
+        if (Array.isArray(body.regua) && body.regua.length) {
+          const atual = await sb(e, 'atend_cobranca_regua?select=etapa_id&limit=1');
+          if (!atual || !atual.length) {           // só importa se estiver vazia
+            await sb(e, 'atend_cobranca_regua?on_conflict=etapa_id', {
+              method: 'POST',
+              headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+              body: body.regua.map(x => ({
+                etapa_id: String(x.etapa_id ?? x.id), dias: Number(x.dias) || 0,
+                nome: String(x.nome || 'Etapa'), tpl: String(x.tpl || ''),
+                cor: x.cor || null, ativo: x.ativo !== false, updated_by: user.id,
+              })),
+            });
+            regua = body.regua.length;
+          }
+        }
+        if (Array.isArray(body.log) && body.log.length) {
+          for (const l of body.log.slice(0, 5000)) {
+            try {
+              await sb(e, 'atend_cobranca_envios', {
+                method: 'POST', prefer: 'return=minimal',
+                body: {
+                  fatura_id: String(l.fatId), etapa_id: String(l.etapaId),
+                  etapa_nome: l.etapaNome || null, cliente_nome: l.cliente || null,
+                  canal: l.canal || 'whatsapp', status: 'enviado',
+                  texto: l.texto || null, enviado_em: l.quando || new Date().toISOString(),
+                  enviado_por: user.id,
+                },
+              });
+              envios++;
+            } catch { /* duplicado: já estava no banco */ }
+          }
+        }
+        return res.status(200).json({ ok: true, regua, envios });
+      }
+
       case 'clientes.buscar': {
         const termo = String(body.termo || '').trim();
         if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
