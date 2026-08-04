@@ -1847,6 +1847,286 @@ async function tratarWebhook(e, body) {
   return { ok: true, conversa_id: conversa.id, enviadas: out.enviar.length, patch: out.patch };
 }
 
+
+// ============================================================================
+// COBRANÇA AUTOMÁTICA — executada pelo cron
+// ----------------------------------------------------------------------------
+// Só entrega o que a régua e a configuração autorizam. Cada trava aqui existe
+// porque, sem operador olhando, um erro de configuração vira dezenas de
+// mensagens indevidas antes de alguém perceber.
+// ============================================================================
+
+/* Entrega de uma cobrança: conversa, envio, anexos, thread e log.
+   Compartilhada entre o clique do operador e o cron — duas implementações
+   divergiriam, e a do cron é a que ninguém está olhando. */
+async function entregarCobranca(e, o) {
+  const nome = o.nome || o.fone;
+  let c = await sbUm(e, `atend_conversas?contato_fone=eq.${o.fone}&deleted_at=is.null&select=*&limit=1`);
+  if (!c) {
+    const nova = await sb(e, 'atend_conversas', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: {
+        contato_fone: o.fone, contato_nome: nome, coluna: 'aguardando',
+        setor: 'Financeiro', bot_ativo: true, cliente_ixc_id: o.ixcId || null,
+        created_by: o.userId || null,
+      },
+    });
+    c = Array.isArray(nova) ? nova[0] : nova;
+  }
+
+  let env = null, erro = null;
+  const extras = [];
+  if (!o.somenteRegistrar) {
+    try { env = await waEnviar(e, o.fone, o.texto); }
+    catch (err) { erro = String(err.message).slice(0, 250); }
+
+    if (!erro && (o.anexarBoleto || o.anexarPix) && /^\d+$/.test(String(o.faturaId))) {
+      let pdf = null, pix = null;
+      if (o.anexarBoleto) {
+        try {
+          const b = await ixc(e, 'get_boleto', {
+            boletos: String(o.faturaId), juros: 'N', multa: 'N',
+            atualiza_boleto: 'N', tipo_boleto: 'arquivo', base64: 'S',
+          }, 'listar');
+          pdf = acharBase64(b);
+        } catch (err) { console.error('[cobranca] boleto:', err.message); }
+      }
+      if (o.anexarPix) {
+        try {
+          const g = await ixc(e, 'get_pix', { id_areceber: String(o.faturaId) }, 'listar');
+          pix = acharPix(g);
+        } catch (err) { console.error('[cobranca] pix:', err.message); }
+      }
+      const pausa = () => new Promise(r => setTimeout(r, 700));
+      if (pdf) {
+        try {
+          await pausa();
+          const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+          const r1 = await waEnviarMidia(e, o.fone, {
+            base64: pdf, tipo: 'document', mimetype: 'application/pdf',
+            nomeArquivo: `fatura-${o.faturaId}.pdf`, legenda: leg,
+          });
+          extras.push({ texto: leg, tipo: 'documento', wa: idDaEvolution(r1) });
+        } catch (err) { console.error('[cobranca] envio pdf:', err.message); }
+      }
+      if (pix) {
+        try {
+          await pausa();
+          const r2 = await waEnviar(e, o.fone, pix);
+          extras.push({ texto: pix, tipo: 'texto', wa: idDaEvolution(r2) });
+        } catch (err) { console.error('[cobranca] envio pix:', err.message); }
+      }
+    }
+  }
+
+  if (!erro && !o.somenteRegistrar && c) {
+    await sb(e, 'atend_mensagens', {
+      method: 'POST', prefer: 'return=minimal',
+      body: {
+        conversa_id: c.id, direcao: 'out', conteudo: o.texto, autor_id: o.userId || null,
+        wa_id: idDaEvolution(env), status: 'enviado',
+      },
+    });
+    for (const x of extras) {
+      await sb(e, 'atend_mensagens', {
+        method: 'POST', prefer: 'return=minimal',
+        body: {
+          conversa_id: c.id, direcao: 'out', conteudo: x.texto, autor_id: o.userId || null,
+          tipo: x.tipo, wa_id: x.wa, status: 'enviado',
+        },
+      });
+    }
+    const patch = {
+      ultima_msg: 'Cobrança: ' + o.texto.slice(0, 160),
+      ultima_msg_em: new Date().toISOString(), updated_by: o.userId || null,
+    };
+    // não rouba atendimento em andamento
+    if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
+    if (!c.cliente_ixc_id && o.ixcId) patch.cliente_ixc_id = o.ixcId;
+    await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+  }
+
+  await sb(e, 'atend_cobranca_envios', {
+    method: 'POST', prefer: 'return=minimal',
+    body: {
+      fatura_id: String(o.faturaId), etapa_id: String(o.etapaId), etapa_nome: o.etapaNome || null,
+      cliente_ixc_id: o.ixcId || null, cliente_nome: nome, contato_fone: o.fone,
+      conversa_id: c ? c.id : null,
+      canal: o.somenteRegistrar ? (o.canal || 'manual') : (o.canal || 'whatsapp'),
+      valor: o.valor != null ? Number(o.valor) : null, vencimento: o.vencimento || null,
+      texto: o.texto, wa_id: env ? idDaEvolution(env) : null,
+      status: erro ? 'erro' : 'enviado', erro, enviado_por: o.userId || null,
+    },
+  });
+
+  if (erro) throw new Error(erro);
+  return { conversaId: c ? c.id : null, anexos: extras.length };
+}
+
+function cobDiasEntre(a, b) {
+  const d1 = parseDataIXC(a), d2 = parseDataIXC(b);
+  if (!d1 || !d2) return null;
+  return Math.round((new Date(d2.getFullYear(), d2.getMonth(), d2.getDate())
+                   - new Date(d1.getFullYear(), d1.getMonth(), d1.getDate())) / 86400000);
+}
+
+function cobJanelaOkSrv(etapa, cfg, agora) {
+  const ini = etapa.hora_inicio || cfg.hora_inicio || '00:00';
+  const fim = etapa.hora_fim || cfg.hora_fim || '23:59';
+  const dias = (Array.isArray(etapa.dias_semana) && etapa.dias_semana.length)
+    ? etapa.dias_semana : (cfg.dias_semana || [0, 1, 2, 3, 4, 5, 6]);
+  if (!dias.includes(agora.getDay())) return false;
+  const hm = String(agora.getHours()).padStart(2, '0') + ':' + String(agora.getMinutes()).padStart(2, '0');
+  return hm >= ini && hm <= fim;
+}
+
+// Mesmas regras da tela — mantidas em paralelo de propósito: o servidor não
+// pode confiar em cálculo que veio do navegador para decidir enviar.
+function cobEmRiscoSrv(p, cfg) {
+  if (!p) return false;
+  if ((p.seq_em_dia || 0) >= 6 && p.tendencia !== 'piora') return false;
+  if (cfg.risco_tendencia !== false && p.tendencia === 'piora') return true;
+  if ((p.prob_atraso ?? 0) >= Number(cfg.risco_prob_min ?? 55)) return true;
+  if ((p.freq_atraso ?? 0) >= Number(cfg.risco_freq_min ?? 0.35)) return true;
+  if ((p.score ?? 100) <= Number(cfg.risco_score_max ?? 55)) return true;
+  return false;
+}
+
+function cobFolgaSrv(p, cfg) {
+  if (cfg.ajustar_por_habito === false || !p || !p.n_pagas) return 0;
+  if ((p.score ?? 100) <= Number(cfg.risco_score_max ?? 55)) return 0;
+  if ((p.freq_atraso ?? 0) >= 0.7) return 0;
+  const h = Math.round(p.mediana_atraso || 0);
+  if (h <= 0) return 0;
+  return Math.min(Number(cfg.habito_folga_teto ?? 5), h + Number(cfg.habito_folga_dias ?? 1));
+}
+
+function cobTexto(tpl, p, fat, dias) {
+  const venc = fat.data_vencimento ? String(fat.data_vencimento).slice(0, 10).split('-').reverse().join('/') : '—';
+  const nome = p.nome || 'cliente';
+  return String(tpl)
+    .replace(/{nome}/g, nome)
+    .replace(/{primeiro_nome}/g, nome.split(' ')[0])
+    .replace(/{valor}/g, 'R$ ' + Number(fat.valor || 0).toFixed(2).replace('.', ','))
+    .replace(/{vencimento}/g, venc)
+    .replace(/{dias}/g, String(Math.abs(dias)));
+}
+
+async function cobrancaAutomatica(e) {
+  const cfgRow = await sbUm(e, 'atend_cobranca_config?id=eq.1&select=dados');
+  const cfg = (cfgRow && cfgRow.dados) || {};
+  const trilhas = ['faturamento', 'risco', 'recuperacao'].filter(k => cfg['auto_' + k] === true);
+  if (!trilhas.length) return { ok: true, auto: 'desligado' };
+  if (cfg.pausar_tudo) return { ok: true, auto: 'pausado' };
+
+  const agora = new Date();
+  const hojeISO = agora.toISOString().slice(0, 10);
+
+  // Snapshot velho = classificação de risco desatualizada. Parar é mais seguro
+  // que cobrar com base em perfil de semanas atrás.
+  const maisNovo = await sbUm(e, 'atend_cobranca_perfis?select=atualizado_em&order=atualizado_em.desc&limit=1');
+  const idadeDias = maisNovo ? (Date.now() - new Date(maisNovo.atualizado_em).getTime()) / 86400000 : 999;
+  if (idadeDias > Number(cfg.auto_max_dias_perfil ?? 7)) {
+    return { ok: true, auto: 'perfis desatualizados', idade_dias: Math.round(idadeDias) };
+  }
+
+  const regua = (await sb(e, 'atend_cobranca_regua?ativo=eq.true&select=*&order=dias.asc')) || [];
+  if (!regua.length) return { ok: true, auto: 'sem régua' };
+
+  // teto diário conta o que JÁ saiu hoje, por qualquer via (lote ou manual)
+  const hojeEnv = await sb(e, `atend_cobranca_envios?status=eq.enviado&enviado_em=gte.${hojeISO}&select=id`);
+  let restanteHoje = Number(cfg.limite_diario ?? 150) - ((hojeEnv || []).length);
+  if (restanteHoje <= 0) return { ok: true, auto: 'limite diário atingido' };
+
+  const optout = new Set(((await sb(e, 'atend_cobranca_optout?select=contato_fone')) || []).map(o => String(o.contato_fone)));
+  const perfis = (await sb(e, 'atend_cobranca_perfis?select=*')) || [];
+  const porId = new Map(perfis.map(p => [String(p.ixc_id), p]));
+
+  // histórico recente: dedupe, cooldown e teto por cliente
+  const desde90 = new Date(Date.now() - 90 * 864e5).toISOString();
+  const envs = (await sb(e, `atend_cobranca_envios?status=eq.enviado&enviado_em=gte.${desde90}&select=fatura_id,etapa_id,cliente_ixc_id,enviado_em`)) || [];
+  const feitas = new Set(envs.map(x => x.fatura_id + '|' + x.etapa_id));
+  const ult = {}, noMes = {};
+  const ini30 = Date.now() - 30 * 864e5;
+  envs.forEach(x => {
+    const k = String(x.cliente_ixc_id || '');
+    if (!k) return;
+    const q = new Date(x.enviado_em).getTime();
+    if (!ult[k] || q > ult[k]) ult[k] = q;
+    if (q >= ini30) noMes[k] = (noMes[k] || 0) + 1;
+  });
+
+  const enviados = [];
+  const pausa = ms => new Promise(r => setTimeout(r, ms));
+  const intervalo = Math.max(1, Number(cfg.intervalo_segundos ?? 8)) * 1000;
+
+  for (const p of perfis) {
+    if (restanteHoje <= 0) break;
+    if (p.grupo === 'cancelado') continue;
+    const fone = normalizarFone(p.fone || '');
+    if (!fone) continue;
+    if (cfg.respeitar_optout !== false && optout.has(fone)) continue;
+
+    const chave = String(p.ixc_id);
+    if (Number(cfg.cooldown_dias ?? 3) > 0 && ult[chave] &&
+        (Date.now() - ult[chave]) / 864e5 < Number(cfg.cooldown_dias)) continue;
+    if (Number(cfg.max_por_cliente_mes ?? 6) > 0 &&
+        (noMes[chave] || 0) >= Number(cfg.max_por_cliente_mes)) continue;
+
+    // fatura lida do IXC AGORA: quem pagou hoje de manhã não pode ser cobrado
+    let abertas = [];
+    try {
+      const d = await ixc(e, 'fn_areceber', {
+        qtype: 'fn_areceber.id_cliente', query: chave, oper: '=', rp: '50',
+        sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
+      });
+      abertas = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
+    } catch (err) { continue; }
+
+    for (const f of abertas) {
+      if (restanteHoje <= 0) break;
+      const dias = cobDiasEntre(f.data_vencimento, hojeISO);
+      if (dias === null) continue;
+      const trilha = dias > 0 ? 'recuperacao' : dias === 0 ? 'faturamento'
+                   : (cobEmRiscoSrv(p, cfg) ? 'risco' : 'faturamento');
+      if (!trilhas.includes(trilha)) continue;
+
+      const diasEf = dias - (trilha === 'recuperacao' ? cobFolgaSrv(p, cfg) : 0);
+      const cand = regua.filter(et => (et.trilha || 'recuperacao') === trilha && diasEf >= et.dias);
+      if (!cand.length) continue;
+      const etapa = cand[cand.length - 1];
+
+      if (feitas.has(f.id + '|' + etapa.etapa_id)) continue;
+      if (Number(f.valor) < Number(etapa.valor_min ?? cfg.valor_minimo ?? 0)) continue;
+      if (etapa.valor_max != null && Number(f.valor) > Number(etapa.valor_max)) continue;
+      if (Array.isArray(etapa.grupos) && etapa.grupos.length && !etapa.grupos.includes(p.grupo)) continue;
+      if (etapa.risco_min != null && (p.score ?? 0) < Number(etapa.risco_min)) continue;
+      if (etapa.risco_max != null && (p.score ?? 0) > Number(etapa.risco_max)) continue;
+      if (!cobJanelaOkSrv(etapa, cfg, agora)) continue;
+
+      const texto = cobTexto(etapa.tpl, p, f, dias);
+      try {
+        await entregarCobranca(e, {
+          fone, texto, faturaId: String(f.id), etapaId: etapa.etapa_id, etapaNome: etapa.nome,
+          ixcId: chave, nome: p.nome, valor: Number(f.valor), vencimento: f.data_vencimento,
+          anexarBoleto: etapa.anexar_boleto === true, anexarPix: etapa.anexar_pix === true,
+          canal: 'automatico', userId: null,
+        });
+        enviados.push({ cliente: p.nome, etapa: etapa.nome, trilha });
+        feitas.add(f.id + '|' + etapa.etapa_id);
+        ult[chave] = Date.now();
+        noMes[chave] = (noMes[chave] || 0) + 1;
+        restanteHoje--;
+        await pausa(intervalo);          // ritmo humano: rajada queima o número
+      } catch (err) {
+        console.error('[cobranca auto]', err.message);
+      }
+      break;                             // no máximo 1 cobrança por cliente por execução
+    }
+  }
+  return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20) };
+}
+
 // ============================================================================
 // CRON — agendamentos vencidos + limpeza de sessões
 // ============================================================================
@@ -1942,8 +2222,13 @@ async function tratarCron(e) {
     sessoes = await r.json();
   } catch { /* não crítico */ }
 
+  // cobrança automática: só age nas trilhas ligadas e dentro da janela
+  let auto = null;
+  try { auto = await cobrancaAutomatica(e); }
+  catch (err) { console.error('[cobranca auto]', err.message); auto = { erro: err.message }; }
+
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
-           pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes };
+           pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes, cobranca: auto };
 }
 
 // ============================================================================
@@ -2746,6 +3031,29 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, total: etapas.length });
       }
 
+      // MoviOn envia o retrato de risco calculado pela Inteligência Financeira
+      case 'cobranca.perfis.salvar': {
+        const lista = Array.isArray(body.perfis) ? body.perfis : null;
+        if (!lista) return res.status(400).json({ ok: false, error: 'perfis deve ser uma lista.' });
+        const agora = new Date().toISOString();
+        // lotes de 500: payload único com milhares de linhas estoura o limite
+        for (let i = 0; i < lista.length; i += 500) {
+          await sb(e, 'atend_cobranca_perfis?on_conflict=ixc_id', {
+            method: 'POST',
+            headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+            body: lista.slice(i, i + 500).map(p => ({
+              ixc_id: String(p.ixcId), nome: p.nome || null, fone: p.fone || null,
+              grupo: p.grupo || null, score: p.score ?? null,
+              prob_atraso: p.probAtraso ?? null, prob_recup: p.probRecup ?? null,
+              freq_atraso: p.freqAtraso ?? null, mediana_atraso: p.medianaAtraso ?? null,
+              seq_em_dia: p.seqEmDia ?? null, n_pagas: p.nPagas ?? null,
+              tendencia: p.tendencia || null, atualizado_em: agora,
+            })),
+          });
+        }
+        return res.status(200).json({ ok: true, total: lista.length });
+      }
+
       case 'cobranca.config.obter': {
         const cfg = await sbUm(e, 'atend_cobranca_config?id=eq.1&select=dados');
         const opt = await sb(e, 'atend_cobranca_optout?select=*&order=criado_em.desc&limit=500');
@@ -2799,136 +3107,34 @@ export default async function handler(req, res) {
         if (!fone || !texto || !faturaId || !etapaId) {
           return res.status(400).json({ ok: false, error: 'fone, texto, fatura_id e etapa_id são obrigatórios.' });
         }
-
-        // Trava de duplicidade no servidor: o MoviOn pode ser aberto em duas
-        // máquinas e a mesma linha da fila ser clicada duas vezes.
+        // Trava de duplicidade no servidor: o MoviOn pode estar aberto em duas
+        // máquinas e a mesma linha ser clicada ao mesmo tempo.
         const jaFoi = await sbUm(e,
           `atend_cobranca_envios?fatura_id=eq.${encodeURIComponent(faturaId)}` +
           `&etapa_id=eq.${encodeURIComponent(etapaId)}&status=eq.enviado&select=id,enviado_em`);
         if (jaFoi && !body.forcar) {
           return res.status(200).json({ ok: true, duplicado: true, enviado_em: jaFoi.enviado_em });
         }
-
-        const nome = String(body.cliente_nome || '').trim() || fone;
-        const ixcId = body.cliente_ixc_id ? String(body.cliente_ixc_id) : null;
-
-        // acha a conversa do cliente ou cria uma, para a cobrança entrar na
-        // mesma thread que o atendente enxerga
-        let c = await sbUm(e, `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=*&limit=1`);
-        if (!c) {
-          const nova = await sb(e, 'atend_conversas', {
-            method: 'POST',
-            headers: { Prefer: 'return=representation' },
-            body: {
-              contato_fone: fone, contato_nome: nome,
-              coluna: 'aguardando', setor: 'Financeiro',
-              bot_ativo: true, cliente_ixc_id: ixcId,
-              created_by: user.id,
-            },
+        try {
+          const r = await entregarCobranca(e, {
+            fone, texto, faturaId, etapaId, etapaNome: body.etapa_nome,
+            ixcId: body.cliente_ixc_id ? String(body.cliente_ixc_id) : null,
+            nome: String(body.cliente_nome || '').trim(),
+            valor: body.valor, vencimento: body.vencimento, canal: body.canal,
+            anexarBoleto: body.anexar_boleto === true, anexarPix: body.anexar_pix === true,
+            somenteRegistrar: body.somente_registrar === true, userId: user.id,
           });
-          c = Array.isArray(nova) ? nova[0] : nova;
+          return res.status(200).json({ ok: true, conversa_id: r.conversaId, anexos: r.anexos });
+        } catch (err) {
+          return res.status(200).json({ ok: false, error: String(err.message).slice(0, 250) });
         }
+      }
 
-        let env = null, erro = null;
-        // registro manual: o operador já mandou pelo wa.me, então só gravamos.
-        // Sem isto o cliente receberia a mesma cobrança duas vezes.
-        const somenteRegistrar = body.somente_registrar === true;
-        const extras = [];   // mensagens enviadas depois do texto principal
-        if (!somenteRegistrar) {
-          try { env = await waEnviar(e, fone, texto); }
-          catch (err) { erro = String(err.message).slice(0, 250); }
-
-          // Boleto e Pix vão em mensagens SEPARADAS: no celular o cliente copia
-          // o balão inteiro, então código colado a texto o app do banco recusa.
-          if (!erro && (body.anexar_boleto || body.anexar_pix) && /^\d+$/.test(faturaId)) {
-            let pdf = null, pix = null;
-            if (body.anexar_boleto) {
-              try {
-                const b = await ixc(e, 'get_boleto', {
-                  boletos: faturaId, juros: 'N', multa: 'N', atualiza_boleto: 'N',
-                  tipo_boleto: 'arquivo', base64: 'S',
-                }, 'listar');
-                pdf = acharBase64(b);
-              } catch (err) { console.error('[cobranca] boleto:', err.message); }
-            }
-            if (body.anexar_pix) {
-              try {
-                const g = await ixc(e, 'get_pix', { id_areceber: faturaId }, 'listar');
-                pix = acharPix(g);
-              } catch (err) { console.error('[cobranca] pix:', err.message); }
-            }
-            const pausa = () => new Promise(r => setTimeout(r, 700));
-            if (pdf) {
-              try {
-                await pausa();
-                // a legenda do PDF anuncia o Pix que vem logo abaixo, evitando
-                // uma quarta mensagem só para dizer "segue o código"
-                const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
-                const r1 = await waEnviarMidia(e, fone, {
-                  base64: pdf, tipo: 'document', mimetype: 'application/pdf',
-                  nomeArquivo: `fatura-${faturaId}.pdf`, legenda: leg,
-                });
-                extras.push({ texto: leg, tipo: 'documento', wa: idDaEvolution(r1) });
-              } catch (err) { console.error('[cobranca] envio pdf:', err.message); }
-            }
-            if (pix) {
-              try {
-                await pausa();
-                const r2 = await waEnviar(e, fone, pix);
-                extras.push({ texto: pix, tipo: 'texto', wa: idDaEvolution(r2) });
-              } catch (err) { console.error('[cobranca] envio pix:', err.message); }
-            }
-          }
-        }
-
-        if (!erro && !somenteRegistrar && c) {
-          await sb(e, 'atend_mensagens', {
-            method: 'POST', prefer: 'return=minimal',
-            body: {
-              conversa_id: c.id, direcao: 'out', conteudo: texto, autor_id: user.id,
-              wa_id: idDaEvolution(env), status: 'enviado',
-            },
-          });
-          // Não rouba atendimento em andamento: se um humano já está na
-          // conversa, só atualiza a prévia. Se estava resolvida ou nova, vai
-          // para "aguardando cliente" — cobrança não é fila de atendimento.
-          const patch = {
-            ultima_msg: 'Cobrança: ' + texto.slice(0, 160),
-            ultima_msg_em: new Date().toISOString(),
-            updated_by: user.id,
-          };
-          if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
-          if (!c.cliente_ixc_id && ixcId) patch.cliente_ixc_id = ixcId;
-          for (const x of extras) {
-            await sb(e, 'atend_mensagens', {
-              method: 'POST', prefer: 'return=minimal',
-              body: {
-                conversa_id: c.id, direcao: 'out', conteudo: x.texto, autor_id: user.id,
-                tipo: x.tipo, wa_id: x.wa, status: 'enviado',
-              },
-            });
-          }
-          await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
-        }
-
-        // registra sempre — inclusive falha, para o operador ver e repetir
-        await sb(e, 'atend_cobranca_envios', {
-          method: 'POST', prefer: 'return=minimal',
-          body: {
-            fatura_id: faturaId, etapa_id: etapaId,
-            etapa_nome: body.etapa_nome || null,
-            cliente_ixc_id: ixcId, cliente_nome: nome, contato_fone: fone,
-            conversa_id: c ? c.id : null, canal: body.canal || 'whatsapp',
-            valor: body.valor != null ? Number(body.valor) : null,
-            vencimento: body.vencimento || null,
-            texto, wa_id: env ? idDaEvolution(env) : null,
-            status: erro ? 'erro' : 'enviado', erro,
-            enviado_por: user.id,
-          },
-        });
-
-        if (erro) return res.status(200).json({ ok: false, error: erro });
-        return res.status(200).json({ ok: true, conversa_id: c ? c.id : null, anexos: extras.length });
+      // dispara a cobrança automática sob demanda (ou pelo cron)
+      case 'cobranca.auto.executar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const r = await cobrancaAutomatica(e);
+        return res.status(200).json(r);
       }
 
       // Migração única do que já existe em localStorage
