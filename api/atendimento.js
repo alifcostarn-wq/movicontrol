@@ -2738,6 +2738,8 @@ export default async function handler(req, res) {
             hora_inicio: x.hora_inicio || null, hora_fim: x.hora_fim || null,
             dias_semana: Array.isArray(x.dias_semana) && x.dias_semana.length ? x.dias_semana : null,
             observacao: x.observacao || null, ordem: i,
+            anexar_boleto: x.anexar_boleto === true, anexar_pix: x.anexar_pix === true,
+            trilha: ['faturamento','risco','recuperacao'].includes(x.trilha) ? x.trilha : 'recuperacao',
             updated_at: new Date().toISOString(), updated_by: user.id,
           })),
         });
@@ -2831,9 +2833,52 @@ export default async function handler(req, res) {
         // registro manual: o operador já mandou pelo wa.me, então só gravamos.
         // Sem isto o cliente receberia a mesma cobrança duas vezes.
         const somenteRegistrar = body.somente_registrar === true;
+        const extras = [];   // mensagens enviadas depois do texto principal
         if (!somenteRegistrar) {
           try { env = await waEnviar(e, fone, texto); }
           catch (err) { erro = String(err.message).slice(0, 250); }
+
+          // Boleto e Pix vão em mensagens SEPARADAS: no celular o cliente copia
+          // o balão inteiro, então código colado a texto o app do banco recusa.
+          if (!erro && (body.anexar_boleto || body.anexar_pix) && /^\d+$/.test(faturaId)) {
+            let pdf = null, pix = null;
+            if (body.anexar_boleto) {
+              try {
+                const b = await ixc(e, 'get_boleto', {
+                  boletos: faturaId, juros: 'N', multa: 'N', atualiza_boleto: 'N',
+                  tipo_boleto: 'arquivo', base64: 'S',
+                }, 'listar');
+                pdf = acharBase64(b);
+              } catch (err) { console.error('[cobranca] boleto:', err.message); }
+            }
+            if (body.anexar_pix) {
+              try {
+                const g = await ixc(e, 'get_pix', { id_areceber: faturaId }, 'listar');
+                pix = acharPix(g);
+              } catch (err) { console.error('[cobranca] pix:', err.message); }
+            }
+            const pausa = () => new Promise(r => setTimeout(r, 700));
+            if (pdf) {
+              try {
+                await pausa();
+                // a legenda do PDF anuncia o Pix que vem logo abaixo, evitando
+                // uma quarta mensagem só para dizer "segue o código"
+                const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+                const r1 = await waEnviarMidia(e, fone, {
+                  base64: pdf, tipo: 'document', mimetype: 'application/pdf',
+                  nomeArquivo: `fatura-${faturaId}.pdf`, legenda: leg,
+                });
+                extras.push({ texto: leg, tipo: 'documento', wa: idDaEvolution(r1) });
+              } catch (err) { console.error('[cobranca] envio pdf:', err.message); }
+            }
+            if (pix) {
+              try {
+                await pausa();
+                const r2 = await waEnviar(e, fone, pix);
+                extras.push({ texto: pix, tipo: 'texto', wa: idDaEvolution(r2) });
+              } catch (err) { console.error('[cobranca] envio pix:', err.message); }
+            }
+          }
         }
 
         if (!erro && !somenteRegistrar && c) {
@@ -2854,6 +2899,15 @@ export default async function handler(req, res) {
           };
           if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
           if (!c.cliente_ixc_id && ixcId) patch.cliente_ixc_id = ixcId;
+          for (const x of extras) {
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: {
+                conversa_id: c.id, direcao: 'out', conteudo: x.texto, autor_id: user.id,
+                tipo: x.tipo, wa_id: x.wa, status: 'enviado',
+              },
+            });
+          }
           await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
         }
 
@@ -2874,7 +2928,7 @@ export default async function handler(req, res) {
         });
 
         if (erro) return res.status(200).json({ ok: false, error: erro });
-        return res.status(200).json({ ok: true, conversa_id: c ? c.id : null });
+        return res.status(200).json({ ok: true, conversa_id: c ? c.id : null, anexos: extras.length });
       }
 
       // Migração única do que já existe em localStorage
