@@ -2087,8 +2087,21 @@ async function cobrancaAutomatica(e) {
       if (restanteHoje <= 0) break;
       const dias = cobDiasEntre(f.data_vencimento, hojeISO);
       if (dias === null) continue;
-      const trilha = dias > 0 ? 'recuperacao' : dias === 0 ? 'faturamento'
-                   : (cobEmRiscoSrv(p, cfg) ? 'risco' : 'faturamento');
+      // mesmas regras da tela: cancelado fora, negativado em trilha própria
+      if (p.grupo === 'cancelado') continue;
+      let trilha;
+      if (p.grupo === 'negativado') trilha = 'negativacao';
+      else if (dias > 0) {
+        const vencTot = abertas.filter(x => (cobDiasEntre(x.data_vencimento, hojeISO) || 0) > 0)
+          .reduce((acc, x) => acc + Number(x.valor || 0), 0);
+        const nCob = envs.filter(x => String(x.cliente_ixc_id) === chave).length;
+        const eleg = dias >= Number(cfg.neg_dias_min ?? 60)
+          && vencTot >= Number(cfg.neg_valor_min ?? 50)
+          && nCob >= Number(cfg.neg_min_cobrancas ?? 3);
+        trilha = eleg ? 'negativacao' : 'recuperacao';
+      }
+      else if (dias === 0) trilha = 'faturamento';
+      else trilha = cobEmRiscoSrv(p, cfg) ? 'risco' : 'faturamento';
       if (!trilhas.includes(trilha)) continue;
 
       const diasEf = dias - (trilha === 'recuperacao' ? cobFolgaSrv(p, cfg) : 0);
@@ -3052,6 +3065,54 @@ export default async function handler(req, res) {
           });
         }
         return res.status(200).json({ ok: true, total: lista.length });
+      }
+
+      case 'cobranca.negativacao.listar': {
+        const itens = await sb(e, 'atend_cobranca_negativacao?select=*&order=criado_em.desc&limit=500');
+        return res.status(200).json({ ok: true, itens: itens || [] });
+      }
+
+      case 'cobranca.negativacao.salvar': {
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        const status = String(body.status || 'elegivel');
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        if (!['elegivel','avisado','negativado','baixado','descartado'].includes(status)) {
+          return res.status(400).json({ ok: false, error: 'status inválido.' });
+        }
+        const agora = new Date().toISOString();
+        const existente = await sbUm(e,
+          `atend_cobranca_negativacao?cliente_ixc_id=eq.${encodeURIComponent(ixcId)}` +
+          `&status=in.(elegivel,avisado,negativado)&select=id`);
+        const corpo = {
+          cliente_ixc_id: ixcId, cliente_nome: body.cliente_nome || null,
+          contato_fone: body.fone ? normalizarFone(body.fone) : null,
+          valor_total: body.valor != null ? Number(body.valor) : null,
+          dias_atraso: body.dias != null ? Number(body.dias) : null,
+          faturas: Array.isArray(body.faturas) ? body.faturas.map(String) : null,
+          status, orgao: body.orgao || null, observacao: body.observacao || null,
+          fatura_geradora: body.fatura_geradora || null,
+          venc_geradora: body.venc_geradora || null,
+          valor_geradora: body.valor_geradora != null ? Number(body.valor_geradora) : null,
+          em_fidelidade: body.em_fidelidade === true,
+          multa_estimada: body.multa_estimada != null ? Number(body.multa_estimada) : null,
+          pago_em: body.pago_em || null,
+          atualizado_em: agora,
+        };
+        if (body.carta) corpo.carta_gerada_em = agora;
+        // carimba a data da etapa correspondente — é a trilha de auditoria que
+        // prova que houve aviso antes da inclusão no órgão
+        if (status === 'avisado')    corpo.avisado_em = agora;
+        if (status === 'negativado') corpo.negativado_em = agora;
+        if (status === 'baixado')    corpo.baixado_em = agora;
+
+        if (existente) {
+          await sb(e, `atend_cobranca_negativacao?id=eq.${existente.id}`,
+            { method: 'PATCH', prefer: 'return=minimal', body: corpo });
+        } else {
+          await sb(e, 'atend_cobranca_negativacao',
+            { method: 'POST', prefer: 'return=minimal', body: { ...corpo, criado_por: user.id } });
+        }
+        return res.status(200).json({ ok: true });
       }
 
       case 'cobranca.config.obter': {
