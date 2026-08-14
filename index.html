@@ -4271,6 +4271,12 @@ textarea.cp-form-input{resize:vertical}
       </div>
     </div>
 
+
+    <!-- ===== DETALHES DO TÍTULO (v22) ===== -->
+    <div class="ctxd-overlay" id="ctxd-overlay" onclick="if(event.target===this)ctxFecharDetalhe()">
+      <div class="ctxd-modal" id="ctxd-modal"></div>
+    </div>
+
     <!-- MODAL QUITAR CONTA -->
     <div class="modal-quitar-overlay" id="modal-quitar" onclick="if(event.target===this)fecharModalQuitar()">
       <div class="modal-quitar">
@@ -4918,7 +4924,7 @@ textarea.cp-form-input{resize:vertical}
 .ctx-sec-title{font-family:inherit;font-size:11.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin:0 0 9px;display:flex;align-items:center;gap:9px}
 .ctx-sec-title::after{content:'';flex:1;height:1px;background:var(--border)}
 /* barra de ações */
-.ctx-acaobar{position:sticky;top:0;z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:12px 12px 0 0;padding:9px 14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;box-shadow:0 3px 14px -8px rgba(0,0,0,.22)}
+.ctx-acaobar{position:sticky;top:0;z-index:45;background:var(--surface);border:1px solid var(--border);border-radius:12px 12px 0 0;padding:9px 14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;box-shadow:0 3px 14px -8px rgba(0,0,0,.22)}
 .ctx-acaobar.ativa{background:var(--accent2);border-color:var(--accent3)}
 .ctx-chk{width:16px;height:16px;border:1.6px solid var(--text3);border-radius:4px;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:var(--surface);transition:.12s;vertical-align:middle}
 .ctx-chk:hover{border-color:var(--accent)}
@@ -4945,9 +4951,14 @@ textarea.cp-form-input{resize:vertical}
 .ctx-dica{font-size:10.5px;color:var(--text3);flex-basis:100%}
 /* grade em colunas */
 .ctx-grade{background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 12px 12px;overflow:hidden}
-.ctx-scroll{overflow-x:auto}
+.ctx-scroll{overflow-x:auto;overflow-y:auto;max-height:60vh;overscroll-behavior:contain}
+.ctx-scroll::-webkit-scrollbar{width:10px;height:10px}
+.ctx-scroll::-webkit-scrollbar-track{background:var(--surface2)}
+.ctx-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
+.ctx-scroll::-webkit-scrollbar-thumb:hover{background:var(--text3)}
 table.ctx-table{border-collapse:separate;border-spacing:0;width:100%;min-width:100%}
-.ctx-table th{position:sticky;top:50px;z-index:20;background:var(--surface2);text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:9px 10px;white-space:nowrap;border-bottom:1px solid var(--border);user-select:none}
+.ctx-table th{position:sticky;top:0;z-index:20;background:var(--surface2);text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:9px 10px;white-space:nowrap;border-bottom:1px solid var(--border);user-select:none;box-shadow:inset 0 -1px 0 var(--border),0 2px 6px -4px rgba(0,0,0,.25)}
+.ctx-table thead{position:relative;z-index:20}
 .ctx-table th.sortable{cursor:pointer}
 .ctx-table th.sortable:hover{color:var(--text)}
 .ctx-table th .ctx-ar{opacity:.3;font-size:8px;margin-left:2px}
@@ -4965,7 +4976,7 @@ table.ctx-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1
 .ctx-table td.ctx-txt{color:var(--text2);max-width:220px;overflow:hidden;text-overflow:ellipsis;font-size:11.5px}
 .ctx-table td.ctx-dim{color:var(--text3);font-size:11.5px}
 .ctx-table th.ctx-fix,.ctx-table td.ctx-fix{position:sticky;left:0;z-index:15;width:36px;padding-left:12px}
-.ctx-table th.ctx-fix{z-index:25}
+.ctx-table th.ctx-fix{z-index:30}
 .ctx-table td.ctx-fix{background:var(--surface)}
 .ctx-table tbody tr:hover td.ctx-fix{background:var(--surface2)}
 .ctx-table tbody tr.ctx-marcado td.ctx-fix{background:var(--accent2)}
@@ -4993,6 +5004,47 @@ table.ctx-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1
 .ctx-analise-body{display:none;padding:0 16px 16px}
 .ctx-analise.open .ctx-analise-body{display:block}
 .ctx-atraso-d{font-size:9.5px;color:var(--danger);font-weight:700}
+/* ===== DETALHES DO TÍTULO (v22) ===== */
+.ctx-id-link{cursor:pointer;font-weight:600;color:var(--info);text-decoration:underline;text-underline-offset:2px}
+.ctx-id-link:hover{filter:brightness(1.2)}
+.ctxd-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:none;align-items:center;justify-content:center;padding:20px}
+.ctxd-overlay.open{display:flex}
+.ctxd-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(860px,100%);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,.5)}
+.ctxd-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px}
+.ctxd-head .ctxd-kicker{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)}
+.ctxd-head .ctxd-title{font-size:19px;font-weight:700;margin-top:2px}
+.ctxd-head .ctxd-sub{font-size:12px;color:var(--text2);margin-top:3px}
+.ctxd-x{margin-left:auto;width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;font-size:15px;line-height:1;flex-shrink:0}
+.ctxd-x:hover{border-color:var(--danger);color:var(--danger)}
+.ctxd-body{padding:18px 22px;overflow-y:auto;flex:1}
+.ctxd-valores{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+.ctxd-vbox{background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:12px 14px}
+.ctxd-vbox .l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)}
+.ctxd-vbox .v{font-family:'DM Mono',monospace;font-size:17px;font-weight:700;margin-top:4px}
+.ctxd-sec{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin:18px 0 10px;display:flex;align-items:center;gap:9px}
+.ctxd-sec::after{content:'';flex:1;height:1px;background:var(--border)}
+.ctxd-sec:first-child{margin-top:0}
+.ctxd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:2px 20px}
+.ctxd-linha{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px;align-items:baseline}
+.ctxd-linha .k{color:var(--text3);min-width:118px;flex-shrink:0}
+.ctxd-linha .v{font-weight:500;word-break:break-word}
+.ctxd-linha .v.mono{font-family:'DM Mono',monospace}
+.ctxd-tl{border-left:2px solid var(--border);margin-left:6px;padding-left:16px}
+.ctxd-tl-item{position:relative;padding:8px 0;font-size:12.5px}
+.ctxd-tl-item::before{content:'';position:absolute;left:-22px;top:13px;width:9px;height:9px;border-radius:50%;background:var(--border);border:2px solid var(--surface)}
+.ctxd-tl-item.ok::before{background:var(--accent)}
+.ctxd-tl-item.warn::before{background:var(--warn)}
+.ctxd-tl-item.bad::before{background:var(--danger)}
+.ctxd-tl-item .d{font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)}
+.ctxd-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--surface2);border-radius:0 0 16px 16px}
+.ctxd-foot .esq{font-size:11.5px;color:var(--text3)}
+.ctxd-foot .dir{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.ctxd-irmaos{display:flex;flex-direction:column;gap:4px}
+.ctxd-irmao{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;background:var(--surface2)}
+.ctxd-irmao:hover{border-color:var(--accent)}
+.ctxd-irmao.atual{border-color:var(--accent);background:var(--accent2);font-weight:600}
+.ctxd-irmao .n{font-family:'DM Mono',monospace;color:var(--text3);min-width:42px}
+.ctxd-irmao .val{margin-left:auto;font-family:'DM Mono',monospace;font-weight:600}
 /* ===== MODAL LANÇAMENTO V2 ===== */
 .lanc-hdr{padding:20px 26px;background:linear-gradient(135deg, var(--accent2), var(--surface));border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background .25s}
 .lanc-hdr.pag-hdr{background:linear-gradient(135deg, var(--danger-bg), var(--surface))}
@@ -9938,7 +9990,9 @@ function ctxCols(lado){
   const h = hoje();
   return [
     {id:'id', lbl:'ID', sort:'id', cls:'ctx-mono ctx-dim', on:true,
-     get:l=> l.id!=null ? l.id : '—'},
+     get:l=> l.id!=null
+        ? `<span class="ctx-id-link" title="Ver detalhes do título" onclick="event.stopPropagation();ctxAbrirDetalhe(${l._idx},${l.id})">${l.id}</span>`
+        : '—'},
     {id:'status', lbl:'Status', sort:'status', cls:'', on:true,
      get:l=> _ctBadge(l,h)
         + (l.parcGroupId?` <span style="font-size:9px;color:var(--text3)">📑${l.parcNum}/${l.parcTotal}</span>`:'')
@@ -10027,7 +10081,7 @@ function ctxCapacidades(lado){
   const abertos=sel.filter(s=>s.status===stAberto).length;
   const efet=sel.filter(s=>s.status===stFeito && !s.estornoDe).length;
   return {n, total:sel.reduce((s,x)=>s+x.valor,0), sel,
-    quitar:n===1&&abertos===1, editar:n===1,
+    detalhes:n===1, quitar:n===1&&abertos===1, editar:n===1,
     estornar:n>=1&&efet===n, cancelar:n>=1&&abertos===n, excluir:n>=1};
 }
 function ctxMotivo(lado,acao){
@@ -10037,6 +10091,7 @@ function ctxMotivo(lado,acao){
   if(K.n===0) return 'Selecione ao menos um título';
   if(acao==='quitar')   return K.n>1?'A baixa abre um modal por título — selecione apenas um'
                                    :`Só títulos em aberto (${stAberto}) podem ser baixados`;
+  if(acao==='detalhes') return 'Selecione apenas um título para ver os detalhes';
   if(acao==='editar')   return 'A edição abre um modal — selecione apenas um título';
   if(acao==='estornar') return `Só efetivados (${stFeito}) e ainda não estornados podem ser estornados`;
   if(acao==='cancelar') return 'Só títulos em aberto podem ser cancelados — para efetivados use Estornar';
@@ -10046,6 +10101,7 @@ async function ctxAcao(acao){
   const lado=_ctActiveTab, K=ctxCapacidades(lado);
   if(!K[acao]){ showToast(ctxMotivo(lado,acao),true); return; }
   const sel=K.sel;
+  if(acao==='detalhes'){ ctxAbrirDetalhe(sel[0].idx, sel[0].id); return; }
   if(acao==='quitar'){
     if(lado==='pagar') abrirModalQuitar(sel[0].idx, sel[0].id);
     else               abrirModalReceber(sel[0].idx, sel[0].id);
@@ -10072,6 +10128,7 @@ const CTX_IC={
   ban:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>',
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>',
+  eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
 function ctxRenderAcaobar(lado){
   const el=document.getElementById('ctx-acaobar');
@@ -10088,10 +10145,11 @@ function ctxRenderAcaobar(lado){
      `<span class="ctx-chk${todos?' on':(alguns?' meio':'')}" onclick="ctxToggleTodos()" title="Selecionar tudo nesta página"></span>`
     +`<div class="ctx-selinfo">`
     + (K.n ? `<span class="n">${K.n} selecionado${K.n!==1?'s':''}</span><span class="t">${brl(K.total,true)}</span>`
-           : `<span class="vazio">Nenhum título selecionado</span><span class="t" style="color:var(--text3)">clique numa linha</span>`)
+           : `<span class="vazio">Nenhum título selecionado</span><span class="t" style="color:var(--text3)">clique p/ selecionar · 2 cliques p/ detalhes</span>`)
     +`</div>`
     + (K.n?`<button class="ctx-limpar-sel" onclick="ctxLimparSel()">✕ limpar</button>`:'')
     +`<div class="ctx-acoes">`
+    + bt('detalhes','Detalhes',CTX_IC.eye,K.detalhes,'')
     + bt('quitar',rotAcao,CTX_IC.check,K.quitar,'principal')
     + bt('estornar','Estornar',CTX_IC.undo,K.estornar,'')
     + `<span class="ctx-acao-sep"></span>`
@@ -10109,6 +10167,169 @@ function ctxRenderMenuCols(){
     + ctxCols(_ctActiveTab).map(c=>
         `<label><input type="checkbox" ${ctxColsOn[c.id]?'checked':''} onchange="ctxToggleCol('${c.id}')"> ${c.lbl}</label>`).join('');
 }
+/* ============================================================
+   DETALHES DO TÍTULO (v22)
+   Só LEITURA + atalhos para as ações que já existem.
+   Nenhum cálculo financeiro novo: todos os valores vêm dos
+   campos gravados no próprio lançamento.
+   ============================================================ */
+let _ctxdIdx=null, _ctxdId=null;
+
+function ctxEsc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function ctxFecharDetalhe(){
+  const o=document.getElementById('ctxd-overlay');
+  if(o) o.classList.remove('open');
+  _ctxdIdx=null; _ctxdId=null;
+}
+function ctxAbrirDetalhe(idx, id=null){
+  const lc=gd('sf_lancamentos');
+  // usa o mesmo resolvedor das ações, p/ não pegar índice trocado pelo Realtime
+  const i=(typeof _resolverLancIdx==='function') ? _resolverLancIdx(lc, idx, id) : idx;
+  const l=lc[i];
+  if(!l){ showToast('Título não encontrado.',true); return; }
+  _ctxdIdx=i; _ctxdId=(l.id==null?null:l.id);
+
+  const h=hoje();
+  const ehPagar = !!(l.aPagar||l.pago) || l.status==='A Pagar' || l.status==='Pago';
+  const lado = ehPagar?'pagar':'receber';
+  const cor  = ehPagar?'var(--danger)':'var(--accent)';
+  const stAberto = ehPagar?'A Pagar':'A Receber';
+  const stFeito  = ehPagar?'Pago':'Recebido';
+
+  const vTot = ctxVTitulo(l,lado), vAb = ctxVAberto(l,lado), vBx = ctxVBaixado(l,lado);
+  const atrasado = l.status===stAberto && (l.data||'')<h && !l.cancelado;
+  const dAtr = atrasado ? diasAtraso(l.data) : 0;
+
+  const linha=(k,v,mono)=> v==null||v===''||v===undefined ? '' :
+     `<div class="ctxd-linha"><span class="k">${k}</span><span class="v${mono?' mono':''}">${v}</span></div>`;
+
+  // ---- Identificação ----
+  const secId = [
+    linha('ID', l.id!=null?l.id:'—', true),
+    linha('Tipo', ctxEsc(l.tipo||(ehPagar?'Pagamento':'Recebimento'))),
+    linha(ehPagar?'Fornecedor':'Cliente', ctxEsc((ehPagar?l.fornecedor:l.cliente)||'—')),
+    linha('Plano de contas', ctxEsc(l.plano||'—')),
+    linha('Conta', ctxEsc(l.conta||'—')),
+    linha('Cheque', ctxEsc(l.cheque||'')),
+    linha('Linha origem', l.lin!=null?l.lin:'', true),
+  ].join('');
+
+  // ---- Datas ----
+  const secDatas = [
+    linha('Emissão', fmtData(l.dataOriginal||l.data), true),
+    linha('Vencimento', `${fmtData(l.data)}${atrasado?` <span class="ctx-atraso-d">(${dAtr}d de atraso)</span>`:''}`, true),
+    linha('Data da baixa', l.dataEfetivacao?fmtData(l.dataEfetivacao):'— (em aberto)', true),
+  ].join('');
+
+  // ---- Parcelamento / recorrência ----
+  let secGrupo='';
+  if(l.parcGroupId||l.recGroupId){
+    const irmaos=lc.map((x,ix)=>({x,ix}))
+      .filter(o=> (l.parcGroupId&&o.x.parcGroupId===l.parcGroupId) || (l.recGroupId&&o.x.recGroupId===l.recGroupId))
+      .sort((a,b)=>(a.x.parcNum||a.x.recNum||0)-(b.x.parcNum||b.x.recNum||0));
+    const tipoG=l.parcGroupId?'Parcelamento 📑':'Recorrência 🔁';
+    secGrupo = `<div class="ctxd-sec">${tipoG} — ${irmaos.length} título${irmaos.length!==1?'s':''}</div>`
+      + `<div class="ctxd-irmaos">`
+      + irmaos.map(o=>{
+          const n=o.x.parcNum||o.x.recNum, t=o.x.parcTotal||o.x.recTotal;
+          const vv=ctxVTitulo(o.x,lado);
+          const atual=o.ix===i;
+          return `<div class="ctxd-irmao${atual?' atual':''}" onclick="ctxAbrirDetalhe(${o.ix},${o.x.id??null})">`
+            +`<span class="n">${n}/${t}</span>`
+            +`<span>${fmtData(o.x.data)}</span>`
+            +`${_ctBadge(o.x,h)}`
+            +`<span class="val">${brl(vv,true)}</span></div>`;
+        }).join('')
+      + `</div>`;
+  }
+
+  // ---- Linha do tempo (só fatos gravados no registro) ----
+  const eventos=[];
+  eventos.push({d:l.dataOriginal||l.data, t:'Título emitido', c:''});
+  if(l.parcial && l.jaQuitado)
+    eventos.push({d:l.dataEfetivacao||'', t:`Baixa parcial de ${brl(l.jaQuitado,true)}`, c:'warn'});
+  if(l.status===stFeito && l.dataEfetivacao)
+    eventos.push({d:l.dataEfetivacao, t:`${ehPagar?'Pago':'Recebido'} — ${brl(vBx,true)}`, c:'ok'});
+  if(l.estornado)
+    eventos.push({d:l.estornadoEm||'', t:`Estornado${l.estornadoPor?' por '+ctxEsc(l.estornadoPor):''}`, c:'bad'});
+  if(l.estornoDe!=null)
+    eventos.push({d:'', t:`Este lançamento é o estorno do título #${l.estornoDe}`, c:'bad'});
+  if(l.parcialDe!=null)
+    eventos.push({d:'', t:`Saldo remanescente do título #${l.parcialDe}`, c:'warn'});
+  if(l.cancelado||l.status==='Cancelado')
+    eventos.push({d:l.canceladoEm||'', t:`Cancelado${l.canceladoPor?' por '+ctxEsc(l.canceladoPor):''}`, c:'bad'});
+  if(atrasado)
+    eventos.push({d:l.data, t:`Venceu há ${dAtr} dia${dAtr!==1?'s':''}`, c:'bad'});
+
+  const secTL = `<div class="ctxd-sec">Linha do tempo</div><div class="ctxd-tl">`
+    + eventos.map(e=>`<div class="ctxd-tl-item ${e.c}">${e.d?`<div class="d">${fmtData(e.d)}</div>`:''}<div>${e.t}</div></div>`).join('')
+    + `</div>`;
+
+  // ---- Ações disponíveis (mesmas regras da barra) ----
+  const podeQuitar = l.status===stAberto && !l.cancelado;
+  const podeEstornar = l.status===stFeito && !l.estornoDe;
+  const acoes = [
+    podeQuitar ? `<button class="ctx-acao principal" onclick="ctxDetAcao('${ehPagar?'quitar':'receber'}')">${CTX_IC.check}${ehPagar?'Quitar':'Receber'}</button>` : '',
+    podeEstornar ? `<button class="ctx-acao" onclick="ctxDetAcao('estornar')">${CTX_IC.undo}Estornar</button>` : '',
+    podeQuitar ? `<button class="ctx-acao" onclick="ctxDetAcao('cancelar')">${CTX_IC.ban}Cancelar</button>` : '',
+    `<button class="ctx-acao" onclick="ctxDetAcao('editar')">${CTX_IC.edit}Editar</button>`,
+    `<button class="ctx-acao perigo" onclick="ctxDetAcao('excluir')">${CTX_IC.trash}Excluir</button>`,
+  ].filter(Boolean).join('');
+
+  const nome=(ehPagar?l.fornecedor:l.cliente)||'—';
+  document.getElementById('ctxd-modal').innerHTML = `
+    <div class="ctxd-head">
+      <div>
+        <div class="ctxd-kicker">${ehPagar?'Conta a pagar':'Conta a receber'}${l.id!=null?' · #'+l.id:''}</div>
+        <div class="ctxd-title">${ctxEsc(nome)}</div>
+        <div class="ctxd-sub">${_ctBadge(l,h)} ${ctxEsc(l.historico||'')}</div>
+      </div>
+      <button class="ctxd-x" onclick="ctxFecharDetalhe()" title="Fechar (Esc)">✕</button>
+    </div>
+    <div class="ctxd-body">
+      <div class="ctxd-valores">
+        <div class="ctxd-vbox"><div class="l">Valor do título</div><div class="v">${brl(vTot,true)}</div></div>
+        <div class="ctxd-vbox"><div class="l">Em aberto</div><div class="v" style="color:${vAb?cor:'var(--text3)'}">${brl(vAb,true)}</div></div>
+        <div class="ctxd-vbox"><div class="l">Já baixado</div><div class="v" style="color:${vBx?'var(--accent)':'var(--text3)'}">${brl(vBx,true)}</div></div>
+        ${l.valorLiquido?`<div class="ctxd-vbox"><div class="l">Valor líquido</div><div class="v">${brl(l.valorLiquido,true)}</div></div>`:''}
+      </div>
+      <div class="ctxd-sec">Identificação</div>
+      <div class="ctxd-grid">${secId}</div>
+      <div class="ctxd-sec">Datas</div>
+      <div class="ctxd-grid">${secDatas}</div>
+      ${l.historico?`<div class="ctxd-sec">Histórico</div><div style="font-size:12.5px;line-height:1.6">${ctxEsc(l.historico)}</div>`:''}
+      ${secGrupo}
+      ${secTL}
+    </div>
+    <div class="ctxd-foot">
+      <span class="esq">Somente leitura — use os botões para agir sobre o título</span>
+      <div class="dir">${acoes}</div>
+    </div>`;
+  document.getElementById('ctxd-overlay').classList.add('open');
+}
+
+/* Dispara a ação a partir da tela de detalhes, reusando as MESMAS funções */
+function ctxDetAcao(acao){
+  const idx=_ctxdIdx, id=_ctxdId;
+  if(idx==null) return;
+  ctxFecharDetalhe();
+  if(acao==='quitar')        abrirModalQuitar(idx,id);
+  else if(acao==='receber')  abrirModalReceber(idx,id);
+  else if(acao==='editar')   abrirModalLancamento(null,idx);
+  else if(acao==='estornar') estornarLancamento(idx,id);
+  else if(acao==='cancelar') cancelarLancamento(idx,id);
+  else if(acao==='excluir')  deletarLanc(idx,id);
+}
+
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    const o=document.getElementById('ctxd-overlay');
+    if(o&&o.classList.contains('open')) ctxFecharDetalhe();
+  }
+});
+
 /* Ordenação da grade — reaproveita cpSort/crSort já existentes */
 function ctxOrdenar(lado,col){
   const S = lado==='pagar' ? cpSort : crSort;
@@ -10180,7 +10401,7 @@ function ctxRenderGrade(lado, lista, pagAtual, porPag){
     const atr=(l.status===stAberto)&&(l.data||'')<h&&!l.cancelado;
     const canc=(l.cancelado||l.status==='Cancelado')?' ct-row-cancelado':'';
     const marc=ctxSel[lado][k]?' ctx-marcado':'';
-    return `<tr class="${atr?'ct-row-atrasado':''}${canc}${marc}" onclick="ctxToggleItem(event,'${k}')">`
+    return `<tr class="${atr?'ct-row-atrasado':''}${canc}${marc}" onclick="ctxToggleItem(event,'${k}')" ondblclick="ctxAbrirDetalhe(${l._idx},${l.id??null})" title="Clique para selecionar · duplo clique para ver detalhes">`
       + `<td class="ctx-fix"><span class="ctx-chk${ctxSel[lado][k]?' on':''}"></span></td>`
       + cols.map(c=>`<td class="${c.cls}">${c.get(l)}</td>`).join('')
       + `</tr>`;
