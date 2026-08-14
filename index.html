@@ -2204,6 +2204,8 @@ textarea.cp-form-input{resize:vertical}
   box-shadow:inset 3px 0 0 var(--accent);
 }
 #page-clientes .t tbody td{vertical-align:middle}
+.cli-nome-link{cursor:pointer;transition:color .12s}
+.cli-nome-link:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 #page-clientes .action-btns{opacity:.45;transition:opacity .12s ease}
 #page-clientes .t tbody tr:hover .action-btns{opacity:1}
 #page-clientes .search-wrap input:focus{
@@ -4035,37 +4037,27 @@ textarea.cp-form-input{resize:vertical}
     <!-- ====== CONTAS ====== -->
     <div class="page" id="page-contas">
 
-      <!-- KPI CARDS -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px" id="ct-kpis">
-        <div class="ct-kpi-card ct-kpi-green">
-          <div class="ct-kpi-icon">↓</div>
-          <div class="ct-kpi-body"><span class="ct-kpi-label">A Receber</span><span class="ct-kpi-val" id="kpi-a-receber">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-a-receber-qtd">0 títulos</span></div>
+      <!-- ===== SWITCH DE PÁGINA: A PAGAR | A RECEBER ===== -->
+      <div class="ctx-switch-bar">
+        <div class="ctx-switch">
+          <button id="ctx-btn-pagar" class="act" onclick="ctSwitchTab('pagar')">
+            <span class="ctx-ico">↑</span> Contas a Pagar
+            <span class="ctx-qt" id="ct-tab-badge-pagar">0</span>
+          </button>
+          <button id="ctx-btn-receber" onclick="ctSwitchTab('receber')">
+            <span class="ctx-ico">↓</span> Contas a Receber
+            <span class="ctx-qt" id="ct-tab-badge-receber">0</span>
+          </button>
         </div>
-        <div class="ct-kpi-card ct-kpi-red">
-          <div class="ct-kpi-icon">↑</div>
-          <div class="ct-kpi-body"><span class="ct-kpi-label">A Pagar</span><span class="ct-kpi-val" id="kpi-a-pagar">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-a-pagar-qtd">0 títulos</span></div>
-        </div>
-        <div class="ct-kpi-card ct-kpi-blue">
-          <div class="ct-kpi-icon">⇄</div>
-          <div class="ct-kpi-body"><span class="ct-kpi-label">Saldo Previsto</span><span class="ct-kpi-val" id="kpi-saldo-prev">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-saldo-prev-sub">receber − pagar</span></div>
-        </div>
-        <div class="ct-kpi-card ct-kpi-orange">
-          <div class="ct-kpi-icon">⚠</div>
-          <div class="ct-kpi-body"><span class="ct-kpi-label">Atrasados</span><span class="ct-kpi-val" id="kpi-atrasados">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-atrasados-qtd">0 títulos</span></div>
-        </div>
-        <div class="ct-kpi-card ct-kpi-teal">
-          <div class="ct-kpi-icon">✓</div>
-          <div class="ct-kpi-body"><span class="ct-kpi-label">Recebido</span><span class="ct-kpi-val" id="kpi-recebido">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-recebido-qtd">no período</span></div>
-        </div>
-        <div class="ct-kpi-card ct-kpi-purple">
-          <div class="ct-kpi-icon">✓</div>
-          <div class="ct-kpi-body"><span class="ct-kpi-label">Pago</span><span class="ct-kpi-val" id="kpi-pago">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-pago-qtd">no período</span></div>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn" onclick="ctxExportarCSV()">↓ CSV</button>
+          <button class="btn btn-primary" onclick="abrirModalLancamento(_ctActiveTab)">+ Lançamento</button>
         </div>
       </div>
 
-      <!-- FILTROS PERÍODO -->
-      <div class="filtros-periodo" style="margin-bottom:14px">
-        <span class="filtro-label">Período:</span>
+      <!-- ===== FILTROS DE PERÍODO (afetam os indicadores) — IDs preservados ===== -->
+      <div class="ct-periodo-bar">
+        <span class="ct-periodo-lbl">Período:</span>
         <button class="periodo-btn act" id="cpb-todos" onclick="setContasPeriodo('todos')">Todos</button>
         <button class="periodo-btn" id="cpb-hoje" onclick="setContasPeriodo('hoje')">Hoje</button>
         <button class="periodo-btn" id="cpb-semana" onclick="setContasPeriodo('semana')">Esta Semana</button>
@@ -4076,104 +4068,127 @@ textarea.cp-form-input{resize:vertical}
         <input type="date" id="c-fate" onchange="setContasPeriodo('custom')" title="Até">
       </div>
 
-      <!-- PROGRESSO DE RECEBIMENTO / PAGAMENTO (círculos) -->
-      <div class="ct-prog-card">
-        <div class="ct-prog-block">
-          <svg width="128" height="128" viewBox="0 0 128 128" style="flex-shrink:0">
-            <circle cx="64" cy="64" r="52" fill="none" stroke="var(--accent2)" stroke-width="14"/>
-            <circle id="prog-rec-arc" cx="64" cy="64" r="52" fill="none" stroke="var(--accent)" stroke-width="14"
-              stroke-dasharray="0 327" stroke-linecap="round" transform="rotate(-90 64 64)" style="transition:stroke-dasharray .5s"/>
-            <text id="prog-rec-pct" x="64" y="60" text-anchor="middle" font-size="22" font-weight="700" fill="var(--text)" font-family="'DM Mono',monospace">0%</text>
-            <text x="64" y="76" text-anchor="middle" font-size="9" fill="var(--text3)">recebido</text>
-          </svg>
-          <div>
-            <div class="ct-prog-label">Progresso de Recebimento</div>
-            <div class="ct-prog-sub"><span id="prog-rec-feito" style="color:var(--accent);font-weight:700;font-family:'DM Mono',monospace">R$ 0,00</span> de <span id="prog-rec-total">R$ 0,00</span></div>
-            <div class="ct-prog-qtd"><span id="prog-rec-qf">0</span> de <span id="prog-rec-qt">0</span> títulos</div>
+      <!-- ===================== PÁGINA: CONTAS A PAGAR ===================== -->
+      <div id="ctx-page-pagar">
+
+        <div class="ctx-sec-title">Indicadores — Contas a Pagar</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px">
+          <div class="ct-kpi-card ct-kpi-red">
+            <div class="ct-kpi-icon">↑</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">A Pagar</span><span class="ct-kpi-val" id="kpi-a-pagar">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-a-pagar-qtd">0 títulos</span></div>
+          </div>
+          <div class="ct-kpi-card ct-kpi-orange">
+            <div class="ct-kpi-icon">⚠</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">Atrasados</span><span class="ct-kpi-val" id="kpi-atrasados">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-atrasados-qtd">0 títulos</span></div>
+          </div>
+          <div class="ct-kpi-card ct-kpi-purple">
+            <div class="ct-kpi-icon">✓</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">Pago</span><span class="ct-kpi-val" id="kpi-pago">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-pago-qtd">no período</span></div>
+          </div>
+          <div class="ct-kpi-card ct-kpi-blue">
+            <div class="ct-kpi-icon">⇄</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">Saldo Previsto</span><span class="ct-kpi-val" id="kpi-saldo-prev">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-saldo-prev-sub">receber − pagar</span></div>
           </div>
         </div>
-        <div class="ct-prog-block">
-          <svg width="128" height="128" viewBox="0 0 128 128" style="flex-shrink:0">
-            <circle cx="64" cy="64" r="52" fill="none" stroke="var(--danger-bg)" stroke-width="14"/>
-            <circle id="prog-pag-arc" cx="64" cy="64" r="52" fill="none" stroke="var(--danger)" stroke-width="14"
-              stroke-dasharray="0 327" stroke-linecap="round" transform="rotate(-90 64 64)" style="transition:stroke-dasharray .5s"/>
-            <text id="prog-pag-pct" x="64" y="60" text-anchor="middle" font-size="22" font-weight="700" fill="var(--text)" font-family="'DM Mono',monospace">0%</text>
-            <text x="64" y="76" text-anchor="middle" font-size="9" fill="var(--text3)">pago</text>
-          </svg>
-          <div>
-            <div class="ct-prog-label">Progresso de Pagamento</div>
-            <div class="ct-prog-sub"><span id="prog-pag-feito" style="color:var(--danger);font-weight:700;font-family:'DM Mono',monospace">R$ 0,00</span> de <span id="prog-pag-total">R$ 0,00</span></div>
-            <div class="ct-prog-qtd"><span id="prog-pag-qf">0</span> de <span id="prog-pag-qt">0</span> títulos</div>
+
+        <div style="display:grid;grid-template-columns:minmax(300px,.85fr) 1.15fr;gap:14px;margin-bottom:14px" class="ctx-linha2">
+          <div class="ct-mgmt-card">
+            <div class="ct-prog-block">
+              <svg width="118" height="118" viewBox="0 0 118 118" style="flex-shrink:0">
+                <circle cx="59" cy="59" r="52" fill="none" stroke="var(--border)" stroke-width="11"/>
+                <circle id="prog-pag-arc" cx="59" cy="59" r="52" fill="none" stroke="var(--danger)" stroke-width="11" stroke-linecap="round" stroke-dasharray="0 327" transform="rotate(-90 59 59)"/>
+                <text x="59" y="56" text-anchor="middle" font-size="22" font-weight="700" fill="var(--text)" font-family="'DM Mono',monospace" id="prog-pag-pct">0%</text>
+                <text x="59" y="72" text-anchor="middle" font-size="9" fill="var(--text3)">pago</text>
+              </svg>
+              <div>
+                <div class="ct-prog-label">Progresso de Pagamento</div>
+                <div class="ct-prog-sub"><span id="prog-pag-feito" style="color:var(--danger);font-weight:700;font-family:'DM Mono',monospace">R$ 0,00</span> de <span id="prog-pag-total">R$ 0,00</span></div>
+                <div class="ct-prog-qtd"><span id="prog-pag-qf">0</span> de <span id="prog-pag-qt">0</span> títulos</div>
+              </div>
+            </div>
+          </div>
+          <div class="ct-mgmt-card">
+            <div class="ct-mgmt-title">Aging — A Pagar</div>
+            <div id="aging-pagar"></div>
           </div>
         </div>
       </div>
 
-      <!-- AGING (faixas de atraso) -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-        <div class="ct-mgmt-card">
-          <div class="ct-mgmt-title">Aging — A Receber</div>
-          <div id="aging-receber"></div>
+      <!-- ===================== PÁGINA: CONTAS A RECEBER ===================== -->
+      <div id="ctx-page-receber" style="display:none">
+
+        <div class="ctx-sec-title">Indicadores — Contas a Receber</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px">
+          <div class="ct-kpi-card ct-kpi-green">
+            <div class="ct-kpi-icon">↓</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">A Receber</span><span class="ct-kpi-val" id="kpi-a-receber">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-a-receber-qtd">0 títulos</span></div>
+          </div>
+          <div class="ct-kpi-card ct-kpi-orange">
+            <div class="ct-kpi-icon">⚠</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">Atrasados</span><span class="ct-kpi-val" id="kpi2-atrasados">R$ 0,00</span><span class="ct-kpi-sub" id="kpi2-atrasados-qtd">0 títulos</span></div>
+          </div>
+          <div class="ct-kpi-card ct-kpi-teal">
+            <div class="ct-kpi-icon">✓</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">Recebido</span><span class="ct-kpi-val" id="kpi-recebido">R$ 0,00</span><span class="ct-kpi-sub" id="kpi-recebido-qtd">no período</span></div>
+          </div>
+          <div class="ct-kpi-card ct-kpi-blue">
+            <div class="ct-kpi-icon">⇄</div>
+            <div class="ct-kpi-body"><span class="ct-kpi-label">Saldo Previsto</span><span class="ct-kpi-val" id="kpi2-saldo-prev">R$ 0,00</span><span class="ct-kpi-sub" id="kpi2-saldo-prev-sub">receber − pagar</span></div>
+          </div>
         </div>
-        <div class="ct-mgmt-card">
-          <div class="ct-mgmt-title">Aging — A Pagar</div>
-          <div id="aging-pagar"></div>
+
+        <div style="display:grid;grid-template-columns:minmax(300px,.85fr) 1.15fr;gap:14px;margin-bottom:14px" class="ctx-linha2">
+          <div class="ct-mgmt-card">
+            <div class="ct-prog-block">
+              <svg width="118" height="118" viewBox="0 0 118 118" style="flex-shrink:0">
+                <circle cx="59" cy="59" r="52" fill="none" stroke="var(--border)" stroke-width="11"/>
+                <circle id="prog-rec-arc" cx="59" cy="59" r="52" fill="none" stroke="var(--accent)" stroke-width="11" stroke-linecap="round" stroke-dasharray="0 327" transform="rotate(-90 59 59)"/>
+                <text x="59" y="56" text-anchor="middle" font-size="22" font-weight="700" fill="var(--text)" font-family="'DM Mono',monospace" id="prog-rec-pct">0%</text>
+                <text x="59" y="72" text-anchor="middle" font-size="9" fill="var(--text3)">recebido</text>
+              </svg>
+              <div>
+                <div class="ct-prog-label">Progresso de Recebimento</div>
+                <div class="ct-prog-sub"><span id="prog-rec-feito" style="color:var(--accent);font-weight:700;font-family:'DM Mono',monospace">R$ 0,00</span> de <span id="prog-rec-total">R$ 0,00</span></div>
+                <div class="ct-prog-qtd"><span id="prog-rec-qf">0</span> de <span id="prog-rec-qt">0</span> títulos</div>
+              </div>
+            </div>
+          </div>
+          <div class="ct-mgmt-card">
+            <div class="ct-mgmt-title">Aging — A Receber</div>
+            <div id="aging-receber"></div>
+          </div>
         </div>
       </div>
 
-      <!-- RANKINGS -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-        <div class="ct-mgmt-card">
-          <div class="ct-mgmt-title">🏆 Maiores Devedores</div>
-          <div id="rank-devedores"></div>
-        </div>
-        <div class="ct-mgmt-card">
-          <div class="ct-mgmt-title">📌 Maiores Credores</div>
-          <div id="rank-credores"></div>
-        </div>
-      </div>
+      <div class="ctx-sec-title">Títulos</div>
 
-      <!-- EVOLUÇÃO -->
-      <div class="ct-mgmt-card" style="margin-bottom:18px">
-        <div class="ct-mgmt-title">Evolução — últimos 6 meses</div>
-        <div style="height:200px"><canvas id="ct-evolucao"></canvas></div>
-      </div>
+      <!-- ===== BARRA DE AÇÕES (seleção) ===== -->
+      <div class="ctx-acaobar" id="ctx-acaobar"></div>
 
-      <!-- TABS PAGAR / RECEBER -->
-      <div class="ct-tabs-bar">
-        <button class="ct-tab act" id="ct-tab-pagar" onclick="ctSwitchTab('pagar')">
-          <span class="ct-tab-dot ct-tab-dot-red"></span> Contas a Pagar
-          <span class="ct-tab-badge ct-tab-badge-red" id="ct-tab-badge-pagar">0</span>
-        </button>
-        <button class="ct-tab" id="ct-tab-receber" onclick="ctSwitchTab('receber')">
-          <span class="ct-tab-dot ct-tab-dot-green"></span> Contas a Receber
-          <span class="ct-tab-badge ct-tab-badge-green" id="ct-tab-badge-receber">0</span>
-        </button>
-      </div>
-
-      <!-- FILTROS INDEPENDENTES DA TABELA (não afetam os KPIs acima) -->
+      <!-- ===== FILTROS DA TABELA (independentes dos indicadores) — IDs preservados ===== -->
       <div class="ct-filtros">
         <div class="ct-filtro-item ct-filtro-busca">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text3)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;color:var(--text3)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" id="cp-busca" placeholder="Buscar..." oninput="renderContas()">
         </div>
         <div class="ct-filtro-item">
-          <label class="ct-filtro-lbl">Status</label>
+          <span class="ct-filtro-lbl">Status</span>
           <select id="cp-fstatus" onchange="renderContas()">
             <option value="">Todos</option>
           </select>
         </div>
         <div class="ct-filtro-item">
-          <label class="ct-filtro-lbl">Situação</label>
+          <span class="ct-filtro-lbl">Situação</span>
           <select id="cp-fatrasado" onchange="renderContas()">
-            <option value="">Todas as situações</option>
-            <option value="atrasado">Atrasadas</option>
-            <option value="hoje">Vencem Hoje</option>
-            <option value="semana">Esta Semana</option>
-            <option value="ok">Em Dia</option>
+            <option value="">Todas</option>
+            <option value="atrasado">Atrasados</option>
+            <option value="hoje">Vencem hoje</option>
+            <option value="semana">Próximos 7 dias</option>
+            <option value="ok">Em dia</option>
           </select>
         </div>
         <div class="ct-filtro-item">
-          <label class="ct-filtro-lbl">Período: Emissão</label>
+          <span class="ct-filtro-lbl">Emissão</span>
           <div class="ct-filtro-datas">
             <input type="date" id="ctf-emi-de" onchange="renderContas()" title="Emissão de">
             <span>→</span>
@@ -4181,80 +4196,77 @@ textarea.cp-form-input{resize:vertical}
           </div>
         </div>
         <div class="ct-filtro-item">
-          <label class="ct-filtro-lbl">Período: Vencimento</label>
+          <span class="ct-filtro-lbl">Vencimento</span>
           <div class="ct-filtro-datas">
             <input type="date" id="ctf-venc-de" onchange="renderContas()" title="Vencimento de">
             <span>→</span>
             <input type="date" id="ctf-venc-ate" onchange="renderContas()" title="Vencimento até">
           </div>
         </div>
-        <button class="ct-filtro-limpar" onclick="limparFiltrosContas()" title="Limpar filtros da tabela">✕ Limpar</button>
+        <div class="ctx-cols-wrap">
+          <button class="ct-filtro-limpar" onclick="ctxToggleMenuCols(event)">▦ Colunas</button>
+          <div class="ctx-cols-menu" id="ctx-cols-menu" onclick="event.stopPropagation()"></div>
+        </div>
+        <button class="ct-filtro-limpar" onclick="limparFiltrosContas()">✕ Limpar filtros</button>
       </div>
 
-
-      <!-- PAINEL CONTAS A PAGAR -->
-      <div class="ct-panel" id="ct-panel-pagar">
-        <div class="ct-panel-actions">
-          <button class="btn" onclick="exportarContasPagarCSV()" style="font-size:11px">↓ CSV</button>
-          <button class="btn btn-primary" onclick="abrirModalLancamento('pagar')" style="font-size:11px">+ Nova Conta a Pagar</button>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="ct-table">
-            <thead>
-              <tr>
-                <th onclick="sortCP('data')" id="cpth-data" style="cursor:pointer">Vencimento ↕</th>
-                <th>Fornecedor</th>
-                <th>Histórico</th>
-                <th>Plano</th>
-                <th>Conta</th>
-                <th>Situação</th>
-                <th onclick="sortCP('val')" id="cpth-val" style="cursor:pointer">Valor ↕</th>
-                <th style="text-align:right">Ações</th>
-              </tr>
-            </thead>
+      <!-- ===== GRADE EM COLUNAS ===== -->
+      <div class="ctx-grade">
+        <div class="ctx-scroll">
+          <table class="ctx-table" id="ctx-table-pagar">
+            <thead id="ctx-thead-pagar"></thead>
             <tbody id="ct-tbody-pagar"></tbody>
           </table>
-          <div id="ct-empty-pagar" class="ct-empty" style="display:none">
-            <div class="ct-empty-icon">📋</div>
-            Nenhuma conta a pagar no período.
-          </div>
+          <table class="ctx-table" id="ctx-table-receber" style="display:none">
+            <thead id="ctx-thead-receber"></thead>
+            <tbody id="ct-tbody-receber"></tbody>
+          </table>
         </div>
-        <div class="ct-pagination">
-          <span class="ct-pag-info" id="cp-pinfo">0 contas</span>
-          <div class="ct-pag-btns" id="cp-pbtn"></div>
+        <div id="ct-empty-pagar" class="ct-empty" style="display:none">
+          <div class="ct-empty-icon">🗒</div>
+          <div>Nenhuma conta a pagar neste período</div>
+        </div>
+        <div id="ct-empty-receber" class="ct-empty" style="display:none">
+          <div class="ct-empty-icon">🗒</div>
+          <div>Nenhuma conta a receber neste período</div>
+        </div>
+        <div class="ctx-rodape" id="ctx-rodape-pagar">
+          <div class="ctx-rod-item"><span class="l">Valor</span><span class="v" id="ctx-tot-valor-pagar">R$ 0,00</span></div>
+          <div class="ctx-rod-item"><span class="l">Valor aberto</span><span class="v" style="color:var(--danger)" id="ctx-tot-aberto-pagar">R$ 0,00</span></div>
+          <div class="ctx-rod-item"><span class="l">Valor baixado</span><span class="v" style="color:var(--accent)" id="ctx-tot-baixado-pagar">R$ 0,00</span></div>
+          <div class="ctx-rod-item"><span class="l">Cancelados</span><span class="v" style="color:var(--text3)" id="ctx-tot-canc-pagar">0</span></div>
+          <div class="ctx-rod-pag"><span class="ct-pag-info" id="cp-pinfo">0 contas</span><div class="ct-pag-btns" id="cp-pbtn"></div></div>
+        </div>
+        <div class="ctx-rodape" id="ctx-rodape-receber" style="display:none">
+          <div class="ctx-rod-item"><span class="l">Valor</span><span class="v" id="ctx-tot-valor-receber">R$ 0,00</span></div>
+          <div class="ctx-rod-item"><span class="l">Valor aberto</span><span class="v" style="color:var(--accent)" id="ctx-tot-aberto-receber">R$ 0,00</span></div>
+          <div class="ctx-rod-item"><span class="l">Valor baixado</span><span class="v" style="color:var(--accent)" id="ctx-tot-baixado-receber">R$ 0,00</span></div>
+          <div class="ctx-rod-item"><span class="l">Cancelados</span><span class="v" style="color:var(--text3)" id="ctx-tot-canc-receber">0</span></div>
+          <div class="ctx-rod-pag"><span class="ct-pag-info" id="cr-pinfo">0 contas</span><div class="ct-pag-btns" id="cr-pbtn"></div></div>
         </div>
       </div>
 
-      <!-- PAINEL CONTAS A RECEBER -->
-      <div class="ct-panel" id="ct-panel-receber" style="display:none">
-        <div class="ct-panel-actions">
-          <button class="btn" onclick="exportarContasReceberCSV()" style="font-size:11px">↓ CSV</button>
-          <button class="btn btn-primary" onclick="abrirModalLancamento('receber')" style="font-size:11px">+ Nova Conta a Receber</button>
+      <!-- ===== ANÁLISE (colapsável) — rankings e evolução ===== -->
+      <div class="ctx-analise" id="ctx-analise">
+        <div class="ctx-analise-head" onclick="ctxToggleAnalise()">📊 Análise do período
+          <span style="font-weight:500;color:var(--text3)">rankings e evolução</span>
+          <span class="ctx-caret">▶</span>
         </div>
-        <div style="overflow-x:auto">
-          <table class="ct-table">
-            <thead>
-              <tr>
-                <th onclick="sortCR('data')" id="crth-data" style="cursor:pointer">Vencimento ↕</th>
-                <th>Cliente</th>
-                <th>Histórico</th>
-                <th>Plano</th>
-                <th>Conta</th>
-                <th>Situação</th>
-                <th onclick="sortCR('val')" id="crth-val" style="cursor:pointer">Valor ↕</th>
-                <th style="text-align:right">Ações</th>
-              </tr>
-            </thead>
-            <tbody id="ct-tbody-receber"></tbody>
-          </table>
-          <div id="ct-empty-receber" class="ct-empty" style="display:none">
-            <div class="ct-empty-icon">📋</div>
-            Nenhuma conta a receber no período.
+        <div class="ctx-analise-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+            <div class="ct-mgmt-card">
+              <div class="ct-mgmt-title">📌 Maiores Credores</div>
+              <div id="rank-credores"></div>
+            </div>
+            <div class="ct-mgmt-card">
+              <div class="ct-mgmt-title">🏆 Maiores Devedores</div>
+              <div id="rank-devedores"></div>
+            </div>
           </div>
-        </div>
-        <div class="ct-pagination">
-          <span class="ct-pag-info" id="cr-pinfo">0 contas</span>
-          <div class="ct-pag-btns" id="cr-pbtn"></div>
+          <div class="ct-mgmt-card">
+            <div class="ct-mgmt-title">Evolução — últimos 6 meses</div>
+            <div style="height:200px"><canvas id="ct-evolucao"></canvas></div>
+          </div>
         </div>
       </div>
     </div>
@@ -4388,7 +4400,7 @@ textarea.cp-form-input{resize:vertical}
     <div class="page" id="page-clientes">
       <div class="kpi-strip" id="kpi-clientes"></div>
       <div class="filtros-bar">
-        <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="cli-busca" placeholder="Buscar cliente..." oninput="renderCadastro('clientes')" style="width:260px"></div>
+        <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="cli-busca" placeholder="Buscar por nome, CPF/CNPJ, telefone, endereço, bairro..." oninput="renderCadastro('clientes')" style="width:360px"></div>
         <div id="cli-filtros-status" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:12px"></div>
         <button class="btn" onclick="exportarCadastroCSV('clientes')" style="margin-left:auto">↓ CSV</button>
       </div>
@@ -4891,6 +4903,96 @@ textarea.cp-form-input{resize:vertical}
 .ct-filtro-datas input[type=date]{width:130px}
 .ct-filtro-limpar{align-self:flex-end;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
 .ct-filtro-limpar:hover{border-color:var(--danger);color:var(--danger)}
+/* ===== CONTAS v21 — páginas separadas, grade em colunas, barra de ações ===== */
+.ctx-switch-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.ctx-switch{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.ctx-switch button{display:flex;align-items:center;gap:10px;padding:12px 24px;border:none;background:transparent;color:var(--text2);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:.14s;border-right:1px solid var(--border)}
+.ctx-switch button:last-child{border-right:none}
+.ctx-switch button:hover{background:var(--surface2);color:var(--text)}
+.ctx-switch button .ctx-ico{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;background:var(--surface2);color:var(--text3)}
+.ctx-switch button .ctx-qt{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;color:var(--text3);background:var(--surface2);padding:2px 8px;border-radius:20px}
+.ctx-switch button.act{color:#fff}
+.ctx-switch button.act#ctx-btn-pagar{background:var(--danger)}
+.ctx-switch button.act#ctx-btn-receber{background:var(--accent)}
+.ctx-switch button.act .ctx-ico,.ctx-switch button.act .ctx-qt{background:rgba(255,255,255,.22);color:#fff}
+.ctx-sec-title{font-family:inherit;font-size:11.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin:0 0 9px;display:flex;align-items:center;gap:9px}
+.ctx-sec-title::after{content:'';flex:1;height:1px;background:var(--border)}
+/* barra de ações */
+.ctx-acaobar{position:sticky;top:0;z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:12px 12px 0 0;padding:9px 14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;box-shadow:0 3px 14px -8px rgba(0,0,0,.22)}
+.ctx-acaobar.ativa{background:var(--accent2);border-color:var(--accent3)}
+.ctx-chk{width:16px;height:16px;border:1.6px solid var(--text3);border-radius:4px;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:var(--surface);transition:.12s;vertical-align:middle}
+.ctx-chk:hover{border-color:var(--accent)}
+.ctx-chk.on{background:var(--accent);border-color:var(--accent)}
+.ctx-chk.on::after{content:'';width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);margin-top:-2px}
+.ctx-chk.meio{background:var(--accent);border-color:var(--accent)}
+.ctx-chk.meio::after{content:'';width:8px;height:2px;background:#fff;border:none;transform:none;margin:0}
+.ctx-selinfo{display:flex;flex-direction:column;min-width:138px}
+.ctx-selinfo .n{font-size:12px;font-weight:700}
+.ctx-selinfo .t{font-family:'DM Mono',monospace;font-size:11px;color:var(--text2)}
+.ctx-selinfo .vazio{font-size:12px;color:var(--text3);font-weight:500}
+.ctx-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.ctx-acao{display:flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:7px 13px;border-radius:8px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:.13s}
+.ctx-acao svg{width:13px;height:13px}
+.ctx-acao:hover:not(:disabled){border-color:currentColor}
+.ctx-acao:disabled{opacity:.36;cursor:not-allowed}
+.ctx-acao.principal{background:var(--accent);border-color:var(--accent);color:#fff}
+.ctx-acao.principal:hover:not(:disabled){filter:brightness(1.08)}
+.ctx-acao.principal:disabled{background:var(--surface2);border-color:var(--border);color:var(--text3)}
+.ctx-acao.perigo{color:var(--danger);border-color:var(--danger)}
+.ctx-acao.perigo:hover:not(:disabled){background:var(--danger);color:#fff}
+.ctx-acao-sep{width:1px;height:20px;background:var(--border)}
+.ctx-limpar-sel{border:none;background:none;color:var(--danger);font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px;padding:5px 2px}
+.ctx-dica{font-size:10.5px;color:var(--text3);flex-basis:100%}
+/* grade em colunas */
+.ctx-grade{background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 12px 12px;overflow:hidden}
+.ctx-scroll{overflow-x:auto}
+table.ctx-table{border-collapse:separate;border-spacing:0;width:100%;min-width:100%}
+.ctx-table th{position:sticky;top:50px;z-index:20;background:var(--surface2);text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:9px 10px;white-space:nowrap;border-bottom:1px solid var(--border);user-select:none}
+.ctx-table th.sortable{cursor:pointer}
+.ctx-table th.sortable:hover{color:var(--text)}
+.ctx-table th .ctx-ar{opacity:.3;font-size:8px;margin-left:2px}
+.ctx-table th.sort-asc .ctx-ar,.ctx-table th.sort-desc .ctx-ar{opacity:1;color:var(--accent)}
+.ctx-table th.num,.ctx-table td.num{text-align:right}
+.ctx-table td{padding:8px 10px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
+.ctx-table tbody tr{cursor:pointer}
+.ctx-table tbody tr:hover td{background:var(--surface2)}
+.ctx-table tbody tr.ctx-marcado td{background:var(--accent2)}
+.ctx-table tbody tr.ct-row-cancelado td{opacity:.55}
+.ctx-table tbody tr.ct-row-cancelado td.ctx-nome{text-decoration:line-through}
+.ctx-table tbody tr.ct-row-atrasado td.ctx-venc{color:var(--danger);font-weight:600}
+.ctx-table td.ctx-mono{font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
+.ctx-table td.ctx-nome{font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.ctx-table td.ctx-txt{color:var(--text2);max-width:220px;overflow:hidden;text-overflow:ellipsis;font-size:11.5px}
+.ctx-table td.ctx-dim{color:var(--text3);font-size:11.5px}
+.ctx-table th.ctx-fix,.ctx-table td.ctx-fix{position:sticky;left:0;z-index:15;width:36px;padding-left:12px}
+.ctx-table th.ctx-fix{z-index:25}
+.ctx-table td.ctx-fix{background:var(--surface)}
+.ctx-table tbody tr:hover td.ctx-fix{background:var(--surface2)}
+.ctx-table tbody tr.ctx-marcado td.ctx-fix{background:var(--accent2)}
+.ctx-table th.ctx-fix::after,.ctx-table td.ctx-fix::after{content:'';position:absolute;right:0;top:0;bottom:0;width:1px;background:var(--border)}
+/* rodapé de totais */
+.ctx-rodape{display:flex;align-items:center;gap:20px;padding:11px 16px;border-top:2px solid var(--border);background:var(--surface2);flex-wrap:wrap}
+.ctx-rod-item{display:flex;flex-direction:column}
+.ctx-rod-item .l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)}
+.ctx-rod-item .v{font-family:'DM Mono',monospace;font-size:13.5px;font-weight:600}
+.ctx-rod-pag{margin-left:auto;display:flex;align-items:center;gap:8px}
+/* seletor de colunas */
+.ctx-cols-wrap{position:relative}
+.ctx-cols-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px;min-width:212px;box-shadow:0 10px 30px -10px rgba(0,0,0,.3)}
+.ctx-cols-menu.open{display:block}
+.ctx-cols-menu .tit{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:3px 6px 7px}
+.ctx-cols-menu label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;font-size:12px;cursor:pointer}
+.ctx-cols-menu label:hover{background:var(--surface2)}
+.ctx-cols-menu input{accent-color:var(--accent);width:14px;height:14px}
+/* análise colapsável */
+.ctx-analise{margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.ctx-analise-head{display:flex;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;font-size:12.5px;font-weight:700}
+.ctx-analise-head:hover{background:var(--surface2)}
+.ctx-analise-head .ctx-caret{margin-left:auto;color:var(--text3);font-size:10px;transition:transform .15s}
+.ctx-analise.open .ctx-caret{transform:rotate(90deg)}
+.ctx-analise-body{display:none;padding:0 16px 16px}
+.ctx-analise.open .ctx-analise-body{display:block}
+.ctx-atraso-d{font-size:9.5px;color:var(--danger);font-weight:700}
 /* ===== MODAL LANÇAMENTO V2 ===== */
 .lanc-hdr{padding:20px 26px;background:linear-gradient(135deg, var(--accent2), var(--surface));border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background .25s}
 .lanc-hdr.pag-hdr{background:linear-gradient(135deg, var(--danger-bg), var(--surface))}
@@ -9741,10 +9843,21 @@ function renderContasEvolucao(){
 let _ctActiveTab='pagar';
 function ctSwitchTab(tab){
   _ctActiveTab=tab;
-  document.getElementById('ct-tab-pagar').classList.toggle('act',tab==='pagar');
-  document.getElementById('ct-tab-receber').classList.toggle('act',tab==='receber');
-  document.getElementById('ct-panel-pagar').style.display=tab==='pagar'?'':'none';
-  document.getElementById('ct-panel-receber').style.display=tab==='receber'?'':'none';
+  // Botões do switch de página
+  const bp=document.getElementById('ctx-btn-pagar'), br=document.getElementById('ctx-btn-receber');
+  if(bp) bp.classList.toggle('act',tab==='pagar');
+  if(br) br.classList.toggle('act',tab==='receber');
+  // Páginas de indicadores (KPIs + progresso + aging) — uma por vez
+  const pp=document.getElementById('ctx-page-pagar'), pr=document.getElementById('ctx-page-receber');
+  if(pp) pp.style.display = tab==='pagar' ? '' : 'none';
+  if(pr) pr.style.display = tab==='receber' ? '' : 'none';
+  // Grade e rodapé
+  ['pagar','receber'].forEach(s=>{
+    const t=document.getElementById('ctx-table-'+s);
+    const r=document.getElementById('ctx-rodape-'+s);
+    if(t) t.style.display = s===tab ? '' : 'none';
+    if(r) r.style.display = s===tab ? '' : 'none';
+  });
   atualizarStatusFiltro(tab);
   renderContas();
 }
@@ -9793,6 +9906,302 @@ function _ctBadge(l,h){
   return '<span class="ct-badge ct-badge-aberto">'+(l.status||'Aberto')+'</span>';
 }
 
+/* ============================================================
+   CONTAS v21 — seleção, colunas e barra de ações
+   ------------------------------------------------------------
+   A lógica financeira NÃO foi alterada. Este bloco só adiciona
+   estado de seleção e a definição das colunas da grade.
+   Os valores de cada coluna saem de campos que já existem:
+     Emissão   = dataOriginal || data
+     Vencimento= data
+     Baixa     = dataEfetivacao
+     Valor     = valorTotalTitulo || aPagar/aReceber || pago/recebido
+     Aberto    = aPagar / aReceber
+     Baixado   = pago / recebido || jaQuitado
+   ============================================================ */
+let ctxSel = {pagar:{}, receber:{}};
+let ctxMapa = {pagar:{}, receber:{}};
+let ctxOrdem = {pagar:[], receber:[]};
+let ctxUltimaChave = {pagar:null, receber:null};
+let ctxColsOn = null;
+let ctxMenuColsAberto = false;
+let ctxAnaliseAberta = false;
+
+function ctxChave(l){ return l.id!=null ? 'id:'+l.id : 'ix:'+l._idx; }
+function ctxVTitulo(l,lado){ return l.valorTotalTitulo || (lado==='pagar'?(l.aPagar||l.pago):(l.aReceber||l.recebido)) || 0; }
+function ctxVAberto(l,lado){ return (lado==='pagar'? l.aPagar : l.aReceber) || 0; }
+function ctxVBaixado(l,lado){ return (lado==='pagar'? l.pago : l.recebido) || l.jaQuitado || 0; }
+
+function ctxCols(lado){
+  const rotulo = lado==='pagar' ? 'Fornecedor' : 'Cliente';
+  const cor    = lado==='pagar' ? 'var(--danger)' : 'var(--accent)';
+  const h = hoje();
+  return [
+    {id:'id', lbl:'ID', sort:'id', cls:'ctx-mono ctx-dim', on:true,
+     get:l=> l.id!=null ? l.id : '—'},
+    {id:'status', lbl:'Status', sort:'status', cls:'', on:true,
+     get:l=> _ctBadge(l,h)
+        + (l.parcGroupId?` <span style="font-size:9px;color:var(--text3)">📑${l.parcNum}/${l.parcTotal}</span>`:'')
+        + (l.recGroupId ?` <span style="font-size:9px;color:var(--text3)">🔁${l.recNum}/${l.recTotal}</span>`:'')},
+    {id:'nome', lbl:rotulo, sort:'nome', cls:'ctx-nome', on:true,
+     get:l=> (lado==='pagar'?l.fornecedor:l.cliente) || '<span style="color:var(--text3)">—</span>'},
+    {id:'emissao', lbl:'Emissão', sort:'emi', cls:'ctx-mono ctx-dim', on:true,
+     get:l=> fmtData(l.dataOriginal||l.data)},
+    {id:'venc', lbl:'Vencimento', sort:'venc', cls:'ctx-mono ctx-venc', on:true,
+     get:l=> fmtData(l.data)},
+    {id:'baixa', lbl:'Data da baixa', sort:'baixa', cls:'ctx-mono ctx-dim', on:true,
+     get:l=> l.dataEfetivacao ? fmtData(l.dataEfetivacao) : '—'},
+    {id:'atraso', lbl:'Atraso', sort:'atraso', cls:'ctx-mono num', on:true,
+     get:l=>{ const ab=(l.status===(lado==='pagar'?'A Pagar':'A Receber'))&&!l.cancelado;
+              if(!ab||(l.data||'')>=h) return '<span style="color:var(--text3)">—</span>';
+              return `<span class="ctx-atraso-d">${diasAtraso(l.data)}d</span>`; }},
+    {id:'valor', lbl:'Valor', sort:'valor', cls:'ctx-mono num', on:true,
+     get:l=>{ const v=ctxVTitulo(l,lado); return v?brl(v,true):'<span style="color:var(--text3)">—</span>'; }},
+    {id:'aberto', lbl:'Valor aberto', sort:'aberto', cls:'ctx-mono num', on:true,
+     get:l=>{ const v=ctxVAberto(l,lado); return v?`<span style="color:${cor}">${brl(v,true)}</span>`:'<span style="color:var(--text3)">—</span>'; }},
+    {id:'baixado', lbl:'Valor baixado', sort:'baixado', cls:'ctx-mono num', on:true,
+     get:l=>{ const v=ctxVBaixado(l,lado); return v?`<span style="color:var(--accent)">${brl(v,true)}</span>`:'<span style="color:var(--text3)">—</span>'; }},
+    {id:'plano', lbl:'Plano de contas', sort:'plano', cls:'ctx-txt', on:true,
+     get:l=> l.plano||'—'},
+    {id:'conta', lbl:'Conta', sort:'conta', cls:'ctx-dim', on:false,
+     get:l=> l.conta||'—'},
+    {id:'historico', lbl:'Histórico', sort:'hist', cls:'ctx-txt', on:true,
+     get:l=> l.historico||'—'},
+  ];
+}
+function ctxGarantirCols(){
+  if(ctxColsOn) return;
+  ctxColsOn={};
+  ctxCols('pagar').forEach(c=>{ ctxColsOn[c.id]=c.on; });
+}
+function ctxColsAtivas(lado){ ctxGarantirCols(); return ctxCols(lado).filter(c=>ctxColsOn[c.id]); }
+function ctxToggleCol(id){ ctxColsOn[id]=!ctxColsOn[id]; renderContas(); }
+function ctxToggleMenuCols(ev){
+  ev.stopPropagation();
+  ctxMenuColsAberto=!ctxMenuColsAberto;
+  const m=document.getElementById('ctx-cols-menu');
+  if(m) m.classList.toggle('open',ctxMenuColsAberto);
+}
+document.addEventListener('click',function(){
+  if(ctxMenuColsAberto){ ctxMenuColsAberto=false; const m=document.getElementById('ctx-cols-menu'); if(m) m.classList.remove('open'); }
+});
+function ctxToggleAnalise(){
+  ctxAnaliseAberta=!ctxAnaliseAberta;
+  const el=document.getElementById('ctx-analise');
+  if(el) el.classList.toggle('open',ctxAnaliseAberta);
+  if(ctxAnaliseAberta) renderContasEvolucao();
+}
+
+/* ---- seleção ---- */
+function ctxSelecionados(lado){
+  const out=[];
+  for(const k in ctxSel[lado]) if(ctxSel[lado][k] && ctxMapa[lado][k]) out.push(ctxMapa[lado][k]);
+  return out;
+}
+function ctxLimparSelecao(lado){ ctxSel[lado]={}; ctxUltimaChave[lado]=null; }
+function ctxLimparSel(){ ctxLimparSelecao(_ctActiveTab); renderContas(); }
+function ctxToggleItem(ev, chave){
+  const lado=_ctActiveTab;
+  if(ev && ev.shiftKey && ctxUltimaChave[lado]){
+    const o=ctxOrdem[lado], a=o.indexOf(ctxUltimaChave[lado]), b=o.indexOf(chave);
+    if(a>=0&&b>=0){
+      for(let i=Math.min(a,b);i<=Math.max(a,b);i++) ctxSel[lado][o[i]]=true;
+      ctxUltimaChave[lado]=chave; renderContas(); return;
+    }
+  }
+  ctxSel[lado][chave]=!ctxSel[lado][chave];
+  if(!ctxSel[lado][chave]) delete ctxSel[lado][chave];
+  ctxUltimaChave[lado]=chave;
+  renderContas();
+}
+function ctxToggleTodos(){
+  const lado=_ctActiveTab, vis=ctxOrdem[lado];
+  const todos = vis.length>0 && vis.every(k=>ctxSel[lado][k]);
+  if(todos) ctxLimparSelecao(lado); else vis.forEach(k=>{ ctxSel[lado][k]=true; });
+  renderContas();
+}
+function ctxCapacidades(lado){
+  const stAberto = lado==='pagar' ? 'A Pagar' : 'A Receber';
+  const stFeito  = lado==='pagar' ? 'Pago'    : 'Recebido';
+  const sel=ctxSelecionados(lado), n=sel.length;
+  const abertos=sel.filter(s=>s.status===stAberto).length;
+  const efet=sel.filter(s=>s.status===stFeito && !s.estornoDe).length;
+  return {n, total:sel.reduce((s,x)=>s+x.valor,0), sel,
+    quitar:n===1&&abertos===1, editar:n===1,
+    estornar:n>=1&&efet===n, cancelar:n>=1&&abertos===n, excluir:n>=1};
+}
+function ctxMotivo(lado,acao){
+  const stAberto = lado==='pagar' ? 'A Pagar' : 'A Receber';
+  const stFeito  = lado==='pagar' ? 'Pago'    : 'Recebido';
+  const K=ctxCapacidades(lado);
+  if(K.n===0) return 'Selecione ao menos um título';
+  if(acao==='quitar')   return K.n>1?'A baixa abre um modal por título — selecione apenas um'
+                                   :`Só títulos em aberto (${stAberto}) podem ser baixados`;
+  if(acao==='editar')   return 'A edição abre um modal — selecione apenas um título';
+  if(acao==='estornar') return `Só efetivados (${stFeito}) e ainda não estornados podem ser estornados`;
+  if(acao==='cancelar') return 'Só títulos em aberto podem ser cancelados — para efetivados use Estornar';
+  return '';
+}
+async function ctxAcao(acao){
+  const lado=_ctActiveTab, K=ctxCapacidades(lado);
+  if(!K[acao]){ showToast(ctxMotivo(lado,acao),true); return; }
+  const sel=K.sel;
+  if(acao==='quitar'){
+    if(lado==='pagar') abrirModalQuitar(sel[0].idx, sel[0].id);
+    else               abrirModalReceber(sel[0].idx, sel[0].id);
+    ctxLimparSelecao(lado); renderContas(); return;
+  }
+  if(acao==='editar'){ abrirModalLancamento(null, sel[0].idx); ctxLimparSelecao(lado); renderContas(); return; }
+  const rot = acao==='estornar'?'estornar':(acao==='cancelar'?'cancelar':'excluir');
+  if(sel.length>1){
+    if(!confirm(`Você vai ${rot} ${sel.length} títulos (${brl(K.total,true)}).\n\n`
+      +`O sistema pedirá uma confirmação para cada título, uma de cada vez.\n\nContinuar?`)) return;
+  }
+  for(const s of sel){
+    // Sempre pelo id: _resolverLancIdx() reencontra o registro correto
+    if(acao==='estornar')      await estornarLancamento(s.idx, s.id);
+    else if(acao==='cancelar') await cancelarLancamento(s.idx, s.id);
+    else                       await deletarLanc(s.idx, s.id);
+  }
+  ctxLimparSelecao(lado);
+  renderContas();
+}
+const CTX_IC={
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>',
+  undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>',
+  ban:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>',
+};
+function ctxRenderAcaobar(lado){
+  const el=document.getElementById('ctx-acaobar');
+  if(!el) return;
+  const K=ctxCapacidades(lado);
+  const vis=ctxOrdem[lado];
+  const todos = vis.length>0 && vis.every(k=>ctxSel[lado][k]);
+  const alguns = K.n>0 && !todos;
+  const rotAcao = lado==='pagar' ? 'Quitar' : 'Receber';
+  const bt=(id,rot,ico,habil,classe)=>
+    `<button class="ctx-acao ${classe||''}" ${habil?'':'disabled'} title="${(habil?rot+(K.n>1?` (${K.n} títulos)`:''):ctxMotivo(lado,id)).replace(/"/g,'&quot;')}" onclick="ctxAcao('${id}')">${ico}${rot}${habil&&K.n>1?` (${K.n})`:''}</button>`;
+  el.className='ctx-acaobar'+(K.n?' ativa':'');
+  el.innerHTML=
+     `<span class="ctx-chk${todos?' on':(alguns?' meio':'')}" onclick="ctxToggleTodos()" title="Selecionar tudo nesta página"></span>`
+    +`<div class="ctx-selinfo">`
+    + (K.n ? `<span class="n">${K.n} selecionado${K.n!==1?'s':''}</span><span class="t">${brl(K.total,true)}</span>`
+           : `<span class="vazio">Nenhum título selecionado</span><span class="t" style="color:var(--text3)">clique numa linha</span>`)
+    +`</div>`
+    + (K.n?`<button class="ctx-limpar-sel" onclick="ctxLimparSel()">✕ limpar</button>`:'')
+    +`<div class="ctx-acoes">`
+    + bt('quitar',rotAcao,CTX_IC.check,K.quitar,'principal')
+    + bt('estornar','Estornar',CTX_IC.undo,K.estornar,'')
+    + `<span class="ctx-acao-sep"></span>`
+    + bt('cancelar','Cancelar',CTX_IC.ban,K.cancelar,'')
+    + bt('editar','Editar',CTX_IC.edit,K.editar,'')
+    + bt('excluir','Excluir',CTX_IC.trash,K.excluir,'perigo')
+    +`</div>`
+    + (K.n>1?`<div class="ctx-dica">Ações em lote pedem uma confirmação por título — a mesma checagem que o sistema já faz individualmente.</div>`:'');
+}
+function ctxRenderMenuCols(){
+  const m=document.getElementById('ctx-cols-menu');
+  if(!m) return;
+  ctxGarantirCols();
+  m.innerHTML='<div class="tit">Colunas visíveis</div>'
+    + ctxCols(_ctActiveTab).map(c=>
+        `<label><input type="checkbox" ${ctxColsOn[c.id]?'checked':''} onchange="ctxToggleCol('${c.id}')"> ${c.lbl}</label>`).join('');
+}
+/* Ordenação da grade — reaproveita cpSort/crSort já existentes */
+function ctxOrdenar(lado,col){
+  const S = lado==='pagar' ? cpSort : crSort;
+  if(S.col===col) S.dir = S.dir==='asc'?'desc':'asc';
+  else { S.col=col; S.dir = ['venc','emi','baixa','nome','plano','hist','status','conta'].includes(col)?'asc':'desc'; }
+  if(lado==='pagar') cpPag=1; else crPag=1;
+  renderContas();
+}
+function ctxChaveOrd(l,col,lado){
+  const h=hoje();
+  const stAberto = lado==='pagar' ? 'A Pagar' : 'A Receber';
+  switch(col){
+    case 'id':      return l.id||0;
+    case 'status':  return l.status||'';
+    case 'nome':    return ((lado==='pagar'?l.fornecedor:l.cliente)||'').toLowerCase();
+    case 'emi':     return l.dataOriginal||l.data||'';
+    case 'venc':    return l.data||'';
+    case 'baixa':   return l.dataEfetivacao||'';
+    case 'atraso':  return (l.status===stAberto&&(l.data||'')<h)?diasAtraso(l.data):-99999;
+    case 'valor':   return ctxVTitulo(l,lado);
+    case 'aberto':  return ctxVAberto(l,lado);
+    case 'baixado': return ctxVBaixado(l,lado);
+    case 'plano':   return (l.plano||'').toLowerCase();
+    case 'conta':   return (l.conta||'').toLowerCase();
+    case 'hist':    return (l.historico||'').toLowerCase();
+    case 'data':    return l.data||'';   // compat com cpSort/crSort iniciais
+    case 'val':     return ctxVTitulo(l,lado);
+  }
+  return '';
+}
+/* Monta thead + tbody + rodapé de um lado. Recebe a lista JÁ filtrada/ordenada. */
+function ctxRenderGrade(lado, lista, pagAtual, porPag){
+  const cols=ctxColsAtivas(lado);
+  const S = lado==='pagar' ? cpSort : crSort;
+  const h=hoje();
+  const stAberto = lado==='pagar' ? 'A Pagar' : 'A Receber';
+
+  const tp=Math.max(1,Math.ceil(lista.length/porPag));
+  if(pagAtual>tp) pagAtual=tp;
+  const pagina=lista.slice((pagAtual-1)*porPag, pagAtual*porPag);
+
+  // mapa de seleção da página visível
+  ctxOrdem[lado]=[]; ctxMapa[lado]={};
+  pagina.forEach(l=>{
+    const k=ctxChave(l);
+    ctxOrdem[lado].push(k);
+    ctxMapa[lado][k]={chave:k, idx:l._idx, id:(l.id==null?null:l.id), status:l.status,
+                      estornoDe:l.estornoDe, valor:ctxVTitulo(l,lado)};
+  });
+  for(const k in ctxSel[lado]) if(!ctxMapa[lado][k]) delete ctxSel[lado][k];
+
+  const todos = ctxOrdem[lado].length>0 && ctxOrdem[lado].every(k=>ctxSel[lado][k]);
+  const alguns = !todos && ctxOrdem[lado].some(k=>ctxSel[lado][k]);
+
+  // thead
+  const thead=`<tr><th class="ctx-fix"><span class="ctx-chk${todos?' on':(alguns?' meio':'')}" onclick="ctxToggleTodos()"></span></th>`
+    + cols.map(c=>{
+        const st = S.col===c.sort ? ' sort-'+S.dir : '';
+        const num = /num/.test(c.cls) ? ' num' : '';
+        const ar = S.col===c.sort ? (S.dir==='asc'?'▲':'▼') : '▲';
+        return `<th class="sortable${st}${num}" onclick="ctxOrdenar('${lado}','${c.sort}')">${c.lbl}<span class="ctx-ar">${ar}</span></th>`;
+      }).join('') + `</tr>`;
+  const elHead=document.getElementById('ctx-thead-'+lado);
+  if(elHead) elHead.innerHTML=thead;
+
+  // tbody
+  const tbody=pagina.map(l=>{
+    const k=ctxChave(l);
+    const atr=(l.status===stAberto)&&(l.data||'')<h&&!l.cancelado;
+    const canc=(l.cancelado||l.status==='Cancelado')?' ct-row-cancelado':'';
+    const marc=ctxSel[lado][k]?' ctx-marcado':'';
+    return `<tr class="${atr?'ct-row-atrasado':''}${canc}${marc}" onclick="ctxToggleItem(event,'${k}')">`
+      + `<td class="ctx-fix"><span class="ctx-chk${ctxSel[lado][k]?' on':''}"></span></td>`
+      + cols.map(c=>`<td class="${c.cls}">${c.get(l)}</td>`).join('')
+      + `</tr>`;
+  }).join('');
+  const elBody=document.getElementById('ct-tbody-'+lado);
+  if(elBody) elBody.innerHTML=tbody;
+
+  // totais do rodapé — sobre a lista filtrada
+  let tv=0, ta=0, tb=0, tc=0;
+  lista.forEach(l=>{
+    if(l.cancelado||l.status==='Cancelado'){ tc++; return; }
+    tv+=ctxVTitulo(l,lado); ta+=ctxVAberto(l,lado); tb+=ctxVBaixado(l,lado);
+  });
+  const setTxt=(id,v)=>{ const e=document.getElementById(id); if(e) e.innerHTML=v; };
+  setTxt('ctx-tot-valor-'+lado, brl(tv,true));
+  setTxt('ctx-tot-aberto-'+lado, brl(ta,true));
+  setTxt('ctx-tot-baixado-'+lado, brl(tb,true));
+  setTxt('ctx-tot-canc-'+lado, tc);
+
+  return {tp, pagAtual};
+}
 function renderContas(){
   const lc=gd('sf_lancamentos');
   const h=hoje();
@@ -9871,6 +10280,14 @@ function renderContas(){
   document.getElementById('kpi-recebido-qtd').textContent=kpiRecebido.length+' no período';
   document.getElementById('kpi-pago').innerHTML=brl(totPago,true);
   document.getElementById('kpi-pago-qtd').textContent=kpiPago.length+' no período';
+
+  // Espelho dos KPIs transversais na página "A Receber" (mesmos valores, IDs próprios)
+  const _mirror=(id,val)=>{const e=document.getElementById(id); if(e) e.innerHTML=val;};
+  const _mirrorTxt=(id,val)=>{const e=document.getElementById(id); if(e) e.textContent=val;};
+  _mirror('kpi2-atrasados', brl(totAtrasados,true));
+  _mirrorTxt('kpi2-atrasados-qtd', kpiAtrasados.length+' título'+(kpiAtrasados.length!==1?'s':''));
+  _mirror('kpi2-saldo-prev', brl(totAR-totAP,true));
+  _mirrorTxt('kpi2-saldo-prev-sub', totAR-totAP>=0?'receber − pagar':'pagar > receber');
 
   // ----- PROGRESSO de Recebimento / Pagamento -----
   const totGeralRec = totRecebido + totAR;
@@ -9955,80 +10372,73 @@ function renderContas(){
   renderContasEvolucao();
 
   // ----- CONTAS A PAGAR ----- (filtros independentes dos KPIs)
+  // Filtro e ordenação: MESMA lógica de antes. Só a renderização mudou para grade em colunas.
   let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&matchPeriodoTabela(l));
-  pagar=pagar.filter(l=>matchBusca(l,[l.fornecedor||'',l.historico||'',l.plano||''])&&matchStatus(l)&&matchSituacao(l));
+  pagar=pagar.filter(l=>matchBusca(l,[l.fornecedor||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   pagar.sort((a,b)=>{
-    if(cpSort.col==='val'){const va=(a.aPagar||a.pago||0),vb=(b.aPagar||b.pago||0);return cpSort.dir==='asc'?va-vb:vb-va;}
-    const va=a.data||'',vb=b.data||'';return cpSort.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
+    const va=ctxChaveOrd(a,cpSort.col,'pagar'), vb=ctxChaveOrd(b,cpSort.col,'pagar');
+    const d=cpSort.dir==='asc'?1:-1;
+    if(typeof va==='number'&&typeof vb==='number') return (va-vb)*d;
+    return String(va).localeCompare(String(vb))*d;
   });
   const tpP=Math.max(1,Math.ceil(pagar.length/CP_POR_PAG));
   if(cpPag>tpP)cpPag=tpP;
-  const pagP=pagar.slice((cpPag-1)*CP_POR_PAG,cpPag*CP_POR_PAG);
-  document.getElementById('ct-empty-pagar').style.display=pagar.length===0?'':'none';
+  document.getElementById('ct-empty-pagar').style.display=(pagar.length===0&&_ctActiveTab==='pagar')?'':'none';
   document.getElementById('ct-tab-badge-pagar').textContent=kpiAP.length;
-  document.getElementById('ct-tbody-pagar').innerHTML=pagP.map(l=>{
-    const v=l.aPagar||l.pago||0;
-    const atr=l.status==='A Pagar'&&(l.data||'')<h;
-    const da=atr?diasAtraso(l.data):0;
-    const rc=l.cancelado||l.status==='Cancelado'?' ct-row-cancelado':'';
-    return`<tr class="${atr?'ct-row-atrasado':''}${rc}">
-      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3);white-space:nowrap">${fmtData(l.data)}${atr?`<br><span class="ct-dias-atraso">${da}d atraso</span>`:''}</td>
-      <td style="font-weight:500;font-size:12px">${l.fornecedor||'<span style="color:var(--text3)">—</span>'}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text2)">${l.historico||'—'}</td>
-      <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;color:var(--text3)">${l.plano||'—'}</td>
-      <td style="font-size:10.5px;color:var(--text3)">${l.conta||'—'}</td>
-      <td>${_ctBadge(l,h)}${l.parcGroupId?` <span style="font-size:9px;color:var(--text3)">📑${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?` <span style="font-size:9px;color:var(--text3)">🔁${l.recNum}/${l.recTotal}</span>`:''}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${l.status==='Pago'?'var(--accent)':'var(--danger)'}">${brl(v,true)}</td>
-      <td style="text-align:right"><div class="action-btns" style="justify-content:flex-end">
-        ${l.status==='A Pagar'?`<button class="btn-quitar" onclick="abrirModalQuitar(${l._idx},${l.id??null})">✓ Quitar</button>`:''}
-        ${l.status==='A Pagar'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx},${l.id??null})" title="Cancelar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
-        ${l.status==='Pago'&&!l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx},${l.id??null})" title="Estornar">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
-        <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="deletarLanc(${l._idx},${l.id??null})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
-      </div></td>
-    </tr>`;
-  }).join('');
+  ctxRenderGrade('pagar', pagar, cpPag, CP_POR_PAG);
   const cpinf=document.getElementById('cp-pinfo'),cpb=document.getElementById('cp-pbtn');
   if(cpinf)cpinf.textContent=`${pagar.length} conta${pagar.length!==1?'s':''}`;
   if(cpb){let b=`<button onclick="cpNavPag(${cpPag-1})" ${cpPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpP;i++){if(i===1||i===tpP||Math.abs(i-cpPag)<=1)b+=`<button class="${i===cpPag?'active':''}" onclick="cpNavPag(${i})">${i}</button>`;else if(Math.abs(i-cpPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="cpNavPag(${cpPag+1})" ${cpPag===tpP?'disabled':''}>›</button>`;cpb.innerHTML=b;}
 
   // ----- CONTAS A RECEBER -----
   let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&matchPeriodoTabela(l));
-  receber=receber.filter(l=>matchBusca(l,[l.cliente||'',l.historico||'',l.plano||''])&&matchStatus(l)&&matchSituacao(l));
+  receber=receber.filter(l=>matchBusca(l,[l.cliente||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   receber.sort((a,b)=>{
-    if(crSort.col==='val'){const va=(a.aReceber||a.recebido||0),vb=(b.aReceber||b.recebido||0);return crSort.dir==='asc'?va-vb:vb-va;}
-    const va=a.data||'',vb=b.data||'';return crSort.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
+    const va=ctxChaveOrd(a,crSort.col,'receber'), vb=ctxChaveOrd(b,crSort.col,'receber');
+    const d=crSort.dir==='asc'?1:-1;
+    if(typeof va==='number'&&typeof vb==='number') return (va-vb)*d;
+    return String(va).localeCompare(String(vb))*d;
   });
   const tpR=Math.max(1,Math.ceil(receber.length/CP_POR_PAG));
   if(crPag>tpR)crPag=tpR;
-  const pagR=receber.slice((crPag-1)*CP_POR_PAG,crPag*CP_POR_PAG);
-  document.getElementById('ct-empty-receber').style.display=receber.length===0?'':'none';
+  document.getElementById('ct-empty-receber').style.display=(receber.length===0&&_ctActiveTab==='receber')?'':'none';
   document.getElementById('ct-tab-badge-receber').textContent=kpiAR.length;
-  document.getElementById('ct-tbody-receber').innerHTML=pagR.map(l=>{
-    const v=l.aReceber||l.recebido||0;
-    const atr=(l.status==='A Receber')&&(l.data||'')<h;
-    const da=atr?diasAtraso(l.data):0;
-    const rc=l.cancelado||l.status==='Cancelado'?' ct-row-cancelado':'';
-    return`<tr class="${atr?'ct-row-atrasado':''}${rc}">
-      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3);white-space:nowrap">${fmtData(l.data)}${atr?`<br><span class="ct-dias-atraso">${da}d atraso</span>`:''}</td>
-      <td style="font-weight:500;font-size:12px">${l.cliente||'<span style="color:var(--text3)">—</span>'}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text2)">${l.historico||'—'}</td>
-      <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;color:var(--text3)">${l.plano||'—'}</td>
-      <td style="font-size:10.5px;color:var(--text3)">${l.conta||'—'}</td>
-      <td>${_ctBadge(l,h)}${l.parcGroupId?` <span style="font-size:9px;color:var(--text3)">📑${l.parcNum}/${l.parcTotal}</span>`:''}${l.recGroupId?` <span style="font-size:9px;color:var(--text3)">🔁${l.recNum}/${l.recTotal}</span>`:''}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${l.status==='Recebido'?'var(--accent)':'#22c55e'}">${brl(v,true)}</td>
-      <td style="text-align:right"><div class="action-btns" style="justify-content:flex-end">
-        ${l.status==='A Receber'?`<button class="btn-quitar" style="border-color:var(--accent);color:var(--accent)" onclick="abrirModalReceber(${l._idx},${l.id??null})">✓ Receber</button>`:''}
-        ${l.status==='A Receber'?`<button class="action-btn" onclick="cancelarLancamento(${l._idx},${l.id??null})" title="Cancelar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></button>`:''}
-        ${l.status==='Recebido'&&!l.estornoDe?`<button class="btn-estornar" onclick="estornarLancamento(${l._idx},${l.id??null})" title="Estornar">↩ Estornar</button>`:''}${l.estornado?`<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:4px;padding:1px 5px">Estornado</span>`:''}
-        <button class="action-btn" onclick="abrirModalLancamento(null,${l._idx})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="action-btn del" onclick="deletarLanc(${l._idx},${l.id??null})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
-      </div></td>
-    </tr>`;
-  }).join('');
+  ctxRenderGrade('receber', receber, crPag, CP_POR_PAG);
   const crinf=document.getElementById('cr-pinfo'),crb=document.getElementById('cr-pbtn');
   if(crinf)crinf.textContent=`${receber.length} conta${receber.length!==1?'s':''}`;
   if(crb){let b=`<button onclick="crNavPag(${crPag-1})" ${crPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpR;i++){if(i===1||i===tpR||Math.abs(i-crPag)<=1)b+=`<button class="${i===crPag?'active':''}" onclick="crNavPag(${i})">${i}</button>`;else if(Math.abs(i-crPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="crNavPag(${crPag+1})" ${crPag===tpR?'disabled':''}>›</button>`;crb.innerHTML=b;}
+
+  // Barra de ações + menu de colunas refletem a aba ativa
+  ctxRenderAcaobar(_ctActiveTab);
+  ctxRenderMenuCols();
+}
+
+/* Exporta a aba ativa reusando o CSV já existente do módulo de lançamentos */
+function ctxExportarCSV(){
+  const lado=_ctActiveTab;
+  const lc=gd('sf_lancamentos'), h=hoje();
+  const itens = lado==='pagar'
+    ? lc.filter(l=>l.aPagar||l.pago)
+    : lc.filter(l=>l.aReceber||l.recebido);
+  if(!itens.length){ showToast('Sem dados para exportar.',true); return; }
+  let cab, linhas;
+  if(lado==='pagar'){
+    cab='Data;Fornecedor;Histórico;Plano;Status;Valor;Dias Atraso';
+    linhas=itens.map(l=>{
+      const atr=l.status==='A Pagar'&&(l.data||'')<h?diasAtraso(l.data):0;
+      return [l.data||'',l.fornecedor||'',(l.historico||'').replace(/;/g,' '),l.plano||'',l.status||'',
+              parseFloat(l.aPagar||l.pago||0).toFixed(2).replace('.',','),atr].join(';');
+    });
+  } else {
+    cab='Data;Cliente;Histórico;Plano;Status;Valor;Conta';
+    linhas=itens.map(l=>[l.data||'',l.cliente||'',(l.historico||'').replace(/;/g,' '),l.plano||'',l.status||'',
+              parseFloat(l.aReceber||l.recebido||0).toFixed(2).replace('.',','),l.conta||''].join(';'));
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+[cab].concat(linhas).join('\n')],{type:'text/csv'}));
+  a.download = lado==='pagar' ? 'contas_a_pagar.csv' : 'contas_a_receber.csv';
+  a.click();
+  showToast('CSV exportado!');
 }
 
 function cpNavPag(p){if(p<1)return;cpPag=p;renderContas();}
@@ -10742,6 +11152,21 @@ function planAlertasEstouro(ano){
 // ============================================================
 // CADASTROS
 // ============================================================
+/* Campos considerados na busca de clientes/fornecedores.
+   Antes: nome, razão, CNPJ, cidade e login IXC.
+   Agora inclui telefones (com e sem máscara), e-mail, endereço, bairro,
+   número, complemento, CEP, UF, contato e observação. */
+function cadCamposBusca(i){
+  const campos=[i.nome,i.razao,i.cnpj,i.ie,i.cidade,i.ixcLogin,i.email,i.contato,
+    i.tel1,i.tel2,i.whatsapp,i.telResidencial,i.telComercial,
+    i.end,i.bairro,i.numero,i.complemento,i.referencia,i.cep,i.cepFull,i.uf,i.obs];
+  const txt=campos.filter(Boolean).join(' ').toLowerCase();
+  // versão só com dígitos dos telefones/CPF/CEP, p/ buscar "84999" sem máscara
+  const nums=[i.tel1,i.tel2,i.whatsapp,i.telResidencial,i.telComercial,i.cnpj,i.cep,i.cepFull]
+    .filter(Boolean).map(v=>String(v).replace(/\D/g,'')).filter(Boolean).join(' ');
+  return txt+' '+nums;
+}
+
 function renderCadastro(tipo){
   const isCli=tipo==='clientes';
   const key='sf_'+tipo;
@@ -10759,7 +11184,7 @@ function renderCadastro(tipo){
     return null;
   }
   const fil=lista.map((i,idx)=>({...i,_idx:idx}))
-    .filter(i=>!busca||[(i.nome||''),(i.razao||''),(i.cnpj||''),(i.cidade||''),(i.ixcLogin||'')].join(' ').toLowerCase().includes(busca))
+    .filter(i=>!busca||cadCamposBusca(i).includes(busca))
     .filter(i=>{
       if(!isCli || statusFiltro==='Todos') return true;
       return statusDe(i) === statusFiltro;
@@ -10835,7 +11260,7 @@ function renderCadastro(tipo){
         : '';
       return`<tr>
         <td><div style="width:30px;height:30px;border-radius:8px;background:var(--accent2);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials(i.nome)}</div></td>
-        <td><div style="font-weight:600;font-size:13.5px">${i.nome||'—'}${badgeIXC}</div><div style="font-size:10.5px;color:var(--text3)">${i.razao||''}</div></td>
+        <td><div class="cli-nome-link" title="Abrir cadastro de ${(i.nome||'').replace(/"/g,'&quot;')}" onclick="abrirModalCadastro('clientes',${i._idx})" style="font-weight:600;font-size:13.5px">${i.nome||'—'}${badgeIXC}</div><div style="font-size:10.5px;color:var(--text3)">${i.razao||''}</div></td>
         <td class="td-mono td-muted">${i.cnpj||'—'}</td>
         <td class="td-mono" style="font-size:11px">${i.ixcLogin||'<span class="td-muted">—</span>'}</td>
         <td>${statusCell}</td>
