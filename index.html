@@ -24,11 +24,15 @@
        danger/fundo   6,27:1      info/fundo     8,26:1  (antes 5,64) */
   --bg:#F1E9E9;--surface:#FFF;--surface2:#F8F1F1;--border:#C3B3B3;
   --text:#22223B;--text2:#4A4A63;--text3:#67677D;
-  --accent:#2F7D1B;--accent2:#E3F4DC;--accent3:#BEE4AE;
-  --danger:#C40000;--danger-bg:#FBD5D5;
+  --accent:#3C9D23;--accent2:#E3F4DC;--accent3:#BEE4AE;
+  --danger:#D00000;--danger-bg:#FBD5D5;
   --warn:#8A4A00;--warn-bg:#FBE3C4;
   --info:#004E98;--info-bg:#CFE0F2;
-  --fin-green:#2F7D1B;--fin-red:#C40000;--fin-blue:#004E98;
+  --fin-green:#3C9D23;--fin-red:#D00000;--fin-blue:#004E98;
+  /* Tons escurecidos APENAS para texto pequeno sobre fundo claro, onde o
+     verde puro fica em 3,48:1. O verde/vermelho da imagem seguem íntegros
+     em preenchimentos, barras, ícones e números grandes. */
+  --accent-txt:#2F7D1B;--danger-txt:#C40000;
   /* cores puras da paleta, para preenchimentos com texto branco por cima */
   --pal-azul:#004E98;--pal-verde:#3C9D23;--pal-vermelho:#D00000;
   --pal-claro:#F8F1F1;--pal-navy:#22223B;
@@ -43,14 +47,15 @@ body.dark-mode{
      porque os tons puros ficam abaixo de 4,5:1 sobre fundo escuro. */
   --bg:#16162A;--surface:#22223B;--surface2:#2C2C4A;--border:#46466B;
   --text:#F8F1F1;--text2:#B5B0C4;--text3:#9693B0;
-  --accent:#5FC63F;--accent2:#1B3315;--accent3:#26471E;
+  --accent:#4FB82F;--accent2:#1B3315;--accent3:#26471E;
   --danger:#FF6262;--danger-bg:#3A1010;
   --warn:#E0A03A;--warn-bg:#33260C;
   --info:#5A9BE8;--info-bg:#10233D;
-  --fin-green:#5FC63F;--fin-red:#FF6262;--fin-blue:#5A9BE8;
-  --pal-azul:#5A9BE8;--pal-verde:#5FC63F;--pal-vermelho:#FF6262;
+  --fin-green:#4FB82F;--fin-red:#FF6262;--fin-blue:#5A9BE8;
+  --pal-azul:#5A9BE8;--pal-verde:#4FB82F;--pal-vermelho:#FF6262;
   --pal-claro:#F8F1F1;--pal-navy:#22223B;
   --chart-grid:rgba(248,241,241,0.10);
+  --accent-txt:#4FB82F;--danger-txt:#FF6262;
   --sidebar-bg:#101020;
 }
 /* Sidebar cor fixa no dark — independente de --text */
@@ -79,7 +84,7 @@ body.dark-mode .painel-modo-tab.active{background:var(--border);color:var(--text
 body.dark-mode .painel-modo-tab#btn-painel-todos.active{background:var(--border)}
 body.dark-mode .extrato-kpi.dark{background:#040B12;border-color:var(--border)}
 body.dark-mode .toast{background:var(--surface2);border:1px solid var(--border)}
-body.dark-mode .kpi-card.dark::before{background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.04) 50%,transparent 60%);background-size:400px 100%;}
+body.dark-mode .kpi-card.dark::before{content:none}
 body.dark-mode .saldo-card.total-card::before{background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.04) 50%,transparent 60%);background-size:400px 100%;}
 
 /* Botão tema */
@@ -509,16 +514,11 @@ textarea{resize:vertical;min-height:54px}
   border-color:var(--text3);
 }
 .kpi-card:active{transform:translateY(0) scale(0.98);box-shadow:none;}
-.kpi-card::before{
-  content:'';position:absolute;inset:0;
-  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.55) 50%,transparent 60%);
-  background-size:400px 100%;background-position:-400px 0;
-  transition:none;opacity:0;
-}
-.kpi-card:hover::before{animation:shimmer 0.55s ease forwards;opacity:1;}
+/* Shimmer removido: os cards de KPI usam cor sólida, sem brilho passando. */
+.kpi-card::before{content:none}
 .kpi-card.dark{background:var(--text);border-color:var(--text)}
 .kpi-card.dark:hover{border-color:rgba(255,255,255,0.25);box-shadow:0 8px 28px rgba(0,0,0,0.28);}
-.kpi-card.dark::before{background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.12) 50%,transparent 60%);background-size:400px 100%;background-position:-400px 0;}
+.kpi-card.dark::before{content:none}
 .kpi-card .ripple-el{position:absolute;border-radius:50%;background:rgba(45,140,87,0.22);transform:scale(0);animation:ripple 0.5s linear;pointer-events:none;}
 .kpi-card.dark .ripple-el{background:rgba(255,255,255,0.15);}
 .kpi-label{font-size:10.5px;color:var(--text3);margin-bottom:4px}
@@ -762,10 +762,10 @@ body.dark-mode .gov-ajuste{background:rgba(217,119,6,.18);border-color:rgba(217,
 #page-tesouraria .ts-kpi{border-radius:12px;padding:13px 16px;background:var(--surface);border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.05);position:relative;overflow:hidden;transition:transform .2s}
 #page-tesouraria .ts-kpi:hover{transform:translateY(-2px)}
 #page-tesouraria .ts-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
-#page-tesouraria .ts-kpi.verde::before{background:linear-gradient(90deg,#479514,#6EDD23)}
-#page-tesouraria .ts-kpi.ambar::before{background:linear-gradient(90deg,#DB7603,#FB9A2B)}
-#page-tesouraria .ts-kpi.vermelho::before{background:linear-gradient(90deg,#E70D0D,#FD7171)}
-#page-tesouraria .ts-kpi.azul::before{background:linear-gradient(90deg,#086CD0,#51A7FD)}
+#page-tesouraria .ts-kpi.verde::before{background:#3C9D23}
+#page-tesouraria .ts-kpi.ambar::before{background:#B87F22}
+#page-tesouraria .ts-kpi.vermelho::before{background:#D00000}
+#page-tesouraria .ts-kpi.azul::before{background:#004E98}
 #page-tesouraria .ts-lbl{font-size:10px;font-weight:800;letter-spacing:.07em;color:var(--text3)}
 #page-tesouraria .ts-hero .ts-lbl{color:rgba(255,255,255,.78)}
 #page-tesouraria .ts-num{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:3px}
@@ -933,9 +933,9 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 @media(max-width:1100px){#page-planejamento .pl-kpi-row{grid-template-columns:1fr 1fr}}
 #page-planejamento .pl-kpi{border-radius:12px;padding:13px 16px;background:var(--surface);border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.05);position:relative;overflow:hidden}
 #page-planejamento .pl-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--border)}
-#page-planejamento .pl-kpi.ok::before{background:linear-gradient(90deg,#479514,#6EDD23)}
-#page-planejamento .pl-kpi.bad::before{background:linear-gradient(90deg,#E70D0D,#FD7171)}
-#page-planejamento .pl-kpi.neutro::before{background:linear-gradient(90deg,#086CD0,#51A7FD)}
+#page-planejamento .pl-kpi.ok::before{background:#3C9D23}
+#page-planejamento .pl-kpi.bad::before{background:#D00000}
+#page-planejamento .pl-kpi.neutro::before{background:#004E98}
 #page-planejamento .pl-k-lbl{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--text3)}
 #page-planejamento .pl-k-num{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:3px}
 #page-planejamento .pl-k-bar{height:5px;background:var(--surface2);border-radius:5px;overflow:hidden;margin:7px 0 5px}
@@ -1863,11 +1863,11 @@ body.perfil-operador #nav-sec-admin{display:none !important}
 @media(max-width:1000px){.cp-kpi-grid{grid-template-columns:1fr 1fr}.cp-kpi-grid.trio{grid-template-columns:1fr 1fr}}
 .cp-kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden}
 .cp-kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:12px 12px 0 0}
-.cp-kpi.azul::before{background:linear-gradient(90deg,#0B5BAA,#2F8EED)}
-.cp-kpi.verde::before{background:linear-gradient(90deg,var(--accent),#6CC233)}
-.cp-kpi.laranja::before{background:linear-gradient(90deg,#B76200,#DD7C0D)}
-.cp-kpi.vermelho::before{background:linear-gradient(90deg,var(--danger),#F26161)}
-.cp-kpi.roxo::before{background:linear-gradient(90deg,#523CBD,#816FDB)}
+.cp-kpi.azul::before{background:#004E98}
+.cp-kpi.verde::before{background:#3C9D23}
+.cp-kpi.laranja::before{background:#B87F22}
+.cp-kpi.vermelho::before{background:#D00000}
+.cp-kpi.roxo::before{background:#22223B}
 .cp-kpi-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
 .cp-kpi-ico{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
 .cp-kpi-num{font-size:28px;font-weight:700;color:var(--text);line-height:1}
@@ -4871,7 +4871,7 @@ textarea.cp-form-input{resize:vertical}
      azul    = projeção (Saldo Previsto)
      navy    = valor consolidado, sóbrio (Pago) */
 .ct-kpi-green .ct-kpi-icon{background:rgba(60,157,35,.14);color:var(--pal-verde)}
-.ct-kpi-green .ct-kpi-val{color:var(--accent)}
+.ct-kpi-green .ct-kpi-val{color:var(--accent)}   /* nº grande: verde puro OK */
 .ct-kpi-red .ct-kpi-icon{background:rgba(208,0,0,.12);color:var(--pal-vermelho)}
 .ct-kpi-red .ct-kpi-val{color:var(--danger)}
 .ct-kpi-blue .ct-kpi-icon{background:rgba(0,78,152,.12);color:var(--pal-azul)}
@@ -5121,7 +5121,7 @@ body.ctx-compacto .ctxg-head{padding:6px 14px}
 .ctxg-body tr[data-st="atrasado"] td.ctx-fix{box-shadow:inset 3px 0 0 #D00000}
 .ctxg-body tr[data-st="hoje"]     td.ctx-fix{box-shadow:inset 3px 0 0 #004E98}
 .ctxg-body tr[data-st="aberto"]   td.ctx-fix{box-shadow:inset 3px 0 0 #8A4A00}
-.ctxg-body tr[data-st="quitado"]  td.ctx-fix{box-shadow:inset 3px 0 0 #2F7D1B}
+.ctxg-body tr[data-st="quitado"]  td.ctx-fix{box-shadow:inset 3px 0 0 #3C9D23}
 .ctxg-body tr[data-st="parcial"]  td.ctx-fix{box-shadow:inset 3px 0 0 #4B3B8F}
 .ctxg-body tr[data-st="cancelado"]td.ctx-fix{box-shadow:inset 3px 0 0 var(--text3)}
 .ctxg-body td.ctx-mono{font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
@@ -5148,7 +5148,7 @@ body.ctx-compacto .ctxg-head{padding:6px 14px}
 .ct-badge-atrasado{background:#D00000;border-color:#A30000;
                    box-shadow:0 0 0 2px rgba(208,0,0,.18)}
 .ct-badge-pago,
-.ct-badge-recebido{background:#2F7D1B;border-color:#256315}
+.ct-badge-recebido{background:#3C9D23;border-color:#2F7D1B}
 .ct-badge-parcial {background:#4B3B8F;border-color:#3B2E70}
 /* Cancelado é estado "morto": fica discreto de propósito, para não competir
    visualmente com os títulos que exigem ação. */
@@ -5170,7 +5170,7 @@ body.dark-mode .ct-badge-parcial {background:#6E5CC4;border-color:#57489E}
 .ctx-table tbody tr[data-st="atrasado"] td.ctx-fix{box-shadow:inset 3px 0 0 #D00000}
 .ctx-table tbody tr[data-st="hoje"]     td.ctx-fix{box-shadow:inset 3px 0 0 #004E98}
 .ctx-table tbody tr[data-st="aberto"]   td.ctx-fix{box-shadow:inset 3px 0 0 #8A4A00}
-.ctx-table tbody tr[data-st="quitado"]  td.ctx-fix{box-shadow:inset 3px 0 0 #2F7D1B}
+.ctx-table tbody tr[data-st="quitado"]  td.ctx-fix{box-shadow:inset 3px 0 0 #3C9D23}
 .ctx-table tbody tr[data-st="parcial"]  td.ctx-fix{box-shadow:inset 3px 0 0 #4B3B8F}
 .ctx-table tbody tr[data-st="cancelado"]td.ctx-fix{box-shadow:inset 3px 0 0 var(--text3)}
 
@@ -10760,7 +10760,7 @@ function ctxRenderLegenda(cont){
     {cor:'#D00000', txt:'Atrasado',   sit:'atrasado', k:'atrasado'},
     {cor:'#004E98', txt:'Vence hoje', sit:'hoje',     k:'hoje'},
     {cor:'#8A4A00', txt:(lado==='pagar'?'A pagar':'A receber'), sit:'ok', k:'aberto'},
-    {cor:'#2F7D1B', txt:(lado==='pagar'?'Pago':'Recebido'), sit:'', k:'quitado'},
+    {cor:'#3C9D23', txt:(lado==='pagar'?'Pago':'Recebido'), sit:'', k:'quitado'},
     {cor:'#4B3B8F', txt:'Parcial',    sit:'', k:'parcial'},
     {cor:'var(--text3)', txt:'Cancelado', sit:'', k:'cancelado'},
   ];
