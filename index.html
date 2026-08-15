@@ -4177,45 +4177,65 @@ textarea.cp-form-input{resize:vertical}
             <option value="">Todos</option>
           </select>
         </div>
-        <div class="ct-filtro-item">
-          <span class="ct-filtro-lbl">Situação</span>
-          <select id="cp-fatrasado" onchange="renderContas()">
-            <option value="">Todas</option>
-            <option value="atrasado">Atrasados</option>
-            <option value="hoje">Vencem hoje</option>
-            <option value="semana">Próximos 7 dias</option>
-            <option value="ok">Em dia</option>
-          </select>
+        <!-- Situação: continua no DOM porque matchSituacao() lê este valor e
+             limparFiltrosContas() o reseta. Quem controla agora é a legenda de cores. -->
+        <select id="cp-fatrasado" onchange="renderContas()" style="display:none" aria-hidden="true">
+          <option value="">Todas</option>
+          <option value="atrasado">Atrasados</option>
+          <option value="hoje">Vencem hoje</option>
+          <option value="semana">Próximos 7 dias</option>
+          <option value="ok">Em dia</option>
+        </select>
+
+        <!-- Visão: lista ou agrupada por plano de contas -->
+        <div class="ctx-seg">
+          <button id="ctx-v-lista" class="act" onclick="ctxSetVisao('lista')">☰ Lista</button>
+          <button id="ctx-v-grupo" onclick="ctxSetVisao('grupo')">▦ Por plano</button>
         </div>
-        <div class="ct-filtro-item">
-          <span class="ct-filtro-lbl">Emissão</span>
-          <div class="ct-filtro-datas">
-            <input type="date" id="ctf-emi-de" onchange="renderContas()" title="Emissão de">
-            <span>→</span>
-            <input type="date" id="ctf-emi-ate" onchange="renderContas()" title="Emissão até">
+
+        <!-- Datas recolhidas (IDs preservados) -->
+        <div class="ctx-pop">
+          <button class="ct-filtro-limpar" onclick="ctxPop(event,'ctx-pop-datas')">📅 Datas<span id="ctx-ndatas"></span></button>
+          <div class="ctx-popm" id="ctx-pop-datas" onclick="event.stopPropagation()">
+            <div class="tt">Período de emissão</div>
+            <div class="dt">
+              <input type="date" id="ctf-emi-de" onchange="renderContas()" title="Emissão de">
+              <span>→</span>
+              <input type="date" id="ctf-emi-ate" onchange="renderContas()" title="Emissão até">
+            </div>
+            <div class="tt" style="padding-top:9px">Período de vencimento</div>
+            <div class="dt">
+              <input type="date" id="ctf-venc-de" onchange="renderContas()" title="Vencimento de">
+              <span>→</span>
+              <input type="date" id="ctf-venc-ate" onchange="renderContas()" title="Vencimento até">
+            </div>
           </div>
         </div>
-        <div class="ct-filtro-item">
-          <span class="ct-filtro-lbl">Vencimento</span>
-          <div class="ct-filtro-datas">
-            <input type="date" id="ctf-venc-de" onchange="renderContas()" title="Vencimento de">
-            <span>→</span>
-            <input type="date" id="ctf-venc-ate" onchange="renderContas()" title="Vencimento até">
-          </div>
-        </div>
-        <div class="ctx-cols-wrap">
+
+        <div class="ctx-cols-wrap ctx-pop">
           <button class="ct-filtro-limpar" onclick="ctxToggleMenuCols(event)">▦ Colunas</button>
           <div class="ctx-cols-menu" id="ctx-cols-menu" onclick="event.stopPropagation()"></div>
         </div>
+
+        <div class="ctx-seg">
+          <button id="ctx-d-conf" class="act" onclick="ctxSetDens('conf')">Confortável</button>
+          <button id="ctx-d-comp" onclick="ctxSetDens('comp')">Compacto</button>
+        </div>
+
         <button class="ct-filtro-limpar" onclick="limparFiltrosContas()">✕ Limpar filtros</button>
       </div>
+
+      <!-- aviso de colunas ocultas automaticamente -->
+      <div id="ctx-avisocol"></div>
 
       <!-- ===== LEGENDA DE CORES ===== -->
       <div class="ctx-legenda" id="ctx-legenda"></div>
 
       <!-- ===== GRADE EM COLUNAS ===== -->
       <div class="ctx-grade">
-        <div class="ctx-scroll">
+        <div id="ctx-grupos-pagar" style="display:none"></div>
+        <div id="ctx-grupos-receber" style="display:none"></div>
+        <div class="ctx-scroll" id="ctx-scroll">
           <table class="ctx-table" id="ctx-table-pagar">
             <thead id="ctx-thead-pagar"></thead>
             <tbody id="ct-tbody-pagar"></tbody>
@@ -5007,6 +5027,80 @@ table.ctx-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1
 .ctx-analise-body{display:none;padding:0 16px 16px}
 .ctx-analise.open .ctx-analise-body{display:block}
 .ctx-atraso-d{font-size:9.5px;color:var(--danger);font-weight:700}
+/* ===== v24: análise (colunas contextuais, agrupamento, densidade) ===== */
+/* aviso de colunas ocultas */
+.ctx-avisocol{display:flex;align-items:center;gap:7px;background:var(--info-bg);color:var(--info);
+  border:1px solid var(--border);border-top:none;padding:6px 14px;font-size:11px;font-weight:600;line-height:1.5}
+.ctx-avisocol .x{margin-left:auto;cursor:pointer;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+.ctx-avisocol b{font-weight:800}
+/* popover genérico */
+.ctx-pop{position:relative}
+.ctx-popm{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:60;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:10px;min-width:236px;box-shadow:0 10px 30px -10px rgba(0,0,0,.3)}
+.ctx-popm.open{display:block}
+.ctx-popm .tt{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:2px 5px 7px}
+.ctx-popm .dt{display:flex;align-items:center;gap:5px;padding:3px 5px}
+.ctx-popm .dt span{color:var(--text3);font-size:11px}
+.ctx-popm .dt input{flex:1;min-width:0;border:1px solid var(--border);background:var(--surface2);color:var(--text);
+  border-radius:6px;padding:5px 7px;font-family:'DM Mono',monospace;font-size:11px}
+.ctx-popm label.auto{opacity:.55}
+.ctx-badge-n{background:var(--accent);color:#fff;font-family:'DM Mono',monospace;font-size:9.5px;font-weight:700;
+  padding:1px 6px;border-radius:20px;margin-left:4px}
+/* segmentado (visão / densidade) */
+.ctx-seg{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px;gap:2px}
+.ctx-seg button{border:none;background:transparent;color:var(--text2);padding:4px 10px;border-radius:6px;
+  font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.ctx-seg button:hover{color:var(--text)}
+.ctx-seg button.act{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+/* densidade compacta */
+body.ctx-compacto .ctx-table td{padding:3px 10px;font-size:11.5px}
+body.ctx-compacto .ctx-table th{padding:6px 10px}
+body.ctx-compacto .ct-badge{padding:2px 8px;font-size:9px}
+body.ctx-compacto .ctx-scroll{max-height:68vh}
+body.ctx-compacto .ctxg-head{padding:6px 14px}
+/* ===== agrupamento por plano de contas ===== */
+.ctxg-wrap{background:var(--surface)}
+.ctxg{border-bottom:1px solid var(--border)}
+.ctxg:last-child{border-bottom:none}
+.ctxg-head{display:flex;align-items:center;gap:11px;padding:10px 14px;cursor:pointer;background:var(--surface)}
+.ctxg-head:hover{background:var(--surface2)}
+.ctxg.open .ctxg-head{background:var(--surface2)}
+.ctxg-car{color:var(--text3);font-size:10px;width:11px;flex-shrink:0;transition:transform .15s}
+.ctxg.open .ctxg-car{transform:rotate(90deg)}
+.ctxg-nome{font-weight:700;font-size:12.5px;min-width:150px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctxg-cod{font-family:'DM Mono',monospace;font-size:11px;color:var(--text3);margin-right:7px}
+.ctxg-qtd{font-size:10.5px;color:var(--text3);background:var(--surface2);padding:1px 8px;border-radius:20px;
+  border:1px solid var(--border);flex-shrink:0}
+.ctxg.open .ctxg-qtd{background:var(--surface)}
+.ctxg-atr{font-size:9.5px;color:#fff;background:#DC2626;font-weight:800;padding:2px 7px;border-radius:4px;flex-shrink:0}
+.ctxg-bar{flex:1;height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;min-width:60px;max-width:240px;
+  border:1px solid var(--border);display:flex}
+.ctxg-bar i{display:block;height:100%}
+.ctxg-pct{font-family:'DM Mono',monospace;font-size:10.5px;color:var(--text3);min-width:40px;text-align:right;flex-shrink:0}
+.ctxg-tot{font-family:'DM Mono',monospace;font-size:13.5px;font-weight:700;min-width:118px;text-align:right;flex-shrink:0}
+.ctxg-body{display:none}
+.ctxg.open .ctxg-body{display:block}
+.ctxg-body table{width:100%;border-collapse:separate;border-spacing:0;background:var(--bg2)}
+.ctxg-body td{padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;white-space:nowrap}
+.ctxg-body tbody tr{cursor:pointer}
+.ctxg-body tbody tr:hover td{background:var(--surface2)}
+.ctxg-body tbody tr.ctx-marcado td{background:var(--accent2)}
+.ctxg-body tbody tr.ct-row-cancelado td{opacity:.55}
+.ctxg-body td.ctx-fix{width:32px;padding-left:12px;box-shadow:inset 3px 0 0 transparent;background:var(--bg2)}
+.ctxg-body tr[data-st="atrasado"] td.ctx-fix{box-shadow:inset 3px 0 0 #DC2626}
+.ctxg-body tr[data-st="hoje"]     td.ctx-fix{box-shadow:inset 3px 0 0 #2563EB}
+.ctxg-body tr[data-st="aberto"]   td.ctx-fix{box-shadow:inset 3px 0 0 #D97706}
+.ctxg-body tr[data-st="quitado"]  td.ctx-fix{box-shadow:inset 3px 0 0 #16A34A}
+.ctxg-body tr[data-st="parcial"]  td.ctx-fix{box-shadow:inset 3px 0 0 #7C3AED}
+.ctxg-body tr[data-st="cancelado"]td.ctx-fix{box-shadow:inset 3px 0 0 var(--text3)}
+.ctxg-body td.ctx-mono{font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
+.ctxg-body td.ctx-txt{color:var(--text2);max-width:240px;overflow:hidden;text-overflow:ellipsis}
+.ctxg-body td.ctx-dim{color:var(--text3)}
+.ctxg-body td.num{text-align:right}
+.ctxg-resumo{padding:9px 14px;background:var(--surface2);border-bottom:1px solid var(--border);
+  font-size:11px;color:var(--text3);display:flex;gap:16px;flex-wrap:wrap}
+.ctxg-resumo b{color:var(--text2);font-family:'DM Mono',monospace}
+
 /* ===== STATUS EM DESTAQUE (v23) =====
    Mantém a MESMA cor de cada status (vermelho=atrasado, azul=vence hoje,
    âmbar=em aberto, verde=quitado, roxo=parcial, cinza=cancelado).
@@ -9407,7 +9501,7 @@ function svBadge(data,st){
 // ---- Contas Pagar sort state ----
 let cpSort={col:'data',dir:'asc'};
 let cpPag=1;
-const CP_POR_PAG=15;
+let CP_POR_PAG=15;
 
 function sortCP(col){
   if(cpSort.col===col)cpSort.dir=cpSort.dir==='asc'?'desc':'asc';
@@ -9977,6 +10071,8 @@ function ctSwitchTab(tab){
     if(t) t.style.display = s===tab ? '' : 'none';
     if(r) r.style.display = s===tab ? '' : 'none';
   });
+  Object.keys(ctxColsManual).forEach(k=>delete ctxColsManual[k]);  // contexto mudou
+  ctxGruposAbertos={};
   atualizarStatusFiltro(tab);
   renderContas();
 }
@@ -10096,7 +10192,14 @@ function ctxGarantirCols(){
   ctxCols('pagar').forEach(c=>{ ctxColsOn[c.id]=c.on; });
 }
 function ctxColsAtivas(lado){ ctxGarantirCols(); return ctxCols(lado).filter(c=>ctxColsOn[c.id]); }
-function ctxToggleCol(id){ ctxColsOn[id]=!ctxColsOn[id]; renderContas(); }
+function ctxToggleCol(id){
+  ctxGarantirCols();
+  const lado=_ctActiveTab;
+  const fora=ctxColsInuteis(ctxUltimaLista[lado]||[], lado);
+  const atual = ctxColsManual[id]!==undefined ? ctxColsManual[id] : (!fora[id] && ctxColsOn[id]);
+  ctxColsManual[id]=!atual; ctxColsOn[id]=!atual;
+  renderContas();
+}
 function ctxToggleMenuCols(ev){
   ev.stopPropagation();
   ctxMenuColsAberto=!ctxMenuColsAberto;
@@ -10230,9 +10333,19 @@ function ctxRenderMenuCols(){
   const m=document.getElementById('ctx-cols-menu');
   if(!m) return;
   ctxGarantirCols();
+  const lado=_ctActiveTab;
+  const fora=ctxColsInuteis(ctxUltimaLista[lado]||[], lado);
   m.innerHTML='<div class="tit">Colunas visíveis</div>'
-    + ctxCols(_ctActiveTab).map(c=>
-        `<label><input type="checkbox" ${ctxColsOn[c.id]?'checked':''} onchange="ctxToggleCol('${c.id}')"> ${c.lbl}</label>`).join('');
+    + ctxCols(lado).map(c=>{
+        const auto = fora[c.id] && ctxColsManual[c.id]===undefined;
+        const on = ctxColsManual[c.id]!==undefined ? ctxColsManual[c.id] : (!fora[c.id] && ctxColsOn[c.id]);
+        return `<label class="${auto?'auto':''}" title="${auto?('Oculta automaticamente: '+fora[c.id]):''}">`
+          +`<input type="checkbox" ${on?'checked':''} onchange="ctxToggleCol('${c.id}')"> ${c.lbl}`
+          +`${auto?' <span style="font-size:9.5px;color:var(--text3)">(auto)</span>':''}</label>`;
+      }).join('')
+    + (Object.keys(ctxColsManual).length
+        ? `<div style="padding:8px 5px 2px;border-top:1px solid var(--border);margin-top:6px">`
+          +`<button class="ct-filtro-limpar" onclick="ctxColsAuto()">↺ voltar ao automático</button></div>` : '');
 }
 /* ============================================================
    DETALHES DO TÍTULO (v22)
@@ -10397,27 +10510,238 @@ document.addEventListener('keydown',function(e){
   }
 });
 
+/* ============================================================
+   v24 — apoio à análise. Nada aqui altera cálculo:
+   trabalha sempre sobre a MESMA lista já filtrada por
+   matchStatus/matchSituacao/matchPeriodoTabela.
+   ============================================================ */
+let ctxVisao='lista', ctxDens='conf', ctxGruposAbertos={}, ctxContStatus={};
+const ctxColsManual={};        // colunas que o usuário forçou na mão
+
+/* ---- 1) COLUNAS CONTEXTUAIS ----
+   Detecta colunas que não carregam informação na lista atual.
+   Só apresentação: a coluna some da tela, o dado continua lá. */
+function ctxColsInuteis(lista, lado){
+  const fora={};
+  if(!lista.length) return fora;
+  const todos=f=>lista.every(f);
+  const campoNome = lado==='pagar' ? 'fornecedor' : 'cliente';
+  if(todos(l=>!l.dataEfetivacao))            fora.baixa   ='nenhum título foi baixado';
+  if(todos(l=>!ctxVBaixado(l,lado)))         fora.baixado ='nenhuma baixa registrada';
+  if(todos(l=>!ctxVAberto(l,lado)))          fora.aberto  ='nada em aberto';
+  if(todos(l=>!l[campoNome]))                fora.nome    ='campo não preenchido nestes títulos';
+  if(todos(l=>!l.plano))                     fora.plano   ='sem plano de contas';
+  if(todos(l=>!l.historico))                 fora.historico='sem histórico';
+  // Atraso só interessa se houver algum título vencido em aberto
+  const stAb = lado==='pagar' ? 'A Pagar' : 'A Receber';
+  const h=hoje();
+  if(todos(l=>!(l.status===stAb && !l.cancelado && (l.data||'')<h))) fora.atraso='nenhum título vencido';
+  // Valor x Valor aberto idênticos em todos → uma das duas basta
+  if(!fora.aberto && todos(l=>Math.abs(ctxVTitulo(l,lado)-ctxVAberto(l,lado))<0.005)) fora.valor='igual ao valor aberto';
+  // Conta igual em todo mundo não diferencia nada
+  if(lista.length>1 && todos(l=>(l.conta||'')===(lista[0].conta||''))) fora.conta='mesma conta em todos';
+  return fora;
+}
+function ctxColsCtx(lista, lado){
+  ctxGarantirCols();
+  const fora=ctxColsInuteis(lista,lado);
+  const cols=ctxCols(lado).filter(c=>{
+    if(ctxColsManual[c.id]!==undefined) return ctxColsManual[c.id];   // decisão manual manda
+    if(fora[c.id]) return false;
+    return !!ctxColsOn[c.id];
+  });
+  return {cols, fora};
+}
+function ctxRenderAviso(fora, lado){
+  const el=document.getElementById('ctx-avisocol');
+  if(!el) return;
+  const auto=Object.entries(fora).filter(([k])=>ctxColsManual[k]===undefined);
+  if(!auto.length){ el.innerHTML=''; return; }
+  const defs=ctxCols(lado);
+  el.innerHTML=`<div class="ctx-avisocol">▦ ${auto.length} coluna${auto.length!==1?'s':''} `
+    +`oculta${auto.length!==1?'s':''} automaticamente — `
+    + auto.map(([k,m])=>`<b>${(defs.find(c=>c.id===k)||{}).lbl||k}</b> (${m})`).join(', ')
+    + `<span class="x" onclick="ctxMostrarTudo()">mostrar mesmo assim</span></div>`;
+}
+function ctxMostrarTudo(){
+  const lado=_ctActiveTab;
+  const lista=ctxUltimaLista[lado]||[];
+  const fora=ctxColsInuteis(lista,lado);
+  Object.keys(fora).forEach(k=>{ ctxColsManual[k]=true; ctxColsOn[k]=true; });
+  renderContas();
+}
+function ctxColsAuto(){
+  Object.keys(ctxColsManual).forEach(k=>delete ctxColsManual[k]);
+  ctxColsOn=null; ctxGarantirCols();
+  renderContas();
+}
+let ctxUltimaLista={pagar:[],receber:[]};
+
+/* ---- visão / densidade / popovers ---- */
+function ctxSetVisao(v){
+  ctxVisao=v;
+  const a=document.getElementById('ctx-v-lista'), b=document.getElementById('ctx-v-grupo');
+  if(a) a.classList.toggle('act',v==='lista');
+  if(b) b.classList.toggle('act',v==='grupo');
+  if(v==='grupo' && !Object.keys(ctxGruposAbertos).length){
+    // abre o maior grupo, para já mostrar o formato expandido
+    const lado=_ctActiveTab, lista=ctxUltimaLista[lado]||[], m={};
+    lista.forEach(l=>{ const p=l.plano||'(sem plano)'; m[p]=(m[p]||0)+ctxVTitulo(l,lado); });
+    const maior=Object.entries(m).sort((x,y)=>y[1]-x[1])[0];
+    if(maior) ctxGruposAbertos[maior[0]]=true;
+  }
+  renderContas();
+}
+function ctxSetDens(d){
+  ctxDens=d;
+  document.body.classList.toggle('ctx-compacto', d==='comp');
+  const a=document.getElementById('ctx-d-conf'), b=document.getElementById('ctx-d-comp');
+  if(a) a.classList.toggle('act',d==='conf');
+  if(b) b.classList.toggle('act',d==='comp');
+  CP_POR_PAG = (d==='comp') ? 25 : 15;
+  cpPag=1; crPag=1;
+  renderContas();
+}
+function ctxPop(ev,id){
+  ev.stopPropagation();
+  const el=document.getElementById(id);
+  if(!el) return;
+  const aberto=el.classList.contains('open');
+  document.querySelectorAll('.ctx-popm,.ctx-cols-menu').forEach(p=>p.classList.remove('open'));
+  ctxMenuColsAberto=false;
+  if(!aberto) el.classList.add('open');
+}
+document.addEventListener('click',function(){
+  document.querySelectorAll('.ctx-popm').forEach(p=>p.classList.remove('open'));
+});
+function ctxRenderNDatas(){
+  const n=['ctf-emi-de','ctf-emi-ate','ctf-venc-de','ctf-venc-ate']
+    .filter(id=>(document.getElementById(id)||{}).value).length;
+  const el=document.getElementById('ctx-ndatas');
+  if(el) el.innerHTML = n ? `<span class="ctx-badge-n">${n}</span>` : '';
+}
+
+/* ---- 2) AGRUPAMENTO POR PLANO DE CONTAS ----
+   Agrupa a MESMA lista filtrada e soma os MESMOS campos do rodapé.
+   Nenhum valor novo é calculado. */
+function ctxAgrupar(lista, lado){
+  const mapa={};
+  lista.forEach(l=>{ const p=l.plano||'(sem plano de contas)'; (mapa[p]=mapa[p]||[]).push(l); });
+  const h=hoje();
+  const stAb = lado==='pagar' ? 'A Pagar' : 'A Receber';
+  const grupos=Object.entries(mapa).map(([plano,itens])=>{
+    const total   = itens.filter(l=>!(l.cancelado||l.status==='Cancelado'))
+                         .reduce((s,l)=>s+ctxVTitulo(l,lado),0);
+    const aberto  = itens.reduce((s,l)=>s+ctxVAberto(l,lado),0);
+    const baixado = itens.reduce((s,l)=>s+ctxVBaixado(l,lado),0);
+    const atr     = itens.filter(l=>l.status===stAb && !l.cancelado && (l.data||'')<h);
+    return {plano, itens, total, aberto, baixado,
+            atrQtd:atr.length, atrVal:atr.reduce((s,l)=>s+ctxVAberto(l,lado),0)};
+  }).sort((a,b)=>b.total-a.total);
+  return {grupos, geral:grupos.reduce((s,g)=>s+g.total,0)};
+}
+function ctxToggleGrupo(p){
+  ctxGruposAbertos[p]=!ctxGruposAbertos[p];
+  renderContas();
+}
+function ctxExpandirTodos(abrir){
+  const lado=_ctActiveTab;
+  const {grupos}=ctxAgrupar(ctxUltimaLista[lado]||[], lado);
+  ctxGruposAbertos={};
+  if(abrir) grupos.forEach(g=>{ ctxGruposAbertos[g.plano]=true; });
+  renderContas();
+}
+function ctxRenderGrupos(lado, lista, cols){
+  const {grupos, geral}=ctxAgrupar(lista, lado);
+  const h=hoje();
+  const corBase = lado==='pagar' ? '#D97706' : '#16A34A';
+  // dentro do grupo o plano é redundante
+  const cd=cols.filter(c=>c.id!=='plano');
+
+  // mapa de seleção: no modo agrupado, TODAS as linhas ficam visíveis
+  ctxOrdem[lado]=[]; ctxMapa[lado]={};
+  lista.forEach(l=>{
+    const k=ctxChave(l);
+    ctxOrdem[lado].push(k);
+    ctxMapa[lado][k]={chave:k, idx:l._idx, id:(l.id==null?null:l.id), status:l.status,
+                      estornoDe:l.estornoDe, valor:ctxVTitulo(l,lado)};
+  });
+  for(const k in ctxSel[lado]) if(!ctxMapa[lado][k]) delete ctxSel[lado][k];
+
+  const abertos=grupos.filter(g=>ctxGruposAbertos[g.plano]).length;
+  const resumo=`<div class="ctxg-resumo">`
+    +`<span><b>${grupos.length}</b> plano${grupos.length!==1?'s':''} de contas</span>`
+    +`<span><b>${lista.length}</b> título${lista.length!==1?'s':''}</span>`
+    +`<span style="margin-left:auto;cursor:pointer;text-decoration:underline;text-underline-offset:2px" `
+    +`onclick="ctxExpandirTodos(${abertos<grupos.length})">`
+    +`${abertos<grupos.length?'⊞ expandir todos':'⊟ recolher todos'}</span></div>`;
+
+  const corpo=grupos.map(g=>{
+    const aberta=!!ctxGruposAbertos[g.plano];
+    const pct=geral>0?(g.total/geral*100):0;
+    const m=g.plano.match(/^[\d.]+/);
+    const cod=m?m[0]:'';
+    const nome=g.plano.replace(/^[\d.]+\s*/,'');
+    const pAtr=g.total>0?(g.atrVal/g.total*100):0;
+    const chave=String(g.plano).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return `<div class="ctxg${aberta?' open':''}">
+      <div class="ctxg-head" onclick="ctxToggleGrupo('${chave}')" title="${g.itens.length} título(s) · ${pct.toFixed(1)}% do total">
+        <span class="ctxg-car">▶</span>
+        <span class="ctxg-nome">${cod?`<span class="ctxg-cod">${cod}</span> `:''}${nome||g.plano}</span>
+        <span class="ctxg-qtd">${g.itens.length}</span>
+        ${g.atrQtd?`<span class="ctxg-atr">${g.atrQtd} vencido${g.atrQtd!==1?'s':''}</span>`:''}
+        <span class="ctxg-bar">
+          <i style="width:${pAtr.toFixed(2)}%;background:#DC2626"></i>
+          <i style="width:${Math.max(0,100-pAtr).toFixed(2)}%;background:${corBase}"></i>
+        </span>
+        <span class="ctxg-pct">${pct.toFixed(1)}%</span>
+        <span class="ctxg-tot">${brl(g.total,true)}</span>
+      </div>
+      <div class="ctxg-body"><table><tbody>
+        ${g.itens.map(l=>{
+          const k=ctxChave(l);
+          const atr=(l.status===(lado==='pagar'?'A Pagar':'A Receber'))&&(l.data||'')<h&&!l.cancelado;
+          const canc=(l.cancelado||l.status==='Cancelado')?' ct-row-cancelado':'';
+          const marc=ctxSel[lado][k]?' ctx-marcado':'';
+          const st=(l.cancelado||l.status==='Cancelado')?'cancelado'
+                 :(l.status===(lado==='pagar'?'Pago':'Recebido'))?'quitado'
+                 :atr?'atrasado':((l.data||'')===h)?'hoje':l.parcial?'parcial':'aberto';
+          return `<tr data-st="${st}" class="${canc}${marc}" onclick="ctxToggleItem(event,'${k}')" ondblclick="ctxAbrirDetalhe(${l._idx},${l.id??null})">
+            <td class="ctx-fix"><span class="ctx-chk${ctxSel[lado][k]?' on':''}"></span></td>
+            ${cd.map(c=>`<td class="${c.cls}">${c.get(l)}</td>`).join('')}
+          </tr>`;
+        }).join('')}
+      </tbody></table></div>
+    </div>`;
+  }).join('');
+  return `<div class="ctxg-wrap">${resumo}${corpo}</div>`;
+}
+
 /* Legenda de cores dos status. Os atalhos usam o MESMO filtro de situação
    que já existe (cp-fatrasado) — nenhuma regra nova de classificação. */
-function ctxRenderLegenda(){
+function ctxRenderLegenda(cont){
   const el=document.getElementById('ctx-legenda');
   if(!el) return;
   const lado=_ctActiveTab;
   const atual=(document.getElementById('cp-fatrasado')||{}).value||'';
+  cont=cont||{};
   const itens=[
-    {cor:'#DC2626', txt:'Atrasado',   sit:'atrasado'},
-    {cor:'#2563EB', txt:'Vence hoje', sit:'hoje'},
-    {cor:'#D97706', txt:(lado==='pagar'?'A pagar':'A receber'), sit:'ok'},
-    {cor:'#16A34A', txt:(lado==='pagar'?'Pago':'Recebido'), sit:''},
-    {cor:'#7C3AED', txt:'Parcial',    sit:''},
-    {cor:'var(--text3)', txt:'Cancelado', sit:''},
+    {cor:'#DC2626', txt:'Atrasado',   sit:'atrasado', k:'atrasado'},
+    {cor:'#2563EB', txt:'Vence hoje', sit:'hoje',     k:'hoje'},
+    {cor:'#D97706', txt:(lado==='pagar'?'A pagar':'A receber'), sit:'ok', k:'aberto'},
+    {cor:'#16A34A', txt:(lado==='pagar'?'Pago':'Recebido'), sit:'', k:'quitado'},
+    {cor:'#7C3AED', txt:'Parcial',    sit:'', k:'parcial'},
+    {cor:'var(--text3)', txt:'Cancelado', sit:'', k:'cancelado'},
   ];
   el.innerHTML='<span class="tit">Status</span>'
-    + itens.map((i,ix)=>{
+    + itens.map(i=>{
         const on = i.sit && i.sit===atual;
-        return `<span class="lg" ${i.sit?`onclick="ctxFiltrarSituacao('${i.sit}')" title="Filtrar por ${i.txt.toLowerCase()}"`:''}`
-          + ` style="${on?'background:var(--surface);color:var(--text);font-weight:700':''}">`
-          + `<span class="sw" style="background:${i.cor}"></span>${i.txt}</span>`;
+        const n = cont[i.k];
+        return `<span class="lg${on?' lg-on':''}" ${i.sit?`onclick="ctxFiltrarSituacao('${i.sit}')" title="Filtrar por ${i.txt.toLowerCase()}"`:'style="cursor:default"'}`
+          + `${on?' style="background:var(--surface);color:var(--text);font-weight:700;border:1px solid var(--border)"':''}>`
+          + `<span class="sw" style="background:${i.cor}"></span>${i.txt}`
+          + (n!==undefined?` <span style="font-family:'DM Mono',monospace;font-size:10px;opacity:.75">${n}</span>`:'')
+          + `</span>`;
       }).join('')
     + (atual?`<span class="lg" onclick="ctxFiltrarSituacao('')" style="color:var(--danger);margin-left:auto">✕ limpar filtro</span>`:'');
 }
@@ -10461,7 +10785,33 @@ function ctxChaveOrd(l,col,lado){
 }
 /* Monta thead + tbody + rodapé de um lado. Recebe a lista JÁ filtrada/ordenada. */
 function ctxRenderGrade(lado, lista, pagAtual, porPag){
-  const cols=ctxColsAtivas(lado);
+  ctxUltimaLista[lado]=lista;
+  // 1) colunas contextuais — somem as que não têm dado nesta lista
+  const ctxc=ctxColsCtx(lista, lado);
+  const cols=ctxc.cols;
+  if(lado===_ctActiveTab) ctxRenderAviso(ctxc.fora, lado);
+  // contagem por status, para a legenda bater com a lista exibida
+  if(lado===_ctActiveTab){
+    const hh=hoje();
+    const stAb2 = lado==='pagar' ? 'A Pagar' : 'A Receber';
+    const stFe2 = lado==='pagar' ? 'Pago'    : 'Recebido';
+    const cont={atrasado:0,hoje:0,aberto:0,quitado:0,parcial:0,cancelado:0};
+    lista.forEach(l=>{
+      const k=(l.cancelado||l.status==='Cancelado')?'cancelado'
+             :(l.status===stFe2)?'quitado'
+             :(l.status===stAb2&&(l.data||'')<hh)?'atrasado'
+             :((l.data||'')===hh)?'hoje'
+             :l.parcial?'parcial':'aberto';
+      cont[k]++;
+    });
+    ctxContStatus=cont;
+  }
+  // 2) visão agrupada por plano de contas
+  if(lado===_ctActiveTab && ctxVisao==='grupo'){
+    const alvo=document.getElementById('ctx-grupos-'+lado);
+    if(alvo) alvo.innerHTML=ctxRenderGrupos(lado, lista, cols);
+    return {tp:1, pagAtual:1};
+  }
   const S = lado==='pagar' ? cpSort : crSort;
   const h=hoje();
   const stAberto = lado==='pagar' ? 'A Pagar' : 'A Receber';
@@ -10718,6 +11068,8 @@ function renderContas(){
   document.getElementById('ct-empty-pagar').style.display=(pagar.length===0&&_ctActiveTab==='pagar')?'':'none';
   document.getElementById('ct-tab-badge-pagar').textContent=kpiAP.length;
   ctxRenderGrade('pagar', pagar, cpPag, CP_POR_PAG);
+  const cpPagWrap=document.querySelector('#ctx-rodape-pagar .ctx-rod-pag');
+  if(cpPagWrap) cpPagWrap.style.visibility = ctxVisao==='grupo' ? 'hidden' : '';
   const cpinf=document.getElementById('cp-pinfo'),cpb=document.getElementById('cp-pbtn');
   if(cpinf)cpinf.textContent=`${pagar.length} conta${pagar.length!==1?'s':''}`;
   if(cpb){let b=`<button onclick="cpNavPag(${cpPag-1})" ${cpPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpP;i++){if(i===1||i===tpP||Math.abs(i-cpPag)<=1)b+=`<button class="${i===cpPag?'active':''}" onclick="cpNavPag(${i})">${i}</button>`;else if(Math.abs(i-cpPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="cpNavPag(${cpPag+1})" ${cpPag===tpP?'disabled':''}>›</button>`;cpb.innerHTML=b;}
@@ -10736,6 +11088,8 @@ function renderContas(){
   document.getElementById('ct-empty-receber').style.display=(receber.length===0&&_ctActiveTab==='receber')?'':'none';
   document.getElementById('ct-tab-badge-receber').textContent=kpiAR.length;
   ctxRenderGrade('receber', receber, crPag, CP_POR_PAG);
+  const crPagWrap=document.querySelector('#ctx-rodape-receber .ctx-rod-pag');
+  if(crPagWrap) crPagWrap.style.visibility = ctxVisao==='grupo' ? 'hidden' : '';
   const crinf=document.getElementById('cr-pinfo'),crb=document.getElementById('cr-pbtn');
   if(crinf)crinf.textContent=`${receber.length} conta${receber.length!==1?'s':''}`;
   if(crb){let b=`<button onclick="crNavPag(${crPag-1})" ${crPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpR;i++){if(i===1||i===tpR||Math.abs(i-crPag)<=1)b+=`<button class="${i===crPag?'active':''}" onclick="crNavPag(${i})">${i}</button>`;else if(Math.abs(i-crPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="crNavPag(${crPag+1})" ${crPag===tpR?'disabled':''}>›</button>`;crb.innerHTML=b;}
@@ -10743,7 +11097,16 @@ function renderContas(){
   // Barra de ações + menu de colunas refletem a aba ativa
   ctxRenderAcaobar(_ctActiveTab);
   ctxRenderMenuCols();
-  ctxRenderLegenda();
+  ctxRenderLegenda(ctxContStatus);
+  ctxRenderNDatas();
+  // alterna entre grade e agrupamento
+  const ehGrupo = ctxVisao==='grupo';
+  const sc=document.getElementById('ctx-scroll');
+  if(sc) sc.style.display = ehGrupo ? 'none' : '';
+  ['pagar','receber'].forEach(s=>{
+    const g=document.getElementById('ctx-grupos-'+s);
+    if(g) g.style.display = (ehGrupo && s===_ctActiveTab) ? '' : 'none';
+  });
 }
 
 /* Exporta a aba ativa reusando o CSV já existente do módulo de lançamentos */
