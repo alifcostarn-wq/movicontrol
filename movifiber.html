@@ -340,6 +340,18 @@ input:focus,select:focus{border-color:var(--accent)}
 .cabo-sub{fill:var(--text-dim);font-size:10px;font-family:'DM Sans'}
 /* contorno escuro nos cabos: cores opacas e destacadas sobre a imagem de satélite */
 .cabo-linha{filter:drop-shadow(0 0 1.3px rgba(0,0,0,.95)) drop-shadow(0 0 2.5px rgba(0,0,0,.55))}
+.seta-cabo{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.6));pointer-events:none}
+/* luz de tráfego correndo pelo cabo no mapa — mesmo princípio do diagrama de fusão:
+   só cabos implantados/certificados "têm sinal" */
+@keyframes mapa-fluxo-luz{to{stroke-dashoffset:-64}}
+.cabo-fluxo-luz{
+  stroke-width:4;fill:none;stroke-linecap:round;
+  stroke-dasharray:9 30;opacity:.95;
+  filter:drop-shadow(0 0 3px currentColor);
+  animation:mapa-fluxo-luz 1.15s linear infinite;
+  pointer-events:none !important;
+}
+#mapa.sem-fluxo .cabo-fluxo-luz{display:none}
 .fibra-passante{stroke-width:2.6;opacity:.8;stroke-linecap:round;cursor:pointer}
 .fibra-passante:hover{opacity:1;stroke-width:4}
 .fibra-linha{stroke-width:3;cursor:pointer}
@@ -1595,7 +1607,7 @@ try{CAT=Object.assign(JSON.parse(JSON.stringify(CAT_PADRAO)),JSON.parse(store.ge
 });
 function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
-let camadasVisiveis={satelite:true,pop:true,cto:true,ceo:true,reserva:true,backbone:true,distribuicao:true,drop:true,area:true,cliente:true,poste:true,clienteone:false};
+let camadasVisiveis={satelite:true,pop:false,cto:false,ceo:false,reserva:false,backbone:false,distribuicao:false,drop:false,area:false,cliente:false,poste:false,clienteone:false};
 let layerRefs={}, caboTemp=null, areaTemp=null;
 /* Tecnologias PON: TX típico da OLT e faixa de sensibilidade da ONU */
 const TECNOLOGIAS={
@@ -2069,6 +2081,44 @@ function elementoProximo(ll,raio){
 }
 function nomeEl(id){const e=projAtual.elementos.find(x=>x.id===id);return e?e.nome:null}
 function medirCabo(pts){let m=0;for(let i=1;i<pts.length;i++)m+=mapa.distance(pts[i-1],pts[i]);return m}
+/* abre o popup ao passar o mouse (sem precisar clicar) — usado em CTO/CEO/clientes.
+   O clique continua livre para os botões dentro do popup (Editar, etc). */
+function hoverAbrePopup(mk){
+  let timerFechar=null;
+  mk.on('mouseover',()=>{
+    if(timerFechar){clearTimeout(timerFechar);timerFechar=null}
+    if(modo==='navegar')mk.openPopup();
+  });
+  mk.on('mouseout',()=>{
+    timerFechar=setTimeout(()=>{ if(mk.isPopupOpen())mk.closePopup(); },220);
+  });
+  mk.on('popupopen',e=>{
+    // se o mouse entrar no próprio popup, não fecha (dá tempo de clicar nos botões/campos)
+    const el=e.popup.getElement();
+    if(el){
+      el.addEventListener('mouseenter',()=>{if(timerFechar){clearTimeout(timerFechar);timerFechar=null}});
+      el.addEventListener('mouseleave',()=>{timerFechar=setTimeout(()=>{if(mk.isPopupOpen())mk.closePopup();},220)});
+    }
+  });
+}
+/* seta de direção do cabo: uma setinha no meio de cada segmento do traçado,
+   calculada em pixels de tela (para o ângulo ficar visualmente correto em qualquer projeção) */
+function desenharSetasCabo(c){
+  const pts=c.pontos;
+  if(!pts||pts.length<2)return [];
+  const setas=[];
+  for(let i=0;i<pts.length-1;i++){
+    const p1=mapa.latLngToLayerPoint(pts[i]), p2=mapa.latLngToLayerPoint(pts[i+1]);
+    if(p1.distanceTo(p2)<26)continue;   // segmento curto demais para caber a seta
+    const meio=mapa.layerPointToLatLng(p1.add(p2).subtract(p1).divideBy(2));
+    const ang=Math.atan2(p2.y-p1.y,p2.x-p1.x)*180/Math.PI;
+    const cor=c.cor||CORES_CABO[c.tipo];
+    const ic=L.divIcon({className:'',html:`<div class="seta-cabo" style="transform:rotate(${ang}deg)"><svg viewBox="0 0 20 20" width="14" height="14"><path d="M2 3 L17 10 L2 17 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.4" stroke-linejoin="round"/></svg></div>`,iconSize:[14,14],iconAnchor:[7,7]});
+    const mk=L.marker(meio,{icon:ic,interactive:false,keyboard:false});
+    setas.push(mk);
+  }
+  return setas;
+}
 
 /* ===== RÉGUA DE MEDIÇÃO ===== */
 let reguaPts=[], reguaLayers=[];
@@ -2129,8 +2179,10 @@ function limparOverlaysSoltos(){
     if(ghostLn){mapa.removeLayer(ghostLn);ghostLn=null}
   }catch(e){}
 }
+let setasCaboLayers=[];
 function renderTudo(){
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
+  setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
   calcularEspalhamento();
   // áreas
   if(camadasVisiveis.area)projAtual.areas.forEach(a=>{
@@ -2153,6 +2205,13 @@ function renderTudo(){
         ${c.sangria?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Rompido: ${c.sangria.fibrasNaCaixa} fibra(s) na caixa · ${c.sangria.fibrasSeguem} seguem</div>`:''}
         ${(c.passagens&&c.passagens.length)?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria (passagem) em: ${c.passagens.map(id=>nomeEl(id)).filter(Boolean).join(', ')}</div>`:''}
         <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
+    desenharSetasCabo(c).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk)});
+    // luz de tráfego no mapa: só cabos implantados/certificados "têm sinal"
+    if(c.status==='implantado'||c.status==='certificado'){
+      const corLuz=c.status==='certificado'?'#7DE0FF':'#8DFFB0';
+      const luz=L.polyline(c.pontos,{color:corLuz,weight:Math.max(3,est.weight-1),opacity:1,className:'cabo-fluxo-luz',interactive:false});
+      luz.addTo(mapa);setasCaboLayers.push(luz);
+    }
   });
   // clientes MoviOne (localização + vínculo) · status IXC opcional
   if(camadasVisiveis.clienteone)clientesOne.forEach(c=>{
@@ -2178,11 +2237,17 @@ function renderTudo(){
         <b>Caixa (CTO):</b> ${c.caixa||'<span style="color:var(--warn)">não vinculada</span>'}<br>
         <b>Porta:</b> <span class="mono">${c.porta??'—'}</span>${c.projeto?'<br><b>Projeto:</b> '+c.projeto:''}
       </div>
+      <div class="pp-meta" style="display:flex;align-items:center;gap:6px">
+        <b>🏷️ Plaqueta:</b>
+        <input value="${c.plaqueta||''}" placeholder="nº da etiqueta" onclick="event.stopPropagation()" onchange="setPlaquetaPorMoId('${c.id}',this.value)"
+          style="flex:1;min-width:0;padding:3px 7px;border-radius:6px;border:1px solid ${c.plaqueta?'#3CB371':'var(--border)'};background:var(--surface2);color:${c.plaqueta?'#5FE0A0':'var(--text-dim)'};font-family:'DM Mono';font-size:11.5px">
+      </div>
       <div id="pp-det-${c.id}" style="display:none;border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-size:11.5px"></div>
       <div class="pp-acoes" style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn sm" onclick="expandirClienteOne('${c.id}')" id="pp-btn-${c.id}">▾ Ver detalhes</button>
         <button class="btn sm ghost" onclick="abrirVincularCTO('${c.id}')">🔗 ${c.caixa?'Alterar caixa':'Vincular'}</button>
       </div>`);
+    hoverAbrePopup(mk);
     layerRefs['one-'+c.id]=mk.addTo(mapa);
   });
   // clientes
@@ -2195,12 +2260,18 @@ function renderTudo(){
     mk.on('dragend',ev=>{const p=ev.target.getLatLng();cl.lat=p.lat;cl.lng=p.lng;salvar();renderTudo()});
     mk.bindPopup(`<div class="pp-title">${cl.nome}<span class="pp-badge">CLIENTE</span></div>
       <div class="pp-meta">${cl.ctoId?('Atendido por <b>'+(nomeEl(cl.ctoId)||'?')+'</b> · porta <b class="mono">'+cl.porta+'</b>'):'<span style="color:var(--warn)">⚠️ Sem CTO vinculada</span>'}</div>
+      <div class="pp-meta" style="display:flex;align-items:center;gap:6px">
+        <b>🏷️ Plaqueta:</b>
+        <input value="${cl.plaqueta||''}" placeholder="nº da etiqueta" onclick="event.stopPropagation()" onchange="setPlaquetaLocal('${cl.id}',this.value)"
+          style="flex:1;min-width:0;padding:3px 7px;border-radius:6px;border:1px solid ${cl.plaqueta?'#3CB371':'var(--border)'};background:var(--surface2);color:${cl.plaqueta?'#5FE0A0':'var(--text-dim)'};font-family:'DM Mono';font-size:11.5px">
+      </div>
       ${cl._moId
         ? '<div class="pp-meta" style="font-size:11px;color:var(--text-dim)">Vínculo gerenciado no <b>MoviOne</b> (aba Logins do cliente).</div>'
         : `<div class="pp-acoes">
         <button class="btn sm ghost" onclick="revincularCliente('${cl.id}')">🔄 Revincular</button>
         <button class="btn sm danger" onclick="excluirCliente('${cl.id}')">Excluir</button>
       </div>`}`);
+    hoverAbrePopup(mk);
     layerRefs[cl.id]=mk.addTo(mapa);
   });
   // elementos
@@ -2220,9 +2291,10 @@ function renderTudo(){
       const corInline=(e.tipo==='cto'&&e.cor)?` style="background:${e.cor}"`:'';
       ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}"${corInline}>${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
     }
-    const mk=L.marker([e.lat,e.lng],{icon:ic,draggable:modo==='navegar'});
+    const mk=L.marker([e.lat,e.lng],{icon:ic,draggable:modo==='navegar'&&e.status!=='certificado'});
     mk.on('dragend',ev=>{const p=ev.target.getLatLng();e.lat=p.lat;e.lng=p.lng;salvar();renderTudo()});
     mk.bindPopup(popupElemento(e));
+    if(e.tipo==='cto'||e.tipo==='ceo')hoverAbrePopup(mk);
     layerRefs[e.id]=mk.addTo(mapa);
   });
   attProgresso();renderListaElementos();atualizarPendBadge();attOneBadge();renderClientesTopbar();
@@ -4465,6 +4537,8 @@ function aplicarClientesMoviOne(lista){
         if(!cx)return null;
         lat=cx.lat;lng=cx.lng;semCoord=true;
       }
+      // a plaqueta é local ao projeto (não vem do MoviOne) — preserva o que já foi digitado
+      const jaVinc=projAtual&&projAtual.clientes&&projAtual.clientes.find(x=>String(x._moId)===id);
       return{
         id,idCliente:c.id_cliente,ixcId:c.ixc_id,
         nome:c.nome||'Cliente',
@@ -4473,7 +4547,8 @@ function aplicarClientesMoviOne(lista){
         caixa:c.caixa||null,caixaId:c.caixa_id||null,porta:c.porta??null,
         login:c.login||st.login||null,
         online:st.online!==undefined?st.online:null,   // null = status IXC ainda não carregado
-        rx:st.rx??null,tx:st.tx??null,onu:st.onu??null
+        rx:st.rx??null,tx:st.tx??null,onu:st.onu??null,
+        plaqueta:(jaVinc&&jaVinc.plaqueta)||null
       };
     })
     .filter(Boolean);
@@ -4974,6 +5049,30 @@ function abrirMedicaoPON(){
   abrirModalGenerico('📡 Medição das portas PON',html);
 }
 /* ---------- Lista de portas da caixa (estilo IXC) ---------- */
+/* nº da plaqueta física do cabo do cliente na caixa (etiqueta de identificação de campo) */
+function setPlaquetaPorMoId(moId,valor){
+  if(!projAtual)return;
+  if(!projAtual.clientes)projAtual.clientes=[];
+  let cl=projAtual.clientes.find(x=>String(x._moId)===String(moId));
+  const co=clientesOne.find(x=>String(x.id)===String(moId));
+  if(!cl&&co){
+    // ainda não existe localmente (raro) — cria o vínculo mínimo para guardar a plaqueta
+    cl={id:uid('cli'),_moId:String(moId),nome:co.nome,lat:co.lat,lng:co.lng,ctoId:co.caixaId,porta:co.porta,login:co.login};
+    projAtual.clientes.push(cl);
+  }
+  if(!cl)return;
+  cl.plaqueta=String(valor||'').trim()||null;
+  if(co)co.plaqueta=cl.plaqueta;
+  salvar();
+  toast(cl.plaqueta?('Plaqueta nº '+cl.plaqueta+' salva'):'Plaqueta removida');
+}
+function setPlaquetaLocal(clId,valor){
+  const cl=projAtual.clientes.find(x=>x.id===clId);
+  if(!cl)return;
+  cl.plaqueta=String(valor||'').trim()||null;
+  salvar();
+  toast(cl.plaqueta?('Plaqueta nº '+cl.plaqueta+' salva'):'Plaqueta removida');
+}
 function abrirListaPortas(id){
   const el=projAtual.elementos.find(x=>x.id===id);
   if(!el){toast('Caixa não encontrada',true);return}
@@ -4987,19 +5086,22 @@ function abrirListaPortas(id){
     const inat=portaEstaInativa(id,p);
     const acao=`<button class="btn sm ghost" style="padding:2px 8px;font-size:10.5px" onclick="togglePortaInativa('${id}',${p})">${inat?'✓ Reativar':'⛔ Inativar'}</button>`;
     if(inat){
-      linhas+=`<tr style="opacity:.6"><td class="mono">${p}</td><td><span class="tag" style="background:rgba(248,113,104,.16);color:#F87168">⛔ Inativa</span></td><td colspan="4" style="color:var(--text-dim)">${it?('ocupada por '+(it.cl.nome||'cliente')):'defeito / bloqueada'}</td><td>${acao}</td></tr>`;
+      linhas+=`<tr style="opacity:.6"><td class="mono">${p}</td><td><span class="tag" style="background:rgba(248,113,104,.16);color:#F87168">⛔ Inativa</span></td><td colspan="5" style="color:var(--text-dim)">${it?('ocupada por '+(it.cl.nome||'cliente')):'defeito / bloqueada'}</td><td>${acao}</td></tr>`;
     }else if(!it){
-      linhas+=`<tr><td class="mono">${p}</td><td><span class="tag" style="background:rgba(60,179,113,.16);color:#5FE0A0">✓ Disponível</span></td><td colspan="4" style="color:var(--text-dim)">—</td><td>${acao}</td></tr>`;
+      linhas+=`<tr><td class="mono">${p}</td><td><span class="tag" style="background:rgba(60,179,113,.16);color:#5FE0A0">✓ Disponível</span></td><td colspan="5" style="color:var(--text-dim)">—</td><td>${acao}</td></tr>`;
     }else{
       const ix=it.ixc;
       const stTxt=ix?(ix.online===true?'<span class="tag" style="background:rgba(0,255,102,.16);color:#00FF66">● Online</span>':(ix.online===false?'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● Offline</span>':'<span class="tag nao-implantado">Ocupada</span>')):'<span class="tag" style="background:rgba(46,134,255,.16);color:#2E86FF">Ocupada</span>';
       const rx=ix?parseFloat(ix.rx):NaN, tx=ix?parseFloat(ix.tx):NaN;
+      const plaqInp=`<input value="${it.cl.plaqueta||''}" placeholder="nº" title="Nº da plaqueta do cabo deste cliente na caixa"
+        onchange="setPlaquetaLocal('${it.cl.id}',this.value)"
+        style="width:52px;padding:3px 5px;border-radius:5px;border:1px solid ${it.cl.plaqueta?'#3CB371':'var(--border)'};background:var(--surface);color:${it.cl.plaqueta?'#5FE0A0':'var(--text-dim)'};font-family:'DM Mono';font-size:11px;text-align:center">`;
       linhas+=`<tr><td class="mono">${p}</td><td>${stTxt}</td>
         <td>${it.cl.nome||'—'}</td>
         <td class="mono">${it.cl.login||(ix&&ix.login)||'—'}</td>
         <td class="mono" style="font-size:10.5px">${ix&&ix.onu?ix.onu:'—'}</td>
         <td class="mono" style="color:${_corRx(rx)}">${_fmtRx(rx)}</td>
-        <td class="mono" style="font-size:10.5px">${isNaN(tx)?'—':tx.toFixed(2)}</td><td>${acao}</td></tr>`;
+        <td>${plaqInp}</td><td>${acao}</td></tr>`;
     }
   }
   const semIxc=st.ocupadas&&!st.itens.some(x=>x.ixc);
@@ -5011,7 +5113,7 @@ function abrirListaPortas(id){
       <div class="cto-cel"><span>Inativas</span><b style="color:#F87168">${st.inativas}</b></div>
       <div class="cto-cel"><span>Online</span><b style="color:#00FF66">${st.online}</b></div>
     </div>
-    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>
+    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX</th><th>🏷️ Plaqueta</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>
     ${semIxc?'<div class="info-box" style="margin-top:8px;font-size:11px">Sinal e status vêm do IXC. Ative a camada <b>Clientes (MoviOne)</b> no painel de elementos para carregar RX/TX e online/offline.</div>':''}`;
   abrirModalGenerico('📋 Portas de atendimento — '+el.nome,html);
 }
@@ -5120,8 +5222,13 @@ function relinkPontas(){
 }
 function editarTracado(id,silencioso){
   if(editCabo&&editCabo.id===id)return;
+  const alvo=projAtual.cabos.find(c=>c.id===id);
+  if(alvo&&alvo.status==='certificado'){
+    toast('Cabo certificado: mude o status (Implantado/Projeto) para poder editar o traçado',true);
+    return;
+  }
   if(editCabo)concluirTracado(true);
-  editCabo=projAtual.cabos.find(c=>c.id===id);
+  editCabo=alvo;
   const total=editCabo.pontos.length;
   const icMeio=L.divIcon({className:'',html:'<div style="width:13px;height:13px;border-radius:50%;background:#E8C818;border:2px solid #111318;box-shadow:0 1px 5px rgba(0,0,0,.6)"></div>',iconSize:[13,13],iconAnchor:[7,7]});
   const icPonta=L.divIcon({className:'',html:'<div data-ponta="1" style="width:17px;height:17px;border-radius:4px;background:#E87818;border:2px solid #111318;box-shadow:0 1px 6px rgba(0,0,0,.7)"></div>',iconSize:[17,17],iconAnchor:[9,9]});
