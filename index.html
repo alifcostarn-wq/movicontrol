@@ -969,6 +969,25 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 #page-fluxo .dre tr.dn2 td{color:var(--text2)}
 #page-fluxo .dre tr.dmargem td{font-size:14px;font-weight:800}
 #page-fluxo .dre tr.dlucrop td{font-size:14px;font-weight:800}
+/* ===== Faixas de resultado do DRE: número legível sobre o fundo cheio =====
+   As linhas Lucro Operacional (antes/depois) e Despesa Operacional Total têm
+   fundo verde sólido. Os valores herdavam td.pos (verde) e sumiam.
+   Agora o número e o AV% ficam brancos; o negativo continua na caixa vermelha,
+   que já tem contraste próprio. */
+.dre tr.dlucrop td.cv,
+.dre tr.dlucrop td.cv.pos,
+.dre tr.dlucrop td.cv.neg,
+.dre tr.dlucrop td.cv.zero{color:#FFFFFF}
+.dre tr.dlucrop td.cv .fx-avs,
+.dre tr.dlucrop td.cv .fx-avs.up,
+.dre tr.dlucrop td.cv .fx-avs.down{color:rgba(255,255,255,.88)}
+.dre tr.dlucrop td.cv .fx-negbox{color:#FFFFFF}
+/* a coluna do mês atual tem fundo próprio: ali o número volta a ser escuro */
+.dre tr.dlucrop td.cv.fx-mesatual{color:#22223B}
+.dre tr.dlucrop td.cv.fx-mesatual .fx-avs{color:#4A4A63}
+/* mesma regra na tela de Precificação */
+.prluc td.cv,.prluc td.cv.pos,.prluc td.cv.neg{color:#FFFFFF}
+.prluc td.cv .fx-avs{color:rgba(255,255,255,.88)}
 #page-fluxo .dre tr.dresult td{font-size:14.5px;font-weight:800}
 #page-fluxo .fx-seg{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px}
 #page-fluxo .fx-seg-btn{border:none;background:none;font-family:inherit;font-size:12px;font-weight:700;padding:6px 13px;border-radius:7px;cursor:pointer;color:var(--text2);transition:all .18s}
@@ -6515,8 +6534,14 @@ function buildDreFromPlano(){
     if(tipo === 'desp'){
       add('mc', 0, 'MARGEM DE CONTRIBUIÇÃO', 'margem');
     }
-    if(tipo === 'nop'){
+    // O "Lucro Operacional antes dos Investimentos" é, por definição,
+    // Margem de Contribuição − Despesas Fixas: ele NÃO inclui os
+    // investimentos. Por isso entra logo antes do grupo de Investimentos.
+    // (Só a posição de exibição muda; o cálculo continua sendo mc − df.)
+    if(tipo === 'inv'){
       add('lop',     0, 'LUCRO OPERACIONAL ANTES DOS INVESTIMENTOS', 'lucrop');
+    }
+    if(tipo === 'nop'){
       add('desp_op', 0, 'DESPESA OPERACIONAL TOTAL',                 'lucrop');
       add('lucro_op',0, 'LUCRO OPERACIONAL',                         'lucrop');
     }
