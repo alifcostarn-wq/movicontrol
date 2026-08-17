@@ -49,16 +49,8 @@
   --c-verde:#3C9D23;--c-amarelo:#F5CE00;--c-laranja:#FF8C2E;
   --c-sobre-azul:#FFFFFF;--c-sobre-vermelho:#FFFFFF;
   --c-sobre-claro:#22223B;
-  /* ===== ESCALA DE DADOS =====
-     1 a 6  = as cores principais do sistema.
-     7 a 12 = entram SÓ quando um gráfico/lista passa de 6 itens,
-              para nunca repetir cor no mesmo conjunto.
-     Todas as 12 foram checadas par a par: nenhuma fica a menos de
-     22 graus de matiz de outra com luminância parecida. */
-  --dado-1:#3C9D23;  --dado-2:#D00000;  --dado-3:#004E98;
-  --dado-4:#FF8C2E;  --dado-5:#F5CE00;  --dado-6:#4DA3E8;
-  --dado-7:#7B4FC7;  --dado-8:#00A88E;  --dado-9:#E8548C;
-  --dado-10:#9ACD00;  --dado-11:#3F3FA0;  --dado-12:#8B1A4A;
+  --dado-1:#3C9D23;--dado-2:#D00000;--dado-3:#004E98;--dado-4:#FF8C2E;--dado-5:#F5CE00;
+  --dado-6:#4DA3E8;--dado-7:#3C9D23;--dado-8:#D00000;--dado-9:#004E98;--dado-10:#FF8C2E;
   --sidebar:280px;
   --chart-grid:rgba(34,34,59,0.10);
 }
@@ -5967,50 +5959,15 @@ function m_findBancoIdxById(contaId){
    PALETA_DADOS[0..4] são as cores que qualquer pessoa reconhece de imediato
    (verde, vermelho, azul, laranja, amarelo). As demais só entram quando o
    gráfico passa de cinco séries. corDado(i) cicla com segurança. */
-const PALETA_DADOS = [
-  // 1-6: as cores principais do sistema
-  '#3C9D23','#D00000','#004E98','#FF8C2E','#F5CE00','#4DA3E8',
-  // 7-12: só entram quando há mais de 6 itens, para não repetir
-  '#7B4FC7','#00A88E','#E8548C','#9ACD00','#3F3FA0','#8B1A4A'
-];
-const PALETA_DADOS_ESC = PALETA_DADOS.map(c=>_tomVariado(c,-0.28));
+const PALETA_DADOS = ['#3C9D23','#D00000','#004E98','#FF8C2E','#F5CE00','#4DA3E8'];
+const PALETA_DADOS_ESC = ['#2F7D1B','#C40000','#004E98','#C40000','#C40000','#004E98'];
 /* Cor de texto que garante leitura sobre cada preenchimento da paleta.
    Branco só onde o fundo é escuro o bastante; navy no resto. */
-/* Cor de texto que garante leitura sobre qualquer preenchimento.
-   Decide pela luminância real da cor, não por uma lista fixa — assim
-   funciona também para os tons gerados automaticamente acima de 12 itens. */
+const _FUNDO_ESCURO = ['#004E98','#D00000','#C40000','#2F7D1B'];
 function textoSobre(cor){
-  const h=String(cor).replace('#','');
-  const v=[0,2,4].map(i=>{
-    let x=parseInt(h.substr(i,2),16)/255;
-    return x<=0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055,2.4);
-  });
-  const L=0.2126*v[0]+0.7152*v[1]+0.0722*v[2];
-  const contrasteBranco=(1.05)/(L+0.05);
-  return contrasteBranco>=4.5 ? '#FFFFFF' : '#22223B';
+  return _FUNDO_ESCURO.includes(String(cor).toUpperCase()) ? '#FFFFFF' : '#22223B';
 }
-function corDado(i){
-  const n = PALETA_DADOS.length;
-  if(i < n) return PALETA_DADOS[i];
-  // Passou das 12: em vez de repetir a cor 1, clareia/escurece a base.
-  // Cada volta muda o tom, então duas séries nunca saem idênticas.
-  const base = PALETA_DADOS[i % n];
-  const volta = Math.floor(i / n);
-  const f = volta % 2 === 1 ? 0.30 : -0.22;      // alterna clarear / escurecer
-  const g = Math.min(3, Math.ceil(volta/2));
-  return _tomVariado(base, f * g);
-}
-/* Clareia (f>0) ou escurece (f<0) mantendo o matiz. */
-function _tomVariado(hex, f){
-  const h = String(hex).replace('#','');
-  let out = '#';
-  for(let i=0;i<6;i+=2){
-    let v = parseInt(h.substr(i,2),16);
-    v = f >= 0 ? v + (255-v)*f : v * (1+f);
-    out += Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0');
-  }
-  return out.toUpperCase();
-}
+function corDado(i){ return PALETA_DADOS[i % PALETA_DADOS.length]; }
 function corDadoEsc(i){ return PALETA_DADOS_ESC[i % PALETA_DADOS_ESC.length]; }
 function coresDados(n){ return Array.from({length:n},(_,i)=>corDado(i)); }
 
