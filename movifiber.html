@@ -359,16 +359,14 @@ input:focus,select:focus{border-color:var(--accent)}
 /* luz de tráfego percorrendo a fibra fusionada — bem visível */
 @keyframes fluxo-luz{to{stroke-dashoffset:-60}}
 @keyframes fluxo-luz-fib{to{stroke-dashoffset:-48}}
-.fusao-luz{fill:none;stroke-width:5;opacity:1;stroke-dasharray:10 34;stroke-linecap:round;
-  animation:fluxo-luz 1.1s linear infinite;pointer-events:none;
-  filter:drop-shadow(0 0 6px currentColor) drop-shadow(0 0 12px currentColor)}
-.fibra-luz{stroke-width:5;opacity:1;stroke-dasharray:8 30;stroke-linecap:round;
-  animation:fluxo-luz-fib 1s linear infinite;pointer-events:none;
-  filter:drop-shadow(0 0 5px currentColor) drop-shadow(0 0 10px currentColor)}
+/* A luz do diagrama agora é desenhada no canvas #fs-luz.
+   Antes cada traço animado carregava dois drop-shadow (e o glow um blur),
+   recalculados a cada quadro — era o que travava o painel. */
 .fusao-trilho{fill:none;stroke-width:6;opacity:.18;pointer-events:none}
-.fusao-glow{fill:none;stroke-width:11;opacity:.22;filter:blur(4px);pointer-events:none}
+.fusao-glow{fill:none;stroke-width:10;opacity:.13;pointer-events:none}
+#fs-luz{position:absolute;left:0;top:0;pointer-events:none}
 .splitter-shape.sel-sp .splitter-body{stroke:var(--accent);stroke-width:2.5;filter:drop-shadow(0 0 5px rgba(60,179,113,.6))}
-#fs-svg.sem-anim .fusao-luz,#fs-svg.sem-anim .fibra-luz{animation:none;display:none}
+
 .splitter-shape{cursor:move}
 .splitter-body{fill:url(#spGrad);stroke:#4A5568;stroke-width:1.5}
 .splitter-body.des{stroke:#D4A027}
@@ -1234,7 +1232,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="btn sm" onclick="fecharFusao()">💾 Salvar / sair</button>
     </div>
   </div>
-  <div id="fs-canvas-wrap"><svg id="fs-svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div id="fs-canvas-wrap" style="position:relative"><svg id="fs-svg" xmlns="http://www.w3.org/2000/svg"></svg><canvas id="fs-luz"></canvas></div>
   <div id="fs-foot">
     <div class="fs-leg">
       <span><i style="background:var(--st-projeto)"></i>Em projeto</span>
@@ -2951,7 +2949,7 @@ function abrirFusao(caixaId){
   document.getElementById('tela-fusao').style.display='flex';
   renderFusao();
 }
-function fecharFusao(){salvar();fsSelSp=null;renderFsToolbar();document.getElementById('tela-fusao').style.display='none';renderTudo()}
+function fecharFusao(){salvar();fsSelSp=null;_fsLuzParar();renderFsToolbar();document.getElementById('tela-fusao').style.display='none';renderTudo()}
 function mudarStatusCaixaFusao(v){const e=projAtual.elementos.find(x=>x.id===fsCaixa);e.status=v;salvar();toast('Status: '+labelStatus(v))}
 function cabosDaCaixa(id){return projAtual.cabos.filter(c=>c.origemId===id||c.destinoId===id||(c.passagens||[]).includes(id))}
 /* como o cabo se relaciona com a caixa: 'ponta' (termina nela) ou 'sangria' (passa por cima) */
@@ -3196,7 +3194,84 @@ function spTransformar(sp,x,y,W,h){
   return {x:cx0+dx*c-dy*sn, y:cy0+dx*sn+dy*c};
 }
 function ptKey(p){return p.t==='fibra'?('fib-'+p.cabo+(p.lado||'')+'-'+p.fib):(p.t==='dio'?('dio-'+p.dio+'-'+p.porta):('sp-'+p.sp+'-'+p.porta))}
+let _fsLuz={fusoes:[],fibras:[]}, _fsLuzRaf=null, _fsLuzVB=[1180,660];
+/* Desenha a luz do diagrama num canvas sobreposto ao SVG.
+   Um único elemento e uma rotina de desenho, em vez de dezenas de traços
+   animados por CSS com filtros recalculados a cada quadro. */
+function _fsAjustarCanvas(){
+  const svg=document.getElementById('fs-svg'), cv=document.getElementById('fs-luz');
+  if(!svg||!cv)return null;
+  const r=svg.getBoundingClientRect();
+  const larg=Math.round(r.width), alt=Math.round(r.height);
+  if(!larg||!alt)return null;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  if(cv.width!==Math.round(larg*dpr)||cv.height!==Math.round(alt*dpr)){
+    cv.width=Math.round(larg*dpr);cv.height=Math.round(alt*dpr);
+  }
+  cv.style.width=larg+'px';cv.style.height=alt+'px';
+  const esc=larg/(_fsLuzVB[0]||1180);   // do sistema do viewBox para pixels de tela
+  return {cv,dpr,esc,larg,alt};
+}
+function _fsDesenharLuz(t){
+  const ctx0=_fsAjustarCanvas();
+  const cv=document.getElementById('fs-luz');
+  if(!cv)return;
+  const ctx=cv.getContext('2d');
+  if(!ctx)return;
+  if(!ctx0){ctx.clearRect(0,0,cv.width,cv.height);return}
+  const {dpr,esc,larg,alt}=ctx0;
+  ctx.setTransform(dpr*esc,0,0,dpr*esc,0,0);
+  ctx.clearRect(0,0,larg/esc,alt/esc);
+  if(!fsAnim||_movimentoReduzido())return;
+  ctx.lineCap='round';
+  // fusões (curvas)
+  if(_fsLuz.fusoes.length){
+    ctx.setLineDash([10,34]);
+    ctx.lineDashOffset=-(t/1000*55)%44;
+    ctx.lineWidth=5;
+    _fsLuz.fusoes.forEach(f=>{
+      ctx.beginPath();
+      ctx.moveTo(f.ax,f.ay);
+      ctx.bezierCurveTo(f.c1x,f.ay,f.c2x,f.by,f.bx,f.by);
+      ctx.strokeStyle=f.cor;ctx.stroke();
+    });
+  }
+  // fibras (retas)
+  if(_fsLuz.fibras.length){
+    ctx.setLineDash([8,30]);
+    ctx.lineDashOffset=-(t/1000*48)%38;
+    ctx.lineWidth=5;
+    _fsLuz.fibras.forEach(l=>{
+      ctx.beginPath();ctx.moveTo(l.x1,l.y1);ctx.lineTo(l.x2,l.y2);
+      ctx.strokeStyle=l.cor;ctx.stroke();
+    });
+  }
+  ctx.setLineDash([]);
+}
+let _fsResizeLigado=false;
+function _fsLigarResize(){
+  if(_fsResizeLigado)return;
+  _fsResizeLigado=true;
+  window.addEventListener('resize',()=>{ if(_fsLuzRaf)_fsAjustarCanvas() });
+}
+function _fsLuzIniciar(){
+  _fsLigarResize();
+  if(_fsLuzRaf)return;
+  const passo=(t)=>{
+    const tela=document.getElementById('tela-fusao');
+    if(!tela||tela.style.display==='none'){_fsLuzRaf=null;return}  // saiu da tela: para
+    if(_fsLuz.fusoes.length||_fsLuz.fibras.length)_fsDesenharLuz(t);
+    _fsLuzRaf=requestAnimationFrame(passo);
+  };
+  _fsLuzRaf=requestAnimationFrame(passo);
+}
+function _fsLuzParar(){
+  if(_fsLuzRaf){cancelAnimationFrame(_fsLuzRaf);_fsLuzRaf=null}
+  const cv=document.getElementById('fs-luz');
+  if(cv){const c=cv.getContext('2d');if(c)c.clearRect(0,0,cv.width,cv.height)}
+}
 function renderFusao(){
+  _fsLuz={fusoes:[],fibras:[]};
   const svg=document.getElementById('fs-svg');
   const {pos,cabos}=fsPos(), F=getFus(fsCaixa);
   // limpeza defensiva: descarta fusões que apontam para cabos não vinculados a esta caixa
@@ -3213,10 +3288,13 @@ function renderFusao(){
   const e=projAtual.elementos.find(x=>x.id===fsCaixa);
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
   // área cresce conforme os blocos são movidos/redimensionados
-  const vals=Object.values(pos);
+  // só coordenadas de verdade entram no cálculo: "pos" também guarda a lista de
+  // painéis (__paineis), e sem esse filtro o viewBox saía como NaN
+  const vals=Object.values(pos).filter(p=>p&&typeof p.x==='number'&&typeof p.y==='number');
   let alt=Math.max(660,...vals.map(p=>p.y+(p.h||0)+80));
   let larg=Math.max(1180,...vals.map(p=>p.x+(p.bw||0)+120));
   svg.setAttribute('viewBox','0 0 '+larg+' '+alt);svg.style.minHeight=alt+'px';
+  _fsLuzVB=[larg,alt];
   let s='<defs><linearGradient id="spGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A3140"/><stop offset="1" stop-color="#1A1D26"/></linearGradient></defs>';
   // blocos de cabos + fibras
   (pos.__paineis||[]).forEach(pn=>{
@@ -3254,7 +3332,7 @@ function renderFusao(){
       // luz na fibra que participa de uma fusão ativa (implantada/certificada)
       const fk='fib-'+c.id+suf+'-'+f;
       const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
-      if(fuFib)s+=`<line class="fibra-luz" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"/>`;
+      if(fuFib)_fsLuz.fibras.push({x1,y1:p.y,x2,y2:p.y,cor});
       const claro=['#FFFFFF','#F2E205','#F5A623','#E8C818','#00E5FF','#7DE0FF','#FFD86B'].includes((cor||'').toUpperCase());
       s+=`<g onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" style="cursor:pointer">
         <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
@@ -3370,7 +3448,7 @@ function renderFusao(){
         <text x="${mx}" y="${my+1.5}" text-anchor="middle" font-size="8.5" font-family="DM Mono" fill="${_ruim?'#FF8A80':(_med?'#5FE0A0':'#C9CDD6')}">${txt}</text>
       </g>`;
     }
-    if(fsAnim&&ativa)s+=`<path class="fusao-luz" stroke="${luzCor}" d="${dPath}"/>`;
+    if(fsAnim&&ativa)_fsLuz.fusoes.push({ax,ay,c1x,c2x,bx,by,cor:luzCor});
   });
   if(!cabos.length)s+=`<text x="560" y="300" text-anchor="middle" fill="#8B90A0" font-size="13" font-family="DM Sans">Nenhum cabo chega nesta caixa — trace um cabo até ela no mapa (ele conecta sozinho ao passar perto)</text>`;
   // bloco de anotações da caixa (sai junto no PNG exportado)
@@ -3385,6 +3463,8 @@ function renderFusao(){
       +`</g>`;
   }
   svg.innerHTML=s;
+  // a luz vive no canvas sobreposto
+  if(fsAnim&&(_fsLuz.fusoes.length||_fsLuz.fibras.length))_fsLuzIniciar();else _fsLuzParar();
 }
 function fsClique(ev,p){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
@@ -3646,7 +3726,7 @@ function _spSel(){return getFus(fsCaixa).splitters.find(s=>s.id===fsSelSp)}
 function toggleFsAnim(){
   fsAnim=!fsAnim;
   const b=document.getElementById('btn-anim');if(b)b.textContent=fsAnim?'✨ Tráfego: ON':'✨ Tráfego: OFF';
-  const svg=document.getElementById('fs-svg');if(svg)svg.classList.toggle('sem-anim',!fsAnim);
+  if(!fsAnim)_fsLuzParar();
   renderFusao();
 }
 function fsGirar(d){const sp=_spSel();if(!sp)return;sp.rot=((sp.rot||0)+d+360)%360;salvar();renderFusao()}
