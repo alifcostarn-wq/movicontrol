@@ -226,7 +226,9 @@ input:focus,select:focus{border-color:var(--accent)}
 /* Painel de camadas (direita) */
 #camadas{position:absolute;top:14px;right:14px;z-index:900;background:var(--surface);border:1px solid var(--border);border-radius:14px;width:198px;box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden}
 #camadas .cam-head{padding:11px 14px;font-size:11px;letter-spacing:1.5px;color:var(--text-dim);text-transform:uppercase;display:flex;justify-content:space-between;cursor:pointer}
-#camadas .cam-body{padding:4px 8px 10px;max-height:70vh;overflow-y:auto}
+#camadas .cam-body{padding:4px 8px 10px;max-height:70vh;overflow-y:auto;transition:max-height .22s ease,padding .22s ease,opacity .18s ease}
+#camadas .cam-body.oculto{max-height:0;padding-top:0;padding-bottom:0;opacity:0;overflow:hidden}
+#camadas .cam-head span{transition:transform .2s ease;font-size:14px;line-height:1}
 .cam-item{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:8px;font-size:12.5px;cursor:pointer}
 .cam-item:hover{background:var(--surface2)}
 .cam-item .sw{width:28px;height:16px;border-radius:9px;background:var(--border);position:relative;transition:.15s;flex-shrink:0}
@@ -342,20 +344,9 @@ input:focus,select:focus{border-color:var(--accent)}
 .cabo-linha{filter:drop-shadow(0 0 1.3px rgba(0,0,0,.95)) drop-shadow(0 0 2.5px rgba(0,0,0,.55))}
 .seta-cabo{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.6));pointer-events:none}
 .fusao-linha.fusao-ruim{stroke-width:3.2;filter:drop-shadow(0 0 3px rgba(255,59,48,.7))}
-/* luz de tráfego correndo pelo cabo no mapa — mesmo princípio do diagrama de fusão:
-   só cabos implantados/certificados "têm sinal" */
-@keyframes mapa-fluxo-luz{to{stroke-dashoffset:-64}}
-.cabo-fluxo-luz{
-  stroke-width:4;fill:none;stroke-linecap:round;
-  stroke-dasharray:9 30;opacity:.95;
-  /* sem drop-shadow: o filtro é recalculado a cada quadro e travava o mapa */
-  animation:mapa-fluxo-luz 1.15s linear infinite;
-  pointer-events:none !important;
-  will-change:stroke-dashoffset;
-}
-/* durante o arrasto a animação é pausada — o traço continua visível, sem repintar */
-.leaflet-container.sem-fluxo .cabo-fluxo-luz{animation-play-state:paused}
-.leaflet-container.sem-fluxo .seta-cabo{visibility:hidden}
+/* a luz de tráfego e as setas agora são desenhadas num único canvas
+   (classe LuzSetasCanvas) — sem elementos no DOM e sem animação por CSS */
+.luz-setas-canvas{pointer-events:none}
 .fibra-passante{stroke-width:2.6;opacity:.8;stroke-linecap:round;cursor:pointer}
 .fibra-passante:hover{opacity:1;stroke-width:4}
 .fibra-linha{stroke-width:3;cursor:pointer}
@@ -738,7 +729,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
   <div id="hint"><b>Navegação:</b> clique nos elementos para editar</div>
 
   <div id="camadas">
-    <div class="cam-head" onclick="document.querySelector('#camadas .cam-body').classList.toggle('oculto');this.querySelector('span').textContent=this.querySelector('span').textContent==='−'?'+':'−'">Elementos <span>−</span></div>
+    <div class="cam-head" onclick="togglePainelCamadas()" title="Recolher / expandir">Elementos <span id="cam-seta">−</span></div>
     <div class="cam-body" id="cam-body"></div>
   </div>
 </div>
@@ -1879,6 +1870,7 @@ function criarProjeto(){
 }
 function voltarHome(){
   if(mapa)limparOverlaysSoltos();
+  destruirLuzSetas();   // para a animação ao sair do mapa
   document.getElementById('tela-editor').style.display='none';
   document.getElementById('shell').style.display='flex';
   renderHome();
@@ -2195,6 +2187,10 @@ function reguaDesenhar(){
 function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':m.toFixed(1)+' m'}
 
 /* ================= RENDER MAPA ================= */
+function destruirLuzSetas(){
+  if(luzSetasLayer&&mapa){try{mapa.removeLayer(luzSetasLayer)}catch(e){}}
+  luzSetasLayer=null;
+}
 function limparOverlaysSoltos(){
   // remove TUDO que vive fora de layerRefs (senão vaza ao trocar de projeto)
   try{
@@ -2209,12 +2205,16 @@ function limparOverlaysSoltos(){
   }catch(e){}
 }
 let setasCaboLayers=[];
-const LUZ_MAX_CABOS=20;    // teto de cabos animados ao mesmo tempo
-const SETA_MAX_TOTAL=120; // cada seta é um elemento na tela: sem teto, mapas grandes pesam
+const LUZ_MAX_CABOS=40;    // teto de cabos animados ao mesmo tempo
+const SETA_MAX_TOTAL=200;  // teto de setas desenhadas
 
-/* O custo da animação é o repintar do SVG a cada quadro. Três medidas cortam isso:
-   1) só desenha o que está na tela  2) simplifica o traçado da luz (menos vértices)
-   3) limita quantos cabos animam juntos. */
+/* ===== CAMADA DE LUZ E SETAS EM CANVAS =====
+   Antes cada seta era um marcador no DOM e cada luz um <path> SVG animado por CSS:
+   com dezenas de cabos o navegador repintava tudo a cada quadro e o mapa travava.
+   Agora é UM único canvas: o desenho custa quase nada e não cria elementos na página. */
+function _movimentoReduzido(){
+  return !!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
 function _caboNaVista(c,vista){
   if(!vista)return true;                 // mapa ainda sem tamanho: não recorta nada
   if(!c.pontos||!c.pontos.length)return false;
@@ -2230,39 +2230,155 @@ function _tracadoLeve(pontos){
     return simp.map(p=>{const ll=mapa.layerPointToLatLng(p);return [ll.lat,ll.lng]});
   }catch(e){ return pontos }
 }
+/* posições e ângulos das setas, em coordenadas de tela */
+function calcularSetasCabo(c){
+  const pts=c.pontos;
+  if(!pts||pts.length<2)return [];
+  if(mapa.getZoom()<SETA_ZOOM_MIN)return [];
+  const cor=c.cor||CORES_CABO[c.tipo];
+  const px=pts.map(p=>mapa.latLngToContainerPoint(L.latLng(p[0],p[1])));
+  const out=[];
+  let desdeUltima=Infinity;
+  for(let i=0;i<px.length-1;i++){
+    const p1=px[i], p2=px[i+1];
+    const d=p1.distanceTo(p2);
+    if(d<0.5)continue;
+    if(desdeUltima<SETA_ESPACO_PX){desdeUltima+=d;continue}
+    desdeUltima=0;
+    out.push({x:p1.x,y:p1.y,ang:Math.atan2(p2.y-p1.y,p2.x-p1.x),cor});
+  }
+  return out;
+}
+/* compatibilidade: versão que devolve marcadores (usada por chamadas antigas) */
+function desenharSetasCabo(c){ return calcularSetasCabo(c) }
+
+/* A classe é criada só na primeira utilização: o Leaflet é carregado de forma
+   assíncrona (com fallback entre CDNs) e não existe quando este script é lido. */
+let LuzSetasCanvas=null;
+function _defLuzSetasCanvas(){
+  if(LuzSetasCanvas)return LuzSetasCanvas;
+  if(typeof L==='undefined'||!L.Layer)return null;
+  LuzSetasCanvas=L.Layer.extend({
+  onAdd:function(map){
+    this._map=map;
+    const cv=this._canvas=L.DomUtil.create('canvas','luz-setas-canvas');
+    cv.style.position='absolute';
+    cv.style.pointerEvents='none';
+    cv.style.zIndex=250;
+    map.getPanes().overlayPane.appendChild(cv);
+    this._luzes=[];this._setas=[];this._pausado=false;
+    this._onMoveStart=()=>{this._pausado=true};
+    this._onMoveEnd=()=>{this._pausado=false;this._reposicionar();this.reconstruir()};
+    map.on('movestart zoomstart',this._onMoveStart);
+    map.on('moveend zoomend resize',this._onMoveEnd);
+    this._reposicionar();this.reconstruir();
+    this._laco();
+    return this;
+  },
+  onRemove:function(map){
+    if(this._raf)cancelAnimationFrame(this._raf);
+    map.off('movestart zoomstart',this._onMoveStart);
+    map.off('moveend zoomend resize',this._onMoveEnd);
+    if(this._canvas&&this._canvas.parentNode)this._canvas.parentNode.removeChild(this._canvas);
+    return this;
+  },
+  _reposicionar:function(){
+    const map=this._map;if(!map)return;
+    const size=map.getSize();
+    if(!size||!size.x||!size.y)return;
+    const canto=map.containerPointToLayerPoint([0,0]);
+    L.DomUtil.setPosition(this._canvas,canto);
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    this._canvas.width=Math.round(size.x*dpr);
+    this._canvas.height=Math.round(size.y*dpr);
+    this._canvas.style.width=size.x+'px';
+    this._canvas.style.height=size.y+'px';
+    this._dpr=dpr;this._w=size.x;this._h=size.y;
+  },
+  /* recalcula a geometria só quando o mapa para de se mexer */
+  reconstruir:function(){
+    this._luzes=[];this._setas=[];
+    if(!mapa||!projAtual||!this._map)return;
+    const tam=mapa.getSize();
+    const vista=(tam&&tam.x>40&&tam.y>40)?mapa.getBounds().pad(0.12):null;
+    const podeLuz=camadasVisiveis.luzfibra!==false && mapa.getZoom()>=LUZ_ZOOM_MIN && !_movimentoReduzido();
+    let nLuz=0,nSetas=0;
+    projAtual.cabos.forEach(c=>{
+      if(!camadasVisiveis[c.tipo])return;
+      if(!_caboNaVista(c,vista))return;
+      if(nSetas<SETA_MAX_TOTAL){
+        const s=calcularSetasCabo(c);
+        s.slice(0,Math.max(0,SETA_MAX_TOTAL-nSetas)).forEach(x=>{this._setas.push(x);nSetas++});
+      }
+      if(podeLuz&&nLuz<LUZ_MAX_CABOS
+         &&(c.tipo==='backbone'||c.tipo==='distribuicao')
+         &&(c.status==='implantado'||c.status==='certificado')){
+        const pts=_tracadoLeve(c.pontos).map(p=>mapa.latLngToContainerPoint(L.latLng(p[0],p[1])));
+        if(pts.length>1){
+          this._luzes.push({pts,cor:c.status==='certificado'?'#7DE0FF':'#8DFFB0',
+            w:Math.max(3,estiloCabo(c).weight-1)});
+          nLuz++;
+        }
+      }
+    });
+    this._desenhar(performance.now());
+  },
+  _desenhar:function(t){
+    const cv=this._canvas;if(!cv)return;
+    const ctx=cv.getContext('2d');
+    if(!ctx||!this._w)return;
+    ctx.setTransform(this._dpr,0,0,this._dpr,0,0);
+    ctx.clearRect(0,0,this._w,this._h);
+    // luz correndo pela fibra
+    if(this._luzes.length){
+      const off=-(t/1000*46)%39;
+      ctx.lineCap='round';ctx.globalAlpha=.95;
+      ctx.setLineDash([9,30]);ctx.lineDashOffset=off;
+      this._luzes.forEach(l=>{
+        ctx.beginPath();
+        for(let i=0;i<l.pts.length;i++){const p=l.pts[i];i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)}
+        ctx.strokeStyle=l.cor;ctx.lineWidth=l.w;ctx.stroke();
+      });
+      ctx.setLineDash([]);
+    }
+    // setas de direção
+    if(this._setas.length){
+      ctx.globalAlpha=1;
+      this._setas.forEach(s=>{
+        ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.ang);
+        ctx.beginPath();ctx.moveTo(-5,-4.5);ctx.lineTo(6.5,0);ctx.lineTo(-5,4.5);ctx.closePath();
+        ctx.fillStyle=s.cor;ctx.fill();
+        ctx.lineWidth=1.4;ctx.strokeStyle='#0B0D11';ctx.stroke();
+        ctx.restore();
+      });
+    }
+    ctx.globalAlpha=1;
+  },
+  _laco:function(){
+    const passo=(t)=>{
+      // enquanto o mapa se move não redesenha: o canvas acompanha o arrasto sozinho
+      if(!this._pausado&&this._luzes.length)this._desenhar(t);
+      this._raf=requestAnimationFrame(passo);
+    };
+    this._raf=requestAnimationFrame(passo);
+  }
+  });
+  return LuzSetasCanvas;
+}
+let luzSetasLayer=null;
 /* redesenha apenas setas e luz (dependem de zoom/posição) sem repintar o mapa inteiro */
 function redesenharSetasELuz(){
   if(!mapa||!projAtual)return;
-  setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
-  // se o container ainda não foi dimensionado, os limites degeneram num ponto e
-  // o recorte esconderia tudo — nesse caso desenha sem recortar
-  const tam=mapa.getSize();
-  const vista=(tam&&tam.x>40&&tam.y>40)?mapa.getBounds().pad(0.12):null;
-  const zoom=mapa.getZoom();
-  const podeLuz=camadasVisiveis.luzfibra!==false && zoom>=LUZ_ZOOM_MIN && !_movimentoReduzido();
-  let nLuz=0, nSetas=0;
-  projAtual.cabos.forEach(c=>{
-    if(!camadasVisiveis[c.tipo])return;
-    if(!_caboNaVista(c,vista))return;              // fora da tela: nem seta nem luz
-    if(nSetas<SETA_MAX_TOTAL){
-      const s=desenharSetasCabo(c);
-      const cabe=Math.max(0,SETA_MAX_TOTAL-nSetas);
-      s.slice(0,cabe).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk);nSetas++});
-    }
-    if(podeLuz && nLuz<LUZ_MAX_CABOS
-       &&(c.tipo==='backbone'||c.tipo==='distribuicao')
-       &&(c.status==='implantado'||c.status==='certificado')){
-      const est=estiloCabo(c);
-      const corLuz=c.status==='certificado'?'#7DE0FF':'#8DFFB0';
-      const luz=L.polyline(_tracadoLeve(c.pontos),{color:corLuz,weight:Math.max(3,est.weight-1),
-        opacity:1,className:'cabo-fluxo-luz',interactive:false,smoothFactor:3});
-      luz.addTo(mapa);setasCaboLayers.push(luz);nLuz++;
-    }
-  });
+  // limpa resquícios da implementação antiga baseada em camadas
+  setasCaboLayers.forEach(l=>{try{mapa.removeLayer(l)}catch(e){}});setasCaboLayers=[];
+  if(!luzSetasLayer){
+    const Classe=_defLuzSetasCanvas();
+    if(!Classe)return;                 // Leaflet ainda carregando
+    luzSetasLayer=new Classe();luzSetasLayer.addTo(mapa);
+  }
+  else luzSetasLayer.reconstruir();
 }
-function _movimentoReduzido(){
-  return !!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
+
 function renderTudo(){
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
   setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
@@ -2452,6 +2568,13 @@ function renderCamadas(){
     if(d.sub)return `<div class="cam-sub">${d.sub}</div>`;
     return `<div class="cam-item ${camadasVisiveis[d.k]?'on':''}" onclick="${d.fn?d.fn.name+'()':`toggleCamada('${d.k}')`}"><div class="sw"></div>${d.l}${d.k==='clienteone'&&clientesOne.length?' <span style=\'margin-left:auto;font-size:10px;color:var(--text-dim)\'>'+clientesOne.length+'</span>':''}</div>`;
   }).join('');
+}
+function togglePainelCamadas(){
+  const corpo=document.getElementById('cam-body');
+  const seta=document.getElementById('cam-seta');
+  if(!corpo)return;
+  const fechado=corpo.classList.toggle('oculto');
+  if(seta)seta.textContent=fechado?'+':'−';
 }
 function toggleCamada(k){
   camadasVisiveis[k]=!camadasVisiveis[k];
