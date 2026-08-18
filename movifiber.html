@@ -32,6 +32,23 @@ body.tema-claro #camadas,
 body.tema-claro .leaflet-popup-content-wrapper{box-shadow:0 16px 48px rgba(20,25,35,.16)}
 body.tema-claro input,body.tema-claro select,body.tema-claro textarea{background:#FFFFFF}
 body.tema-claro ::-webkit-scrollbar-thumb{background:#C7CDD8}
+/* Etiquetas coloridas: no escuro o texto claro funciona sobre o fundo translúcido,
+   mas no claro esse mesmo fundo vira quase branco e o texto some. Aqui elas ganham
+   tons escurecidos, mantendo a mesma leitura de cor. */
+body.tema-claro .tipo-tag.backbone{background:rgba(154,107,8,.14);color:#7A5406}
+body.tema-claro .tipo-tag.distribuicao{background:rgba(37,99,199,.13);color:#1D4F9E}
+body.tema-claro .tipo-tag.drop{background:rgba(31,138,84,.13);color:#166B41}
+body.tema-claro .tag-sangria{background:rgba(196,92,10,.14);color:#A2490A;border-color:rgba(196,92,10,.35)}
+body.tema-claro .tag-ponta{background:rgba(37,99,199,.13);color:#1D4F9E;border-color:rgba(37,99,199,.35)}
+body.tema-claro .mnb-porta.ocupada{background:rgba(31,138,84,.14);border-color:#1F8A54;color:#146B41}
+body.tema-claro .mnb-porta.uplink{background:rgba(109,40,190,.12);border-color:#6D28BE;color:#5B21A6}
+body.tema-claro .alerta-cto{background:rgba(154,107,8,.12);color:#6E4B05;border-color:rgba(154,107,8,.3)}
+body.tema-claro #toast{background:#14603A;border-color:#1F8A54;color:#EAFBF2}
+/* status coloridos dos elementos */
+body.tema-claro .tag.projeto{background:rgba(154,107,8,.13);color:#7A5406}
+body.tema-claro .tag.implantado{background:rgba(31,138,84,.13);color:#166B41}
+body.tema-claro .tag.certificado{background:rgba(37,99,199,.13);color:#1D4F9E}
+body.tema-claro .tag.nao-implantado{background:rgba(100,110,126,.13);color:#4A5361}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh}
 .mono{font-family:'DM Mono',monospace}
@@ -263,7 +280,9 @@ input:focus,select:focus{border-color:var(--accent)}
 
 /* Markers customizados */
 .mk{display:flex;flex-direction:column;align-items:center}
-.mk .pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.6)}
+.mk .pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.6);color:#fff}
+/* o desenho do pin fica sempre branco: ele vai sobre o círculo colorido do elemento */
+.mk .pin svg{stroke:#fff}
 .mk .lbl{margin-top:2px;background:rgba(13,15,20,.85);padding:1px 6px;border-radius:5px;font-size:9.5px;white-space:nowrap;font-weight:600}
 .pin-pop{background:#7B2ED8}.pin-cto{background:#1E5AD8}.pin-ceo{background:#E87818}.pin-reserva{background:#8A8A8A}
 .pin-poste-real{background:#6B4A28}
@@ -1471,7 +1490,9 @@ window.__leafletPronto=new Promise(function(resolve){
 });
 
 /* ================= ÍCONES SVG ================= */
-const _ic=(inner)=>`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+/* currentColor: o ícone herda a cor do contexto, então funciona nos dois temas.
+   Antes era "#fff" fixo e sumia no modo claro. */
+const _ic=(inner)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 const ICONS={
   navegar:_ic('<path d="M4 4l16 7-7 2-2 7z"/>'),
   pop:_ic('<path d="M4 20V8l8-4 8 4v12M4 20h16M8 20v-5h3v5M13 12h3v8M8 9h2M14 9h2"/>'),
