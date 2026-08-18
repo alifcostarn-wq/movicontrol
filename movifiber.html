@@ -1225,6 +1225,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <option value="implantado">Implantado</option>
         <option value="certificado">Certificado</option>
       </select>
+      <button class="fs-tool" onclick="abrirVisualizarFusao()" title="Ver o diagrama e a lista de conexões · imprimir ou salvar em PDF">🖨 Visualizar / Imprimir</button>
       <button class="fs-tool" onclick="exportarPNGFusao()">🖼 PNG</button>
       <button class="fs-tool" onclick="abrirQR()">▦ QR Code</button>
       <button class="fs-tool" id="btn-vfl" onclick="tracarVFL()" style="border-color:#FF3B30;color:#FF8A80">🔴 Traçar VFL</button>
@@ -3733,13 +3734,158 @@ function fsIniciarDragDio(ev,id){
   document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
 }
 function svgPoint(svg,ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;return p.matrixTransform(svg.getScreenCTM().inverse())}
-function exportarPNGFusao(){
+/* devolve o SVG do diagrama com as variáveis de cor já resolvidas */
+function _svgFusaoResolvido(){
   const svg=document.getElementById('fs-svg');
-  const vb=svg.getAttribute('viewBox').split(' ');
-  const xml=new XMLSerializer().serializeToString(svg)
+  if(!svg)return null;
+  return new XMLSerializer().serializeToString(svg)
     .replace(/var\(--surface\)/g,'#1A1D26').replace(/var\(--border\)/g,'#2C3040')
     .replace(/var\(--text\)/g,'#E2E0DB').replace(/var\(--text-dim\)/g,'#8B90A0')
     .replace(/var\(--surface2\)/g,'#20242F').replace(/var\(--danger\)/g,'#E05445').replace(/var\(--accent\)/g,'#3CB371');
+}
+/* lista legível de todas as conexões da caixa */
+function _listaConexoes(){
+  const F=getFus(fsCaixa);
+  return (F.fusoes||[]).map((fu,i)=>{
+    const med=fusaoMedida(fu), ruim=fusaoForaDoLimite(fu);
+    return {
+      n:i+1,
+      de:rotuloPonto(fu.a),
+      para:rotuloPonto(fu.b),
+      status:labelStatus(fu.status||'projeto'),
+      perda:(med?(+fu.perdaReal).toFixed(2):PERDAS.fusao.toFixed(2)),
+      medida:med, ruim:ruim,
+      obs:fu.obs||''
+    };
+  });
+}
+/* ===== VISUALIZAR / IMPRIMIR O DIAGRAMA ===== */
+function abrirVisualizarFusao(){
+  const svg=document.getElementById('fs-svg');
+  if(!svg){toast('Diagrama não disponível',true);return}
+  const F=getFus(fsCaixa);
+  const el=projAtual.elementos.find(x=>x.id===fsCaixa);
+  const nomeCaixa=el?el.nome:'Caixa';
+  const conex=_listaConexoes();
+  const vb=(svg.getAttribute('viewBox')||'0 0 1180 660').split(' ');
+  const xml=_svgFusaoResolvido();
+
+  // o SVG vira imagem para caber na página impressa
+  const img=new Image();
+  img.onload=()=>{
+    const cv=document.createElement('canvas');
+    cv.width=+vb[2]*2; cv.height=+vb[3]*2;
+    const cx=cv.getContext('2d');
+    cx.fillStyle='#14161d';cx.fillRect(0,0,cv.width,cv.height);
+    cx.drawImage(img,0,0,cv.width,cv.height);
+    _montarJanelaImpressao(nomeCaixa,cv.toDataURL('image/png'),conex,F);
+  };
+  img.onerror=()=>{toast('Não foi possível gerar a imagem do diagrama',true)};
+  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
+}
+function _montarJanelaImpressao(nomeCaixa,dataUrl,conex,F){
+  const proj=projAtual?projAtual.nome:'';
+  const hoje=new Date().toLocaleDateString('pt-BR');
+  const el=projAtual.elementos.find(x=>x.id===fsCaixa);
+  const medidas=conex.filter(c=>c.medida).length;
+  const fora=conex.filter(c=>c.ruim).length;
+
+  const linhas=conex.length?conex.map(c=>`<tr class="${c.ruim?'alerta':''}">
+      <td class="num">${c.n}</td>
+      <td>${_esc(c.de)}</td>
+      <td class="seta">⇄</td>
+      <td>${_esc(c.para)}</td>
+      <td class="num">${c.perda}${c.medida?' <b>medida</b>':' <i>est.</i>'}</td>
+      <td>${_esc(c.status)}</td>
+      <td class="obs">${_esc(c.obs)}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="vazio">Nenhuma fusão registrada nesta caixa.</td></tr>';
+
+  const notaHtml=(F.nota&&F.nota.trim())
+    ? `<div class="nota"><b>📝 Anotações</b><p>${_esc(F.nota).replace(/\n/g,'<br>')}</p></div>` : '';
+
+  const doc=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Diagrama de fusões — ${_esc(nomeCaixa)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 30px;background:#fff;color:#14161d;
+       font-family:'DM Sans',system-ui,Arial,sans-serif;font-size:13px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;
+         border-bottom:2px solid #14161d;padding-bottom:12px;margin-bottom:18px}
+  h1{margin:0 0 3px;font-size:20px}
+  .sub{color:#5b6472;font-size:12px;line-height:1.6}
+  .resumo{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}
+  .resumo div{border:1px solid #d5d9e0;border-radius:8px;padding:6px 12px;font-size:11.5px}
+  .resumo b{display:block;font-size:16px;margin-top:2px}
+  figure{margin:0 0 18px;text-align:center}
+  figure img{max-width:100%;border:1px solid #d5d9e0;border-radius:8px}
+  h2{font-size:14px;margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid #d5d9e0}
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th{text-align:left;background:#f1f3f6;padding:7px 8px;border-bottom:1px solid #d5d9e0;font-size:10.5px;
+     text-transform:uppercase;letter-spacing:.4px;color:#5b6472}
+  td{padding:6px 8px;border-bottom:1px solid #eceff3;vertical-align:top}
+  tr.alerta td{background:#fff4f3}
+  .num{font-family:'DM Mono',ui-monospace,monospace;white-space:nowrap}
+  .seta{text-align:center;color:#8b90a0}
+  .obs{color:#5b6472;font-size:11px}
+  .vazio{text-align:center;color:#8b90a0;padding:18px}
+  .nota{border:1px solid #d5d9e0;border-left:3px solid #E0913C;border-radius:6px;padding:10px 12px;margin-bottom:16px}
+  .nota b{font-size:11.5px}
+  .nota p{margin:5px 0 0;font-size:12px;line-height:1.55;color:#3c434f}
+  footer{margin-top:22px;padding-top:10px;border-top:1px solid #d5d9e0;
+         color:#8b90a0;font-size:10.5px;display:flex;justify-content:space-between}
+  .barra{position:fixed;top:0;left:0;right:0;background:#14161d;padding:10px 16px;
+         display:flex;gap:10px;align-items:center;justify-content:flex-end}
+  .barra button{background:#3CB371;color:#06130C;border:none;border-radius:7px;
+                padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .barra button.sec{background:#2C3040;color:#E2E0DB}
+  .conteudo{margin-top:44px}
+  @media print{
+    .barra{display:none}
+    .conteudo{margin-top:0}
+    body{padding:0}
+    tr{break-inside:avoid}
+    figure{break-inside:avoid}
+  }
+</style></head><body>
+<div class="barra">
+  <button onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+  <button class="sec" onclick="window.close()">Fechar</button>
+</div>
+<div class="conteudo">
+<header>
+  <div>
+    <h1>Diagrama de fusões — ${_esc(nomeCaixa)}</h1>
+    <div class="sub">Projeto: <b>${_esc(proj)}</b>${el&&el.tipo?' · '+_esc(el.tipo.toUpperCase()):''}${el&&el.status?' · '+_esc(labelStatus(el.status)):''}</div>
+  </div>
+  <div class="sub" style="text-align:right">Emitido em ${hoje}<br>MoviFiber · MoviOn</div>
+</header>
+<div class="resumo">
+  <div>Fusões<b>${conex.length}</b></div>
+  <div>Medidas<b>${medidas}</b></div>
+  <div>Fora do limite<b>${fora}</b></div>
+</div>
+${notaHtml}
+<figure><img src="${dataUrl}" alt="Diagrama de fusões"></figure>
+<h2>Conexões de fibra — quem conecta com quem</h2>
+<table>
+  <thead><tr><th>#</th><th>Origem</th><th></th><th>Destino</th><th>Perda (dB)</th><th>Status</th><th>Observação</th></tr></thead>
+  <tbody>${linhas}</tbody>
+</table>
+<footer><span>MoviFiber — documentação de rede óptica</span><span>${_esc(nomeCaixa)} · ${hoje}</span></footer>
+</div>
+</body></html>`;
+
+  const jan=window.open('','_blank');
+  if(!jan){toast('Permita janelas pop-up para visualizar e imprimir',true);return}
+  jan.document.write(doc);
+  jan.document.close();
+  toast('Diagrama aberto para visualização e impressão');
+}
+function _esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function exportarPNGFusao(){
+  const svg=document.getElementById('fs-svg');
+  const vb=svg.getAttribute('viewBox').split(' ');
+  const xml=_svgFusaoResolvido();
   const img=new Image();
   img.onload=()=>{
     const cv=document.createElement('canvas');cv.width=+vb[2]*2;cv.height=+vb[3]*2;
