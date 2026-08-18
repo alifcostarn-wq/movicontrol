@@ -353,7 +353,9 @@ input:focus,select:focus{border-color:var(--accent)}
   pointer-events:none !important;
   will-change:stroke-dashoffset;
 }
-#mapa.sem-fluxo .cabo-fluxo-luz{display:none}
+/* durante o arrasto a animação é pausada — o traço continua visível, sem repintar */
+.leaflet-container.sem-fluxo .cabo-fluxo-luz{animation-play-state:paused}
+.leaflet-container.sem-fluxo .seta-cabo{visibility:hidden}
 .fibra-passante{stroke-width:2.6;opacity:.8;stroke-linecap:round;cursor:pointer}
 .fibra-passante:hover{opacity:1;stroke-width:4}
 .fibra-linha{stroke-width:3;cursor:pointer}
@@ -1612,7 +1614,7 @@ try{CAT=Object.assign(JSON.parse(JSON.stringify(CAT_PADRAO)),JSON.parse(store.ge
 });
 function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
-let camadasVisiveis={satelite:true,pop:false,cto:false,ceo:false,reserva:false,backbone:false,distribuicao:false,drop:false,area:false,cliente:false,poste:false,clienteone:false};
+let camadasVisiveis={satelite:true,luzfibra:true,pop:false,cto:false,ceo:false,reserva:false,backbone:false,distribuicao:false,drop:false,area:false,cliente:false,poste:false,clienteone:false};
 let layerRefs={}, caboTemp=null, areaTemp=null;
 /* Tecnologias PON: TX típico da OLT e faixa de sensibilidade da ONU */
 const TECNOLOGIAS={
@@ -1924,8 +1926,17 @@ async function garantirMapa(centro,zoom){
     mapa.on('click',cliqueMapa);
     mapa.on('dblclick',finalizarDesenho);
     mapa.on('mousemove',aoMoverMapa);
-    // setas e luz dependem do zoom (posição em pixels): redesenha só elas ao terminar o zoom
-    mapa.on('zoomend',()=>{if(projAtual)redesenharSetasELuz()});
+    // Durante arrasto/zoom a animação é pausada: enquanto o mapa se move o navegador
+    // já está ocupado, e repintar a luz a cada quadro é justamente o que trava.
+    const _cont=mapa.getContainer();
+    let _tRedesenho=null;
+    mapa.on('movestart zoomstart',()=>_cont.classList.add('sem-fluxo'));
+    mapa.on('moveend zoomend',()=>{
+      _cont.classList.remove('sem-fluxo');
+      clearTimeout(_tRedesenho);
+      // pequeno atraso: evita recalcular a cada micro-ajuste do mapa
+      _tRedesenho=setTimeout(()=>{if(projAtual)redesenharSetasELuz()},140);
+    });
     document.addEventListener('keydown',e=>{
       if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;
       if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();desfazer();return}
@@ -2120,12 +2131,17 @@ function desenharSetasCabo(c){
   if(mapa.getZoom()<SETA_ZOOM_MIN)return [];
   const cor=c.cor||CORES_CABO[c.tipo];
   const setas=[];
-  let ultimo=null;
+  const px=pts.map(p=>mapa.latLngToLayerPoint(L.latLng(p[0],p[1])));
+  // percorre o traçado acumulando distância: a seta cai sobre um ponto da fibra
+  // a cada ~SETA_ESPACO_PX. Assim funciona tanto com vértices esparsos quanto
+  // com traçados densos (KML), onde antes nenhum segmento atingia o mínimo.
+  let desdeUltima=Infinity;
   for(let i=0;i<pts.length-1;i++){
-    const p1=mapa.latLngToLayerPoint(pts[i]), p2=mapa.latLngToLayerPoint(pts[i+1]);
-    if(p1.distanceTo(p2)<18)continue;                       // vértices praticamente colados
-    if(ultimo&&p1.distanceTo(ultimo)<SETA_ESPACO_PX)continue; // respeita o espaçamento
-    ultimo=p1;
+    const p1=px[i], p2=px[i+1];
+    const d=p1.distanceTo(p2);
+    if(d<0.5)continue;
+    if(desdeUltima<SETA_ESPACO_PX){desdeUltima+=d;continue}
+    desdeUltima=0;
     const ang=Math.atan2(p2.y-p1.y,p2.x-p1.x)*180/Math.PI;
     const ic=L.divIcon({className:'',html:`<div class="seta-cabo" style="transform:rotate(${ang}deg)"><svg viewBox="0 0 20 20" width="13" height="13"><path d="M3 3 L17 10 L3 17 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.5" stroke-linejoin="round"/></svg></div>`,iconSize:[13,13],iconAnchor:[6,6]});
     setas.push(L.marker(pts[i],{icon:ic,interactive:false,keyboard:false}));
@@ -2193,22 +2209,59 @@ function limparOverlaysSoltos(){
   }catch(e){}
 }
 let setasCaboLayers=[];
-/* redesenha apenas setas e luz (dependem do zoom) sem repintar o mapa inteiro */
+const LUZ_MAX_CABOS=20;    // teto de cabos animados ao mesmo tempo
+const SETA_MAX_TOTAL=120; // cada seta é um elemento na tela: sem teto, mapas grandes pesam
+
+/* O custo da animação é o repintar do SVG a cada quadro. Três medidas cortam isso:
+   1) só desenha o que está na tela  2) simplifica o traçado da luz (menos vértices)
+   3) limita quantos cabos animam juntos. */
+function _caboNaVista(c,vista){
+  if(!vista)return true;                 // mapa ainda sem tamanho: não recorta nada
+  if(!c.pontos||!c.pontos.length)return false;
+  try{ return vista.intersects(L.latLngBounds(c.pontos)) }catch(e){ return true }
+}
+/* a luz é decorativa: não precisa de todos os vértices do cabo */
+function _tracadoLeve(pontos){
+  if(!pontos||pontos.length<4)return pontos;
+  try{
+    const px=pontos.map(p=>mapa.latLngToLayerPoint(L.latLng(p[0],p[1])));
+    const simp=L.LineUtil.simplify(px,6);
+    if(simp.length<2)return pontos;
+    return simp.map(p=>{const ll=mapa.layerPointToLatLng(p);return [ll.lat,ll.lng]});
+  }catch(e){ return pontos }
+}
+/* redesenha apenas setas e luz (dependem de zoom/posição) sem repintar o mapa inteiro */
 function redesenharSetasELuz(){
   if(!mapa||!projAtual)return;
   setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
+  // se o container ainda não foi dimensionado, os limites degeneram num ponto e
+  // o recorte esconderia tudo — nesse caso desenha sem recortar
+  const tam=mapa.getSize();
+  const vista=(tam&&tam.x>40&&tam.y>40)?mapa.getBounds().pad(0.12):null;
+  const zoom=mapa.getZoom();
+  const podeLuz=camadasVisiveis.luzfibra!==false && zoom>=LUZ_ZOOM_MIN && !_movimentoReduzido();
+  let nLuz=0, nSetas=0;
   projAtual.cabos.forEach(c=>{
     if(!camadasVisiveis[c.tipo])return;
-    const est=estiloCabo(c);
-    desenharSetasCabo(c).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk)});
-    if((c.tipo==='backbone'||c.tipo==='distribuicao')
-       &&(c.status==='implantado'||c.status==='certificado')
-       &&mapa.getZoom()>=LUZ_ZOOM_MIN){
+    if(!_caboNaVista(c,vista))return;              // fora da tela: nem seta nem luz
+    if(nSetas<SETA_MAX_TOTAL){
+      const s=desenharSetasCabo(c);
+      const cabe=Math.max(0,SETA_MAX_TOTAL-nSetas);
+      s.slice(0,cabe).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk);nSetas++});
+    }
+    if(podeLuz && nLuz<LUZ_MAX_CABOS
+       &&(c.tipo==='backbone'||c.tipo==='distribuicao')
+       &&(c.status==='implantado'||c.status==='certificado')){
+      const est=estiloCabo(c);
       const corLuz=c.status==='certificado'?'#7DE0FF':'#8DFFB0';
-      const luz=L.polyline(c.pontos,{color:corLuz,weight:Math.max(3,est.weight-1),opacity:1,className:'cabo-fluxo-luz',interactive:false});
-      luz.addTo(mapa);setasCaboLayers.push(luz);
+      const luz=L.polyline(_tracadoLeve(c.pontos),{color:corLuz,weight:Math.max(3,est.weight-1),
+        opacity:1,className:'cabo-fluxo-luz',interactive:false,smoothFactor:3});
+      luz.addTo(mapa);setasCaboLayers.push(luz);nLuz++;
     }
   });
+}
+function _movimentoReduzido(){
+  return !!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 function renderTudo(){
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
@@ -2235,17 +2288,9 @@ function renderTudo(){
         ${c.sangria?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Rompido: ${c.sangria.fibrasNaCaixa} fibra(s) na caixa · ${c.sangria.fibrasSeguem} seguem</div>`:''}
         ${(c.passagens&&c.passagens.length)?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria (passagem) em: ${c.passagens.map(id=>nomeEl(id)).filter(Boolean).join(', ')}</div>`:''}
         <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
-    desenharSetasCabo(c).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk)});
-    // luz de tráfego: só nos troncos (backbone/distribuição) com sinal.
-    // Drop fica de fora — são centenas no mapa e travavam a navegação.
-    if((c.tipo==='backbone'||c.tipo==='distribuicao')
-       &&(c.status==='implantado'||c.status==='certificado')
-       &&mapa.getZoom()>=LUZ_ZOOM_MIN){
-      const corLuz=c.status==='certificado'?'#7DE0FF':'#8DFFB0';
-      const luz=L.polyline(c.pontos,{color:corLuz,weight:Math.max(3,est.weight-1),opacity:1,className:'cabo-fluxo-luz',interactive:false});
-      luz.addTo(mapa);setasCaboLayers.push(luz);
-    }
   });
+  // setas e luz saem por uma passada única, já com recorte de tela e limites
+  redesenharSetasELuz();
   // clientes MoviOne (localização + vínculo) · status IXC opcional
   if(camadasVisiveis.clienteone)clientesOne.forEach(c=>{
     // cor: cinza = status não carregado · VERDE CLARO vivo = online · vermelho = offline
@@ -2400,7 +2445,8 @@ function renderCamadas(){
     {sub:'Postes'},{k:'poste',l:'Postes'},
     {sub:'Cabos'},{k:'backbone',l:'Backbone'},{k:'distribuicao',l:'Distribuição'},{k:'drop',l:'Drop'},
     {sub:'Clientes'},{k:'clienteone',l:'Clientes (MoviOne)',fn:toggleCamadaClientes},
-    {sub:'Outros'},{k:'reserva',l:'Reservas Técnicas'},{k:'area',l:'Áreas'}
+    {sub:'Outros'},{k:'reserva',l:'Reservas Técnicas'},{k:'area',l:'Áreas'},
+    {k:'luzfibra',l:'✨ Luz de tráfego'}
   ];
   document.getElementById('cam-body').innerHTML=defs.map(d=>{
     if(d.sub)return `<div class="cam-sub">${d.sub}</div>`;
@@ -2409,7 +2455,9 @@ function renderCamadas(){
 }
 function toggleCamada(k){
   camadasVisiveis[k]=!camadasVisiveis[k];
-  if(k==='satelite')toggleSatelite();else renderTudo();
+  if(k==='satelite')toggleSatelite();
+  else if(k==='luzfibra')redesenharSetasELuz();   // só a luz muda, não repinta tudo
+  else renderTudo();
   renderCamadas();
 }
 async function toggleCamadaClientes(){
