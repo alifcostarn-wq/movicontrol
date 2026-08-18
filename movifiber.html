@@ -341,15 +341,17 @@ input:focus,select:focus{border-color:var(--accent)}
 /* contorno escuro nos cabos: cores opacas e destacadas sobre a imagem de satélite */
 .cabo-linha{filter:drop-shadow(0 0 1.3px rgba(0,0,0,.95)) drop-shadow(0 0 2.5px rgba(0,0,0,.55))}
 .seta-cabo{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.6));pointer-events:none}
+.fusao-linha.fusao-ruim{stroke-width:3.2;filter:drop-shadow(0 0 3px rgba(255,59,48,.7))}
 /* luz de tráfego correndo pelo cabo no mapa — mesmo princípio do diagrama de fusão:
    só cabos implantados/certificados "têm sinal" */
 @keyframes mapa-fluxo-luz{to{stroke-dashoffset:-64}}
 .cabo-fluxo-luz{
   stroke-width:4;fill:none;stroke-linecap:round;
   stroke-dasharray:9 30;opacity:.95;
-  filter:drop-shadow(0 0 3px currentColor);
+  /* sem drop-shadow: o filtro é recalculado a cada quadro e travava o mapa */
   animation:mapa-fluxo-luz 1.15s linear infinite;
   pointer-events:none !important;
+  will-change:stroke-dashoffset;
 }
 #mapa.sem-fluxo .cabo-fluxo-luz{display:none}
 .fibra-passante{stroke-width:2.6;opacity:.8;stroke-linecap:round;cursor:pointer}
@@ -1220,6 +1222,9 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="fs-tool" onclick="addSplitterDoCatalogo()">+ Splitter</button>
       <button class="fs-tool" onclick="abrirMapaConexoes()" title="Mapa de conexões: conectar cabos por ponta ou por sangria (passagem)">🔗 Conexões</button>
       <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Reorganizar</button>
+      <button class="fs-tool" onclick="abrirNotaCaixa()" title="Anotações desta caixa (vão junto no PNG)">📝 Nota</button>
+      <button class="fs-tool" id="btn-medir" onclick="toggleModoMedir()" title="Registrar a potência medida em cada ponta">📏 Medir</button>
+      <button class="fs-tool" onclick="abrirProjetadoReal()" title="Comparar o projetado com o que foi medido">📊 Projetado × Real</button>
       <span style="width:10px"></span>
       <select id="fs-status-el" style="width:150px;padding:7px 10px;font-size:12px" onchange="mudarStatusCaixaFusao(this.value)">
         <option value="projeto">Em projeto</option>
@@ -1919,6 +1924,8 @@ async function garantirMapa(centro,zoom){
     mapa.on('click',cliqueMapa);
     mapa.on('dblclick',finalizarDesenho);
     mapa.on('mousemove',aoMoverMapa);
+    // setas e luz dependem do zoom (posição em pixels): redesenha só elas ao terminar o zoom
+    mapa.on('zoomend',()=>{if(projAtual)redesenharSetasELuz()});
     document.addEventListener('keydown',e=>{
       if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;
       if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();desfazer();return}
@@ -2101,21 +2108,27 @@ function hoverAbrePopup(mk){
     }
   });
 }
-/* seta de direção do cabo: uma setinha no meio de cada segmento do traçado,
-   calculada em pixels de tela (para o ângulo ficar visualmente correto em qualquer projeção) */
+/* Seta de direção do cabo: fica NOS PONTOS (vértices) do traçado, apontando para o
+   próximo ponto. Para não poluir o mapa, respeita um espaçamento mínimo em pixels
+   de tela e só aparece a partir de um zoom em que dá para enxergar o traçado. */
+const LUZ_ZOOM_MIN=15;      // abaixo disso a animação em muitos cabos trava o mapa
+const SETA_ZOOM_MIN=16;     // abaixo disso o mapa fica coberto de setas
+const SETA_ESPACO_PX=110;   // distância mínima entre duas setas na tela
 function desenharSetasCabo(c){
   const pts=c.pontos;
   if(!pts||pts.length<2)return [];
+  if(mapa.getZoom()<SETA_ZOOM_MIN)return [];
+  const cor=c.cor||CORES_CABO[c.tipo];
   const setas=[];
+  let ultimo=null;
   for(let i=0;i<pts.length-1;i++){
     const p1=mapa.latLngToLayerPoint(pts[i]), p2=mapa.latLngToLayerPoint(pts[i+1]);
-    if(p1.distanceTo(p2)<26)continue;   // segmento curto demais para caber a seta
-    const meio=mapa.layerPointToLatLng(p1.add(p2).subtract(p1).divideBy(2));
+    if(p1.distanceTo(p2)<18)continue;                       // vértices praticamente colados
+    if(ultimo&&p1.distanceTo(ultimo)<SETA_ESPACO_PX)continue; // respeita o espaçamento
+    ultimo=p1;
     const ang=Math.atan2(p2.y-p1.y,p2.x-p1.x)*180/Math.PI;
-    const cor=c.cor||CORES_CABO[c.tipo];
-    const ic=L.divIcon({className:'',html:`<div class="seta-cabo" style="transform:rotate(${ang}deg)"><svg viewBox="0 0 20 20" width="14" height="14"><path d="M2 3 L17 10 L2 17 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.4" stroke-linejoin="round"/></svg></div>`,iconSize:[14,14],iconAnchor:[7,7]});
-    const mk=L.marker(meio,{icon:ic,interactive:false,keyboard:false});
-    setas.push(mk);
+    const ic=L.divIcon({className:'',html:`<div class="seta-cabo" style="transform:rotate(${ang}deg)"><svg viewBox="0 0 20 20" width="13" height="13"><path d="M3 3 L17 10 L3 17 Z" fill="${cor}" stroke="#0B0D11" stroke-width="1.5" stroke-linejoin="round"/></svg></div>`,iconSize:[13,13],iconAnchor:[6,6]});
+    setas.push(L.marker(pts[i],{icon:ic,interactive:false,keyboard:false}));
   }
   return setas;
 }
@@ -2180,6 +2193,23 @@ function limparOverlaysSoltos(){
   }catch(e){}
 }
 let setasCaboLayers=[];
+/* redesenha apenas setas e luz (dependem do zoom) sem repintar o mapa inteiro */
+function redesenharSetasELuz(){
+  if(!mapa||!projAtual)return;
+  setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
+  projAtual.cabos.forEach(c=>{
+    if(!camadasVisiveis[c.tipo])return;
+    const est=estiloCabo(c);
+    desenharSetasCabo(c).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk)});
+    if((c.tipo==='backbone'||c.tipo==='distribuicao')
+       &&(c.status==='implantado'||c.status==='certificado')
+       &&mapa.getZoom()>=LUZ_ZOOM_MIN){
+      const corLuz=c.status==='certificado'?'#7DE0FF':'#8DFFB0';
+      const luz=L.polyline(c.pontos,{color:corLuz,weight:Math.max(3,est.weight-1),opacity:1,className:'cabo-fluxo-luz',interactive:false});
+      luz.addTo(mapa);setasCaboLayers.push(luz);
+    }
+  });
+}
 function renderTudo(){
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
   setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
@@ -2206,8 +2236,11 @@ function renderTudo(){
         ${(c.passagens&&c.passagens.length)?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria (passagem) em: ${c.passagens.map(id=>nomeEl(id)).filter(Boolean).join(', ')}</div>`:''}
         <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
     desenharSetasCabo(c).forEach(mk=>{mk.addTo(mapa);setasCaboLayers.push(mk)});
-    // luz de tráfego no mapa: só cabos implantados/certificados "têm sinal"
-    if(c.status==='implantado'||c.status==='certificado'){
+    // luz de tráfego: só nos troncos (backbone/distribuição) com sinal.
+    // Drop fica de fora — são centenas no mapa e travavam a navegação.
+    if((c.tipo==='backbone'||c.tipo==='distribuicao')
+       &&(c.status==='implantado'||c.status==='certificado')
+       &&mapa.getZoom()>=LUZ_ZOOM_MIN){
       const corLuz=c.status==='certificado'?'#7DE0FF':'#8DFFB0';
       const luz=L.polyline(c.pontos,{color:corLuz,weight:Math.max(3,est.weight-1),opacity:1,className:'cabo-fluxo-luz',interactive:false});
       luz.addTo(mapa);setasCaboLayers.push(luz);
@@ -2715,9 +2748,25 @@ function baixar(nome,conteudo,tipo){
 
 /* ================= EDITOR DE FUSÕES ================= */
 let fsCaixa=null, fsSel=null, fsDrag=null, fsAnim=true, fsSelSp=null;
-function getFus(id){if(!projAtual.fusoes[id])projAtual.fusoes[id]={splitters:[],fusoes:[]};return projAtual.fusoes[id]}
+function getFus(id){
+  if(!projAtual.fusoes[id])projAtual.fusoes[id]={splitters:[],fusoes:[]};
+  const F=projAtual.fusoes[id];
+  if(!F.medicoes)F.medicoes={};   // dBm medido em cada ponta: { chaveDoPonto: {dbm,data,por,obs} }
+  if(F.nota===undefined)F.nota='';// anotação livre da caixa
+  return F;
+}
+/* limite de alerta para emenda por fusão (dB) — acima disso a emenda é destacada */
+const LIMITE_FUSAO_DB=0.10;
+/* perda efetiva de uma fusão: usa a medida real quando existir, senão a estimada */
+function perdaFusao(fu){
+  const v=fu&&fu.perdaReal;
+  return (v!=null&&v!==''&&!isNaN(+v))?+v:PERDAS.fusao;
+}
+function fusaoMedida(fu){return fu&&fu.perdaReal!=null&&fu.perdaReal!==''&&!isNaN(+fu.perdaReal)}
+function fusaoForaDoLimite(fu){return fusaoMedida(fu)&&+fu.perdaReal>LIMITE_FUSAO_DB}
 function abrirFusao(caixaId){
-  fsCaixa=caixaId;fsSel=null;
+  fsCaixa=caixaId;fsSel=null;modoMedir=false;
+  const _bm=document.getElementById('btn-medir');if(_bm)_bm.classList.remove('ativo');
   const e=projAtual.elementos.find(x=>x.id===caixaId);
   document.getElementById('fs-titulo').textContent='🧵 '+e.nome+' — Diagrama de fusões';
   document.getElementById('fs-status-el').value=e.status;
@@ -3040,6 +3089,13 @@ function renderFusao(){
         <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}">${f}</text>
         <title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title>
       </g>`;
+      // potência medida registrada nesta ponta
+      {const _mk=F.medicoes&&F.medicoes[fk];
+       if(_mk){
+         const dir=b.lado==='esq'?1:-1;
+         s+=`<g style="pointer-events:none"><rect x="${p.x+dir*11-(dir<0?46:0)}" y="${p.y-7}" width="46" height="14" rx="4" fill="#11151C" stroke="#5B9BFF" stroke-width="1"/>`
+           +`<text x="${p.x+dir*11+(dir<0?-23:23)}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Mono" fill="#8FBEFF">${(+_mk.dbm).toFixed(2)}</text></g>`;
+       }}
     }
     s+='</g>';
   });
@@ -3128,14 +3184,40 @@ function renderFusao(){
       s+=`<path class="fusao-glow" stroke="${luzCor}" d="${dPath}"/>`;
       s+=`<path class="fusao-trilho" stroke="${cor}" d="${dPath}"/>`;
     }
-    s+=`<path class="fusao-linha" stroke="${cor}" d="${dPath}" onclick="clicarFusao(event,${i})"><title>Fusão (clique para remover) — perda ${PERDAS.fusao} dB</title></path>`;
+    const _med=fusaoMedida(fu), _ruim=fusaoForaDoLimite(fu);
+    const _corLinha=_ruim?'#FF3B30':cor;
+    const _tit=(_med?('Emenda medida: '+(+fu.perdaReal).toFixed(2)+' dB'+(_ruim?' ⚠️ acima de '+LIMITE_FUSAO_DB.toFixed(2)+' dB':' ✔')):('Perda estimada: '+PERDAS.fusao.toFixed(2)+' dB (não medida)'))
+      +(fu.obs?('\n💬 '+fu.obs):'')+'\n(clique para status, perda real e comentário)';
+    s+=`<path class="fusao-linha${_ruim?' fusao-ruim':''}" stroke="${_corLinha}" d="${dPath}" onclick="clicarFusao(event,${i})"><title>${_tit.replace(/"/g,'&quot;')}</title></path>`;
+    // selo no meio da emenda: valor medido e/ou marca de comentário
+    if(_med||fu.obs){
+      const mx=(ax+bx)/2, my=(ay+by)/2;
+      const txt=(_med?((+fu.perdaReal).toFixed(2)+'dB'):'')+(fu.obs?(_med?' 💬':'💬'):'');
+      s+=`<g style="pointer-events:none">
+        <rect x="${mx-20}" y="${my-9}" width="${40}" height="14" rx="4" fill="#11151C" stroke="${_ruim?'#FF3B30':(_med?'#3CB371':'#4A5568')}" stroke-width="1"/>
+        <text x="${mx}" y="${my+1.5}" text-anchor="middle" font-size="8.5" font-family="DM Mono" fill="${_ruim?'#FF8A80':(_med?'#5FE0A0':'#C9CDD6')}">${txt}</text>
+      </g>`;
+    }
     if(fsAnim&&ativa)s+=`<path class="fusao-luz" stroke="${luzCor}" d="${dPath}"/>`;
   });
   if(!cabos.length)s+=`<text x="560" y="300" text-anchor="middle" fill="#8B90A0" font-size="13" font-family="DM Sans">Nenhum cabo chega nesta caixa — trace um cabo até ela no mapa (ele conecta sozinho ao passar perto)</text>`;
+  // bloco de anotações da caixa (sai junto no PNG exportado)
+  if(F.nota&&F.nota.trim()){
+    const linhas=F.nota.trim().split(/\n/).slice(0,8);
+    const larg=470, altura=26+linhas.length*15;
+    const bx=30, by=alt-altura-24;
+    s+=`<g style="pointer-events:none">
+      <rect x="${bx}" y="${by}" width="${larg}" height="${altura}" rx="10" fill="#141A24" stroke="#2C3545" stroke-width="1"/>
+      <text x="${bx+14}" y="${by+17}" font-size="10" font-family="DM Mono" fill="#E0913C" letter-spacing="1">📝 ANOTAÇÕES</text>`
+      +linhas.map((l,i)=>`<text x="${bx+14}" y="${by+34+i*15}" font-size="11.5" font-family="DM Sans" fill="#C9CDD6">${String(l).slice(0,72).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text>`).join('')
+      +`</g>`;
+  }
   svg.innerHTML=s;
 }
 function fsClique(ev,p){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
+  // modo medição: clicar numa ponta abre o registro de potência em vez de fundir
+  if(modoMedir){abrirMedicaoPonto(ptKey(p),rotuloPonto(p));return}
   if(!fsSel){fsSel=p;renderFusao();return}
   if(ptKey(fsSel)===ptKey(p)){fsSel=null;renderFusao();return}
   const F=getFus(fsCaixa);
@@ -3144,12 +3226,178 @@ function fsClique(ev,p){
   F.fusoes.push({a:fsSel,b:p,status:'projeto'});
   fsSel=null;salvar();renderFusao();
 }
+/* nome legível de uma ponta do diagrama */
+function rotuloPonto(p){
+  if(!p)return '—';
+  if(p.t==='fibra'){
+    const c=projAtual.cabos.find(x=>x.id===p.cabo);
+    const lado=p.lado==='e'?' (entrada)':(p.lado==='s'?' (saída)':'');
+    return (c?c.nome:'Cabo')+lado+' · fibra '+p.fib+' ('+ABNT[(p.fib-1)%12].nome+')';
+  }
+  if(p.t==='sp'){
+    const F=getFus(fsCaixa);
+    const sp=F.splitters.find(s=>s.id===p.sp);
+    return (sp?rotuloSp(sp):'Splitter')+(p.porta===0?' · entrada':' · saída '+p.porta);
+  }
+  if(p.t==='dio'){
+    const P=getPop(fsCaixa);
+    const d=P.dios.find(x=>x.id===p.dio);
+    return (d?d.nome:'DIO')+' · porta '+p.porta;
+  }
+  return '—';
+}
+/* ===== PROJETADO x REAL ===== */
+function abrirProjetadoReal(){
+  const F=getFus(fsCaixa);
+  const el=projAtual.elementos.find(x=>x.id===fsCaixa);
+  const orc=calcOrcamento(fsCaixa);
+
+  // --- emendas: estimadas x medidas ---
+  const fus=F.fusoes||[];
+  const medidas=fus.filter(fusaoMedida);
+  const fora=fus.filter(fusaoForaDoLimite);
+  const somaReal=medidas.reduce((s,f)=>s+(+f.perdaReal),0);
+  const somaEstim=medidas.length*PERDAS.fusao;
+  let linhasFus=fus.map((f,i)=>{
+    const med=fusaoMedida(f), ruim=fusaoForaDoLimite(f);
+    const val=med?(+f.perdaReal):null;
+    const dif=med?(val-PERDAS.fusao):null;
+    return `<tr${ruim?' style="background:rgba(255,59,48,.07)"':''}>
+      <td class="mono">${i+1}</td>
+      <td style="font-size:11.5px">${rotuloPonto(f.a)} ⇄ ${rotuloPonto(f.b)}</td>
+      <td class="mono">${PERDAS.fusao.toFixed(2)}</td>
+      <td class="mono" style="color:${med?(ruim?'#FF8A80':'#5FE0A0'):'var(--text-dim)'}">${med?val.toFixed(2):'—'}</td>
+      <td class="mono" style="color:${dif==null?'var(--text-dim)':(dif>0?'#E0913C':'#5FE0A0')}">${dif==null?'—':((dif>0?'+':'')+dif.toFixed(2))}</td>
+      <td>${med?(ruim?'⚠️ acima do limite':'✔ ok'):'<span style="color:var(--text-dim)">não medida</span>'}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${f.obs?('💬 '+String(f.obs).slice(0,40)):''}</td></tr>`;
+  }).join('');
+  if(!fus.length)linhasFus=`<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:14px">Nenhuma fusão nesta caixa.</td></tr>`;
+
+  // --- pontas: potência prevista x medida ---
+  const chaves=Object.keys(F.medicoes||{});
+  let linhasPt=chaves.map(k=>{
+    const m=F.medicoes[k];
+    // previsto: só temos referência fechada para a saída do splitter (fim do caminho calculado)
+    const prev=(orc&&k.startsWith('sp-'))?orc.rx:null;
+    const dif=(prev!=null)?(m.dbm-prev):null;
+    const alerta=dif!=null&&Math.abs(dif)>2;
+    return `<tr${alerta?' style="background:rgba(255,59,48,.07)"':''}>
+      <td style="font-size:11.5px">${_rotuloChave(k)}</td>
+      <td class="mono">${prev!=null?prev.toFixed(2)+' dBm':'—'}</td>
+      <td class="mono" style="color:${_corRx(m.dbm)}">${(+m.dbm).toFixed(2)} dBm</td>
+      <td class="mono" style="color:${dif==null?'var(--text-dim)':(alerta?'#FF8A80':'#5FE0A0')}">${dif==null?'—':((dif>0?'+':'')+dif.toFixed(2)+' dB')}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${m.data?new Date(m.data+'T00:00').toLocaleDateString('pt-BR'):'—'}${m.por?(' · '+m.por):''}</td></tr>`;
+  }).join('');
+  if(!chaves.length)linhasPt=`<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:14px">Nenhuma medição registrada. Use <b>📏 Medir</b> e clique numa ponta do diagrama.</td></tr>`;
+
+  const html=`
+    <div class="cto-grid" style="margin-bottom:10px">
+      <div class="cto-cel"><span>Emendas</span><b>${fus.length}</b></div>
+      <div class="cto-cel"><span>Medidas</span><b style="color:#5FE0A0">${medidas.length}</b></div>
+      <div class="cto-cel"><span>Fora do limite</span><b style="color:${fora.length?'#FF8A80':'var(--text)'}">${fora.length}</b></div>
+      <div class="cto-cel"><span>Σ estimada</span><b class="mono">${somaEstim.toFixed(2)} dB</b></div>
+      <div class="cto-cel"><span>Σ real</span><b class="mono" style="color:${somaReal>somaEstim?'#E0913C':'#5FE0A0'}">${somaReal.toFixed(2)} dB</b></div>
+      <div class="cto-cel"><span>Pontas medidas</span><b>${chaves.length}</b></div>
+    </div>
+    <div class="dr-sec">🔧 Emendas — estimado × medido</div>
+    <table class="tbl"><thead><tr><th>#</th><th>Emenda</th><th>Estim.</th><th>Medido</th><th>Δ</th><th>Situação</th><th>Obs.</th></tr></thead><tbody>${linhasFus}</tbody></table>
+    <div class="dr-sec" style="margin-top:12px">📏 Pontas — potência prevista × medida</div>
+    <table class="tbl"><thead><tr><th>Ponto</th><th>Previsto</th><th>Medido</th><th>Δ</th><th>Quando / quem</th></tr></thead><tbody>${linhasPt}</tbody></table>
+    ${orc?`<div class="info-box" style="margin-top:10px;font-size:11.5px">RX previsto no fim do caminho calculado: <b class="mono">${orc.rx.toFixed(2)} dBm</b> · perda total <b class="mono">${orc.total.toFixed(2)} dB</b>${medidas.length?' (já usando as emendas medidas)':''}.</div>`
+      :`<div class="info-box" style="margin-top:10px;font-size:11.5px">Sem caminho óptico calculado nesta caixa — adicione um splitter e as fusões para ter o valor previsto.</div>`}
+    <div class="info-box" style="margin-top:8px;font-size:11px">Limite de alerta por emenda: <b>${LIMITE_FUSAO_DB.toFixed(2)} dB</b>. Nas pontas, diferença acima de <b>2 dB</b> entre previsto e medido é destacada.</div>`;
+  abrirModalGenerico('📊 Projetado × Real — '+(el?el.nome:''),html);
+}
+function _rotuloChave(k){
+  const F=getFus(fsCaixa);
+  // reconstrói um rótulo legível a partir da chave do ponto
+  if(k.startsWith('fib-')){
+    const m=k.match(/^fib-(.+?)([es]?)-(\d+)$/);
+    if(m){const c=projAtual.cabos.find(x=>x.id===m[1]);
+      return (c?c.nome:'Cabo')+(m[2]==='e'?' (entrada)':(m[2]==='s'?' (saída)':''))+' · fibra '+m[3]}
+  }
+  if(k.startsWith('sp-')){
+    const m=k.match(/^sp-(.+)-(\d+)$/);
+    if(m){const sp=F.splitters.find(s=>s.id===m[1]);
+      return (sp?rotuloSp(sp):'Splitter')+(m[2]==='0'?' · entrada':' · saída '+m[2])}
+  }
+  if(k.startsWith('dio-')){
+    const m=k.match(/^dio-(.+)-(\d+)$/);
+    if(m)return 'DIO · porta '+m[2];
+  }
+  return k;
+}
+/* ===== ANOTAÇÃO DA CAIXA ===== */
+function abrirNotaCaixa(){
+  const F=getFus(fsCaixa);
+  const el=projAtual.elementos.find(x=>x.id===fsCaixa);
+  abrirModalGenerico('📝 Anotações — '+(el?el.nome:''),
+    `<div class="info-box" style="margin-bottom:8px">Histórico e observações desta caixa. O texto aparece no diagrama e sai junto no PNG exportado.</div>
+     <textarea id="nota-cx" placeholder="Ex.: CTO trocada em 12/03. Reserva de 15 m na caixa. Cabo antigo rompido no poste 45."
+       style="width:100%;min-height:150px;padding:11px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:13px;line-height:1.55;resize:vertical">${(F.nota||'').replace(/</g,'&lt;')}</textarea>`);
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost" onclick="fecharModal('md-generico')">Cancelar</button>
+    <button class="btn" onclick="salvarNotaCaixa()">💾 Salvar anotação</button>`;
+  setTimeout(()=>{const t=document.getElementById('nota-cx');if(t)t.focus()},60);
+}
+function salvarNotaCaixa(){
+  const F=getFus(fsCaixa);
+  F.nota=document.getElementById('nota-cx').value||'';
+  salvar();fecharModal('md-generico');renderFusao();
+  toast(F.nota.trim()?'Anotação salva':'Anotação removida');
+}
+
+/* ===== MEDIÇÃO DE POTÊNCIA NAS PONTAS ===== */
+let modoMedir=false;
+function toggleModoMedir(){
+  modoMedir=!modoMedir;
+  const b=document.getElementById('btn-medir');
+  if(b)b.classList.toggle('ativo',modoMedir);
+  fsSel=null;renderFusao();
+  toast(modoMedir?'Modo medição: clique numa ponta para registrar o dBm medido':'Modo medição desligado');
+}
+function abrirMedicaoPonto(chave,rotulo){
+  const F=getFus(fsCaixa);
+  const m=F.medicoes[chave]||{};
+  abrirModalGenerico('📏 Medição — '+rotulo,
+    `<div class="info-box" style="margin-bottom:8px">Potência lida no power meter neste ponto. Fica registrada no projeto e entra na comparação com o previsto.</div>
+     <div class="linha2">
+       <div class="campo"><label>Potência medida (dBm)</label>
+         <input id="med-dbm" placeholder="ex: -21.40" value="${m.dbm??''}"></div>
+       <div class="campo"><label>Data</label>
+         <input id="med-data" type="date" value="${m.data||new Date().toISOString().slice(0,10)}"></div>
+     </div>
+     <div class="campo"><label>Medido por</label><input id="med-por" placeholder="nome do técnico" value="${(m.por||'').replace(/"/g,'&quot;')}"></div>
+     <div class="campo"><label>Observação</label><input id="med-obs" placeholder="opcional" value="${(m.obs||'').replace(/"/g,'&quot;')}"></div>`);
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost danger" onclick="removerMedicao('${chave}')">🗑 Remover</button>
+    <button class="btn ghost" onclick="fecharModal('md-generico')">Cancelar</button>
+    <button class="btn" onclick="salvarMedicao('${chave}')">💾 Salvar</button>`;
+}
+function salvarMedicao(chave){
+  const F=getFus(fsCaixa);
+  const raw=String(document.getElementById('med-dbm').value||'').trim().replace(',','.');
+  if(raw===''||isNaN(+raw)){toast('Informe a potência em dBm (ex: -21.40)',true);return}
+  F.medicoes[chave]={dbm:+raw,data:document.getElementById('med-data').value||null,
+    por:document.getElementById('med-por').value.trim()||null,
+    obs:document.getElementById('med-obs').value.trim()||null};
+  salvar();fecharModal('md-generico');renderFusao();
+  toast('Medição registrada: '+(+raw).toFixed(2)+' dBm');
+}
+function removerMedicao(chave){
+  const F=getFus(fsCaixa);
+  delete F.medicoes[chave];
+  salvar();fecharModal('md-generico');renderFusao();
+  toast('Medição removida');
+}
 function clicarFusao(ev,i){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
   const m=document.getElementById('ctx-menu');
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
   m.innerHTML=['projeto','nao-implantado','implantado','certificado'].map(st=>
     `<button onclick="setStatusFusao(${i},'${st}')"><span class="dot" style="background:${stCor[st]}"></span>${labelStatus(st)}</button>`).join('')
+    +`<div class="sep"></div>`
+    +`<button onclick="abrirDadosFusao(${i})">📏 Perda real / comentário</button>`
     +`<div class="sep"></div><button style="color:var(--danger)" onclick="removerFusaoIdx(${i})">🗑 Remover fusão</button>`;
   m.style.display='block';
   const x=Math.min((ev&&ev.clientX)||200,window.innerWidth-200);
@@ -3157,6 +3405,35 @@ function clicarFusao(ev,i){
   m.style.left=x+'px';m.style.top=y+'px';
 }
 function fecharCtx(){document.getElementById('ctx-menu').style.display='none'}
+/* perda real medida na fusionadora + comentário da emenda */
+function abrirDadosFusao(i){
+  fecharCtx();
+  const fu=getFus(fsCaixa).fusoes[i];
+  if(!fu)return;
+  abrirModalGenerico('📏 Emenda '+(i+1)+' — medição e comentário',
+    `<div class="info-box" style="margin-bottom:8px">Sem valor medido o sistema usa a estimativa de <b>${PERDAS.fusao.toFixed(2)} dB</b> do catálogo. Lançando o valor da fusionadora, o orçamento óptico passa a calcular com a perda real.</div>
+     <div class="campo"><label>Perda real da emenda (dB)</label>
+       <input id="fu-perda" placeholder="ex: 0.02  ·  vazio = usa a estimativa" value="${fu.perdaReal??''}"></div>
+     <div class="campo"><label>Comentário</label>
+       <textarea id="fu-obs" placeholder="Ex.: refeita 3x, fibra com micro curvatura"
+         style="width:100%;min-height:80px;padding:10px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:13px;resize:vertical">${(fu.obs||'').replace(/</g,'&lt;')}</textarea></div>
+     <div class="info-box" style="font-size:11px">Emenda acima de <b>${LIMITE_FUSAO_DB.toFixed(2)} dB</b> fica destacada em vermelho no diagrama.</div>`);
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost" onclick="fecharModal('md-generico')">Cancelar</button>
+    <button class="btn" onclick="salvarDadosFusao(${i})">💾 Salvar</button>`;
+}
+function salvarDadosFusao(i){
+  const fu=getFus(fsCaixa).fusoes[i];
+  if(!fu)return;
+  const raw=String(document.getElementById('fu-perda').value||'').trim().replace(',','.');
+  if(raw===''){delete fu.perdaReal}
+  else if(isNaN(+raw)){toast('Perda inválida — use números (ex: 0.02)',true);return}
+  else fu.perdaReal=+raw;
+  const obs=document.getElementById('fu-obs').value.trim();
+  if(obs)fu.obs=obs;else delete fu.obs;
+  salvar();fecharModal('md-generico');renderFusao();
+  toast(fu.perdaReal!=null?('Emenda '+(i+1)+': '+fu.perdaReal.toFixed(2)+' dB medidos'):'Emenda '+(i+1)+' voltou à estimativa');
+}
 function setStatusFusao(i,st){
   const fu=getFus(fsCaixa).fusoes[i];
   if(fu){fu.status=st;salvar();renderFusao();toast('Fusão: '+labelStatus(st))}
@@ -3900,7 +4177,8 @@ function calcOrcamento(ctoId){
   if(!fEntrada){aviso.push('Entrada do splitter sem fusão — caminho até o POP incompleto.')}
   else{
     ponto=ptKey(fEntrada.a)==='sp-'+sp.id+'-0'?fEntrada.b:fEntrada.a;
-    passos.push({nome:'F-1',sub:'Fusão · '+nomeEl(caixa),db:PERDAS.fusao});total+=PERDAS.fusao;fusoesN=1;
+    {const _d=perdaFusao(fEntrada),_r=fusaoMedida(fEntrada);
+     passos.push({nome:'F-1',sub:'Fusão · '+nomeEl(caixa)+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;fusoesN=1;}
     while(ponto&&ponto.t==='fibra'&&guarda++<30){
       const cabo=projAtual.cabos.find(c=>c.id===ponto.cabo);
       if(!cabo){aviso.push('Cabo não encontrado.');break}
@@ -3917,7 +4195,8 @@ function calcOrcamento(ctoId){
         const FP=getFus(outra);
         const ehMinha=pt=>pt.t==='fibra'&&pt.cabo===cabo.id&&pt.fib===ponto.fib;
         const fdio=FP.fusoes.find(f=>ehMinha(f.a)||ehMinha(f.b));
-        passos.push({nome:'F-'+(++fusoesN),sub:'Fusão bandeja · '+elOutra.nome,db:PERDAS.fusao});total+=PERDAS.fusao;
+        {const _d=perdaFusao(fdio),_r=fusaoMedida(fdio);
+         passos.push({nome:'F-'+(++fusoesN),sub:'Fusão bandeja · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;}
         if(fdio){
           const other=ehMinha(fdio.a)?fdio.b:fdio.a;
           if(other.t==='dio'){
@@ -3950,7 +4229,8 @@ function calcOrcamento(ctoId){
       const FO=getFus(outra);
       const fx=FO.fusoes.find(f=>(f.a.t==='fibra'&&f.a.cabo===cabo.id&&f.a.fib===ponto.fib)||(f.b.t==='fibra'&&f.b.cabo===cabo.id&&f.b.fib===ponto.fib));
       if(!fx){aviso.push('Fibra chega em '+elOutra.nome+' mas não há fusão de continuidade.');break}
-      passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome,db:PERDAS.fusao});total+=PERDAS.fusao;
+      {const _d=perdaFusao(fx),_r=fusaoMedida(fx);
+       passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;}
       let prox=(fx.a.t==='fibra'&&fx.a.cabo===cabo.id&&fx.a.fib===ponto.fib)?fx.b:fx.a;
       if(prox.t==='sp'){
         const sp2=FO.splitters.find(s=>s.id===prox.sp);
@@ -3960,7 +4240,8 @@ function calcOrcamento(ctoId){
         total+=db2;
         const f0=FO.fusoes.find(f=>ptKey(f.a)==='sp-'+sp2.id+'-0'||ptKey(f.b)==='sp-'+sp2.id+'-0');
         if(!f0){aviso.push('Splitter em '+elOutra.nome+' sem fusão na entrada.');break}
-        passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome,db:PERDAS.fusao});total+=PERDAS.fusao;
+        {const _d=perdaFusao(f0),_r=fusaoMedida(f0);
+         passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;}
         prox=ptKey(f0.a)==='sp-'+sp2.id+'-0'?f0.b:f0.a;
       }
       caixa=outra;ponto=prox;
