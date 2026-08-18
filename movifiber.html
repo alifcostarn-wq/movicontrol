@@ -32,6 +32,22 @@ body.tema-claro #camadas,
 body.tema-claro .leaflet-popup-content-wrapper{box-shadow:0 16px 48px rgba(20,25,35,.16)}
 body.tema-claro input,body.tema-claro select,body.tema-claro textarea{background:#FFFFFF}
 body.tema-claro ::-webkit-scrollbar-thumb{background:#C7CDD8}
+/* As telas técnicas (diagrama de fusão e editor de POP) permanecem escuras mesmo
+   no modo claro: as 12 cores ABNT incluem branco, amarelo e ciano, que somem sobre
+   fundo claro. Aqui elas recebem de volta a paleta escura inteira, para não ficarem
+   com blocos brancos sobre canvas escuro. */
+body.tema-claro #tela-fusao,
+body.tema-claro #tela-pop{
+  --bg:#111318; --sidebar-bg:#0D0F14; --surface:#1A1D26; --surface2:#20242F;
+  --border:#2C3040; --text:#E2E0DB; --text-dim:#8B90A0;
+  --accent:#3CB371; --accent-dark:#1A5C3A; --accent-glow:rgba(60,179,113,.15);
+  --danger:#E05445; --warn:#D4A027; --info:#5B9BFF;
+  --st-projeto:#D4A027; --st-nao:#8B90A0; --st-impl:#3CB371; --st-cert:#5B9BFF;
+  color:#E2E0DB;
+}
+body.tema-claro #tela-fusao input,body.tema-claro #tela-fusao select,
+body.tema-claro #tela-pop input,body.tema-claro #tela-pop select{background:#1A1D26;color:#E2E0DB;border-color:#2C3040}
+body.tema-claro #tela-fusao .btn.ghost,body.tema-claro #tela-pop .btn.ghost{color:#E2E0DB}
 /* Etiquetas coloridas: no escuro o texto claro funciona sobre o fundo translúcido,
    mas no claro esse mesmo fundo vira quase branco e o texto some. Aqui elas ganham
    tons escurecidos, mantendo a mesma leitura de cor. */
@@ -3466,27 +3482,31 @@ function renderFusao(){
     const cx0=sp.x+W/2, cy0=sp.y+h/2;
     const rot=sp.rot||0, sc=sp.scale||1, fl=sp.flip?-1:1;
     const tr=`transform="translate(${cx0} ${cy0}) rotate(${rot}) scale(${sc*fl} ${sc}) translate(${-cx0} ${-cy0})"`;
-    const txtTr=`transform="translate(${cx0} ${cy0}) scale(${fl} 1) rotate(${-rot}) translate(${-cx0} ${-cy0})"`;
     const selSp=fsSelSp===sp.id?' sel-sp':'';
     const conec=spConectorizado(sp);
     const adpTipo=spPolimento(sp)||'APC';
     const adpClass=adpTipo==='UPC'?'upc':'apc';
     const cyIn=sp.y+h/2;
-    // grupo do CORPO (arrastável)
+    /* Os textos NÃO ficam dentro do grupo transformado. Anular a transformação
+       devolveria o texto à posição original, não para cima da aba. Em vez disso o
+       ponto é convertido para a coordenada final e o texto é desenhado já lá,
+       sempre na horizontal e acompanhando o splitter girado/espelhado. */
+    const P=(x,y)=>spTransformar(sp,x,y,W,h);
+    let txt='';   // camada de textos, emitida depois do grupo
+
     s+=`<g class="splitter-shape${selSp}" ${tr}>`;
     s+=`<g onmousedown="fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">`;
     s+=`<line x1="${sp.x-14}" y1="${cyIn}" x2="${sp.x}" y2="${cyIn}" stroke="#7A8494" stroke-width="2"/>`;
     s+=`<polygon class="splitter-body${des?' des':''}" points="${sp.x},${cyIn} ${sp.x+W},${sp.y} ${sp.x+W},${sp.y+h}"/>`;
     s+=`</g>`;
-    // rótulo abaixo (contra-transformado p/ ficar sempre legível)
-    s+=`<g ${txtTr}>
-      <text class="splitter-lbl-big" x="${sp.x+W/2}" y="${sp.y+h+18}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}</text>
-      <text class="splitter-lbl" x="${sp.x+W/2}" y="${sp.y+h+30}" style="font-size:8.5px">${conec?('−'+((POLIMENTO[adpTipo]||{}).il||0.3).toFixed(2)+'dB · RL '+((POLIMENTO[adpTipo]||{}).rl||50)+'dB'):('emenda −'+PERDAS.fusao.toFixed(2)+'dB')}</text>
-      <text class="splitter-lbl" x="${sp.x+W/2}" y="${sp.y-8}" style="fill:var(--danger);cursor:pointer" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>
-    </g>`;
-    // ENTRADA (vértice esquerdo)
     s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x-14}" cy="${cyIn}" r="5.5" fill="#E2E0DB" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
-    // SAÍDAS: abas verdes numeradas na aresta direita (estilo Planner)
+
+    // rótulos do splitter, posicionados já em coordenada final
+    const pLbl=P(sp.x+W/2, sp.y+h+18), pSub=P(sp.x+W/2, sp.y+h+30), pX=P(sp.x+W/2, sp.y-8);
+    txt+=`<text class="splitter-lbl-big" x="${pLbl.x.toFixed(1)}" y="${pLbl.y.toFixed(1)}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}</text>`;
+    txt+=`<text class="splitter-lbl" x="${pSub.x.toFixed(1)}" y="${pSub.y.toFixed(1)}" style="font-size:8.5px">${conec?('−'+((POLIMENTO[adpTipo]||{}).il||0.3).toFixed(2)+'dB · RL '+((POLIMENTO[adpTipo]||{}).rl||50)+'dB'):('emenda −'+PERDAS.fusao.toFixed(2)+'dB')}</text>`;
+    txt+=`<text class="splitter-lbl" x="${pX.x.toFixed(1)}" y="${pX.y.toFixed(1)}" style="fill:var(--danger);cursor:pointer;pointer-events:auto" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
+
     for(let p=1;p<=n;p++){
       const perda=perdaSpPorta(sp,p);
       const py=sp.y+4+(p-0.5)*SLOT;
@@ -3495,13 +3515,21 @@ function renderFusao(){
       const lblP=(des?(pcts[p-1]+'% · '):('Saída '+p+' · '))+'−'+perda.toFixed(1)+'dB · '+descTerminacaoSp(sp);
       s+=`<g class="sp-aba${sel?' sel':''}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})">
         <rect x="${sp.x+W-15}" y="${py-8}" width="15" height="16" rx="2.5" fill="${corAba}"/>
-        <g ${txtTr}><text class="sp-aba-num" x="${sp.x+W-7.5}" y="${py+3.5}">${p}</text></g>
         <title>${lblP}</title>
       </g>`;
       if(conec)s+=`<rect class="sc-adapter ${adpClass}" x="${sp.x+W+2}" y="${py-3.5}" width="9" height="7" rx="1.5"><title>Adaptador SC/${adpTipo}</title></rect>`;
-      if(des)s+=`<g ${txtTr}><text class="splitter-lbl" x="${sp.x+W+(conec?15:6)}" y="${py+3}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text></g>`;
+      // número da aba: converte o CENTRO da aba e só então aplica o ajuste de linha
+      // de base (+3.5). Se o ajuste entrar antes, ele gira junto e o número sai do lugar.
+      const pn=P(sp.x+W-7.5, py);
+      txt+=`<text class="sp-aba-num" x="${pn.x.toFixed(1)}" y="${(pn.y+3.5).toFixed(1)}">${p}</text>`;
+      if(des){
+        const pp=P(sp.x+W+(conec?15:6), py);
+        txt+=`<text class="splitter-lbl" x="${pp.x.toFixed(1)}" y="${(pp.y+3).toFixed(1)}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text>`;
+      }
     }
     s+='</g>';
+    // textos não capturam clique, exceto o ✕ (que tem o seu próprio)
+    s+=`<g style="pointer-events:none">${txt}</g>`;
   });
   // DIOs (plano de fusão do POP)
   if(e&&e.tipo==='pop'){
