@@ -3734,15 +3734,50 @@ function fsIniciarDragDio(ev,id){
   document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
 }
 function svgPoint(svg,ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;return p.matrixTransform(svg.getScreenCTM().inverse())}
-/* devolve o SVG do diagrama com as variáveis de cor já resolvidas */
-function _svgFusaoResolvido(){
+/* troca as variáveis de cor por valores fixos (fora do app elas não existem) */
+function _resolverCores(txt){
+  return String(txt)
+    .replace(/var\(--surface2\)/g,'#20242F').replace(/var\(--surface\)/g,'#1A1D26')
+    .replace(/var\(--border\)/g,'#2C3040').replace(/var\(--text-dim\)/g,'#8B90A0')
+    .replace(/var\(--text\)/g,'#E2E0DB').replace(/var\(--danger\)/g,'#E05445')
+    .replace(/var\(--accent\)/g,'#3CB371').replace(/var\(--warn\)/g,'#E0913C')
+    .replace(/var\(--bg\)/g,'#14161d');
+}
+/* junta as regras de estilo que o diagrama usa — sem elas o SVG sai sem cor
+   quando exportado ou aberto fora da aplicação */
+function _cssDoDiagrama(){
+  const chaves=['fusao','fibra','splitter','sp-aba','porta-splitter','sc-adapter',
+                'cabo-bloco','cabo-titulo','cabo-sub','blk-'];
+  let css='';
+  for(const folha of Array.from(document.styleSheets||[])){
+    let regras;
+    try{ regras=folha.cssRules }catch(e){ continue }   // folha de outra origem
+    if(!regras)continue;
+    for(const r of Array.from(regras)){
+      if(r.selectorText&&chaves.some(k=>r.selectorText.includes(k)))css+=r.cssText+'\n';
+    }
+  }
+  return _resolverCores(css);
+}
+/* SVG autossuficiente: com dimensões e com o próprio estilo embutido.
+   Sem width/height o navegador não consegue rasterizar o SVG numa imagem. */
+function _svgFusaoAutonomo(){
   const svg=document.getElementById('fs-svg');
   if(!svg)return null;
-  return new XMLSerializer().serializeToString(svg)
-    .replace(/var\(--surface\)/g,'#1A1D26').replace(/var\(--border\)/g,'#2C3040')
-    .replace(/var\(--text\)/g,'#E2E0DB').replace(/var\(--text-dim\)/g,'#8B90A0')
-    .replace(/var\(--surface2\)/g,'#20242F').replace(/var\(--danger\)/g,'#E05445').replace(/var\(--accent\)/g,'#3CB371');
+  const vb=(svg.getAttribute('viewBox')||'0 0 1180 660').split(/\s+/);
+  const larg=+vb[2]||1180, alt=+vb[3]||660;
+  const clone=svg.cloneNode(true);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',larg);
+  clone.setAttribute('height',alt);
+  clone.removeAttribute('style');
+  const est=document.createElementNS('http://www.w3.org/2000/svg','style');
+  est.textContent='svg{background:#14161d}'+_cssDoDiagrama();
+  clone.insertBefore(est,clone.firstChild);
+  return {xml:_resolverCores(new XMLSerializer().serializeToString(clone)),larg,alt};
 }
+/* mantido para compatibilidade */
+function _svgFusaoResolvido(){const r=_svgFusaoAutonomo();return r?r.xml:null}
 /* lista legível de todas as conexões da caixa */
 function _listaConexoes(){
   const F=getFus(fsCaixa);
@@ -3767,23 +3802,13 @@ function abrirVisualizarFusao(){
   const el=projAtual.elementos.find(x=>x.id===fsCaixa);
   const nomeCaixa=el?el.nome:'Caixa';
   const conex=_listaConexoes();
-  const vb=(svg.getAttribute('viewBox')||'0 0 1180 660').split(' ');
-  const xml=_svgFusaoResolvido();
-
-  // o SVG vira imagem para caber na página impressa
-  const img=new Image();
-  img.onload=()=>{
-    const cv=document.createElement('canvas');
-    cv.width=+vb[2]*2; cv.height=+vb[3]*2;
-    const cx=cv.getContext('2d');
-    cx.fillStyle='#14161d';cx.fillRect(0,0,cv.width,cv.height);
-    cx.drawImage(img,0,0,cv.width,cv.height);
-    _montarJanelaImpressao(nomeCaixa,cv.toDataURL('image/png'),conex,F);
-  };
-  img.onerror=()=>{toast('Não foi possível gerar a imagem do diagrama',true)};
-  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
+  const auto=_svgFusaoAutonomo();
+  if(!auto){toast('Não foi possível gerar o diagrama',true);return}
+  // o SVG entra direto na página (vetor): imprime nítido em qualquer tamanho
+  // e evita a conversão para imagem, que é onde quebrava
+  _montarJanelaImpressao(nomeCaixa,auto,conex,F);
 }
-function _montarJanelaImpressao(nomeCaixa,dataUrl,conex,F){
+function _montarJanelaImpressao(nomeCaixa,auto,conex,F){
   const proj=projAtual?projAtual.nome:'';
   const hoje=new Date().toLocaleDateString('pt-BR');
   const el=projAtual.elementos.find(x=>x.id===fsCaixa);
@@ -3817,7 +3842,7 @@ function _montarJanelaImpressao(nomeCaixa,dataUrl,conex,F){
   .resumo div{border:1px solid #d5d9e0;border-radius:8px;padding:6px 12px;font-size:11.5px}
   .resumo b{display:block;font-size:16px;margin-top:2px}
   figure{margin:0 0 18px;text-align:center}
-  figure img{max-width:100%;border:1px solid #d5d9e0;border-radius:8px}
+  figure svg{max-width:100%;height:auto;border:1px solid #d5d9e0;border-radius:8px;background:#14161d}
   h2{font-size:14px;margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid #d5d9e0}
   table{width:100%;border-collapse:collapse;font-size:11.5px}
   th{text-align:left;background:#f1f3f6;padding:7px 8px;border-bottom:1px solid #d5d9e0;font-size:10.5px;
@@ -3865,7 +3890,7 @@ function _montarJanelaImpressao(nomeCaixa,dataUrl,conex,F){
   <div>Fora do limite<b>${fora}</b></div>
 </div>
 ${notaHtml}
-<figure><img src="${dataUrl}" alt="Diagrama de fusões"></figure>
+<figure>${auto.xml}</figure>
 <h2>Conexões de fibra — quem conecta com quem</h2>
 <table>
   <thead><tr><th>#</th><th>Origem</th><th></th><th>Destino</th><th>Perda (dB)</th><th>Status</th><th>Observação</th></tr></thead>
@@ -3883,18 +3908,22 @@ ${notaHtml}
 }
 function _esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function exportarPNGFusao(){
-  const svg=document.getElementById('fs-svg');
-  const vb=svg.getAttribute('viewBox').split(' ');
-  const xml=_svgFusaoResolvido();
+  const auto=_svgFusaoAutonomo();
+  if(!auto){toast('Diagrama não disponível',true);return}
   const img=new Image();
   img.onload=()=>{
-    const cv=document.createElement('canvas');cv.width=+vb[2]*2;cv.height=+vb[3]*2;
+    const cv=document.createElement('canvas');cv.width=auto.larg*2;cv.height=auto.alt*2;
     const cx=cv.getContext('2d');cx.fillStyle='#14161d';cx.fillRect(0,0,cv.width,cv.height);
     cx.drawImage(img,0,0,cv.width,cv.height);
-    const a=document.createElement('a');a.download=document.getElementById('fs-titulo').textContent.replace(/[^\w-]/g,'_')+'.png';a.href=cv.toDataURL('image/png');a.click();
+    try{
+      const a=document.createElement('a');
+      a.download=document.getElementById('fs-titulo').textContent.replace(/[^\w-]/g,'_')+'.png';
+      a.href=cv.toDataURL('image/png');a.click();
+      toast('PNG do diagrama exportado');
+    }catch(e){toast('Não foi possível gerar o PNG: '+e.message,true)}
   };
-  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
-  toast('PNG do diagrama exportado');
+  img.onerror=()=>toast('Falha ao gerar a imagem do diagrama',true);
+  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(auto.xml)));
 }
 
 /* ================= EDITOR DE POP (CANVAS) ================= */
