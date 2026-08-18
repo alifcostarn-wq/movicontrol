@@ -16,6 +16,22 @@
   --danger:#E05445; --warn:#D4A027; --info:#5B9BFF;
   --st-projeto:#D4A027; --st-nao:#8B90A0; --st-impl:#3CB371; --st-cert:#5B9BFF;
 }
+/* ---- Modo claro: mesma estrutura, só os tons mudam ---- */
+body.tema-claro{
+  --bg:#F4F5F7; --sidebar-bg:#FFFFFF; --surface:#FFFFFF; --surface2:#F0F2F5;
+  --border:#DDE1E8; --text:#1B1F27; --text-dim:#646E7E;
+  --accent:#1F8A54; --accent-dark:#14603A; --accent-glow:rgba(31,138,84,.14);
+  --danger:#C0392B; --warn:#9A6B08; --info:#2563C7;
+  --st-projeto:#9A6B08; --st-nao:#646E7E; --st-impl:#1F8A54; --st-cert:#2563C7;
+}
+/* no claro, superfícies precisam de sombra em vez de contraste de cor */
+body.tema-claro #sidebar,
+body.tema-claro #drawer{box-shadow:0 0 24px rgba(20,25,35,.07)}
+body.tema-claro .modal,
+body.tema-claro #camadas,
+body.tema-claro .leaflet-popup-content-wrapper{box-shadow:0 16px 48px rgba(20,25,35,.16)}
+body.tema-claro input,body.tema-claro select,body.tema-claro textarea{background:#FFFFFF}
+body.tema-claro ::-webkit-scrollbar-thumb{background:#C7CDD8}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh}
 .mono{font-family:'DM Mono',monospace}
@@ -137,8 +153,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .mnb-legenda{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:4px;flex-wrap:wrap}
 .mnb-legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
 #pop-canvas-wrap{flex:1;overflow:auto;background:
-  linear-gradient(var(--surface2) 1px,transparent 1px),
-  linear-gradient(90deg,var(--surface2) 1px,transparent 1px);
+  linear-gradient(#20242F 1px,transparent 1px),
+  linear-gradient(90deg,#20242F 1px,transparent 1px);
   background-size:22px 22px;background-color:#14161d;position:relative}
 #pop-svg{display:block;min-width:1200px;min-height:700px}
 .eq-body{fill:var(--surface);stroke:var(--border);stroke-width:1.5;cursor:move}
@@ -192,6 +208,14 @@ input:focus,select:focus{border-color:var(--accent)}
 .dr-body{flex:1;overflow-y:auto;padding:12px}
 .dr-busca{margin-bottom:12px}
 .dr-sec{font-size:10.5px;letter-spacing:1.5px;color:var(--text-dim);margin:14px 4px 8px;text-transform:uppercase}
+.dr-sec.dobra{display:flex;align-items:center;justify-content:space-between;cursor:pointer;
+  padding:7px 8px;margin:8px 0 2px;border-radius:8px;user-select:none;transition:background .15s,color .15s}
+.dr-sec.dobra:hover{background:var(--surface);color:var(--text)}
+.dr-sec.dobra .seta{font-size:11px;transition:transform .2s ease;opacity:.75}
+.dr-sec.dobra.aberta .seta{transform:rotate(90deg)}
+.dr-grupo{display:none;padding-left:2px}
+.dr-grupo.aberto{display:block;animation:dr-abrir .18s ease}
+@keyframes dr-abrir{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .dr-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:13px;color:var(--text);width:100%;text-align:left;transition:.12s}
 .dr-item:hover{background:var(--surface2)}
 .dr-item .ic{width:20px;text-align:center;font-size:14px}
@@ -327,8 +351,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .fs-tool:hover{color:var(--text);border-color:var(--text-dim)}
 .fs-tool.ativo{background:var(--accent);color:#08120C;border-color:var(--accent);font-weight:600}
 #fs-canvas-wrap{flex:1;overflow:auto;background:
-  linear-gradient(var(--surface2) 1px,transparent 1px),
-  linear-gradient(90deg,var(--surface2) 1px,transparent 1px);
+  linear-gradient(#20242F 1px,transparent 1px),
+  linear-gradient(90deg,#20242F 1px,transparent 1px);
   background-size:22px 22px;background-color:#14161d;position:relative}
 #fs-svg{display:block;min-width:1100px;min-height:640px}
 #fs-foot{display:flex;justify-content:space-between;align-items:center;padding:9px 16px;border-top:1px solid var(--border);background:var(--sidebar-bg);font-size:12px}
@@ -668,10 +692,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <input id="busca-el" placeholder="Buscar CTO, POP ou CEO..." oninput="buscarElemento(this.value)">
         <div class="busca-res" id="busca-res"></div>
       </div>
-      <div class="dr-sec">Elementos do projeto</div>
-      <div id="lista-elementos"></div>
-      <button class="dr-item" onclick="abrirImportar()" style="border:1px dashed var(--accent);color:var(--accent)"><span class="ic">📥</span> Importar KMZ/KML</button>
-      <div class="dr-sec">Ferramentas</div>
+      <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="elementos">Elementos do projeto <span class="seta">▸</span></div>
+      <div class="dr-grupo" data-grupo="elementos">
+        <div id="lista-elementos"></div>
+        <button class="dr-item" onclick="abrirImportar()" style="border:1px dashed var(--accent);color:var(--accent)"><span class="ic">📥</span> Importar KMZ/KML</button>
+      </div>
+      <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="ferramentas">Ferramentas <span class="seta">▸</span></div>
+      <div class="dr-grupo" data-grupo="ferramentas">
       <button class="dr-item" onclick="abrirAnalise()"><span class="ic">📊</span> Análise de Rede</button>
       <button class="dr-item" onclick="abrirTabelaPontos()"><span class="ic">📍</span> Tabela de Pontos</button>
       <button class="dr-item" onclick="exportarKMZ()"><span class="ic">🌍</span> Exportar KMZ</button>
@@ -683,10 +710,14 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="dr-item" onclick="abrirMateriais()"><span class="ic">🧰</span> Lista de Materiais</button>
       <button class="dr-item" onclick="abrirRelArea()"><span class="ic">🗂️</span> Relatório por Área</button>
       <button class="dr-item" onclick="abrirPendencias()"><span class="ic">⚠️</span> Pendências <span class="badge" id="pend-badge" style="display:none"></span></button>
-      <div class="dr-sec">Projeto</div>
-      <button class="dr-item" onclick="abrirConfig()"><span class="ic">⚙️</span> Configurações</button>
-      <button class="dr-item" onclick="exportarProjetoJSON()"><span class="ic">💾</span> Exportar Projeto (.json)</button>
-      <button class="dr-item" onclick="limparProjeto()" style="color:var(--danger)"><span class="ic">🗑️</span> Limpar elementos</button>
+      </div>
+      <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="projeto">Projeto <span class="seta">▸</span></div>
+      <div class="dr-grupo" data-grupo="projeto">
+        <button class="dr-item" onclick="abrirConfig()"><span class="ic">⚙️</span> Configurações</button>
+        <button class="dr-item" onclick="alternarTema()"><span class="ic" id="ic-tema">🌙</span> <span id="lbl-tema">Modo claro</span></button>
+        <button class="dr-item" onclick="exportarProjetoJSON()"><span class="ic">💾</span> Exportar Projeto (.json)</button>
+        <button class="dr-item" onclick="limparProjeto()" style="color:var(--danger)"><span class="ic">🗑️</span> Limpar elementos</button>
+      </div>
     </div>
   </div>
   <button id="drawer-toggle" onclick="toggleDrawer()">☰</button>
@@ -1813,7 +1844,7 @@ async function abrirProjetos(ids){
     if(pts.length)mapa.fitBounds(pts,{padding:[60,60]});else mapa.setView(centro,13);
   },120);
   limparOverlaysSoltos();
-  setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();
+  setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();restaurarSecoes();
   toast('✏️ '+sel2.length+' projetos abertos para EDIÇÃO · '+elementos.length+' elementos · '+cabos.length+' cabos');
 }
 /* Em qual projeto os itens NOVOS serão gravados */
@@ -1903,7 +1934,7 @@ async function abrirProjeto(id){
   if(!mapa)return;
   setTimeout(()=>mapa.invalidateSize(),100);
   limparOverlaysSoltos();
-  renderCamadas();renderTudo();setModo('navegar');
+  renderCamadas();renderTudo();setModo('navegar');restaurarSecoes();
   _estadoAtual=snapProj();
 }
 async function garantirMapa(centro,zoom){
@@ -2567,6 +2598,61 @@ function renderCamadas(){
     if(d.sub)return `<div class="cam-sub">${d.sub}</div>`;
     return `<div class="cam-item ${camadasVisiveis[d.k]?'on':''}" onclick="${d.fn?d.fn.name+'()':`toggleCamada('${d.k}')`}"><div class="sw"></div>${d.l}${d.k==='clienteone'&&clientesOne.length?' <span style=\'margin-left:auto;font-size:10px;color:var(--text-dim)\'>'+clientesOne.length+'</span>':''}</div>`;
   }).join('');
+}
+/* ===== TEMA CLARO / ESCURO ===== */
+function aplicarTema(claro){
+  document.body.classList.toggle('tema-claro',!!claro);
+  const ic=document.getElementById('ic-tema'), lbl=document.getElementById('lbl-tema');
+  if(ic)ic.textContent=claro?'☀️':'🌙';
+  if(lbl)lbl.textContent=claro?'Modo escuro':'Modo claro';
+  try{store.set('movifiber_tema',claro?'claro':'escuro')}catch(e){}
+  // o mapa e o diagrama guardam cores próprias: redesenha para acompanhar
+  if(typeof mapa!=='undefined'&&mapa&&typeof projAtual!=='undefined'&&projAtual){
+    try{renderTudo()}catch(e){}
+  }
+  const tf=document.getElementById('tela-fusao');
+  if(tf&&tf.style.display!=='none'&&typeof renderFusao==='function'){try{renderFusao()}catch(e){}}
+}
+function alternarTema(){ aplicarTema(!document.body.classList.contains('tema-claro')) }
+function aplicarRotuloTema(){
+  const claro=document.body.classList.contains('tema-claro');
+  const ic=document.getElementById('ic-tema'), lbl=document.getElementById('lbl-tema');
+  if(ic)ic.textContent=claro?'☀️':'🌙';
+  if(lbl)lbl.textContent=claro?'Modo escuro':'Modo claro';
+}
+/* aplica a preferência salva assim que a página abre */
+(function(){
+  let t=null;
+  try{t=store.get('movifiber_tema')}catch(e){}
+  if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)t='claro';
+  if(t==='claro')document.body.classList.add('tema-claro');
+})();
+
+/* ===== SEÇÕES DO MENU LATERAL ===== */
+function toggleSecao(el){
+  const sec=el.dataset.sec;
+  const grupo=document.querySelector('.dr-grupo[data-grupo="'+sec+'"]');
+  if(!grupo)return;
+  const abriu=grupo.classList.toggle('aberto');
+  el.classList.toggle('aberta',abriu);
+  try{
+    const st=JSON.parse(store.get('movifiber_secoes')||'{}');
+    st[sec]=abriu; store.set('movifiber_secoes',JSON.stringify(st));
+  }catch(e){}
+}
+/* ao abrir um projeto as seções começam recolhidas, respeitando o que ficou salvo */
+function restaurarSecoes(){
+  aplicarRotuloTema();
+  let st={};
+  try{st=JSON.parse(store.get('movifiber_secoes')||'{}')}catch(e){}
+  document.querySelectorAll('.dr-sec.dobra').forEach(el=>{
+    const sec=el.dataset.sec;
+    const grupo=document.querySelector('.dr-grupo[data-grupo="'+sec+'"]');
+    if(!grupo)return;
+    const aberto=st[sec]===true;      // padrão: recolhido
+    grupo.classList.toggle('aberto',aberto);
+    el.classList.toggle('aberta',aberto);
+  });
 }
 function togglePainelCamadas(){
   const corpo=document.getElementById('cam-body');
