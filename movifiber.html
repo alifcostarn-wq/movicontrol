@@ -748,6 +748,8 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       </div>
       <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="projeto">Projeto <span class="seta">▸</span></div>
       <div class="dr-grupo" data-grupo="projeto">
+        <button class="dr-item" onclick="abrirDossie()" style="border:1px dashed var(--accent);color:var(--accent)"><span class="ic">📄</span> Dossiê de execução</button>
+        <button class="dr-item" onclick="abrirHistorico()"><span class="ic">🕘</span> Histórico de alterações</button>
         <button class="dr-item" onclick="abrirConfig()"><span class="ic">⚙️</span> Configurações</button>
         <button class="dr-item" onclick="alternarTema()"><span class="ic" id="ic-tema">🌙</span> <span id="lbl-tema">Modo claro</span></button>
         <button class="dr-item" onclick="exportarProjetoJSON()"><span class="ic">💾</span> Exportar Projeto (.json)</button>
@@ -1694,6 +1696,224 @@ async function conflitoSalvarCopia(id){
     if(projAtual&&projAtual.id===id)await abrirProjeto(copia.id);
     toast('Cópia criada: '+copia.nome);
   }catch(e){toast('Falha ao criar a cópia: '+e.message,true)}
+}
+/* ===== DOSSIÊ DE EXECUÇÃO (as-built) ===== */
+/* Desenho vetorial da rede: os blocos do satélite não podem ser exportados,
+   então o mapa do dossiê é um esquema com cabos, caixas e postes. */
+function _mapaEsquematico(larg,alt){
+  const els=projAtual.elementos||[], cbs=projAtual.cabos||[];
+  const pts=[...els.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...cbs.flatMap(c=>c.pontos||[])];
+  if(!pts.length)return '<div style="padding:30px;text-align:center;color:#8b90a0">Projeto sem geometria</div>';
+  const lats=pts.map(p=>p[0]), lngs=pts.map(p=>p[1]);
+  const la0=Math.min(...lats), la1=Math.max(...lats), ln0=Math.min(...lngs), ln1=Math.max(...lngs);
+  const m=24;
+  // corrige a distorção da longitude na latitude do projeto
+  const kx=Math.cos((la0+la1)/2*Math.PI/180)||1;
+  const dLa=(la1-la0)||1e-6, dLn=((ln1-ln0)*kx)||1e-6;
+  const esc=Math.min((larg-2*m)/dLn,(alt-2*m)/dLa);
+  const X=ln=>m+((ln-ln0)*kx)*esc;
+  const Y=la=>alt-m-((la-la0)*esc);          // norte para cima
+  let s='';
+  cbs.forEach(c=>{
+    if(!c.pontos||c.pontos.length<2)return;
+    const d=c.pontos.map((p,i)=>(i?'L':'M')+X(p[1]).toFixed(1)+' '+Y(p[0]).toFixed(1)).join(' ');
+    const cor=c.cor||CORES_CABO[c.tipo]||'#888';
+    const w=c.tipo==='backbone'?2.4:(c.tipo==='drop'?0.8:1.5);
+    s+=`<path d="${d}" fill="none" stroke="${cor}" stroke-width="${w}" stroke-linejoin="round" opacity="${c.tipo==='drop'?0.55:0.95}"/>`;
+  });
+  const corEl={pop:'#7B2ED8',cto:'#2E86FF',ceo:'#FF7A00',reserva:'#8A8A8A',poste:'#8B5A2B'};
+  els.forEach(e=>{
+    if(e.lat==null)return;
+    const x=X(e.lng), y=Y(e.lat);
+    if(e.tipo==='poste'){ s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="#8B5A2B" opacity=".7"/>`; return }
+    const r=e.tipo==='pop'?5:4;
+    s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${corEl[e.tipo]||'#666'}" stroke="#fff" stroke-width="1.2"/>`;
+    if(e.tipo!=='reserva')s+=`<text x="${(x+r+2).toFixed(1)}" y="${(y+3).toFixed(1)}" font-size="6" font-family="DM Sans" fill="#333">${_esc((e.nome||'').slice(0,18))}</text>`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${larg}" height="${alt}" viewBox="0 0 ${larg} ${alt}" style="background:#fff;border:1px solid #d5d9e0;border-radius:8px">${s}</svg>`;
+}
+function _statsProjeto(){
+  const els=projAtual.elementos||[], cbs=projAtual.cabos||[];
+  const porTipo={};els.forEach(e=>porTipo[e.tipo]=(porTipo[e.tipo]||0)+1);
+  const porCabo={};let extensao=0;
+  cbs.forEach(c=>{porCabo[c.tipo]=(porCabo[c.tipo]||0)+1;
+    const g=medirCabo(c.pontos||[]);extensao+=g*(1+(c.folga||0)/100)});
+  const impl=els.filter(e=>e.status==='implantado'||e.status==='certificado').length;
+  const nFus=Object.values(projAtual.fusoes||{}).reduce((s,f)=>s+((f&&f.fusoes||[]).length),0);
+  return {porTipo,porCabo,extensao,impl,total:els.length,nFus,
+    pct:els.length?Math.round(impl/els.length*100):0};
+}
+async function abrirDossie(){
+  if(!projAtual){toast('Abra um projeto',true);return}
+  const incluirFusoes=confirm('Incluir os diagramas de fusão de todas as caixas?\n\nOK = documento completo (mais demorado)\nCancelar = só mapa, materiais e pontos');
+  toast('Montando o dossiê…');
+  await new Promise(r=>setTimeout(r,50));
+
+  const st=_statsProjeto();
+  const rot={pop:'POP',cto:'CTO',ceo:'CEO',poste:'Poste',reserva:'Reserva'};
+  const rotC={backbone:'Backbone',distribuicao:'Distribuição',drop:'Drop'};
+
+  // --- diagramas de fusão de cada caixa ---
+  let secFusoes='';
+  if(incluirFusoes){
+    const caixas=projAtual.elementos.filter(e=>['cto','ceo','pop'].includes(e.tipo)&&cabosDaCaixa(e.id).length);
+    const guardaCaixa=fsCaixa;
+    for(const cx of caixas){
+      try{
+        fsCaixa=cx.id; renderFusao();
+        const auto=_svgFusaoAutonomo();
+        const conex=_listaConexoes();
+        if(!auto)continue;
+        const linhas=conex.length?conex.map(c=>`<tr><td class="num">${c.n}</td><td>${_esc(c.de)}</td><td class="seta">⇄</td><td>${_esc(c.para)}</td><td class="num">${c.perda}</td><td>${_esc(c.status)}</td></tr>`).join('')
+          :'<tr><td colspan="6" class="vazio">Sem fusões registradas</td></tr>';
+        secFusoes+=`<section class="quebra"><h2>Fusões — ${_esc(cx.nome)}</h2>
+          <figure>${auto.xml}</figure>
+          <table><thead><tr><th>#</th><th>Origem</th><th></th><th>Destino</th><th>Perda</th><th>Status</th></tr></thead><tbody>${linhas}</tbody></table></section>`;
+      }catch(e){}
+    }
+    fsCaixa=guardaCaixa; if(fsCaixa)renderFusao();
+  }
+
+  const linhasEl=projAtual.elementos.filter(e=>e.tipo!=='poste').map(e=>
+    `<tr><td>${_esc(e.nome||'')}</td><td>${rot[e.tipo]||e.tipo}</td><td>${_esc(labelStatus(e.status))}</td>
+      <td class="num">${e.lat!=null?e.lat.toFixed(6):'—'}</td><td class="num">${e.lng!=null?e.lng.toFixed(6):'—'}</td>
+      <td>${e.splitter||'—'}</td></tr>`).join('');
+  const linhasCb=projAtual.cabos.map(c=>{
+    const g=medirCabo(c.pontos||[]);
+    return `<tr><td>${_esc(c.nome||'')}</td><td>${rotC[c.tipo]||c.tipo}</td><td class="num">${c.fo}</td>
+      <td class="num">${g.toFixed(0)} m</td><td class="num">${(g*(1+(c.folga||0)/100)).toFixed(0)} m</td>
+      <td>${_esc(labelStatus(c.status))}</td></tr>`}).join('');
+  const materiais=Object.entries(st.porTipo).map(([k,v])=>`<tr><td>${rot[k]||k}</td><td class="num">${v}</td></tr>`).join('')
+    +Object.entries(st.porCabo).map(([k,v])=>`<tr><td>Cabo ${rotC[k]||k}</td><td class="num">${v}</td></tr>`).join('')
+    +`<tr><td><b>Extensão total de cabo (com folga)</b></td><td class="num"><b>${(st.extensao/1000).toFixed(2)} km</b></td></tr>`
+    +`<tr><td><b>Fusões</b></td><td class="num"><b>${st.nFus}</b></td></tr>`;
+
+  const hoje=new Date().toLocaleDateString('pt-BR');
+  const doc=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Dossiê de execução — ${_esc(projAtual.nome)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 30px;background:#fff;color:#14161d;font-family:'DM Sans',system-ui,Arial,sans-serif;font-size:12.5px}
+  header{border-bottom:2px solid #14161d;padding-bottom:14px;margin-bottom:18px}
+  h1{margin:0 0 4px;font-size:22px}
+  .sub{color:#5b6472;font-size:12px;line-height:1.6}
+  h2{font-size:14px;margin:20px 0 8px;padding-bottom:5px;border-bottom:1px solid #d5d9e0}
+  .cards{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .cards div{border:1px solid #d5d9e0;border-radius:8px;padding:7px 13px;font-size:11px}
+  .cards b{display:block;font-size:17px;margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:6px}
+  th{text-align:left;background:#f1f3f6;padding:6px 8px;border-bottom:1px solid #d5d9e0;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#5b6472}
+  td{padding:5px 8px;border-bottom:1px solid #eceff3}
+  .num{font-family:'DM Mono',ui-monospace,monospace;white-space:nowrap}
+  .seta{text-align:center;color:#8b90a0}
+  .vazio{text-align:center;color:#8b90a0;padding:14px}
+  figure{margin:0 0 12px;text-align:center}
+  figure svg{max-width:100%;height:auto}
+  .conf td{height:26px}
+  footer{margin-top:20px;padding-top:10px;border-top:1px solid #d5d9e0;color:#8b90a0;font-size:10.5px;display:flex;justify-content:space-between}
+  .barra{position:fixed;top:0;left:0;right:0;background:#14161d;padding:10px 16px;display:flex;gap:10px;justify-content:flex-end;z-index:9}
+  .barra button{background:#3CB371;color:#06130C;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .barra button.sec{background:#2C3040;color:#E2E0DB}
+  .conteudo{margin-top:46px}
+  @media print{.barra{display:none}.conteudo{margin-top:0}body{padding:0}
+    tr{break-inside:avoid}figure{break-inside:avoid}.quebra{break-before:page}}
+</style></head><body>
+<div class="barra">
+  <button onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+  <button class="sec" onclick="window.close()">Fechar</button>
+</div>
+<div class="conteudo">
+<header>
+  <h1>Dossiê de execução — ${_esc(projAtual.nome)}</h1>
+  <div class="sub">Documento para execução em campo · MoviFiber / MoviOn · Emitido em ${hoje}${USUARIO?(' por '+_esc(USUARIO.nome)):''}</div>
+</header>
+<div class="cards">
+  <div>Elementos<b>${st.total}</b></div>
+  <div>Implantados<b>${st.impl} (${st.pct}%)</b></div>
+  <div>Cabos<b>${projAtual.cabos.length}</b></div>
+  <div>Extensão<b>${(st.extensao/1000).toFixed(2)} km</b></div>
+  <div>Fusões<b>${st.nFus}</b></div>
+</div>
+<h2>Mapa geral da rede</h2>
+<figure>${_mapaEsquematico(980,620)}</figure>
+<div class="sub" style="margin-bottom:6px">
+  <b style="color:#7B2ED8">●</b> POP &nbsp; <b style="color:#2E86FF">●</b> CTO &nbsp;
+  <b style="color:#FF7A00">●</b> CEO &nbsp; <b style="color:#8B5A2B">•</b> Poste &nbsp;
+  <b style="color:#FFD400">▬</b> Backbone &nbsp; <b style="color:#2E86FF">▬</b> Distribuição &nbsp; <b style="color:#00D26A">▬</b> Drop
+</div>
+<h2>Lista de materiais</h2>
+<table><thead><tr><th>Item</th><th>Quantidade</th></tr></thead><tbody>${materiais}</tbody></table>
+<section class="quebra">
+<h2>Caixas e pontos</h2>
+<table><thead><tr><th>Nome</th><th>Tipo</th><th>Status</th><th>Latitude</th><th>Longitude</th><th>Splitter</th></tr></thead><tbody>${linhasEl}</tbody></table>
+</section>
+<section class="quebra">
+<h2>Cabos</h2>
+<table><thead><tr><th>Nome</th><th>Tipo</th><th>FO</th><th>Geométrico</th><th>Com folga</th><th>Status</th></tr></thead><tbody>${linhasCb}</tbody></table>
+</section>
+${secFusoes}
+<section class="quebra">
+<h2>Folha de conferência</h2>
+<table class="conf"><thead><tr><th>Item</th><th>Executado</th><th>Responsável</th><th>Data</th><th>Observação</th></tr></thead><tbody>
+${projAtual.elementos.filter(e=>['cto','ceo','pop'].includes(e.tipo)).map(e=>`<tr><td>${_esc(e.nome)}</td><td></td><td></td><td></td><td></td></tr>`).join('')}
+</tbody></table>
+<p class="sub" style="margin-top:26px">Responsável técnico: ____________________________________ &nbsp;&nbsp; Data: ____ / ____ / ________</p>
+</section>
+<footer><span>MoviFiber — documentação de rede óptica</span><span>${_esc(projAtual.nome)} · ${hoje}</span></footer>
+</div></body></html>`;
+
+  const jan=window.open('','_blank');
+  if(!jan){toast('Permita janelas pop-up para gerar o dossiê',true);return}
+  jan.document.write(doc);jan.document.close();
+  toast('Dossiê gerado');
+}
+/* ===== HISTÓRICO DE ALTERAÇÕES ===== */
+async function abrirHistorico(){
+  if(!projAtual||projAtual._multi){toast('Abra um projeto para ver o histórico',true);return}
+  abrirModalGenerico('🕘 Histórico — '+projAtual.nome,'<div class="info-box">Carregando…</div>');
+  try{
+    const d=await nuvemCall({acao:'hist-listar',projeto_id:projAtual.id});
+    const vs=d.versoes||[];
+    if(!vs.length){
+      document.getElementById('mdg-body').innerHTML=
+        '<div class="info-box">Ainda não há histórico deste projeto.<br>A partir de agora cada gravação fica registrada aqui, com autor e o que mudou.</div>';
+      return;
+    }
+    const linhas=vs.map((v,i)=>{
+      const q=new Date(v.versao);
+      const dataTxt=q.toLocaleDateString('pt-BR')+' '+q.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      return `<tr>
+        <td class="mono" style="white-space:nowrap">${dataTxt}${i===0?' <span class="tag implantado" style="margin-left:4px">atual</span>':''}</td>
+        <td>${v.autor_nome?_esc(v.autor_nome):'<span style="color:var(--text-dim)">—</span>'}</td>
+        <td style="font-size:11.5px">${_esc(v.resumo||'')}</td>
+        <td class="mono" style="font-size:11px">${v.qtd_elementos}el · ${v.qtd_cabos}cb</td>
+        <td>${i===0?'':`<button class="btn sm ghost" style="padding:3px 9px" onclick="restaurarVersao(${v.id},'${dataTxt}')">↺ Restaurar</button>`}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('mdg-body').innerHTML=
+      `<div class="info-box" style="margin-bottom:8px">Cada gravação do projeto fica registrada. Restaurar traz o conteúdo daquela versão de volta — o estado atual também vira uma entrada no histórico, então nada se perde.</div>
+       <table class="tbl"><thead><tr><th>Quando</th><th>Quem</th><th>O que mudou</th><th>Tamanho</th><th></th></tr></thead><tbody>${linhas}</tbody></table>
+       <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Guardamos as 40 versões mais recentes de cada projeto.</div>`;
+  }catch(e){
+    document.getElementById('mdg-body').innerHTML='<div class="info-box" style="color:var(--danger)">Não foi possível carregar o histórico: '+_esc(e.message)+'</div>';
+  }
+}
+async function restaurarVersao(histId,quando){
+  if(!confirm('Restaurar o projeto para a versão de '+quando+'?\n\nO estado atual continua guardado no histórico e pode ser recuperado depois.'))return;
+  try{
+    const d=await nuvemCall({acao:'hist-carregar',id:histId});
+    const v=d.versao;
+    if(!v||!v.dados){toast('Versão não encontrada',true);return}
+    const restaurado=v.dados;
+    restaurado.id=projAtual.id;                 // mantém a identidade do projeto
+    restaurado._versao=projAtual._versao;       // grava por cima da versão atual
+    const idx=DB.projetos.findIndex(x=>x.id===projAtual.id);
+    if(idx>=0)DB.projetos[idx]=restaurado;
+    fecharModal('md-generico');
+    salvar();
+    await abrirProjeto(restaurado.id);
+    toast('Projeto restaurado para '+quando);
+  }catch(e){toast('Falha ao restaurar: '+e.message,true)}
 }
 async function nuvemExcluir(id){ try{await nuvemCall({acao:'proj-excluir',id})}catch(e){console.warn('[nuvem] excluir:',e.message)} }
 function atualizarBadgeNuvem(estado){
