@@ -319,7 +319,9 @@ input:focus,select:focus{border-color:var(--accent)}
 .pp-acoes{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 
 /* ============ MODAIS ============ */
-.modal-bg{position:fixed;inset:0;background:rgba(5,7,10,.75);z-index:1000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+/* z-index acima das telas de fusão/POP (1100) — antes o modal abria ATRÁS delas
+   e era preciso fechar o diagrama para conseguir digitar */
+.modal-bg{position:fixed;inset:0;background:rgba(5,7,10,.75);z-index:1500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .modal-bg.aberto{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:440px;max-width:94vw;max-height:90vh;overflow-y:auto}
 .modal.lg{width:640px}
@@ -379,7 +381,13 @@ input:focus,select:focus{border-color:var(--accent)}
 
 /* ============ EDITOR DE FUSÕES ============ */
 #tela-fusao{display:none;position:fixed;inset:0;z-index:1100;background:var(--bg);flex-direction:column}
-#fs-head{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--sidebar-bg)}
+#fs-head{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--sidebar-bg);transition:padding .2s ease}
+#fs-head.recolhido{padding:5px 16px}
+#fs-head.recolhido #fs-tools{display:none}
+#fs-head.recolhido #fs-titulo{font-size:13px}
+#btn-recolher-barra{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);
+  border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;white-space:nowrap;transition:.15s}
+#btn-recolher-barra:hover{border-color:var(--accent);color:var(--text)}
 #fs-head .titulo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
 #fs-tools{display:flex;gap:6px;align-items:center}
 .fs-tool{padding:7px 12px;border:1px solid var(--border);border-radius:9px;font-size:12px;color:var(--text-dim);display:flex;gap:6px;align-items:center}
@@ -1254,7 +1262,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 </div>
 
 <!-- ================= MODAL: PORTA (CAMPO) ================= -->
-<div class="modal-bg" id="md-campo-porta" style="z-index:1200">
+<div class="modal-bg" id="md-campo-porta" style="z-index:1600">
   <div class="modal" style="width:400px">
     <div class="md-head"><b id="cp-md-titulo">Vincular cliente — Porta 01</b><button class="x" onclick="fecharModal('md-campo-porta')">✕</button></div>
     <div class="md-body">
@@ -1280,7 +1288,9 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <select id="fs-add-split" style="width:190px;padding:7px 10px;font-size:12px"></select>
       <button class="fs-tool" onclick="addSplitterDoCatalogo()">+ Splitter</button>
       <button class="fs-tool" onclick="abrirMapaConexoes()" title="Mapa de conexões: conectar cabos por ponta ou por sangria (passagem)">🔗 Conexões</button>
-      <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Reorganizar</button>
+      <button class="fs-tool" onclick="fsDesembaracar()" title="Reordena as fibras fundidas para as curvas não se cruzarem">🪄 Desembaraçar</button>
+      <button class="fs-tool" onclick="fsResetarFibras()" title="Devolve as fibras às posições originais">↺ Fibras</button>
+      <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Blocos</button>
       <button class="fs-tool" onclick="abrirNotaCaixa()" title="Anotações desta caixa (vão junto no PNG)">📝 Nota</button>
       <button class="fs-tool" id="btn-medir" onclick="toggleModoMedir()" title="Registrar a potência medida em cada ponta">📏 Medir</button>
       <button class="fs-tool" onclick="abrirProjetadoReal()" title="Comparar o projetado com o que foi medido">📊 Projetado × Real</button>
@@ -1299,6 +1309,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="fs-tool" id="btn-anim" onclick="toggleFsAnim()" title="Liga/desliga a luz de tráfego">✨ Tráfego: ON</button>
       <button class="btn sm" onclick="fecharFusao()">💾 Salvar / sair</button>
     </div>
+    <button id="btn-recolher-barra" onclick="toggleBarraFusao()" title="Recolher a barra para ganhar espaço">⌃ Recolher</button>
   </div>
   <div id="fs-canvas-wrap" style="position:relative"><svg id="fs-svg" xmlns="http://www.w3.org/2000/svg"></svg><canvas id="fs-luz"></canvas></div>
   <div id="fs-foot">
@@ -1696,6 +1707,22 @@ async function conflitoSalvarCopia(id){
     if(projAtual&&projAtual.id===id)await abrirProjeto(copia.id);
     toast('Cópia criada: '+copia.nome);
   }catch(e){toast('Falha ao criar a cópia: '+e.message,true)}
+}
+function toggleBarraFusao(){
+  const head=document.getElementById('fs-head');
+  const b=document.getElementById('btn-recolher-barra');
+  const recolhido=head.classList.toggle('recolhido');
+  if(b)b.textContent=recolhido?'⌄ Ferramentas':'⌃ Recolher';
+  try{store.set('movifiber_barra_fusao',recolhido?'1':'0')}catch(e){}
+  if(typeof _fsAjustarCanvas==='function')setTimeout(_fsAjustarCanvas,220);
+}
+function restaurarBarraFusao(){
+  let r=null; try{r=store.get('movifiber_barra_fusao')}catch(e){}
+  const head=document.getElementById('fs-head');
+  const b=document.getElementById('btn-recolher-barra');
+  if(!head)return;
+  head.classList.toggle('recolhido',r==='1');
+  if(b)b.textContent=r==='1'?'⌄ Ferramentas':'⌃ Recolher';
 }
 /* ===== DOSSIÊ DE EXECUÇÃO (as-built) ===== */
 /* Desenho vetorial da rede: os blocos do satélite não podem ser exportados,
@@ -3368,6 +3395,7 @@ function fusaoMedida(fu){return fu&&fu.perdaReal!=null&&fu.perdaReal!==''&&!isNa
 function fusaoForaDoLimite(fu){return fusaoMedida(fu)&&+fu.perdaReal>LIMITE_FUSAO_DB}
 function abrirFusao(caixaId){
   fsCaixa=caixaId;fsSel=null;modoMedir=false;
+  setTimeout(restaurarBarraFusao,0);
   const _bm=document.getElementById('btn-medir');if(_bm)_bm.classList.remove('ativo');
   const e=projAtual.elementos.find(x=>x.id===caixaId);
   document.getElementById('fs-titulo').textContent='🧵 '+e.nome+' — Diagrama de fusões';
@@ -3595,7 +3623,10 @@ function fsPos(){ // calcula posições de todos os pontos conectáveis
     pos['blk-'+pn.k]={x,y,lado,h:hB,bw,esp};
     const fx=lado==='esq'?x+bw+70:x-70;
     for(let f=1;f<=c.fo;f++){
-      const pf={x:fx,y:y+52+(f-1)*esp};
+      // deslocamento manual da fibra (arrastar para desembaraçar o diagrama)
+      const chave=c.id+pn.suf+'-'+f;
+      const dz=(Fb.fibras&&Fb.fibras[chave])||null;
+      const pf={x:fx+(dz?dz.dx:0), y:y+52+(f-1)*esp+(dz?dz.dy:0)};
       pos['fib-'+c.id+pn.suf+'-'+f]=pf;
       if(pn.suf==='e')pos['fib-'+c.id+'-'+f]=pf;   // alias p/ fusões antigas
     }
@@ -3611,8 +3642,16 @@ function fsPos(){ // calcula posições de todos os pontos conectáveis
   const elCx=projAtual.elementos.find(x=>x.id===fsCaixa);
   if(elCx&&elCx.tipo==='pop'){
     getPop(fsCaixa).dios.forEach((d,di)=>{
-      if(d.fx===undefined){d.fx=560;d.fy=90+di*(d.portas*16+70)}
-      for(let p=1;p<=d.portas;p++)pos['dio-'+d.id+'-'+p]={x:d.fx,y:d.fy+30+(p-1)*16};
+      // bandejas são módulos físicos separados (o DIO novo tem duas partes)
+      const porBand=d.portasPorBandeja||12;
+      const nBand=Math.max(1,d.bandejas||Math.ceil(d.portas/porBand));
+      const altBand=porBand*16+34;
+      if(d.fx===undefined){d.fx=560;d.fy=90+di*(nBand*altBand+70)}
+      for(let p=1;p<=d.portas;p++){
+        const b=Math.floor((p-1)/porBand);            // bandeja 0,1,2…
+        const dentro=(p-1)%porBand;                   // posição dentro da bandeja
+        pos['dio-'+d.id+'-'+p]={x:d.fx,y:d.fy+b*altBand+42+dentro*16};
+      }
     });
   }
   return {pos,cabos};
@@ -3766,7 +3805,7 @@ function renderFusao(){
       const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
       if(fuFib)_fsLuz.fibras.push({x1,y1:p.y,x2,y2:p.y,cor});
       const claro=['#FFFFFF','#F2E205','#F5A623','#E8C818','#00E5FF','#7DE0FF','#FFD86B'].includes((cor||'').toUpperCase());
-      s+=`<g onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" style="cursor:pointer">
+      s+=`<g onmousedown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" style="cursor:grab">
         <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
         <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}">${f}</text>
         <title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title>
@@ -3812,7 +3851,7 @@ function renderFusao(){
 
     // rótulos do splitter, posicionados já em coordenada final
     const pLbl=P(sp.x+W/2, sp.y+h+18), pSub=P(sp.x+W/2, sp.y+h+30), pX=P(sp.x+W/2, sp.y-8);
-    txt+=`<text class="splitter-lbl-big" x="${pLbl.x.toFixed(1)}" y="${pLbl.y.toFixed(1)}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}</text>`;
+    txt+=`<text class="splitter-lbl-big" x="${pLbl.x.toFixed(1)}" y="${pLbl.y.toFixed(1)}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}${sp.pernasCor?' · ABNT':''}</text>`;
     txt+=`<text class="splitter-lbl" x="${pSub.x.toFixed(1)}" y="${pSub.y.toFixed(1)}" style="font-size:8.5px">${conec?('−'+((POLIMENTO[adpTipo]||{}).il||0.3).toFixed(2)+'dB · RL '+((POLIMENTO[adpTipo]||{}).rl||50)+'dB'):('emenda −'+PERDAS.fusao.toFixed(2)+'dB')}</text>`;
     txt+=`<text class="splitter-lbl" x="${pX.x.toFixed(1)}" y="${pX.y.toFixed(1)}" style="fill:var(--danger);cursor:pointer;pointer-events:auto" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
 
@@ -3820,7 +3859,11 @@ function renderFusao(){
       const perda=perdaSpPorta(sp,p);
       const py=sp.y+4+(p-0.5)*SLOT;
       const sel=fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-'+p;
-      const corAba=des?(p===1?'#D4A027':'#2E9E63'):'#2E9E63';
+      // pernas coloridas: muitos splitters vêm com as saídas no padrão ABNT
+      const corAba=sp.pernasCor
+        ? ABNT[(p-1)%12].hex
+        : (des?(p===1?'#D4A027':'#2E9E63'):'#2E9E63');
+      const abaClara=sp.pernasCor&&['#FFFFFF','#F2E205','#FFD400','#00E5FF','#FF7A00'].includes((corAba||'').toUpperCase());
       const lblP=(des?(pcts[p-1]+'% · '):('Saída '+p+' · '))+'−'+perda.toFixed(1)+'dB · '+descTerminacaoSp(sp);
       s+=`<g class="sp-aba${sel?' sel':''}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})">
         <rect x="${sp.x+W-15}" y="${py-8}" width="15" height="16" rx="2.5" fill="${corAba}"/>
@@ -3830,7 +3873,7 @@ function renderFusao(){
       // número da aba: converte o CENTRO da aba e só então aplica o ajuste de linha
       // de base (+3.5). Se o ajuste entrar antes, ele gira junto e o número sai do lugar.
       const pn=P(sp.x+W-7.5, py);
-      txt+=`<text class="sp-aba-num" x="${pn.x.toFixed(1)}" y="${(pn.y+3.5).toFixed(1)}">${p}</text>`;
+      txt+=`<text class="sp-aba-num" x="${pn.x.toFixed(1)}" y="${(pn.y+3.5).toFixed(1)}"${(!sp.pernasCor||abaClara)?'':' fill="#FFFFFF"'}>${p}</text>`;
       if(des){
         const pp=P(sp.x+W+(conec?15:6), py);
         txt+=`<text class="splitter-lbl" x="${pp.x.toFixed(1)}" y="${(pp.y+3).toFixed(1)}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text>`;
@@ -3843,16 +3886,29 @@ function renderFusao(){
   // DIOs (plano de fusão do POP)
   if(e&&e.tipo==='pop'){
     getPop(fsCaixa).dios.forEach(d=>{
-      const hD=d.portas*16+44;
-      s+=`<g onmousedown="fsIniciarDragDio(event,'${d.id}')">
-        <rect class="dio-fs-body" x="${d.fx-10}" y="${d.fy}" width="170" height="${hD}" rx="10"/>
-        <text class="cabo-titulo" x="${d.fx+8}" y="${d.fy+20}">${d.nome.toUpperCase()}</text>
-        <text class="cabo-sub" x="${d.fx+95}" y="${d.fy+20}">BANDEJA</text>`;
-      for(let p=1;p<=d.portas;p++){
-        const cy=d.fy+30+(p-1)*16;
-        const pat=getPop(fsCaixa).patches.find(x=>x.dio===d.id&&x.dioPorta===p);
-        s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Porta ${p}${pat?' · patch PON '+pat.oltPorta:''}</title></circle>
-        <text class="cabo-sub" x="${d.fx+12}" y="${cy+3.5}" style="font-family:'DM Mono';font-size:9px">${p}${pat?' ⇄ PON '+pat.oltPorta:''}</text>`;
+      const porBand=d.portasPorBandeja||12;
+      const nBand=Math.max(1,d.bandejas||Math.ceil(d.portas/porBand));
+      const altBand=porBand*16+34;
+      const P=getPop(fsCaixa);
+      s+=`<g onmousedown="fsIniciarDragDio(event,'${d.id}')">`;
+      for(let b=0;b<nBand;b++){
+        const topo=d.fy+b*altBand;
+        const nesta=Math.min(porBand,d.portas-b*porBand);
+        if(nesta<=0)break;
+        const usadas=P.patches.filter(x=>x.dio===d.id&&x.dioPorta>b*porBand&&x.dioPorta<=b*porBand+nesta).length;
+        // cada bandeja é um módulo próprio, com folga entre elas
+        s+=`<rect class="dio-fs-body" x="${d.fx-10}" y="${topo}" width="170" height="${nesta*16+30}" rx="9"/>
+          <rect x="${d.fx-10}" y="${topo}" width="170" height="20" rx="9" fill="rgba(91,155,255,.14)"/>
+          <rect x="${d.fx-10}" y="${topo+11}" width="170" height="9" fill="rgba(91,155,255,.14)"/>
+          <text class="cabo-titulo" x="${d.fx}" y="${topo+14}" style="font-size:10.5px">${b===0?d.nome.toUpperCase()+' · ':''}BANDEJA ${b+1}</text>
+          <text class="cabo-sub" x="${d.fx+150}" y="${topo+14}" style="text-anchor:end;font-size:9px">${usadas}/${nesta}</text>`;
+        for(let i=0;i<nesta;i++){
+          const p=b*porBand+i+1;
+          const cy=topo+42+i*16-12;
+          const pat=P.patches.find(x=>x.dio===d.id&&x.dioPorta===p);
+          s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy+12}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Bandeja ${b+1} · porta ${p}${pat?' · patch PON '+pat.oltPorta:''}</title></circle>
+          <text class="cabo-sub" x="${d.fx+12}" y="${cy+15.5}" style="font-family:'DM Mono';font-size:9px">${p}${pat?' ⇄ PON '+pat.oltPorta:''}</text>`;
+        }
       }
       s+='</g>';
     });
@@ -4177,6 +4233,14 @@ function fsGirar(d){const sp=_spSel();if(!sp)return;sp.rot=((sp.rot||0)+d+360)%3
 function fsEspelhar(){const sp=_spSel();if(!sp)return;sp.flip=!sp.flip;salvar();renderFusao()}
 function fsEscala(d){const sp=_spSel();if(!sp)return;sp.scale=Math.max(.5,Math.min(2.5,(sp.scale||1)+d));salvar();renderFusao()}
 function fsResetTransform(){const sp=_spSel();if(!sp)return;sp.rot=0;sp.flip=false;sp.scale=1;salvar();renderFusao()}
+function fsTogglePernasCor(){
+  const F=getFus(fsCaixa);
+  const sp=F.splitters.find(x=>x.id===fsSelSp);
+  if(!sp)return;
+  sp.pernasCor=!sp.pernasCor;
+  salvar();renderFusao();
+  toast(sp.pernasCor?'Pernas com as cores ABNT (verde, amarela, branca…)':'Pernas na cor padrão');
+}
 function fsTrocarAdaptador(){const sp=_spSel();if(!sp)return;sp.adaptador=(sp.adaptador==='UPC')?'APC':'UPC';salvar();renderFusao();renderFsToolbar()}
 function renderFsToolbar(){
   let tb=document.getElementById('fs-transform-bar');
@@ -4196,7 +4260,9 @@ function renderFsToolbar(){
     `<button class="btn sm ghost" title="Diminuir" onclick="fsEscala(-.15)">−</button>`+
     `<button class="btn sm ghost" title="Aumentar" onclick="fsEscala(.15)">＋</button>`+
     `<button class="btn sm ghost" title="Resetar" onclick="fsResetTransform()">⭯</button>`+
-    (spConectorizado(sp)?`<span style="width:1px;height:16px;background:var(--border);margin:0 2px"></span><button class="btn sm ghost" title="Alternar adaptador SC/APC ↔ SC/UPC" onclick="fsTrocarAdaptador()">🔌 ${descTerminacaoSp(sp)}</button>`:'')+
+    (spConectorizado(sp)?`<span style="width:1px;height:16px;background:var(--border);margin:0 2px"></span><button class="btn sm ghost" title="Alternar adaptador SC/APC ↔ SC/UPC" onclick="fsTrocarAdaptador()">🔌 ${descTerminacaoSp(sp)}</button>`:'')
+    +`<span style="width:1px;height:16px;background:var(--border);margin:0 2px"></span>`
+    +`<button class="btn sm ghost" title="Pernas de saída com as cores ABNT" onclick="fsTogglePernasCor()">🎨 Pernas: ${sp.pernasCor?'coloridas':'padrão'}</button>`+
     `<button class="btn sm" title="Concluir" onclick="fsSelSp=null;renderFusao();renderFsToolbar()">✓</button>`;
 }
 function fsIniciarDrag(ev,id){
@@ -4247,6 +4313,91 @@ function fsReorganizarBlocos(){
   if(!F.blocos||!Object.keys(F.blocos).length){toast('Os blocos já estão na posição automática');return}
   if(!confirm('Reorganizar os blocos de cabo na posição automática?'))return;
   F.blocos={};salvar();renderFusao();toast('Blocos reorganizados');
+}
+/* ===== ARRASTAR A FIBRA =====
+   Em caixas cheias as fusões se cruzam e ficam ilegíveis. Aqui a ponta da fibra
+   pode ser puxada para cima ou para baixo, desembaraçando o diagrama.
+   O clique simples continua servindo para fundir — o arrasto só começa depois
+   de alguns pixels de movimento. */
+let _dragFibra=null;
+function fsIniciarDragFibra(ev,caboId,suf,fib){
+  ev.stopPropagation();
+  if(modoMedir)return;                       // no modo medição o clique é outro
+  const svg=document.getElementById('fs-svg');
+  const F=getFus(fsCaixa);
+  if(!F.fibras)F.fibras={};
+  const chave=caboId+suf+'-'+fib;
+  const base=F.fibras[chave]||{dx:0,dy:0};
+  const ini=svgPoint(svg,ev);
+  _dragFibra={chave,base:{...base},ini,moveu:false};
+  const mover=(e)=>{
+    if(!_dragFibra)return;
+    const p=svgPoint(svg,e);
+    const dx=p.x-_dragFibra.ini.x, dy=p.y-_dragFibra.ini.y;
+    if(!_dragFibra.moveu&&Math.hypot(dx,dy)<4)return;   // ainda pode ser um clique
+    _dragFibra.moveu=true;
+    F.fibras[_dragFibra.chave]={dx:_dragFibra.base.dx+dx, dy:_dragFibra.base.dy+dy};
+    renderFusao();
+  };
+  const soltar=()=>{
+    document.removeEventListener('mousemove',mover);
+    document.removeEventListener('mouseup',soltar);
+    if(_dragFibra&&_dragFibra.moveu){salvar();fsSel=null;renderFusao()}
+    _dragFibra=null;
+  };
+  document.addEventListener('mousemove',mover);
+  document.addEventListener('mouseup',soltar);
+}
+/* devolve todas as fibras às posições originais */
+function fsResetarFibras(){
+  const F=getFus(fsCaixa);
+  if(!F.fibras||!Object.keys(F.fibras).length){toast('As fibras já estão na posição original');return}
+  if(!confirm('Devolver todas as fibras às posições originais?'))return;
+  F.fibras={};salvar();renderFusao();
+  toast('Fibras reorganizadas');
+}
+/* espalha automaticamente as fibras fundidas para reduzir cruzamentos:
+   ordena pelo destino, de modo que as curvas fiquem paralelas */
+function fsDesembaracar(){
+  const F=getFus(fsCaixa);
+  if(!F.fusoes||!F.fusoes.length){toast('Não há fusões para organizar',true);return}
+  if(!F.fibras)F.fibras={};
+  const blocoDe=p=>p.t==='fibra'?(p.cabo+(p.lado||'')):null;
+
+  // quantas fusões cada bloco tem — o maior vira a REFERÊNCIA e não se move.
+  // Reordenar os dois lados ao mesmo tempo faz um desfazer o do outro.
+  const contagem={};
+  F.fusoes.forEach(fu=>{[fu.a,fu.b].forEach(p=>{const b=blocoDe(p);if(b)contagem[b]=(contagem[b]||0)+1})});
+  const blocos=Object.keys(contagem);
+  if(!blocos.length){toast('Não há fibras de cabo nas fusões',true);return}
+  const refer=blocos.sort((a,b)=>(contagem[b]-contagem[a])||a.localeCompare(b))[0];
+
+  let ajustadas=0;
+  // um bloco por vez, recalculando as posições a cada passo
+  blocos.filter(b=>b!==refer).forEach(bloco=>{
+    const {pos}=fsPos();
+    const itens=[];
+    F.fusoes.forEach(fu=>{
+      [[fu.a,fu.b],[fu.b,fu.a]].forEach(([lado,outro])=>{
+        if(blocoDe(lado)!==bloco)return;
+        const pL=pos[ptKey(lado)], pO=pos[ptKey(outro)];
+        if(!pL||!pO)return;
+        itens.push({chave:lado.cabo+(lado.lado||'')+'-'+lado.fib, alvo:pO.y, y:pL.y});
+      });
+    });
+    if(itens.length<2)return;
+    const vagas=itens.map(x=>x.y).sort((a,b)=>a-b);          // alturas disponíveis
+    const ordem=[...itens].sort((a,b)=>a.alvo-b.alvo);        // pela altura do destino
+    ordem.forEach((item,i)=>{
+      const dy=vagas[i]-item.y;
+      if(Math.abs(dy)<0.5)return;
+      const at=F.fibras[item.chave]||{dx:0,dy:0};
+      F.fibras[item.chave]={dx:at.dx,dy:at.dy+dy};
+      ajustadas++;
+    });
+  });
+  salvar();renderFusao();
+  toast(ajustadas?('Diagrama organizado · '+ajustadas+' fibra(s) reposicionadas'):'As fibras já estavam sem cruzamentos');
 }
 function fsIniciarDragDio(ev,id){
   const d=getPop(fsCaixa).dios.find(x=>x.id===id);
