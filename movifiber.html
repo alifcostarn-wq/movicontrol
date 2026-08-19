@@ -1544,8 +1544,23 @@ function _proxyUrlNuvem(){
   try{ if(location&&location.origin&&location.origin.startsWith('http'))return location.origin+'/api/movifiber'; }catch(e){}
   return '/api/movifiber';
 }
+async function _tokenAtual(){
+  try{
+    const sb=_sbAuth();
+    if(!sb)return null;
+    const {data}=await sb.auth.getSession();
+    return (data&&data.session&&data.session.access_token)||null;
+  }catch(e){return null}
+}
 async function nuvemCall(body){
-  const r=await fetch(_proxyUrlNuvem(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const cab={'Content-Type':'application/json'};
+  const tk=await _tokenAtual();
+  if(tk)cab.Authorization='Bearer '+tk;   // o proxy confere quem está chamando
+  const r=await fetch(_proxyUrlNuvem(),{method:'POST',headers:cab,body:JSON.stringify(body)});
+  if(r.status===401){
+    const d=await r.json().catch(()=>({}));
+    throw new Error(d.erro||'sessão expirada — entre novamente');
+  }
   if(!r.ok)throw new Error('HTTP '+r.status);
   const d=await r.json(); if(d.erro)throw new Error(d.erro); return d;
 }
@@ -1578,6 +1593,8 @@ async function nuvemCarregarProjeto(id){
   full.elementos=full.elementos||[];full.cabos=full.cabos||[];full.areas=full.areas||[];
   full.fusoes=full.fusoes||{};full.pops=full.pops||{};full.clientes=full.clientes||[];
   full.seq=full.seq||{pop:0,cto:0,ceo:0,reserva:0,cabo:0,area:0};
+  // versão que serviu de base: usada para detectar edição simultânea ao salvar
+  full._versao=d.projeto.atualizado_em||null;
   const idx=DB.projetos.findIndex(x=>x.id===id);
   if(idx>=0)DB.projetos[idx]=full;else DB.projetos.push(full);
   return full;
@@ -1598,13 +1615,85 @@ async function nuvemFlush(){
     const p=DB.projetos.find(x=>x.id===id);
     if(!p||p._stub)continue;
     try{
-      const limpo={...p};delete limpo._stub;delete limpo._qtdEl;delete limpo._qtdCb;delete limpo._atualizado;
-      await nuvemCall({acao:'proj-salvar',projeto:limpo});
+      const limpo={...p};delete limpo._stub;delete limpo._qtdEl;delete limpo._qtdCb;delete limpo._atualizado;delete limpo._versao;
+      const resp=await nuvemCall({acao:'proj-salvar',projeto:limpo,versao_base:p._versao||null});
+      if(resp&&resp.conflito){
+        // outra pessoa gravou depois que este projeto foi aberto
+        NUVEM.fila.delete(id);
+        atualizarBadgeNuvem('erro');
+        avisarConflito(id,resp);
+        continue;
+      }
+      if(resp&&resp.versao)p._versao=resp.versao;   // avança a base
       NUVEM.ok=true;NUVEM.ultimoErro=null;
       atualizarBadgeNuvem('salvo');
     }catch(e){NUVEM.ok=false;NUVEM.ultimoErro=e.message;NUVEM.fila.add(id);atualizarBadgeNuvem('erro');console.warn('[nuvem] salvar:',e.message)}
   }
   NUVEM.sincronizando=false;
+}
+/* Alguém salvou o mesmo projeto enquanto este estava aberto.
+   Em vez de apagar o trabalho do outro em silêncio, a decisão é do usuário. */
+let _conflitoAberto=false;
+function avisarConflito(id,resp){
+  if(_conflitoAberto)return;
+  _conflitoAberto=true;
+  const p=DB.projetos.find(x=>x.id===id);
+  const quando=resp.versao_banco?new Date(resp.versao_banco).toLocaleString('pt-BR'):'agora há pouco';
+  abrirModalGenerico('⚠️ Este projeto foi alterado por outra pessoa',
+    `<div class="info-box" style="border-left:3px solid var(--warn)">
+       O projeto <b>${(p&&p.nome)||id}</b> foi salvo por outra pessoa em <b>${quando}</b>,
+       depois que você o abriu.<br><br>
+       Para não apagar o trabalho dela, <b>suas alterações ainda não foram enviadas</b>.
+     </div>
+     <div class="dr-sec" style="margin-top:10px">Como deseja seguir?</div>
+     <div style="font-size:12.5px;line-height:1.7;color:var(--text-dim)">
+       <b style="color:var(--text)">Recarregar</b> — traz a versão do servidor. Suas alterações desta sessão são perdidas.<br>
+       <b style="color:var(--text)">Manter as minhas</b> — grava a sua versão por cima da outra.<br>
+       <b style="color:var(--text)">Salvar cópia</b> — cria um projeto novo com as suas alterações e preserva os dois.
+     </div>`);
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost" onclick="conflitoRecarregar('${id}')">↻ Recarregar</button>
+    <button class="btn ghost" onclick="conflitoSalvarCopia('${id}')">⧉ Salvar cópia</button>
+    <button class="btn" style="background:var(--warn);color:#0B0D11" onclick="conflitoForcar('${id}')">Manter as minhas</button>`;
+}
+async function conflitoRecarregar(id){
+  fecharModal('md-generico');_conflitoAberto=false;
+  try{
+    await nuvemCarregarProjeto(id);
+    if(projAtual&&projAtual.id===id){await abrirProjeto(id)}
+    else renderHome();
+    toast('Projeto recarregado do servidor');
+  }catch(e){toast('Falha ao recarregar: '+e.message,true)}
+}
+async function conflitoForcar(id){
+  fecharModal('md-generico');_conflitoAberto=false;
+  const p=DB.projetos.find(x=>x.id===id);
+  if(!p)return;
+  try{
+    const limpo={...p};delete limpo._stub;delete limpo._qtdEl;delete limpo._qtdCb;delete limpo._atualizado;delete limpo._versao;
+    const resp=await nuvemCall({acao:'proj-salvar',projeto:limpo,forcar:true});
+    if(resp&&resp.versao)p._versao=resp.versao;
+    atualizarBadgeNuvem('salvo');
+    toast('Sua versão foi gravada por cima da outra');
+  }catch(e){toast('Falha ao salvar: '+e.message,true)}
+}
+async function conflitoSalvarCopia(id){
+  fecharModal('md-generico');_conflitoAberto=false;
+  const p=DB.projetos.find(x=>x.id===id);
+  if(!p)return;
+  const copia={...p,id:uid('prj'),nome:(p.nome||'Projeto')+' (minha versão)'};
+  delete copia._stub;delete copia._qtdEl;delete copia._qtdCb;delete copia._atualizado;delete copia._versao;
+  try{
+    const resp=await nuvemCall({acao:'proj-salvar',projeto:copia});
+    copia._versao=resp&&resp.versao;
+    DB.projetos.push(copia);
+    // o projeto original volta ao estado do servidor
+    await nuvemCarregarProjeto(id);
+    store.set(STORE_KEY,JSON.stringify(DB));
+    renderHome();
+    if(projAtual&&projAtual.id===id)await abrirProjeto(copia.id);
+    toast('Cópia criada: '+copia.nome);
+  }catch(e){toast('Falha ao criar a cópia: '+e.message,true)}
 }
 async function nuvemExcluir(id){ try{await nuvemCall({acao:'proj-excluir',id})}catch(e){console.warn('[nuvem] excluir:',e.message)} }
 function atualizarBadgeNuvem(estado){
