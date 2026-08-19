@@ -49,20 +49,32 @@ const F_ONU_CANDIDATOS = ['id_hardware','onu','serial_onu','id_onu'];
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ erro: 'use POST' });
 
   const b = req.body || {};
   const acao = b.acao || 'clientes-movione';
   try {
+    // ---- quem esta chamando? ----
+    // O login protege a tela, mas sem esta checagem qualquer um com a URL do proxy
+    // leria clientes e projetos. Com MOVIFIBER_EXIGE_LOGIN=1 o acesso passa a exigir
+    // o token do usuario; sem a variavel o comportamento antigo e mantido (para o
+    // deploy nao quebrar antes de o front novo estar no ar).
+    const exigeLogin = String(process.env.MOVIFIBER_EXIGE_LOGIN || '') === '1';
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() || b.token || '';
+    if (exigeLogin) {
+      const quem = await validarUsuario(token);
+      if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'nao autorizado' });
+      b._usuario = quem.usuario;
+    }
     if (acao === 'clientes-movione')  return res.status(200).json(await clientesMoviOne(b.projeto));
     if (acao === 'ixc-status')        return res.status(200).json(await ixcStatus(b.ixc_ids || []));
     if (acao === 'salvar-instalacao') return res.status(200).json(await salvarInstalacao(b));
     if (acao === 'debug-schema')      return res.status(200).json(await debugSchema());
     if (acao === 'proj-listar')       return res.status(200).json(await projListar());
     if (acao === 'proj-carregar')     return res.status(200).json(await projCarregar(b.id));
-    if (acao === 'proj-salvar')       return res.status(200).json(await projSalvar(b.projeto));
+    if (acao === 'proj-salvar')       return res.status(200).json(await projSalvar(b.projeto, b.versao_base, b.forcar));
     if (acao === 'proj-excluir')      return res.status(200).json(await projExcluir(b.id));
     if (acao === 'cat-carregar')      return res.status(200).json(await catCarregar());
     if (acao === 'cat-salvar')        return res.status(200).json(await catSalvar(b.dados));
@@ -160,6 +172,45 @@ async function projListar() {
   if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
   return { projetos: await r.json() };
 }
+/* Confere o token do usuario no Supabase Auth e a liberacao no modulo.
+   O resultado fica em cache curto para nao consultar a cada chamada. */
+const _cacheUsuarios = new Map();   // token -> { exp, dado }
+async function validarUsuario(token) {
+  if (!token) return { ok: false, motivo: 'sem credencial: faca login no MoviFiber' };
+  const agora = Date.now();
+  const emCache = _cacheUsuarios.get(token);
+  if (emCache && emCache.exp > agora) return emCache.dado;
+
+  const anon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
+  let dado;
+  try {
+    // 1) o token e valido?
+    const r = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: anon, Authorization: `Bearer ${token}` }
+    });
+    if (!r.ok) {
+      dado = { ok: false, motivo: 'sessao expirada: entre novamente' };
+    } else {
+      const u = await r.json();
+      // 2) esse usuario tem o MoviFiber liberado?
+      const rp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/tem_movifiber`, {
+        method: 'POST',
+        headers: { ...sbHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_id: u.id })
+      });
+      const liberado = rp.ok ? await rp.json() : false;
+      dado = liberado === true
+        ? { ok: true, usuario: { id: u.id, email: u.email } }
+        : { ok: false, motivo: 'usuario sem acesso liberado ao MoviFiber' };
+    }
+  } catch (e) {
+    dado = { ok: false, motivo: 'falha ao validar credencial' };
+  }
+  // cache de 60s (positivo) / 10s (negativo), com teto de entradas
+  _cacheUsuarios.set(token, { exp: agora + (dado.ok ? 60000 : 10000), dado });
+  if (_cacheUsuarios.size > 500) _cacheUsuarios.clear();
+  return dado;
+}
 async function projCarregar(id) {
   if (!id) throw new Error('id obrigatorio');
   const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}?id=eq.${encodeURIComponent(id)}&select=*`;
@@ -168,16 +219,43 @@ async function projCarregar(id) {
   const rows = await r.json();
   return { projeto: rows[0] || null };
 }
-async function projSalvar(p) {
+/* Salva o projeto com trava por versao.
+   O front envia a versao que carregou (base). Se no banco houver algo mais novo,
+   outra pessoa gravou nesse meio tempo: a gravacao e recusada em vez de apagar
+   o trabalho do outro em silencio. */
+async function projSalvar(p, versaoBase, forcar) {
   if (!p || !p.id) throw new Error('projeto invalido');
+
+  // versao atual no banco
+  const urlAtual = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}`
+    + `?id=eq.${encodeURIComponent(p.id)}&select=atualizado_em,atualizado_por`;
+  const rAtual = await fetch(urlAtual, { headers: sbHeaders() });
+  const atuais = rAtual.ok ? await rAtual.json() : [];
+  const noBanco = atuais[0] || null;
+
+  if (noBanco && !forcar && versaoBase) {
+    const vBanco = new Date(noBanco.atualizado_em).getTime();
+    const vBase = new Date(versaoBase).getTime();
+    // tolerancia de 1s: o carimbo do banco pode ter precisao diferente
+    if (isFinite(vBanco) && isFinite(vBase) && vBanco - vBase > 1000) {
+      return {
+        ok: false, conflito: true, id: p.id,
+        versao_banco: noBanco.atualizado_em,
+        versao_base: versaoBase,
+        alterado_por: noBanco.atualizado_por || null
+      };
+    }
+  }
+
   const centro = Array.isArray(p.centro) ? p.centro : [null, null];
+  const agora = new Date().toISOString();
   const row = {
     id: p.id, nome: p.nome || 'Projeto',
     centro_lat: centro[0], centro_lng: centro[1],
     dados: p,
     qtd_elementos: (p.elementos || []).length,
     qtd_cabos: (p.cabos || []).length,
-    atualizado_em: new Date().toISOString()
+    atualizado_em: agora
   };
   const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}`;
   const r = await fetch(url, {
@@ -186,7 +264,7 @@ async function projSalvar(p) {
     body: JSON.stringify(row)
   });
   if (!r.ok) throw new Error('Supabase salvar HTTP ' + r.status + ' ' + (await r.text()).slice(0,200));
-  return { ok: true, id: p.id };
+  return { ok: true, id: p.id, versao: agora };
 }
 async function projExcluir(id) {
   if (!id) throw new Error('id obrigatorio');
