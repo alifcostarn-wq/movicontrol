@@ -63,18 +63,20 @@ export default async function handler(req, res) {
     // deploy nao quebrar antes de o front novo estar no ar).
     const exigeLogin = String(process.env.MOVIFIBER_EXIGE_LOGIN || '') === '1';
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() || b.token || '';
-    if (exigeLogin) {
-      const quem = await validarUsuario(token);
-      if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'nao autorizado' });
-      b._usuario = quem.usuario;
-    }
+    // o token e sempre conferido quando presente (para registrar a autoria);
+    // MOVIFIBER_EXIGE_LOGIN apenas torna a credencial obrigatoria
+    const quem = token ? await validarUsuario(token) : { ok: false, motivo: 'sem credencial: faca login no MoviFiber' };
+    if (exigeLogin && !quem.ok) return res.status(401).json({ erro: quem.motivo || 'nao autorizado' });
+    if (quem.ok) b._usuario = quem.usuario;
     if (acao === 'clientes-movione')  return res.status(200).json(await clientesMoviOne(b.projeto));
     if (acao === 'ixc-status')        return res.status(200).json(await ixcStatus(b.ixc_ids || []));
     if (acao === 'salvar-instalacao') return res.status(200).json(await salvarInstalacao(b));
     if (acao === 'debug-schema')      return res.status(200).json(await debugSchema());
     if (acao === 'proj-listar')       return res.status(200).json(await projListar());
     if (acao === 'proj-carregar')     return res.status(200).json(await projCarregar(b.id));
-    if (acao === 'proj-salvar')       return res.status(200).json(await projSalvar(b.projeto, b.versao_base, b.forcar));
+    if (acao === 'proj-salvar')       return res.status(200).json(await projSalvar(b.projeto, b.versao_base, b.forcar, b._usuario));
+    if (acao === 'hist-listar')       return res.status(200).json(await histListar(b.projeto_id));
+    if (acao === 'hist-carregar')     return res.status(200).json(await histCarregar(b.id));
     if (acao === 'proj-excluir')      return res.status(200).json(await projExcluir(b.id));
     if (acao === 'cat-carregar')      return res.status(200).json(await catCarregar());
     if (acao === 'cat-salvar')        return res.status(200).json(await catSalvar(b.dados));
@@ -199,9 +201,18 @@ async function validarUsuario(token) {
         body: JSON.stringify({ p_id: u.id })
       });
       const liberado = rp.ok ? await rp.json() : false;
-      dado = liberado === true
-        ? { ok: true, usuario: { id: u.id, email: u.email } }
-        : { ok: false, motivo: 'usuario sem acesso liberado ao MoviFiber' };
+      if (liberado === true) {
+        // busca o nome do cadastro para o historico ficar legivel
+        let nome = null;
+        try {
+          const rn = await fetch(`${process.env.SUPABASE_URL}/rest/v1/perfis?id=eq.${u.id}&select=nome`,
+                                 { headers: sbHeaders() });
+          if (rn.ok) nome = ((await rn.json())[0] || {}).nome || null;
+        } catch (e) {}
+        dado = { ok: true, usuario: { id: u.id, email: u.email, nome } };
+      } else {
+        dado = { ok: false, motivo: 'usuario sem acesso liberado ao MoviFiber' };
+      }
     }
   } catch (e) {
     dado = { ok: false, motivo: 'falha ao validar credencial' };
@@ -223,7 +234,7 @@ async function projCarregar(id) {
    O front envia a versao que carregou (base). Se no banco houver algo mais novo,
    outra pessoa gravou nesse meio tempo: a gravacao e recusada em vez de apagar
    o trabalho do outro em silencio. */
-async function projSalvar(p, versaoBase, forcar) {
+async function projSalvar(p, versaoBase, forcar, autor) {
   if (!p || !p.id) throw new Error('projeto invalido');
 
   // versao atual no banco
@@ -264,7 +275,84 @@ async function projSalvar(p, versaoBase, forcar) {
     body: JSON.stringify(row)
   });
   if (!r.ok) throw new Error('Supabase salvar HTTP ' + r.status + ' ' + (await r.text()).slice(0,200));
+  // registra no historico (nunca deixa o salvamento falhar por causa disso)
+  try { await registrarHistorico(p, agora, autor); } catch (e) { console.warn('[historico]', e.message); }
   return { ok: true, id: p.id, versao: agora };
+}
+
+/* ---- Historico de alteracoes ---- */
+const SB_HIST = 'movifiber_historico';
+function _resumoMudancas(antes, depois) {
+  if (!antes) return 'Projeto criado';
+  const partes = [];
+  const nomes = (arr) => new Map((arr || []).map(x => [x.id, x.nome || x.id]));
+  const cmp = (rotuloS, rotuloP, ant, dep) => {
+    const a = nomes(ant), d = nomes(dep);
+    const novos = [...d.keys()].filter(k => !a.has(k));
+    const saiu  = [...a.keys()].filter(k => !d.has(k));
+    const mudou = [...d.keys()].filter(k => a.has(k) && a.get(k) !== d.get(k));
+    if (novos.length) partes.push(`+${novos.length} ${novos.length > 1 ? rotuloP : rotuloS}` +
+      (novos.length <= 3 ? ' (' + novos.map(k => d.get(k)).join(', ') + ')' : ''));
+    if (saiu.length) partes.push(`−${saiu.length} ${saiu.length > 1 ? rotuloP : rotuloS}` +
+      (saiu.length <= 3 ? ' (' + saiu.map(k => a.get(k)).join(', ') + ')' : ''));
+    if (mudou.length) partes.push(`${mudou.length} ${mudou.length > 1 ? rotuloP : rotuloS} renomeado(s)`);
+  };
+  cmp('elemento', 'elementos', antes.elementos, depois.elementos);
+  cmp('cabo', 'cabos', antes.cabos, depois.cabos);
+  // fusoes
+  const nFus = (o) => Object.values(o && o.fusoes || {}).reduce((s, f) => s + ((f && f.fusoes || []).length), 0);
+  const df = nFus(depois) - nFus(antes);
+  if (df > 0) partes.push(`+${df} fusão(ões)`);
+  if (df < 0) partes.push(`−${-df} fusão(ões)`);
+  // clientes
+  const dc = (depois.clientes || []).length - (antes.clientes || []).length;
+  if (dc > 0) partes.push(`+${dc} cliente(s)`);
+  if (dc < 0) partes.push(`−${-dc} cliente(s)`);
+  return partes.length ? partes.join(' · ') : 'Ajustes no projeto';
+}
+async function registrarHistorico(p, versao, autor) {
+  // ultimo retrato para comparar
+  const urlUlt = `${process.env.SUPABASE_URL}/rest/v1/${SB_HIST}`
+    + `?projeto_id=eq.${encodeURIComponent(p.id)}&select=dados&order=versao.desc&limit=1`;
+  const rU = await fetch(urlUlt, { headers: sbHeaders() });
+  const ult = rU.ok ? (await rU.json())[0] : null;
+  const resumo = _resumoMudancas(ult && ult.dados, p);
+
+  await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_HIST}`, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      projeto_id: p.id, projeto_nome: p.nome || null, versao,
+      autor_id: (autor && autor.id) || null,
+      autor_nome: (autor && (autor.nome || autor.email)) || null,
+      resumo,
+      qtd_elementos: (p.elementos || []).length,
+      qtd_cabos: (p.cabos || []).length,
+      dados: p
+    })
+  });
+  // mantem o historico enxuto
+  await fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/movifiber_podar_historico`, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_projeto: p.id, p_manter: 40 })
+  });
+}
+async function histListar(projetoId) {
+  if (!projetoId) throw new Error('projeto obrigatorio');
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_HIST}`
+    + `?projeto_id=eq.${encodeURIComponent(projetoId)}`
+    + `&select=id,versao,autor_nome,resumo,qtd_elementos,qtd_cabos&order=versao.desc&limit=40`;
+  const r = await fetch(url, { headers: sbHeaders() });
+  if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+  return { versoes: await r.json() };
+}
+async function histCarregar(histId) {
+  if (!histId) throw new Error('id obrigatorio');
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_HIST}?id=eq.${encodeURIComponent(histId)}&select=*`;
+  const r = await fetch(url, { headers: sbHeaders() });
+  if (!r.ok) throw new Error('Supabase HTTP ' + r.status);
+  return { versao: (await r.json())[0] || null };
 }
 async function projExcluir(id) {
   if (!id) throw new Error('id obrigatorio');
