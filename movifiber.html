@@ -406,7 +406,12 @@ input:focus,select:focus{border-color:var(--accent)}
   linear-gradient(#20242F 1px,transparent 1px),
   linear-gradient(90deg,#20242F 1px,transparent 1px);
   background-size:22px 22px;background-color:#14161d;position:relative}
-#fs-svg{display:block;min-width:1100px;min-height:640px}
+#fs-svg{display:block;min-width:1100px;min-height:640px;user-select:none;-webkit-user-select:none;touch-action:none}
+#fs-svg text{user-select:none;-webkit-user-select:none}
+#fs-svg.arrastando, #fs-svg.arrastando *{cursor:grabbing!important}
+#fs-svg.pan{cursor:grab}
+.fusao-linha.ligada{stroke-width:4.5;opacity:1;filter:drop-shadow(0 0 4px rgba(255,255,255,.45))}
+.fibra-ponto.ligada{stroke:#fff;stroke-width:3}
 #fs-foot{display:flex;justify-content:space-between;align-items:center;padding:9px 16px;border-top:1px solid var(--border);background:var(--sidebar-bg);font-size:12px}
 .fs-leg{display:flex;gap:14px;align-items:center;color:var(--text-dim)}
 .fs-leg i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}
@@ -1339,11 +1344,12 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="fs-tool" id="btn-vfl" onclick="tracarVFL()" style="border-color:#FF3B30;color:#FF8A80">🔴 Traçar VFL</button>
       <button class="fs-tool" id="btn-orc" onclick="abrirOrcamento()">🔦 Orçamento Óptico</button>
       <button class="fs-tool" id="btn-anim" onclick="toggleFsAnim()" title="Liga/desliga a luz de tráfego">✨ Tráfego: ON</button>
+      <button class="fs-tool" id="btn-fspot" onclick="toggleFsPot()" title="Mostra a potência óptica projetada em cada fibra, splitter e porta de DIO (vinda do SFP da OLT)">⚡ Potência: ON</button>
       <button class="btn sm" onclick="fecharFusao()">💾 Salvar / sair</button>
     </div>
     <button id="btn-recolher-barra" onclick="toggleBarraFusao()" title="Recolher a barra para ganhar espaço">⌃ Recolher</button>
   </div>
-  <div id="fs-canvas-wrap" style="position:relative"><svg id="fs-svg" xmlns="http://www.w3.org/2000/svg"></svg><canvas id="fs-luz"></canvas></div>
+  <div id="fs-canvas-wrap" style="position:relative"><svg id="fs-svg" xmlns="http://www.w3.org/2000/svg" onpointerdown="fsIniciarPan(event)" onmousedown="if(!window.PointerEvent)fsIniciarPan(event)"></svg><canvas id="fs-luz"></canvas></div>
   <div id="fs-foot">
     <div class="fs-leg">
       <span><i style="background:var(--st-projeto)"></i>Em projeto</span>
@@ -1351,7 +1357,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <span><i style="background:var(--st-impl)"></i>Implantado</span>
       <span><i style="background:var(--st-cert)"></i>Certificado</span>
     </div>
-    <div id="fs-status-hint">Clique em uma fibra e depois no destino para criar a fusão · clique na fusão para status/remover</div>
+    <div id="fs-status-hint">Clique numa fibra e depois no destino para fundir · arraste a fibra, o splitter, o bloco ou a própria curva (Shift trava o eixo · duplo clique na fibra devolve ao lugar) · arraste o fundo para rolar · Esc limpa a seleção</div>
   </div>
 </div>
 
@@ -2633,7 +2639,14 @@ async function garantirMapa(centro,zoom){
       if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;
       if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();desfazer();return}
       if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){e.preventDefault();refazer();return}
-      if(e.key==='Escape'){if(editCabo){concluirTracado();return}cancelarDesenho()}
+      if(e.key==='Escape'){
+        const tf=document.getElementById('tela-fusao');
+        if(tf&&tf.style.display==='flex'){
+          const m=document.getElementById('ctx-menu');if(m)m.style.display='none';
+          if(modoMedir)toggleModoMedir();else if(modoNota)toggleModoNota();
+          fsSel=null;fsSelSp=null;renderFusao();return;
+        }
+        if(editCabo){concluirTracado();return}cancelarDesenho()}
       if(e.key==='Enter')finalizarDesenho();
     });
   } else {mapa.setView(centro,zoom);aplicarTiles()}
@@ -3685,6 +3698,21 @@ function baixar(nome,conteudo,tipo){
 
 /* ================= EDITOR DE FUSÕES ================= */
 let fsCaixa=null, fsSel=null, fsDrag=null, fsAnim=true, fsSelSp=null;
+let fsPot=store.get('movifiber_fs_pot')!=='0';  // mostrar potência projetada no diagrama
+function toggleFsPot(){
+  fsPot=!fsPot;store.set('movifiber_fs_pot',fsPot?'1':'0');
+  const b=document.getElementById('btn-fspot');if(b){b.textContent=fsPot?'⚡ Potência: ON':'⚡ Potência: OFF';b.classList.toggle('ativo',fsPot)}
+  renderFusao();
+}
+/* etiqueta de potência projetada (pequena, à direita/esquerda do ponto) */
+function _etqPot(x,y,dir,info,extra){
+  if(!info)return '';
+  const cor=_corPot(info.pot), w=52;
+  const bx=x+dir*11-(dir<0?w:0);
+  return `<g style="pointer-events:none"><rect x="${bx}" y="${y-7}" width="${w}" height="14" rx="4" fill="#11151C" stroke="${cor}" stroke-width="1" stroke-dasharray="${info.real?'none':'3 2'}" opacity=".95"/>`
+    +`<text x="${bx+w/2}" y="${y+3}" text-anchor="middle" font-size="8.5" font-family="DM Mono" fill="${cor}">${info.real?'':'≈'}${info.pot.toFixed(2)}</text>`
+    +`<title>Potência projetada ${info.dir==='chega'?'que chega':(info.dir==='entra'?'na entrada':'que sai')}: ${info.pot.toFixed(2)} dBm${info.real?' (TX real)':' (TX estimado)'}${info.ctoNome?' · pior caso: '+info.ctoNome:''}${extra||''}</title></g>`;
+}
 function getFus(id){
   if(!projAtual.fusoes[id])projAtual.fusoes[id]={splitters:[],fusoes:[]};
   const F=projAtual.fusoes[id];
@@ -4066,6 +4094,8 @@ function renderFusao(){
   }
   const e=projAtual.elementos.find(x=>x.id===fsCaixa);
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
+  let POT={};try{if(fsPot)POT=potenciasDaCaixa(fsCaixa)}catch(err){POT={}}
+  {const b=document.getElementById('btn-fspot');if(b){b.textContent=fsPot?'⚡ Potência: ON':'⚡ Potência: OFF';b.classList.toggle('ativo',fsPot)}}
   // área cresce conforme os blocos são movidos/redimensionados
   // só coordenadas de verdade entram no cálculo: "pos" também guarda a lista de
   // painéis (__paineis), e sem esse filtro o viewBox saía como NaN
@@ -4081,16 +4111,16 @@ function renderFusao(){
     const b=pos['blk-'+pn.k];if(!b)return;
     const bw=b.bw;
     s+=`<g><rect class="cabo-bloco" x="${b.x}" y="${b.y}" width="${bw}" height="${b.h}" rx="10"/>
-      <rect class="blk-mover" x="${b.x}" y="${b.y}" width="${bw}" height="46" rx="10" onmousedown="fsIniciarDragBloco(event,'${pn.k}')"><title>Arraste para mover este bloco</title></rect>
+      <rect class="blk-mover" x="${b.x}" y="${b.y}" width="${bw}" height="46" rx="10" onpointerdown="fsIniciarDragBloco(event,'${pn.k}')" onmousedown="if(!window.PointerEvent)fsIniciarDragBloco(event,'${pn.k}')"><title>Arraste para mover este bloco</title></rect>
       <text class="cabo-titulo" x="${b.x+14}" y="${b.y+24}" style="pointer-events:none">${pn.tit.toUpperCase().slice(0,22)}</text>
       <text class="cabo-sub" x="${b.x+14}" y="${b.y+40}" style="pointer-events:none">${c.fo} FIBRAS · ${labelStatus(c.status)}</text>
       ${suf?`<g style="pointer-events:none"><rect x="${b.x+14}" y="${b.y+46}" width="62" height="14" rx="3" fill="rgba(255,138,60,.18)" stroke="rgba(255,138,60,.5)"/><text x="${b.x+45}" y="${b.y+56}" style="fill:#FF8A3C;font-size:9px;font-weight:700;text-anchor:middle;font-family:'DM Mono'">✂ SANGRIA</text></g>`:''}
-      <g class="blk-unlink" onmousedown="event.stopPropagation()" onclick="desvincularCabo('${c.id}')">
+      <g class="blk-unlink" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="desvincularCabo('${c.id}')">
         <rect x="${b.x+bw-30}" y="${b.y+10}" width="22" height="20" rx="5"/>
         <text x="${b.x+bw-19}" y="${b.y+24}">⛓</text>
         <title>Desvincular este cabo da caixa (remove também as fusões dele aqui)</title>
       </g>
-      <g class="blk-resize" onmousedown="fsIniciarResizeBloco(event,'${pn.k}')">
+      <g class="blk-resize" onpointerdown="fsIniciarResizeBloco(event,'${pn.k}')" onmousedown="if(!window.PointerEvent)fsIniciarResizeBloco(event,'${pn.k}')">
         <rect x="${b.x+bw-16}" y="${b.y+b.h-16}" width="14" height="14" rx="3"/>
         <path d="M ${b.x+bw-13} ${b.y+b.h-4} L ${b.x+bw-4} ${b.y+b.h-13} M ${b.x+bw-8} ${b.y+b.h-4} L ${b.x+bw-4} ${b.y+b.h-8}"/>
         <title>Arraste para ajustar largura e espaçamento das fibras</title>
@@ -4116,7 +4146,7 @@ function renderFusao(){
       const _nf=getIdFibra(c.id,f,suf);
       const _dica='Fibra '+f+' — '+ABNT[(f-1)%12].nome
         +(_nf?('\n🏷️ '+_nf.label+(_nf.obs?'\n'+_nf.obs:'')+(_nf._herdado?'\n(vem do trecho anterior — edite para dar nome próprio a partir daqui)':'')):'')
-        +'\n(botão direito para identificar · arraste para reposicionar)';
+        +'\n(botão direito para identificar · arraste para reposicionar · duplo clique volta ao lugar · Shift trava o eixo)';
       // A etiqueta é desenhada ANTES do ponto: assim o ponto fica por cima e
       // continua sempre agarrável, mesmo com a identificação ao lado.
       if(_nf&&_nf.label){
@@ -4129,7 +4159,7 @@ function renderFusao(){
           <title>${_esc(_dica)}</title>
         </g>`;
       }
-      s+=`<g onmousedown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" style="cursor:grab">
+      s+=`<g data-pt="${fk}" onpointerdown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onmousedown="if(!window.PointerEvent)fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" ondblclick="fsResetarFibra(event,'${c.id}','${suf}',${f})" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" onmouseenter="fsDestacar('${fk}')" onmouseleave="fsDestacar(null)" style="cursor:grab">
         <circle cx="${p.x}" cy="${p.y}" r="11" fill="transparent"/>
         <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
         <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}" style="pointer-events:none">${f}</text>
@@ -4137,10 +4167,18 @@ function renderFusao(){
       </g>`;
       // potência medida registrada nesta ponta
       {const _mk=F.medicoes&&F.medicoes[fk];
+       const dir=b.lado==='esq'?1:-1;
        if(_mk){
-         const dir=b.lado==='esq'?1:-1;
          s+=`<g style="pointer-events:none"><rect x="${p.x+dir*11-(dir<0?46:0)}" y="${p.y-7}" width="46" height="14" rx="4" fill="#11151C" stroke="#5B9BFF" stroke-width="1"/>`
            +`<text x="${p.x+dir*11+(dir<0?-23:23)}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Mono" fill="#8FBEFF">${(+_mk.dbm).toFixed(2)}</text></g>`;
+       }
+       const _pj=POT['fib-'+c.id+'-'+f];
+       if(_pj&&!(_nf&&_nf.label&&!_mk)){
+         const _dv=_mk?((+_mk.dbm)-_pj.pot):null;
+         s+=_etqPot(p.x+(_mk?dir*50:0),p.y,dir,_pj,_dv!=null?('\nMedido '+(+_mk.dbm).toFixed(2)+' · desvio '+(_dv>0?'+':'')+_dv.toFixed(2)+' dB'):'');
+       }else if(_pj){
+         // fibra com etiqueta de identificação: potência vai no tooltip da etiqueta (sem sobrepor)
+         s+=_etqPot(p.x+dir*(Math.min(126,10+String(_nf.label).length*5.8)+4),p.y,dir,_pj,'');
        }}
     }
     s+='</g>';
@@ -4168,17 +4206,25 @@ function renderFusao(){
     let txt='';   // camada de textos, emitida depois do grupo
 
     s+=`<g class="splitter-shape${selSp}" ${tr}>`;
-    s+=`<g onmousedown="fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">`;
+    s+=`<g onpointerdown="fsIniciarDrag(event,'${sp.id}')" onmousedown="if(!window.PointerEvent)fsIniciarDrag(event,'${sp.id}')" onclick="fsSelecionarSplitter(event,'${sp.id}')">`;
     s+=`<line x1="${sp.x-14}" y1="${cyIn}" x2="${sp.x}" y2="${cyIn}" stroke="#7A8494" stroke-width="2"/>`;
     s+=`<polygon class="splitter-body${des?' des':''}" points="${sp.x},${cyIn} ${sp.x+W},${sp.y} ${sp.x+W},${sp.y+h}"/>`;
     s+=`</g>`;
-    s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x-14}" cy="${cyIn}" r="5.5" fill="#E2E0DB" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
+    s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x-14}" cy="${cyIn}" r="5.5" fill="#E2E0DB" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
 
     // rótulos do splitter, posicionados já em coordenada final
     // a perda fica no tooltip e no orçamento óptico — no desenho só polui
     const pLbl=P(sp.x+W/2, sp.y+h+18), pX=P(sp.x+W/2, sp.y-8);
     txt+=`<text class="splitter-lbl-big" x="${pLbl.x.toFixed(1)}" y="${pLbl.y.toFixed(1)}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}${sp.pernasCor?' · ABNT':''}</text>`;
-    txt+=`<text class="splitter-lbl" x="${pX.x.toFixed(1)}" y="${pX.y.toFixed(1)}" style="fill:var(--danger);cursor:pointer;pointer-events:auto" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
+    {const _pi=POT['sp-'+sp.id+'-0'], _po=POT['sp-'+sp.id+'-*'];
+     if(_pi||_po){
+       const pP=P(sp.x+W/2, sp.y+h+32);
+       txt+=`<text class="splitter-lbl" x="${pP.x.toFixed(1)}" y="${pP.y.toFixed(1)}" style="font-family:'DM Mono';font-size:8.5px">`
+         +(_pi?`<tspan fill="${_corPot(_pi.pot)}">${_pi.real?'':'≈'}${_pi.pot.toFixed(2)}</tspan> → `:'')
+         +(_po?`<tspan fill="${_corPot(_po.pot)}">${_po.real?'':'≈'}${_po.pot.toFixed(2)} dBm</tspan>`:'')
+         +`<title>Potência projetada: entrada ${_pi?_pi.pot.toFixed(2):'—'} · saída ${_po?_po.pot.toFixed(2):'—'} dBm${(_pi||_po).real?' (TX real do SFP)':' (TX estimado)'}</title></text>`;
+     }}
+    txt+=`<text class="splitter-lbl" x="${pX.x.toFixed(1)}" y="${pX.y.toFixed(1)}" style="fill:var(--danger);cursor:pointer;pointer-events:auto" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
 
     for(let p=1;p<=n;p++){
       const perda=perdaSpPorta(sp,p);
@@ -4190,7 +4236,7 @@ function renderFusao(){
         : (des?(p===1?'#D4A027':'#2E9E63'):'#2E9E63');
       const abaClara=sp.pernasCor&&['#FFFFFF','#F2E205','#FFD400','#00E5FF','#FF7A00'].includes((corAba||'').toUpperCase());
       const lblP=(des?(pcts[p-1]+'% · '):('Saída '+p+' · '))+'−'+perda.toFixed(1)+'dB · '+descTerminacaoSp(sp);
-      s+=`<g class="sp-aba${sel?' sel':''}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})">
+      s+=`<g class="sp-aba${sel?' sel':''}" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:${p}})">
         <rect x="${sp.x+W-15}" y="${py-8}" width="15" height="16" rx="2.5" fill="${corAba}"/>
         <title>${lblP}</title>
       </g>`;
@@ -4203,6 +4249,9 @@ function renderFusao(){
         const pp=P(sp.x+W+(conec?15:6), py);
         txt+=`<text class="splitter-lbl" x="${pp.x.toFixed(1)}" y="${(pp.y+3).toFixed(1)}" style="font-size:8.5px;text-anchor:start">${pcts[p-1]}%</text>`;
       }
+      {const _pp=POT['sp-'+sp.id+'-'+p];
+       if(_pp){const pq=P(sp.x+W+(conec?15:6)+(des?26:0), py);
+         txt+=`<text class="splitter-lbl" x="${pq.x.toFixed(1)}" y="${(pq.y+3).toFixed(1)}" style="font-family:'DM Mono';font-size:8px;text-anchor:start" fill="${_corPot(_pp.pot)}">${_pp.real?'':'≈'}${_pp.pot.toFixed(2)}<title>Saída ${p}: ${_pp.pot.toFixed(2)} dBm projetados → ${_pp.ctoNome||''}</title></text>`}}
     }
     s+='</g>';
     // textos não capturam clique, exceto o ✕ (que tem o seu próprio)
@@ -4215,7 +4264,7 @@ function renderFusao(){
       const nBand=Math.max(1,d.bandejas||Math.ceil(d.portas/porBand));
       const altBand=porBand*16+34;
       const P=getPop(fsCaixa);
-      s+=`<g onmousedown="fsIniciarDragDio(event,'${d.id}')">`;
+      s+=`<g onpointerdown="fsIniciarDragDio(event,'${d.id}')" onmousedown="if(!window.PointerEvent)fsIniciarDragDio(event,'${d.id}')">`;
       for(let b=0;b<nBand;b++){
         const topo=d.fy+b*altBand;
         const nesta=Math.min(porBand,d.portas-b*porBand);
@@ -4231,7 +4280,11 @@ function renderFusao(){
           const p=b*porBand+i+1;
           const cy=topo+42+i*16-12;
           const pat=P.patches.find(x=>x.dio===d.id&&x.dioPorta===p);
-          s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy+12}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Bandeja ${b+1} · porta ${i+1}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].label)?' · '+d.rotulos[p].label:''}${pat?' · patch PON '+pat.oltPorta:''}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].obs)?'\n'+d.rotulos[p].obs:''}</title></circle>
+          const _oo=pat?P.olts.find(x=>x.id===pat.olt):null, _rr=_oo?txPortaOLT(_oo,pat.oltPorta):null;
+          const _sfpTxt=_rr?('\n'+(_rr.sfp?_rr.sfp.nome:'sem SFP')+(_rr.tx!=null?' · TX '+(_rr.real?'✔':'≈')+' '+_rr.tx.toFixed(2)+' dBm':' · não transmite')):'';
+          const _pd=POT['dio-'+d.id+'-'+p];
+          if(_pd)s+=_etqPot(d.fx+150-52-11+6,cy+12,1,_pd,'');
+          s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy+12}" r="5" fill="${_rr&&_rr.fonte==='desativada'?'#F87168':(pat?(_rr&&_rr.sfp?'#3CB371':'#E0913C'):'#8B90A0')}" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Bandeja ${b+1} · porta ${i+1}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].label)?' · '+d.rotulos[p].label:''}${pat?' · patch PON '+pat.oltPorta+' ('+(_oo?_oo.nome:'OLT')+')':''}${_sfpTxt}${_pd?'\nSai do DIO: '+_pd.pot.toFixed(2)+' dBm':''}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].obs)?'\n'+d.rotulos[p].obs:''}</title></circle>
           <text class="cabo-sub" x="${d.fx+12}" y="${cy+15.5}" style="font-family:'DM Mono';font-size:9px">${i+1}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].label)?' '+String(d.rotulos[p].label).slice(0,13):(pat?' ⇄ PON '+pat.oltPorta:'')}</text>`;
         }
       }
@@ -4266,7 +4319,7 @@ function renderFusao(){
     const _corLinha=_ruim?'#FF3B30':cor;
     const _tit=(_med?('Emenda medida: '+(+fu.perdaReal).toFixed(2)+' dB'+(_ruim?' ⚠️ acima de '+LIMITE_FUSAO_DB.toFixed(2)+' dB':' ✔')):('Perda estimada: '+PERDAS.fusao.toFixed(2)+' dB (não medida)'))
       +(fu.obs?('\n💬 '+fu.obs):'')+'\n(clique para status, perda real e comentário)';
-    s+=`<path class="fusao-linha${_ruim?' fusao-ruim':''}" stroke="${_corLinha}" d="${dPath}" onmousedown="fsIniciarDragCurva(event,${i})" onclick="clicarFusao(event,${i})"><title>${_tit.replace(/"/g,'&quot;')}\n(arraste para desviar o traçado)</title></path>`;
+    s+=`<path class="fusao-linha${_ruim?' fusao-ruim':''}" data-a="${ptKey(fu.a)}" data-b="${ptKey(fu.b)}" stroke="${_corLinha}" d="${dPath}" onpointerdown="fsIniciarDragCurva(event,${i})" onmousedown="if(!window.PointerEvent)fsIniciarDragCurva(event,${i})" onclick="clicarFusao(event,${i})" onmouseenter="fsDestacarFusao(${i})" onmouseleave="fsDestacar(null)"><title>${_tit.replace(/"/g,'&quot;')}\n(arraste para desviar o traçado)</title></path>`;
     // selo no meio da emenda: valor medido e/ou marca de comentário
     if(_med||fu.obs){
       const mx=(ax+bx)/2, my=(ay+by)/2;
@@ -4296,6 +4349,7 @@ function renderFusao(){
 }
 function fsClique(ev,p){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
+  if(_fsCliqueAposArrasto())return;
   // modo medição: clicar numa ponta abre o registro de potência em vez de fundir
   if(modoMedir){abrirMedicaoPonto(ptKey(p),rotuloPonto(p));return}
   // modo identificar: clicar numa fibra abre a etiqueta
@@ -4600,6 +4654,7 @@ function removerMedicao(chave){
 }
 function clicarFusao(ev,i){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
+  if(_fsCliqueAposArrasto())return;
   const m=document.getElementById('ctx-menu');
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
   m.innerHTML=['projeto','nao-implantado','implantado','certificado'].map(st=>
@@ -4673,6 +4728,7 @@ function removerSplitter(ev,id){
   salvar();renderFusao();
 }
 function fsSelecionarSplitter(ev,id){
+  if(_fsCliqueAposArrasto())return;
   if(ev&&ev.stopPropagation)ev.stopPropagation();
   fsSelSp=(fsSelSp===id?null:id);
   renderFusao();
@@ -4722,13 +4778,13 @@ function renderFsToolbar(){
     `<button class="btn sm" title="Concluir" onclick="fsSelSp=null;renderFusao();renderFsToolbar()">✓</button>`;
 }
 function fsIniciarDrag(ev,id){
-  const sp=getFus(fsCaixa).splitters.find(s=>s.id===id);
-  const svg=document.getElementById('fs-svg');
-  const pt0=svgPoint(svg,ev);
-  fsDrag={sp,dx:pt0.x-sp.x,dy:pt0.y-sp.y};
-  const mv=e=>{const p=svgPoint(svg,e);sp.x=Math.round(p.x-fsDrag.dx);sp.y=Math.round(p.y-fsDrag.dy);renderFusao()};
-  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);fsDrag=null;salvar()};
-  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  const sp=getFus(fsCaixa).splitters.find(s=>s.id===id);if(!sp)return;
+  const x0=sp.x,y0=sp.y;
+  fsDrag={sp};
+  _fsArrasto(ev,{
+    onMove:(dx,dy)=>{sp.x=Math.round(x0+dx);sp.y=Math.round(y0+dy);renderFusao()},
+    onEnd:(moveu)=>{fsDrag=null;if(moveu)salvar()}
+  });
 }
 function _blocoOv(chave){
   const F=getFus(fsCaixa); if(!F.blocos)F.blocos={};
@@ -4740,29 +4796,22 @@ function _blocoOv(chave){
   return F.blocos[chave];
 }
 function fsIniciarDragBloco(ev,caboId){
-  ev.stopPropagation();
   const o=_blocoOv(caboId);
-  const svg=document.getElementById('fs-svg');
-  const p0=svgPoint(svg,ev);
-  const dx=p0.x-o.x, dy=p0.y-o.y;
-  const mv=e=>{const p=svgPoint(svg,e);o.x=Math.round(p.x-dx);o.y=Math.max(10,Math.round(p.y-dy));renderFusao()};
-  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);salvar()};
-  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  const x0=o.x,y0=o.y;
+  _fsArrasto(ev,{
+    onMove:(dx,dy)=>{o.x=Math.round(x0+dx);o.y=Math.max(10,Math.round(y0+dy));renderFusao()},
+    onEnd:(moveu)=>{if(moveu)salvar()}
+  });
 }
 function fsIniciarResizeBloco(ev,caboId){
-  ev.stopPropagation();
   const o=_blocoOv(caboId);
   const c=projAtual.cabos.find(x=>x.id===caboId.replace(/-[es]$/,''));
   const nf=Math.min((c?c.fo:12),36);
-  const svg=document.getElementById('fs-svg');
-  const mv=e=>{
-    const p=svgPoint(svg,e);
-    o.w=Math.max(130,Math.min(380,Math.round(p.x-o.x)));
-    o.esp=Math.max(12,Math.min(44,Math.round((p.y-o.y-76)/nf)));
-    renderFusao();
-  };
-  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);salvar()};
-  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  const w0=o.w||180,e0=o.esp||20;
+  _fsArrasto(ev,{eixo:false,limiar:1,
+    onMove:(dx,dy)=>{o.w=Math.max(130,Math.min(380,Math.round(w0+dx)));o.esp=Math.max(12,Math.min(44,Math.round(e0+dy/nf)));renderFusao()},
+    onEnd:(moveu)=>{if(moveu)salvar()}
+  });
 }
 function fsReorganizarBlocos(){
   const F=getFus(fsCaixa);
@@ -4770,6 +4819,44 @@ function fsReorganizarBlocos(){
   if(!confirm('Reorganizar os blocos de cabo na posição automática?'))return;
   F.blocos={};salvar();renderFusao();toast('Blocos reorganizados');
 }
+/* ===== Arrasto genérico do diagrama =====
+   Um único mecanismo para fibra, splitter, bloco, DIO e curva:
+   - preventDefault no início: sem isso o navegador inicia seleção de texto /
+     drag nativo no SVG e "rouba" os mousemoves seguintes (era o motivo de só a
+     primeira fibra responder em alguns casos);
+   - pointer events com captura quando disponíveis (mouse, caneta e toque);
+   - o clique continua valendo: o arrasto só assume após 4 px, e quando assume
+     o clique que o navegador dispara ao soltar é ignorado (_fsSuprimirClique). */
+let _fsSuprimirClique=0;
+function _fsArrasto(ev,h){
+  if(ev.button!==undefined&&ev.button!==0)return false;
+  if(ev.preventDefault)ev.preventDefault();
+  if(ev.stopPropagation)ev.stopPropagation();
+  const svg=document.getElementById('fs-svg');
+  const ini=svgPoint(svg,ev);
+  let moveu=false;
+  const usaPointer=!!window.PointerEvent&&ev.pointerId!==undefined;
+  const mv=e=>{
+    const p=svgPoint(svg,e);
+    let dx=p.x-ini.x, dy=p.y-ini.y;
+    if(!moveu&&Math.hypot(dx,dy)<(h.limiar??4))return;
+    if(!moveu){moveu=true;svg.classList.add('arrastando');if(h.onStart)h.onStart()}
+    if(e.shiftKey&&h.eixo!==false){if(Math.abs(dx)>Math.abs(dy))dy=0;else dx=0}
+    h.onMove(dx,dy,e);
+  };
+  const up=()=>{
+    if(usaPointer){document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up)}
+    else{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up)}
+    svg.classList.remove('arrastando');
+    _fsSuprimirClique=moveu?Date.now():0;
+    if(h.onEnd)h.onEnd(moveu);
+  };
+  if(usaPointer){document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',up)}
+  else{document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}
+  return true;
+}
+function _fsCliqueAposArrasto(){return _fsSuprimirClique&&(Date.now()-_fsSuprimirClique)<350}
+
 /* ===== ARRASTAR A FIBRA =====
    Em caixas cheias as fusões se cruzam e ficam ilegíveis. Aqui a ponta da fibra
    pode ser puxada para cima ou para baixo, desembaraçando o diagrama.
@@ -4777,32 +4864,30 @@ function fsReorganizarBlocos(){
    de alguns pixels de movimento. */
 let _dragFibra=null;
 function fsIniciarDragFibra(ev,caboId,suf,fib){
-  ev.stopPropagation();
-  if(modoMedir)return;                       // no modo medição o clique é outro
-  const svg=document.getElementById('fs-svg');
+  if(modoMedir||modoNota){if(ev.stopPropagation)ev.stopPropagation();return}   // nesses modos o clique é outro
   const F=getFus(fsCaixa);
   if(!F.fibras)F.fibras={};
   const chave=caboId+suf+'-'+fib;
-  const base=F.fibras[chave]||{dx:0,dy:0};
-  const ini=svgPoint(svg,ev);
-  _dragFibra={chave,base:{...base},ini,moveu:false};
-  const mover=(e)=>{
-    if(!_dragFibra)return;
-    const p=svgPoint(svg,e);
-    const dx=p.x-_dragFibra.ini.x, dy=p.y-_dragFibra.ini.y;
-    if(!_dragFibra.moveu&&Math.hypot(dx,dy)<4)return;   // ainda pode ser um clique
-    _dragFibra.moveu=true;
-    F.fibras[_dragFibra.chave]={dx:_dragFibra.base.dx+dx, dy:_dragFibra.base.dy+dy};
-    renderFusao();
-  };
-  const soltar=()=>{
-    document.removeEventListener('mousemove',mover);
-    document.removeEventListener('mouseup',soltar);
-    if(_dragFibra&&_dragFibra.moveu){salvar();fsSel=null;renderFusao()}
-    _dragFibra=null;
-  };
-  document.addEventListener('mousemove',mover);
-  document.addEventListener('mouseup',soltar);
+  const base=Object.assign({dx:0,dy:0},F.fibras[chave]||{});
+  _dragFibra={chave};
+  _fsArrasto(ev,{
+    onMove:(dx,dy)=>{F.fibras[chave]={dx:base.dx+dx,dy:base.dy+dy};renderFusao()},
+    onEnd:(moveu)=>{
+      _dragFibra=null;
+      if(moveu){
+        const o=F.fibras[chave];
+        if(o&&Math.abs(o.dx)<3&&Math.abs(o.dy)<3)delete F.fibras[chave];   // voltou pra casa: limpa
+        salvar();fsSel=null;renderFusao();
+      }
+    }
+  });
+}
+/* duplo clique na fibra: volta à posição original */
+function fsResetarFibra(ev,caboId,suf,fib){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  const F=getFus(fsCaixa);
+  const chave=caboId+suf+'-'+fib;
+  if(F.fibras&&F.fibras[chave]){delete F.fibras[chave];salvar();renderFusao();toast('Fibra '+fib+' de volta à posição original')}
 }
 /* devolve todas as fibras às posições originais */
 function fsResetarFibras(){
@@ -4816,28 +4901,13 @@ function fsResetarFibras(){
    Como no arrasto da fibra, o clique continua funcionando: o arrasto só assume
    depois de alguns pixels de movimento. */
 function fsIniciarDragCurva(ev,i){
-  ev.stopPropagation();
-  const svg=document.getElementById('fs-svg');
   const F=getFus(fsCaixa);
   if(!F.curvas)F.curvas={};
-  const base=F.curvas[i]||{dx:0,dy:0};
-  const ini=svgPoint(svg,ev);
-  let moveu=false;
-  const mover=(e)=>{
-    const p=svgPoint(svg,e);
-    const dx=p.x-ini.x, dy=p.y-ini.y;
-    if(!moveu&&Math.hypot(dx,dy)<4)return;
-    moveu=true;
-    F.curvas[i]={dx:base.dx+dx, dy:base.dy+dy};
-    renderFusao();
-  };
-  const soltar=()=>{
-    document.removeEventListener('mousemove',mover);
-    document.removeEventListener('mouseup',soltar);
-    if(moveu){salvar();renderFusao();toast('Traçado ajustado')}
-  };
-  document.addEventListener('mousemove',mover);
-  document.addEventListener('mouseup',soltar);
+  const base=Object.assign({dx:0,dy:0},F.curvas[i]||{});
+  _fsArrasto(ev,{
+    onMove:(dx,dy)=>{F.curvas[i]={dx:base.dx+dx,dy:base.dy+dy};renderFusao()},
+    onEnd:(moveu)=>{if(moveu){const o=F.curvas[i];if(o&&Math.abs(o.dx)<3&&Math.abs(o.dy)<3)delete F.curvas[i];salvar();renderFusao();toast('Traçado ajustado')}}
+  });
 }
 /* devolve fibras e traçados às posições originais */
 function fsResetarTracados(){
@@ -4849,13 +4919,52 @@ function fsResetarTracados(){
   toast('Traçados restaurados');
 }
 function fsIniciarDragDio(ev,id){
-  const d=getPop(fsCaixa).dios.find(x=>x.id===id);
+  const d=getPop(fsCaixa).dios.find(x=>x.id===id);if(!d)return;
+  const x0=d.fx,y0=d.fy;
+  _fsArrasto(ev,{
+    onMove:(dx,dy)=>{d.fx=Math.round(x0+dx);d.fy=Math.round(y0+dy);renderFusao()},
+    onEnd:(moveu)=>{if(moveu)salvar()}
+  });
+}
+/* ===== Destaque ao passar o mouse: mostra a fusão ligada àquela ponta ===== */
+function fsDestacar(k){
+  const svg=document.getElementById('fs-svg');if(!svg)return;
+  svg.querySelectorAll('.ligada').forEach(el=>el.classList.remove('ligada'));
+  if(!k)return;
+  svg.querySelectorAll('.fusao-linha').forEach(pth=>{
+    if(pth.dataset.a===k||pth.dataset.b===k){
+      pth.classList.add('ligada');
+      const outro=pth.dataset.a===k?pth.dataset.b:pth.dataset.a;
+      const g=svg.querySelector('[data-pt="'+outro+'"] .fibra-ponto');if(g)g.classList.add('ligada');
+    }
+  });
+}
+function fsDestacarFusao(i){
+  const F=getFus(fsCaixa);const fu=F.fusoes[i];if(!fu)return;
+  const svg=document.getElementById('fs-svg');if(!svg)return;
+  svg.querySelectorAll('.ligada').forEach(el=>el.classList.remove('ligada'));
+  [ptKey(fu.a),ptKey(fu.b)].forEach(k=>{const g=svg.querySelector('[data-pt="'+k+'"] .fibra-ponto');if(g)g.classList.add('ligada')});
+  const pth=svg.querySelectorAll('.fusao-linha')[i];if(pth)pth.classList.add('ligada');
+}
+/* ===== Pan: arrastar o fundo vazio rola o diagrama ===== */
+function fsIniciarPan(ev){
+  if(ev.target&&ev.target.id!=='fs-svg')return;       // só no fundo
+  if(ev.button!==undefined&&ev.button!==0)return;
+  const wrap=document.getElementById('fs-canvas-wrap');if(!wrap)return;
+  const sl=wrap.scrollLeft,st=wrap.scrollTop,x0=ev.clientX,y0=ev.clientY;
   const svg=document.getElementById('fs-svg');
-  const p0=svgPoint(svg,ev);
-  const dx=p0.x-d.fx,dy=p0.y-d.fy;
-  const mv=e=>{const p=svgPoint(svg,e);d.fx=Math.round(p.x-dx);d.fy=Math.round(p.y-dy);renderFusao()};
-  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);salvar()};
-  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  let moveu=false;
+  const usaPointer=!!window.PointerEvent&&ev.pointerId!==undefined;
+  const mv=e=>{const dx=e.clientX-x0,dy=e.clientY-y0;if(!moveu&&Math.hypot(dx,dy)<4)return;moveu=true;svg.classList.add('arrastando');wrap.scrollLeft=sl-dx;wrap.scrollTop=st-dy};
+  const up=()=>{
+    if(usaPointer){document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up)}
+    else{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up)}
+    svg.classList.remove('arrastando');
+    if(moveu)_fsSuprimirClique=Date.now();
+    else if(fsSel||fsSelSp){fsSel=null;fsSelSp=null;renderFusao()}   // clique no vazio limpa a seleção
+  };
+  if(usaPointer){document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up)}
+  else{document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}
 }
 function svgPoint(svg,ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;return p.matrixTransform(svg.getScreenCTM().inverse())}
 /* troca as variáveis de cor por valores fixos (fora do app elas não existem) */
@@ -5954,7 +6063,7 @@ function calcOrcamento(ctoId){
   const fEntrada=F.fusoes.find(f=>ptKey(f.a)==='sp-'+sp.id+'-0'||ptKey(f.b)==='sp-'+sp.id+'-0');
   const catF=splitCatDe(sp);
   const dbF=perdaSpMax(sp)+perdaTerminacaoSp(sp);
-  passos.push({nome:rotuloSp(sp)+(spPolimento(sp)?' SC/'+spPolimento(sp):' p/ fusão')+(catF&&catF.tipo==='des'?' DGO':' Balanceado'),sub:'Splitter · '+nomeEl(ctoId)+' · saída '+descTerminacaoSp(sp)+(catF&&catF.tipo==='des'?' (pior saída)':''),db:dbF,caixa:ctoId,etapa:'splitter'});
+  passos.push({nome:rotuloSp(sp)+(spPolimento(sp)?' SC/'+spPolimento(sp):' p/ fusão')+(catF&&catF.tipo==='des'?' DGO':' Balanceado'),sub:'Splitter · '+nomeEl(ctoId)+' · saída '+descTerminacaoSp(sp)+(catF&&catF.tipo==='des'?' (pior saída)':''),db:dbF,caixa:ctoId,etapa:'splitter',sp:sp.id});
   total+=dbF;
   if(!fEntrada){aviso.push('Entrada do splitter sem fusão — caminho até o POP incompleto.')}
   else{
@@ -5983,7 +6092,7 @@ function calcOrcamento(ctoId){
           const other=ehMinha(fdio.a)?fdio.b:fdio.a;
           if(other.t==='dio'){
             const d=P.dios.find(x=>x.id===other.dio);
-            passos.push({nome:(d?d.nome:'DIO')+' · '+(d?dioRotuloPorta(d,other.porta):'porta '+other.porta),sub:'Conector DIO · '+elOutra.nome,db:PERDAS.conector,caixa:outra,etapa:'dio'});total+=PERDAS.conector;
+            passos.push({nome:(d?d.nome:'DIO')+' · '+(d?dioRotuloPorta(d,other.porta):'porta '+other.porta),sub:'Conector DIO · '+elOutra.nome,db:PERDAS.conector,caixa:outra,etapa:'dio',dio:other.dio,porta:other.porta});total+=PERDAS.conector;
             const pat=P.patches.find(p=>p.dio===other.dio&&p.dioPorta===other.porta);
             if(pat){
               const o=P.olts.find(x=>x.id===pat.olt);
@@ -6020,7 +6129,7 @@ function calcOrcamento(ctoId){
         const sp2=FO.splitters.find(s=>s.id===prox.sp);
         const cat2=splitCatDe(sp2);
         const db2=perdaSpPorta(sp2,prox.porta||1);
-        passos.push({nome:rotuloSp(sp2)+(cat2&&cat2.tipo==='des'?' DGO · saída '+(prox.porta||1):' Balanceado'),sub:'Splitter intermediário · '+elOutra.nome,db:db2,caixa:outra,etapa:'splitter'});
+        passos.push({nome:rotuloSp(sp2)+(cat2&&cat2.tipo==='des'?' DGO · saída '+(prox.porta||1):' Balanceado'),sub:'Splitter intermediário · '+elOutra.nome,db:db2,caixa:outra,etapa:'splitter',sp:sp2.id,porta:prox.porta||1});
         total+=db2;
         const f0=FO.fusoes.find(f=>ptKey(f.a)==='sp-'+sp2.id+'-0'||ptKey(f.b)==='sp-'+sp2.id+'-0');
         if(!f0){aviso.push('Splitter em '+elOutra.nome+' sem fusão na entrada.');break}
@@ -6074,6 +6183,31 @@ function sinaisProjetados(){
   return _sinalCache;
 }
 function _corPot(v){return _corRx(v)}
+/* Potência projetada em cada ponto conectável de uma caixa (usada no diagrama de fusão):
+   fibras (chave 'fib-<cabo>-<n>'), saídas de splitter ('sp-<id>-<porta>', 0 = entrada)
+   e portas de DIO ('dio-<id>-<porta>'). Cada valor traz o pior caso entre as CTOs. */
+function potenciasDaCaixa(caixaId){
+  const out={};
+  const put=(k,pot,info)=>{if(pot==null||isNaN(pot))return;if(!out[k]||pot<out[k].pot)out[k]=Object.assign({pot},info)};
+  sinaisProjetados().porCto.forEach((r,ctoId)=>{
+    const real=r.txInfo.real, ctoNome=nomeEl(ctoId);
+    r.passos.forEach(ps=>{
+      if(ps.etapa==='cabo'){
+        const cabo=projAtual.cabos.find(c=>c.id===ps.cabo);if(!cabo)return;
+        const up=cabo.origemId===ps.chegaEm?cabo.destinoId:cabo.origemId;
+        if(ps.chegaEm===caixaId)put('fib-'+ps.cabo+'-'+ps.fib,ps.potOut,{real,ctoNome,dir:'chega'});
+        if(up===caixaId)put('fib-'+ps.cabo+'-'+ps.fib,ps.potIn,{real,ctoNome,dir:'sai'});
+      }else if(ps.caixa===caixaId&&ps.etapa==='splitter'&&ps.sp){
+        put('sp-'+ps.sp+'-0',ps.potIn,{real,ctoNome,dir:'entra'});
+        if(ps.porta)put('sp-'+ps.sp+'-'+ps.porta,ps.potOut,{real,ctoNome,dir:'sai'});
+        else put('sp-'+ps.sp+'-*',ps.potOut,{real,ctoNome,dir:'sai'});
+      }else if(ps.caixa===caixaId&&ps.etapa==='dio'&&ps.dio){
+        put('dio-'+ps.dio+'-'+ps.porta,ps.potOut,{real,ctoNome,dir:'sai',potIn:ps.potIn});
+      }
+    });
+  });
+  return out;
+}
 /* RX projetado na casa do cliente: saída da CTO − drop real (distância cliente⇄CTO) */
 function rxClienteProjetado(ctoId,lat,lng){
   const r=sinaisProjetados().porCto.get(ctoId);
