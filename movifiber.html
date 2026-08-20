@@ -182,6 +182,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .mnb-porta.uplink{background:rgba(123,46,216,.14);border-color:#7B2ED8;color:#B98AE8}
 .mnb-porta.sel{background:var(--accent);color:#08120C;border-color:var(--accent);font-weight:700;box-shadow:0 0 0 3px rgba(60,179,113,.3)}
 .mnb-porta.fibra{border-color:#5B9BFF}
+.mnb-porta.sfp{border-color:#7B2ED8;color:#B98AE8}
+.mnb-porta.desativada{border-color:#F87168;background:rgba(248,113,104,.12);color:#F87168;text-decoration:line-through}
 .mnb-band{margin-bottom:6px}
 .mnb-legenda{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:4px;flex-wrap:wrap}
 .mnb-legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
@@ -1413,11 +1415,29 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         </div>
         <div class="info-box" id="olt-tx-info" style="margin-top:6px"></div>
         <div class="info-box" id="olt-resumo">Total: 8 portas PON</div>
+        <div id="olt-acao-portas" style="margin-top:10px;display:none">
+          <button class="btn ghost sm" style="width:100%" onclick="fecharModal('md-olt');abrirPortasOLT(document.getElementById('olt-id').value)">⚡ Transceptores (SFP) e TX por porta</button>
+        </div>
       </div>
       <div class="md-foot">
         <button class="btn ghost" onclick="fecharModal('md-olt')">Cancelar</button>
         <button class="btn" onclick="salvarOLT()">Criar dispositivo</button>
       </div>
+    </div>
+  </div>
+
+  <!-- EDITOR: portas da OLT (SFP por porta PON / uplink) -->
+  <div class="modal-bg" id="md-olt-portas">
+    <div class="modal" style="max-width:760px">
+      <div class="md-head"><b id="op-titulo">⚡ Portas da OLT</b><button class="x" onclick="fecharModal('md-olt-portas')">✕</button></div>
+      <div class="md-body">
+        <div class="info-box" style="margin-bottom:8px">Cada porta PON tem o seu próprio transceptor. Instale o SFP (classe B+/C+/C++…) ou informe o TX medido com power meter — é essa potência que entra no orçamento óptico das CTOs, CEOs e do cliente. Porta sem SFP não transmite.</div>
+        <div style="display:flex;gap:14px">
+          <div style="width:230px;border-right:1px solid var(--border);padding-right:12px;max-height:380px;overflow:auto" id="op-lista"></div>
+          <div style="flex:1;min-width:0" id="op-det"></div>
+        </div>
+      </div>
+      <div class="md-foot"><button class="btn ghost" onclick="opAplicarTodas()">📋 Aplicar este SFP a todas as PON</button><button class="btn" onclick="fecharModal('md-olt-portas');renderPop()">💾 Concluir</button></div>
     </div>
   </div>
 
@@ -1523,7 +1543,8 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
   <div id="fs-foot" style="border-top:1px solid var(--border)">
     <div class="fs-leg">
       <span><i style="background:var(--accent)"></i>Patch óptico</span>
-      <span><i style="background:#7B8AA5"></i>Link de rede</span>
+      <span><i style="background:#B98AE8"></i>Link porta-a-porta</span>
+      <span><i style="background:#7B2ED8"></i>SFP instalado</span>
       <span><i style="background:#5B9BFF"></i>Porta com fibra fundida</span>
     </div>
     <div id="pop-hint">Clique numa porta da OLT e depois numa porta do DIO para criar o patch · arraste os equipamentos</div>
@@ -2199,8 +2220,19 @@ const CAT_PADRAO={
     {id:'ol-vsol16',nome:'OLT V-Sol 16 Portas',marca:'V-Sol',portas:16}
   ],
   catGbic:[
-    {id:'gb-cpp',nome:'GBIC C++ 20km',marca:'Genérico',tx:3.0,tipo:'C++'},
-    {id:'gb-bpp',nome:'GBIC B+ 20km',marca:'Genérico',tx:2.5,tipo:'B+'}
+    {id:'gb-cpp',nome:'GBIC C++ 20km',marca:'Genérico',tx:3.0,tipo:'C++',uso:'pon'},
+    {id:'gb-bpp',nome:'GBIC B+ 20km',marca:'Genérico',tx:2.5,tipo:'B+',uso:'pon'},
+    /* classes reais de PON (ITU-T G.984.2 / G.9807): TX típico e sensibilidade RX da OLT */
+    {id:'gb-gpon-bp',nome:'SFP GPON Classe B+',marca:'Genérico',tx:3.0,tipo:'B+',uso:'pon',rxMin:-28,alc:20},
+    {id:'gb-gpon-cp',nome:'SFP GPON Classe C+',marca:'Genérico',tx:5.0,tipo:'C+',uso:'pon',rxMin:-30,alc:20},
+    {id:'gb-gpon-cpp',nome:'SFP GPON Classe C++',marca:'Genérico',tx:7.0,tipo:'C++',uso:'pon',rxMin:-32,alc:20},
+    {id:'gb-xgs-n1',nome:'SFP+ XGS-PON N1',marca:'Genérico',tx:4.0,tipo:'N1',uso:'pon',rxMin:-27,alc:20},
+    {id:'gb-xgs-n2',nome:'SFP+ XGS-PON N2',marca:'Genérico',tx:6.0,tipo:'N2',uso:'pon',rxMin:-29,alc:20},
+    /* uplink / Ethernet óptico */
+    {id:'gb-1g-lx',nome:'SFP 1G LX 10km',marca:'Genérico',tx:-3.0,tipo:'1G-LX',uso:'eth',rxMin:-21,alc:10},
+    {id:'gb-10g-lr',nome:'SFP+ 10G LR 10km',marca:'Genérico',tx:-1.0,tipo:'10G-LR',uso:'eth',rxMin:-14,alc:10},
+    {id:'gb-10g-er',nome:'SFP+ 10G ER 40km',marca:'Genérico',tx:2.0,tipo:'10G-ER',uso:'eth',rxMin:-16,alc:40},
+    {id:'gb-bidi-1g',nome:'SFP BiDi 1G 20km',marca:'Genérico',tx:-2.0,tipo:'1G-BiDi',uso:'eth',rxMin:-23,alc:20}
   ],
   catConector:[
     {id:'cn-scapc',nome:'Conector SC/APC',perda:0.3},
@@ -2242,6 +2274,42 @@ function todasOLTs(){
 function nomeOLT(oltId){
   const x=todasOLTs().find(t=>t.olt.id===oltId);
   return x?(x.olt.nome+' ('+x.popNome+')'):null;
+}
+/* ===== Transceptores por porta da OLT =====
+   Cada porta PON tem o seu próprio SFP. O que a porta realmente entrega é:
+     1. TX medido com power meter naquela porta        (o.pon[p].tx)
+     2. TX de datasheet do SFP instalado naquela porta  (o.pon[p].sfp → catálogo)
+     3. TX informado no cadastro da OLT (legado)        (o.tx)
+   Sem nada disso a porta NÃO TRANSMITE de verdade — o cálculo cai no típico da
+   tecnologia só para não travar o projeto, mas avisa que é estimativa. */
+function sfpDe(id){return id?(CAT.catGbic.find(g=>g.id===id)||null):null}
+function oltPon(o,p){
+  if(!o.pon)o.pon={};
+  // migra o formato antigo txPorta[p] → pon[p].tx
+  if(o.txPorta){Object.keys(o.txPorta).forEach(k=>{if(!o.pon[k])o.pon[k]={};if(o.pon[k].tx==null)o.pon[k].tx=o.txPorta[k]});delete o.txPorta}
+  if(!o.pon[p])o.pon[p]={};
+  return o.pon[p];
+}
+function oltUp(o,u){if(!o.up)o.up={};if(!o.up[u])o.up[u]={};return o.up[u]}
+function txPortaOLT(o,p){
+  if(!o)return {tx:null,real:false,fonte:'nenhuma',rotulo:'sem OLT',ativa:true};
+  const c=p?oltPon(o,p):{};
+  const g=sfpDe(c.sfp);
+  const base={sfp:g,ativa:c.ativa!==false,label:c.label||''};
+  if(c.ativa===false)return Object.assign(base,{tx:null,real:false,fonte:'desativada',rotulo:'PON '+p+' desativada'});
+  if(c.tx!=null&&c.tx!==''&&!isNaN(+c.tx))return Object.assign(base,{tx:+c.tx,real:true,fonte:'porta',rotulo:'medido na PON '+p+' de '+o.nome+(g?' ('+g.nome+')':'')});
+  if(g)return Object.assign(base,{tx:+g.tx,real:true,fonte:'sfp',rotulo:'datasheet do '+g.nome+' na PON '+p+' de '+o.nome});
+  if(o.tx!=null&&o.tx!==''&&!isNaN(+o.tx))return Object.assign(base,{tx:+o.tx,real:true,fonte:'olt',rotulo:(o.txFonte==='medido'?'medido':'datasheet')+' do transceptor da '+o.nome+(p?' (sem SFP específico na PON '+p+')':'')});
+  return Object.assign(base,{tx:null,real:false,fonte:'sem-sfp',rotulo:'PON '+(p||'?')+' de '+o.nome+' sem SFP instalado'});
+}
+/* caixas (CTO/CEO) alimentadas por uma PON — vínculo direto ou pelo caminho óptico */
+function caixasDaPon(oltId,p){
+  const diretas=projAtual.elementos.filter(e=>['cto','ceo'].includes(e.tipo)&&e.oltId===oltId&&e.pon===p);
+  const set=new Map(diretas.map(e=>[e.id,e]));
+  sinaisProjetados().porCto.forEach((r,ctoId)=>{
+    if(r.olt&&r.olt.id===oltId&&r.pon===p){const e=projAtual.elementos.find(x=>x.id===ctoId);if(e)set.set(e.id,e)}
+  });
+  return [...set.values()];
 }
 const CORES_CABO={backbone:'#FFD400',distribuicao:'#2E86FF',drop:'#00D26A'};
 const ABNT=[
@@ -2300,6 +2368,7 @@ function _marcarProj(o,projId){
   return o;
 }
 function salvar(){
+  _sinalCache=null;
   if(projAtual){
     const s=snapProj();
     if(_estadoAtual!==null&&_estadoAtual!==s){
@@ -3011,6 +3080,7 @@ function redesenharSetasELuz(){
 }
 
 function renderTudo(){
+  _sinalCache=null;
   Object.values(layerRefs).forEach(l=>mapa.removeLayer(l));layerRefs={};
   setasCaboLayers.forEach(l=>mapa.removeLayer(l));setasCaboLayers=[];
   calcularEspalhamento();
@@ -3051,7 +3121,15 @@ function renderTudo(){
     const selo=nAp?`<div style="position:absolute;top:-4px;right:-6px;background:#E0913C;color:#0B0D11;border-radius:3px;font-size:7.5px;font-weight:700;padding:0 3px;line-height:1.5">≈</div>`:'';
     const ic=L.divIcon({className:'',html:`<div style="position:relative">${casa}${selo}</div>`,iconSize:[26,26],iconAnchor:[13,19]});
     const badge=c.online===null||c.online===undefined?'<span class="tag nao-implantado">status IXC não carregado</span>':(online?'<span class="tag" style="background:rgba(0,255,102,.18);color:#00FF66;font-weight:700;text-shadow:0 0 6px rgba(0,255,102,.6)">● ONLINE</span>':'<span class="tag" style="background:rgba(248,113,104,.15);color:#F87168">● OFFLINE</span>');
-    const rxTxt=c.rx!=null?`<div class="pp-meta mono">ONU RX <b style="color:${c.rx>=-27&&c.rx<=-8?'var(--accent)':'var(--danger)'}">${c.rx.toFixed(1)} dBm</b>${c.tx!=null?' · TX '+c.tx.toFixed(1):''}${c.onu?' · '+c.onu:''}</div>`:'';
+    let rxTxt=c.rx!=null?`<div class="pp-meta mono">ONU RX <b style="color:${c.rx>=-27&&c.rx<=-8?'var(--accent)':'var(--danger)'}">${c.rx.toFixed(1)} dBm</b>${c.tx!=null?' · TX '+c.tx.toFixed(1):''}${c.onu?' · '+c.onu:''}</div>`:'';
+    try{
+      const pj=c.caixaId?rxClienteProjetado(c.caixaId,c.semCoord?null:c.lat,c.semCoord?null:c.lng):null;
+      if(pj){
+        const dv=c.rx!=null?(c.rx-pj.rx):null;
+        rxTxt+=`<div class="pp-meta mono" style="font-size:11px">📡 Projetado na casa: <b style="color:${_corPot(pj.rx)}">${pj.rx.toFixed(2)} dBm</b> <span style="color:var(--text-dim)">(CTO ${pj.potCTO.toFixed(1)} − drop ${pj.drop.toFixed(2)} · ${pj.dist.toFixed(0)} m${pj.real?'':' · TX ≈'})</span>`
+          +(dv!=null?`<br>Desvio real − projetado: <b style="color:${Math.abs(dv)>3?'#F87168':'#5FE0A0'}">${(dv>0?'+':'')+dv.toFixed(2)} dB</b>${Math.abs(dv)>3?' ⚠️':''}`:'')+`</div>`;
+      }
+    }catch(err){}
     const mk=L.marker(posCliente('mo:'+c.id,c.lat,c.lng),{icon:ic}).bindPopup(`
       <div class="pp-title">🏠 ${c.nome}<span class="pp-badge">MOVIONE</span></div>
       <div class="pp-meta">${badge}${c.login?' · <span class="mono">'+c.login+'</span>':''}</div>
@@ -3170,9 +3248,11 @@ function popupElemento(e){
   if(e.tipo==='pop')acoes+=`<button class="btn sm ghost" onclick="abrirEditorPop('${e.id}')">🖥 Equipamentos</button>`;
   if(e.tipo==='cto')acoes+=`<button class="btn sm ghost" onclick="abrirListaPortas('${e.id}')">📋 Portas</button>`;
   if(['cto','ceo','pop'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirFusao('${e.id}')">🧵 Fusões</button><button class="btn sm ghost" onclick="abrirMapaConexoes('${e.id}')">🔗 Conexões</button>`;
+  let sinal='';
+  try{if(['cto','ceo','pop'].includes(e.tipo))sinal=(e.tipo==='pop'?htmlResumoPop(e):'')+htmlSinalCaixa(e)}catch(err){sinal=''}
   return `<div class="pp-title">${e.nome}<span class="pp-badge">${e.tipo.toUpperCase()}</span></div>
     <div class="pp-meta"><span class="tag ${e.status}">${labelStatus(e.status)}</span> · <span class="mono">${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}</span></div>
-    ${ocup}${posteInfo}<div class="pp-acoes">${acoes}</div>`;
+    ${ocup}${sinal}${posteInfo}<div class="pp-acoes">${acoes}</div>`;
 }
 function labelStatus(s){return{'projeto':'Em projeto','nao-implantado':'Não implantado','implantado':'Implantado','certificado':'Certificado'}[s]||s}
 function attProgresso(){
@@ -3357,11 +3437,11 @@ function _elRedeInfo(){
   const pon=document.getElementById('el-pon').value;
   const herda=!document.getElementById('el-tec').value;
   const oltObj=oltId?(todasOLTs().find(o=>o.olt.id===oltId)||{}).olt:null;
-  const txReal=(oltObj&&oltObj.txPorta&&pon&&oltObj.txPorta[pon]!=null)?+oltObj.txPorta[pon]
-              :((oltObj&&oltObj.tx!=null&&oltObj.tx!=='')?+oltObj.tx:null);
+  const _tp=oltObj?txPortaOLT(oltObj,pon):null;
+  const txReal=(_tp&&_tp.tx!=null)?_tp.tx:null;
   box.innerHTML=`<b>${T.nome}</b> · ${T.norma} · ${T.taxa}${herda?' <span style="color:var(--text-dim)">(herdada do projeto)</span>':''}<br>`
     +`TX da OLT: `+(txReal!=null
-        ?`<b style="color:#5FE0A0">✔ ${txReal.toFixed(2)} dBm</b> <span style="color:var(--text-dim)">(real)</span>`
+        ?`<b style="color:#5FE0A0">✔ ${txReal.toFixed(2)} dBm</b> <span style="color:var(--text-dim)">(${_tp.sfp?_tp.sfp.nome:'TX da OLT'})</span>`
         :`<b style="color:#E0913C">≈ ${T.tx.toFixed(1)} dBm</b> <span style="color:var(--text-dim)">(típico, não medido)</span>`)
     +` · sensibilidade da ONU: <b>${T.rxMin} a ${T.rxMax} dBm</b>`
     +(oltId?`<br>Alimentada por <b>${nomeOLT(oltId)||'OLT'}</b>${pon?' · PON <b>'+pon+'</b>':' <span style="color:var(--warn)">· defina a porta PON</span>'}`
@@ -5015,6 +5095,7 @@ function abrirModalOLT(id){
   document.getElementById('olt-nome').value=olt?olt.nome:'';
   document.getElementById('olt-tx').value=(olt&&olt.tx!=null&&olt.tx!=='')?olt.tx:'';
   document.getElementById('olt-tx-fonte').value=(olt&&olt.txFonte)||'datasheet';
+  const _ap=document.getElementById('olt-acao-portas');if(_ap)_ap.style.display=olt?'':'none';
   _oltTxInfo();
   _oltCalc();
   abrirModal('md-olt');
@@ -5024,7 +5105,7 @@ function _oltTxInfo(){
   const v=String(document.getElementById('olt-tx').value||'').trim().replace(',','.');
   const tecP=TECNOLOGIAS[cfg().tecnologia||'gpon']||TECNOLOGIAS.gpon;
   if(v===''||isNaN(+v)){
-    box.innerHTML=`Sem valor informado: os cálculos usarão o <b>típico de ${tecP.nome} (${tecP.tx.toFixed(1)} dBm)</b>, que é um valor de catálogo — <b>não medido</b>. Informar o TX real do transceptor torna o orçamento óptico confiável.`;
+    box.innerHTML=`TX padrão (portas sem SFP específico). Sem valor: os cálculos usarão o <b>típico de ${tecP.nome} (${tecP.tx.toFixed(1)} dBm)</b>, valor de catálogo — <b>não medido</b>. O ideal é instalar o SFP em cada porta PON (⚡ Portas) — aí a potência de cada porta é a real.`;
   }else{
     const d=(+v)-tecP.tx;
     box.innerHTML=`TX real <b>${(+v).toFixed(2)} dBm</b> · ${Math.abs(d)<0.05?'igual ao':(d>0?'<b>+'+d.toFixed(2)+' dB acima do</b>':'<b>'+d.toFixed(2)+' dB abaixo do</b>')} típico de ${tecP.nome}. Todas as caixas desta OLT passam a calcular com este valor.`;
@@ -5061,9 +5142,175 @@ function salvarOLT(){
     const o=P.olts.find(x=>x.id===id);
     Object.assign(o,{nome,slots,ppp,uplinks,portas,tx,txFonte});
   }else{
-    P.olts.push({id:uid('olt'),nome,slots,ppp,uplinks,portas,tx,txFonte,placas:Array.from({length:slots},(_,i)=>({slot:i+1,habilitado:true})),x:120+P.olts.length*30,y:120+P.olts.length*30});
+    P.olts.push({id:uid('olt'),nome,slots,ppp,uplinks,portas,tx,txFonte,pon:{},up:{},placas:Array.from({length:slots},(_,i)=>({slot:i+1,habilitado:true})),x:120+P.olts.length*30,y:120+P.olts.length*30});
+    toast('OLT criada — clique em ⚡ na OLT para instalar os SFPs de cada porta PON');
   }
   salvar();fecharModal('md-olt');renderPop();
+}
+
+/* ===== Portas da OLT: SFP + TX medido por porta PON / uplink ===== */
+let _opOlt=null,_opSel={t:'pon',n:1};
+function abrirPortasOLT(id){
+  const P=getPop(popAtual);
+  const o=P.olts.find(x=>x.id===id);
+  if(!o){toast('Salve a OLT antes de configurar as portas',true);return}
+  _opOlt=o.id;_opSel={t:'pon',n:1};
+  document.getElementById('op-titulo').textContent='⚡ Portas · '+o.nome;
+  opRenderLista();opRenderDet();
+  abrirModal('md-olt-portas');
+}
+function _opO(){return getPop(popAtual).olts.find(x=>x.id===_opOlt)}
+function opSel(t,n){_opSel={t,n};opRenderLista();opRenderDet()}
+function opRenderLista(){
+  const o=_opO();if(!o)return;
+  const P=getPop(popAtual);
+  const slots=o.slots||1,ppp=o.ppp||8,nP=o.portas||slots*ppp,upl=o.uplinks??0;
+  let html='';
+  for(let sl=1;sl<=slots;sl++){
+    html+=`<div class="dr-sec" style="margin:6px 0 4px">Slot ${sl}</div>`;
+    for(let i=1;i<=ppp;i++){
+      const p=(sl-1)*ppp+i;if(p>nP)break;
+      const r=txPortaOLT(o,p);
+      const pat=P.patches.find(x=>x.olt===o.id&&x.oltPorta===p);
+      const sel=_opSel.t==='pon'&&_opSel.n===p;
+      const cor=r.fonte==='desativada'?'#F87168':(pat?'#5FE0A0':(r.sfp?'#B98AE8':'var(--text-dim)'));
+      html+=`<div class="ap-porta ${sel?'sel':''}" onclick="opSel('pon',${p})" style="display:flex;justify-content:space-between;align-items:center">
+        <div><b>PON ${p}${r.label?' · '+String(r.label).slice(0,14):''}</b><small>${r.fonte==='desativada'?'⛔ desativada':(r.sfp?r.sfp.nome:'sem SFP')}${pat?' · patch':''}</small></div>
+        <span class="mono" style="font-size:11px;color:${cor}">${r.tx!=null?(r.real?'✔ ':'≈ ')+r.tx.toFixed(1):'—'}</span></div>`;
+    }
+  }
+  if(upl){html+=`<div class="dr-sec" style="margin:8px 0 4px">Uplinks SFP+</div>`;
+    for(let u=1;u<=upl;u++){
+      const c=oltUp(o,u),g=sfpDe(c.sfp);
+      const lk=P.links.find(l=>(l.a===o.id&&l.ap&&l.ap.tipo==='up'&&l.ap.n===u)||(l.b===o.id&&l.bp&&l.bp.tipo==='up'&&l.bp.n===u));
+      const sel=_opSel.t==='up'&&_opSel.n===u;
+      html+=`<div class="ap-porta ${sel?'sel':''}" onclick="opSel('up',${u})"><b>U${u}${c.label?' · '+String(c.label).slice(0,14):''}</b><small>${g?g.nome:'sem SFP'}${lk?' · conectado':''}</small></div>`;
+    }}
+  document.getElementById('op-lista').innerHTML=html;
+}
+function _opSfpOptions(sel,uso){
+  const lst=CAT.catGbic.slice().sort((a,b)=>((a.uso||'pon')===uso?0:1)-((b.uso||'pon')===uso?0:1));
+  return '<option value="">— sem SFP instalado —</option>'+lst.map(g=>`<option value="${g.id}" ${sel===g.id?'selected':''}>${g.nome} (${g.tx>=0?'+':''}${g.tx} dBm${(g.uso||'pon')!==uso?' · '+((g.uso||'pon')==='eth'?'Ethernet':'PON'):''})</option>`).join('');
+}
+function opRenderDet(){
+  const o=_opO();if(!o)return;
+  const P=getPop(popAtual);
+  const box=document.getElementById('op-det');
+  if(_opSel.t==='pon'){
+    const p=_opSel.n,c=oltPon(o,p),r=txPortaOLT(o,p);
+    const pat=P.patches.find(x=>x.olt===o.id&&x.oltPorta===p);
+    const dd=pat?P.dios.find(x=>x.id===pat.dio):null;
+    const caixas=caixasDaPon(o.id,p);
+    const nCli=caixas.reduce((a,cx)=>a+clientesDaCTO(cx.id).length,0);
+    const tecP=TECNOLOGIAS[cfg().tecnologia||'gpon']||TECNOLOGIAS.gpon;
+    box.innerHTML=`
+      <div class="linha2">
+        <div class="campo"><label>Identificação</label><input id="op-label" value="${c.label||''}" placeholder="ex: Centro / Anel 2" oninput="opGrava('label',this.value)"></div>
+        <div class="campo"><label>Estado</label><select id="op-ativa" onchange="opGrava('ativa',this.value==='1')"><option value="1" ${c.ativa!==false?'selected':''}>Ativa</option><option value="0" ${c.ativa===false?'selected':''}>Desativada (sem sinal)</option></select></div>
+      </div>
+      <div class="dr-sec" style="margin-top:4px">🔌 Transceptor SFP instalado</div>
+      <div class="campo"><label>Modelo</label><select id="op-sfp" onchange="opGrava('sfp',this.value)">${_opSfpOptions(c.sfp,'pon')}</select></div>
+      <div class="linha2">
+        <div class="campo"><label>TX medido (dBm)</label><input id="op-tx" value="${c.tx!=null?c.tx:''}" placeholder="${r.sfp?('datasheet '+(+r.sfp.tx).toFixed(1)):'ex: 4.8'}" onchange="opGrava('tx',this.value)"></div>
+        <div class="campo"><label>Medido em</label><input id="op-data" type="date" value="${c.data||''}" onchange="opGrava('data',this.value)"></div>
+      </div>
+      <div class="info-box" style="margin-top:4px">
+        <b>Potência efetiva da PON ${p}:</b> <span style="color:${r.tx!=null?(r.real?'#5FE0A0':'#E0913C'):'#F87168'}">${r.tx!=null?((r.real?'✔ ':'≈ ')+r.tx.toFixed(2)+' dBm'):'— não transmite'}</span><br>
+        <span style="color:var(--text-dim)">${r.rotulo}${r.sfp&&r.sfp.rxMin!=null?' · sensibilidade RX da OLT '+r.sfp.rxMin+' dBm':''}${r.sfp&&r.sfp.alc?' · alcance nominal '+r.sfp.alc+' km':''}</span>
+      </div>
+      <div class="info-box" style="margin-top:6px">
+        ${pat?`🔗 Patch: <b>${dd?dd.nome:'DIO'} ${dd?dioRotuloPorta(dd,pat.dioPorta):pat.dioPorta}</b>`:'<span style="color:var(--text-dim)">Sem patch para DIO — conecte no canvas ou na Manobra.</span>'}<br>
+        📦 Alimenta <b>${caixas.length}</b> caixa(s) · <b>${nCli}</b> cliente(s)${caixas.length?': '+caixas.slice(0,8).map(cx=>{const sg=sinaisProjetados().porCto.get(cx.id);return cx.nome+(sg?' <span class="mono" style="color:'+_corPot(sg.potCTO)+'">'+sg.potCTO.toFixed(1)+'</span>':'')}).join(', ')+(caixas.length>8?' …':''):''}
+      </div>
+      <div style="font-size:10.5px;color:var(--text-dim);margin-top:6px">Sem SFP a porta usa o TX padrão da OLT; sem ambos, o típico de ${tecP.nome} (${tecP.tx.toFixed(1)} dBm) apenas como estimativa ≈.</div>`;
+  }else{
+    const u=_opSel.n,c=oltUp(o,u),g=sfpDe(c.sfp);
+    const lk=P.links.find(l=>(l.a===o.id&&l.ap&&l.ap.tipo==='up'&&l.ap.n===u)||(l.b===o.id&&l.bp&&l.bp.tipo==='up'&&l.bp.n===u));
+    let dest='';
+    if(lk){const outroId=lk.a===o.id?lk.b:lk.a;const op=lk.a===o.id?lk.bp:lk.ap;const E=equipDe(outroId);dest=E?(E.e.nome+(op?' · '+descPortaLink(E,op):'')):'?'}
+    box.innerHTML=`
+      <div class="campo"><label>Identificação</label><input value="${c.label||''}" placeholder="ex: Uplink core / BGP" oninput="opGravaUp('label',this.value)"></div>
+      <div class="dr-sec" style="margin-top:4px">🔌 Transceptor SFP+ instalado</div>
+      <div class="campo"><label>Modelo</label><select onchange="opGravaUp('sfp',this.value)">${_opSfpOptions(c.sfp,'eth')}</select></div>
+      <div class="info-box" style="margin-top:4px">${g?`<b>${g.nome}</b> · TX ${g.tx>=0?'+':''}${g.tx} dBm${g.rxMin!=null?' · RX mín '+g.rxMin+' dBm':''}${g.alc?' · '+g.alc+' km':''}`:'Sem transceptor — o uplink não pode ser conectado por fibra.'}</div>
+      <div class="info-box" style="margin-top:6px">${lk?'🔗 Conectado a <b>'+dest+'</b>':'<span style="color:var(--text-dim)">Não conectado. Use 🔌 Conectar no canvas e clique no uplink e depois na porta do switch/roteador.</span>'}</div>`;
+  }
+}
+function opGrava(campo,valor){
+  const o=_opO();if(!o)return;
+  const c=oltPon(o,_opSel.n);
+  if(campo==='tx'){const v=String(valor||'').trim().replace(',','.');if(v===''||isNaN(+v))delete c.tx;else c.tx=+v}
+  else if(campo==='ativa'){if(valor)delete c.ativa;else c.ativa=false}
+  else{const v=String(valor||'').trim();if(v)c[campo]=v;else delete c[campo]}
+  salvar();opRenderLista();if(campo!=='label')opRenderDet();
+}
+function opGravaUp(campo,valor){
+  const o=_opO();if(!o)return;
+  const c=oltUp(o,_opSel.n);
+  const v=String(valor||'').trim();if(v)c[campo]=v;else delete c[campo];
+  salvar();opRenderLista();if(campo!=='label')opRenderDet();
+}
+function opAplicarTodas(){
+  const o=_opO();if(!o)return;
+  if(_opSel.t!=='pon'){toast('Selecione uma porta PON para copiar o SFP dela',true);return}
+  const src=oltPon(o,_opSel.n);
+  if(!src.sfp){toast('A porta selecionada não tem SFP',true);return}
+  const nP=o.portas||((o.slots||1)*(o.ppp||8));
+  if(!confirm('Instalar "'+sfpDe(src.sfp).nome+'" em todas as '+nP+' portas PON?\n(Os TX medidos já gravados são mantidos.)'))return;
+  for(let p=1;p<=nP;p++)oltPon(o,p).sfp=src.sfp;
+  salvar();opRenderLista();opRenderDet();toast('SFP aplicado em '+nP+' portas');
+}
+/* porta PON pode receber patch? */
+function validarPortaPon(o,p){
+  const r=txPortaOLT(o,p);
+  if(r.fonte==='desativada'){toast('PON '+p+' está desativada — reative em ⚡ Portas antes de conectar',true);return false}
+  if(r.fonte==='sem-sfp'&&!confirm('PON '+p+' da '+o.nome+' não tem SFP instalado: sem transceptor ela não transmite.\n\nConectar mesmo assim? (a potência ficará como estimativa até instalar o SFP)'))return false;
+  return true;
+}
+/* descrição de uma porta usada num link de rede */
+function descPortaLink(E,pr){
+  if(!pr)return '';
+  if(pr.tipo==='up'){const g=sfpDe(oltUp(E.e,pr.n).sfp);return 'Uplink U'+pr.n+(g?' ('+g.nome+')':' (sem SFP)')}
+  const port=(E.e.ports||[]).find(x=>x.n===pr.n);const g=port?sfpDe(port.gbic):null;
+  return (port?port.label:'P'+pr.n)+(g?' ('+g.nome+')':' (sem GBIC)');
+}
+function sfpDaPortaLink(E,pr){
+  if(!pr)return null;
+  if(pr.tipo==='up')return sfpDe(oltUp(E.e,pr.n).sfp);
+  const port=(E.e.ports||[]).find(x=>x.n===pr.n);return port?sfpDe(port.gbic):null;
+}
+function portaLinkUsada(id,pr){
+  return getPop(popAtual).links.some(l=>(l.a===id&&l.ap&&l.ap.tipo===pr.tipo&&l.ap.n===pr.n)||(l.b===id&&l.bp&&l.bp.tipo===pr.tipo&&l.bp.n===pr.n));
+}
+function posPortaLink(E,pr){
+  const d=equipDim(E.t,E.e);
+  if(!pr)return [E.e.x+d.w/2,E.e.y+d.h/2];
+  if(pr.tipo==='up')return [E.e.x+15+(E.e.portas)*18+4+(pr.n-1)*16+6,E.e.y+d.h-16];
+  return [E.e.x+15+(pr.n-1)*16+6,E.e.y+d.h-18];
+}
+/* clique numa porta de uplink/SFP no modo Conectar */
+function clicarPortaLink(ev,id,tipo,n){
+  ev.stopPropagation();
+  const P=getPop(popAtual);
+  const E=equipDe(id);if(!E)return;
+  const pr={tipo,n};
+  if(!popConn){
+    // fora do modo conectar: informa o que há na porta
+    const lk=P.links.find(l=>(l.a===id&&l.ap&&l.ap.tipo===tipo&&l.ap.n===n)||(l.b===id&&l.bp&&l.bp.tipo===tipo&&l.bp.n===n));
+    if(lk){const oId=lk.a===id?lk.b:lk.a;const op=lk.a===id?lk.bp:lk.ap;const O=equipDe(oId);toast(descPortaLink(E,pr)+' ⇄ '+(O?O.e.nome+' '+descPortaLink(O,op):'?'))}
+    else if(tipo==='up')abrirPortasOLT(id);else abrirEditorPortas(id);
+    return;
+  }
+  if(portaLinkUsada(id,pr)){toast('Esta porta já está conectada — clique no link para remover',true);return}
+  if(!popConnSel){popConnSel={id,pr};toast('Agora clique na porta do outro equipamento');renderPop();return}
+  if(popConnSel.id===id){toast('Escolha uma porta de outro equipamento',true);return}
+  const A=equipDe(popConnSel.id),B=E;
+  const ga=sfpDaPortaLink(A,popConnSel.pr),gb=sfpDaPortaLink(B,pr);
+  if(popConnSel.pr&&!ga&&!confirm(descPortaLink(A,popConnSel.pr)+' está sem transceptor. Conectar mesmo assim?')){return}
+  if(!gb&&!confirm(descPortaLink(B,pr)+' está sem transceptor. Conectar mesmo assim?')){return}
+  if(ga&&gb&&ga.tipo!==gb.tipo&&!confirm('Transceptores de classes diferentes ('+ga.tipo+' ⇄ '+gb.tipo+'). Pode não fechar link. Conectar mesmo assim?'))return;
+  P.links.push({a:popConnSel.id,ap:popConnSel.pr||null,b:id,bp:pr});
+  popConnSel=null;salvar();renderPop();toast('Link criado: '+A.e.nome+' '+descPortaLink(A,P.links[P.links.length-1].ap)+' ⇄ '+B.e.nome+' '+descPortaLink(B,pr));
 }
 
 /* ===== DIO em bandejas =====
@@ -5293,13 +5540,13 @@ function togglePopConn(){
   popConn=!popConn;popConnSel=null;popSel=null;
   document.getElementById('btn-pop-conn').classList.toggle('ativo',popConn);
   document.getElementById('pop-hint').textContent=popConn
-    ?'Modo Conectar: clique em dois equipamentos para criar o link de rede (uplink) · clique no link para remover'
+    ?'Modo Conectar: clique na porta de uplink/SFP de origem e depois na porta do destino (ou no corpo do equipamento) · clique no link para remover'
     :'Clique numa porta da OLT e depois numa porta do DIO para criar o patch · arraste os equipamentos';
   renderPop();
 }
 function equipDim(t,e){
   if(t==='rack')return{w:e.w||320,h:e.h||520};
-  if(t==='olt')return{w:Math.max(170,e.portas*18+30),h:74};
+  if(t==='olt')return{w:Math.max(190,e.portas*18+30+(e.uplinks||0)*16+8),h:74};
   if(t==='dio'){const pb=e.portasPorBandeja||12;const band=e.bandejas||Math.ceil(e.portas/pb);return{w:Math.max(190,pb*18+30),h:40+band*24}}
   if(t==='switch')return{w:Math.max(190,Math.min(e.portas,24)*10+30),h:64};
   return{w:150,h:58}; // roteador
@@ -5348,8 +5595,11 @@ function renderPop(){
   P.links.forEach((lk,i)=>{
     const A=equipDe(lk.a),B=equipDe(lk.b);
     if(!A||!B)return;
-    const[ax,ay]=centro(A.t,A.e),[bx,by]=centro(B.t,B.e);
-    s+=`<path class="link-linha" d="M ${ax} ${ay} C ${(ax+bx)/2} ${ay}, ${(ax+bx)/2} ${by}, ${bx} ${by}" onclick="removerLinkPop(${i})"><title>Link ${A.e.nome} ⇄ ${B.e.nome} (clique para remover)</title></path>`;
+    const[ax,ay]=lk.ap?posPortaLink(A,lk.ap):centro(A.t,A.e),[bx,by]=lk.bp?posPortaLink(B,lk.bp):centro(B.t,B.e);
+    const comPorta=lk.ap||lk.bp;
+    const ga=sfpDaPortaLink(A,lk.ap),gb=sfpDaPortaLink(B,lk.bp);
+    const pot=(ga&&ga.tx!=null)?(' · TX '+(ga.tx>=0?'+':'')+ga.tx+' dBm →'):'';
+    s+=`<path class="link-linha" style="${comPorta?'stroke:#B98AE8;stroke-dasharray:none;opacity:.9':''}" d="M ${ax} ${ay} C ${ax} ${ay+40}, ${bx} ${by+40}, ${bx} ${by}" onclick="removerLinkPop(${i})"><title>Link ${A.e.nome} ${descPortaLink(A,lk.ap)} ⇄ ${B.e.nome} ${descPortaLink(B,lk.bp)}${pot}${gb&&gb.rxMin!=null?' RX mín '+gb.rxMin+' dBm':''} (clique para remover)</title></path>`;
   });
   // patches OLT->DIO
   P.patches.forEach((pt,i)=>{
@@ -5370,7 +5620,8 @@ function renderPop(){
       <rect class="eq-body" x="${o.x}" y="${o.y}" width="${d.w}" height="${d.h}" rx="8"/>
       <rect x="${o.x}" y="${o.y}" width="4" height="${d.h}" rx="2" fill="#3CB371"/>
       <text class="eq-title" x="${o.x+14}" y="${o.y+18}">🖥 ${o.nome}</text>
-      <text class="eq-sub" x="${o.x+14}" y="${o.y+31}">${slots} slot × ${ppp}p · ${livres}/${o.portas} PON livre${upl?' · '+upl+' uplink':''}</text>
+      <text class="eq-sub" x="${o.x+14}" y="${o.y+31}">${slots} slot × ${ppp}p · ${livres}/${o.portas} PON livre · ${(()=>{let n=0;for(let q=1;q<=o.portas;q++)if(sfpDe(oltPon(o,q).sfp))n++;return n})()} SFP${upl?' · '+upl+' uplink':''}</text>
+      <text class="eq-x" x="${o.x+d.w-46}" y="${o.y+18}" style="cursor:pointer;fill:#B98AE8" onmousedown="event.stopPropagation()" onclick="abrirPortasOLT('${o.id}')"><title>Transceptores e TX por porta</title>⚡</text>
       <text class="eq-x" x="${o.x+d.w-30}" y="${o.y+18}" style="cursor:pointer;fill:var(--text-dim)" onmousedown="event.stopPropagation()" onclick="abrirModalOLT('${o.id}')">✎</text>
       <text class="eq-x" x="${o.x+d.w-14}" y="${o.y+18}" onmousedown="event.stopPropagation()" onclick="removerEquipPop('${o.id}')">✕</text>`;
     // portas agrupadas por slot
@@ -5380,13 +5631,25 @@ function renderPop(){
       const slotN=Math.floor((p-1)/ppp)+1;
       // separador de slot
       if((p-1)%ppp===0&&p>1)s+=`<line x1="${cx-9}" y1="${cy-14}" x2="${cx-9}" y2="${cy+8}" stroke="#4A5568" stroke-width="1.5"/>`;
-      s+=`<circle class="eq-porta ${popSel&&popSel.t==='olt'&&popSel.id===o.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5.5" fill="${pat?'#3CB371':'#3A4050'}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('olt','${o.id}',${p})"><title>Slot ${slotN} · PON ${p}${pat?(()=>{const dd=P.dios.find(x=>x.id===pat.dio);return ' → '+((dd||{}).nome||'DIO')+' '+(dd?dioRotuloPorta(dd,pat.dioPorta):pat.dioPorta)})():' · livre'}</title></circle>
+      const rP=txPortaOLT(o,p);
+      const fillP=rP.fonte==='desativada'?'#5A2A2A':(pat?'#3CB371':(rP.sfp?'#7B2ED8':'#3A4050'));
+      const cxs=pat?caixasDaPon(o.id,p):[];
+      const tipP='Slot '+slotN+' · PON '+p+(rP.label?' · '+rP.label:'')
+        +'\n'+(rP.fonte==='desativada'?'⛔ DESATIVADA':(rP.sfp?'SFP: '+rP.sfp.nome:'sem SFP instalado'))
+        +(rP.tx!=null?'\nTX '+(rP.real?'✔ ':'≈ ')+rP.tx.toFixed(2)+' dBm ('+rP.rotulo+')':'\nnão transmite')
+        +(pat?(()=>{const dd=P.dios.find(x=>x.id===pat.dio);return '\n→ '+((dd||{}).nome||'DIO')+' '+(dd?dioRotuloPorta(dd,pat.dioPorta):pat.dioPorta)})():'\nlivre')
+        +(cxs.length?'\nAlimenta: '+cxs.slice(0,6).map(c=>c.nome).join(', ')+(cxs.length>6?' …':''):'');
+      s+=`<circle class="eq-porta ${popSel&&popSel.t==='olt'&&popSel.id===o.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5.5" fill="${fillP}" ${rP.sfp&&!pat?'stroke="#B98AE8" stroke-width="1.5"':''} onmousedown="event.stopPropagation()" onclick="clicarPortaPop('olt','${o.id}',${p})"><title>${tipP}</title></circle>
+      ${rP.fonte==='desativada'?`<line x1="${cx-4}" y1="${cy-4}" x2="${cx+4}" y2="${cy+4}" stroke="#F87168" stroke-width="1.5" pointer-events="none"/>`:''}
       <text class="eq-porta-lbl" x="${cx}" y="${cy-9}">${p}</text>`;
     }
     // uplinks (retângulos SFP+ à direita)
     for(let u=1;u<=upl;u++){
       const ux=o.x+15+(o.portas)*18+4+(u-1)*16, uy=o.y+d.h-16;
-      s+=`<rect x="${ux}" y="${uy}" width="12" height="9" rx="1.5" fill="#7B2ED8" stroke="#0a0c10"><title>Uplink SFP+ U${u}</title></rect>
+      const cu=oltUp(o,u),gu=sfpDe(cu.sfp);
+      const usado=portaLinkUsada(o.id,{tipo:'up',n:u});
+      const selU=popConnSel&&popConnSel.id===o.id&&popConnSel.pr&&popConnSel.pr.tipo==='up'&&popConnSel.pr.n===u;
+      s+=`<rect class="eq-porta" x="${ux}" y="${uy}" width="12" height="9" rx="1.5" fill="${usado?'#3CB371':(gu?'#7B2ED8':'#3A4050')}" stroke="${selU?'#fff':'#0a0c10'}" stroke-width="${selU?2:1}" onmousedown="event.stopPropagation()" onclick="clicarPortaLink(event,'${o.id}','up',${u})"><title>Uplink SFP+ U${u}${cu.label?' · '+cu.label:''} · ${gu?gu.nome+' · TX '+(gu.tx>=0?'+':'')+gu.tx+' dBm':'sem SFP'}${usado?' · conectado':''}</title></rect>
       <text class="eq-porta-lbl" x="${ux+6}" y="${uy-3}" style="fill:#B98AE8">U${u}</text>`;
     }
     s+='</g>';
@@ -5418,7 +5681,12 @@ function renderPop(){
         const cx=d0.x+24+(i-1)*18+6, cy=by;
         const cor=pat?'#3CB371':(fib?'#5B9BFF':'#3A4050');
         const rot=(d0.rotulos&&d0.rotulos[p])||{};
-        const tip='Bandeja '+(b+1)+' · Porta '+i+(rot.label?' · '+rot.label:'')+(fib?' · '+fib.txt:' · sem fibra fundida')+(pat?' · PON '+pat.oltPorta+' ('+((P.olts.find(x=>x.id===pat.olt)||{}).nome||'OLT')+')':' · sem patch')+(rot.obs?' — '+rot.obs:'');
+        let potTxt='';
+        if(pat){const oo=P.olts.find(x=>x.id===pat.olt);const rr=oo?txPortaOLT(oo,pat.oltPorta):null;
+          if(rr&&rr.tx!=null)potTxt='\nSai do DIO ≈ '+(rr.tx-2*PERDAS.conector).toFixed(2)+' dBm ('+(rr.real?'✔':'≈')+' TX '+rr.tx.toFixed(2)+' − 2 conectores)';
+          else if(rr)potTxt='\n⚠️ '+rr.rotulo;
+          const cxs=oo?caixasDaPon(oo.id,pat.oltPorta):[];if(cxs.length)potTxt+='\nAlimenta: '+cxs.slice(0,6).map(c=>c.nome).join(', ');}
+        const tip='Bandeja '+(b+1)+' · Porta '+i+(rot.label?' · '+rot.label:'')+(fib?' · '+fib.txt:' · sem fibra fundida')+(pat?' · PON '+pat.oltPorta+' ('+((P.olts.find(x=>x.id===pat.olt)||{}).nome||'OLT')+')':' · sem patch')+(rot.obs?' — '+rot.obs:'')+potTxt;
         s+=`<circle class="eq-porta ${popSel&&popSel.t==='dio'&&popSel.id===d0.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5" fill="${cor}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('dio','${d0.id}',${p})"><title>${tip}</title></circle>`;
       }
     }
@@ -5443,7 +5711,10 @@ function renderPop(){
     for(let p=1;p<=Math.min(nP,24);p++){
       const port=(sw.ports||[]).find(x=>x.n===p);
       const temGbic=port&&port.gbic;
-      s+=`<rect x="${sw.x+15+(p-1)*16}" y="${sw.y+d.h-18}" width="12" height="9" rx="1.5" fill="${temGbic?'#7B2ED8':'#3A4050'}" stroke="#0a0c10"><title>Porta ${port?port.label:('P'+p)}${temGbic?' · '+((CAT.catGbic.find(g=>g.id===port.gbic)||{}).nome):' · sem GBIC'}</title></rect>`;
+      const usadoS=portaLinkUsada(sw.id,{tipo:'sfp',n:p});
+      const selS=popConnSel&&popConnSel.id===sw.id&&popConnSel.pr&&popConnSel.pr.tipo==='sfp'&&popConnSel.pr.n===p;
+      const gS=temGbic?sfpDe(port.gbic):null;
+      s+=`<rect class="eq-porta" x="${sw.x+15+(p-1)*16}" y="${sw.y+d.h-18}" width="12" height="9" rx="1.5" fill="${usadoS?'#3CB371':(temGbic?'#7B2ED8':'#3A4050')}" stroke="${selS?'#fff':'#0a0c10'}" stroke-width="${selS?2:1}" onmousedown="event.stopPropagation()" onclick="clicarPortaLink(event,'${sw.id}','sfp',${p})"><title>Porta ${port?port.label:('P'+p)}${gS?' · '+gS.nome+' · TX '+(gS.tx>=0?'+':'')+gS.tx+' dBm':' · sem GBIC'}${usadoS?' · conectada':''}</title></rect>`;
     }
     s+='</g>';
   });
@@ -5472,20 +5743,21 @@ function renderManobra(){
   P.olts.forEach(o=>{
     const slots=o.slots||1, ppp=o.ppp||8, upl=o.uplinks??0;
     const usados=P.patches.filter(p=>p.olt===o.id).length;
-    colO+=`<div class="mnb-eq"><div class="mnb-eq-tit">🖥 ${o.nome}<span class="tag" style="background:rgba(60,179,113,.15);color:#5FE0A0">${usados}/${o.portas}</span></div>`;
+    colO+=`<div class="mnb-eq"><div class="mnb-eq-tit">🖥 ${o.nome}<span class="tag" style="background:rgba(60,179,113,.15);color:#5FE0A0">${usados}/${o.portas}</span><button class="btn sm ghost" style="padding:2px 7px;font-size:10.5px;margin-left:6px" onclick="abrirPortasOLT('${o.id}')">⚡ SFP</button></div>`;
     for(let sl=1;sl<=slots;sl++){
       colO+=`<div class="mnb-sec-lbl">Slot ${sl} · ${ppp}p</div><div class="mnb-grid">`;
       for(let i=1;i<=ppp;i++){
         const p=(sl-1)*ppp+i;
         const pat=P.patches.find(x=>x.olt===o.id&&x.oltPorta===p);
-        const cls=pat?'ocupada':'livre';
+        const rP=txPortaOLT(o,p);
+        const cls=rP.fonte==='desativada'?'desativada':(pat?'ocupada':(rP.sfp?'livre sfp':'livre'));
         const sel=mnbSel&&mnbSel.t==='olt'&&mnbSel.id===o.id&&mnbSel.porta===p?' sel':'';
-        colO+=`<div class="mnb-porta ${cls}${sel}" onclick="manobraClicarPorta('olt','${o.id}',${p})" title="PON ${p}${pat?' → conectada':' · livre'}">${p}</div>`;
+        colO+=`<div class="mnb-porta ${cls}${sel}" onclick="manobraClicarPorta('olt','${o.id}',${p})" title="PON ${p}${rP.label?' · '+rP.label:''} · ${rP.fonte==='desativada'?'⛔ desativada':(rP.sfp?rP.sfp.nome:'sem SFP')}${rP.tx!=null?' · TX '+(rP.real?'✔':'≈')+' '+rP.tx.toFixed(2)+' dBm':''}${pat?' → conectada':' · livre'}">${p}</div>`;
       }
       colO+=`</div>`;
     }
     if(upl){colO+=`<div class="mnb-sec-lbl">Uplinks</div><div class="mnb-grid">`;
-      for(let u=1;u<=upl;u++)colO+=`<div class="mnb-porta uplink" title="Uplink SFP+ U${u}">U${u}</div>`;
+      for(let u=1;u<=upl;u++){const cu=oltUp(o,u),gu=sfpDe(cu.sfp);const us=portaLinkUsada(o.id,{tipo:'up',n:u});colO+=`<div class="mnb-porta ${us?'ocupada':'uplink'}" title="Uplink SFP+ U${u} · ${gu?gu.nome+' · TX '+gu.tx+' dBm':'sem SFP'}${us?' · conectado':''}">U${u}</div>`}
       colO+=`</div>`;}
     colO+=`</div>`;
   });
@@ -5497,7 +5769,7 @@ function renderManobra(){
   ativos.forEach(sw=>{
     const ic=sw._tipo==='switch'?'⇄':'🌐';
     colS+=`<div class="mnb-eq"><div class="mnb-eq-tit">${ic} ${sw.nome}<span class="tag" style="background:rgba(91,155,255,.15);color:#8FBEFF">${sw._tipo}</span></div><div class="mnb-sec-lbl">Portas SFP</div><div class="mnb-grid">`;
-    for(let i=1;i<=Math.min(sw.portas||8,48);i++)colS+=`<div class="mnb-porta livre" title="Porta ${i}">${i}</div>`;
+    for(let i=1;i<=Math.min(sw.portas||8,48);i++){const pt=(sw.ports||[]).find(x=>x.n===i);const g=pt?sfpDe(pt.gbic):null;const us=portaLinkUsada(sw.id,{tipo:'sfp',n:i});colS+=`<div class="mnb-porta ${us?'ocupada':(g?'livre sfp':'livre')}" title="${pt?pt.label:'P'+i} · ${g?g.nome+' · TX '+g.tx+' dBm':'sem GBIC'}${us?' · conectada':''}">${i}</div>`}
     colS+=`</div><div style="font-size:10px;color:var(--text-dim);margin-top:6px">Patch de switch é feito no editor do próprio ativo</div></div>`;
   });
   colS+=`</div>`;
@@ -5529,7 +5801,7 @@ function renderManobra(){
   });
   colD+=`</div>`;
   cont.innerHTML=colO+colS+colD+
-    `<div class="mnb-legenda" style="grid-column:1/-1"><span><i style="background:rgba(60,179,113,.16);border:1.5px solid #3CB371"></i>Conectada</span><span><i style="background:var(--surface);border:1.5px solid var(--border)"></i>Livre</span><span><i style="border:1.5px solid #5B9BFF"></i>Com fibra fundida</span><span><i style="background:rgba(123,46,216,.14);border:1.5px solid #7B2ED8"></i>Uplink</span></div>`;
+    `<div class="mnb-legenda" style="grid-column:1/-1"><span><i style="background:rgba(60,179,113,.16);border:1.5px solid #3CB371"></i>Conectada</span><span><i style="border:1.5px solid #7B2ED8"></i>Com SFP (livre)</span><span><i style="border:1.5px solid #F87168;background:rgba(248,113,104,.12)"></i>Desativada</span><span><i style="background:var(--surface);border:1.5px solid var(--border)"></i>Livre</span><span><i style="border:1.5px solid #5B9BFF"></i>Com fibra fundida</span><span><i style="background:rgba(123,46,216,.14);border:1.5px solid #7B2ED8"></i>Uplink</span></div>`;
 }
 function manobraClicarPorta(t,id,porta){
   const P=getPop(popAtual);
@@ -5545,6 +5817,8 @@ function manobraClicarPorta(t,id,porta){
   // conecta OLT <-> DIO
   const olt=mnbSel.t==='olt'?mnbSel:{t,id,porta};
   const dio=mnbSel.t==='dio'?mnbSel:{t,id,porta};
+  const oObj=P.olts.find(x=>x.id===olt.id);
+  if(oObj&&!validarPortaPon(oObj,olt.porta)){mnbSel=null;renderManobra();return}
   P.patches.push({olt:olt.id,oltPorta:olt.porta,dio:dio.id,dioPorta:dio.porta});
   mnbSel=null;salvar();renderManobra();
   toast('Conectado: PON '+olt.porta+' ⇄ DIO porta '+dio.porta);
@@ -5561,6 +5835,8 @@ function clicarPortaPop(t,id,porta){
   if(popSel.t===t){popSel={t,id,porta};renderPop();return}
   const olt=popSel.t==='olt'?popSel:{t,id,porta};
   const dio=popSel.t==='dio'?popSel:{t,id,porta};
+  const oObj=P.olts.find(x=>x.id===olt.id);
+  if(oObj&&!validarPortaPon(oObj,olt.porta)){popSel=null;renderPop();return}
   P.patches.push({olt:olt.id,oltPorta:olt.porta,dio:dio.id,dioPorta:dio.porta});
   popSel=null;salvar();renderPop();
   toast('Patch criado: PON '+olt.porta+' ⇄ DIO porta '+dio.porta);
@@ -5568,12 +5844,12 @@ function clicarPortaPop(t,id,porta){
 function popIniciarDrag(ev,id){
   if(popConn){
     ev.stopPropagation();
-    if(!popConnSel){popConnSel=id;toast('Agora clique no segundo equipamento');return}
-    if(popConnSel!==id){
-      getPop(popAtual).links.push({a:popConnSel,b:id});
-      salvar();renderPop();toast('Link criado');
+    if(!popConnSel){popConnSel={id,pr:null};toast('Agora clique numa porta (uplink/SFP) ou no corpo do outro equipamento');renderPop();return}
+    if(popConnSel.id!==id){
+      getPop(popAtual).links.push({a:popConnSel.id,ap:popConnSel.pr||null,b:id,bp:null});
+      salvar();renderPop();toast('Link criado (sem porta definida no destino)');
     }
-    popConnSel=null;return;
+    popConnSel=null;renderPop();return;
   }
   const found=equipDe(id);
   if(!found)return;
@@ -5619,15 +5895,19 @@ function executarAutoPatch(){
   const olt=P.olts.find(o=>o.id===document.getElementById('ap-origem').value);
   const dio=P.dios.find(d=>d.id===document.getElementById('ap-destino').value);
   let n=0;
+  let semSfp=0,desat=0;
   for(let po=1;po<=olt.portas;po++){
     if(P.patches.some(p=>p.olt===olt.id&&p.oltPorta===po))continue;
+    const rP=txPortaOLT(olt,po);
+    if(rP.fonte==='desativada'){desat++;continue}
+    if(rP.fonte==='sem-sfp')semSfp++;
     let pd=null;
     for(let x=1;x<=dio.portas;x++)if(!P.patches.some(p=>p.dio===dio.id&&p.dioPorta===x)){pd=x;break}
     if(!pd)break;
     P.patches.push({olt:olt.id,oltPorta:po,dio:dio.id,dioPorta:pd});n++;
   }
   salvar();renderPop();fecharModal('md-autopatch');
-  toast(n?('Auto-Patch: '+n+' porta(s) conectada(s)'):'Nenhuma porta livre para conectar');
+  toast(n?('Auto-Patch: '+n+' porta(s) conectada(s)'+(desat?' · '+desat+' desativada(s) ignorada(s)':'')+(semSfp?' · ⚠️ '+semSfp+' sem SFP':'')):'Nenhuma porta livre para conectar',!!semSfp);
 }
 
 /* ================= ORÇAMENTO ÓPTICO ================= */
@@ -5638,25 +5918,25 @@ function executarAutoPatch(){
    As duas primeiras são valores reais; as demais são estimativas. */
 function txDaCaixa(ctoId,oltDet,ponDet){
   const e=projAtual.elementos.find(x=>x.id===ctoId);
+  const T=e?TECNOLOGIAS[tecDaCaixa(e)]:null;
+  const fmt=(r,olt,pon,via)=>({tx:r.tx,tec:T,olt,pon,real:r.real,fonte:r.fonte+(via?'-caminho':''),sfp:r.sfp,
+                               rotulo:r.rotulo+(via?' (via caminho óptico)':''),semSfp:r.fonte==='sem-sfp',desativada:r.fonte==='desativada'});
   // OLT encontrada percorrendo o caminho óptico (vale mesmo entre projetos diferentes)
   if(oltDet){
-    if(ponDet&&oltDet.txPorta&&oltDet.txPorta[ponDet]!=null&&!isNaN(+oltDet.txPorta[ponDet]))
-      return {tx:+oltDet.txPorta[ponDet],tec:e?TECNOLOGIAS[tecDaCaixa(e)]:null,olt:oltDet,real:true,fonte:'caminho-porta',
-              rotulo:'medido na PON '+ponDet+' de '+oltDet.nome+' (via caminho óptico)'};
-    if(oltDet.tx!=null&&oltDet.tx!==''&&!isNaN(+oltDet.tx))
-      return {tx:+oltDet.tx,tec:e?TECNOLOGIAS[tecDaCaixa(e)]:null,olt:oltDet,real:true,fonte:'caminho',
-              rotulo:(oltDet.txFonte==='medido'?'medido':'datasheet')+' da '+oltDet.nome+' (via caminho óptico)'};
+    const r=txPortaOLT(oltDet,ponDet);
+    if(r.tx!=null)return fmt(r,oltDet,ponDet,true);
+    // porta sem SFP/desativada: cai no típico mas mantém a procedência do aviso
+    if(T)return Object.assign(fmt(r,oltDet,ponDet,true),{tx:T.tx,real:false,rotulo:r.rotulo+' — usando típico de '+T.nome});
+    return Object.assign(fmt(r,oltDet,ponDet,true),{tx:cfg().tx,real:false,rotulo:r.rotulo+' — usando padrão do projeto'});
   }
-  const T=e?TECNOLOGIAS[tecDaCaixa(e)]:null;
   const oltId=(e&&e.oltId)||cfg().oltProjeto||null;
   const reg=oltId?todasOLTs().find(o=>o.olt.id===oltId):null;
   const olt=reg?reg.olt:null;
-  if(olt&&e&&e.pon&&olt.txPorta&&olt.txPorta[e.pon]!=null&&!isNaN(+olt.txPorta[e.pon]))
-    return {tx:+olt.txPorta[e.pon],tec:T,olt,real:true,fonte:'porta',
-            rotulo:'medido na PON '+e.pon+' de '+olt.nome};
-  if(olt&&olt.tx!=null&&olt.tx!==''&&!isNaN(+olt.tx))
-    return {tx:+olt.tx,tec:T,olt,real:true,fonte:'olt',
-            rotulo:(olt.txFonte==='medido'?'medido':'datasheet')+' do transceptor da '+olt.nome};
+  if(olt){
+    const r=txPortaOLT(olt,e&&e.pon);
+    if(r.tx!=null)return fmt(r,olt,e&&e.pon,false);
+    if(T)return Object.assign(fmt(r,olt,e&&e.pon,false),{tx:T.tx,real:false,rotulo:r.rotulo+' — usando típico de '+T.nome});
+  }
   if(T&&e&&(e.oltId||e.tecnologia||cfg().oltProjeto))
     return {tx:T.tx,tec:T,olt,real:false,fonte:'tipico',
             rotulo:'típico de '+T.nome+' — valor de catálogo, não medido'};
@@ -5674,19 +5954,19 @@ function calcOrcamento(ctoId){
   const fEntrada=F.fusoes.find(f=>ptKey(f.a)==='sp-'+sp.id+'-0'||ptKey(f.b)==='sp-'+sp.id+'-0');
   const catF=splitCatDe(sp);
   const dbF=perdaSpMax(sp)+perdaTerminacaoSp(sp);
-  passos.push({nome:rotuloSp(sp)+(spPolimento(sp)?' SC/'+spPolimento(sp):' p/ fusão')+(catF&&catF.tipo==='des'?' DGO':' Balanceado'),sub:'Splitter · '+nomeEl(ctoId)+' · saída '+descTerminacaoSp(sp)+(catF&&catF.tipo==='des'?' (pior saída)':''),db:dbF});
+  passos.push({nome:rotuloSp(sp)+(spPolimento(sp)?' SC/'+spPolimento(sp):' p/ fusão')+(catF&&catF.tipo==='des'?' DGO':' Balanceado'),sub:'Splitter · '+nomeEl(ctoId)+' · saída '+descTerminacaoSp(sp)+(catF&&catF.tipo==='des'?' (pior saída)':''),db:dbF,caixa:ctoId,etapa:'splitter'});
   total+=dbF;
   if(!fEntrada){aviso.push('Entrada do splitter sem fusão — caminho até o POP incompleto.')}
   else{
     ponto=ptKey(fEntrada.a)==='sp-'+sp.id+'-0'?fEntrada.b:fEntrada.a;
     {const _d=perdaFusao(fEntrada),_r=fusaoMedida(fEntrada);
-     passos.push({nome:'F-1',sub:'Fusão · '+nomeEl(caixa)+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;fusoesN=1;}
+     passos.push({nome:'F-1',sub:'Fusão · '+nomeEl(caixa)+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r,caixa:ctoId,etapa:'fusao'});total+=_d;fusoesN=1;}
     while(ponto&&ponto.t==='fibra'&&guarda++<30){
       const cabo=projAtual.cabos.find(c=>c.id===ponto.cabo);
       if(!cabo){aviso.push('Cabo não encontrado.');break}
       const km=medirCabo(cabo.pontos)*(1+(cabo.folga||0)/100)/1000;
       const dbC=km*dbCabo(cabo);
-      passos.push({nome:cabo.nome,sub:'Fibra '+ponto.fib+' ('+ABNT[(ponto.fib-1)%12].nome+') · '+(km*1000).toFixed(0)+' m · '+dbCabo(cabo)+' dB/km',db:dbC});
+      passos.push({nome:cabo.nome,sub:'Fibra '+ponto.fib+' ('+ABNT[(ponto.fib-1)%12].nome+') · '+(km*1000).toFixed(0)+' m · '+dbCabo(cabo)+' dB/km',db:dbC,cabo:cabo.id,fib:ponto.fib,etapa:'cabo',chegaEm:caixa});
       caboIds.push(cabo.id);
       total+=dbC;
       const outra=cabo.origemId===caixa?cabo.destinoId:cabo.origemId;
@@ -5698,32 +5978,34 @@ function calcOrcamento(ctoId){
         const ehMinha=pt=>pt.t==='fibra'&&pt.cabo===cabo.id&&pt.fib===ponto.fib;
         const fdio=FP.fusoes.find(f=>ehMinha(f.a)||ehMinha(f.b));
         {const _d=perdaFusao(fdio),_r=fusaoMedida(fdio);
-         passos.push({nome:'F-'+(++fusoesN),sub:'Fusão bandeja · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;}
+         passos.push({nome:'F-'+(++fusoesN),sub:'Fusão bandeja · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r,caixa:outra,etapa:'fusao'});total+=_d;}
         if(fdio){
           const other=ehMinha(fdio.a)?fdio.b:fdio.a;
           if(other.t==='dio'){
             const d=P.dios.find(x=>x.id===other.dio);
-            passos.push({nome:(d?d.nome:'DIO')+' · porta '+other.porta,sub:'Conector · '+elOutra.nome,db:PERDAS.conector});total+=PERDAS.conector;
+            passos.push({nome:(d?d.nome:'DIO')+' · '+(d?dioRotuloPorta(d,other.porta):'porta '+other.porta),sub:'Conector DIO · '+elOutra.nome,db:PERDAS.conector,caixa:outra,etapa:'dio'});total+=PERDAS.conector;
             const pat=P.patches.find(p=>p.dio===other.dio&&p.dioPorta===other.porta);
             if(pat){
               const o=P.olts.find(x=>x.id===pat.olt);
               if(o){oltCaminho=o;ponCaminho=pat.oltPorta}
               const _t=txDaCaixa(ctoId,o,pat.oltPorta);
-              passos.push({nome:(o?o.nome:'OLT')+' · PON '+pat.oltPorta,sub:'Patch cord · TX '+seloTx(_t)+' '+_t.tx.toFixed(2)+' dBm ('+_t.rotulo+')',db:PERDAS.conector});total+=PERDAS.conector;
+              passos.push({nome:(o?o.nome:'OLT')+' · PON '+pat.oltPorta+(_t.sfp?' · '+_t.sfp.nome:''),sub:'Patch cord · TX '+seloTx(_t)+' '+_t.tx.toFixed(2)+' dBm ('+_t.rotulo+')',db:PERDAS.conector,caixa:outra,etapa:'olt'});total+=PERDAS.conector;
+              if(_t.semSfp)aviso.push('PON '+pat.oltPorta+' da '+(o?o.nome:'OLT')+' sem SFP instalado — instale o transceptor no editor do POP (⚡ Portas) para a potência ser real.');
+              if(_t.desativada)aviso.push('PON '+pat.oltPorta+' da '+(o?o.nome:'OLT')+' está DESATIVADA — esta caixa não recebe sinal.');
             } else {
-              passos.push({nome:'OLT',sub:'Porta '+other.porta+' do DIO sem patch',db:PERDAS.conector});total+=PERDAS.conector;
+              passos.push({nome:'OLT',sub:'Porta '+other.porta+' do DIO sem patch',db:PERDAS.conector,caixa:outra,etapa:'olt',semPatch:true});total+=PERDAS.conector;
               aviso.push('Porta '+other.porta+' do '+(d?d.nome:'DIO')+' sem patch para OLT — abra o editor de POP.');
             }
           } else {
-            passos.push({nome:P.dios.length?P.dios[0].nome:'DIO',sub:'Conector · '+elOutra.nome,db:PERDAS.conector});total+=PERDAS.conector;
+            passos.push({nome:P.dios.length?P.dios[0].nome:'DIO',sub:'Conector · '+elOutra.nome,db:PERDAS.conector,caixa:outra,etapa:'dio'});total+=PERDAS.conector;
             if(P.olts.length)oltCaminho=P.olts[0];
-            passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord',db:PERDAS.conector});total+=PERDAS.conector;
+            passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord',db:PERDAS.conector,caixa:outra,etapa:'olt'});total+=PERDAS.conector;
           }
         } else {
-          passos.push({nome:P.dios.length?P.dios[0].nome:'DIO',sub:'Conector · '+elOutra.nome,db:PERDAS.conector});total+=PERDAS.conector;
+          passos.push({nome:P.dios.length?P.dios[0].nome:'DIO',sub:'Conector · '+elOutra.nome,db:PERDAS.conector,caixa:outra,etapa:'dio'});total+=PERDAS.conector;
           if(P.olts.length)oltCaminho=P.olts[0];
           const _t2=txDaCaixa(ctoId,P.olts[0]);
-          passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord · TX '+seloTx(_t2)+' '+_t2.tx.toFixed(2)+' dBm ('+_t2.rotulo+')',db:PERDAS.conector});total+=PERDAS.conector;
+          passos.push({nome:P.olts.length?P.olts[0].nome:'OLT',sub:'Conector patch cord · TX '+seloTx(_t2)+' '+_t2.tx.toFixed(2)+' dBm ('+_t2.rotulo+')',db:PERDAS.conector,caixa:outra,etapa:'olt'});total+=PERDAS.conector;
           aviso.push('Fibra '+ponto.fib+' não fundida no DIO — abra "Fusões" do POP para montar o plano de fusão da bandeja.');
         }
         ponto=null;break;
@@ -5732,18 +6014,18 @@ function calcOrcamento(ctoId){
       const fx=FO.fusoes.find(f=>(f.a.t==='fibra'&&f.a.cabo===cabo.id&&f.a.fib===ponto.fib)||(f.b.t==='fibra'&&f.b.cabo===cabo.id&&f.b.fib===ponto.fib));
       if(!fx){aviso.push('Fibra chega em '+elOutra.nome+' mas não há fusão de continuidade.');break}
       {const _d=perdaFusao(fx),_r=fusaoMedida(fx);
-       passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;}
+       passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r,caixa:outra,etapa:'fusao'});total+=_d;}
       let prox=(fx.a.t==='fibra'&&fx.a.cabo===cabo.id&&fx.a.fib===ponto.fib)?fx.b:fx.a;
       if(prox.t==='sp'){
         const sp2=FO.splitters.find(s=>s.id===prox.sp);
         const cat2=splitCatDe(sp2);
         const db2=perdaSpPorta(sp2,prox.porta||1);
-        passos.push({nome:rotuloSp(sp2)+(cat2&&cat2.tipo==='des'?' DGO · saída '+(prox.porta||1):' Balanceado'),sub:'Splitter intermediário · '+elOutra.nome,db:db2});
+        passos.push({nome:rotuloSp(sp2)+(cat2&&cat2.tipo==='des'?' DGO · saída '+(prox.porta||1):' Balanceado'),sub:'Splitter intermediário · '+elOutra.nome,db:db2,caixa:outra,etapa:'splitter'});
         total+=db2;
         const f0=FO.fusoes.find(f=>ptKey(f.a)==='sp-'+sp2.id+'-0'||ptKey(f.b)==='sp-'+sp2.id+'-0');
         if(!f0){aviso.push('Splitter em '+elOutra.nome+' sem fusão na entrada.');break}
         {const _d=perdaFusao(f0),_r=fusaoMedida(f0);
-         passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r});total+=_d;}
+         passos.push({nome:'F-'+(++fusoesN),sub:'Fusão · '+elOutra.nome+(_r?' · medida ✔':' · estimada ≈'),db:_d,real:_r,caixa:outra,etapa:'fusao'});total+=_d;}
         prox=ptKey(f0.a)==='sp-'+sp2.id+'-0'?f0.b:f0.a;
       }
       caixa=outra;ponto=prox;
@@ -5752,7 +6034,102 @@ function calcOrcamento(ctoId){
   const dropDb=0.1*PERDAS.fibraKm+PERDAS.fusao+2*PERDAS.conector;
   const txInfo=txDaCaixa(ctoId,oltCaminho,ponCaminho);
   const rx=txInfo.tx-total-dropDb;
-  return {sp,passos,total,dropDb,rx,aviso,caboIds,txInfo,olt:oltCaminho};
+  /* Potência em cada ponto do caminho, de cima (OLT) para baixo (CTO):
+     potIn = o que chega naquele passo · potOut = o que sai dele. */
+  let pot=txInfo.tx;
+  const nos=[], vistos={};
+  passos.slice().reverse().forEach(ps=>{
+    ps.potIn=pot; pot-=ps.db; ps.potOut=pot;
+    const cx=ps.caixa||null;
+    if(cx){
+      if(!vistos[cx]){vistos[cx]={id:cx,nome:nomeEl(cx),tipo:(projAtual.elementos.find(x=>x.id===cx)||{}).tipo,potIn:ps.potIn,potOut:ps.potOut};nos.push(vistos[cx])}
+      else vistos[cx].potOut=ps.potOut;
+    }
+    if(ps.etapa==='cabo'&&ps.chegaEm&&vistos[ps.chegaEm]===undefined){
+      // a potência que CHEGA na próxima caixa é a que sai do cabo
+      vistos[ps.chegaEm]={id:ps.chegaEm,nome:nomeEl(ps.chegaEm),tipo:(projAtual.elementos.find(x=>x.id===ps.chegaEm)||{}).tipo,potIn:ps.potOut,potOut:ps.potOut,fib:ps.fib,cabo:ps.cabo};nos.push(vistos[ps.chegaEm]);
+    }
+  });
+  const potCTO=txInfo.tx-total;  // saída do splitter na CTO (antes do drop)
+  return {sp,passos,total,dropDb,rx,potCTO,nos,aviso,caboIds,txInfo,olt:oltCaminho,pon:ponCaminho,semSfp:!!txInfo.semSfp,desativada:!!txInfo.desativada};
+}
+/* ===== Sinal projetado em toda a rede =====
+   Percorre o caminho óptico de cada CTO e guarda a potência que passa por cada
+   CEO/POP/CTO. O cache é invalidado a cada gravação/render. */
+let _sinalCache=null;
+function sinaisProjetados(){
+  if(_sinalCache)return _sinalCache;
+  const porCto=new Map(), porCaixa=new Map();
+  if(projAtual)projAtual.elementos.filter(e=>e.tipo==='cto').forEach(e=>{
+    let r=null;
+    try{r=calcOrcamento(e.id)}catch(err){r=null}
+    if(!r)return;
+    porCto.set(e.id,r);
+    r.nos.forEach(n=>{
+      if(!porCaixa.has(n.id))porCaixa.set(n.id,[]);
+      porCaixa.get(n.id).push({ctoId:e.id,ctoNome:e.nome,potIn:n.potIn,potOut:n.potOut,fib:n.fib,cabo:n.cabo,real:r.txInfo.real,olt:r.olt,pon:r.pon});
+    });
+  });
+  _sinalCache={porCto,porCaixa};
+  return _sinalCache;
+}
+function _corPot(v){return _corRx(v)}
+/* RX projetado na casa do cliente: saída da CTO − drop real (distância cliente⇄CTO) */
+function rxClienteProjetado(ctoId,lat,lng){
+  const r=sinaisProjetados().porCto.get(ctoId);
+  if(!r)return null;
+  const e=projAtual.elementos.find(x=>x.id===ctoId);
+  let d=100;
+  if(e&&lat!=null&&lng!=null&&mapa)d=mapa.distance([lat,lng],[e.lat,e.lng]);
+  const drop=(d/1000)*PERDAS.fibraKm+PERDAS.fusao+2*PERDAS.conector;
+  return {rx:r.potCTO-drop,drop,dist:d,potCTO:r.potCTO,real:r.txInfo.real,tx:r.txInfo.tx};
+}
+/* bloco HTML de sinal óptico para os popups do mapa */
+function htmlSinalCaixa(e){
+  const S=sinaisProjetados();
+  if(e.tipo==='cto'){
+    const r=S.porCto.get(e.id);
+    if(!r)return `<div class="pp-meta" style="font-size:10.5px;color:var(--text-dim)">📡 Sem caminho óptico projetado até o POP (monte as fusões)</div>`;
+    const st=statsCTO(e.id);
+    const desvio=(st.rxMed!=null)?(st.rxMed-r.rx):null;
+    const entrada=r.nos.find(n=>n.id===e.id);
+    return `<div class="pp-meta" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-size:11px">
+      <b>📡 Sinal óptico</b> <span style="color:${r.txInfo.real?'#5FE0A0':'#E0913C'}">${r.txInfo.real?'✔ TX real':'≈ TX estimado'} ${r.txInfo.tx.toFixed(2)} dBm</span>${r.olt?' · '+r.olt.nome+(r.pon?' PON '+r.pon:''):''}
+      <div class="cto-grid" style="margin-top:4px">
+        <div class="cto-cel"><span>Chega na CTO</span><b style="color:${_corPot(entrada?entrada.potIn:null)}">${_fmtRx(entrada?entrada.potIn:null)}</b></div>
+        <div class="cto-cel"><span>Saída splitter</span><b style="color:${_corPot(r.potCTO)}">${_fmtRx(r.potCTO)}</b></div>
+        <div class="cto-cel"><span>Cliente (proj.)</span><b style="color:${_corPot(r.rx)}">${_fmtRx(r.rx)}</b></div>
+        <div class="cto-cel"><span>Cliente (real)</span><b style="color:${_corPot(st.rxMed)}">${_fmtRx(st.rxMed)}</b></div>
+      </div>
+      ${desvio!=null?`<div style="margin-top:3px;color:${Math.abs(desvio)>3?'#F87168':'var(--text-dim)'}">Desvio real − projetado: <b class="mono">${(desvio>0?'+':'')+desvio.toFixed(2)} dB</b>${Math.abs(desvio)>3?' ⚠️ acima de 3 dB':''}</div>`:''}
+      ${r.semSfp?'<div style="color:#E0913C;margin-top:3px">⚠️ PON sem SFP instalado — potência estimada</div>':''}
+      ${r.desativada?'<div style="color:#F87168;margin-top:3px">⛔ PON desativada — sem sinal</div>':''}
+    </div>`;
+  }
+  if(e.tipo==='ceo'||e.tipo==='pop'){
+    const lst=(S.porCaixa.get(e.id)||[]).sort((a,b)=>a.potOut-b.potOut);
+    if(!lst.length)return `<div class="pp-meta" style="font-size:10.5px;color:var(--text-dim)">📡 Nenhum caminho de CTO passa por aqui</div>`;
+    const ctoNomes=[...new Set(lst.map(x=>x.ctoNome))];
+    const min=lst[0],max=lst[lst.length-1];
+    return `<div class="pp-meta" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-size:11px">
+      <b>📡 Sinal ${e.tipo==='pop'?'de saída':'passante'} projetado</b> · ${ctoNomes.length} CTO(s)
+      <div class="cto-grid" style="margin-top:4px">
+        <div class="cto-cel"><span>${e.tipo==='pop'?'Sai do POP':'Chega'} (melhor)</span><b style="color:${_corPot(max.potIn)}">${_fmtRx(e.tipo==='pop'?max.potOut:max.potIn)}</b></div>
+        <div class="cto-cel"><span>${e.tipo==='pop'?'Sai do POP':'Chega'} (pior)</span><b style="color:${_corPot(min.potIn)}">${_fmtRx(e.tipo==='pop'?min.potOut:min.potIn)}</b></div>
+      </div>
+      <div style="max-height:110px;overflow:auto;margin-top:4px">${lst.slice(0,12).map(x=>`<div class="mono" style="display:flex;justify-content:space-between;gap:6px"><span>${x.fib?'F'+x.fib+' ':''}→ ${x.ctoNome}</span><span style="color:${_corPot(x.potOut)}">${x.potOut.toFixed(2)} dBm${x.real?'':' ≈'}</span></div>`).join('')}${lst.length>12?`<div style="color:var(--text-dim)">… +${lst.length-12}</div>`:''}</div>
+    </div>`;
+  }
+  return '';
+}
+function htmlResumoPop(e){
+  const P=getPop(e.id);
+  if(!P.olts.length&&!P.dios.length)return `<div class="pp-meta" style="font-size:10.5px;color:var(--text-dim)">🖥 Sem equipamentos — abra o editor do POP</div>`;
+  return `<div class="pp-meta" style="font-size:11px">${P.olts.map(o=>{
+    const nP=o.portas||((o.slots||1)*(o.ppp||8));let sf=0,pt=0;
+    for(let q=1;q<=nP;q++){if(sfpDe(oltPon(o,q).sfp))sf++;if(P.patches.some(x=>x.olt===o.id&&x.oltPorta===q))pt++}
+    return `🖥 <b>${o.nome}</b> · ${nP} PON · <span style="color:#B98AE8">${sf} SFP</span> · <span style="color:#5FE0A0">${pt} patch</span>`}).join('<br>')}
+    ${P.dios.length?'<br>🗄 '+P.dios.map(d=>d.nome+' ('+d.portas+'p)').join(' · '):''}</div>`;
 }
 function abrirOrcamento(){
   const r=calcOrcamento(fsCaixa);
@@ -5760,8 +6137,9 @@ function abrirOrcamento(){
   const viavel=r.rx>=-25&&r.rx<=-15, quase=r.rx>-15&&r.rx>=-8;
   document.getElementById('orc-body').innerHTML=`
     <div class="info-box">Caminho óptico para <b>${r.sp.ratio}${r.sp.ratio==='1:16'?' AC APC':''}</b> em <b>${nomeEl(fsCaixa)}</b> · perdas do catálogo por cabo/splitter · ${PERDAS.fusao} dB/fusão · ${PERDAS.conector} dB/conector</div>
-    ${r.passos.slice().reverse().map((p,i)=>`<div class="orc-item"><div class="orc-num">${i+1}</div><div class="orc-info"><b>${p.nome}</b><span>${p.sub}</span></div><div class="orc-db">−${p.db.toFixed(2)} dB</div></div>`).join('')}
-    <div class="orc-item"><div class="orc-num">＋</div><div class="orc-info"><b>Drop estimado (cliente)</b><span>100 m + 1 fusão + 2 conectores</span></div><div class="orc-db">−${r.dropDb.toFixed(2)} dB</div></div>
+    <div class="orc-item" style="background:rgba(123,46,216,.08)"><div class="orc-num">⚡</div><div class="orc-info"><b>Saída do transceptor${r.txInfo.sfp?' · '+r.txInfo.sfp.nome:''}</b><span>${r.txInfo.rotulo}</span></div><div class="orc-db" style="color:${r.txInfo.real?'#5FE0A0':'#E0913C'}">${r.txInfo.real?'✔':'≈'} ${r.txInfo.tx.toFixed(2)} dBm</div></div>
+    ${r.passos.slice().reverse().map((p,i)=>`<div class="orc-item"><div class="orc-num">${i+1}</div><div class="orc-info"><b>${p.nome}</b><span>${p.sub}</span></div><div class="orc-db">−${p.db.toFixed(2)} dB<br><small class="mono" style="font-weight:400;color:${_corPot(p.potOut)}">→ ${p.potOut.toFixed(2)} dBm</small></div></div>`).join('')}
+    <div class="orc-item"><div class="orc-num">＋</div><div class="orc-info"><b>Drop estimado (cliente)</b><span>100 m + 1 fusão + 2 conectores</span></div><div class="orc-db">−${r.dropDb.toFixed(2)} dB<br><small class="mono" style="font-weight:400;color:${_corPot(r.rx)}">→ ${r.rx.toFixed(2)} dBm</small></div></div>
     <div class="orc-total ${viavel?'ok':'ruim'}">
       <span>${viavel?'✅ VIÁVEL':(quase?'⚠️ SINAL ALTO (atenuar)':'❌ INVIÁVEL')}</span>
       <span class="mono">RX est.: ${r.rx.toFixed(2)} dBm · atenuação ${(r.total+r.dropDb).toFixed(2)} dB</span>
@@ -6760,13 +7138,13 @@ function setTxPon(oltId,porta,valor){
   const reg=todasOLTs().find(o=>o.olt.id===oltId);
   if(!reg)return;
   const olt=reg.olt;
-  if(!olt.txPorta)olt.txPorta={};
+  const c=oltPon(olt,porta);
   const v=String(valor==null?'':valor).trim().replace(',','.');
-  if(v===''){delete olt.txPorta[porta];toast('PON '+porta+': voltou a usar o TX da OLT/tecnologia')}
+  if(v===''){delete c.tx;toast('PON '+porta+': voltou a usar o TX do SFP/OLT')}
   else{
     const n=+v;
     if(isNaN(n)){toast('Informe um número em dBm (ex: 2.8)',true);return}
-    olt.txPorta[porta]=n;toast('PON '+porta+': TX real '+n.toFixed(2)+' dBm gravado');
+    c.tx=n;toast('PON '+porta+': TX real '+n.toFixed(2)+' dBm gravado');
   }
   salvar();abrirMedicaoPON();
 }
@@ -6796,10 +7174,11 @@ function abrirMedicaoPON(){
       const est=md(ests), real=md(reais);
       const desvio=(est!=null&&real!=null)?(real-est):null;
       const alerta=desvio!=null&&Math.abs(desvio)>3;
-      const txP=(olt.txPorta&&olt.txPorta[p]!=null)?olt.txPorta[p]:'';
+      const _c=oltPon(olt,p);const txP=(_c.tx!=null&&_c.tx!=='')?_c.tx:'';
       const txEfe=txDaCaixa(caixas[0].id);
+      const _g=sfpDe(_c.sfp);
       linhas+=`<tr>
-        <td class="mono">PON ${p}</td>
+        <td class="mono">PON ${p}${_c.ativa===false?' <span style="color:#F87168">⛔</span>':''}<br><small style="color:${_g?'#B98AE8':'#E0913C'}">${_g?_g.nome:'sem SFP'}</small></td>
         <td>${caixas.map(c=>c.nome).join(', ')}</td>
         <td class="mono">${cli}</td>
         <td><input value="${txP}" placeholder="${txEfe.tx.toFixed(2)}" title="TX medido nesta porta PON (dBm). Vazio = usa o da OLT/tecnologia."
@@ -6814,8 +7193,9 @@ function abrirMedicaoPON(){
     html+=`<div class="dr-sec" style="margin-top:10px">🖥 ${olt.nome} <span style="color:var(--text-dim);font-weight:400">— ${popNome}</span></div>
       <div class="info-box" style="margin-bottom:8px;font-size:11.5px">`
       +(txOlt!=null
-        ? `🔦 TX do transceptor: <b style="color:#5FE0A0">✔ ${txOlt.toFixed(2)} dBm</b> (${olt.txFonte==='medido'?'medido com power meter':'datasheet do GBIC'}) — os cálculos desta OLT usam potência real.`
-        : `🔦 TX do transceptor <b style="color:#E0913C">não informado</b> — usando o típico de ${tecOlt.nome} (${tecOlt.tx.toFixed(1)} dBm), valor de catálogo. Edite a OLT e informe o TX real para o cálculo ficar confiável.`)
+        ? `🔦 TX padrão da OLT: <b style="color:#5FE0A0">✔ ${txOlt.toFixed(2)} dBm</b> (${olt.txFonte==='medido'?'medido com power meter':'datasheet do GBIC'}) — vale para as portas sem SFP específico.`
+        : `🔦 TX padrão da OLT <b style="color:#E0913C">não informado</b> — portas sem SFP usam o típico de ${tecOlt.nome} (${tecOlt.tx.toFixed(1)} dBm), valor de catálogo.`)
+      +` <span style="color:var(--text-dim)">SFPs instalados: <b>${(()=>{let n=0;for(let q=1;q<=nP;q++)if(sfpDe(oltPon(olt,q).sfp))n++;return n})()}/${nP}</b> portas.</span>`
       +`</div>
       <div class="cto-grid" style="margin-bottom:8px">
         <div class="cto-cel"><span>Portas PON</span><b>${nP}</b></div>
@@ -6883,7 +7263,7 @@ function abrirListaPortas(id){
         <td>${it.cl.nome||'—'}</td>
         <td class="mono">${it.cl.login||(ix&&ix.login)||'—'}</td>
         <td class="mono" style="font-size:10.5px">${ix&&ix.onu?ix.onu:'—'}</td>
-        <td class="mono" style="color:${_corRx(rx)}">${_fmtRx(rx)}</td>
+        <td class="mono" style="color:${_corRx(rx)}">${_fmtRx(rx)}${(()=>{const co=(typeof clientesOne!=='undefined')?clientesOne.find(c=>String(c.id)===String(it.cl._moId)):null;const pj=rxClienteProjetado(id,co&&!co.semCoord?co.lat:null,co&&!co.semCoord?co.lng:null);if(!pj)return '';const dv=isNaN(rx)?null:(rx-pj.rx);return `<br><small style="color:${dv!=null&&Math.abs(dv)>3?'#F87168':'var(--text-dim)'}">proj. ${pj.rx.toFixed(1)}${dv!=null?' ('+(dv>0?'+':'')+dv.toFixed(1)+')':''}</small>`})()}</td>
         <td>${plaqInp}</td><td>${acao}</td></tr>`;
     }
   }
@@ -6896,7 +7276,9 @@ function abrirListaPortas(id){
       <div class="cto-cel"><span>Inativas</span><b style="color:#F87168">${st.inativas}</b></div>
       <div class="cto-cel"><span>Online</span><b style="color:#00FF66">${st.online}</b></div>
     </div>
-    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX</th><th>🏷️ Plaqueta</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>
+    ${(()=>{const r=sinaisProjetados().porCto.get(id);if(!r)return '<div class="info-box" style="margin-bottom:8px;font-size:11px">📡 Sem caminho óptico projetado até o POP — monte as fusões para ver o sinal previsto por porta.</div>';
+      return `<div class="info-box" style="margin-bottom:8px;font-size:11px">📡 <b>Sinal projetado</b>: saída do splitter <b class="mono" style="color:${_corPot(r.potCTO)}">${r.potCTO.toFixed(2)} dBm</b> → cliente a 100 m <b class="mono" style="color:${_corPot(r.rx)}">${r.rx.toFixed(2)} dBm</b> · TX ${r.txInfo.real?'✔ real':'≈ estimado'} ${r.txInfo.tx.toFixed(2)} dBm${r.olt?' · '+r.olt.nome+(r.pon?' PON '+r.pon:''):''}. Na coluna <b>RX</b>, o valor real da ONU; um desvio &gt; 3 dB aparece em vermelho.</div>`})()}
+    <table class="tbl"><thead><tr><th>Porta</th><th>Status</th><th>Cliente</th><th>Login</th><th>ONU</th><th>RX real / proj.</th><th>🏷️ Plaqueta</th><th>Ação</th></tr></thead><tbody>${linhas}</tbody></table>
     ${semIxc?'<div class="info-box" style="margin-top:8px;font-size:11px">Sinal e status vêm do IXC. Ative a camada <b>Clientes (MoviOne)</b> no painel de elementos para carregar RX/TX e online/offline.</div>':''}`;
   abrirModalGenerico('📋 Portas de atendimento — '+el.nome,html);
 }
@@ -7287,13 +7669,14 @@ function renderCadBody(){
         <td><button class="btn sm ghost" style="padding:3px 8px" onclick="delCat('catOlt','${k.id}')">🗑</button></td></tr>`).join('')}</table>`;
   } else if(cadTab==='gbic'){
     b.innerHTML=cadHeader('Catálogo de GBIC / SFP','+ Adicionar GBIC','')+
-      `<div class="linha2" id="cad-form" style="grid-template-columns:2fr 1fr 1fr auto;align-items:end;gap:8px;margin-bottom:16px;display:none">
+      `<div class="linha2" id="cad-form" style="grid-template-columns:2fr 1fr 1fr 1fr auto;align-items:end;gap:8px;margin-bottom:16px;display:none">
         <div class="campo" style="margin:0"><label>Nome</label><input id="gb-nome" placeholder="GBIC C++ 20km"></div>
         <div class="campo" style="margin:0"><label>Classe</label><input id="gb-tipo" placeholder="C++"></div>
         <div class="campo" style="margin:0"><label>TX (dBm)</label><input id="gb-tx" type="number" step="0.1" value="3.0"></div>
+        <div class="campo" style="margin:0"><label>Uso</label><select id="gb-uso"><option value="pon">PON (OLT)</option><option value="eth">Ethernet / uplink</option></select></div>
         <button class="btn sm" style="height:37px" onclick="addCatGbic()">Salvar</button></div>
-      <table class="tp"><tr><th>Nome</th><th>Classe</th><th>Potência TX</th><th></th></tr>
-      ${CAT.catGbic.map(k=>`<tr><td><b>${k.nome}</b></td><td>${k.tipo}</td><td class="mono">+${k.tx} dBm</td>
+      <table class="tp"><tr><th>Nome</th><th>Classe</th><th>Uso</th><th>Potência TX</th><th></th></tr>
+      ${CAT.catGbic.map(k=>`<tr><td><b>${k.nome}</b></td><td>${k.tipo}</td><td>${k.uso==='eth'?'Ethernet':'PON'}</td><td class="mono">${k.tx>=0?'+':''}${k.tx} dBm</td>
         <td><button class="btn sm ghost" style="padding:3px 8px" onclick="delCat('catGbic','${k.id}')">🗑</button></td></tr>`).join('')}</table>`;
   } else if(cadTab==='conector'){
     b.innerHTML=cadHeader('Catálogo de Conectores','+ Adicionar conector','')+
@@ -7350,7 +7733,7 @@ function delCatSplit(id){
 }
 function toggleAPC(id){const k=CAT.catSplit.find(x=>x.id===id);k.con=!k.con;salvarCat();renderCadBody()}
 function addCatOlt(){CAT.catOlt.push({id:uid('ol'),nome:document.getElementById('ol-nome').value.trim()||'OLT',marca:document.getElementById('ol-marca').value.trim()||'—',portas:+document.getElementById('ol-portas').value||8});salvarCat();renderCadBody()}
-function addCatGbic(){CAT.catGbic.push({id:uid('gb'),nome:document.getElementById('gb-nome').value.trim()||'GBIC',tipo:document.getElementById('gb-tipo').value.trim()||'—',tx:+document.getElementById('gb-tx').value||3.0});salvarCat();renderCadBody()}
+function addCatGbic(){const _u=document.getElementById('gb-uso');CAT.catGbic.push({id:uid('gb'),nome:document.getElementById('gb-nome').value.trim()||'GBIC',tipo:document.getElementById('gb-tipo').value.trim()||'—',tx:+document.getElementById('gb-tx').value||3.0,uso:_u?_u.value:'pon'});salvarCat();renderCadBody()}
 function addCatConector(){CAT.catConector.push({id:uid('cn'),nome:document.getElementById('cn-nome').value.trim()||'Conector',perda:+document.getElementById('cn-perda').value||0.3});salvarCat();renderCadBody()}
 function delCat(cat,id){CAT[cat]=CAT[cat].filter(x=>x.id!==id);salvarCat();renderCadBody()}
 
