@@ -565,6 +565,24 @@ input:focus,select:focus{border-color:var(--accent)}
 .usr-chip b{color:var(--text);font-size:12.5px}
 .usr-chip .sair{margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer}
 .usr-chip .sair:hover{border-color:var(--danger);color:#F87168}
+/* barra do modo combinado: fica no canto, fora do caminho do mapa
+   (antes ficava centralizada no topo e tapava a área de trabalho) */
+#multi-barra{
+  position:absolute;left:12px;bottom:70px;z-index:898;
+  background:var(--surface);border:1px solid var(--accent);border-radius:12px;
+  padding:7px 10px;display:none;gap:6px;align-items:center;flex-wrap:wrap;
+  box-shadow:0 8px 26px rgba(0,0,0,.45);max-width:min(420px,46vw);
+}
+#multi-barra.recolhida{padding:5px 9px}
+#multi-barra.recolhida .mb-conteudo{display:none}
+#multi-barra .mb-topo{display:flex;align-items:center;gap:7px;width:100%}
+#multi-barra .mb-tit{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);white-space:nowrap}
+#multi-barra .mb-dobra{margin-left:auto;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text-dim);border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer;line-height:1.4}
+#multi-barra .mb-dobra:hover{border-color:var(--accent);color:var(--text)}
+#multi-barra .mb-conteudo{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%}
+#multi-barra .mb-dica{font-size:10.5px;color:var(--text-dim);line-height:1.4;width:100%}
+@media (max-width:900px){#multi-barra{max-width:72vw}}
 .multi-chip{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:4px 10px;font-size:11.5px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:5px}
 .multi-chip span{background:var(--bg);border-radius:4px;padding:0 4px;font-size:10px;font-family:'DM Mono'}
 .multi-chip.ativo{border-color:var(--accent);color:var(--text);background:rgba(60,179,113,.12)}
@@ -802,7 +820,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
   </div>
 
-  <div id="multi-barra" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:898;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:7px 12px;display:none;gap:8px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;flex-wrap:wrap"></div>
+  <div id="multi-barra"></div>
   <div id="subbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:899;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 12px;display:none;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12px;color:var(--text-dim)"></div>
 
   <div id="clientes-topbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:898;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:7px 14px;display:none;gap:16px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12.5px"></div>
@@ -2389,7 +2407,9 @@ async function abrirProjetos(ids){
   });
   const centro=sel2[0]?sel2[0].centro:[-5.19,-37.34];
   projAtual={id:'__multi__',_multi:true,_ids:ids,
-    nome:'🔗 '+sel2.length+' projetos conectados: '+sel2.map(p=>p.nome).join(' + '),
+    // título curto: a lista completa fica na barra do modo combinado
+    nome:'🔗 '+sel2.length+' projetos conectados',
+    _nomes:sel2.map(p=>p.nome),
     centro,criado:Date.now(),elementos,cabos,areas,fusoes,pops,clientes,
     _seqProj:seqPorProj,_alvo:ids[0],
     cfg:Object.assign({tx:3.0,folgaPadrao:10,raioVinculo:35,raioViab:250,tiles:'google-h'},(sel2[0]&&sel2[0].cfg)||{}),
@@ -2406,6 +2426,7 @@ async function abrirProjetos(ids){
     if(pts.length)mapa.fitBounds(pts,{padding:[60,60]});else mapa.setView(centro,13);
   },120);
   limparOverlaysSoltos();
+  try{_multiRecolhida=store.get('movifiber_multibarra')==='1'}catch(e){}
   setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();restaurarSecoes();
   toast('✏️ '+sel2.length+' projetos abertos para EDIÇÃO · '+elementos.length+' elementos · '+cabos.length+' cabos');
 }
@@ -2419,15 +2440,29 @@ function mudarProjetoAlvo(id){
   projAtual._alvo=id;renderSeletorAlvo();
   toast('Novos itens serão gravados em: '+_nomeProj(id));
 }
+let _multiRecolhida=false;
+function toggleMultiBarra(){
+  _multiRecolhida=!_multiRecolhida;
+  try{store.set('movifiber_multibarra',_multiRecolhida?'1':'0')}catch(e){}
+  renderSeletorAlvo();
+}
 function renderSeletorAlvo(){
   const barra=document.getElementById('multi-barra');
   if(!barra)return;
   if(!projAtual||!projAtual._multi){barra.style.display='none';return}
-  barra.style.display='';
+  barra.style.display='flex';   // a regra do CSS é display:none; precisa sobrepor
   const conta=id=>projAtual.elementos.filter(e=>e._projId===id).length;
-  barra.innerHTML='<span style="color:var(--text-dim);font-size:11px">Novos itens em:</span>'+
-    projAtual._ids.map(id=>`<button class="multi-chip ${projAtual._alvo===id?'ativo':''}" onclick="mudarProjetoAlvo('${id}')">${_nomeProj(id)} <span>${conta(id)}</span></button>`).join('')+
-    '<span style="color:var(--text-dim);font-size:11px;margin-left:auto">Cabos entre projetos são permitidos — o orçamento óptico atravessa os dois</span>';
+  const alvoNome=_nomeProj(projAtual._alvo);
+  barra.innerHTML=
+    `<div class="mb-topo">
+       <span class="mb-tit">🔗 Novos itens em: <b style="color:var(--accent);text-transform:none;font-size:11.5px">${alvoNome}</b></span>
+       <button class="mb-dobra" onclick="toggleMultiBarra()" title="Recolher">${_multiRecolhida?'⌃':'⌄'}</button>
+     </div>
+     <div class="mb-conteudo">`
+    +projAtual._ids.map(id=>`<button class="multi-chip ${projAtual._alvo===id?'ativo':''}" onclick="mudarProjetoAlvo('${id}')">${_nomeProj(id)} <span>${conta(id)}</span></button>`).join('')
+    +`<span class="mb-dica">Cabos entre projetos são permitidos — o orçamento óptico atravessa os dois.</span>
+     </div>`;
+  barra.classList.toggle('recolhida',_multiRecolhida);
 }
 function abrirModalNovoProjeto(){
   abrirModal('md-novo-projeto');
