@@ -417,6 +417,9 @@ input:focus,select:focus{border-color:var(--accent)}
 /* contorno escuro nos cabos: cores opacas e destacadas sobre a imagem de satélite */
 .cabo-linha{filter:drop-shadow(0 0 1.3px rgba(0,0,0,.95)) drop-shadow(0 0 2.5px rgba(0,0,0,.55))}
 .seta-cabo{filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.6));pointer-events:none}
+/* etiqueta da fibra: mostra a dica ao passar o mouse, mas não captura arrasto */
+.fibra-etiq rect{cursor:help}
+.fibra-etiq text{pointer-events:none}
 .fusao-linha.fusao-ruim{stroke-width:3.2;filter:drop-shadow(0 0 3px rgba(255,59,48,.7))}
 /* a luz de tráfego e as setas agora são desenhadas num único canvas
    (classe LuzSetasCanvas) — sem elementos no DOM e sem animação por CSS */
@@ -2531,6 +2534,7 @@ async function abrirProjeto(id){
   if(!mapa)return;
   setTimeout(()=>mapa.invalidateSize(),100);
   limparOverlaysSoltos();
+  _migrarNotasFibra();
   renderCamadas();renderTudo();setModo('navegar');restaurarSecoes();
   _estadoAtual=snapProj();
 }
@@ -4029,22 +4033,28 @@ function renderFusao(){
       const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
       if(fuFib)_fsLuz.fibras.push({x1,y1:p.y,x2,y2:p.y,cor});
       const claro=['#FFFFFF','#F2E205','#F5A623','#E8C818','#00E5FF','#7DE0FF','#FFD86B'].includes((cor||'').toUpperCase());
-      const _nf=(F.notasFibra&&F.notasFibra[c.id+suf+'-'+f])||null;
-      s+=`<g onmousedown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" style="cursor:grab">
-        <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
-        <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}">${f}</text>
-        <title>Fibra ${f} — ${ABNT[(f-1)%12].nome}${_nf?('\n🏷️ '+_nf.label+(_nf.obs?' — '+_nf.obs:'')):'\n(botão direito para identificar)'}</title>
-      </g>`;
-      // identificação da fibra, ao lado do ponto
+      const _nf=getIdFibra(c.id,f);
+      const _dica='Fibra '+f+' — '+ABNT[(f-1)%12].nome
+        +(_nf?('\n🏷️ '+_nf.label+(_nf.obs?'\n'+_nf.obs:'')):'')
+        +'\n(botão direito para identificar · arraste para reposicionar)';
+      // A etiqueta é desenhada ANTES do ponto: assim o ponto fica por cima e
+      // continua sempre agarrável, mesmo com a identificação ao lado.
       if(_nf&&_nf.label){
         const dir=b.lado==='esq'?1:-1;
-        const larg=Math.min(120,8+String(_nf.label).length*5.6);
-        const bx=p.x+dir*13-(dir<0?larg:0);
-        s+=`<g style="pointer-events:none">
-          <rect x="${bx}" y="${p.y-7}" width="${larg}" height="14" rx="4" fill="#141A24" stroke="${cor}" stroke-width="1" opacity=".95"/>
-          <text x="${bx+larg/2}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Sans" fill="#E2E0DB">${_esc(String(_nf.label).slice(0,20))}</text>
+        const larg=Math.min(126,10+String(_nf.label).length*5.8);
+        const bx=p.x+dir*14-(dir<0?larg:0);
+        s+=`<g class="fibra-etiq">
+          <rect x="${bx}" y="${p.y-7}" width="${larg}" height="14" rx="4" fill="#141A24" stroke="${cor}" stroke-width="1" opacity=".96"/>
+          <text x="${bx+larg/2}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Sans" fill="#E2E0DB">${_esc(String(_nf.label).slice(0,21))}</text>
+          <title>${_esc(_dica)}</title>
         </g>`;
       }
+      s+=`<g onmousedown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" style="cursor:grab">
+        <circle cx="${p.x}" cy="${p.y}" r="11" fill="transparent"/>
+        <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
+        <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}" style="pointer-events:none">${f}</text>
+        <title>${_esc(_dica)}</title>
+      </g>`;
       // potência medida registrada nesta ponta
       {const _mk=F.medicoes&&F.medicoes[fk];
        if(_mk){
@@ -4333,12 +4343,41 @@ function toggleModoNota(){
   fsSel=null;renderFusao();
   toast(modoNota?'Modo identificar: clique numa fibra para nomeá-la':'Modo identificar desligado');
 }
+/* A identificação pertence à FIBRA DO CABO, não à caixa.
+   Assim ela acompanha o cabo por toda a extensão: aparece em cada caixa por onde
+   ele passa (sangria) e some sozinha quando o cabo é rompido — o rompimento gera
+   um cabo novo, com identificação própria. */
+function idFibraChave(caboId,fib){return caboId+'-'+fib}
+function getIdFibra(caboId,fib){
+  if(!projAtual.idFibras)projAtual.idFibras={};
+  return projAtual.idFibras[idFibraChave(caboId,fib)]||null;
+}
+function setIdFibra(caboId,fib,label,obs){
+  if(!projAtual.idFibras)projAtual.idFibras={};
+  const k=idFibraChave(caboId,fib);
+  if(!label&&!obs)delete projAtual.idFibras[k];
+  else projAtual.idFibras[k]={label:label||undefined,obs:obs||undefined};
+}
+/* traz as identificações antigas (guardadas por caixa) para o novo formato */
+function _migrarNotasFibra(){
+  if(!projAtual||!projAtual.fusoes)return;
+  if(!projAtual.idFibras)projAtual.idFibras={};
+  let n=0;
+  Object.values(projAtual.fusoes).forEach(F=>{
+    if(!F||!F.notasFibra)return;
+    Object.entries(F.notasFibra).forEach(([k,v])=>{
+      const m=k.match(/^(.+?)([es]?)-(\d+)$/);
+      if(!m)return;
+      const nk=idFibraChave(m[1],m[3]);
+      if(!projAtual.idFibras[nk]){projAtual.idFibras[nk]=v;n++}
+    });
+    delete F.notasFibra;
+  });
+  if(n)salvar();
+}
 function fsNotaFibra(ev,caboId,suf,fib){
   if(ev){ev.preventDefault();ev.stopPropagation()}
-  const F=getFus(fsCaixa);
-  if(!F.notasFibra)F.notasFibra={};
-  const chave=caboId+suf+'-'+fib;
-  const n=F.notasFibra[chave]||{};
+  const n=getIdFibra(caboId,fib)||{};
   const c=projAtual.cabos.find(x=>x.id===caboId);
   const lado=suf==='e'?' (entrada)':(suf==='s'?' (saída)':'');
   abrirModalGenerico('🏷️ Fibra '+fib+' — '+((c&&c.nome)||'cabo')+lado,
@@ -4348,31 +4387,42 @@ function fsNotaFibra(ev,caboId,suf,fib){
      </div>
      <div class="campo"><label>Identificação</label>
        <input id="nf-label" placeholder="ex: Ramal Centro · Cliente 1234 · Reserva" value="${_esc(n.label||'')}"
-         onkeydown="if(event.key==='Enter')salvarNotaFibra('${chave}')"></div>
+         onkeydown="if(event.key==='Enter')salvarNotaFibra('${caboId}',${fib})"></div>
      <div class="campo"><label>Observação</label>
        <input id="nf-obs" placeholder="opcional" value="${_esc(n.obs||'')}"
-         onkeydown="if(event.key==='Enter')salvarNotaFibra('${chave}')"></div>`);
+         onkeydown="if(event.key==='Enter')salvarNotaFibra('${caboId}',${fib})"></div>`);
   const foot=document.querySelector('#md-generico .md-foot');
-  foot.innerHTML=`<button class="btn ghost danger" onclick="removerNotaFibra('${chave}')">🗑 Remover</button>
+  foot.innerHTML=`<button class="btn ghost danger" onclick="removerNotaFibra('${caboId}',${fib})">🗑 Remover</button>
     <button class="btn ghost" onclick="fecharModal('md-generico')">Cancelar</button>
-    <button class="btn" onclick="salvarNotaFibra('${chave}')">💾 Salvar</button>`;
+    <button class="btn" onclick="salvarNotaFibra('${caboId}',${fib})">💾 Salvar</button>`;
   setTimeout(()=>{const el=document.getElementById('nf-label');if(el){el.focus();el.select()}},60);
   return false;
 }
-function salvarNotaFibra(chave){
-  const F=getFus(fsCaixa);
+function salvarNotaFibra(caboId,fib){
   const label=document.getElementById('nf-label').value.trim();
   const obs=document.getElementById('nf-obs').value.trim();
-  if(!label&&!obs)delete F.notasFibra[chave];
-  else F.notasFibra[chave]={label:label||undefined,obs:obs||undefined};
+  setIdFibra(caboId,fib,label,obs);
   salvar();fecharModal('md-generico');renderFusao();
-  toast(label?('Fibra identificada: '+label):'Identificação removida');
+  if(label){
+    const n=_caixasDoCabo(caboId).length;
+    toast('Fibra identificada: '+label+(n>1?(' · aparece nas '+n+' caixas do cabo'):''));
+  }else toast('Identificação removida');
 }
-function removerNotaFibra(chave){
-  const F=getFus(fsCaixa);
-  delete F.notasFibra[chave];
+function removerNotaFibra(caboId,fib){
+  setIdFibra(caboId,fib,'','');
   salvar();fecharModal('md-generico');renderFusao();
   toast('Identificação removida');
+}
+/* em quantas caixas este cabo aparece (pontas + sangrias de passagem) */
+function _caixasDoCabo(caboId){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  if(!c)return [];
+  const ids=new Set();
+  if(c.origemId)ids.add(c.origemId);
+  if(c.destinoId)ids.add(c.destinoId);
+  (c.passagens||[]).forEach(id=>ids.add(id));
+  if(c.sangria&&c.sangria.caixa)ids.add(c.sangria.caixa);
+  return [...ids];
 }
 /* ===== ANOTAÇÃO DA CAIXA ===== */
 function abrirNotaCaixa(){
