@@ -1449,17 +1449,46 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     </div>
   </div>
 
+  <!-- EDITOR: portas do DIO (nome e observação por porta) -->
+  <div class="modal-bg" id="md-dio-portas">
+    <div class="modal" style="max-width:660px">
+      <div class="md-head"><b id="dp-titulo">Portas do DIO</b><button class="x" onclick="fecharModal('md-dio-portas')">✕</button></div>
+      <div class="md-body">
+        <div class="info-box" style="margin-bottom:8px">Identifique cada porta como no campo — para onde ela vai, qual cliente atende, qual anel. O nome aparece no diagrama de fusão e nos relatórios.</div>
+        <div style="display:flex;gap:14px">
+          <div style="width:190px;border-right:1px solid var(--border);padding-right:12px;max-height:340px;overflow:auto">
+            <div id="dp-lista"></div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="campo"><label>Identificação da porta</label>
+              <input id="dp-label" placeholder="ex: Ramal Centro / Cliente 1234" oninput="dpSalvarLabel()"></div>
+            <div class="campo"><label>Observação</label>
+              <input id="dp-obs" placeholder="opcional" oninput="dpSalvarObs()"></div>
+            <div class="info-box" id="dp-info" style="margin-top:8px"></div>
+            <button class="btn ghost sm" style="margin-top:8px" onclick="dpLimparPorta()">🗑 Limpar esta porta</button>
+          </div>
+        </div>
+      </div>
+      <div class="md-foot"><button class="btn" onclick="fecharModal('md-dio-portas')">💾 Concluir</button></div>
+    </div>
+  </div>
+
   <!-- MODAL: Adicionar/Editar DIO (bandejas) -->
   <div class="modal-bg" id="md-dio">
     <div class="modal">
       <div class="md-head"><b id="dio-titulo">🗄 Adicionar DIO</b><button class="x" onclick="fecharModal('md-dio')">✕</button></div>
       <div class="md-body">
         <input type="hidden" id="dio-id">
+        <div class="campo"><label>Nome do DIO</label>
+          <input id="dio-nome" placeholder="ex: DIO 1 — Rack A"></div>
         <div class="dr-sec">Portas por bandeja</div>
         <div id="dio-pb" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
         <div class="dr-sec" style="margin-top:10px">Quantidade de bandejas</div>
         <div id="dio-opcoes" style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px"></div>
         <div class="info-box" id="dio-resumo" style="margin-top:8px"></div>
+        <div id="dio-acao-portas" style="margin-top:10px;display:none">
+          <button class="btn ghost sm" style="width:100%" onclick="abrirPortasDIO()">🏷️ Nomear e anotar as portas</button>
+        </div>
       </div>
       <div class="md-foot">
         <button class="btn ghost" onclick="fecharModal('md-dio')">Cancelar</button>
@@ -3858,9 +3887,9 @@ function renderFusao(){
     s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='sp-'+sp.id+'-0'?'sel':''}" cx="${sp.x-14}" cy="${cyIn}" r="5.5" fill="#E2E0DB" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'sp',sp:'${sp.id}',porta:0})"><title>Entrada</title></circle>`;
 
     // rótulos do splitter, posicionados já em coordenada final
-    const pLbl=P(sp.x+W/2, sp.y+h+18), pSub=P(sp.x+W/2, sp.y+h+30), pX=P(sp.x+W/2, sp.y-8);
+    // a perda fica no tooltip e no orçamento óptico — no desenho só polui
+    const pLbl=P(sp.x+W/2, sp.y+h+18), pX=P(sp.x+W/2, sp.y-8);
     txt+=`<text class="splitter-lbl-big" x="${pLbl.x.toFixed(1)}" y="${pLbl.y.toFixed(1)}">${rotuloSp(sp)}${conec?' AC '+adpTipo:' fusão'}${sp.pernasCor?' · ABNT':''}</text>`;
-    txt+=`<text class="splitter-lbl" x="${pSub.x.toFixed(1)}" y="${pSub.y.toFixed(1)}" style="font-size:8.5px">${conec?('−'+((POLIMENTO[adpTipo]||{}).il||0.3).toFixed(2)+'dB · RL '+((POLIMENTO[adpTipo]||{}).rl||50)+'dB'):('emenda −'+PERDAS.fusao.toFixed(2)+'dB')}</text>`;
     txt+=`<text class="splitter-lbl" x="${pX.x.toFixed(1)}" y="${pX.y.toFixed(1)}" style="fill:var(--danger);cursor:pointer;pointer-events:auto" onmousedown="event.stopPropagation()" onclick="removerSplitter(event,'${sp.id}')">✕</text>`;
 
     for(let p=1;p<=n;p++){
@@ -3914,8 +3943,8 @@ function renderFusao(){
           const p=b*porBand+i+1;
           const cy=topo+42+i*16-12;
           const pat=P.patches.find(x=>x.dio===d.id&&x.dioPorta===p);
-          s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy+12}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Bandeja ${b+1} · porta ${i+1}${pat?' · patch PON '+pat.oltPorta:''}</title></circle>
-          <text class="cabo-sub" x="${d.fx+12}" y="${cy+15.5}" style="font-family:'DM Mono';font-size:9px">${i+1}${pat?' ⇄ PON '+pat.oltPorta:''}</text>`;
+          s+=`<circle class="porta-splitter ${fsSel&&ptKey(fsSel)==='dio-'+d.id+'-'+p?'sel':''}" cx="${d.fx}" cy="${cy+12}" r="5" fill="${pat?'#3CB371':'#8B90A0'}" onmousedown="event.stopPropagation()" onclick="fsClique(event,{t:'dio',dio:'${d.id}',porta:${p}})"><title>Bandeja ${b+1} · porta ${i+1}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].label)?' · '+d.rotulos[p].label:''}${pat?' · patch PON '+pat.oltPorta:''}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].obs)?'\n'+d.rotulos[p].obs:''}</title></circle>
+          <text class="cabo-sub" x="${d.fx+12}" y="${cy+15.5}" style="font-family:'DM Mono';font-size:9px">${i+1}${(d.rotulos&&d.rotulos[p]&&d.rotulos[p].label)?' '+String(d.rotulos[p].label).slice(0,13):(pat?' ⇄ PON '+pat.oltPorta:'')}</text>`;
         }
       }
       s+='</g>';
@@ -4725,8 +4754,79 @@ function abrirModalDIO(id){
   document.getElementById('dio-titulo').textContent=dio?'🗄 Editar DIO':'🗄 Adicionar DIO';
   _dioPorBandSel=dio?(dio.portasPorBandeja||12):12;
   _dioBandSel=dio?(dio.bandejas||Math.ceil(dio.portas/_dioPorBandSel)):2;
+  document.getElementById('dio-nome').value=dio?(dio.nome||''):'';
+  document.getElementById('dio-nome').placeholder=dio?'':'DIO '+(getPop(popAtual).dios.length+1);
+  // nomear portas só faz sentido num DIO que já existe
+  document.getElementById('dio-acao-portas').style.display=dio?'':'none';
+  document.querySelector('#md-dio .md-foot .btn:last-child').textContent=dio?'Salvar':'Criar dispositivo';
   _dioRenderOpcoes();
   abrirModal('md-dio');
+}
+
+/* ===== Identificação das portas do DIO ===== */
+let _dpDio=null, _dpPorta=1;
+function abrirPortasDIO(){
+  const id=document.getElementById('dio-id').value;
+  const d=getPop(popAtual).dios.find(x=>x.id===id);
+  if(!d){toast('Salve o DIO antes de nomear as portas',true);return}
+  _dpDio=d.id;_dpPorta=1;
+  if(!d.rotulos)d.rotulos={};
+  document.getElementById('dp-titulo').textContent='Portas · '+(d.nome||'DIO');
+  dpRenderLista();dpSelPorta(1);
+  abrirModal('md-dio-portas');
+}
+function _dpD(){return getPop(popAtual).dios.find(x=>x.id===_dpDio)}
+function dpRenderLista(){
+  const d=_dpD();if(!d)return;
+  const pb=d.portasPorBandeja||12;
+  const nb=d.bandejas||Math.ceil(d.portas/pb);
+  let html='';
+  for(let b=0;b<nb;b++){
+    const nesta=Math.min(pb,d.portas-b*pb);
+    if(nesta<=0)break;
+    html+=`<div class="dr-sec" style="margin:6px 0 4px">Bandeja ${b+1}</div>`;
+    for(let i=1;i<=nesta;i++){
+      const p=b*pb+i;
+      const r=d.rotulos[p]||{};
+      const pat=getPop(popAtual).patches.find(x=>x.dio===d.id&&x.dioPorta===p);
+      html+=`<div class="ap-porta ${p===_dpPorta?'sel':''}" onclick="dpSelPorta(${p})">
+        <b>${i}${r.label?' · '+String(r.label).slice(0,16):''}</b>
+        <small>${r.label?'identificada':'sem identificação'}${pat?' · PON '+pat.oltPorta:''}</small></div>`;
+    }
+  }
+  document.getElementById('dp-lista').innerHTML=html;
+}
+function dpSelPorta(p){
+  _dpPorta=p;
+  const d=_dpD();if(!d)return;
+  const r=d.rotulos[p]||{};
+  document.getElementById('dp-label').value=r.label||'';
+  document.getElementById('dp-obs').value=r.obs||'';
+  const l=dioLocal(d,p);
+  const pat=getPop(popAtual).patches.find(x=>x.dio===d.id&&x.dioPorta===p);
+  const fib=fibraNoDIO(d.id,p);
+  document.getElementById('dp-info').innerHTML=
+    `<b>Bandeja ${l.bandeja} · porta ${l.porta}</b>`
+    +(pat?'<br>Conectada à PON '+pat.oltPorta:'<br><span style="color:var(--text-dim)">Sem patch para a OLT</span>')
+    +(fib?'<br>Fibra fundida: '+fib.txt:'');
+  dpRenderLista();
+}
+function _dpGrava(campo,valor){
+  const d=_dpD();if(!d)return;
+  if(!d.rotulos)d.rotulos={};
+  const r=d.rotulos[_dpPorta]||{};
+  r[campo]=String(valor||'').trim()||undefined;
+  if(!r.label&&!r.obs)delete d.rotulos[_dpPorta];else d.rotulos[_dpPorta]=r;
+  salvar();
+}
+function dpSalvarLabel(){_dpGrava('label',document.getElementById('dp-label').value);dpRenderLista()}
+function dpSalvarObs(){_dpGrava('obs',document.getElementById('dp-obs').value)}
+function dpLimparPorta(){
+  const d=_dpD();if(!d)return;
+  delete d.rotulos[_dpPorta];
+  document.getElementById('dp-label').value='';document.getElementById('dp-obs').value='';
+  salvar();dpRenderLista();renderPop();
+  toast('Porta sem identificação');
 }
 function _dioRenderOpcoes(){
   document.getElementById('dio-pb').innerHTML=DIO_POR_BANDEJA.map(pb=>{
@@ -4764,8 +4864,13 @@ function salvarDIO(){
       P.patches=P.patches.filter(x=>!(x.dio===d.id&&x.dioPorta>portas));
     }
     d.portas=portas;d.bandejas=nb;d.portasPorBandeja=pb;
+    const nv=document.getElementById('dio-nome').value.trim();
+    if(nv)d.nome=nv;
   }
-  else P.dios.push({id:uid('dio'),nome:'DIO '+(P.dios.length+1),portas,bandejas:nb,portasPorBandeja:pb,x:480+P.dios.length*30,y:120+P.dios.length*30});
+  else{
+    const nv=document.getElementById('dio-nome').value.trim();
+    P.dios.push({id:uid('dio'),nome:nv||('DIO '+(P.dios.length+1)),portas,bandejas:nb,portasPorBandeja:pb,rotulos:{},x:480+P.dios.length*30,y:120+P.dios.length*30});
+  }
   salvar();fecharModal('md-dio');renderPop();
 }
 /* ===== Ativos Ethernet (switch/roteador/servidor) com GBIC por porta ===== */
@@ -4976,7 +5081,8 @@ function renderPop(){
         const fib=fibraNoDIO(d0.id,p);
         const cx=d0.x+24+(i-1)*18+6, cy=by;
         const cor=pat?'#3CB371':(fib?'#5B9BFF':'#3A4050');
-        const tip='Bandeja '+(b+1)+' · Porta '+i+(fib?' · '+fib.txt:' · sem fibra fundida')+(pat?' · PON '+pat.oltPorta+' ('+((P.olts.find(x=>x.id===pat.olt)||{}).nome||'OLT')+')':' · sem patch');
+        const rot=(d0.rotulos&&d0.rotulos[p])||{};
+        const tip='Bandeja '+(b+1)+' · Porta '+i+(rot.label?' · '+rot.label:'')+(fib?' · '+fib.txt:' · sem fibra fundida')+(pat?' · PON '+pat.oltPorta+' ('+((P.olts.find(x=>x.id===pat.olt)||{}).nome||'OLT')+')':' · sem patch')+(rot.obs?' — '+rot.obs:'');
         s+=`<circle class="eq-porta ${popSel&&popSel.t==='dio'&&popSel.id===d0.id&&popSel.porta===p?'sel':''}" cx="${cx}" cy="${cy}" r="5" fill="${cor}" onmousedown="event.stopPropagation()" onclick="clicarPortaPop('dio','${d0.id}',${p})"><title>${tip}</title></circle>`;
       }
     }
@@ -5078,7 +5184,8 @@ function renderManobra(){
         const sel=mnbSel&&mnbSel.t==='dio'&&mnbSel.id===d.id&&mnbSel.porta===p?' sel':'';
         const tip=(fib?fib.txt+' · ':'')+(pat?'conectada à OLT':'livre');
         // o número mostrado reinicia em cada bandeja
-        colD+=`<div class="mnb-porta ${cls}${sel}" onclick="manobraClicarPorta('dio','${d.id}',${p})" title="Bandeja ${b+1} · porta ${i} · ${tip}">${i}</div>`;
+        const rot=(d.rotulos&&d.rotulos[p])||{};
+        colD+=`<div class="mnb-porta ${cls}${sel}" onclick="manobraClicarPorta('dio','${d.id}',${p})" title="Bandeja ${b+1} · porta ${i}${rot.label?' · '+rot.label:''} · ${tip}">${i}</div>`;
       }
       colD+=`</div>`;
     }
