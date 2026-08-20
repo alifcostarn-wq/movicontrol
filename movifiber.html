@@ -763,6 +763,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       </div>
       <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="projeto">Projeto <span class="seta">▸</span></div>
       <div class="dr-grupo" data-grupo="projeto">
+        <button class="dr-item" onclick="abrirVerificadorNomes()"><span class="ic">🔤</span> Nomenclatura</button>
         <button class="dr-item" onclick="abrirDossie()" style="border:1px dashed var(--accent);color:var(--accent)"><span class="ic">📄</span> Dossiê de execução</button>
         <button class="dr-item" onclick="abrirHistorico()"><span class="ic">🕘</span> Histórico de alterações</button>
         <button class="dr-item" onclick="abrirConfig()"><span class="ic">⚙️</span> Configurações</button>
@@ -1299,6 +1300,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="fs-tool" onclick="fsResetarTracados()" title="Desfaz os desvios de traçado das fusões">↺ Traçados</button>
       <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Blocos</button>
       <button class="fs-tool" onclick="abrirNotaCaixa()" title="Anotações desta caixa (vão junto no PNG)">📝 Nota</button>
+      <button class="fs-tool" id="btn-nota-fibra" onclick="toggleModoNota()" title="Identificar fibras · também pelo botão direito sobre a fibra">🏷️ Identificar</button>
       <button class="fs-tool" id="btn-medir" onclick="toggleModoMedir()" title="Registrar a potência medida em cada ponta">📏 Medir</button>
       <button class="fs-tool" onclick="abrirProjetadoReal()" title="Comparar o projetado com o que foi medido">📊 Projetado × Real</button>
       <span style="width:10px"></span>
@@ -1761,6 +1763,155 @@ function restaurarBarraFusao(){
   if(!head)return;
   head.classList.toggle('recolhido',r==='1');
   if(b)b.textContent=r==='1'?'⌄ Ferramentas':'⌃ Recolher';
+}
+/* ===== VERIFICADOR DE NOMENCLATURA =====
+   O padrão adotado é o que já predomina nos projetos (R01-APD-05 nas CTOs).
+   O verificador aponta o que foge dele e propõe o nome corrigido. */
+const PADROES_NOME={
+  projeto:{re:/^FTTH-[A-Z0-9-]+$/,  exemplo:'FTTH-APODI-APAMA', desc:'FTTH-<LOCALIDADE>'},
+  pop:    {re:/^(POP|CPD)-[A-Z]{3}$/,exemplo:'POP-APD · CPD-MOS', desc:'POP-<SITE> ou CPD-<SITE>'},
+  ceo:    {re:/^CEO-[A-Z]{3}-(R\d{2}|BB\d{2})$/, exemplo:'CEO-APD-R01 · CEO-MSA-BB01', desc:'CEO-<SITE>-R<nn> (ramal) ou CEO-<SITE>-BB<nn> (backbone)'},
+  cto:    {re:/^R\d{2}-[A-Z]{3}-\d{2}$/, exemplo:'R01-APD-05', desc:'R<ramal>-<SITE>-<nn>'},
+  reserva:{re:/^RT-[A-Z]{3}-\d{2}$/, exemplo:'RT-APD-03', desc:'RT-<SITE>-<nn>'},
+  backbone:{re:/^CB-BB-[A-Z]{3}-[A-Z]{3}-\d{2}$/, exemplo:'CB-BB-MSA-APD-01', desc:'CB-BB-<ORIGEM>-<DESTINO>-<nn>'},
+  distribuicao:{re:/^CB-DS-[A-Z]{3}-R\d{2}-\d{2}$/, exemplo:'CB-DS-APD-R01-02', desc:'CB-DS-<SITE>-R<ramal>-<nn>'},
+  drop:   {re:/^CB-DR-R\d{2}-[A-Z]{3}-\d{2}-P\d{2}$/, exemplo:'CB-DR-R01-APD-05-P03', desc:'CB-DR-<CTO>-P<porta>'}
+};
+function _semAcento(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
+/* descobre a sigla do site a partir dos nomes que já existem */
+function _siglaProjeto(){
+  const c={};
+  (projAtual.elementos||[]).forEach(e=>{
+    const m=String(e.nome||'').toUpperCase().match(/\b([A-Z]{2,4})\b/g)||[];
+    m.forEach(x=>{if(!['CEO','CTO','POP','CPD','FTTH','RAMAL','CDR','CB','RT','BB','DS','DR'].includes(x))c[x]=(c[x]||0)+1});
+  });
+  const top=Object.entries(c).sort((a,b)=>b[1]-a[1])[0];
+  if(top)return top[0].padEnd(3,'X').slice(0,3);
+  return _semAcento(projAtual.nome||'XXX').toUpperCase().replace(/[^A-Z]/g,'').slice(0,3)||'XXX';
+}
+const _dd=n=>String(n).padStart(2,'0');
+/* propõe o nome corrigido a partir dos números já presentes */
+function _sugerirNome(tipo,nome,sigla,idx){
+  const N=_semAcento(nome).toUpperCase();
+  const nums=(N.match(/\d+/g)||[]).map(Number);
+  switch(tipo){
+    case 'cto':{
+      const mr=N.match(/R\s*-?\s*(\d+)/); const ramal=mr?+mr[1]:(nums[0]||1);
+      const seq=nums.length>1?nums[nums.length-1]:(idx+1);
+      return 'R'+_dd(ramal)+'-'+sigla+'-'+_dd(seq);
+    }
+    case 'ceo':{
+      if(/BACKBONE|BB/.test(N))return 'CEO-'+sigla+'-BB'+_dd(nums[0]||idx+1);
+      const mr=N.match(/(?:RAMAL|CDR|R)\s*-?\s*(\d+)/);
+      return 'CEO-'+sigla+'-R'+_dd(mr?+mr[1]:(nums[0]||idx+1));
+    }
+    case 'pop': return (/CPD/.test(N)?'CPD-':'POP-')+sigla;
+    case 'reserva': return 'RT-'+sigla+'-'+_dd(nums[0]||idx+1);
+    case 'backbone': return 'CB-BB-'+sigla+'-'+sigla+'-'+_dd(nums[0]||idx+1);
+    case 'distribuicao':{
+      const mr=N.match(/R\s*-?\s*(\d+)/);
+      return 'CB-DS-'+sigla+'-R'+_dd(mr?+mr[1]:1)+'-'+_dd(idx+1);
+    }
+    case 'drop': return 'CB-DR-'+sigla+'-'+_dd(idx+1)+'-P'+_dd(nums[nums.length-1]||1);
+    case 'projeto': return 'FTTH-'+_semAcento(nome).toUpperCase().replace(/^FTTH[\s-]*/,'').replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'');
+  }
+  return nome;
+}
+function _analisarNomes(){
+  const sigla=_siglaProjeto();
+  const itens=[];
+  const conf=(tipo,nome)=>{const p=PADROES_NOME[tipo];return p?p.re.test(nome||''):true};
+  // projeto
+  itens.push({escopo:'projeto',id:'__proj__',tipo:'projeto',nome:projAtual.nome,
+    ok:conf('projeto',projAtual.nome), sugerido:_sugerirNome('projeto',projAtual.nome,sigla,0)});
+  // elementos (postes ficam de fora: seguem a numeração da concessionária)
+  (projAtual.elementos||[]).filter(e=>e.tipo!=='poste').forEach((e,i)=>{
+    itens.push({escopo:'elemento',id:e.id,tipo:e.tipo,nome:e.nome,
+      ok:conf(e.tipo,e.nome), sugerido:_sugerirNome(e.tipo,e.nome,sigla,i)});
+  });
+  (projAtual.cabos||[]).forEach((c,i)=>{
+    itens.push({escopo:'cabo',id:c.id,tipo:c.tipo,nome:c.nome,
+      ok:conf(c.tipo,c.nome), sugerido:_sugerirNome(c.tipo,c.nome,sigla,i)});
+  });
+  return {sigla,itens};
+}
+function abrirVerificadorNomes(){
+  if(!projAtual){toast('Abra um projeto',true);return}
+  const {sigla,itens}=_analisarNomes();
+  window.__nomesAnalise={sigla,itens};
+  const fora=itens.filter(x=>!x.ok);
+  const rot={projeto:'Projeto',pop:'POP',ceo:'CEO',cto:'CTO',reserva:'Reserva',
+             backbone:'Cabo backbone',distribuicao:'Cabo distribuição',drop:'Cabo drop'};
+  const linhas=fora.length?fora.map((x,i)=>`<tr>
+      <td>${rot[x.tipo]||x.tipo}</td>
+      <td style="color:var(--warn)">${_esc(x.nome||'(sem nome)')}</td>
+      <td class="seta">→</td>
+      <td><input value="${_esc(x.sugerido)}" id="vn-${i}" style="width:100%;padding:3px 7px;border-radius:5px;border:1px solid var(--border);background:var(--surface2);color:#5FE0A0;font-family:'DM Mono';font-size:11.5px"></td>
+      <td><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="checkbox" id="vc-${i}" checked> aplicar</label></td>
+    </tr>`).join('')
+    :'<tr><td colspan="5" style="text-align:center;color:#5FE0A0;padding:18px">✓ Todos os nomes seguem o padrão.</td></tr>';
+
+  const referencia=Object.entries(PADROES_NOME).map(([k,p])=>
+    `<tr><td>${rot[k]||k}</td><td class="mono" style="font-size:11px">${_esc(p.desc)}</td><td class="mono" style="color:#5FE0A0;font-size:11px">${_esc(p.exemplo)}</td></tr>`).join('');
+
+  abrirModalGenerico('🔤 Nomenclatura — '+projAtual.nome,
+    `<div class="cto-grid" style="margin-bottom:10px">
+       <div class="cto-cel"><span>Itens</span><b>${itens.length}</b></div>
+       <div class="cto-cel"><span>No padrão</span><b style="color:#5FE0A0">${itens.length-fora.length}</b></div>
+       <div class="cto-cel"><span>Fora do padrão</span><b style="color:${fora.length?'#E0913C':'var(--text)'}">${fora.length}</b></div>
+       <div class="cto-cel"><span>Sigla do site</span><b class="mono">${sigla}</b></div>
+     </div>
+     <div style="display:flex;gap:8px;margin-bottom:10px">
+       <button class="btn sm ghost" onclick="_vnAba('verif')" id="vn-t1">⚠️ Verificação</button>
+       <button class="btn sm ghost" onclick="_vnAba('ref')" id="vn-t2">📖 Padrão recomendado</button>
+     </div>
+     <div id="vn-verif">
+       ${fora.length?'<div class="info-box" style="margin-bottom:8px">Confira os nomes sugeridos, ajuste o que quiser e aplique. Renomear é seguro: fusões, conexões e vínculos são preservados.</div>':''}
+       <table class="tbl"><thead><tr><th>Tipo</th><th>Nome atual</th><th></th><th>Sugerido</th><th></th></tr></thead><tbody>${linhas}</tbody></table>
+     </div>
+     <div id="vn-ref" style="display:none">
+       <div class="info-box" style="margin-bottom:8px">Padrão baseado no que já predomina nos seus projetos. A sigla do site deste projeto é <b class="mono">${sigla}</b>.</div>
+       <table class="tbl"><thead><tr><th>Elemento</th><th>Formato</th><th>Exemplo</th></tr></thead><tbody>${referencia}</tbody></table>
+       <div class="dr-sec" style="margin-top:12px">Regras gerais</div>
+       <div style="font-size:12px;line-height:1.8;color:var(--text-dim)">
+         <b style="color:var(--text)">Sempre dois dígitos</b> — R01, nunca R1 (senão a lista ordena 1, 10, 11, 2…)<br>
+         <b style="color:var(--text)">Só hífen, nunca espaço</b> — facilita busca, exportação e nome de arquivo<br>
+         <b style="color:var(--text)">Sigla do site com 3 letras</b> — APD, MSA, OZL, PBR, PCO, PMR, SRM, MOS<br>
+         <b style="color:var(--text)">Sem acentos</b> — evita caracteres estranhos ao exportar<br>
+         <b style="color:var(--text)">Não repita no nome o que já é campo</b> — fibras, modelo do cabo e status já são registrados à parte
+       </div>
+       <div class="info-box" style="margin-top:10px;font-size:11.5px">Postes ficam fora da verificação: seguem a numeração da concessionária.</div>
+     </div>`);
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost" onclick="fecharModal('md-generico')">Fechar</button>`
+    +(fora.length?`<button class="btn" onclick="aplicarRenomeacao()">✏️ Aplicar renomeação</button>`:'');
+  _vnAba('verif');
+}
+function _vnAba(qual){
+  document.getElementById('vn-verif').style.display=qual==='verif'?'':'none';
+  document.getElementById('vn-ref').style.display=qual==='ref'?'':'none';
+  const t1=document.getElementById('vn-t1'), t2=document.getElementById('vn-t2');
+  if(t1)t1.style.borderColor=qual==='verif'?'var(--accent)':'';
+  if(t2)t2.style.borderColor=qual==='ref'?'var(--accent)':'';
+}
+function aplicarRenomeacao(){
+  const a=window.__nomesAnalise;
+  if(!a)return;
+  const fora=a.itens.filter(x=>!x.ok);
+  let n=0;
+  fora.forEach((x,i)=>{
+    const cb=document.getElementById('vc-'+i);
+    const inp=document.getElementById('vn-'+i);
+    if(!cb||!cb.checked||!inp)return;
+    const novo=inp.value.trim();
+    if(!novo||novo===x.nome)return;
+    if(x.escopo==='projeto')projAtual.nome=novo;
+    else if(x.escopo==='elemento'){const e=projAtual.elementos.find(y=>y.id===x.id);if(e)e.nome=novo}
+    else {const c=projAtual.cabos.find(y=>y.id===x.id);if(c)c.nome=novo}
+    n++;
+  });
+  salvar();fecharModal('md-generico');renderTudo();renderHome();
+  toast(n?(n+' item(ns) renomeado(s)'):'Nada foi alterado');
 }
 /* ===== DOSSIÊ DE EXECUÇÃO (as-built) ===== */
 /* Desenho vetorial da rede: os blocos do satélite não podem ser exportados,
@@ -3432,7 +3583,7 @@ function perdaFusao(fu){
 function fusaoMedida(fu){return fu&&fu.perdaReal!=null&&fu.perdaReal!==''&&!isNaN(+fu.perdaReal)}
 function fusaoForaDoLimite(fu){return fusaoMedida(fu)&&+fu.perdaReal>LIMITE_FUSAO_DB}
 function abrirFusao(caixaId){
-  fsCaixa=caixaId;fsSel=null;modoMedir=false;
+  fsCaixa=caixaId;fsSel=null;modoMedir=false;modoNota=false;
   setTimeout(restaurarBarraFusao,0);
   const _bm=document.getElementById('btn-medir');if(_bm)_bm.classList.remove('ativo');
   const e=projAtual.elementos.find(x=>x.id===caixaId);
@@ -3837,17 +3988,28 @@ function renderFusao(){
           if(!rompida)s+=`<line class="fibra-passante" x1="${p.x}" y1="${p.y}" x2="${pS.x}" y2="${pS.y}" stroke="${cor}" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f},lado:'e'})"><title>Fibra ${f} passa direto (íntegra) — clique para romper e fundir</title></line>`;
         }
       }
-      s+=`<line class="fibra-linha" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}"><title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title></line>`;
+      s+=`<line class="fibra-linha" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" style="cursor:context-menu"><title>Fibra ${f} — ${ABNT[(f-1)%12].nome}\n(botão direito para identificar)</title></line>`;
       // luz na fibra que participa de uma fusão ativa (implantada/certificada)
       const fk='fib-'+c.id+suf+'-'+f;
       const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
       if(fuFib)_fsLuz.fibras.push({x1,y1:p.y,x2,y2:p.y,cor});
       const claro=['#FFFFFF','#F2E205','#F5A623','#E8C818','#00E5FF','#7DE0FF','#FFD86B'].includes((cor||'').toUpperCase());
-      s+=`<g onmousedown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" style="cursor:grab">
+      const _nf=(F.notasFibra&&F.notasFibra[c.id+suf+'-'+f])||null;
+      s+=`<g onmousedown="fsIniciarDragFibra(event,'${c.id}','${suf}',${f})" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f}${suf?",lado:'"+suf+"'":''}})" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" style="cursor:grab">
         <circle class="fibra-ponto ${fsSel&&ptKey(fsSel)==='fib-'+c.id+'-'+f?'sel':''}" cx="${p.x}" cy="${p.y}" r="7.5" fill="${cor}"/>
         <text class="fibra-num" x="${p.x}" y="${p.y+3}" fill="${claro?'#0B0D11':'#FFFFFF'}">${f}</text>
-        <title>Fibra ${f} — ${ABNT[(f-1)%12].nome}</title>
+        <title>Fibra ${f} — ${ABNT[(f-1)%12].nome}${_nf?('\n🏷️ '+_nf.label+(_nf.obs?' — '+_nf.obs:'')):'\n(botão direito para identificar)'}</title>
       </g>`;
+      // identificação da fibra, ao lado do ponto
+      if(_nf&&_nf.label){
+        const dir=b.lado==='esq'?1:-1;
+        const larg=Math.min(120,8+String(_nf.label).length*5.6);
+        const bx=p.x+dir*13-(dir<0?larg:0);
+        s+=`<g style="pointer-events:none">
+          <rect x="${bx}" y="${p.y-7}" width="${larg}" height="14" rx="4" fill="#141A24" stroke="${cor}" stroke-width="1" opacity=".95"/>
+          <text x="${bx+larg/2}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Sans" fill="#E2E0DB">${_esc(String(_nf.label).slice(0,20))}</text>
+        </g>`;
+      }
       // potência medida registrada nesta ponta
       {const _mk=F.medicoes&&F.medicoes[fk];
        if(_mk){
@@ -4011,6 +4173,8 @@ function fsClique(ev,p){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
   // modo medição: clicar numa ponta abre o registro de potência em vez de fundir
   if(modoMedir){abrirMedicaoPonto(ptKey(p),rotuloPonto(p));return}
+  // modo identificar: clicar numa fibra abre a etiqueta
+  if(modoNota&&p.t==='fibra'){fsNotaFibra(null,p.cabo,p.lado||'',p.fib);return}
   if(!fsSel){fsSel=p;renderFusao();return}
   if(ptKey(fsSel)===ptKey(p)){fsSel=null;renderFusao();return}
   const F=getFus(fsCaixa);
@@ -4119,6 +4283,61 @@ function _rotuloChave(k){
     if(m)return 'DIO · porta '+m[2];
   }
   return k;
+}
+/* ===== IDENTIFICAÇÃO DA FIBRA =====
+   Antes só dava para comentar a FUSÃO — e clicar na fibra iniciava uma fusão.
+   Agora: botão direito na fibra (em qualquer modo) ou o modo 🏷️ Identificar. */
+let modoNota=false;
+function toggleModoNota(){
+  modoNota=!modoNota;
+  if(modoNota)modoMedir=false;
+  const b=document.getElementById('btn-nota-fibra');
+  if(b)b.classList.toggle('ativo',modoNota);
+  const m=document.getElementById('btn-medir');
+  if(m&&!modoMedir)m.classList.remove('ativo');
+  fsSel=null;renderFusao();
+  toast(modoNota?'Modo identificar: clique numa fibra para nomeá-la':'Modo identificar desligado');
+}
+function fsNotaFibra(ev,caboId,suf,fib){
+  if(ev){ev.preventDefault();ev.stopPropagation()}
+  const F=getFus(fsCaixa);
+  if(!F.notasFibra)F.notasFibra={};
+  const chave=caboId+suf+'-'+fib;
+  const n=F.notasFibra[chave]||{};
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const lado=suf==='e'?' (entrada)':(suf==='s'?' (saída)':'');
+  abrirModalGenerico('🏷️ Fibra '+fib+' — '+((c&&c.nome)||'cabo')+lado,
+    `<div class="info-box" style="margin-bottom:8px">
+       <b>Fibra ${fib}</b> · cor ${ABNT[(fib-1)%12].nome} · ${_esc((c&&c.nome)||'')}${lado}<br>
+       <span style="font-size:11px;color:var(--text-dim)">A identificação aparece ao lado da fibra no diagrama e nos relatórios.</span>
+     </div>
+     <div class="campo"><label>Identificação</label>
+       <input id="nf-label" placeholder="ex: Ramal Centro · Cliente 1234 · Reserva" value="${_esc(n.label||'')}"
+         onkeydown="if(event.key==='Enter')salvarNotaFibra('${chave}')"></div>
+     <div class="campo"><label>Observação</label>
+       <input id="nf-obs" placeholder="opcional" value="${_esc(n.obs||'')}"
+         onkeydown="if(event.key==='Enter')salvarNotaFibra('${chave}')"></div>`);
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML=`<button class="btn ghost danger" onclick="removerNotaFibra('${chave}')">🗑 Remover</button>
+    <button class="btn ghost" onclick="fecharModal('md-generico')">Cancelar</button>
+    <button class="btn" onclick="salvarNotaFibra('${chave}')">💾 Salvar</button>`;
+  setTimeout(()=>{const el=document.getElementById('nf-label');if(el){el.focus();el.select()}},60);
+  return false;
+}
+function salvarNotaFibra(chave){
+  const F=getFus(fsCaixa);
+  const label=document.getElementById('nf-label').value.trim();
+  const obs=document.getElementById('nf-obs').value.trim();
+  if(!label&&!obs)delete F.notasFibra[chave];
+  else F.notasFibra[chave]={label:label||undefined,obs:obs||undefined};
+  salvar();fecharModal('md-generico');renderFusao();
+  toast(label?('Fibra identificada: '+label):'Identificação removida');
+}
+function removerNotaFibra(chave){
+  const F=getFus(fsCaixa);
+  delete F.notasFibra[chave];
+  salvar();fecharModal('md-generico');renderFusao();
+  toast('Identificação removida');
 }
 /* ===== ANOTAÇÃO DA CAIXA ===== */
 function abrirNotaCaixa(){
