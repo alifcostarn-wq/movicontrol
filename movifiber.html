@@ -433,6 +433,9 @@ input:focus,select:focus{border-color:var(--accent)}
 .luz-setas-canvas{pointer-events:none}
 .fibra-passante{stroke-width:2.6;opacity:.8;stroke-linecap:round;cursor:pointer}
 .fibra-passante:hover{opacity:1;stroke-width:4}
+.fibra-passante-st{stroke-width:8;opacity:.28;stroke-linecap:round;pointer-events:none}
+.fibra-rompida{stroke-width:2;opacity:.35;stroke-dasharray:4 6;stroke-linecap:round;cursor:pointer}
+.fibra-rompida:hover{opacity:.7}
 .fibra-linha{stroke-width:3;cursor:pointer}
 .fibra-linha:hover{stroke-width:5}
 .fibra-ponto{cursor:pointer;stroke:#fff;stroke-width:1.5}
@@ -1357,7 +1360,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <span><i style="background:var(--st-impl)"></i>Implantado</span>
       <span><i style="background:var(--st-cert)"></i>Certificado</span>
     </div>
-    <div id="fs-status-hint">Clique numa fibra e depois no destino para fundir · arraste a fibra, o splitter, o bloco ou a própria curva (Shift trava o eixo · duplo clique na fibra devolve ao lugar) · arraste o fundo para rolar · Esc limpa a seleção</div>
+    <div id="fs-status-hint">Clique numa fibra e depois no destino para fundir · arraste a fibra, o splitter, o bloco ou a própria curva (Shift trava o eixo · duplo clique na fibra devolve ao lugar) · arraste o fundo para rolar · Esc limpa a seleção · em sangria, clique na fibra passante para status, emendar ou romper</div>
   </div>
 </div>
 
@@ -4134,7 +4137,18 @@ function renderFusao(){
         if(pS){
           const ks=['fib-'+c.id+'e-'+f,'fib-'+c.id+'s-'+f,'fib-'+c.id+'-'+f];
           const rompida=F.fusoes.some(fu=>ks.includes(ptKey(fu.a))||ks.includes(ptKey(fu.b)));
-          if(!rompida)s+=`<line class="fibra-passante" x1="${p.x}" y1="${p.y}" x2="${pS.x}" y2="${pS.y}" stroke="${cor}" onclick="fsClique(event,{t:'fibra',cabo:'${c.id}',fib:${f},lado:'e'})"><title>Fibra ${f} passa direto (íntegra) — clique para romper e fundir</title></line>`;
+          const pk=c.id+'-'+f, ps=(F.passantes&&F.passantes[pk])||{};
+          if(!rompida&&!ps.rompida){
+            const stP=ps.status||null;
+            const _tp='Fibra '+f+' passa direto (íntegra)'+(stP?' · '+labelStatus(stP):'')+(ps.obs?'\n💬 '+ps.obs:'')+'\n(clique: status · emendar · romper)';
+            if(stP)s+=`<line class="fibra-passante-st" x1="${p.x}" y1="${p.y}" x2="${pS.x}" y2="${pS.y}" stroke="${stCor[stP]}"/>`;
+            s+=`<line class="fibra-passante" x1="${p.x}" y1="${p.y}" x2="${pS.x}" y2="${pS.y}" stroke="${cor}" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="clicarPassante(event,'${c.id}',${f})"><title>${_tp}</title></line>`;
+          }else if(!rompida&&ps.rompida){
+            // fibra cortada nesta caixa e ainda sem emenda: marca discreta no meio, com opção de restaurar
+            const mx=(p.x+pS.x)/2,my=(p.y+pS.y)/2;
+            s+=`<line class="fibra-rompida" x1="${p.x}" y1="${p.y}" x2="${pS.x}" y2="${pS.y}" stroke="${cor}" onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()" onclick="clicarPassante(event,'${c.id}',${f})"><title>Fibra ${f} rompida nesta caixa — as duas pontas estão livres para fusão\n(clique para restaurar a passagem)</title></line>`;
+            s+=`<text x="${mx}" y="${my+4}" text-anchor="middle" font-size="11" style="pointer-events:none">✂️</text>`;
+          }
         }
       }
       s+=`<line class="fibra-linha" x1="${x1}" y1="${p.y}" x2="${x2}" y2="${p.y}" stroke="${cor}" oncontextmenu="fsNotaFibra(event,'${c.id}','${suf}',${f})" style="cursor:context-menu"><title>Fibra ${f} — ${ABNT[(f-1)%12].nome}\n(botão direito para identificar)</title></line>`;
@@ -4697,6 +4711,68 @@ function salvarDadosFusao(i){
   salvar();fecharModal('md-generico');renderFusao();
   toast(fu.perdaReal!=null?('Emenda '+(i+1)+': '+fu.perdaReal.toFixed(2)+' dB medidos'):'Emenda '+(i+1)+' voltou à estimativa');
 }
+/* ===== Fibra passante (sangria): status, emenda direta e rompimento ===== */
+function _passante(caboId,f){const F=getFus(fsCaixa);if(!F.passantes)F.passantes={};const k=caboId+'-'+f;if(!F.passantes[k])F.passantes[k]={};return F.passantes[k]}
+function clicarPassante(ev,caboId,f){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  if(_fsCliqueAposArrasto())return;
+  const F=getFus(fsCaixa);
+  const ps=(F.passantes&&F.passantes[caboId+'-'+f])||{};
+  const m=document.getElementById('ctx-menu');
+  const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const cab=`<div style="padding:4px 10px 6px;font-size:11px;color:var(--text-dim)">Fibra ${f} · ${ABNT[(f-1)%12].nome}${c?' · '+c.nome:''}</div>`;
+  if(ps.rompida){
+    m.innerHTML=cab+`<button onclick="restaurarPassante('${caboId}',${f})">↩ Restaurar passagem direta</button>`
+      +`<div class="sep"></div><button onclick="emendarPassante('${caboId}',${f})">🔗 Emendar entrada ⇄ saída</button>`;
+  }else{
+    m.innerHTML=cab+['projeto','nao-implantado','implantado','certificado'].map(st=>
+      `<button onclick="setStatusPassante('${caboId}',${f},'${st}')"><span class="dot" style="background:${stCor[st]}"></span>${labelStatus(st)}${ps.status===st?' ✓':''}</button>`).join('')
+      +`<div class="sep"></div>`
+      +`<button onclick="emendarPassante('${caboId}',${f})">🔗 Emendar entrada ⇄ saída (vira fusão)</button>`
+      +`<button onclick="abrirObsPassante('${caboId}',${f})">💬 Comentário</button>`
+      +`<div class="sep"></div><button style="color:var(--danger)" onclick="romperPassante('${caboId}',${f})">✂️ Romper fibra nesta caixa</button>`;
+  }
+  m.style.display='block';
+  const x=Math.min((ev&&ev.clientX)||200,window.innerWidth-230);
+  const y=Math.min((ev&&ev.clientY)||200,window.innerHeight-260);
+  m.style.left=x+'px';m.style.top=y+'px';
+}
+function setStatusPassante(caboId,f,st){_passante(caboId,f).status=st;fecharCtx();salvar();renderFusao();toast('Fibra '+f+': '+labelStatus(st))}
+function emendarPassante(caboId,f){
+  fecharCtx();
+  const F=getFus(fsCaixa);
+  const ks=['fib-'+caboId+'e-'+f,'fib-'+caboId+'s-'+f,'fib-'+caboId+'-'+f];
+  if(F.fusoes.some(fu=>ks.includes(ptKey(fu.a))||ks.includes(ptKey(fu.b)))){toast('Esta fibra já tem emenda nesta caixa',true);return}
+  const ps=(F.passantes&&F.passantes[caboId+'-'+f])||{};
+  F.fusoes.push({a:{t:'fibra',cabo:caboId,fib:f,lado:'e'},b:{t:'fibra',cabo:caboId,fib:f,lado:'s'},status:ps.status||'projeto',obs:ps.obs});
+  if(F.passantes)delete F.passantes[caboId+'-'+f];
+  salvar();renderFusao();toast('Fibra '+f+' emendada entrada ⇄ saída — clique na curva para status, perda real e comentário');
+}
+function romperPassante(caboId,f){
+  fecharCtx();
+  if(!confirm('Romper a fibra '+f+' nesta caixa?\n\nA passagem direta deixa de existir e as duas pontas (entrada e saída) ficam livres para fusão com outro cabo ou splitter.'))return;
+  const ps=_passante(caboId,f);ps.rompida=true;
+  salvar();renderFusao();toast('Fibra '+f+' rompida — funda cada ponta onde precisar');
+}
+function restaurarPassante(caboId,f){
+  fecharCtx();
+  const F=getFus(fsCaixa);
+  const ks=['fib-'+caboId+'e-'+f,'fib-'+caboId+'s-'+f,'fib-'+caboId+'-'+f];
+  const n=F.fusoes.filter(fu=>ks.includes(ptKey(fu.a))||ks.includes(ptKey(fu.b))).length;
+  if(n&&!confirm('As pontas desta fibra já têm '+n+' fusão(ões). Restaurar a passagem direta remove essas fusões. Continuar?'))return;
+  F.fusoes=F.fusoes.filter(fu=>!(ks.includes(ptKey(fu.a))||ks.includes(ptKey(fu.b))));
+  if(F.passantes)delete F.passantes[caboId+'-'+f];
+  salvar();renderFusao();toast('Fibra '+f+' volta a passar direto');
+}
+function abrirObsPassante(caboId,f){
+  fecharCtx();
+  const ps=_passante(caboId,f);
+  const v=prompt('Comentário da fibra '+f+' (passante):',ps.obs||'');
+  if(v===null)return;
+  if(v.trim())ps.obs=v.trim();else delete ps.obs;
+  salvar();renderFusao();
+}
 function setStatusFusao(i,st){
   const fu=getFus(fsCaixa).fusoes[i];
   if(fu){fu.status=st;salvar();renderFusao();toast('Fusão: '+labelStatus(st))}
@@ -4705,7 +4781,18 @@ function setStatusFusao(i,st){
 function removerFusaoIdx(i){
   fecharCtx();
   if(!confirm('Remover esta fusão?'))return;
-  getFus(fsCaixa).fusoes.splice(i,1);salvar();renderFusao();
+  const F=getFus(fsCaixa);
+  const fu=F.fusoes[i];
+  F.fusoes.splice(i,1);
+  // se era uma ponta de sangria, a fibra fica ROMPIDA (pontas livres), como no campo —
+  // a passagem direta só volta por "Restaurar passagem"
+  [fu&&fu.a,fu&&fu.b].forEach(pt=>{
+    if(pt&&pt.t==='fibra'&&(pt.lado==='e'||pt.lado==='s')){
+      const c=projAtual.cabos.find(x=>x.id===pt.cabo);
+      if(c&&ligacaoCaboCaixa(c,fsCaixa)==='sangria')_passante(pt.cabo,pt.fib).rompida=true;
+    }
+  });
+  salvar();renderFusao();
 }
 document.addEventListener('click',e=>{
   const m=document.getElementById('ctx-menu');
