@@ -4033,9 +4033,9 @@ function renderFusao(){
       const fuFib=fsAnim&&F.fusoes.some(fu=>(ptKey(fu.a)===fk||ptKey(fu.b)===fk)&&(fu.status==='implantado'||fu.status==='certificado'));
       if(fuFib)_fsLuz.fibras.push({x1,y1:p.y,x2,y2:p.y,cor});
       const claro=['#FFFFFF','#F2E205','#F5A623','#E8C818','#00E5FF','#7DE0FF','#FFD86B'].includes((cor||'').toUpperCase());
-      const _nf=getIdFibra(c.id,f);
+      const _nf=getIdFibra(c.id,f,suf);
       const _dica='Fibra '+f+' — '+ABNT[(f-1)%12].nome
-        +(_nf?('\n🏷️ '+_nf.label+(_nf.obs?'\n'+_nf.obs:'')):'')
+        +(_nf?('\n🏷️ '+_nf.label+(_nf.obs?'\n'+_nf.obs:'')+(_nf._herdado?'\n(vem do trecho anterior — edite para dar nome próprio a partir daqui)':'')):'')
         +'\n(botão direito para identificar · arraste para reposicionar)';
       // A etiqueta é desenhada ANTES do ponto: assim o ponto fica por cima e
       // continua sempre agarrável, mesmo com a identificação ao lado.
@@ -4044,8 +4044,8 @@ function renderFusao(){
         const larg=Math.min(126,10+String(_nf.label).length*5.8);
         const bx=p.x+dir*14-(dir<0?larg:0);
         s+=`<g class="fibra-etiq">
-          <rect x="${bx}" y="${p.y-7}" width="${larg}" height="14" rx="4" fill="#141A24" stroke="${cor}" stroke-width="1" opacity=".96"/>
-          <text x="${bx+larg/2}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Sans" fill="#E2E0DB">${_esc(String(_nf.label).slice(0,21))}</text>
+          <rect x="${bx}" y="${p.y-7}" width="${larg}" height="14" rx="4" fill="#141A24" stroke="${cor}" stroke-width="1" opacity="${_nf._herdado?'.7':'.96'}" stroke-dasharray="${_nf._herdado?'3 2':'none'}"/>
+          <text x="${bx+larg/2}" y="${p.y+3}" text-anchor="middle" font-size="8.5" font-family="DM Sans" fill="${_nf._herdado?'#9AA1AF':'#E2E0DB'}">${_esc(String(_nf.label).slice(0,21))}</text>
           <title>${_esc(_dica)}</title>
         </g>`;
       }
@@ -4348,15 +4348,40 @@ function toggleModoNota(){
    ele passa (sangria) e some sozinha quando o cabo é rompido — o rompimento gera
    um cabo novo, com identificação própria. */
 function idFibraChave(caboId,fib){return caboId+'-'+fib}
-function getIdFibra(caboId,fib){
-  if(!projAtual.idFibras)projAtual.idFibras={};
-  return projAtual.idFibras[idFibraChave(caboId,fib)]||null;
+/* A fibra foi cortada na sangria? Se existe fusão referenciando um dos lados
+   (entrada/saída), entrada e saída deixaram de ser o mesmo trecho físico. */
+function _fibraRompidaNoCabo(caboId,fib){
+  const fus=projAtual.fusoes||{};
+  return Object.values(fus).some(F=>
+    ((F&&F.fusoes)||[]).some(fu=>[fu.a,fu.b].some(p=>
+      p&&p.t==='fibra'&&p.cabo===caboId&&+p.fib===+fib&&p.lado))
+  );
 }
-function setIdFibra(caboId,fib,label,obs){
+/* Identificação da fibra.
+   - Fibra íntegra atravessando a caixa: entrada e saída são o MESMO trecho,
+     então dividem a identificação e ela segue o cabo inteiro.
+   - Fibra rompida e fundida: cada lado vira um trecho independente. Enquanto o
+     lado de saída não recebe nome próprio, ele HERDA o da origem (útil para saber
+     de onde a fibra veio); ao ser editado, passa a valer só dali para a frente. */
+function getIdFibra(caboId,fib,suf){
   if(!projAtual.idFibras)projAtual.idFibras={};
-  const k=idFibraChave(caboId,fib);
+  const M=projAtual.idFibras;
+  const base=idFibraChave(caboId,fib);
+  if(suf&&_fibraRompidaNoCabo(caboId,fib)){
+    const k=caboId+suf+'-'+fib;
+    if(M[k])return M[k];
+    const herdado=M[base];
+    return herdado?Object.assign({},herdado,{_herdado:true}):null;
+  }
+  return M[base]||null;
+}
+function setIdFibra(caboId,fib,suf,label,obs){
+  if(!projAtual.idFibras)projAtual.idFibras={};
+  const rompida=suf&&_fibraRompidaNoCabo(caboId,fib);
+  const k=rompida?(caboId+suf+'-'+fib):idFibraChave(caboId,fib);
   if(!label&&!obs)delete projAtual.idFibras[k];
   else projAtual.idFibras[k]={label:label||undefined,obs:obs||undefined};
+  return {rompida,chave:k};
 }
 /* traz as identificações antigas (guardadas por caixa) para o novo formato */
 function _migrarNotasFibra(){
@@ -4377,41 +4402,47 @@ function _migrarNotasFibra(){
 }
 function fsNotaFibra(ev,caboId,suf,fib){
   if(ev){ev.preventDefault();ev.stopPropagation()}
-  const n=getIdFibra(caboId,fib)||{};
+  const n=getIdFibra(caboId,fib,suf)||{};
+  const rompida=suf&&_fibraRompidaNoCabo(caboId,fib);
   const c=projAtual.cabos.find(x=>x.id===caboId);
   const lado=suf==='e'?' (entrada)':(suf==='s'?' (saída)':'');
   abrirModalGenerico('🏷️ Fibra '+fib+' — '+((c&&c.nome)||'cabo')+lado,
     `<div class="info-box" style="margin-bottom:8px">
        <b>Fibra ${fib}</b> · cor ${ABNT[(fib-1)%12].nome} · ${_esc((c&&c.nome)||'')}${lado}<br>
-       <span style="font-size:11px;color:var(--text-dim)">A identificação aparece ao lado da fibra no diagrama e nos relatórios.</span>
+       <span style="font-size:11px;color:var(--text-dim)">${rompida
+         ? 'A fibra foi rompida e fundida aqui: o nome que você salvar vale <b>deste ponto em diante</b> e não altera o trecho anterior.'
+         : 'A fibra segue íntegra: a identificação acompanha o cabo por toda a extensão, até um rompimento ou fusão.'}</span>
+       ${n._herdado?'<br><span style="font-size:11px;color:var(--warn)">⤷ Hoje mostra <b>'+_esc(n.label||'')+'</b> herdado do trecho anterior. Salvar dá nome próprio a este trecho.</span>':''}
      </div>
      <div class="campo"><label>Identificação</label>
        <input id="nf-label" placeholder="ex: Ramal Centro · Cliente 1234 · Reserva" value="${_esc(n.label||'')}"
-         onkeydown="if(event.key==='Enter')salvarNotaFibra('${caboId}',${fib})"></div>
+         onkeydown="if(event.key==='Enter')salvarNotaFibra('${caboId}',${fib},'${suf}')"></div>
      <div class="campo"><label>Observação</label>
        <input id="nf-obs" placeholder="opcional" value="${_esc(n.obs||'')}"
-         onkeydown="if(event.key==='Enter')salvarNotaFibra('${caboId}',${fib})"></div>`);
+         onkeydown="if(event.key==='Enter')salvarNotaFibra('${caboId}',${fib},'${suf}')"></div>`);
   const foot=document.querySelector('#md-generico .md-foot');
-  foot.innerHTML=`<button class="btn ghost danger" onclick="removerNotaFibra('${caboId}',${fib})">🗑 Remover</button>
+  foot.innerHTML=`<button class="btn ghost danger" onclick="removerNotaFibra('${caboId}',${fib},'${suf}')">🗑 Remover</button>
     <button class="btn ghost" onclick="fecharModal('md-generico')">Cancelar</button>
-    <button class="btn" onclick="salvarNotaFibra('${caboId}',${fib})">💾 Salvar</button>`;
+    <button class="btn" onclick="salvarNotaFibra('${caboId}',${fib},'${suf}')">💾 Salvar</button>`;
   setTimeout(()=>{const el=document.getElementById('nf-label');if(el){el.focus();el.select()}},60);
   return false;
 }
-function salvarNotaFibra(caboId,fib){
+function salvarNotaFibra(caboId,fib,suf){
   const label=document.getElementById('nf-label').value.trim();
   const obs=document.getElementById('nf-obs').value.trim();
-  setIdFibra(caboId,fib,label,obs);
+  const r=setIdFibra(caboId,fib,suf||'',label,obs);
   salvar();fecharModal('md-generico');renderFusao();
-  if(label){
+  if(!label){toast('Identificação removida'+(r.rompida?' deste trecho':''));return}
+  if(r.rompida)toast('Fibra identificada: '+label+' · vale deste ponto em diante');
+  else{
     const n=_caixasDoCabo(caboId).length;
     toast('Fibra identificada: '+label+(n>1?(' · aparece nas '+n+' caixas do cabo'):''));
-  }else toast('Identificação removida');
+  }
 }
-function removerNotaFibra(caboId,fib){
-  setIdFibra(caboId,fib,'','');
+function removerNotaFibra(caboId,fib,suf){
+  const r=setIdFibra(caboId,fib,suf||'','','');
   salvar();fecharModal('md-generico');renderFusao();
-  toast('Identificação removida');
+  toast('Identificação removida'+(r.rompida?' deste trecho':''));
 }
 /* em quantas caixas este cabo aparece (pontas + sangrias de passagem) */
 function _caixasDoCabo(caboId){
