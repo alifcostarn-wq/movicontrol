@@ -13467,6 +13467,7 @@ function _dmAbrir(globalIdx, modo){
     +     '<button class="btn" onclick="fecharDesbloqueioManual()">Cancelar</button>'
     +     '<button class="btn" onclick="dmDiagnosticoContrato()" title="Mostra o registro cru do contrato no IXC" style="margin-left:auto">🔍 Campos</button>'
     +     '<button class="btn" onclick="dmListarMotivos()" title="Lista os motivos cadastrados no IXC">📋 Motivos</button>'
+    +     '<button class="btn" onclick="dmSondarRotas()" title="Descobre quais rotas de bloqueio existem neste IXC">🧭 Rotas</button>'
     +   '</div>'
     +   '<div id="dm-msg" style="margin-top:12px"></div>'
     + '</div>'
@@ -13582,6 +13583,50 @@ async function dmTentarComCampo(campo){
     console.error('[contrato ixc] tentativa', e);
     _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro');
   }
+}
+
+// Sonda de rotas: o IXC responde "Recurso X não está disponível!" para
+// endpoint inexistente. Qualquer outra resposta significa que a rota
+// EXISTE. Só leitura (ixcsoft: listar) — não altera nada.
+const DM_ROTAS_CANDIDATAS = [
+  'alterar_status_acesso','alteracao_status_acesso','status_acesso',
+  'cliente_contrato_status','contrato_status_acesso','cliente_contrato_alterar_status',
+  'bloqueio_contrato','contrato_bloqueio','cliente_contrato_bloqueio',
+  'bloqueio_manual','liberacao_contrato','desbloqueio_confianca',
+  'cliente_contrato_bloqueio_manual','contrato_liberacao',
+];
+
+async function dmSondarRotas(){
+  _dmMsg('Sondando '+DM_ROTAS_CANDIDATAS.length+' rotas no IXC… isso leva alguns segundos.');
+  const existem = [], ausentes = [], indefinidos = [];
+  try{
+    const cfg = await getIXCConfig();
+    for(const ep of DM_ROTAS_CANDIDATAS){
+      let veredito = 'indefinido', detalhe = '';
+      try{
+        const r = await chamarIXC(cfg, ep, { rp:'1' });
+        const msg = String(r?.message || r?.mensagem || '');
+        if(/n[ãa]o est[áa] dispon[íi]vel/i.test(msg)){ veredito='ausente'; }
+        else { veredito='existe'; detalhe = msg || (r?.registros ? r.registros.length+' registro(s)' : 'respondeu'); }
+      }catch(e){
+        const m = String(e.message||e);
+        if(/n[ãa]o est[áa] dispon[íi]vel/i.test(m)) veredito='ausente';
+        else { veredito='existe'; detalhe = m.slice(0,90); }
+      }
+      if(veredito==='existe') existem.push({ep, detalhe});
+      else if(veredito==='ausente') ausentes.push(ep);
+      else indefinidos.push(ep);
+      console.log('[sonda ixc] '+ep+' → '+veredito+(detalhe?' | '+detalhe:''));
+    }
+    _dmMsg('<b>Rotas que EXISTEM ('+existem.length+'):</b>'
+      + '<div class="td-mono" style="font-size:11px;margin-top:5px;max-height:150px;overflow:auto">'
+      + (existem.length ? existem.map(x=>_fxEsc(x.ep)+(x.detalhe?' — '+_fxEsc(x.detalhe):'')).join('<br>') : '<i>nenhuma das candidatas</i>')
+      + '</div>'
+      + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">'+ausentes.length+' não existem'
+      + (indefinidos.length?', '+indefinidos.length+' indefinidas':'')
+      + '. Detalhe de cada uma no console (F12). Me manda esta lista.</div>',
+      existem.length ? 'ok' : 'erro');
+  }catch(e){ _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro'); }
 }
 
 async function dmListarMotivos(){
