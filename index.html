@@ -13596,7 +13596,7 @@ function _renderFaturasIXC(regsAll){
 
   target.innerHTML = `
     <div class="fatixc-head">
-      <div class="fatixc-note">📊 <b>Análise IXC</b> — somente leitura. Estes dados vêm direto do IXC e <b>não entram</b> nos saldos, no DRE nem no financeiro do MoviControl.</div>
+      <div class="fatixc-note">📊 <b>Análise IXC</b> — dados direto do IXC, <b>não entram</b> nos saldos, no DRE nem no financeiro do MoviControl. O boleto e o PIX são gerados pelo próprio IXC: nada é gravado nem baixado por aqui.</div>
       <div class="fatixc-tools">
         <select onchange="fatIxcFiltrarAno(this.value)" class="fatixc-sel">
           <option value="todos" ${_ixcFinAnoSel==='todos'?'selected':''}>Todos os anos</option>
@@ -13614,7 +13614,7 @@ function _renderFaturasIXC(regsAll){
     </div>
     <div class="fatixc-scroll">
     <table class="cli-mini-table fatixc-table">
-      <thead><tr><th>Doc.</th><th>Emissão</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pagamento</th><th>Data Crédito</th><th>Valor Recebido</th></tr></thead>
+      <thead><tr><th>Doc.</th><th>Emissão</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pagamento</th><th>Data Crédito</th><th>Valor Recebido</th><th style="text-align:center">Cobrança</th></tr></thead>
       <tbody>${regs.map(r=>{
         const st=_statusFaturaIXC(r);
         return `<tr>
@@ -13626,10 +13626,179 @@ function _renderFaturasIXC(regsAll){
           <td class="td-mono">${_fmtDataIXC(r.pagamento_data)}</td>
           <td class="td-mono">${_fmtDataIXC(r.credito_data)}</td>
           <td class="td-mono ${_numIXC(r.valor_recebido)?'td-green':''}">${_numIXC(r.valor_recebido)?brl(_numIXC(r.valor_recebido),true):'—'}</td>
+          <td style="text-align:center;white-space:nowrap">${_fatIxcAcoes(r,st)}</td>
         </tr>`;}).join('')}</tbody>
     </table>
     </div>
     <div class="fatixc-foot">${regs.length} título${regs.length!==1?'s':''} ${_ixcFinAnoSel!=='todos'?('em '+_ixcFinAnoSel):''} · consultado às ${quandoTxt} · fonte: IXC (fn_areceber)</div>`;
+}
+
+// ════════════════════════════════════════════════════════
+// COBRANÇA DA FATURA IXC — boleto em PDF e PIX copia-e-cola
+// ADITIVO. Não altera carregarFaturasIXC, _renderFaturasIXC,
+// calcDRE, sf_lancamentos nem qualquer integração existente.
+//
+//  • Usa a rota x-target:'ixc-doc' do ixc-proxy (ixcsoft:'listar')
+//  • get_boleto → PDF em base64 · get_pix → EMV copia-e-cola
+//  • NÃO grava, NÃO dá baixa, NÃO toca no financeiro interno
+// ════════════════════════════════════════════════════════
+
+// A branch padrão do proxy monta um corpo fixo (qtype/query/oper/page/
+// rp/sortname/sortorder) e descartaria 'boletos', 'base64' e
+// 'id_areceber'. Por isso o get_boleto/get_pix têm rota própria.
+async function chamarIXCDoc(cfg, endpoint, params){
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-ixc-url': cfg.ixcUrl,
+    'x-ixc-token': cfg.ixcToken,
+    'x-ixc-endpoint': endpoint,
+    'x-target': 'ixc-doc',
+  };
+  if(cfg.ixcUser) headers['x-ixc-user'] = cfg.ixcUser;
+  const resp = await fetch(cfg.proxyUrl, {
+    method:'POST', headers, body: JSON.stringify({ params: params||{} })
+  });
+  const text = await resp.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('Resposta inválida do proxy: '+text.slice(0,120)); }
+  if(!resp.ok) throw new Error(data.hint || data.error || ('erro HTTP '+resp.status));
+  return data;
+}
+
+// O IXC devolve o PDF em base64, mas a chave muda conforme a versão.
+function _fxAcharB64(obj, prof=0){
+  if(!obj || prof>8) return null;
+  if(typeof obj === 'string'){
+    const s = obj.replace(/^data:[^;]+;base64,/,'').trim();
+    return (s.length>500 && /^[A-Za-z0-9+/=\r\n]+$/.test(s)) ? s : null;
+  }
+  if(Array.isArray(obj)){ for(const it of obj){ const r=_fxAcharB64(it,prof+1); if(r) return r; } return null; }
+  if(typeof obj === 'object'){
+    for(const k of ['arquivo','base64','pdf','boleto','file','conteudo']){
+      if(obj[k]){ const r=_fxAcharB64(obj[k],prof+1); if(r) return r; }
+    }
+    for(const v of Object.values(obj)){ const r=_fxAcharB64(v,prof+1); if(r) return r; }
+  }
+  return null;
+}
+
+// O gateway aninha o PIX em profundidade variável: procura a string EMV
+// (todo payload PIX começa com "0002").
+function _fxAcharPix(obj, prof=0){
+  if(!obj || prof>8) return null;
+  if(typeof obj === 'string') return (/^0002[0-9A-Za-z]/.test(obj.trim()) && obj.length>60) ? obj.trim() : null;
+  if(Array.isArray(obj)){ for(const it of obj){ const r=_fxAcharPix(it,prof+1); if(r) return r; } return null; }
+  if(typeof obj === 'object'){ for(const v of Object.values(obj)){ const r=_fxAcharPix(v,prof+1); if(r) return r; } }
+  return null;
+}
+
+function _fxB64Blob(b64, mime){
+  const limpo = String(b64||'').replace(/^data:[^;]+;base64,/,'').replace(/\s+/g,'');
+  const bin = atob(limpo);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr], { type: mime||'application/pdf' });
+}
+
+function _fxEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Botões só nas faturas cobráveis. Recebida/cancelada não tem o que cobrar.
+function _fatIxcAcoes(r, st){
+  if(!['aberta','vencida','parcial'].includes(st.k)) return '<span class="td-muted">—</span>';
+  const id = String(r.id||'');
+  if(!id) return '<span class="td-muted">—</span>';
+  const b = 'padding:3px 8px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;margin:0 2px';
+  return '<button style="'+b+'" onclick="fatIxcBoleto(\''+id+'\')" title="Ver o boleto em PDF">📄 Boleto</button>'
+       + '<button style="'+b+'" onclick="fatIxcPix(\''+id+'\')" title="Gerar o PIX copia e cola">💠 PIX</button>';
+}
+
+let _fxBlobUrl = null;
+
+function fatIxcFecharDoc(){
+  const el = document.getElementById('fatixc-doc-overlay');
+  if(el) el.remove();
+  if(_fxBlobUrl){ URL.revokeObjectURL(_fxBlobUrl); _fxBlobUrl = null; }
+}
+
+function _fatIxcAbrirDoc(titulo){
+  fatIxcFecharDoc();
+  const ov = document.createElement('div');
+  ov.id = 'fatixc-doc-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,20,.62);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML =
+    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:620px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.28)">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">'
+    +   '<span style="font-weight:700;font-size:14px;color:var(--text)">'+_fxEsc(titulo)+'</span>'
+    +   '<button onclick="fatIxcFecharDoc()" style="background:none;border:none;font-size:17px;cursor:pointer;color:var(--text3);line-height:1">✕</button>'
+    + '</div>'
+    + '<div id="fatixc-doc-body" style="padding:16px 18px;overflow:auto;flex:1">'
+    +   '<div style="text-align:center;padding:26px;color:var(--text3);font-size:13px">Consultando o IXC…</div>'
+    + '</div>'
+    + '</div>';
+  ov.onclick = ev => { if(ev.target===ov) fatIxcFecharDoc(); };
+  document.body.appendChild(ov);
+  return document.getElementById('fatixc-doc-body');
+}
+
+function _fxErro(body, msg){
+  body.innerHTML = '<div style="padding:18px;border-radius:10px;background:rgba(194,59,42,.08);border-left:3px solid #D00000;font-size:12.5px;color:#C40000">'+_fxEsc(msg)+'</div>';
+}
+
+async function fatIxcBoleto(faturaId){
+  const body = _fatIxcAbrirDoc('📄 Boleto da fatura #'+faturaId);
+  try{
+    const cfg = await getIXCConfig();
+    if(!cfg.proxyUrl) throw new Error('Configure a integração IXC em Configurações.');
+    const r = await chamarIXCDoc(cfg, 'get_boleto', {
+      boletos: String(faturaId), juros:'N', multa:'N',
+      atualiza_boleto:'N', tipo_boleto:'arquivo', base64:'S'
+    });
+    const b64 = _fxAcharB64(r);
+    if(!b64) throw new Error('O IXC não retornou o PDF. Verifique se esta fatura tem boleto gerado.');
+    _fxBlobUrl = URL.createObjectURL(_fxB64Blob(b64,'application/pdf'));
+    body.innerHTML =
+      '<iframe src="'+_fxBlobUrl+'" style="width:100%;height:56vh;border:1px solid var(--border);border-radius:10px;background:#fff"></iframe>'
+      + '<div style="display:flex;gap:8px;margin-top:12px">'
+      +   '<a class="btn" href="'+_fxBlobUrl+'" download="fatura-'+_fxEsc(faturaId)+'.pdf" style="text-decoration:none">↓ Baixar PDF</a>'
+      +   '<a class="btn" href="'+_fxBlobUrl+'" target="_blank" rel="noopener" style="text-decoration:none">↗ Abrir em nova aba</a>'
+      + '</div>';
+  }catch(e){
+    console.error('[fatura ixc boleto]', e);
+    _fxErro(body, 'Falha ao buscar o boleto: '+(e.message||e));
+  }
+}
+
+async function fatIxcPix(faturaId){
+  const body = _fatIxcAbrirDoc('💠 PIX da fatura #'+faturaId);
+  try{
+    const cfg = await getIXCConfig();
+    if(!cfg.proxyUrl) throw new Error('Configure a integração IXC em Configurações.');
+    const g = await chamarIXCDoc(cfg, 'get_pix', { id_areceber: String(faturaId) });
+    const pix = _fxAcharPix(g);
+    if(!pix) throw new Error('O IXC não gerou o PIX desta fatura. Confira se o gateway PIX está ativo para este título.');
+    const qr = _fxAcharB64(g);   // algumas versões devolvem a imagem do QR junto
+    body.innerHTML =
+      (qr ? '<div style="text-align:center;margin-bottom:14px"><img src="data:image/png;base64,'+qr+'" alt="QR Code PIX" style="width:190px;height:190px;border:1px solid var(--border);border-radius:10px;background:#fff;padding:8px"></div>' : '')
+      + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:6px">PIX copia e cola — a baixa é automática após o pagamento.</div>'
+      + '<textarea id="fatixc-pix-txt" readonly style="width:100%;height:96px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text);resize:vertical">'+_fxEsc(pix)+'</textarea>'
+      + '<button class="btn btn-primary" style="margin-top:10px" onclick="fatIxcCopiarPix()">⧉ Copiar código</button>';
+  }catch(e){
+    console.error('[fatura ixc pix]', e);
+    _fxErro(body, 'Falha ao gerar o PIX: '+(e.message||e));
+  }
+}
+
+async function fatIxcCopiarPix(){
+  const ta = document.getElementById('fatixc-pix-txt');
+  if(!ta) return;
+  try{
+    await navigator.clipboard.writeText(ta.value);
+    showToast('✓ PIX copiado.');
+  }catch{
+    ta.select(); ta.setSelectionRange(0, 99999);
+    try{ document.execCommand('copy'); showToast('✓ PIX copiado.'); }
+    catch{ showToast('Não consegui copiar — selecione e copie manualmente.', true); }
+  }
 }
 
 function exportarFaturasIxcCSV(){
