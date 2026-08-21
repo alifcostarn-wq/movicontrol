@@ -620,10 +620,6 @@ input:focus,select:focus{border-color:var(--accent)}
 .pj-rodape button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px;font-size:11px;cursor:pointer}
 .pj-rodape button:hover{border-color:var(--accent);color:var(--text)}
 .pj-carregando{font-size:11px;color:var(--accent);padding:4px 7px}
-#btn-enquadrar-proj{display:none;position:absolute;left:50%;top:78px;transform:translateX(-50%);z-index:900;
-  align-items:center;gap:6px;background:var(--surface);border:1px solid var(--accent);color:var(--text);
-  border-radius:10px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.45)}
-#btn-enquadrar-proj:hover{background:var(--accent-glow)}
 .tp-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:.12s}
 .tp-item:hover{border-color:var(--accent)}
 .tp-item.on{border-color:var(--accent);background:rgba(60,179,113,.08)}
@@ -891,7 +887,6 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
   </div>
 
-  <button id="btn-enquadrar-proj" onclick="enquadrarProjetos()" title="A seleção atual está fora da tela">⤢ Enquadrar projeto</button>
   <div id="multi-barra"></div>
   <div id="subbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:899;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 12px;display:none;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12px;color:var(--text-dim)"></div>
 
@@ -2683,22 +2678,12 @@ async function trocarProjetos(ids,opts){
   renderPainelProjetos();
   const nomes=ids.map(_nomeProj);
   toast((ids.length>1?'🔗 '+ids.length+' no mapa: ':'📁 ')+nomes.slice(0,3).join(' · ')+(nomes.length>3?' +'+(nomes.length-3):''));
-  _projFocoAviso(ids);
-}
-/* se nada da nova seleção estiver na tela, oferece enquadrar */
-function _projFocoAviso(ids){
-  if(!mapa||!projAtual)return;
-  const b=mapa.getBounds();
-  const visivel=projAtual.elementos.some(e=>e.lat!=null&&b.contains([e.lat,e.lng]));
-  const btn=document.getElementById('btn-enquadrar-proj');
-  if(btn)btn.style.display=visivel?'none':'flex';
 }
 function enquadrarProjetos(){
   if(!mapa||!projAtual)return;
   const pts=[...projAtual.elementos.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...projAtual.cabos.flatMap(c=>c.pontos||[])];
   if(!pts.length){toast('Nada para enquadrar neste projeto',true);return}
   mapa.fitBounds(pts,{padding:[60,60]});
-  const btn=document.getElementById('btn-enquadrar-proj');if(btn)btn.style.display='none';
 }
 let _pjFiltro='', _pjOcupado=false;
 /* abre o painel lateral na seção Projetos (usado pelo chip da barra multi) */
@@ -2747,7 +2732,12 @@ async function pjToggle(id,ligar){
   _pjOcupado=true;renderPainelProjetos();
   const lista=document.getElementById('pj-lista');
   if(lista&&ligar)lista.insertAdjacentHTML('afterbegin','<div class="pj-carregando">carregando '+_esc(_nomeProj(id))+'…</div>');
-  try{await trocarProjetos(ids,{silencioso:true})}
+  try{
+    await trocarProjetos(ids,{silencioso:true});
+    // marcar leva o mapa até o projeto marcado (o último marcado manda);
+    // desmarcar não mexe na vista.
+    if(ligar)pjIr(id,true);
+  }
   finally{_pjOcupado=false;renderPainelProjetos()}
 }
 function pjTodos(){
@@ -2757,13 +2747,17 @@ function pjTodos(){
   trocarProjetos([alvo],{silencioso:true});
 }
 /* centraliza num projeto específico sem fechar os outros */
-function pjIr(id){
+function pjIr(id,virarAlvo){
   if(!mapa||!projAtual)return;
   const pts=[...projAtual.elementos.filter(e=>e.lat!=null&&(e._projId||projAtual.id)===id).map(e=>[e.lat,e.lng]),
              ...projAtual.cabos.filter(c=>(c._projId||projAtual.id)===id).flatMap(c=>c.pontos||[])];
-  if(!pts.length){const p=DB.projetos.find(x=>x.id===id);if(p&&p.centro)mapa.setView(p.centro,15);else toast('Projeto sem elementos posicionados',true);return}
+  if(!pts.length){
+    const p=DB.projetos.find(x=>x.id===id);
+    if(p&&p.centro)mapa.setView(p.centro,15);else if(!virarAlvo)toast('Projeto sem elementos posicionados',true);
+    if(virarAlvo&&projAtual._multi){projAtual._alvo=id;renderSeletorAlvo()}
+    return;
+  }
   mapa.fitBounds(pts,{padding:[60,60]});
-  const b=document.getElementById('btn-enquadrar-proj');if(b)b.style.display='none';
   if(projAtual._multi&&projAtual._alvo!==id){projAtual._alvo=id;renderSeletorAlvo();renderPainelProjetos()}
 }
 function abrirModalNovoProjeto(){
