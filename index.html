@@ -13465,7 +13465,8 @@ function _dmAbrir(globalIdx, modo){
     +       (bloquear?' style="background:#D00000;border-color:#D00000;color:#fff"':'') + '>'
     +       (bloquear?'🔒 Bloquear no IXC':'🔓 Desbloquear no IXC') + '</button>'
     +     '<button class="btn" onclick="fecharDesbloqueioManual()">Cancelar</button>'
-    +     '<button class="btn" onclick="dmDiagnosticoContrato()" title="Mostra o registro cru do contrato no IXC" style="margin-left:auto">🔍 Ver campos do IXC</button>'
+    +     '<button class="btn" onclick="dmDiagnosticoContrato()" title="Mostra o registro cru do contrato no IXC" style="margin-left:auto">🔍 Campos</button>'
+    +     '<button class="btn" onclick="dmListarMotivos()" title="Lista os motivos cadastrados no IXC">📋 Motivos</button>'
     +   '</div>'
     +   '<div id="dm-msg" style="margin-top:12px"></div>'
     + '</div>'
@@ -13495,12 +13496,52 @@ async function dmDiagnosticoContrato(){
     const reg = await _dmLerContratoIXC(cfg, c.ixcId);
     if(!reg) throw new Error('Contrato não encontrado no IXC.');
     const chaves = Object.keys(reg);
-    const relev = chaves.filter(k => /status|bloque|desbloq|liber|suspens|ativ/i.test(k));
-    _dmMsg('<b>'+chaves.length+' campos no registro.</b> Candidatos a status/bloqueio:<br>'
-      + '<div class="td-mono" style="font-size:11px;margin-top:6px;max-height:180px;overflow:auto">'
-      + (relev.length ? relev.map(k=>_fxEsc(k)+' = '+_fxEsc(String(reg[k]))).join('<br>') : 'nenhum campo bateu com o filtro')
-      + '</div>');
-    console.log('[desbloqueio manual] registro cru do contrato IXC:', reg);
+    // O IXC exige "motivo do cancelamento" ao mudar status_internet.
+    // O filtro antigo (só status/bloqueio) escondia justamente esse campo.
+    const grupos = [
+      ['Motivo / cancelamento', /motivo|cancel/i],
+      ['Status / bloqueio',     /status|bloque|desbloq|liber|suspens|ativ/i],
+    ];
+    let html = '<b>'+chaves.length+' campos no registro do contrato.</b>';
+    grupos.forEach(([titulo, rx])=>{
+      const ks = chaves.filter(k=>rx.test(k));
+      html += '<div style="margin-top:8px"><b>'+titulo+'</b>'
+            + '<div class="td-mono" style="font-size:11px;margin-top:4px;max-height:150px;overflow:auto">'
+            + (ks.length ? ks.map(k=>_fxEsc(k)+' = '+_fxEsc(String(reg[k]??''))).join('<br>') : '<i>nenhum campo</i>')
+            + '</div></div>';
+    });
+    html += '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">A lista completa dos '+chaves.length+' campos está no console (F12).</div>';
+    _dmMsg(html);
+    console.log('[contrato ixc] registro cru:', reg);
+    console.log('[contrato ixc] todos os campos:', chaves.sort().join(', '));
+  }catch(e){ _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro'); }
+}
+
+// O IXC pede um motivo cadastrado (não texto livre) para mudar o
+// status do contrato. Este botão lista os motivos disponíveis e o ID
+// de cada um — é o que falta para o bloqueio funcionar.
+async function dmListarMotivos(){
+  _dmMsg('Procurando a tabela de motivos no IXC…');
+  const tentativas = ['motivo_cancelamento','cliente_contrato_motivo','motivo_cancela','motivos_cancelamento'];
+  const falhas = [];
+  try{
+    const cfg = await getIXCConfig();
+    for(const ep of tentativas){
+      try{
+        const d = await chamarIXC(cfg, ep, { rp:'100' });
+        const regs = d?.registros || [];
+        if(!regs.length){ falhas.push(ep+': sem registros'); continue; }
+        const campoTxt = Object.keys(regs[0]).find(k=>/motivo|descri|nome|titulo/i.test(k)) || Object.keys(regs[0])[1];
+        _dmMsg('<b>Endpoint <span class="td-mono">'+_fxEsc(ep)+'</span> — '+regs.length+' motivo(s):</b>'
+          + '<div class="td-mono" style="font-size:11px;margin-top:6px;max-height:190px;overflow:auto">'
+          + regs.map(r=>'id '+_fxEsc(String(r.id))+' — '+_fxEsc(String(r[campoTxt]??''))).join('<br>')
+          + '</div>'
+          + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Me manda esta lista que eu ligo o motivo ao bloqueio.</div>', 'ok');
+        console.log('[contrato ixc] motivos ('+ep+'):', regs);
+        return;
+      }catch(e){ falhas.push(ep+': '+(e.message||e).slice(0,60)); }
+    }
+    _dmMsg('Nenhum endpoint de motivos respondeu:<br><span class="td-mono" style="font-size:11px">'+_fxEsc(falhas.join(' | '))+'</span>', 'erro');
   }catch(e){ _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro'); }
 }
 
@@ -13569,7 +13610,7 @@ async function executarAcessoContrato(){
     if(novo !== alvo){
       _dmMsg('O IXC respondeu sem erro, mas o status ficou <span class="td-mono">'+_fxEsc(novo||'?')+'</span> em vez de <span class="td-mono">'+_fxEsc(alvo)+'</span>.'
         + '<br><span class="td-mono" style="font-size:11px;display:block;margin-top:6px;word-break:break-word">'+_fxEsc(msgResp || cru)+'</span>'
-        + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Ou o campo tem outro nome nesta instalação, ou o IXC ignora escrita em <span class="td-mono">status_internet</span>. Use <b>🔍 Ver campos do IXC</b> para conferir. A tentativa ficou na auditoria.</div>', 'erro');
+        + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Ou o campo tem outro nome nesta instalação, ou o IXC ignora escrita em <span class="td-mono">status_internet</span>. Use <b>🔍 Campos</b> para conferir. A tentativa ficou na auditoria.</div>', 'erro');
       restaurar(); return;
     }
 
