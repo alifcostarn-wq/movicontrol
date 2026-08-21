@@ -13520,6 +13520,50 @@ async function dmDiagnosticoContrato(){
 // O IXC pede um motivo cadastrado (não texto livre) para mudar o
 // status do contrato. Este botão lista os motivos disponíveis e o ID
 // de cada um — é o que falta para o bloqueio funcionar.
+// Reenvia o mesmo PUT acrescentando o motivo no campo escolhido.
+// Seguro repetir: o IXC valida o formulário inteiro antes de gravar,
+// então a tentativa recusada não aplicou nada.
+async function dmTentarComCampo(campo){
+  const ctx = window._dmCtx;
+  if(!ctx){ _dmMsg('Contexto perdido. Feche e abra o modal de novo.', 'erro'); return; }
+  const { c, reg, alvo, motivo, bloquear, idx } = ctx;
+  _dmMsg('Reenviando com <span class="td-mono">'+_fxEsc(campo)+'</span>…');
+  try{
+    const cfg = await getIXCConfig();
+    const payload = { ...reg, id:String(c.ixcId), status_internet:alvo, [campo]: motivo };
+    console.log('[contrato ixc] tentativa com campo '+campo+':', payload);
+    const r = await chamarIXCPut(cfg, 'cliente_contrato/'+encodeURIComponent(c.ixcId), payload);
+    console.log('[contrato ixc] resposta:', r);
+    const tipo = String(r?.type || r?.tipo || '').toLowerCase();
+    const msg  = r?.message || r?.mensagem || JSON.stringify(r||{}).slice(0,300);
+
+    if(tipo.startsWith('err')){
+      _dmMsg('Com <span class="td-mono">'+_fxEsc(campo)+'</span> o IXC respondeu:<br>'
+        + '<span class="td-mono" style="font-size:11px">'+_fxEsc(msg)+'</span>'
+        + '<div style="margin-top:6px;font-size:11.5px;color:var(--text2)">Se a mensagem mudou, o campo está certo e falta o formato (provavelmente um ID). Se é a mesma, tente outro candidato.</div>', 'erro');
+      return;
+    }
+
+    const depois = await _dmLerContratoIXC(cfg, c.ixcId);
+    const novo = String(depois?.status_internet||'').toUpperCase();
+    await registrarAuditoria(bloquear?'bloqueio_manual':'desbloqueio_manual', 'Clientes', 'clientes_contratos', c.id,
+      'Contrato IXC #'+c.ixcId+' → '+(novo||'?')+' via campo '+campo+' — motivo: '+motivo);
+
+    if(novo !== alvo){
+      _dmMsg('Sem erro, mas o status ficou <span class="td-mono">'+_fxEsc(novo||'?')+'</span>. Tente outro candidato.', 'erro');
+      return;
+    }
+    const todos = gd('sf_clientes_contratos');
+    if(todos[idx]){ todos[idx] = { ...todos[idx], statusAcesso:alvo }; sd('sf_clientes_contratos', todos); }
+    _dmMsg('✅ Funcionou com <b><span class="td-mono">'+_fxEsc(campo)+'</span></b>. Me avisa qual foi que eu fixo isso no código.', 'ok');
+    showToast('✓ Contrato #'+c.ixcId+(bloquear?' bloqueado':' desbloqueado')+' no IXC.');
+    setTimeout(()=>{ fecharDesbloqueioManual(); if(window._cliAtual) renderCliContratos(window._cliAtual); }, 2200);
+  }catch(e){
+    console.error('[contrato ixc] tentativa', e);
+    _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro');
+  }
+}
+
 async function dmListarMotivos(){
   _dmMsg('Procurando a tabela de motivos no IXC…');
   const tentativas = ['motivo_cancelamento','cliente_contrato_motivo','motivo_cancela','motivos_cancelamento'];
@@ -13594,6 +13638,25 @@ async function executarAcessoContrato(){
     if(tipoResp.startsWith('err')){
       await registrarAuditoria(bloquear?'bloqueio_manual':'desbloqueio_manual', 'Clientes', 'clientes_contratos', c.id,
         'RECUSADO pelo IXC — contrato #'+c.ixcId+' — '+(msgResp||cru).slice(0,200));
+
+      // Erro de campo obrigatório: em vez de mandar o usuário caçar o
+      // nome do campo, listamos os candidatos do próprio registro e
+      // deixamos ele reenviar com um clique.
+      const pedeCampo = /obrigat|necess[áa]rio|informar/i.test(msgResp||'');
+      if(pedeCampo){
+        window._dmCtx = { c, reg, alvo, motivo, bloquear, idx };
+        const alvos = Object.keys(reg).filter(k=>/motivo|cancel|obs|justific/i.test(k));
+        _dmMsg('<b>O IXC exige um campo a mais.</b><br><span class="td-mono" style="font-size:11px">'+_fxEsc(msgResp||cru)+'</span>'
+          + (alvos.length
+            ? '<div style="margin-top:10px;font-size:12px">Candidatos no registro do contrato — clique para reenviar com o seu motivo nele:</div>'
+              + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">'
+              + alvos.map(k=>'<button class="btn" style="font-size:11px;padding:3px 9px" onclick="dmTentarComCampo(\''+_fxEsc(k)+'\')">'+_fxEsc(k)+'</button>').join('')
+              + '</div>'
+              + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Se algum campo for um ID cadastrado, use <b>📋 Motivos</b> para pegar o número certo.</div>'
+            : '<div style="margin-top:10px;font-size:12px">Nenhum campo com nome de motivo no registro. Veja a lista completa no console (F12) ou clique em <b>🔍 Campos</b>.</div>'), 'erro');
+        restaurar(); return;
+      }
+
       _dmMsg('<b>O IXC recusou a edição.</b><br><span class="td-mono" style="font-size:11px;display:block;margin-top:6px;word-break:break-word">'
         + _fxEsc(msgResp || cru) + '</span>'
         + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Causas mais comuns: o usuário do token não tem permissão de escrita no formulário de Contratos, ou o registro devolvido pela listagem traz campos calculados que o IXC não aceita de volta. A resposta completa está no console (F12).</div>', 'erro');
