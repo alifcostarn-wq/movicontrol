@@ -13589,11 +13589,19 @@ async function dmTentarComCampo(campo){
 // endpoint inexistente. Qualquer outra resposta significa que a rota
 // EXISTE. Só leitura (ixcsoft: listar) — não altera nada.
 const DM_ROTAS_CANDIDATAS = [
-  'alterar_status_acesso','alteracao_status_acesso','status_acesso',
-  'cliente_contrato_status','contrato_status_acesso','cliente_contrato_alterar_status',
-  'bloqueio_contrato','contrato_bloqueio','cliente_contrato_bloqueio',
-  'bloqueio_manual','liberacao_contrato','desbloqueio_confianca',
-  'cliente_contrato_bloqueio_manual','contrato_liberacao',
+  // controle: rota que SABEMOS existir. Se ela vier como "ausente",
+  // a sonda está quebrada e o resto do resultado não vale nada.
+  'cliente_contrato',
+  // família do desbloqueio_confianca, que já provamos existir
+  'bloqueio_confianca','desbloqueio_contrato','bloqueio_contrato_manual',
+  // verbos
+  'bloquear_contrato','desbloquear_contrato','bloqueia_acesso','libera_acesso',
+  'liberar_contrato','libera_contrato','ativar_contrato',
+  // nomes de campo/coluna virando rota
+  'status_internet','cliente_contrato_status_internet','cliente_contrato_acesso',
+  // padrão de rotina
+  'rotina_bloqueio','rotina_status_acesso','contrato_alterar_status_acesso',
+  'alterar_contrato_status','su_bloqueio','fn_bloqueio',
 ];
 
 async function dmSondarRotas(){
