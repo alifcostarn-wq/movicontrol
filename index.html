@@ -13520,6 +13520,24 @@ async function dmDiagnosticoContrato(){
 // O IXC pede um motivo cadastrado (não texto livre) para mudar o
 // status do contrato. Este botão lista os motivos disponíveis e o ID
 // de cada um — é o que falta para o bloqueio funcionar.
+// Lista de campos candidatos, marcando os já testados. Fica visível a
+// cada tentativa — sem isso o usuário perde a lista na primeira resposta.
+function _dmBotoesCandidatos(reg){
+  const testados = window._dmTestados || [];
+  const alvos = Object.keys(reg).filter(k=>/motivo|cancel|obs|justific/i.test(k));
+  if(!alvos.length) return '<div style="margin-top:10px;font-size:12px">Nenhum campo com nome de motivo no registro. Veja a lista completa no console (F12).</div>';
+  return '<div style="margin-top:10px;font-size:12px">Clique num campo para reenviar com o seu motivo nele:</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">'
+    + alvos.map(k=>{
+        const usado = testados.includes(k);
+        return '<button class="btn" style="font-size:11px;padding:3px 9px'
+             + (usado?';opacity:.45;text-decoration:line-through':'')
+             + '" onclick="dmTentarComCampo(\''+_fxEsc(k)+'\')">'+_fxEsc(k)+'</button>';
+      }).join('')
+    + '</div>'
+    + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Riscados já foram testados. Se algum campo for um ID cadastrado, use <b>📋 Motivos</b> para pegar o número.</div>';
+}
+
 // Reenvia o mesmo PUT acrescentando o motivo no campo escolhido.
 // Seguro repetir: o IXC valida o formulário inteiro antes de gravar,
 // então a tentativa recusada não aplicou nada.
@@ -13527,6 +13545,7 @@ async function dmTentarComCampo(campo){
   const ctx = window._dmCtx;
   if(!ctx){ _dmMsg('Contexto perdido. Feche e abra o modal de novo.', 'erro'); return; }
   const { c, reg, alvo, motivo, bloquear, idx } = ctx;
+  window._dmTestados = [...new Set([...(window._dmTestados||[]), campo])];
   _dmMsg('Reenviando com <span class="td-mono">'+_fxEsc(campo)+'</span>…');
   try{
     const cfg = await getIXCConfig();
@@ -13540,7 +13559,8 @@ async function dmTentarComCampo(campo){
     if(tipo.startsWith('err')){
       _dmMsg('Com <span class="td-mono">'+_fxEsc(campo)+'</span> o IXC respondeu:<br>'
         + '<span class="td-mono" style="font-size:11px">'+_fxEsc(msg)+'</span>'
-        + '<div style="margin-top:6px;font-size:11.5px;color:var(--text2)">Se a mensagem mudou, o campo está certo e falta o formato (provavelmente um ID). Se é a mesma, tente outro candidato.</div>', 'erro');
+        + '<div style="margin-top:6px;font-size:11.5px;color:var(--text2)">Mensagem diferente = campo certo, formato errado. Mensagem igual = próximo candidato.</div>'
+        + _dmBotoesCandidatos(reg), 'erro');
       return;
     }
 
@@ -13645,15 +13665,9 @@ async function executarAcessoContrato(){
       const pedeCampo = /obrigat|necess[áa]rio|informar/i.test(msgResp||'');
       if(pedeCampo){
         window._dmCtx = { c, reg, alvo, motivo, bloquear, idx };
-        const alvos = Object.keys(reg).filter(k=>/motivo|cancel|obs|justific/i.test(k));
+        window._dmTestados = [];
         _dmMsg('<b>O IXC exige um campo a mais.</b><br><span class="td-mono" style="font-size:11px">'+_fxEsc(msgResp||cru)+'</span>'
-          + (alvos.length
-            ? '<div style="margin-top:10px;font-size:12px">Candidatos no registro do contrato — clique para reenviar com o seu motivo nele:</div>'
-              + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">'
-              + alvos.map(k=>'<button class="btn" style="font-size:11px;padding:3px 9px" onclick="dmTentarComCampo(\''+_fxEsc(k)+'\')">'+_fxEsc(k)+'</button>').join('')
-              + '</div>'
-              + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Se algum campo for um ID cadastrado, use <b>📋 Motivos</b> para pegar o número certo.</div>'
-            : '<div style="margin-top:10px;font-size:12px">Nenhum campo com nome de motivo no registro. Veja a lista completa no console (F12) ou clique em <b>🔍 Campos</b>.</div>'), 'erro');
+          + _dmBotoesCandidatos(reg), 'erro');
         restaurar(); return;
       }
 
