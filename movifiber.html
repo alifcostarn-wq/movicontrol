@@ -133,6 +133,28 @@ input:focus,select:focus{border-color:var(--accent)}
 .logo-fiber small{display:block;font-size:11px;font-weight:400;color:var(--text-dim);letter-spacing:2px}
 #home-card{width:520px;max-width:92vw;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px}
 #home-card h3{font-size:14px;color:var(--text-dim);font-weight:500;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+.home-bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.home-busca{flex:1;min-width:200px;max-width:360px;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px}
+.home-ord{padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px}
+.home-cnt{font-size:12px;color:var(--text-dim);margin-left:auto}
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.proj-card{position:relative;padding:14px 14px 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:8px}
+.proj-card:hover{border-color:var(--accent);background:var(--accent-glow);transform:translateY(-1px)}
+.proj-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(60,179,113,.25)}
+.proj-chk{position:absolute;top:10px;right:10px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer}
+.proj-chk:hover{background:var(--surface2)}
+.proj-chk input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
+.proj-head{display:flex;align-items:center;gap:8px;padding-right:28px}
+.proj-nome{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-tag{font-size:12px;opacity:.8}
+.proj-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--text-dim);font-family:'DM Mono'}
+.proj-prog{display:flex;align-items:center;gap:10px;font-size:12px}
+.proj-prog .bar{flex:1;height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;position:relative}
+.proj-prog .bar i{position:absolute;left:0;top:0;height:100%;display:block;border-radius:4px}
+.proj-prog .bar i.cert{background:#5B9BFF;opacity:.85}
+.proj-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim)}
+.home-selbar{position:sticky;bottom:0;margin-top:14px;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--surface);box-shadow:0 -6px 24px rgba(0,0,0,.35)}
+.home-dica{margin-top:12px;font-size:11.5px;color:var(--text-dim)}
 .proj-item{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;cursor:pointer;transition:.15s}
 .proj-item:hover{border-color:var(--accent);background:var(--accent-glow)}
 .proj-item b{font-size:15px}
@@ -2355,6 +2377,15 @@ function distribuirMulti(){
     Object.keys(projAtual.fusoes||{}).forEach(k=>{if(dono[k]===pid)fus[k]=projAtual.fusoes[k]});
     Object.keys(projAtual.pops||{}).forEach(k=>{if(dono[k]===pid)pps[k]=projAtual.pops[k]});
     p.fusoes=fus;p.pops=pps;
+    // identificação das fibras volta para o projeto dono do cabo (chave começa com o id do cabo)
+    const donoCabo={};projAtual.cabos.forEach(c=>{donoCabo[c.id]=c._projId||alvo});
+    const ids={};
+    Object.keys(projAtual.idFibras||{}).forEach(k=>{
+      const m=k.match(/^(.+?)[es]?-\d+$/);
+      const cid=m?m[1]:null;
+      if((cid&&donoCabo[cid]===pid)||(!cid&&pid===alvo))ids[k]=projAtual.idFibras[k];
+    });
+    p.idFibras=ids;
     if(projAtual._seqProj&&projAtual._seqProj[pid])p.seq=projAtual._seqProj[pid];
     nuvemAgendarSalvar(pid);
   });
@@ -2433,34 +2464,79 @@ function abrirProjetoSelecionado(){
 }
 
 /* ================= HOME ================= */
+let _homeBusca='', _homeOrd=store.get('movifiber_home_ord')||'recente', _homeSel=new Set();
+function _homeStats(p){
+  const stub=!!p._stub;
+  const els=p.elementos||[], cbs=p.cabos||[];
+  const n=t=>els.filter(e=>e.tipo===t).length;
+  let km=0;try{cbs.forEach(c=>{const pts=c.pontos||[];for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];const R=6371,toR=x=>x*Math.PI/180;const dl=toR(b[0]-a[0]),dg=toR(b[1]-a[1]);const h=Math.sin(dl/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dg/2)**2;km+=2*R*Math.asin(Math.sqrt(h))}})}catch(e){}
+  const tot=els.length+cbs.length;
+  const impl=els.filter(e=>['implantado','certificado'].includes(e.status)).length+cbs.filter(c=>['implantado','certificado'].includes(c.status)).length;
+  const cert=els.filter(e=>e.status==='certificado').length+cbs.filter(c=>c.status==='certificado').length;
+  return {stub,
+    elementos:stub?(p._qtdEl||0):els.length, cabos:stub?(p._qtdCb||0):cbs.length,
+    pop:n('pop'),cto:n('cto'),ceo:n('ceo'),poste:n('poste'),km,
+    clientes:(p.clientes||[]).length,
+    pct:tot?Math.round(impl/tot*100):0, pctCert:tot?Math.round(cert/tot*100):0,
+    atualizado:p._atualizado?new Date(p._atualizado):(p.criado?new Date(p.criado):null),
+    nuvem:!!(p._versao||p._stub||p._atualizado)};
+}
 function renderHome(){
   const l=document.getElementById('lista-projetos');
   if(!DB.projetos.length){l.innerHTML='<div class="vazio">Nenhum projeto ainda.<br>Crie o primeiro projeto FTTH para começar.</div>';return}
-  let cab='';
-  if(DB.projetos.length>1){
-    cab=`<div class="proj-item" style="border-color:var(--accent);background:rgba(60,179,113,.08);cursor:default;display:block">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <b>🗂️ Ver vários projetos juntos</b>
-        <button class="btn sm" onclick="abrirSelecionados()">Abrir selecionados</button>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px 14px">
-        ${DB.projetos.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
-          <input type="checkbox" class="chk-proj" value="${p.id}"> ${p.nome}</label>`).join('')}
-      </div>
-      <div style="font-size:10.5px;color:var(--text-dim);margin-top:6px">Marque 2 ou mais e clique em "Abrir selecionados" (visão somente leitura). Ou clique num projeto abaixo para editá-lo.</div>
+  const q=_homeBusca.trim().toLowerCase();
+  let lista=DB.projetos.map(p=>({p,st:_homeStats(p)})).filter(x=>!q||x.p.nome.toLowerCase().includes(q));
+  const ord={recente:(a,b)=>((b.st.atualizado||0)-(a.st.atualizado||0)),nome:(a,b)=>a.p.nome.localeCompare(b.p.nome,'pt-BR'),tamanho:(a,b)=>(b.st.elementos+b.st.cabos)-(a.st.elementos+a.st.cabos),progresso:(a,b)=>b.st.pct-a.st.pct}[_homeOrd]||(()=>0);
+  lista.sort(ord);
+  // limpa seleções de projetos que não existem mais
+  [..._homeSel].forEach(id=>{if(!DB.projetos.some(p=>p.id===id))_homeSel.delete(id)});
+  const nSel=_homeSel.size;
+  const barra=`<div class="home-bar">
+      <input class="home-busca" placeholder="🔍 Buscar projeto…" value="${_esc(_homeBusca)}" oninput="_homeBusca=this.value;renderHome();_homeFocoBusca()">
+      <select class="home-ord" onchange="_homeOrd=this.value;store.set('movifiber_home_ord',this.value);renderHome()">
+        <option value="recente" ${_homeOrd==='recente'?'selected':''}>Mais recentes</option>
+        <option value="nome" ${_homeOrd==='nome'?'selected':''}>Nome A–Z</option>
+        <option value="tamanho" ${_homeOrd==='tamanho'?'selected':''}>Maiores</option>
+        <option value="progresso" ${_homeOrd==='progresso'?'selected':''}>Mais implantados</option>
+      </select>
+      <span class="home-cnt">${lista.length} de ${DB.projetos.length} projeto(s)</span>
     </div>`;
-  }
-  l.innerHTML=cab+DB.projetos.map(p=>{
-    const tot=p.elementos.length+p.cabos.length;
-    const impl=p.elementos.filter(e=>['implantado','certificado'].includes(e.status)).length+p.cabos.filter(c=>['implantado','certificado'].includes(c.status)).length;
-    const pct=tot?Math.round(impl/tot*100):0;
-    return `<div class="proj-item" onclick="abrirProjeto('${p.id}')">
-      <div><b>${p.nome}</b><div class="meta">${p.elementos.length} elementos · ${p.cabos.length} cabos · criado em ${new Date(p.criado).toLocaleDateString('pt-BR')}</div></div>
-      <div style="text-align:right"><div class="prog mono">${pct}%</div><div class="meta">implantado</div></div>
+  const cards=lista.map(({p,st})=>{
+    const sel=_homeSel.has(p.id);
+    const dt=st.atualizado?st.atualizado.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'}):'—';
+    const corPct=st.pct>=100?'#5B9BFF':(st.pct>=50?'#3CB371':(st.pct>0?'#E0913C':'var(--text-dim)'));
+    const stats=st.stub
+      ? `<span title="Na nuvem — conteúdo baixa ao abrir">☁️ ${st.elementos} elementos · ${st.cabos} cabos</span>`
+      : `<span title="POPs">🏢 ${st.pop}</span><span title="CTOs">📦 ${st.cto}</span><span title="Caixas de emenda">🔗 ${st.ceo}</span><span title="Cabos">〰️ ${st.cabos}</span><span title="Extensão de cabo">${st.km>=1?st.km.toFixed(1)+' km':Math.round(st.km*1000)+' m'}</span>${st.clientes?`<span title="Clientes vinculados">🏠 ${st.clientes}</span>`:''}`;
+    return `<div class="proj-card ${sel?'sel':''}" onclick="abrirProjeto('${p.id}')">
+      <label class="proj-chk" onclick="event.stopPropagation()" title="Marcar para abrir junto com outros">
+        <input type="checkbox" class="chk-proj" value="${p.id}" ${sel?'checked':''} onchange="_homeToggle('${p.id}',this.checked)"></label>
+      <div class="proj-head">
+        <div class="proj-nome" title="${_esc(p.nome)}">${_esc(p.nome)}</div>
+        ${st.nuvem?'<span class="proj-tag" title="Sincronizado com a nuvem">☁️</span>':'<span class="proj-tag" title="Somente neste navegador">💾</span>'}
+      </div>
+      <div class="proj-stats">${stats}</div>
+      <div class="proj-prog"><div class="bar"><i style="width:${st.pct}%;background:${corPct}"></i><i class="cert" style="width:${st.pctCert}%"></i></div>
+        <span class="mono" style="color:${corPct}">${st.pct}%</span></div>
+      <div class="proj-foot"><span>${st.pct>=100?'✅ implantado':(st.pct?'implantado '+st.pct+'%':'em projeto')}${st.pctCert?' · certificado '+st.pctCert+'%':''}</span><span>atualizado ${dt}</span></div>
     </div>`}).join('');
+  const selBar=nSel?`<div class="home-selbar">
+      <b>${nSel} projeto(s) marcado(s)</b>
+      <span style="color:var(--text-dim);font-size:12px">${[..._homeSel].map(id=>_esc(_nomeProj(id))).join(' · ')}</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" onclick="_homeSel.clear();renderHome()">Limpar</button>
+      <button class="btn sm" onclick="abrirSelecionados()">${nSel>1?'🔗 Abrir juntos':'◎ Abrir'}</button>
+    </div>`:`<div class="home-dica">Marque 2 ou mais projetos para abri-los juntos no mesmo mapa (rede conectada entre projetos, com edição).</div>`;
+  l.innerHTML=barra+`<div class="proj-grid">${cards||'<div class="vazio">Nenhum projeto com esse nome.</div>'}</div>`+selBar;
 }
+/* mantém o cursor na busca após o re-render da lista */
+function _homeFocoBusca(){
+  const i=document.querySelector('.home-busca');
+  if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}
+}
+function _homeToggle(id,on){if(on)_homeSel.add(id);else _homeSel.delete(id);renderHome()}
 function abrirSelecionados(){
-  const ids=[...document.querySelectorAll('.chk-proj:checked')].map(c=>c.value);
+  const ids=[..._homeSel];
   if(ids.length<1){toast('Marque ao menos um projeto',true);return}
   if(ids.length===1){abrirProjeto(ids[0]);return}  // um só → abre normal (editável)
   abrirProjetos(ids);
@@ -2476,7 +2552,7 @@ async function abrirProjetos(ids){
   }
   const sel2=DB.projetos.filter(p=>ids.includes(p.id));
   const elementos=[], cabos=[], areas=[], clientes=[];
-  let fusoes={}, pops={};
+  let fusoes={}, pops={}, idFibras={};
   const seqPorProj={};
   sel2.forEach(p=>{
     (p.elementos||[]).forEach(e=>elementos.push({...e,_proj:p.nome,_projId:p.id}));
@@ -2484,6 +2560,7 @@ async function abrirProjetos(ids){
     (p.areas||[]).forEach(a=>areas.push({...a,_proj:p.nome,_projId:p.id}));
     (p.clientes||[]).forEach(c=>clientes.push({...c,_projId:p.id}));
     Object.assign(fusoes,p.fusoes||{});Object.assign(pops,p.pops||{});
+    Object.assign(idFibras,p.idFibras||{});   // identificação das fibras vive por projeto
     seqPorProj[p.id]=Object.assign({pop:0,cto:0,ceo:0,reserva:0,poste:0,cabo:0,area:0,cliente:0},p.seq||{});
   });
   const centro=sel2[0]?sel2[0].centro:[-5.19,-37.34];
@@ -2491,7 +2568,7 @@ async function abrirProjetos(ids){
     // título curto: a lista completa fica na barra do modo combinado
     nome:'🔗 '+sel2.length+' projetos conectados',
     _nomes:sel2.map(p=>p.nome),
-    centro,criado:Date.now(),elementos,cabos,areas,fusoes,pops,clientes,
+    centro,criado:Date.now(),elementos,cabos,areas,fusoes,pops,clientes,idFibras,
     _seqProj:seqPorProj,_alvo:ids[0],
     cfg:Object.assign({tx:3.0,folgaPadrao:10,raioVinculo:35,raioViab:250,tiles:'google-h'},(sel2[0]&&sel2[0].cfg)||{}),
     seq:{pop:0,cto:0,ceo:0,reserva:0,poste:0,cabo:0,area:0,cliente:0}};
