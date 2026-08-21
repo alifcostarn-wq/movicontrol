@@ -13319,7 +13319,7 @@ function renderCliLogins(cli){
 
 // ====== EDITAR CONTRATO ======
 // ════════════════════════════════════════════════════════
-// DESBLOQUEIO MANUAL DO CONTRATO (ADITIVO)
+// BLOQUEIO E DESBLOQUEIO MANUAL DO CONTRATO (ADITIVO)
 //
 // Primeira ESCRITA do MoviControl no IXC. Segue o mesmo padrão
 // já provado no campo.html (limpar MAC): lê o registro inteiro,
@@ -13347,11 +13347,28 @@ const DM_MOTIVO_TXT = {
 };
 
 function _ctrAcaoDesbloqueio(c, globalIdx){
-  const sa = String(c.statusAcesso||'').toUpperCase();
-  if(!DM_BLOQUEADOS.includes(sa)) return '';
   if(!c.ixcId) return '';
-  return '<button class="action-btn" title="Desbloquear o acesso no IXC" onclick="abrirDesbloqueioManual('+globalIdx+')" '
-       + 'style="color:#2F7D1B;border-color:rgba(99,153,34,.4)">🔓</button>';
+  const sa = String(c.statusAcesso||'').toUpperCase();
+  if(DM_BLOQUEADOS.includes(sa))
+    return '<button class="action-btn" title="Desbloquear o acesso no IXC" onclick="abrirDesbloqueioManual('+globalIdx+')" '
+         + 'style="color:#2F7D1B;border-color:rgba(99,153,34,.4)">🔓</button>';
+  if(sa === 'A')
+    return '<button class="action-btn" title="Bloquear o acesso no IXC" onclick="abrirBloqueioManual('+globalIdx+')" '
+         + 'style="color:#C40000;border-color:rgba(194,59,42,.4)">🔒</button>';
+  return '';
+}
+
+// O código de "bloqueio manual" muda de instalação para instalação
+// (D, DM, S, SU). Em vez de chutar, conta o que já existe na base
+// sincronizada — o próprio IXC dele responde qual é o código certo.
+function _dmCodigoBloqueioSugerido(){
+  const cont = {};
+  gd('sf_clientes_contratos').forEach(c=>{
+    const s = String(c.statusAcesso||'').toUpperCase();
+    if(['D','DM','S','SU'].includes(s)) cont[s] = (cont[s]||0)+1;
+  });
+  const top = Object.entries(cont).sort((a,b)=>b[1]-a[1])[0];
+  return { codigo: top ? top[0] : 'D', qtd: top ? top[1] : 0 };
 }
 
 // PUT no IXC (ixcsoft: editar). Função nova — chamarIXC segue
@@ -13387,13 +13404,19 @@ function fecharDesbloqueioManual(){
   if(el) el.remove();
 }
 
-function abrirDesbloqueioManual(globalIdx){
+function abrirDesbloqueioManual(idx){ _dmAbrir(idx, 'desbloquear'); }
+function abrirBloqueioManual(idx){ _dmAbrir(idx, 'bloquear'); }
+
+function _dmAbrir(globalIdx, modo){
   const c = gd('sf_clientes_contratos')[globalIdx];
   if(!c || !c.ixcId){ showToast('Contrato sem ID do IXC.', true); return; }
   window._dmIdx = globalIdx;
+  window._dmModo = modo;
+  const bloquear = modo === 'bloquear';
   const sa = String(c.statusAcesso||'').toUpperCase();
   const motivoBloq = DM_MOTIVO_TXT[sa] || ('Acesso em status "'+sa+'"');
   const financeiro = ['FA','CM','BL'].includes(sa);
+  const sug = _dmCodigoBloqueioSugerido();
 
   const ov = document.createElement('div');
   ov.id = 'dm-overlay';
@@ -13401,26 +13424,43 @@ function abrirDesbloqueioManual(globalIdx){
   ov.innerHTML =
     '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:540px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.28)">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">'
-    +   '<span style="font-weight:700;font-size:14px;color:var(--text)">🔓 Desbloqueio manual do contrato</span>'
+    +   '<span style="font-weight:700;font-size:14px;color:var(--text)">'+(bloquear?'🔒 Bloqueio manual do contrato':'🔓 Desbloqueio manual do contrato')+'</span>'
     +   '<button onclick="fecharDesbloqueioManual()" style="background:none;border:none;font-size:17px;cursor:pointer;color:var(--text3);line-height:1">✕</button>'
     + '</div>'
     + '<div id="dm-body" style="padding:16px 18px;overflow:auto;flex:1">'
     +   '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.7;margin-bottom:14px">'
     +     '<div><b>Contrato IXC</b> #'+_fxEsc(c.ixcId)+' — '+_fxEsc(c.plano||'sem plano')+'</div>'
-    +     '<div><b>Situação atual</b> '+_fxEsc(motivoBloq)+' <span class="td-mono td-muted">('+_fxEsc(sa)+')</span></div>'
-    +     '<div style="color:var(--text3)">O campo <span class="td-mono">status_internet</span> passa para <span class="td-mono">A</span> (ativo). Os demais campos do contrato são preservados.</div>'
+    +     '<div><b>Situação atual</b> '+_fxEsc(bloquear?'Acesso ativo':motivoBloq)+' <span class="td-mono td-muted">('+_fxEsc(sa||'—')+')</span></div>'
+    +     '<div style="color:var(--text3)">Só o campo <span class="td-mono">status_internet</span> é alterado. Os demais campos do contrato são preservados.</div>'
     +   '</div>'
-    +   (financeiro
-        ? '<div style="background:rgba(194,90,0,.07);border-left:3px solid #FF8C2E;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:#B35400;margin-bottom:14px">'
-          + '⚠️ Este é um bloqueio <b>financeiro</b>. Enquanto a fatura seguir em aberto, a rotina automática do IXC pode bloquear de novo na próxima execução. Para liberação duradoura, resolva a fatura ou use o desbloqueio de confiança.'
+    +   (bloquear
+        ? '<div style="background:rgba(194,59,42,.07);border-left:3px solid #D00000;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:#C40000;margin-bottom:14px">'
+          + '⚠️ Isto <b>derruba a conexão do cliente</b>. Use para bloqueio comercial, suspensão a pedido ou contrato em disputa — não para inadimplência, que a rotina automática do IXC já trata.'
           + '</div>'
-        : '')
+          + '<div class="form-group full" style="margin-bottom:12px">'
+          +   '<label class="form-label">Código de bloqueio</label>'
+          +   '<select class="cp-form-input" id="dm-codigo">'
+          +     ['D','DM','S','SU'].map(k=>'<option value="'+k+'"'+(k===sug.codigo?' selected':'')+'>'+k+'</option>').join('')
+          +   '</select>'
+          +   '<div style="font-size:11px;color:var(--text3);margin-top:5px">'
+          +     (sug.qtd ? 'Sugerido <b>'+_fxEsc(sug.codigo)+'</b> — é o código usado em '+sug.qtd+' contrato(s) já bloqueado(s) na sua base.'
+                        : 'Nenhum contrato bloqueado na base para comparar. <b>D</b> é o padrão do IXC.')
+          +   '</div>'
+          + '</div>'
+        : (financeiro
+          ? '<div style="background:rgba(194,90,0,.07);border-left:3px solid #FF8C2E;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:#B35400;margin-bottom:14px">'
+            + '⚠️ Este é um bloqueio <b>financeiro</b>. Enquanto a fatura seguir em aberto, a rotina automática do IXC pode bloquear de novo na próxima execução. Para liberação duradoura, resolva a fatura ou use o desbloqueio de confiança.'
+            + '</div>'
+          : ''))
     +   '<div class="form-group full" style="margin-bottom:12px">'
-    +     '<label class="form-label">Motivo do desbloqueio<span>*</span></label>'
-    +     '<input class="cp-form-input" id="dm-motivo" placeholder="Ex: acordo de pagamento, erro de cobrança, liberação comercial" maxlength="180">'
+    +     '<label class="form-label">Motivo<span>*</span></label>'
+    +     '<input class="cp-form-input" id="dm-motivo" maxlength="180" placeholder="'
+    +       (bloquear ? 'Ex: suspensão a pedido do cliente, contrato em disputa' : 'Ex: acordo de pagamento, erro de cobrança, liberação comercial')+'">'
     +   '</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +     '<button class="btn btn-primary" id="dm-btn" onclick="executarDesbloqueioManual()">🔓 Desbloquear no IXC</button>'
+    +     '<button class="btn'+(bloquear?'':' btn-primary')+'" id="dm-btn" onclick="executarAcessoContrato()"'
+    +       (bloquear?' style="background:#D00000;border-color:#D00000;color:#fff"':'') + '>'
+    +       (bloquear?'🔒 Bloquear no IXC':'🔓 Desbloquear no IXC') + '</button>'
     +     '<button class="btn" onclick="fecharDesbloqueioManual()">Cancelar</button>'
     +     '<button class="btn" onclick="dmDiagnosticoContrato()" title="Mostra o registro cru do contrato no IXC" style="margin-left:auto">🔍 Ver campos do IXC</button>'
     +   '</div>'
@@ -13461,17 +13501,25 @@ async function dmDiagnosticoContrato(){
   }catch(e){ _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro'); }
 }
 
-async function executarDesbloqueioManual(){
+async function executarAcessoContrato(){
   const idx = window._dmIdx;
+  const modo = window._dmModo || 'desbloquear';
+  const bloquear = modo === 'bloquear';
   const c = gd('sf_clientes_contratos')[idx];
   if(!c) return;
+
+  const alvo = bloquear ? (document.getElementById('dm-codigo')?.value || 'D') : 'A';
   const motivo = (document.getElementById('dm-motivo')?.value||'').trim();
-  if(!motivo){ _dmMsg('Informe o motivo do desbloqueio.', 'erro'); document.getElementById('dm-motivo')?.focus(); return; }
-  if(!confirm('Desbloquear o acesso do contrato #'+c.ixcId+' no IXC?\n\nEsta ação escreve no IXC e libera a internet do cliente.')) return;
+  if(!motivo){ _dmMsg('Informe o motivo.', 'erro'); document.getElementById('dm-motivo')?.focus(); return; }
+  const pergunta = bloquear
+    ? 'Bloquear o acesso do contrato #'+c.ixcId+' no IXC?\n\nIsto derruba a conexão do cliente.'
+    : 'Desbloquear o acesso do contrato #'+c.ixcId+' no IXC?\n\nEsta ação escreve no IXC e libera a internet do cliente.';
+  if(!confirm(pergunta)) return;
 
   const btn = document.getElementById('dm-btn');
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ Desbloqueando…'; }
-  const restaurar = () => { if(btn){ btn.disabled=false; btn.textContent='🔓 Desbloquear no IXC'; } };
+  const rotulo = bloquear ? '🔒 Bloquear no IXC' : '🔓 Desbloquear no IXC';
+  if(btn){ btn.disabled = true; btn.textContent = bloquear ? '⏳ Bloqueando…' : '⏳ Desbloqueando…'; }
+  const restaurar = () => { if(btn){ btn.disabled=false; btn.textContent=rotulo; } };
 
   try{
     const cfg = await getIXCConfig();
@@ -13482,39 +13530,41 @@ async function executarDesbloqueioManual(){
     const reg = await _dmLerContratoIXC(cfg, c.ixcId);
     if(!reg) throw new Error('Contrato não encontrado no IXC.');
     const antes = String(reg.status_internet||'').toUpperCase();
-    if(antes === 'A'){
-      _dmMsg('Este contrato já está com o acesso ativo no IXC. Nada foi alterado.', 'ok');
+    if(antes === alvo){
+      _dmMsg('O contrato já está em <span class="td-mono">'+_fxEsc(alvo)+'</span> no IXC. Nada foi alterado.', 'ok');
       restaurar(); return;
     }
 
     // 2) PUT com todos os campos preservados, só status_internet muda
-    _dmMsg('Gravando o desbloqueio…');
-    const payload = { ...reg, id: String(c.ixcId), status_internet: 'A' };
+    _dmMsg(bloquear ? 'Gravando o bloqueio…' : 'Gravando o desbloqueio…');
+    const payload = { ...reg, id: String(c.ixcId), status_internet: alvo };
     await chamarIXCPut(cfg, 'cliente_contrato/'+encodeURIComponent(c.ixcId), payload);
 
     // 3) reconferência — não declaramos sucesso sem ver o campo mudar
     const depois = await _dmLerContratoIXC(cfg, c.ixcId);
     const novo = String(depois?.status_internet||'').toUpperCase();
 
-    await registrarAuditoria('desbloqueio_manual', 'Clientes', 'clientes_contratos', c.id,
+    await registrarAuditoria(bloquear?'bloqueio_manual':'desbloqueio_manual', 'Clientes', 'clientes_contratos', c.id,
       'Contrato IXC #'+c.ixcId+' — '+antes+' → '+(novo||'?')+' — motivo: '+motivo);
 
-    if(novo !== 'A'){
-      _dmMsg('O IXC aceitou a requisição, mas o status continua <span class="td-mono">'+_fxEsc(novo||'?')+'</span>. '
-        + 'Provavelmente o campo de bloqueio tem outro nome nesta instalação. Use <b>🔍 Ver campos do IXC</b> para identificar. '
+    if(novo !== alvo){
+      _dmMsg('O IXC aceitou a requisição, mas o status ficou <span class="td-mono">'+_fxEsc(novo||'?')+'</span> em vez de <span class="td-mono">'+_fxEsc(alvo)+'</span>. '
+        + 'Provavelmente o campo ou o código tem outro valor nesta instalação. Use <b>🔍 Ver campos do IXC</b> para identificar. '
         + 'A tentativa ficou registrada na auditoria.', 'erro');
       restaurar(); return;
     }
 
     // 4) reflete na tela na hora; o próximo sync confirma
     const todos = gd('sf_clientes_contratos');
-    if(todos[idx]){ todos[idx] = { ...todos[idx], statusAcesso:'A' }; sd('sf_clientes_contratos', todos); }
-    _dmMsg('✅ Acesso desbloqueado. A liberação na rede pode levar alguns minutos.', 'ok');
-    showToast('✓ Contrato #'+c.ixcId+' desbloqueado no IXC.');
+    if(todos[idx]){ todos[idx] = { ...todos[idx], statusAcesso:alvo }; sd('sf_clientes_contratos', todos); }
+    _dmMsg(bloquear
+      ? '🔒 Acesso bloqueado. A queda da conexão pode levar alguns minutos.'
+      : '✅ Acesso desbloqueado. A liberação na rede pode levar alguns minutos.', 'ok');
+    showToast('✓ Contrato #'+c.ixcId+(bloquear?' bloqueado':' desbloqueado')+' no IXC.');
     setTimeout(()=>{ fecharDesbloqueioManual(); if(window._cliAtual) renderCliContratos(window._cliAtual); }, 1400);
   }catch(e){
-    console.error('[desbloqueio manual]', e);
-    _dmMsg('Falha ao desbloquear: '+_fxEsc(e.message||e), 'erro');
+    console.error('[acesso contrato ixc]', e);
+    _dmMsg('Falha: '+_fxEsc(e.message||e), 'erro');
     restaurar();
   }
 }
