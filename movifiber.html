@@ -620,6 +620,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .pj-rodape button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px;font-size:11px;cursor:pointer}
 .pj-rodape button:hover{border-color:var(--accent);color:var(--text)}
 .pj-carregando{font-size:11px;color:var(--accent);padding:4px 7px}
+.marco-proj{font-size:20px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));opacity:.75;cursor:pointer}
+.marco-proj.alvo{opacity:1;filter:drop-shadow(0 0 5px rgba(60,179,113,.9))}
 .tp-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:.12s}
 .tp-item:hover{border-color:var(--accent)}
 .tp-item.on{border-color:var(--accent);background:rgba(60,179,113,.08)}
@@ -821,6 +823,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <div class="pj-rodape">
           <button onclick="pjTodos(false)" title="Deixar apenas o projeto ativo">Só o ativo</button>
           <button onclick="enquadrarProjetos()" title="Enquadrar tudo o que está marcado">⤢ Enquadrar</button>
+          <button onclick="marcarLocalProjeto()" title="Clique depois no mapa para definir onde este projeto fica — é o ponto em que ele abre">📍 Marcar local</button>
         </div>
       </div>
       <div class="dr-busca">
@@ -2313,7 +2316,7 @@ try{CAT=Object.assign(JSON.parse(JSON.stringify(CAT_PADRAO)),JSON.parse(store.ge
 });
 function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
-let camadasVisiveis={satelite:true,luzfibra:true,pop:false,cto:false,ceo:false,reserva:false,backbone:false,distribuicao:false,drop:false,area:false,cliente:false,poste:false,clienteone:false};
+let camadasVisiveis={satelite:true,luzfibra:true,marcoproj:true,pop:false,cto:false,ceo:false,reserva:false,backbone:false,distribuicao:false,drop:false,area:false,cliente:false,poste:false,clienteone:false};
 let layerRefs={}, caboTemp=null, areaTemp=null;
 /* Tecnologias PON: TX típico da OLT e faixa de sensibilidade da ONU */
 const TECNOLOGIAS={
@@ -2685,6 +2688,34 @@ function enquadrarProjetos(){
   if(!pts.length){toast('Nada para enquadrar neste projeto',true);return}
   mapa.fitBounds(pts,{padding:[60,60]});
 }
+/* ===== Localização (marco) do projeto no mapa =====
+   É o ponto que identifica o projeto: o mapa abre nele, o painel usa para
+   centralizar quando o projeto ainda não tem elementos, e ele fica visível
+   como um pino na camada "Marco dos projetos". */
+function marcarLocalProjeto(id){
+  if(!projAtual){toast('Abra um projeto primeiro',true);return}
+  _localProjAlvo=id||(projAtual._multi?_projAlvo():projAtual.id);
+  setModo('localproj');
+  toast('Clique no mapa para marcar a localização de '+_nomeProj(_localProjAlvo));
+}
+let _localProjAlvo=null;
+function definirLocalProjeto(ll){
+  const id=_localProjAlvo||(projAtual._multi?_projAlvo():projAtual.id);
+  const p=DB.projetos.find(x=>x.id===id);
+  if(!p){toast('Projeto não encontrado',true);setModo('navegar');return}
+  p.centro=[ll[0],ll[1]];
+  if(!projAtual._multi)projAtual.centro=p.centro;
+  if(!camadasVisiveis.marcoproj)camadasVisiveis.marcoproj=true;
+  _localProjAlvo=null;setModo('navegar');
+  salvar();nuvemAgendarSalvar(id);renderCamadas();renderTudo();
+  toast('📍 Localização de '+p.nome+' marcada em '+ll[0].toFixed(5)+', '+ll[1].toFixed(5));
+}
+function usarVistaComoLocal(id){
+  if(!mapa){return}
+  const c=mapa.getCenter();
+  _localProjAlvo=id||null;
+  definirLocalProjeto([c.lat,c.lng]);
+}
 let _pjFiltro='', _pjOcupado=false;
 /* abre o painel lateral na seção Projetos (usado pelo chip da barra multi) */
 function focarPainelProjetos(){
@@ -2715,7 +2746,8 @@ function renderPainelProjetos(){
       <span class="pj-nm">${_esc(p.nome)}</span>
       ${alvo===p.id&&abertos.length>1?'<span class="pj-alvo">alvo</span>':''}
       <span class="pj-qt">${st.stub?'☁️':st.elementos}</span>
-      ${on?`<button class="pj-ir" title="Centralizar neste projeto" onclick="event.preventDefault();event.stopPropagation();pjIr('${p.id}')">⤢</button>`:''}
+      ${on?`<button class="pj-ir" title="Centralizar neste projeto" onclick="event.preventDefault();event.stopPropagation();pjIr('${p.id}')">⤢</button>
+           <button class="pj-ir" title="Marcar a localização deste projeto no mapa" onclick="event.preventDefault();event.stopPropagation();marcarLocalProjeto('${p.id}')">📍</button>`:''}
     </label>`}).join('')||'<div class="pj-carregando" style="color:var(--text-dim)">Nenhum projeto com esse nome.</div>';
   const b=document.getElementById('pj-badge');
   if(b){b.textContent=abertos.length;b.style.display=''}
@@ -2885,7 +2917,8 @@ const HINTS={
   regua:'<b>Régua:</b> clique para marcar pontos e medir a distância · duplo-clique ou Esc para finalizar',
   otdr:'<b>OTDR:</b> clique em um cabo para simular a varredura óptica (eventos, distâncias e perdas ao longo da fibra)',
   romper:'<b>Romper cabo:</b> clique no ponto onde o cabo passa pela caixa — parte das fibras fica (sangria) e o resto segue',
-  viab:'<b>Viabilidade:</b> clique em qualquer ponto do mapa para analisar o atendimento'
+  viab:'<b>Viabilidade:</b> clique em qualquer ponto do mapa para analisar o atendimento',
+  localproj:'<b>Localização do projeto:</b> clique no ponto que marca este projeto no mapa (é para onde ele abre) · <b>Esc</b> cancela'
 };
 function attHint(){document.getElementById('hint').innerHTML=HINTS[modo]}
 function renderSubbar(){
@@ -2928,6 +2961,7 @@ function cliqueMapa(e){
     salvar();renderTudo();
     toast(nome+' adicionado com sucesso');
   }
+  if(modo==='localproj'){definirLocalProjeto(ll);return}
   if(modo==='viab'){viabilidadePonto(ll);return}
   if(modo==='regua'){reguaClique(ll);return}
   if(modo==='romper'){romperNoPonto(ll);return}
@@ -3322,6 +3356,25 @@ function renderTudo(){
     layerRefs[a.id]=L.polygon(a.pontos,{color:'#3CB371',weight:2,fillOpacity:.10})
       .bindPopup(`<div class="pp-title">${a.nome}<span class="pp-badge">ÁREA</span></div><div class="pp-acoes"><button class="btn sm danger" onclick="excluirArea('${a.id}')">Excluir</button></div>`).addTo(mapa);
   });
+  // marco (localização) de cada projeto aberto
+  if(camadasVisiveis.marcoproj){
+    const abertos=projAtual._multi?projAtual._ids:[projAtual.id];
+    abertos.forEach(pid=>{
+      const pr=DB.projetos.find(x=>x.id===pid);
+      if(!pr||!pr.centro)return;
+      const alvo=projAtual._multi?(projAtual._alvo===pid):true;
+      const ic=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
+        html:`<div class="marco-proj ${alvo?'alvo':''}" title="${_esc(pr.nome)}">📍</div>`});
+      layerRefs['marco-'+pid]=L.marker(pr.centro,{icon:ic,zIndexOffset:-200})
+        .bindPopup(`<div class="pp-title">${_esc(pr.nome)}<span class="pp-badge">PROJETO</span></div>
+          <div class="pp-meta mono">${pr.centro[0].toFixed(5)}, ${pr.centro[1].toFixed(5)}</div>
+          <div class="pp-meta">Marco do projeto — é aqui que ele abre no mapa.</div>
+          <div class="pp-acoes">
+            <button class="btn sm" onclick="marcarLocalProjeto('${pid}')">📍 Remarcar</button>
+            <button class="btn sm ghost" onclick="pjIr('${pid}')">⤢ Enquadrar</button>
+          </div>`).addTo(mapa);
+    });
+  }
   // cabos
   projAtual.cabos.forEach(c=>{
     if(!camadasVisiveis[c.tipo])return;
@@ -3505,7 +3558,7 @@ function renderCamadas(){
     {sub:'Postes'},{k:'poste',l:'Postes'},
     {sub:'Cabos'},{k:'backbone',l:'Backbone'},{k:'distribuicao',l:'Distribuição'},{k:'drop',l:'Drop'},
     {sub:'Clientes'},{k:'clienteone',l:'Clientes (MoviOne)',fn:toggleCamadaClientes},
-    {sub:'Outros'},{k:'reserva',l:'Reservas Técnicas'},{k:'area',l:'Áreas'},
+    {sub:'Outros'},{k:'reserva',l:'Reservas Técnicas'},{k:'area',l:'Áreas'},{k:'marcoproj',l:'📍 Marco dos projetos'},
     {k:'luzfibra',l:'✨ Luz de tráfego'}
   ];
   document.getElementById('cam-body').innerHTML=defs.map(d=>{
