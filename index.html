@@ -13337,14 +13337,27 @@ function renderCliLogins(cli){
 // Os dois mapas do arquivo divergem um pouco entre si, então a
 // lista abaixo é a união deles — melhor oferecer o botão a mais
 // do que escondê-lo de um contrato realmente bloqueado.
-const DM_BLOQUEADOS = ['D','DM','S','SU','FA','CM','BL'];
-const DM_MOTIVO_TXT = {
-  'FA':'Bloqueio automático por atraso financeiro',
-  'CM':'Bloqueio automático',
+// Códigos confirmados cruzando status_acesso × status_contrato na base
+// sincronizada desta instalação (ago/2026):
+//   A  292  contrato A          → ativo
+//   CM   34  contrato A ou N     → bloqueio manual (contrato vivo)
+//   D  1753  contrato I, N ou D  → DESATIVADO, contrato encerrado
+//   CA    3  contrato A          → cancelado
+//   AA    1  contrato P          → aguardando assinatura
+// Atenção: 'D' NÃO é bloqueio. Nunca aparece em contrato ativo.
+const DM_ROTULO = {
+  'A' :'Ativo',
+  'CM':'Bloqueio manual',
+  'FA':'Financeiro em atraso',
   'BL':'Bloqueio automático',
-  'D' :'Bloqueio manual', 'DM':'Bloqueio manual',
-  'S' :'Bloqueio manual', 'SU':'Bloqueio manual',
+  'D' :'Desativado', 'DM':'Desativado',
+  'CA':'Cancelado',
+  'AA':'Aguardando assinatura',
 };
+// Acesso cortado com contrato ainda vivo — só aqui faz sentido desbloquear.
+const DM_BLOQUEADOS = ['CM','FA','BL'];
+// Código usado para cortar o acesso.
+const DM_CODIGO_BLOQUEIO = 'CM';
 
 function _ctrAcaoDesbloqueio(c, globalIdx){
   if(!c.ixcId) return '';
@@ -13358,17 +13371,11 @@ function _ctrAcaoDesbloqueio(c, globalIdx){
   return '';
 }
 
-// O código de "bloqueio manual" muda de instalação para instalação
-// (D, DM, S, SU). Em vez de chutar, conta o que já existe na base
-// sincronizada — o próprio IXC dele responde qual é o código certo.
-function _dmCodigoBloqueioSugerido(){
-  const cont = {};
-  gd('sf_clientes_contratos').forEach(c=>{
-    const s = String(c.statusAcesso||'').toUpperCase();
-    if(['D','DM','S','SU'].includes(s)) cont[s] = (cont[s]||0)+1;
-  });
-  const top = Object.entries(cont).sort((a,b)=>b[1]-a[1])[0];
-  return { codigo: top ? top[0] : 'D', qtd: top ? top[1] : 0 };
+// Quantos contratos da base já usam o código de bloqueio — serve de
+// evidência na tela de que CM é mesmo o código desta instalação.
+function _dmContagemBloqueio(){
+  return gd('sf_clientes_contratos').filter(c =>
+    String(c.statusAcesso||'').toUpperCase() === DM_CODIGO_BLOQUEIO).length;
 }
 
 // PUT no IXC (ixcsoft: editar). Função nova — chamarIXC segue
@@ -13414,9 +13421,9 @@ function _dmAbrir(globalIdx, modo){
   window._dmModo = modo;
   const bloquear = modo === 'bloquear';
   const sa = String(c.statusAcesso||'').toUpperCase();
-  const motivoBloq = DM_MOTIVO_TXT[sa] || ('Acesso em status "'+sa+'"');
+  const motivoBloq = DM_ROTULO[sa] || ('Acesso em status "'+sa+'"');
   const financeiro = ['FA','CM','BL'].includes(sa);
-  const sug = _dmCodigoBloqueioSugerido();
+  const sug = _dmContagemBloqueio();
 
   const ov = document.createElement('div');
   ov.id = 'dm-overlay';
@@ -13437,15 +13444,11 @@ function _dmAbrir(globalIdx, modo){
         ? '<div style="background:rgba(194,59,42,.07);border-left:3px solid #D00000;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:#C40000;margin-bottom:14px">'
           + '⚠️ Isto <b>derruba a conexão do cliente</b>. Use para bloqueio comercial, suspensão a pedido ou contrato em disputa — não para inadimplência, que a rotina automática do IXC já trata.'
           + '</div>'
-          + '<div class="form-group full" style="margin-bottom:12px">'
-          +   '<label class="form-label">Código de bloqueio</label>'
-          +   '<select class="cp-form-input" id="dm-codigo">'
-          +     ['D','DM','S','SU'].map(k=>'<option value="'+k+'"'+(k===sug.codigo?' selected':'')+'>'+k+'</option>').join('')
-          +   '</select>'
-          +   '<div style="font-size:11px;color:var(--text3);margin-top:5px">'
-          +     (sug.qtd ? 'Sugerido <b>'+_fxEsc(sug.codigo)+'</b> — é o código usado em '+sug.qtd+' contrato(s) já bloqueado(s) na sua base.'
-                        : 'Nenhum contrato bloqueado na base para comparar. <b>D</b> é o padrão do IXC.')
-          +   '</div>'
+          + '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:12px">'
+          +   'O acesso vai para <span class="td-mono"><b>CM</b></span> (bloqueio manual). '
+          +   (sug ? 'É o código já usado em <b>'+sug+'</b> contrato(s) bloqueado(s) na sua base.'
+                   : 'É o código padrão do IXC para corte de acesso com contrato ativo.')
+          +   '<br><span style="color:var(--text3)">Bloquear <b>não</b> encerra o contrato. Para encerrar, use o cancelamento no IXC.</span>'
           + '</div>'
         : (financeiro
           ? '<div style="background:rgba(194,90,0,.07);border-left:3px solid #FF8C2E;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12px;color:#B35400;margin-bottom:14px">'
@@ -13508,7 +13511,7 @@ async function executarAcessoContrato(){
   const c = gd('sf_clientes_contratos')[idx];
   if(!c) return;
 
-  const alvo = bloquear ? (document.getElementById('dm-codigo')?.value || 'D') : 'A';
+  const alvo = bloquear ? DM_CODIGO_BLOQUEIO : 'A';
   const motivo = (document.getElementById('dm-motivo')?.value||'').trim();
   if(!motivo){ _dmMsg('Informe o motivo.', 'erro'); document.getElementById('dm-motivo')?.focus(); return; }
   const pergunta = bloquear
@@ -13538,7 +13541,23 @@ async function executarAcessoContrato(){
     // 2) PUT com todos os campos preservados, só status_internet muda
     _dmMsg(bloquear ? 'Gravando o bloqueio…' : 'Gravando o desbloqueio…');
     const payload = { ...reg, id: String(c.ixcId), status_internet: alvo };
-    await chamarIXCPut(cfg, 'cliente_contrato/'+encodeURIComponent(c.ixcId), payload);
+    console.log('[acesso contrato ixc] payload enviado:', payload);
+    const respPut = await chamarIXCPut(cfg, 'cliente_contrato/'+encodeURIComponent(c.ixcId), payload);
+    console.log('[acesso contrato ixc] resposta do IXC:', respPut);
+
+    // O IXC responde HTTP 200 mesmo quando RECUSA a edição, sinalizando
+    // o erro no corpo. Sem esta checagem o erro dele passa despercebido.
+    const tipoResp = String(respPut?.type || respPut?.tipo || '').toLowerCase();
+    const msgResp  = respPut?.message || respPut?.mensagem || '';
+    const cru      = JSON.stringify(respPut||{}).slice(0,400);
+    if(tipoResp.startsWith('err')){
+      await registrarAuditoria(bloquear?'bloqueio_manual':'desbloqueio_manual', 'Clientes', 'clientes_contratos', c.id,
+        'RECUSADO pelo IXC — contrato #'+c.ixcId+' — '+(msgResp||cru).slice(0,200));
+      _dmMsg('<b>O IXC recusou a edição.</b><br><span class="td-mono" style="font-size:11px;display:block;margin-top:6px;word-break:break-word">'
+        + _fxEsc(msgResp || cru) + '</span>'
+        + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Causas mais comuns: o usuário do token não tem permissão de escrita no formulário de Contratos, ou o registro devolvido pela listagem traz campos calculados que o IXC não aceita de volta. A resposta completa está no console (F12).</div>', 'erro');
+      restaurar(); return;
+    }
 
     // 3) reconferência — não declaramos sucesso sem ver o campo mudar
     const depois = await _dmLerContratoIXC(cfg, c.ixcId);
@@ -13548,9 +13567,9 @@ async function executarAcessoContrato(){
       'Contrato IXC #'+c.ixcId+' — '+antes+' → '+(novo||'?')+' — motivo: '+motivo);
 
     if(novo !== alvo){
-      _dmMsg('O IXC aceitou a requisição, mas o status ficou <span class="td-mono">'+_fxEsc(novo||'?')+'</span> em vez de <span class="td-mono">'+_fxEsc(alvo)+'</span>. '
-        + 'Provavelmente o campo ou o código tem outro valor nesta instalação. Use <b>🔍 Ver campos do IXC</b> para identificar. '
-        + 'A tentativa ficou registrada na auditoria.', 'erro');
+      _dmMsg('O IXC respondeu sem erro, mas o status ficou <span class="td-mono">'+_fxEsc(novo||'?')+'</span> em vez de <span class="td-mono">'+_fxEsc(alvo)+'</span>.'
+        + '<br><span class="td-mono" style="font-size:11px;display:block;margin-top:6px;word-break:break-word">'+_fxEsc(msgResp || cru)+'</span>'
+        + '<div style="margin-top:8px;font-size:11.5px;color:var(--text2)">Ou o campo tem outro nome nesta instalação, ou o IXC ignora escrita em <span class="td-mono">status_internet</span>. Use <b>🔍 Ver campos do IXC</b> para conferir. A tentativa ficou na auditoria.</div>', 'erro');
       restaurar(); return;
     }
 
