@@ -602,6 +602,33 @@ input:focus,select:focus{border-color:var(--accent)}
 .usr-chip .sair:hover{border-color:var(--danger);color:#F87168}
 /* barra do modo combinado: fica no canto, fora do caminho do mapa
    (antes ficava centralizada no topo e tapava a área de trabalho) */
+.pj-busca{padding:0 2px 6px}
+.pj-busca input{width:100%;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px}
+.pj-lista{max-height:230px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.pj-lin{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:.12s}
+.pj-lin:hover{background:var(--surface2)}
+.pj-lin.on{border-color:rgba(60,179,113,.4);background:rgba(60,179,113,.08)}
+.pj-lin input{width:14px;height:14px;accent-color:var(--accent);cursor:pointer;flex:none}
+.pj-nm{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pj-lin.on .pj-nm{font-weight:600;color:var(--text)}
+.pj-qt{font-size:10px;font-family:'DM Mono';color:var(--text-dim);flex:none}
+.pj-alvo{font-size:9.5px;border:1px solid var(--accent);color:var(--accent);border-radius:5px;padding:0 5px;flex:none}
+.pj-ir{flex:none;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0 2px;opacity:0}
+.pj-lin:hover .pj-ir{opacity:1}
+.pj-ir:hover{color:var(--accent)}
+.pj-rodape{display:flex;gap:6px;margin-top:7px}
+.pj-rodape button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px;font-size:11px;cursor:pointer}
+.pj-rodape button:hover{border-color:var(--accent);color:var(--text)}
+.pj-carregando{font-size:11px;color:var(--accent);padding:4px 7px}
+#btn-enquadrar-proj{display:none;position:absolute;left:50%;top:78px;transform:translateX(-50%);z-index:900;
+  align-items:center;gap:6px;background:var(--surface);border:1px solid var(--accent);color:var(--text);
+  border-radius:10px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.45)}
+#btn-enquadrar-proj:hover{background:var(--accent-glow)}
+.tp-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:.12s}
+.tp-item:hover{border-color:var(--accent)}
+.tp-item.on{border-color:var(--accent);background:rgba(60,179,113,.08)}
+.tp-item input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
+.tp-abre{font-size:10px;border:1px solid var(--border);border-radius:6px;padding:1px 6px;color:var(--text-dim);white-space:nowrap}
 #multi-barra{
   position:absolute;left:12px;bottom:70px;z-index:898;
   background:var(--surface);border:1px solid var(--accent);border-radius:12px;
@@ -791,6 +818,15 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <div class="prog-txt" id="dr-prog-txt">0% implantado</div>
     </div>
     <div class="dr-body">
+      <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="projetos">🗂️ Projetos no mapa <span class="badge" id="pj-badge">1</span> <span class="seta">▸</span></div>
+      <div class="dr-grupo" data-grupo="projetos">
+        <div class="pj-busca"><input id="pj-busca" placeholder="Buscar projeto…" oninput="_pjFiltro=this.value;renderPainelProjetos();_pjFoco()"></div>
+        <div id="pj-lista" class="pj-lista"></div>
+        <div class="pj-rodape">
+          <button onclick="pjTodos(false)" title="Deixar apenas o projeto ativo">Só o ativo</button>
+          <button onclick="enquadrarProjetos()" title="Enquadrar tudo o que está marcado">⤢ Enquadrar</button>
+        </div>
+      </div>
       <div class="dr-busca">
         <input id="busca-el" placeholder="Buscar CTO, POP ou CEO..." oninput="buscarElemento(this.value)">
         <div class="busca-res" id="busca-res"></div>
@@ -855,6 +891,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
   </div>
 
+  <button id="btn-enquadrar-proj" onclick="enquadrarProjetos()" title="A seleção atual está fora da tela">⤢ Enquadrar projeto</button>
   <div id="multi-barra"></div>
   <div id="subbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:899;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 12px;display:none;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12px;color:var(--text-dim)"></div>
 
@@ -2541,7 +2578,8 @@ function abrirSelecionados(){
   if(ids.length===1){abrirProjeto(ids[0]);return}  // um só → abre normal (editável)
   abrirProjetos(ids);
 }
-async function abrirProjetos(ids){
+async function abrirProjetos(ids,opts){
+  opts=opts||{};
   // visão combinada EDITÁVEL: cada item guarda o projeto de origem (_projId) e as
   // alterações são devolvidas ao projeto correto ao salvar.
   const sel=DB.projetos.filter(p=>ids.includes(p.id));
@@ -2573,20 +2611,21 @@ async function abrirProjetos(ids){
     cfg:Object.assign({tx:3.0,folgaPadrao:10,raioVinculo:35,raioViab:250,tiles:'google-h'},(sel2[0]&&sel2[0].cfg)||{}),
     seq:{pop:0,cto:0,ceo:0,reserva:0,poste:0,cabo:0,area:0,cliente:0}};
   document.getElementById('shell').style.display='none';
-  clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
+  if(!opts.manterVista){clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false}
   cfg();undoStack=[];redoStack=[];_estadoAtual=null;
   document.getElementById('tela-editor').style.display='block';
   document.getElementById('dr-nome-proj').textContent=projAtual.nome;
-  await garantirMapa(centro,13);
+  await garantirMapa(centro,opts.manterVista?null:13);
   if(!mapa)return;
   setTimeout(()=>{mapa.invalidateSize();
+    if(opts.manterVista)return;   // trocando projeto pelo mapa: a vista atual é preservada
     const pts=[...elementos.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...cabos.flatMap(c=>c.pontos||[])];
     if(pts.length)mapa.fitBounds(pts,{padding:[60,60]});else mapa.setView(centro,13);
   },120);
   limparOverlaysSoltos();
   try{_multiRecolhida=store.get('movifiber_multibarra')==='1'}catch(e){}
-  setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();restaurarSecoes();
-  toast('✏️ '+sel2.length+' projetos abertos para EDIÇÃO · '+elementos.length+' elementos · '+cabos.length+' cabos');
+  setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();restaurarSecoes();renderPainelProjetos();
+  if(!opts.manterVista)toast('✏️ '+sel2.length+' projetos abertos para EDIÇÃO · '+elementos.length+' elementos · '+cabos.length+' cabos');
 }
 /* Em qual projeto os itens NOVOS serão gravados */
 function _projAlvo(){
@@ -2595,7 +2634,7 @@ function _projAlvo(){
 }
 function _nomeProj(id){const p=DB.projetos.find(x=>x.id===id);return p?p.nome:'?'}
 function mudarProjetoAlvo(id){
-  projAtual._alvo=id;renderSeletorAlvo();
+  projAtual._alvo=id;renderSeletorAlvo();renderPainelProjetos();
   toast('Novos itens serão gravados em: '+_nomeProj(id));
 }
 let _multiRecolhida=false;
@@ -2618,9 +2657,114 @@ function renderSeletorAlvo(){
      </div>
      <div class="mb-conteudo">`
     +projAtual._ids.map(id=>`<button class="multi-chip ${projAtual._alvo===id?'ativo':''}" onclick="mudarProjetoAlvo('${id}')">${_nomeProj(id)} <span>${conta(id)}</span></button>`).join('')
+    +`<button class="multi-chip" style="border-style:dashed" onclick="focarPainelProjetos()" title="Adicionar ou remover projetos sem sair do mapa">＋ projetos</button>`
     +`<span class="mb-dica">Cabos entre projetos são permitidos — o orçamento óptico atravessa os dois.</span>
      </div>`;
   barra.classList.toggle('recolhida',_multiRecolhida);
+}
+/* ===== Trocar / somar projetos sem sair do mapa =====
+   Grava o que está aberto, remonta a seleção e devolve a MESMA vista (centro,
+   zoom e modo), para não ter de procurar de novo onde se estava trabalhando. */
+async function trocarProjetos(ids,opts){
+  opts=opts||{};
+  if(!ids||!ids.length){toast('Marque ao menos um projeto',true);return}
+  const iguais=projAtual&&((projAtual._multi&&projAtual._ids.length===ids.length&&projAtual._ids.every(i=>ids.includes(i)))
+                          ||(!projAtual._multi&&ids.length===1&&projAtual.id===ids[0]));
+  if(iguais){if(!opts.silencioso)toast('Já são esses os projetos abertos');return}
+  const centro=mapa?mapa.getCenter():null, zoom=mapa?mapa.getZoom():null;
+  const modoAnt=modo||'navegar';
+  const cam=Object.assign({},camadasVisiveis);
+  try{salvar()}catch(e){}                    // grava o que está aberto antes de trocar
+  if(ids.length===1)await abrirProjeto(ids[0],{manterVista:true});
+  else await abrirProjetos(ids,{manterVista:true});
+  if(mapa&&centro){mapa.setView(centro,zoom,{animate:false})}
+  Object.assign(camadasVisiveis,cam);renderCamadas();renderTudo();
+  try{setModo(modoAnt)}catch(e){}
+  renderPainelProjetos();
+  const nomes=ids.map(_nomeProj);
+  toast((ids.length>1?'🔗 '+ids.length+' no mapa: ':'📁 ')+nomes.slice(0,3).join(' · ')+(nomes.length>3?' +'+(nomes.length-3):''));
+  _projFocoAviso(ids);
+}
+/* se nada da nova seleção estiver na tela, oferece enquadrar */
+function _projFocoAviso(ids){
+  if(!mapa||!projAtual)return;
+  const b=mapa.getBounds();
+  const visivel=projAtual.elementos.some(e=>e.lat!=null&&b.contains([e.lat,e.lng]));
+  const btn=document.getElementById('btn-enquadrar-proj');
+  if(btn)btn.style.display=visivel?'none':'flex';
+}
+function enquadrarProjetos(){
+  if(!mapa||!projAtual)return;
+  const pts=[...projAtual.elementos.filter(e=>e.lat!=null).map(e=>[e.lat,e.lng]),...projAtual.cabos.flatMap(c=>c.pontos||[])];
+  if(!pts.length){toast('Nada para enquadrar neste projeto',true);return}
+  mapa.fitBounds(pts,{padding:[60,60]});
+  const btn=document.getElementById('btn-enquadrar-proj');if(btn)btn.style.display='none';
+}
+let _pjFiltro='', _pjOcupado=false;
+/* abre o painel lateral na seção Projetos (usado pelo chip da barra multi) */
+function focarPainelProjetos(){
+  const dr=document.getElementById('drawer');if(dr)dr.classList.remove('fechado');
+  const sec=document.querySelector('.dr-sec.dobra[data-sec="projetos"]');
+  const grupo=document.querySelector('.dr-grupo[data-grupo="projetos"]');
+  if(grupo&&!grupo.classList.contains('aberto')&&sec)toggleSecao(sec);
+  renderPainelProjetos();
+  setTimeout(()=>{const i=document.getElementById('pj-busca');if(i){try{i.scrollIntoView({block:'nearest'})}catch(e){}i.focus()}},60);
+}
+function _pjFoco(){const i=document.getElementById('pj-busca');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}}
+function _pjAbertos(){return projAtual?(projAtual._multi?projAtual._ids.slice():[projAtual.id]):[]}
+function renderPainelProjetos(){
+  const c=document.getElementById('pj-lista');if(!c)return;
+  const abertos=_pjAbertos();
+  const alvo=projAtual&&projAtual._multi?projAtual._alvo:(abertos[0]||null);
+  const q=_pjFiltro.trim().toLowerCase();
+  const lst=DB.projetos.slice().sort((a,b)=>{
+    const aa=abertos.includes(a.id),bb=abertos.includes(b.id);
+    if(aa!==bb)return aa?-1:1;                       // abertos primeiro
+    return a.nome.localeCompare(b.nome,'pt-BR');
+  }).filter(p=>!q||p.nome.toLowerCase().includes(q));
+  c.innerHTML=lst.map(p=>{
+    const on=abertos.includes(p.id);
+    const st=_homeStats(p);
+    return `<label class="pj-lin ${on?'on':''}" title="${_esc(p.nome)}${st.stub?' · ainda na nuvem':''}">
+      <input type="checkbox" ${on?'checked':''} ${_pjOcupado?'disabled':''} onchange="pjToggle('${p.id}',this.checked)">
+      <span class="pj-nm">${_esc(p.nome)}</span>
+      ${alvo===p.id&&abertos.length>1?'<span class="pj-alvo">alvo</span>':''}
+      <span class="pj-qt">${st.stub?'☁️':st.elementos}</span>
+      ${on?`<button class="pj-ir" title="Centralizar neste projeto" onclick="event.preventDefault();event.stopPropagation();pjIr('${p.id}')">⤢</button>`:''}
+    </label>`}).join('')||'<div class="pj-carregando" style="color:var(--text-dim)">Nenhum projeto com esse nome.</div>';
+  const b=document.getElementById('pj-badge');
+  if(b){b.textContent=abertos.length;b.style.display=''}
+}
+/* marcar/desmarcar aplica na hora, mantendo a vista */
+async function pjToggle(id,ligar){
+  if(_pjOcupado)return;
+  let ids=_pjAbertos();
+  if(ligar){if(!ids.includes(id))ids.push(id)}
+  else{
+    if(ids.length<=1){toast('Ao menos um projeto precisa ficar aberto',true);renderPainelProjetos();return}
+    ids=ids.filter(x=>x!==id);
+  }
+  _pjOcupado=true;renderPainelProjetos();
+  const lista=document.getElementById('pj-lista');
+  if(lista&&ligar)lista.insertAdjacentHTML('afterbegin','<div class="pj-carregando">carregando '+_esc(_nomeProj(id))+'…</div>');
+  try{await trocarProjetos(ids,{silencioso:true})}
+  finally{_pjOcupado=false;renderPainelProjetos()}
+}
+function pjTodos(){
+  const alvo=(projAtual&&projAtual._multi?projAtual._alvo:null)||_pjAbertos()[0];
+  if(!alvo)return;
+  if(_pjAbertos().length<=1){toast('Só há um projeto aberto');return}
+  trocarProjetos([alvo],{silencioso:true});
+}
+/* centraliza num projeto específico sem fechar os outros */
+function pjIr(id){
+  if(!mapa||!projAtual)return;
+  const pts=[...projAtual.elementos.filter(e=>e.lat!=null&&(e._projId||projAtual.id)===id).map(e=>[e.lat,e.lng]),
+             ...projAtual.cabos.filter(c=>(c._projId||projAtual.id)===id).flatMap(c=>c.pontos||[])];
+  if(!pts.length){const p=DB.projetos.find(x=>x.id===id);if(p&&p.centro)mapa.setView(p.centro,15);else toast('Projeto sem elementos posicionados',true);return}
+  mapa.fitBounds(pts,{padding:[60,60]});
+  const b=document.getElementById('btn-enquadrar-proj');if(b)b.style.display='none';
+  if(projAtual._multi&&projAtual._alvo!==id){projAtual._alvo=id;renderSeletorAlvo();renderPainelProjetos()}
 }
 function abrirModalNovoProjeto(){
   abrirModal('md-novo-projeto');
@@ -2667,7 +2811,8 @@ function limparProjeto(){
 }
 
 /* ================= MAPA / EDITOR ================= */
-async function abrirProjeto(id){
+async function abrirProjeto(id,opts){
+  opts=opts||{};
   projAtual=DB.projetos.find(p=>p.id===id);
   // se o projeto veio só como stub da nuvem, baixa o conteúdo completo
   if(projAtual&&projAtual._stub){
@@ -2676,7 +2821,7 @@ async function abrirProjeto(id){
     catch(e){toast('Falha ao carregar da nuvem: '+e.message,true);return}
   }
   document.getElementById('shell').style.display='none';
-  clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false;
+  if(!opts.manterVista){clientesOne=[];store.set('movifiber_clientes_one','[]');camadasVisiveis.clienteone=false}
   if(!projAtual.clientes)projAtual.clientes=[];
   limparClientesNaoMoviOne(true);   // MoviOne é a fonte única de clientes
   if(projAtual.seq.cliente===undefined)projAtual.seq.cliente=0;
@@ -2685,12 +2830,12 @@ async function abrirProjeto(id){
   undoStack=[];redoStack=[];_estadoAtual=null;
   document.getElementById('tela-editor').style.display='block';
   document.getElementById('dr-nome-proj').textContent=projAtual.nome;
-  await garantirMapa(projAtual.centro,16);
+  await garantirMapa(projAtual.centro,opts.manterVista?null:16);
   if(!mapa)return;
   setTimeout(()=>mapa.invalidateSize(),100);
   limparOverlaysSoltos();
   _migrarNotasFibra();
-  renderCamadas();renderTudo();setModo('navegar');restaurarSecoes();
+  renderCamadas();renderTudo();setModo('navegar');restaurarSecoes();renderSeletorAlvo();renderPainelProjetos();
   _estadoAtual=snapProj();
 }
 async function garantirMapa(centro,zoom){
@@ -2729,7 +2874,8 @@ async function garantirMapa(centro,zoom){
         if(editCabo){concluirTracado();return}cancelarDesenho()}
       if(e.key==='Enter')finalizarDesenho();
     });
-  } else {mapa.setView(centro,zoom);aplicarTiles()}
+  } else if(zoom!==null){mapa.setView(centro,zoom);aplicarTiles()}
+    else aplicarTiles();
 }
 function toggleDrawer(){document.getElementById('drawer').classList.toggle('fechado')}
 const HINTS={
@@ -3423,7 +3569,7 @@ function restaurarSecoes(){
     const sec=el.dataset.sec;
     const grupo=document.querySelector('.dr-grupo[data-grupo="'+sec+'"]');
     if(!grupo)return;
-    const aberto=st[sec]===true;      // padrão: recolhido
+    const aberto=st[sec]===undefined?(sec==='projetos'):(st[sec]===true);   // Projetos vem aberto; demais recolhidos
     grupo.classList.toggle('aberto',aberto);
     el.classList.toggle('aberta',aberto);
   });
