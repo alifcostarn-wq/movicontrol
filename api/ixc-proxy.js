@@ -203,6 +203,61 @@ export default async function handler(req, res) {
   ];
 
   // ============================================================
+  // IXC DOC (ADITIVO) - boleto em PDF e PIX copia-e-cola
+  // Acionado pelo header x-target: ixc-doc
+  //
+  // Por que rota propria: a branch padrao de listagem monta um corpo
+  // FIXO (qtype/query/oper/page/rp/sortname/sortorder) e descartaria
+  // 'boletos', 'base64', 'tipo_boleto' e 'id_areceber'. Aqui o params
+  // vai inteiro para o IXC.
+  //
+  // Somente leitura: ixcsoft 'listar'. Lista branca de endpoints para
+  // nao virar um passthrough generico.
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'ixc-doc') {
+    const DOC_PERMITIDOS = ['get_boleto', 'get_pix'];
+    if (!DOC_PERMITIDOS.includes(endpoint)) {
+      return res.status(400).json({ error: 'Endpoint nao permitido nesta rota.', permitidos: DOC_PERMITIDOS });
+    }
+    const docBody = JSON.stringify(params);
+    const docResults = [];
+    for (const url of urlCandidates) {
+      for (const { label, value } of authCandidates) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': value,
+              'Content-Type': 'application/json',
+              'ixcsoft': 'listar',
+            },
+            body: docBody,
+          });
+          const text   = await response.text();
+          const isHtml = text.trim().startsWith('<');
+          docResults.push({ url, auth: label, status: response.status, isHtml, preview: text.slice(0, 200) });
+          if (!isHtml && response.status >= 200 && response.status < 400) {
+            try {
+              const data = JSON.parse(text);
+              return res.status(200).json({ ...data, _workingUrl: url, _auth: label });
+            } catch {
+              // algumas versoes devolvem o base64 cru, fora de JSON
+              return res.status(200).json({ raw: text, _workingUrl: url, _auth: label });
+            }
+          }
+        } catch (e) {
+          docResults.push({ url, auth: label, error: e.message });
+        }
+      }
+    }
+    const got401d = docResults.find(r => r.status === 401 && !r.isHtml);
+    const hintD = got401d
+      ? `Endpoint correto (${got401d.url}) mas credenciais invalidas. Verifique o token.`
+      : docResults.find(r => !r.isHtml)?.preview || 'Nenhum endpoint respondeu como API.';
+    return res.status(401).json({ error: 'Consulta de boleto/PIX falhou.', hint: hintD, results: docResults });
+  }
+
+  // ============================================================
   // EDICAO (PUT) - ex: limpar MAC do login (ixcsoft: 'editar')
   // O endpoint ja vem com o id: ex "cliente_login/1234"
   // ============================================================
