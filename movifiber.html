@@ -649,6 +649,11 @@ body.com-inspetor #camadas{right:366px}
 .pj-rodape button{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px;font-size:11px;cursor:pointer}
 .pj-rodape button:hover{border-color:var(--accent);color:var(--text)}
 .pj-carregando{font-size:11px;color:var(--accent);padding:4px 7px}
+.ocp-lin{display:flex;gap:12px;align-items:center;padding:9px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:.12s}
+.ocp-lin:hover{border-color:var(--accent);background:var(--accent-glow)}
+.ocp-barra{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--surface2);margin-top:5px}
+.ocp-barra i{display:block;height:100%}
+.ocp-tag{font-size:10.5px;border:1px solid var(--border);border-radius:6px;padding:1px 7px;white-space:nowrap}
 .tp-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:.12s}
 .tp-item:hover{border-color:var(--accent)}
 .tp-item.on{border-color:var(--accent);background:rgba(60,179,113,.08)}
@@ -864,6 +869,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="ferramentas">Ferramentas <span class="seta">▸</span></div>
       <div class="dr-grupo" data-grupo="ferramentas">
       <button class="dr-item" onclick="abrirAnalise()"><span class="ic">📊</span> Análise de Rede</button>
+      <button class="dr-item" onclick="abrirOcupacao()"><span class="ic">🎯</span> Ocupação de Fibras</button>
       <button class="dr-item" onclick="abrirTabelaPontos()"><span class="ic">📍</span> Tabela de Pontos</button>
       <button class="dr-item" onclick="exportarKMZ()"><span class="ic">🌍</span> Exportar KMZ</button>
       <button class="dr-item" onclick="abrirExpArea()"><span class="ic">📤</span> Exportar Área</button>
@@ -1193,6 +1199,10 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
           </select></div>
         <div class="campo"><label>Estilo</label>
           <select id="cb-estilo"><option value="">Automático</option><option value="solid">Sólida</option><option value="dash">Tracejada</option></select></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="btn sm ghost" style="flex:1" onclick="abrirImpactoCabo(document.getElementById('cb-id').value)">🚨 Impacto</button>
+        <button class="btn sm ghost" style="flex:1" onclick="abrirOcupacaoCabo(document.getElementById('cb-id').value)">🎯 Ocupação</button>
       </div>
       <div class="info-box">
         Comprimento geométrico: <b class="mono" id="cb-geo">—</b><br>
@@ -3459,7 +3469,10 @@ function renderTudo(){
         <div class="pp-meta">${nomeEl(c.origemId)||'—'} ⇄ ${nomeEl(c.destinoId)||'—'}</div>
         ${c.sangria?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Rompido: ${c.sangria.fibrasNaCaixa} fibra(s) na caixa · ${c.sangria.fibrasSeguem} seguem</div>`:''}
         ${(c.passagens&&c.passagens.length)?`<div class="pp-meta" style="color:#FF8A3C;font-size:11px">✂️ Sangria (passagem) em: ${c.passagens.map(id=>nomeEl(id)).filter(Boolean).join(', ')}</div>`:''}
-        <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
+        ${(()=>{try{const oc=fibrasDoCabo(c.id);const cor=oc.livres===0?'#F87168':(oc.livres<=2?'#E0913C':'#5FE0A0');
+          return `<div class="pp-meta" style="font-size:11px">🎯 Fibras: <b style="color:${cor}">${oc.livres} livre(s)</b> de ${oc.total} · ${oc.cont.servico} em serviço
+            <div class="ocp-barra" style="height:5px;margin-top:3px">${['servico','fundida','identificada','livre'].map(k=>oc.cont[k]?`<i style="width:${oc.cont[k]/oc.total*100}%;background:${_OCUP_COR[k]}"></i>`:'').join('')}</div></div>`}catch(e){return ''}})()}
+        <div class="pp-acoes"><button class="btn sm" onclick="abrirModalCabo('${c.id}')">✏️ Editar</button><button class="btn sm ghost" onclick="editarTracado('${c.id}')">📐 Traçado</button><button class="btn sm ghost" onclick="abrirImpactoCabo('${c.id}')">🚨 Impacto</button><button class="btn sm ghost" onclick="abrirOcupacaoCabo('${c.id}')">🎯 Fibras</button><button class="btn sm ghost" onclick="iniciarRomper('${c.id}')">✂️ Romper</button></div>`).addTo(mapa);
   });
   // setas e luz saem por uma passada única, já com recorte de tela e limites
   redesenharSetasELuz();
@@ -3605,6 +3618,7 @@ function popupElemento(e){
   if(['cto','ceo','pop'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirFusao('${e.id}')">🧵 Fusões</button><button class="btn sm ghost" onclick="abrirMapaConexoes('${e.id}')">🔗 Conexões</button>`;
   let sinal='';
   try{if(['cto','ceo','pop'].includes(e.tipo))sinal=(e.tipo==='pop'?htmlResumoPop(e):'')+htmlSinalCaixa(e)}catch(err){sinal=''}
+  if(['ceo','pop','cto'].includes(e.tipo))acoes+=`<button class="btn sm ghost" onclick="abrirImpactoCaixa('${e.id}')">🚨 Impacto</button>`;
   return `<div class="pp-title">${e.nome}<span class="pp-badge">${e.tipo.toUpperCase()}</span></div>
     <div class="pp-meta"><span class="tag ${e.status}">${labelStatus(e.status)}</span> · <span class="mono">${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}</span></div>
     ${ocup}${sinal}${posteInfo}<div class="pp-acoes">${acoes}</div>`;
@@ -6661,6 +6675,256 @@ function sinaisProjetados(){
   return _sinalCache;
 }
 function _corPot(v){return _corRx(v)}
+
+/* ===================================================================
+   ANÁLISE DE IMPACTO — quem cai se este cabo/fibra/caixa parar
+   Reaproveita o caminho óptico já calculado por CTO (calcOrcamento):
+   se o cabo (ou a fibra, ou a caixa) aparece no caminho, a CTO cai junto.
+   =================================================================== */
+/* clientes de uma CTO: os do projeto (vindos do MoviOne) + os que o MoviOne
+   aponta para esta caixa mesmo sem registro local */
+function clientesAfetadosDaCTO(ctoId){
+  const lst=clientesDaCTO(ctoId).map(cl=>{
+    const ix=dadosIxcDoCliente(cl)||{};
+    return {nome:cl.nome||ix.nome||'',login:cl.login||ix.login||'',porta:cl.porta,
+            contrato:ix.idContrato||'',onu:ix.onu||'',rx:ix.rx,online:ix.online,idCliente:ix.idCliente||cl._moId};
+  });
+  const vistos=new Set(lst.map(c=>(c.login||'').toLowerCase()).filter(Boolean));
+  if(typeof clientesOne!=='undefined')clientesOne.forEach(c=>{
+    if(c.caixaId!==ctoId)return;
+    const lg=(c.login||'').toLowerCase();
+    if(lg&&vistos.has(lg))return;
+    lst.push({nome:c.nome||c.login||'',login:c.login||'',porta:c.porta,contrato:c.idContrato||'',
+              onu:c.onu||'',rx:c.rx,online:c.online,idCliente:c.idCliente});
+  });
+  return lst;
+}
+function impacto(alvo){
+  const S=sinaisProjetados();
+  const ctos=[];
+  S.porCto.forEach((r,ctoId)=>{
+    let atinge=false, fibras=new Set();
+    if(alvo.caixa){
+      atinge=r.nos.some(n=>n.id===alvo.caixa);
+    }else if(alvo.cabo){
+      r.passos.forEach(ps=>{
+        if(ps.etapa!=='cabo'||ps.cabo!==alvo.cabo)return;
+        if(alvo.fib!=null&&ps.fib!==alvo.fib)return;
+        atinge=true;fibras.add(ps.fib);
+      });
+    }
+    if(!atinge)return;
+    const e=projAtual.elementos.find(x=>x.id===ctoId);
+    const cls=clientesAfetadosDaCTO(ctoId);
+    ctos.push({id:ctoId,nome:e?e.nome:ctoId,status:e?e.status:'',lat:e&&e.lat,lng:e&&e.lng,
+               fibras:[...fibras].sort((a,b)=>a-b),clientes:cls,potCTO:r.potCTO,olt:r.olt,pon:r.pon});
+  });
+  ctos.sort((a,b)=>b.clientes.length-a.clientes.length||a.nome.localeCompare(b.nome,'pt-BR'));
+  const clientes=ctos.reduce((n,c)=>n+c.clientes.length,0);
+  // portas ocupadas mas sem cliente cadastrado ainda contam como possível impacto
+  const olts=new Set();ctos.forEach(c=>{if(c.olt)olts.add(c.olt.nome+(c.pon?' PON '+c.pon:''))});
+  return {ctos,clientes,olts:[...olts]};
+}
+function abrirImpactoCabo(caboId,fib){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  if(!c){toast('Cabo não encontrado',true);return}
+  const r=impacto({cabo:caboId,fib:fib==null?null:+fib});
+  const usadas=fibrasDoCabo(caboId);
+  const opcoes=`<select id="imp-fib" onchange="abrirImpactoCabo('${caboId}',this.value===''?null:this.value)" style="padding:6px 9px;font-size:12px">
+      <option value="">Cabo inteiro (rompimento total)</option>
+      ${Array.from({length:c.fo},(_,i)=>i+1).map(f=>{
+        const u=usadas.porFibra[f];
+        return `<option value="${f}" ${String(fib)===String(f)?'selected':''}>Só a fibra ${f} · ${ABNT[(f-1)%12].nome}${u&&u.ctos.length?' ('+u.ctos.length+' CTO)':' (livre)'}</option>`}).join('')}
+    </select>`;
+  const cor=r.clientes>=50?'#F87168':(r.clientes>=10?'#E0913C':'#5FE0A0');
+  const cabecalho=`
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <div style="flex:1;min-width:180px"><b style="font-size:15px">${_esc(c.nome)}</b>
+        <div style="font-size:11.5px;color:var(--text-dim)">${c.fo}FO · ${c.tipo} · ${medirCabo(c.pontos).toFixed(0)} m · <span class="tag ${c.status}">${labelStatus(c.status)}</span></div></div>
+      ${opcoes}
+    </div>
+    <div class="cto-grid" style="margin-bottom:10px">
+      <div class="cto-cel"><span>Clientes sem sinal</span><b style="color:${cor};font-size:20px">${r.clientes}</b></div>
+      <div class="cto-cel"><span>CTOs afetadas</span><b style="font-size:20px">${r.ctos.length}</b></div>
+      <div class="cto-cel"><span>PONs envolvidas</span><b>${r.olts.length||'—'}</b></div>
+    </div>
+    ${r.olts.length?`<div class="info-box" style="margin-bottom:8px;font-size:11.5px">🖥 ${r.olts.join(' · ')}</div>`:''}`;
+  const corpo=r.ctos.length?`
+    <table class="tbl"><thead><tr><th>CTO</th><th>Fibra</th><th>Clientes</th><th></th></tr></thead><tbody>
+    ${r.ctos.map(x=>`<tr>
+      <td><b>${_esc(x.nome)}</b><br><small style="color:var(--text-dim)">${labelStatus(x.status)}</small></td>
+      <td class="mono">${x.fibras.length?x.fibras.map(f=>f+' <span style="color:var(--text-dim)">'+ABNT[(f-1)%12].nome+'</span>').join('<br>'):'—'}</td>
+      <td><b style="color:${x.clientes.length?'#F87168':'var(--text-dim)'}">${x.clientes.length}</b>
+        ${(()=>{const off=x.clientes.filter(c=>c.online===false).length;return off?` <small style="color:#F87168">(${off} já offline)</small>`:''})()}
+        ${x.clientes.length?`<br><small style="color:var(--text-dim)">${x.clientes.slice(0,3).map(cl=>_esc(cl.nome||cl.login||'—')).join(', ')}${x.clientes.length>3?' +'+(x.clientes.length-3):''}</small>`:''}</td>
+      <td><button class="btn sm ghost" onclick="fecharModal('md-generico');irPara('${x.id}')">⤢</button></td></tr>`).join('')}
+    </tbody></table>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn sm ghost" onclick="exportarImpactoCSV('${caboId}',${fib==null?'null':fib})">📄 Exportar CSV</button>
+      <button class="btn sm ghost" onclick="copiarAvisoImpacto('${caboId}',${fib==null?'null':fib})">📋 Copiar aviso de massa</button>
+    </div>`
+    :`<div class="info-box">Nenhuma CTO com caminho óptico passa por ${fib?'esta fibra':'este cabo'} — o rompimento não derruba ninguém <i>segundo o que está fundido hoje</i>. Se a rede já está em campo, confira as fusões das caixas.</div>`;
+  abrirModalGenerico('🚨 Impacto de rompimento',cabecalho+corpo);
+}
+function abrirImpactoCaixa(caixaId){
+  const e=projAtual.elementos.find(x=>x.id===caixaId);if(!e)return;
+  const r=impacto({caixa:caixaId});
+  const cor=r.clientes>=50?'#F87168':(r.clientes>=10?'#E0913C':'#5FE0A0');
+  const html=`
+    <div style="margin-bottom:10px"><b style="font-size:15px">${_esc(e.nome)}</b>
+      <div style="font-size:11.5px;color:var(--text-dim)">${e.tipo.toUpperCase()} · <span class="tag ${e.status}">${labelStatus(e.status)}</span></div></div>
+    <div class="cto-grid" style="margin-bottom:10px">
+      <div class="cto-cel"><span>Clientes sem sinal</span><b style="color:${cor};font-size:20px">${r.clientes}</b></div>
+      <div class="cto-cel"><span>CTOs abaixo desta caixa</span><b style="font-size:20px">${r.ctos.length}</b></div>
+    </div>
+    ${r.ctos.length?`<table class="tbl"><thead><tr><th>CTO</th><th>Clientes</th><th></th></tr></thead><tbody>
+      ${r.ctos.map(x=>`<tr><td><b>${_esc(x.nome)}</b></td><td><b style="color:${x.clientes.length?'#F87168':'var(--text-dim)'}">${x.clientes.length}</b></td>
+        <td><button class="btn sm ghost" onclick="fecharModal('md-generico');irPara('${x.id}')">⤢</button></td></tr>`).join('')}
+      </tbody></table>`
+      :'<div class="info-box">Nenhuma CTO depende desta caixa no caminho óptico atual.</div>'}`;
+  abrirModalGenerico('🚨 Impacto — '+e.nome,html);
+}
+function exportarImpactoCSV(caboId,fib){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const r=impacto({cabo:caboId,fib:fib==null?null:+fib});
+  const linhas=[['Cabo','Fibra','CTO','Cliente','Login','Contrato','ONU','RX (dBm)']];
+  r.ctos.forEach(x=>{
+    const fibs=x.fibras.join('/')||'';
+    if(!x.clientes.length)linhas.push([c.nome,fibs,x.nome,'(sem cliente cadastrado)','','','','']);
+    x.clientes.forEach(cl=>{
+      linhas.push([c.nome,fibs,x.nome,cl.nome||'',cl.login||'',cl.contrato||'',cl.onu||'',cl.rx!=null?(+cl.rx).toFixed(1):'']);
+    });
+  });
+  const csv=linhas.map(l=>l.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(';')).join('\n');
+  baixar('impacto-'+(c?c.nome:'cabo').replace(/[^\w-]+/g,'_')+'.csv','text/csv;charset=utf-8','\ufeff'+csv);
+}
+function copiarAvisoImpacto(caboId,fib){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const r=impacto({cabo:caboId,fib:fib==null?null:+fib});
+  const txt='⚠️ Interrupção de serviço\n'
+    +'Trecho: '+(c?c.nome:'cabo')+(fib?(' · fibra '+fib):'')+'\n'
+    +'Clientes afetados: '+r.clientes+' em '+r.ctos.length+' caixa(s)\n'
+    +'Regiões: '+r.ctos.slice(0,12).map(x=>x.nome).join(', ')+(r.ctos.length>12?' …':'')+'\n'
+    +'Equipe em deslocamento para o reparo.';
+  try{navigator.clipboard.writeText(txt);toast('Aviso copiado — cole no WhatsApp/CRM')}
+  catch(e){abrirModalGenerico('Aviso de massa','<textarea style="width:100%;height:200px">'+_esc(txt)+'</textarea>')}
+}
+
+/* ===================================================================
+   OCUPAÇÃO DE FIBRAS POR CABO
+   Estados por fibra: em serviço (leva sinal a alguma CTO), fundida
+   (tem emenda mas sem caminho fechado), identificada (só rótulo) e livre.
+   =================================================================== */
+function fibrasDoCabo(caboId){
+  const c=projAtual.cabos.find(x=>x.id===caboId);
+  const total=c?c.fo:0;
+  const porFibra={};
+  for(let f=1;f<=total;f++)porFibra[f]={f,estado:'livre',ctos:[],caixas:[],label:null};
+  // 1. rótulos de identificação
+  for(let f=1;f<=total;f++){
+    const id=getIdFibra(caboId,f);
+    if(id&&id.label){porFibra[f].label=id.label;porFibra[f].estado='identificada'}
+  }
+  // 2. fusões em qualquer caixa
+  Object.keys(projAtual.fusoes||{}).forEach(cx=>{
+    const F=projAtual.fusoes[cx];if(!F||!F.fusoes)return;
+    F.fusoes.forEach(fu=>{
+      [fu.a,fu.b].forEach(pt=>{
+        if(!pt||pt.t!=='fibra'||pt.cabo!==caboId)return;
+        const r=porFibra[pt.fib];if(!r)return;
+        if(r.estado==='livre'||r.estado==='identificada')r.estado='fundida';
+        const nm=nomeEl(cx);if(nm&&!r.caixas.includes(nm))r.caixas.push(nm);
+      });
+    });
+  });
+  // 3. caminho óptico ativo (leva sinal até uma CTO)
+  sinaisProjetados().porCto.forEach((r,ctoId)=>{
+    r.passos.forEach(ps=>{
+      if(ps.etapa!=='cabo'||ps.cabo!==caboId)return;
+      const reg=porFibra[ps.fib];if(!reg)return;
+      reg.estado='servico';
+      const nm=nomeEl(ctoId);if(nm&&!reg.ctos.includes(nm))reg.ctos.push(nm);
+    });
+  });
+  const cont={servico:0,fundida:0,identificada:0,livre:0};
+  Object.values(porFibra).forEach(r=>cont[r.estado]++);
+  const usadas=cont.servico+cont.fundida+cont.identificada;
+  return {cabo:c,total,porFibra,cont,usadas,livres:cont.livre,
+          pct:total?Math.round(usadas/total*100):0,pctServico:total?Math.round(cont.servico/total*100):0};
+}
+const _OCUP_COR={servico:'#3CB371',fundida:'#5B9BFF',identificada:'#D4A027',livre:'#3A4050'};
+const _OCUP_NOME={servico:'em serviço',fundida:'fundida',identificada:'identificada',livre:'livre'};
+let _ocupOrd='ocupacao';
+function abrirOcupacao(){
+  const cabos=projAtual.cabos.map(c=>fibrasDoCabo(c.id)).filter(x=>x.cabo);
+  const ord={ocupacao:(a,b)=>b.pct-a.pct,nome:(a,b)=>a.cabo.nome.localeCompare(b.cabo.nome,'pt-BR'),livres:(a,b)=>a.livres-b.livres}[_ocupOrd];
+  cabos.sort(ord);
+  const totFO=cabos.reduce((n,x)=>n+x.total,0), totUso=cabos.reduce((n,x)=>n+x.usadas,0);
+  const criticos=cabos.filter(x=>x.livres<=2&&x.total>0).length;
+  const html=`
+    <div class="cto-grid" style="margin-bottom:10px">
+      <div class="cto-cel"><span>Fibras no projeto</span><b>${totFO}</b></div>
+      <div class="cto-cel"><span>Em uso</span><b style="color:#5FE0A0">${totUso} (${totFO?Math.round(totUso/totFO*100):0}%)</b></div>
+      <div class="cto-cel"><span>Cabos quase cheios</span><b style="color:${criticos?'#F87168':'var(--text-dim)'}">${criticos}</b></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:11.5px;color:var(--text-dim)">
+      Ordenar:
+      <select onchange="_ocupOrd=this.value;abrirOcupacao()" style="padding:5px 8px;font-size:12px">
+        <option value="ocupacao" ${_ocupOrd==='ocupacao'?'selected':''}>Mais ocupados</option>
+        <option value="livres" ${_ocupOrd==='livres'?'selected':''}>Menos fibras livres</option>
+        <option value="nome" ${_ocupOrd==='nome'?'selected':''}>Nome</option>
+      </select>
+      <span style="margin-left:auto">${Object.keys(_OCUP_COR).map(k=>`<i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${_OCUP_COR[k]};margin:0 4px 0 8px"></i>${_OCUP_NOME[k]}`).join('')}</span>
+    </div>
+    ${cabos.map(x=>`
+      <div class="ocp-lin" onclick="abrirOcupacaoCabo('${x.cabo.id}')">
+        <div style="flex:1;min-width:0">
+          <b>${_esc(x.cabo.nome)}</b> <span style="font-size:11px;color:var(--text-dim)">${x.total}FO · ${x.cabo.tipo}</span>
+          <div class="ocp-barra">${['servico','fundida','identificada','livre'].map(k=>x.cont[k]?`<i style="width:${x.cont[k]/x.total*100}%;background:${_OCUP_COR[k]}" title="${x.cont[k]} ${_OCUP_NOME[k]}"></i>`:'').join('')}</div>
+        </div>
+        <div style="text-align:right;flex:none;width:96px">
+          <b style="color:${x.livres===0?'#F87168':(x.livres<=2?'#E0913C':'#5FE0A0')}">${x.livres} livre${x.livres===1?'':'s'}</b>
+          <div style="font-size:11px;color:var(--text-dim)">${x.pct}% ocupado</div>
+        </div>
+      </div>`).join('')||'<div class="info-box">Nenhum cabo no projeto.</div>'}
+    <button class="btn sm ghost" style="margin-top:10px" onclick="exportarOcupacaoCSV()">📄 Exportar CSV</button>`;
+  abrirModalGenerico('🎯 Ocupação de fibras',html);
+}
+function abrirOcupacaoCabo(caboId){
+  const x=fibrasDoCabo(caboId);
+  if(!x.cabo)return;
+  const linhas=Object.values(x.porFibra).map(r=>`
+    <tr>
+      <td class="mono"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${ABNT[(r.f-1)%12].cor};border:1px solid rgba(255,255,255,.4);margin-right:6px"></span>${r.f} <span style="color:var(--text-dim)">${ABNT[(r.f-1)%12].nome}</span></td>
+      <td><span class="ocp-tag" style="border-color:${_OCUP_COR[r.estado]};color:${_OCUP_COR[r.estado]}">${_OCUP_NOME[r.estado]}</span></td>
+      <td>${r.label?'<b>'+_esc(r.label)+'</b>':'<span style="color:var(--text-dim)">—</span>'}</td>
+      <td style="font-size:11.5px">${r.ctos.length?_esc(r.ctos.join(', ')):(r.caixas.length?'<span style="color:var(--text-dim)">emenda em '+_esc(r.caixas.join(', '))+'</span>':'—')}</td>
+    </tr>`).join('');
+  const html=`
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+      <div style="flex:1"><b style="font-size:15px">${_esc(x.cabo.nome)}</b>
+        <div style="font-size:11.5px;color:var(--text-dim)">${x.total}FO · ${x.cabo.tipo} · ${medirCabo(x.cabo.pontos).toFixed(0)} m</div></div>
+      <div style="text-align:right"><b style="font-size:20px;color:${x.livres===0?'#F87168':(x.livres<=2?'#E0913C':'#5FE0A0')}">${x.livres}</b>
+        <div style="font-size:11px;color:var(--text-dim)">fibra(s) livre(s)</div></div>
+    </div>
+    <div class="ocp-barra" style="height:10px;margin-bottom:10px">${['servico','fundida','identificada','livre'].map(k=>x.cont[k]?`<i style="width:${x.cont[k]/x.total*100}%;background:${_OCUP_COR[k]}"></i>`:'').join('')}</div>
+    <table class="tbl"><thead><tr><th>Fibra</th><th>Estado</th><th>Identificação</th><th>Destino</th></tr></thead><tbody>${linhas}</tbody></table>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn sm ghost" onclick="abrirOcupacao()">← Todos os cabos</button>
+      <button class="btn sm ghost" onclick="fecharModal('md-generico');irParaCabo('${caboId}')">⤢ Ver no mapa</button>
+      <button class="btn sm ghost" onclick="abrirImpactoCabo('${caboId}')">🚨 Impacto</button>
+    </div>`;
+  abrirModalGenerico('🎯 '+x.cabo.nome,html);
+}
+function exportarOcupacaoCSV(){
+  const linhas=[['Cabo','Tipo','FO','Fibra','Cor ABNT','Estado','Identificacao','Destino']];
+  projAtual.cabos.forEach(c=>{
+    const x=fibrasDoCabo(c.id);
+    Object.values(x.porFibra).forEach(r=>linhas.push([c.nome,c.tipo,c.fo,r.f,ABNT[(r.f-1)%12].nome,_OCUP_NOME[r.estado],r.label||'',r.ctos.join(' / ')||r.caixas.join(' / ')]));
+  });
+  const csv=linhas.map(l=>l.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(';')).join('\n');
+  baixar('ocupacao-fibras.csv','text/csv;charset=utf-8','\ufeff'+csv);
+}
 /* Potência projetada em cada ponto conectável de uma caixa (usada no diagrama de fusão):
    fibras (chave 'fib-<cabo>-<n>'), saídas de splitter ('sp-<id>-<porta>', 0 = entrada)
    e portas de DIO ('dio-<id>-<porta>'). Cada valor traz o pior caso entre as CTOs. */
