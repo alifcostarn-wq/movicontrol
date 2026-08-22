@@ -309,8 +309,51 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 .refresh-fab{position:fixed;bottom:calc(var(--safe-bot) + 16px);right:16px;width:48px;height:48px;border-radius:50%;background:var(--ac);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;z-index:30}
 
 /* ---- TABS (Minhas OS / Meu Estoque) ---- */
+/* ---- REDE / CTOs ---- */
+.rede-bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.cx-card{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:13px 14px;
+  display:flex;align-items:center;gap:12px;margin-bottom:9px;cursor:pointer}
+.cx-card:active{opacity:.85}
+.cx-nome{font-weight:700;font-size:15px}
+.cx-sub{font-size:11.5px;color:var(--tx2);margin-top:2px}
+.cx-dist{font-family:monospace;font-size:11px;color:var(--tx3);margin-top:3px}
+.cx-dist.longe{color:var(--amb);font-weight:700}
+.cx-livres{flex-shrink:0;text-align:center;min-width:60px}
+.cx-livres b{display:block;font-size:23px;line-height:1;font-weight:800}
+.cx-livres span{font-size:9.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
+.pot-ok{color:var(--ac)} .pot-warn{color:var(--amb)} .pot-bad{color:var(--red)} .pot-vazio{color:var(--tx3)}
+.budget{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:14px;
+  display:flex;gap:14px;align-items:center;margin-bottom:10px}
+.gauge{width:66px;height:66px;border-radius:50%;border:3px solid var(--ac);flex-shrink:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace}
+.gauge b{font-size:15px;line-height:1;font-weight:700}
+.gauge span{font-size:8.5px;opacity:.75;margin-top:1px}
+.gauge.warn{border-color:var(--amb)} .gauge.bad{border-color:var(--red)} .gauge.vazio{border-color:var(--bd)}
+.budget-det b{display:block;font-size:13px}
+.budget-det span{display:block;font-size:11.5px;color:var(--tx2);margin-top:2px}
+.breakdown{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--tx2);
+  padding:10px 12px;background:var(--sf2);border:1px solid var(--bd);border-radius:10px}
+.breakdown div{display:flex;justify-content:space-between}
+.breakdown div.tot{color:var(--tx);font-weight:700;border-top:1px solid var(--bd);padding-top:5px;margin-top:2px}
+.port-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+@media(min-width:420px){.port-grid{grid-template-columns:repeat(6,1fr)}}
+.port{aspect-ratio:1;min-height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-family:monospace;font-size:14px;font-weight:700;cursor:pointer;border:1px solid transparent}
+.port.free{background:var(--sf2);color:var(--tx3);border:1px dashed var(--bd)}
+.port.used{background:var(--ac);color:#fff}
+.port.off{background:var(--red-bg);color:var(--red);border-color:var(--red);text-decoration:line-through}
+.port-leg{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--tx3)}
+.port-leg i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:-1px}
+.cli-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;
+  border-bottom:1px solid var(--bd);font-size:13px}
+.cli-row:last-child{border-bottom:none}
+.cli-nm{font-weight:600;min-width:0}
+.cli-nm small{display:block;font-weight:400;color:var(--tx3);font-size:11px}
+.cli-dot{width:7px;height:7px;border-radius:50%;background:var(--tx3);flex-shrink:0;display:inline-block;margin-right:7px}
+.cli-dot.on{background:var(--ac)} .cli-dot.off{background:var(--red)}
+.cli-sig{font-family:monospace;font-size:12px;color:var(--tx3);flex-shrink:0;text-align:right}
 .vtabs{display:flex;gap:6px;background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:14px}
-.vtab{flex:1;padding:9px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.vtab{flex:1;padding:9px 6px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
 .vtab.on{background:var(--ac);color:#fff}
 
 /* ---- ESTOQUE (técnico) ---- */
@@ -389,6 +432,7 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
       <button class="vtab on" id="tab-rota" onclick="trocarView('rota')">🗺️ Rota do Dia</button>
       <button class="vtab" id="tab-os" onclick="trocarView('os')">🗂 Minhas OS</button>
       <button class="vtab" id="tab-est" onclick="trocarView('estoque')">📦 Estoque</button>
+      <button class="vtab" id="tab-rede" onclick="trocarView('rede')">📡 CTOs</button>
     </div>
 
     <div id="view-rota">
@@ -444,6 +488,15 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
     </div><!-- /view-os -->
 
     <!-- MEU ESTOQUE -->
+    <div id="view-rede" style="display:none">
+      <div class="rede-bar">
+        <div id="rede-info" style="flex:1;font-size:12px;color:var(--tx2)">Toque em 📍 para localizar</div>
+        <button class="ico-btn" onclick="redeLocalizar()" title="Atualizar localização">📍</button>
+        <button class="ico-btn" id="btn-raio" onclick="redeRaio()" title="Raio de busca" style="width:auto;padding:0 10px;font-size:12px;font-weight:700">300 m</button>
+      </div>
+      <div id="rede-lista"></div>
+    </div>
+
     <div id="view-estoque" style="display:none">
       <div class="alert">📦 Peças sob sua responsabilidade. As baixas acontecem ao finalizar uma OS. Para receber mais peças, fale com o administrador.</div>
       <div class="list" id="lista-est"></div>
@@ -494,6 +547,29 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
       <div id="det-badge"></div>
     </div>
     <div class="sheet-body" id="det-body"></div>
+  </div>
+</div>
+
+<!-- SHEET: FICHA DA CTO -->
+<div class="ov" id="ov-cto" onclick="if(event.target===this)fecharCTO()">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" onclick="fecharCTO()">✕</button>
+    <div class="sheet-head">
+      <div class="sheet-title" id="cto-title">—</div>
+      <div class="sheet-sub" id="cto-sub"></div>
+    </div>
+    <div class="sheet-body" id="cto-body"></div>
+  </div>
+</div>
+
+<!-- SHEET: MEDIÇÃO / DIVERGÊNCIA NA CTO -->
+<div class="ov" id="ov-cto-form" onclick="if(event.target===this)fecharCTOForm()">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" onclick="fecharCTOForm()">✕</button>
+    <div class="sheet-head"><div class="sheet-title" id="ctof-title">—</div></div>
+    <div class="sheet-body" id="ctof-body"></div>
   </div>
 </div>
 
@@ -760,12 +836,298 @@ function trocarView(v){
   $('tab-rota').classList.toggle('on', v==='rota');
   $('tab-os').classList.toggle('on', v==='os');
   $('tab-est').classList.toggle('on', v==='estoque');
+  $('tab-rede').classList.toggle('on', v==='rede');
   $('view-rota').style.display     = v==='rota' ? '' : 'none';
   $('view-os').style.display       = v==='os' ? '' : 'none';
   $('view-estoque').style.display  = v==='estoque' ? '' : 'none';
+  $('view-rede').style.display     = v==='rede' ? '' : 'none';
   if(v==='rota') iniciarTelaRota();
+  if(v==='rede') iniciarTelaRede();
 }
 
+
+/* ============================================================
+   📡 REDE — CTOs por perto (dados publicados pelo MoviFiber)
+   Somente leitura da rede: o técnico consulta portas, sinal e
+   clientes; e devolve medição e divergência. A ocupação vem do
+   vínculo vivo (ftth_cliente_instalacao), nunca do resumo.
+   ============================================================ */
+const REDE_DROP_M = 200;             // alcance de projeto do drop
+let _redePos = null, _redeRaio = 300, _redeCaixas = [], _redeVinc = [], _ctoSel = null, _redeCarregando = false;
+
+const _n = v => (v==null||v===''||isNaN(+v)) ? null : +v;
+/* cor pela janela de operação da ONU */
+function _potCls(v){
+  if(v==null) return 'vazio';
+  if(v >= -8 || v <= -27) return 'bad';
+  if(v <= -25) return 'warn';
+  return 'ok';
+}
+function _escR(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function iniciarTelaRede(){
+  if(_redeCaixas.length){ renderRede(); return; }
+  const cache = _redeCache();
+  if(cache){ _redePos=cache.pos; _redeCaixas=cache.caixas; _redeVinc=cache.vinc||[]; renderRede(true); }
+  redeLocalizar();
+}
+function _redeCache(){
+  try{ const c=JSON.parse(localStorage.getItem('mtec_rede')||'null');
+       return (c && Date.now()-c.em < 86400000) ? c : null; }catch(e){ return null; }
+}
+function redeRaio(){
+  _redeRaio = _redeRaio===300 ? 600 : 300;
+  $('btn-raio').textContent = _redeRaio+' m';
+  carregarRede();
+}
+/* Se houver uma OS aberta, a busca parte do endereço dela; senão, do GPS. */
+async function redeLocalizar(){
+  $('rede-info').textContent = 'Localizando…';
+  const g = await _getGPS();
+  if(g){ _redePos = {lat:g.lat, lng:g.lng, origem:'GPS'}; }
+  else if(_aberta && _aberta._lat && _aberta._lng){ _redePos = {lat:_aberta._lat, lng:_aberta._lng, origem:'OS'}; }
+  if(!_redePos){ $('rede-info').textContent = 'Sem localização — ative o GPS'; return; }
+  carregarRede();
+}
+/* abre a aba já centrada na OS (botão dentro da ficha da OS) */
+async function ctosDaOS(lat,lng,nome){
+  _redePos = {lat:+lat, lng:+lng, origem:'OS', nome};
+  fecharDet();
+  trocarView('rede');
+  await carregarRede();
+}
+async function carregarRede(){
+  if(!_redePos || _redeCarregando) return;
+  _redeCarregando = true;
+  $('rede-info').textContent = 'Buscando caixas…';
+  try{
+    const { data, error } = await sb.rpc('campo_caixas_proximas', {
+      p_lat:_redePos.lat, p_lng:_redePos.lng, p_raio:_redeRaio, p_tipos:['cto']
+    });
+    if(error) throw new Error(error.message);
+    _redeCaixas = data || [];
+    await carregarVinculosRede();
+    try{ localStorage.setItem('mtec_rede', JSON.stringify({em:Date.now(), pos:_redePos, caixas:_redeCaixas, vinc:_redeVinc})); }catch(e){}
+    renderRede();
+  }catch(e){
+    const cache=_redeCache();
+    if(cache){ _redeCaixas=cache.caixas; _redeVinc=cache.vinc||[]; renderRede(true); toast('Sem conexão — mostrando o último download'); }
+    else { $('rede-info').textContent='Erro ao buscar'; toast('Erro: '+e.message, 3500); }
+  }
+  _redeCarregando = false;
+}
+async function carregarVinculosRede(){
+  const ids = _redeCaixas.map(c=>c.caixa_id);
+  if(!ids.length){ _redeVinc=[]; return; }
+  const { data } = await sb.from('ftth_cliente_instalacao')
+    .select('caixa_id,porta,cliente_id,clientes(razao,ixc_login,ixc_id)')
+    .in('caixa_id', ids);
+  _redeVinc = (data||[]).map(x=>{
+    const c = Array.isArray(x.clientes) ? x.clientes[0] : x.clientes;
+    return { caixa_id:x.caixa_id, porta:x.porta, cliente_id:x.cliente_id,
+             nome:(c&&c.razao)||'Cliente', login:(c&&c.ixc_login)||'', ixc_id:(c&&c.ixc_id)||null };
+  });
+}
+function _cliDaCx(id){ return _redeVinc.filter(c=>c.caixa_id===id); }
+function _livresCx(cx){
+  const inat = (cx.portas_inativas||[]).length;
+  return Math.max(0, (cx.portas_total||0) - _cliDaCx(cx.caixa_id).length - inat);
+}
+
+function renderRede(offline){
+  const orig = _redePos ? (_redePos.origem==='OS' ? (_redePos.nome?('OS · '+_redePos.nome):'Endereço da OS') : 'Minha posição') : '';
+  $('rede-info').innerHTML = `${orig} · <b>${_redeCaixas.length}</b> CTO(s) em ${_redeRaio} m${offline?' <span style="color:var(--amb)">· offline</span>':''}`;
+  const l = $('rede-lista');
+  if(!_redeCaixas.length){
+    l.innerHTML = `<div class="empty"><div class="empty-ico">📡</div>
+      <div style="font-size:16px;font-weight:700;color:var(--tx);margin-bottom:6px">Nenhuma CTO por perto</div>
+      <div style="font-size:13px;line-height:1.6">Não há caixa publicada num raio de ${_redeRaio} m.<br>Toque no raio para ampliar.</div></div>`;
+    return;
+  }
+  l.innerHTML = _redeCaixas.map(cx=>{
+    const livres=_livresCx(cx), tot=cx.portas_total||0, d=Math.round(cx.distancia_m);
+    const cor = livres===0 ? 'pot-bad' : (livres<=1 ? 'pot-warn' : 'pot-ok');
+    const pot = _n(cx.pot_saida_dbm);
+    return `<div class="cx-card" onclick="abrirCTO('${cx.caixa_id}')">
+      <div style="flex:1;min-width:0">
+        <div class="cx-nome">${_escR(cx.nome)}</div>
+        <div class="cx-sub">${cx.splitter?('Splitter '+_escR(cx.splitter)+' · '):''}${tot} portas${pot!=null?' · saída '+pot.toFixed(1)+' dBm':''}</div>
+        <div class="cx-dist ${d>REDE_DROP_M?'longe':''}">${d>REDE_DROP_M?'⚠️ ':''}${d} m em linha reta</div>
+      </div>
+      <div class="cx-livres"><b class="${cor}">${livres}</b><span>livres</span></div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- ficha da CTO ---------- */
+function abrirCTO(id){
+  const cx=_redeCaixas.find(c=>c.caixa_id===id); if(!cx) return;
+  _ctoSel = cx;
+  const cls=_cliDaCx(id), inat=cx.portas_inativas||[], tot=cx.portas_total||0;
+  const ocup={}; cls.forEach(c=>{ if(c.porta) ocup[c.porta]=c; });
+  const saida=_n(cx.pot_saida_dbm), entrada=_n(cx.pot_entrada_dbm), rx=_n(cx.rx_previsto_dbm);
+  const d=Math.round(cx.distancia_m);
+
+  let portas='';
+  for(let p=1;p<=tot;p++){
+    const off=inat.includes(p), c=ocup[p];
+    portas += `<div class="port ${off?'off':(c?'used':'free')}" onclick="verPortaCTO(${p})">${String(p).padStart(2,'0')}</div>`;
+  }
+  const perdas=[['Fibra do trecho',_n(cx.perda_fibra_db)],['Splitters',_n(cx.perda_splitter_db)],['Conectores / DIO',_n(cx.perda_conector_db)]].filter(x=>x[1]!=null);
+
+  $('cto-title').textContent = cx.nome;
+  $('cto-sub').innerHTML = `${cx.splitter?'Splitter '+_escR(cx.splitter)+' · ':''}${_escR(cx.projeto_nome||'')}`
+    + `<br><span class="${d>REDE_DROP_M?'cx-dist longe':'cx-dist'}">${d} m daqui${d>REDE_DROP_M?` · acima do padrão de drop (${REDE_DROP_M} m)`:''}</span>`;
+
+  $('cto-body').innerHTML = `
+    <div class="budget">
+      <div class="gauge ${_potCls(rx!=null?rx:saida)}">
+        <b class="pot-${_potCls(rx!=null?rx:saida)}">${saida!=null?saida.toFixed(1):'—'}</b><span>dBm</span>
+      </div>
+      <div class="budget-det">
+        <b>Saída do splitter</b>
+        <span>Chega na caixa: ${entrada!=null?entrada.toFixed(2)+' dBm':'—'}</span>
+        <span>Previsto na casa (100 m): ${rx!=null?rx.toFixed(2)+' dBm':'—'}</span>
+        ${cx.olt_nome?`<span>${_escR(cx.olt_nome)}${cx.pon?' · PON '+cx.pon:''}</span>`:''}
+      </div>
+    </div>
+    ${perdas.length?`<div class="breakdown">${perdas.map(([k,v])=>`<div><span>${k}</span><span>${v.toFixed(2)} dB</span></div>`).join('')}
+      ${cx.perda_total_db!=null?`<div class="tot"><span>Perda total até o cliente</span><span>${(+cx.perda_total_db).toFixed(2)} dB</span></div>`:''}</div>`:''}
+    ${cx.tx_real===false?`<div class="alert warn" style="margin-top:12px">⚠️ Valor estimado — a OLT ainda não tem o TX real cadastrado. Use como referência, não como laudo.</div>`:''}
+    ${rx!=null&&_potCls(rx)==='bad'?`<div class="alert red" style="margin-top:12px">❌ Previsto na casa fora da janela (${rx>-8?'sinal alto demais':'sinal fraco'}). Meça antes de instalar.</div>`
+      :(rx!=null&&_potCls(rx)==='warn'?`<div class="alert warn" style="margin-top:12px">⚠️ Previsto no limite (${rx.toFixed(1)} dBm). Drop longo aqui pode derrubar o cliente.</div>`:'')}
+
+    <div class="row-sec" style="margin-top:14px">
+      <div class="row-sec-title">🔌 Portas — ${_livresCx(cx)} livre(s) de ${tot}</div>
+      <div style="padding:12px">
+        ${tot?`<div class="port-grid">${portas}</div>
+          <div class="port-leg">
+            <span><i style="background:var(--ac)"></i>Ocupada</span>
+            <span><i style="background:var(--sf2);border:1px dashed var(--bd)"></i>Livre</span>
+            <span><i style="background:var(--red-bg);border:1px solid var(--red)"></i>Desativada</span>
+          </div>`:'<div style="font-size:12.5px;color:var(--tx2)">Caixa de passagem (sem splitter).</div>'}
+      </div>
+    </div>
+
+    <div class="row-sec">
+      <div class="row-sec-title">👥 Clientes ligados (${cls.length})</div>
+      ${cls.length?cls.map(c=>`
+        <div class="cli-row">
+          <span class="cli-nm"><span class="cli-dot" id="cdot-${c.cliente_id}"></span>${_escR(c.nome)}
+            <small>${c.login?_escR(c.login)+' · ':''}porta ${c.porta||'—'}</small></span>
+          <span class="cli-sig" id="csig-${c.cliente_id}">—</span>
+        </div>`).join('')
+      :'<div style="padding:10px 12px;font-size:12.5px;color:var(--tx2)">Nenhum cliente vinculado a esta caixa.</div>'}
+    </div>
+    ${cls.length?`<button class="btn-full btn-ghost" onclick="sinalClientesCTO()">📶 Ver status e sinal ao vivo</button>`:''}
+
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${cx.lat},${cx.lng}" target="_blank" rel="noopener"
+         class="btn-full btn-blu" style="margin-top:0;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">🗺️ Maps</a>
+      <a href="https://waze.com/ul?ll=${cx.lat},${cx.lng}&navigate=yes" target="_blank" rel="noopener"
+         class="btn-full btn-ghost" style="margin-top:0;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">🚗 Waze</a>
+    </div>
+    <button class="btn-full" style="background:var(--ac);color:#fff" onclick="formMedicaoCTO()">📏 Registrar potência medida</button>
+    <button class="btn-full btn-ghost" onclick="formDivergenciaCTO()">⚠️ Reportar divergência</button>
+    <div style="text-align:center;font-size:10.5px;color:var(--tx3);margin-top:12px">
+      Rede publicada em ${cx.atualizado_em?fmtDH(cx.atualizado_em):'—'} · consulta somente leitura
+    </div>`;
+  $('ov-cto').classList.add('open');
+}
+function fecharCTO(){ $('ov-cto').classList.remove('open'); }
+function verPortaCTO(p){
+  if(!_ctoSel) return;
+  if((_ctoSel.portas_inativas||[]).includes(p)){ toast('Porta '+p+' está desativada no projeto'); return; }
+  const c=_cliDaCx(_ctoSel.caixa_id).find(x=>x.porta===p);
+  toast(c ? (c.nome + (c.login?' · '+c.login:'')) : ('Porta '+p+' livre — pode usar nesta instalação'), 3200);
+}
+/* status/sinal ao vivo pelo proxy do MoviFiber (mesma consulta do IXC) */
+async function sinalClientesCTO(){
+  if(!_ctoSel) return;
+  const cls=_cliDaCx(_ctoSel.caixa_id).filter(c=>c.ixc_id);
+  if(!cls.length){ toast('Nenhum cliente com ID do IXC nesta caixa'); return; }
+  toast('Consultando o IXC…');
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    const r = await fetch('/api/movifiber', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', ...(session?{Authorization:'Bearer '+session.access_token}:{})},
+      body: JSON.stringify({ acao:'ixc-status', ixc_ids: cls.map(c=>String(c.ixc_id)) })
+    });
+    const j = await r.json();
+    if(j.erro) throw new Error(j.erro);
+    let off=0;
+    cls.forEach(c=>{
+      const st=(j.status||{})[String(c.ixc_id)]; if(!st) return;
+      const sig=$('csig-'+c.cliente_id), dot=$('cdot-'+c.cliente_id);
+      const rx=_n(st.rx);
+      if(sig) sig.innerHTML = rx!=null ? `<span class="pot-${_potCls(rx)}">${rx.toFixed(1)} dBm</span>` : '—';
+      if(dot){ if(st.online===true) dot.className='cli-dot on'; else if(st.online===false){ dot.className='cli-dot off'; off++; } }
+    });
+    toast(off ? `${off} cliente(s) offline nesta caixa` : 'Todos online nesta caixa');
+  }catch(e){ toast('Sem status ao vivo: '+e.message, 3500); }
+}
+
+/* ---------- retorno para o projeto ---------- */
+function formMedicaoCTO(){
+  if(!_ctoSel) return;
+  $('ctof-title').textContent = '📏 Medição — '+_ctoSel.nome;
+  $('ctof-body').innerHTML = `
+    <label class="flabel">Onde mediu</label>
+    <select class="finput" id="mdc-ponto"><option value="saida">Saída do splitter</option><option value="entrada">Entrada da caixa</option><option value="porta">Numa porta específica</option></select>
+    <div class="frow2">
+      <div><label class="flabel">Porta (se aplicável)</label><input class="finput" id="mdc-porta" type="number" inputmode="numeric" placeholder="ex: 3"></div>
+      <div><label class="flabel">Potência (dBm) <span style="color:var(--red)">*</span></label><input class="finput" id="mdc-dbm" type="text" inputmode="decimal" placeholder="-21.4"></div>
+    </div>
+    <label class="flabel">Observação</label><input class="finput" id="mdc-obs" placeholder="opcional">
+    <button class="btn-full" style="background:var(--ac);color:#fff" onclick="salvarMedicaoCTO()">Salvar medição</button>`;
+  $('ov-cto-form').classList.add('open');
+}
+async function salvarMedicaoCTO(){
+  const dbm = _n(String($('mdc-dbm').value).replace(',','.'));
+  if(dbm==null){ toast('Informe a potência em dBm'); return; }
+  ld(true);
+  const g = await _getGPS();
+  const { error } = await sb.from('movifiber_medicoes_campo').insert({
+    projeto_id:_ctoSel.projeto_id, caixa_id:_ctoSel.caixa_id, caixa_nome:_ctoSel.nome,
+    ponto:$('mdc-ponto').value, porta:_n($('mdc-porta').value), dbm,
+    os_id:(_aberta&&_aberta.id)||null, tecnico_id:_tec.id, tecnico_nome:_tec.nome,
+    lat:g?g.lat:null, lng:g?g.lng:null, obs:$('mdc-obs').value.trim()||null
+  });
+  ld(false);
+  if(error){ toast('Erro ao salvar: '+error.message, 3500); return; }
+  fecharCTOForm();
+  const proj = _n($('mdc-ponto') && $('mdc-ponto').value==='entrada' ? _ctoSel.pot_entrada_dbm : _ctoSel.pot_saida_dbm);
+  const dv = proj!=null ? (dbm-proj) : null;
+  toast(dv!=null ? `Medição gravada · ${dv>0?'+':''}${dv.toFixed(2)} dB vs projetado` : 'Medição gravada');
+}
+function formDivergenciaCTO(){
+  if(!_ctoSel) return;
+  $('ctof-title').textContent = '⚠️ Divergência — '+_ctoSel.nome;
+  $('ctof-body').innerHTML = `
+    <div class="alert warn">O que você encontrou é diferente do projeto? Descreva — isso chega ao MoviFiber como pendência.</div>
+    <label class="flabel">Descrição <span style="color:var(--red)">*</span></label>
+    <textarea class="finput" id="dvc-txt" placeholder="Ex: caixa é 1:16, não 1:8. Splitter trocado."></textarea>
+    <button class="btn-full" style="background:var(--amb);color:#fff" onclick="salvarDivergenciaCTO()">Enviar para o projeto</button>`;
+  $('ov-cto-form').classList.add('open');
+}
+async function salvarDivergenciaCTO(){
+  const txt=$('dvc-txt').value.trim();
+  if(!txt){ toast('Descreva o que encontrou'); return; }
+  ld(true);
+  const g = await _getGPS();
+  const { error } = await sb.from('movifiber_pendencias_campo').insert({
+    projeto_id:_ctoSel.projeto_id, caixa_id:_ctoSel.caixa_id, caixa_nome:_ctoSel.nome,
+    descricao:txt, os_id:(_aberta&&_aberta.id)||null,
+    tecnico_id:_tec.id, tecnico_nome:_tec.nome, lat:g?g.lat:null, lng:g?g.lng:null
+  });
+  ld(false);
+  if(error){ toast('Erro ao enviar: '+error.message, 3500); return; }
+  fecharCTOForm(); toast('Divergência enviada para o projeto');
+}
+function fecharCTOForm(){ $('ov-cto-form').classList.remove('open'); }
+
+/* ============================================================ */
 function kpis(){
   const h = hoje();
   const ativas = ['aberta','assumida','executando','andamento'];
@@ -1495,6 +1857,9 @@ async function abrirDet(id){
         <div style="display:flex;gap:8px;padding:10px 12px">
           <a href="${mapsUrl}" target="_blank" rel="noopener" class="btn-full btn-blu" style="margin-top:0;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">🗺️ Google Maps</a>
           <a href="${wazeUrl}" target="_blank" rel="noopener" class="btn-full btn-ghost" style="margin-top:0;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">🚗 Waze</a>
+        </div>
+        <div style="padding:0 12px 12px">
+          <button class="btn-full btn-ghost" style="margin-top:0" onclick="ctosDaOS(${lat},${lng},'${String(os.cliente||'').replace(/'/g,"\\'").slice(0,40)}')">📡 CTOs perto deste cliente</button>
         </div>
       </div>`;
     }else{
