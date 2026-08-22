@@ -20,6 +20,12 @@
 //                             por cliente. Isolado do MoviOne.
 //   - "salvar-instalacao"  -> {cliente_id, projeto, caixa_id, caixa_nome, porta}
 //                             grava o vinculo (RPC ftth_upsert_instalacao).
+//   - "campo-publicar"     -> {projetos:[ids], caixas:[...]}  publica o resumo
+//                             das caixas em movifiber_caixas (lido pelo app do
+//                             tecnico). Substitui o que existia dos projetos
+//                             enviados: caixa apagada no projeto some do campo.
+//   - "campo-retorno"      -> {projetos:[ids]}  medicoes e divergencias que os
+//                             tecnicos registraram na rua.
 //   - "debug-schema"       -> 1 registro cru de cada fonte (descobrir colunas).
 // ============================================================================
 
@@ -78,6 +84,8 @@ export default async function handler(req, res) {
     if (acao === 'hist-listar')       return res.status(200).json(await histListar(b.projeto_id));
     if (acao === 'hist-carregar')     return res.status(200).json(await histCarregar(b.id));
     if (acao === 'proj-excluir')      return res.status(200).json(await projExcluir(b.id));
+    if (acao === 'campo-publicar')    return res.status(200).json(await campoPublicar(b.projetos || [], b.caixas || [], b._usuario));
+    if (acao === 'campo-retorno')     return res.status(200).json(await campoRetorno(b.projetos || []));
     if (acao === 'cat-carregar')      return res.status(200).json(await catCarregar());
     if (acao === 'cat-salvar')        return res.status(200).json(await catSalvar(b.dados));
     return res.status(400).json({ erro: 'acao desconhecida: ' + acao });
@@ -166,6 +174,56 @@ async function salvarInstalacao(b) {
 // ---------------------- PROJETOS MOVIFIBER (nuvem) --------------------------
 const SB_PROJ = 'movifiber_projetos';
 const SB_CAT  = 'movifiber_catalogos';
+
+// ------------------------- CAMPO (app do tecnico) ---------------------------
+const SB_CAMPO_CX  = 'movifiber_caixas';
+const SB_CAMPO_MED = 'movifiber_medicoes_campo';
+const SB_CAMPO_PEN = 'movifiber_pendencias_campo';
+
+// Publica o resumo por caixa. Regravar tudo do projeto (delete + insert) e mais
+// simples e seguro que diffs: o volume e pequeno (centenas de linhas) e garante
+// que caixa removida no projeto desapareca do app do tecnico.
+async function campoPublicar(projetos, caixas, usuario) {
+  if (!Array.isArray(caixas) || !caixas.length) throw new Error('nada a publicar');
+  const ids = [...new Set([...(projetos || []), ...caixas.map(c => c.projeto_id)].filter(Boolean).map(String))];
+  if (!ids.length) throw new Error('projeto nao identificado');
+
+  const emLista = ids.map(i => `"${String(i).replace(/"/g, '')}"`).join(',');
+  const del = await fetch(
+    `${process.env.SUPABASE_URL}/rest/v1/${SB_CAMPO_CX}?projeto_id=in.(${emLista})`,
+    { method: 'DELETE', headers: sbHeaders() });
+  if (!del.ok && del.status !== 404) throw new Error('Supabase DELETE HTTP ' + del.status);
+
+  const quando = new Date().toISOString();
+  const quem = usuario ? (usuario.nome || usuario.email || null) : null;
+  const linhas = caixas.map(c => ({ ...c, atualizado_em: quando, atualizado_por: quem }));
+
+  let gravadas = 0;
+  for (let i = 0; i < linhas.length; i += 500) {
+    const lote = linhas.slice(i, i + 500);
+    const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_CAMPO_CX}`, {
+      method: 'POST',
+      headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(lote)
+    });
+    if (!r.ok) throw new Error('Supabase INSERT HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+    gravadas += lote.length;
+  }
+  return { ok: true, gravadas, projetos: ids, em: quando };
+}
+
+// Medicoes e divergencias que vieram da rua (para o painel do MoviFiber)
+async function campoRetorno(projetos) {
+  const ids = (projetos || []).filter(Boolean).map(String);
+  const filtro = ids.length ? `&projeto_id=in.(${ids.map(i => `"${i}"`).join(',')})` : '';
+  const [med, pen] = await Promise.all([
+    fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_CAMPO_MED}?select=*${filtro}&order=criado_em.desc&limit=100`,
+      { headers: sbHeaders() }).then(r => r.ok ? r.json() : []),
+    fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_CAMPO_PEN}?select=*${filtro}&order=criado_em.desc&limit=60`,
+      { headers: sbHeaders() }).then(r => r.ok ? r.json() : []),
+  ]);
+  return { medicoes: med || [], pendencias: pen || [] };
+}
 
 async function projListar() {
   const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_PROJ}` +
