@@ -232,7 +232,7 @@ input:focus,select:focus{border-color:var(--accent)}
 
 /* ============ TELA EDITOR ============ */
 #tela-editor{display:none;height:100vh;position:relative}
-#mapa{position:absolute;inset:0;z-index:1;background:#0a0c10}
+#mapa{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;background:#0a0c10;transition:right .22s ease}
 .leaflet-container{background:#0a0c10;font-family:'DM Sans',sans-serif}
 
 /* Toolbar superior flutuante */
@@ -305,7 +305,11 @@ input:focus,select:focus{border-color:var(--accent)}
 #vazio-mapa p{font-size:12.5px;color:var(--text-dim);margin:8px 0 14px;line-height:1.5}
 
 /* Painel de camadas (direita) */
-#camadas{position:absolute;top:14px;right:14px;z-index:900;background:var(--surface);border:1px solid var(--border);border-radius:14px;width:198px;box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden}
+#camadas{position:absolute;top:62px;right:14px;z-index:900;background:var(--surface);border:1px solid var(--border);border-radius:14px;width:210px;box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden;
+  display:none;transform-origin:top right;animation:camPop .14s ease}
+#camadas.aberto{display:block}
+@keyframes camPop{from{opacity:0;transform:scale(.96) translateY(-6px)}to{opacity:1;transform:none}}
+#tool-camadas.ativo{background:var(--accent-glow);border-color:var(--accent);color:var(--text)}
 #camadas .cam-head{padding:11px 14px;font-size:11px;letter-spacing:1.5px;color:var(--text-dim);text-transform:uppercase;display:flex;justify-content:space-between;cursor:pointer}
 #camadas .cam-body{padding:4px 8px 10px;max-height:70vh;overflow-y:auto;transition:max-height .22s ease,padding .22s ease,opacity .18s ease}
 #camadas .cam-body.oculto{max-height:0;padding-top:0;padding-bottom:0;opacity:0;overflow:hidden}
@@ -345,6 +349,18 @@ input:focus,select:focus{border-color:var(--accent)}
 /* ============ MODAIS ============ */
 /* z-index acima das telas de fusão/POP (1100) — antes o modal abria ATRÁS delas
    e era preciso fechar o diagrama para conseguir digitar */
+#inspetor{position:absolute;top:0;right:0;bottom:0;width:352px;max-width:92vw;z-index:1200;
+  background:var(--surface);border-left:1px solid var(--border);box-shadow:-10px 0 34px rgba(0,0,0,.45);
+  transform:translateX(102%);transition:transform .22s ease;display:flex;flex-direction:column;overflow:hidden}
+#inspetor.aberto{transform:none}
+#inspetor .modal.como-inspetor{width:100%;max-width:none;max-height:none;height:100%;border:none;border-radius:0;
+  background:transparent;display:flex;flex-direction:column;overflow:hidden}
+#inspetor .como-inspetor .md-body{flex:1;overflow-y:auto}
+#inspetor .como-inspetor .md-head{position:sticky;top:0;background:var(--surface);z-index:2}
+#inspetor .como-inspetor .md-foot{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border)}
+body.com-inspetor #mapa{right:352px}
+body.com-inspetor #camadas{right:366px}
+@media(max-width:900px){#inspetor{width:100%}body.com-inspetor #mapa{right:0}}
 .modal-bg{position:fixed;inset:0;background:rgba(5,7,10,.75);z-index:1500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .modal-bg.aberto{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:440px;max-width:94vw;max-height:90vh;overflow-y:auto}
@@ -421,6 +437,19 @@ input:focus,select:focus{border-color:var(--accent)}
 #fs-head>.titulo span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #fs-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap;flex:1 1 100%;order:3}
 #fs-tools .fs-tool,#fs-tools .btn{flex:0 0 auto;white-space:nowrap}
+.fs-menu{position:relative;flex:0 0 auto}
+.fs-menu .cv{font-size:9px;opacity:.7;margin-left:2px}
+.fs-menu.aberto>.fs-tool{border-color:var(--accent);color:var(--text);background:var(--accent-glow)}
+.fs-drop{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:224px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px;
+  box-shadow:0 14px 38px rgba(0,0,0,.55);flex-direction:column;gap:2px}
+.fs-menu.aberto .fs-drop{display:flex}
+.fs-drop button{background:none;border:none;color:var(--text);text-align:left;padding:8px 10px;border-radius:8px;
+  font-size:12.5px;cursor:pointer;white-space:nowrap}
+.fs-drop button:hover{background:var(--surface2)}
+.fs-drop button.ativo{color:var(--accent);font-weight:600;background:var(--accent-glow)}
+.fs-menu.tem-ativo>.fs-tool::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:2px}
+.fs-drop .sep{height:1px;background:var(--border);margin:4px 2px}
 .fs-tool{padding:7px 13px;border:1px solid var(--border);border-radius:9px;font-size:12.5px;color:var(--text-dim);display:flex;gap:6px;align-items:center;line-height:1.35}
 .fs-tool:hover{color:var(--text);border-color:var(--text-dim)}
 .fs-tool.ativo{background:var(--accent);color:#08120C;border-color:var(--accent);font-weight:600}
@@ -885,6 +914,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" data-modo="regua" onclick="setModo('regua')"><span class="ic">📏</span>Régua</button>
     <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
     <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
+    <button class="tool" id="tool-camadas" onclick="togglePainelCamadas()" title="Mostrar/ocultar camadas do mapa"><span class="ic">🗺️</span>Camadas</button>
   </div>
 
   <div id="multi-barra"></div>
@@ -893,12 +923,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
   <div id="clientes-topbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:898;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:7px 14px;display:none;gap:16px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12.5px"></div>
 
   <div id="toast"></div>
-  <div id="hint"><b>Navegação:</b> clique nos elementos para editar</div>
+  <div id="hint" style="display:none"></div>
 
   <div id="camadas">
-    <div class="cam-head" onclick="togglePainelCamadas()" title="Recolher / expandir">Elementos <span id="cam-seta">−</span></div>
+    <div class="cam-head" onclick="togglePainelCamadas()" title="Fechar">Camadas <span id="cam-seta">✕</span></div>
     <div class="cam-body" id="cam-body"></div>
   </div>
+  <aside id="inspetor" data-mod=""></aside>
 </div>
 
 <div id="ctx-menu"></div>
@@ -1385,30 +1416,54 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
   <div id="fs-head">
     <div class="titulo"><button class="btn sm ghost" onclick="fecharFusao()">←</button> <span id="fs-titulo">CTO-1</span></div>
     <div id="fs-tools">
-      <select id="fs-add-split" style="width:190px;padding:7px 10px;font-size:12px"></select>
+      <!-- o que se usa o tempo todo fica à mostra; o resto entra em menus -->
+      <select id="fs-add-split" style="width:170px;padding:7px 10px;font-size:12px"></select>
       <button class="fs-tool" onclick="addSplitterDoCatalogo()">+ Splitter</button>
       <button class="fs-tool" onclick="abrirMapaConexoes()" title="Mapa de conexões: conectar cabos por ponta ou por sangria (passagem)">🔗 Conexões</button>
-      <button class="fs-tool" onclick="fsResetarFibras()" title="Devolve as fibras às posições originais">↺ Fibras</button>
-      <button class="fs-tool" onclick="fsResetarTracados()" title="Desfaz os desvios de traçado das fusões">↺ Traçados</button>
-      <button class="fs-tool" onclick="fsReorganizarBlocos()" title="Voltar os blocos à posição automática">↺ Blocos</button>
-      <button class="fs-tool" onclick="abrirNotaCaixa()" title="Anotações desta caixa (vão junto no PNG)">📝 Nota</button>
       <button class="fs-tool" id="btn-nota-fibra" onclick="toggleModoNota()" title="Identificar fibras · também pelo botão direito sobre a fibra">🏷️ Identificar</button>
       <button class="fs-tool" id="btn-medir" onclick="toggleModoMedir()" title="Registrar a potência medida em cada ponta">📏 Medir</button>
-      <button class="fs-tool" onclick="abrirProjetadoReal()" title="Comparar o projetado com o que foi medido">📊 Projetado × Real</button>
-      <span style="width:10px"></span>
-      <select id="fs-status-el" style="width:150px;padding:7px 10px;font-size:12px" onchange="mudarStatusCaixaFusao(this.value)">
+      <button class="fs-tool" id="btn-orc" onclick="abrirOrcamento()">🔦 Orçamento</button>
+
+      <div class="fs-menu">
+        <button class="fs-tool" onclick="fsMenu(event,'mn-exibir')" title="O que aparece no diagrama">👁 Exibir <span class="cv">▾</span></button>
+        <div class="fs-drop" id="mn-exibir" onclick="fsDropClique(event)">
+          <button id="btn-anim" data-manter="1" onclick="toggleFsAnim()" title="Luz percorrendo as fibras com tráfego">✨ Tráfego: ON</button>
+          <button id="btn-fspot" data-manter="1" onclick="toggleFsPot()" title="Potência projetada em cada fibra, splitter e porta de DIO">⚡ Potência: ON</button>
+          <div class="sep"></div>
+          <button onclick="abrirProjetadoReal()">📊 Projetado × Real</button>
+          <button id="btn-vfl" onclick="tracarVFL()" style="color:#FF8A80">🔴 Traçar VFL</button>
+          <div class="sep"></div>
+          <button onclick="toggleBarraFusao()">⌃ Recolher esta barra</button>
+        </div>
+      </div>
+
+      <div class="fs-menu">
+        <button class="fs-tool" onclick="fsMenu(event,'mn-org')" title="Organizar o desenho">↺ Organizar <span class="cv">▾</span></button>
+        <div class="fs-drop" id="mn-org" onclick="fsDropClique(event)">
+          <button onclick="fsResetarFibras()">↺ Fibras à posição original</button>
+          <button onclick="fsResetarTracados()">↺ Traçados das fusões</button>
+          <button onclick="fsReorganizarBlocos()">↺ Blocos dos cabos</button>
+        </div>
+      </div>
+
+      <div class="fs-menu">
+        <button class="fs-tool" onclick="fsMenu(event,'mn-doc')" title="Documentar e exportar">⤓ Documentar <span class="cv">▾</span></button>
+        <div class="fs-drop" id="mn-doc" onclick="fsDropClique(event)">
+          <button onclick="abrirNotaCaixa()">📝 Nota da caixa</button>
+          <div class="sep"></div>
+          <button onclick="abrirVisualizarFusao()">🖨 Visualizar / Imprimir</button>
+          <button onclick="exportarPNGFusao()">🖼 Exportar PNG</button>
+          <button onclick="abrirQR()">▦ QR Code da caixa</button>
+        </div>
+      </div>
+
+      <span style="flex:1"></span>
+      <select id="fs-status-el" style="width:150px;padding:7px 10px;font-size:12px" onchange="mudarStatusCaixaFusao(this.value)" title="Status desta caixa">
         <option value="projeto">Em projeto</option>
         <option value="nao-implantado">Não implantado</option>
         <option value="implantado">Implantado</option>
         <option value="certificado">Certificado</option>
       </select>
-      <button class="fs-tool" onclick="abrirVisualizarFusao()" title="Ver o diagrama e a lista de conexões · imprimir ou salvar em PDF">🖨 Visualizar / Imprimir</button>
-      <button class="fs-tool" onclick="exportarPNGFusao()">🖼 PNG</button>
-      <button class="fs-tool" onclick="abrirQR()">▦ QR Code</button>
-      <button class="fs-tool" id="btn-vfl" onclick="tracarVFL()" style="border-color:#FF3B30;color:#FF8A80">🔴 Traçar VFL</button>
-      <button class="fs-tool" id="btn-orc" onclick="abrirOrcamento()">🔦 Orçamento Óptico</button>
-      <button class="fs-tool" id="btn-anim" onclick="toggleFsAnim()" title="Liga/desliga a luz de tráfego">✨ Tráfego: ON</button>
-      <button class="fs-tool" id="btn-fspot" onclick="toggleFsPot()" title="Mostra a potência óptica projetada em cada fibra, splitter e porta de DIO (vinda do SFP da OLT)">⚡ Potência: ON</button>
       <button class="btn sm" onclick="fecharFusao()">💾 Salvar / sair</button>
     </div>
     <button id="btn-recolher-barra" onclick="toggleBarraFusao()" title="Recolher a barra para ganhar espaço">⌃ Recolher</button>
@@ -2320,7 +2375,10 @@ try{CAT=Object.assign(JSON.parse(JSON.stringify(CAT_PADRAO)),JSON.parse(store.ge
 });
 function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
-let camadasVisiveis={satelite:true,luzfibra:true,pop:false,cto:false,ceo:false,reserva:false,backbone:false,distribuicao:false,drop:false,area:false,cliente:false,poste:false,clienteone:false};
+/* padrão: a rede aparece de cara (caixas + cabos). Postes e drop ficam fora
+   porque poluem em zoom baixo. O estado é lembrado por projeto. */
+const CAMADAS_PADRAO={satelite:true,luzfibra:true,pop:true,cto:true,ceo:true,reserva:false,backbone:true,distribuicao:true,drop:false,area:true,cliente:true,poste:false,clienteone:false};
+let camadasVisiveis={...CAMADAS_PADRAO};
 let layerRefs={}, caboTemp=null, areaTemp=null;
 /* Tecnologias PON: TX típico da OLT e faixa de sensibilidade da ONU */
 const TECNOLOGIAS={
@@ -2486,8 +2544,48 @@ function refazer(){
 }
 function uid(p){return p+'-'+Math.random().toString(36).slice(2,8)}
 function toast(msg,warn){const t=document.getElementById('toast');t.className=warn?'warn':'';t.style.display='flex';t.innerHTML=(warn?'⚠️ ':'✅ ')+msg;clearTimeout(t._tm);t._tm=setTimeout(()=>t.style.display='none',2600)}
-function fecharModal(id){document.getElementById(id).classList.remove('aberto')}
-function abrirModal(id){document.getElementById(id).classList.add('aberto')}
+/* ===== Inspetor lateral =====
+   Editar CTO/CEO/POP/poste e cabo não deveria tapar o mapa: estes "modais"
+   são movidos para um painel encostado à direita, com o mapa vivo ao lado
+   (dá para arrastar o elemento e pular de um item para outro sem fechar nada).
+   Fora do mapa (home, diagrama, POP) eles continuam abrindo como modal. */
+const MODAIS_INSPETOR=['md-elemento','md-cabo'];
+function _mapaNaTela(){
+  const ed=document.getElementById('tela-editor');
+  const fu=document.getElementById('tela-fusao'), po=document.getElementById('tela-pop');
+  return !!ed&&ed.style.display!=='none'
+    &&!(fu&&fu.style.display==='flex')&&!(po&&po.style.display==='flex');
+}
+function fecharModal(id){
+  const bg=document.getElementById(id);if(!bg)return;
+  if(bg.dataset.noInspetor==='1'){fecharInspetor();return}
+  bg.classList.remove('aberto');
+}
+function abrirModal(id){
+  if(MODAIS_INSPETOR.includes(id)&&_mapaNaTela()){abrirInspetor(id);return}
+  document.getElementById(id).classList.add('aberto');
+}
+function abrirInspetor(id){
+  const ins=document.getElementById('inspetor');
+  if(ins.dataset.mod&&ins.dataset.mod!==id)fecharInspetor();
+  const bg=document.getElementById(id), m=bg.querySelector('.modal');
+  if(!m)return;
+  if(m.parentElement!==ins){m.classList.add('como-inspetor');ins.appendChild(m)}
+  bg.dataset.noInspetor='1';ins.dataset.mod=id;
+  ins.classList.add('aberto');document.body.classList.add('com-inspetor');
+  if(typeof mapa!=='undefined'&&mapa){
+    try{mapa.closePopup()}catch(e){}      // o painel substitui o popup
+    setTimeout(()=>mapa.invalidateSize(),220);
+  }
+}
+function fecharInspetor(){
+  const ins=document.getElementById('inspetor');
+  const id=ins&&ins.dataset.mod;if(!id)return;
+  const bg=document.getElementById(id), m=ins.querySelector('.modal');
+  if(m&&bg){m.classList.remove('como-inspetor');bg.appendChild(m);bg.dataset.noInspetor=''}
+  ins.dataset.mod='';ins.classList.remove('aberto');document.body.classList.remove('com-inspetor');
+  if(typeof mapa!=='undefined'&&mapa)setTimeout(()=>mapa.invalidateSize(),220);
+}
 
 /* ================= SHELL / NAVEGAÇÃO ================= */
 function irPg(pg){
@@ -2626,7 +2724,7 @@ async function abrirProjetos(ids,opts){
   },120);
   limparOverlaysSoltos();
   try{_multiRecolhida=store.get('movifiber_multibarra')==='1'}catch(e){}
-  setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();restaurarSecoes();renderPainelProjetos();
+  restaurarCamadas();setModo('navegar');renderCamadas();renderTudo();renderSeletorAlvo();restaurarSecoes();renderPainelProjetos();
   if(!opts.manterVista)toast('✏️ '+sel2.length+' projetos abertos para EDIÇÃO · '+elementos.length+' elementos · '+cabos.length+' cabos');
 }
 /* Em qual projeto os itens NOVOS serão gravados */
@@ -2680,7 +2778,7 @@ async function trocarProjetos(ids,opts){
   if(ids.length===1)await abrirProjeto(ids[0],{manterVista:true});
   else await abrirProjetos(ids,{manterVista:true});
   if(mapa&&centro){mapa.setView(centro,zoom,{animate:false})}
-  Object.assign(camadasVisiveis,cam);renderCamadas();renderTudo();
+  Object.assign(camadasVisiveis,{clienteone:cam.clienteone});renderCamadas();renderTudo();
   try{setModo(modoAnt)}catch(e){}
   renderPainelProjetos();
   const nomes=ids.map(_nomeProj);
@@ -2846,7 +2944,7 @@ async function abrirProjeto(id,opts){
   setTimeout(()=>mapa.invalidateSize(),100);
   limparOverlaysSoltos();
   _migrarNotasFibra();
-  renderCamadas();renderTudo();setModo('navegar');restaurarSecoes();renderSeletorAlvo();renderPainelProjetos();
+  restaurarCamadas();renderCamadas();renderTudo();setModo('navegar');restaurarSecoes();renderSeletorAlvo();renderPainelProjetos();
   _estadoAtual=snapProj();
 }
 async function garantirMapa(centro,zoom){
@@ -2882,6 +2980,8 @@ async function garantirMapa(centro,zoom){
           if(modoMedir)toggleModoMedir();else if(modoNota)toggleModoNota();
           fsSel=null;fsSelSp=null;renderFusao();return;
         }
+        const _ins=document.getElementById('inspetor');
+        if(_ins&&_ins.dataset.mod){fecharInspetor();return}
         if(editCabo){concluirTracado();return}cancelarDesenho()}
       if(e.key==='Enter')finalizarDesenho();
     });
@@ -2904,7 +3004,12 @@ const HINTS={
   romper:'<b>Romper cabo:</b> clique no ponto onde o cabo passa pela caixa — parte das fibras fica (sangria) e o resto segue',
   viab:'<b>Viabilidade:</b> clique em qualquer ponto do mapa para analisar o atendimento'
 };
-function attHint(){document.getElementById('hint').innerHTML=HINTS[modo]}
+function attHint(){
+  const h=document.getElementById('hint');if(!h)return;
+  // em Navegar não há o que instruir: a dica some e o mapa ganha a faixa de baixo
+  if(modo==='navegar'){h.style.display='none';return}
+  h.style.display='';h.innerHTML=HINTS[modo]||'';
+}
 function renderSubbar(){
   const sb=document.getElementById('subbar');
   if(!sb)return;
@@ -3585,15 +3690,38 @@ function restaurarSecoes(){
     el.classList.toggle('aberta',aberto);
   });
 }
-function togglePainelCamadas(){
-  const corpo=document.getElementById('cam-body');
-  const seta=document.getElementById('cam-seta');
-  if(!corpo)return;
-  const fechado=corpo.classList.toggle('oculto');
-  if(seta)seta.textContent=fechado?'+':'−';
+function togglePainelCamadas(forcar){
+  const box=document.getElementById('camadas');if(!box)return;
+  const abrir=(forcar===undefined)?!box.classList.contains('aberto'):!!forcar;
+  box.classList.toggle('aberto',abrir);
+  const bt=document.getElementById('tool-camadas');if(bt)bt.classList.toggle('ativo',abrir);
+  try{store.set('movifiber_camadas_abertas',abrir?'1':'0')}catch(e){}
+  if(abrir)setTimeout(()=>document.addEventListener('mousedown',_fecharCamadasFora),0);
+  else document.removeEventListener('mousedown',_fecharCamadasFora);
+}
+function _fecharCamadasFora(ev){
+  const box=document.getElementById('camadas'), bt=document.getElementById('tool-camadas');
+  if(!box)return;
+  if(box.contains(ev.target)||(bt&&bt.contains(ev.target)))return;
+  togglePainelCamadas(false);
+}
+function _chaveCamadas(){
+  const id=projAtual?(projAtual._multi?('multi:'+(projAtual._ids||[]).slice().sort().join(',')):projAtual.id):'';
+  return 'movifiber_cam_'+id;
+}
+function salvarCamadas(){try{if(projAtual)store.set(_chaveCamadas(),JSON.stringify(camadasVisiveis))}catch(e){}}
+function restaurarCamadas(){
+  camadasVisiveis={...CAMADAS_PADRAO};
+  try{
+    const raw=projAtual?store.get(_chaveCamadas()):null;
+    if(raw)Object.assign(camadasVisiveis,JSON.parse(raw));
+  }catch(e){}
+  camadasVisiveis.clienteone=false;    // a lista do MoviOne é carregada sob demanda
+  try{const ab=store.get('movifiber_camadas_abertas')==='1';togglePainelCamadas(ab)}catch(e){}
 }
 function toggleCamada(k){
   camadasVisiveis[k]=!camadasVisiveis[k];
+  salvarCamadas();
   if(k==='satelite')toggleSatelite();
   else if(k==='luzfibra')redesenharSetasELuz();   // só a luz muda, não repinta tudo
   else renderTudo();
@@ -3608,6 +3736,7 @@ async function toggleCamadaClientes(){
   renderCamadas();
 }
 function toggleSatelite(){
+  salvarCamadas();
   if(camadasVisiveis.satelite){mapa.removeLayer(mapa._ruas);mapa._sat.addTo(mapa)}
   else{mapa.removeLayer(mapa._sat);mapa._ruas.addTo(mapa)}
 }
@@ -3939,7 +4068,7 @@ let fsPot=store.get('movifiber_fs_pot')!=='0';  // mostrar potência projetada n
 function toggleFsPot(){
   fsPot=!fsPot;store.set('movifiber_fs_pot',fsPot?'1':'0');
   const b=document.getElementById('btn-fspot');if(b){b.textContent=fsPot?'⚡ Potência: ON':'⚡ Potência: OFF';b.classList.toggle('ativo',fsPot)}
-  renderFusao();
+  _fsMarcarMenus();renderFusao();
 }
 /* etiqueta de potência projetada (pequena, à direita/esquerda do ponto) */
 function _etqPot(x,y,dir,info,extra){
@@ -4332,7 +4461,9 @@ function renderFusao(){
   const e=projAtual.elementos.find(x=>x.id===fsCaixa);
   const stCor={'projeto':'#D4A027','nao-implantado':'#8B90A0','implantado':'#3CB371','certificado':'#5B9BFF'};
   let POT={};try{if(fsPot)POT=potenciasDaCaixa(fsCaixa)}catch(err){POT={}}
-  {const b=document.getElementById('btn-fspot');if(b){b.textContent=fsPot?'⚡ Potência: ON':'⚡ Potência: OFF';b.classList.toggle('ativo',fsPot)}}
+  {const b=document.getElementById('btn-fspot');if(b){b.textContent=fsPot?'⚡ Potência: ON':'⚡ Potência: OFF';b.classList.toggle('ativo',fsPot)}
+   const a=document.getElementById('btn-anim');if(a){a.textContent=fsAnim?'✨ Tráfego: ON':'✨ Tráfego: OFF';a.classList.toggle('ativo',fsAnim)}
+   _fsMarcarMenus()}
   // área cresce conforme os blocos são movidos/redimensionados
   // só coordenadas de verdade entram no cálculo: "pos" também guarda a lista de
   // painéis (__paineis), e sem esse filtro o viewBox saía como NaN
@@ -5056,9 +5187,35 @@ function fsSelecionarSplitter(ev,id){
   renderFsToolbar();
 }
 function _spSel(){return getFus(fsCaixa).splitters.find(s=>s.id===fsSelSp)}
+/* menus recolhíveis da barra do diagrama */
+function fsMenu(ev,id){
+  if(ev){ev.stopPropagation()}
+  const box=document.getElementById(id);if(!box)return;
+  const pai=box.parentElement, abrir=!pai.classList.contains('aberto');
+  document.querySelectorAll('.fs-menu.aberto').forEach(m=>m.classList.remove('aberto'));
+  pai.classList.toggle('aberto',abrir);
+  if(abrir)setTimeout(()=>document.addEventListener('mousedown',_fsFecharMenus),0);
+}
+function fsDropClique(ev){
+  const b=ev.target.closest('button');
+  if(b&&b.dataset.manter==='1'){setTimeout(_fsMarcarMenus,0);return}   // interruptor: menu continua aberto
+  document.querySelectorAll('.fs-menu.aberto').forEach(m=>m.classList.remove('aberto'));
+}
+/* ponto verde no menu quando algo dentro dele está ligado */
+function _fsMarcarMenus(){
+  document.querySelectorAll('.fs-menu').forEach(m=>{
+    m.classList.toggle('tem-ativo',!!m.querySelector('.fs-drop button.ativo'));
+  });
+}
+function _fsFecharMenus(ev){
+  if(ev&&ev.target.closest&&ev.target.closest('.fs-menu'))return;
+  document.querySelectorAll('.fs-menu.aberto').forEach(m=>m.classList.remove('aberto'));
+  document.removeEventListener('mousedown',_fsFecharMenus);
+}
 function toggleFsAnim(){
   fsAnim=!fsAnim;
-  const b=document.getElementById('btn-anim');if(b)b.textContent=fsAnim?'✨ Tráfego: ON':'✨ Tráfego: OFF';
+  const b=document.getElementById('btn-anim');if(b){b.textContent=fsAnim?'✨ Tráfego: ON':'✨ Tráfego: OFF';b.classList.toggle('ativo',fsAnim)}
+  _fsMarcarMenus();
   if(!fsAnim)_fsLuzParar();
   renderFusao();
 }
