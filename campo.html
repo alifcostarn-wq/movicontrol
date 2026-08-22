@@ -901,10 +901,12 @@ async function carregarRede(){
   _redeCarregando = true;
   $('rede-info').textContent = 'Buscando caixas…';
   try{
-    const { data, error } = await sb.rpc('campo_caixas_proximas', {
-      p_lat:_redePos.lat, p_lng:_redePos.lng, p_raio:_redeRaio, p_tipos:['cto']
+    let { data, error } = await sb.rpc('campo_caixas_proximas', {
+      p_lat:_redePos.lat, p_lng:_redePos.lng, p_raio:_redeRaio
     });
-    if(error) throw new Error(error.message);
+    // Plano B: se a função não existir/estiver fora do cache do PostgREST,
+    // consulta a tabela direto e calcula a distância aqui mesmo.
+    if(error) data = await _caixasPorTabela();
     _redeCaixas = data || [];
     await carregarVinculosRede();
     try{ localStorage.setItem('mtec_rede', JSON.stringify({em:Date.now(), pos:_redePos, caixas:_redeCaixas, vinc:_redeVinc})); }catch(e){}
@@ -912,9 +914,34 @@ async function carregarRede(){
   }catch(e){
     const cache=_redeCache();
     if(cache){ _redeCaixas=cache.caixas; _redeVinc=cache.vinc||[]; renderRede(true); toast('Sem conexão — mostrando o último download'); }
-    else { $('rede-info').textContent='Erro ao buscar'; toast('Erro: '+e.message, 3500); }
+    else {
+      const falta = /schema cache|does not exist|not find/i.test(e.message||'');
+      $('rede-info').innerHTML = falta
+        ? '<span style="color:var(--amb)">Rede ainda não publicada</span>'
+        : '<span style="color:var(--red)">Erro ao buscar</span>';
+      $('rede-lista').innerHTML = `<div class="empty"><div class="empty-ico">📡</div>
+        <div style="font-size:16px;font-weight:700;color:var(--tx);margin-bottom:6px">${falta?'Consulta de rede indisponível':'Não consegui buscar'}</div>
+        <div style="font-size:13px;line-height:1.6">${falta
+          ? 'O MoviFiber ainda não publicou a rede neste servidor. Avise o administrador.'
+          : _escR(e.message)}</div></div>`;
+    }
   }
   _redeCarregando = false;
+}
+/* fallback sem RPC: recorte por caixa envolvente + haversine no aparelho */
+async function _caixasPorTabela(){
+  const dLat = _redeRaio/111000, dLng = _redeRaio/(111000*Math.cos(_redePos.lat*Math.PI/180));
+  const { data, error } = await sb.from('movifiber_caixas').select('*')
+    .eq('tipo','cto')
+    .gte('lat', _redePos.lat-dLat).lte('lat', _redePos.lat+dLat)
+    .gte('lng', _redePos.lng-dLng).lte('lng', _redePos.lng+dLng)
+    .limit(200);
+  if(error) throw new Error(error.message);
+  return (data||[])
+    .map(c=>({ ...c, distancia_m:_haversine({lat:_redePos.lat,lng:_redePos.lng},{lat:+c.lat,lng:+c.lng})*1000 }))
+    .filter(c=>c.distancia_m<=_redeRaio)
+    .sort((a,b)=>a.distancia_m-b.distancia_m)
+    .slice(0,40);
 }
 async function carregarVinculosRede(){
   const ids = _redeCaixas.map(c=>c.caixa_id);
