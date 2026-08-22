@@ -870,6 +870,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <div class="dr-grupo" data-grupo="ferramentas">
       <button class="dr-item" onclick="abrirAnalise()"><span class="ic">📊</span> Análise de Rede</button>
       <button class="dr-item" onclick="abrirOcupacao()"><span class="ic">🎯</span> Ocupação de Fibras</button>
+      <button class="dr-item" onclick="abrirCampoPainel()"><span class="ic">📱</span> App do Técnico</button>
       <button class="dr-item" onclick="abrirTabelaPontos()"><span class="ic">📍</span> Tabela de Pontos</button>
       <button class="dr-item" onclick="exportarKMZ()"><span class="ic">🌍</span> Exportar KMZ</button>
       <button class="dr-item" onclick="abrirExpArea()"><span class="ic">📤</span> Exportar Área</button>
@@ -1855,6 +1856,7 @@ async function nuvemFlush(){
         continue;
       }
       if(resp&&resp.versao)p._versao=resp.versao;   // avança a base
+      publicarCampoAgendar();                       // o campo enxerga a rede nova
       NUVEM.ok=true;NUVEM.ultimoErro=null;
       atualizarBadgeNuvem('salvo');
     }catch(e){NUVEM.ok=false;NUVEM.ultimoErro=e.message;NUVEM.fila.add(id);atualizarBadgeNuvem('erro');console.warn('[nuvem] salvar:',e.message)}
@@ -6677,6 +6679,79 @@ function sinaisProjetados(){
 function _corPot(v){return _corRx(v)}
 
 /* ===================================================================
+   PUBLICAR PARA O CAMPO
+   O app do técnico não abre o projeto (grande, com trava de versão):
+   ele lê um resumo por caixa, já com a potência calculada aqui.
+   A ocupação de porta NÃO vai no resumo — vem viva do vínculo do
+   MoviOne, senão o técnico veria porta livre que já foi usada hoje.
+   =================================================================== */
+function montarSnapshotCampo(){
+  if(!projAtual)return [];
+  const S=sinaisProjetados();
+  const out=[];
+  projAtual.elementos.filter(e=>['cto','ceo','pop'].includes(e.tipo)&&e.lat!=null).forEach(e=>{
+    const projId=e._projId||projAtual.id;
+    const base={
+      projeto_id:String(projId),
+      projeto_nome:(DB.projetos.find(p=>p.id===projId)||{}).nome||projAtual.nome,
+      caixa_id:e.id, nome:e.nome, tipo:e.tipo, status:e.status||null,
+      lat:+e.lat, lng:+e.lng, endereco:e.endereco||e.obs||null,
+      splitter:e.splitter||null, portas_total:portasCTO(e.id)||0,
+      portas_inativas:portasInativas(e.id)||[]
+    };
+    if(e.tipo==='cto'){
+      const r=S.porCto.get(e.id);
+      if(r){
+        const entrada=r.nos.find(n=>n.id===e.id);
+        const somaPor=et=>r.passos.filter(p=>p.etapa===et).reduce((a,p)=>a+p.db,0);
+        Object.assign(base,{
+          pot_entrada_dbm:entrada?+entrada.potIn.toFixed(2):null,
+          pot_saida_dbm:+r.potCTO.toFixed(2),
+          rx_previsto_dbm:+r.rx.toFixed(2),
+          tx_real:!!r.txInfo.real,
+          olt_nome:r.olt?r.olt.nome:null, pon:r.pon||null,
+          cabo_nome:entrada&&entrada.cabo?((projAtual.cabos.find(c=>c.id===entrada.cabo)||{}).nome||null):null,
+          fibra:entrada&&entrada.fib||null,
+          perda_total_db:+(r.total+r.dropDb).toFixed(2),
+          perda_fibra_db:+somaPor('cabo').toFixed(2),
+          perda_splitter_db:+somaPor('splitter').toFixed(2),
+          perda_conector_db:+(somaPor('dio')+somaPor('olt')).toFixed(2)
+        });
+      }
+    }else{
+      const lst=(S.porCaixa.get(e.id)||[]).sort((a,b)=>a.potOut-b.potOut);
+      if(lst.length)Object.assign(base,{
+        pot_entrada_dbm:+lst[lst.length-1].potIn.toFixed(2),
+        pot_saida_dbm:+lst[0].potOut.toFixed(2),
+        tx_real:!!lst[0].real,
+        olt_nome:lst[0].olt?lst[0].olt.nome:null, pon:lst[0].pon||null
+      });
+    }
+    out.push(base);
+  });
+  return out;
+}
+let _pubCampoTimer=null;
+function publicarCampoAgendar(){
+  clearTimeout(_pubCampoTimer);
+  _pubCampoTimer=setTimeout(()=>publicarCampo(true),8000);   // agrupa edições seguidas
+}
+async function publicarCampo(silencioso){
+  if(!projAtual)return;
+  let caixas=[];
+  try{caixas=montarSnapshotCampo()}catch(e){if(!silencioso)toast('Falha ao montar o resumo: '+e.message,true);return}
+  if(!caixas.length){if(!silencioso)toast('Nada para publicar — o projeto não tem caixas',true);return}
+  try{
+    const ids=projAtual._multi?projAtual._ids:[projAtual.id];
+    const r=await nuvemCall({acao:'campo-publicar',projetos:ids,caixas});
+    if(!silencioso)toast('📡 '+(r&&r.gravadas||caixas.length)+' caixa(s) publicadas para o app do técnico');
+  }catch(e){
+    if(!silencioso)toast('Não consegui publicar: '+e.message,true);
+    else console.warn('[campo] publicar:',e.message);
+  }
+}
+
+/* ===================================================================
    ANÁLISE DE IMPACTO — quem cai se este cabo/fibra/caixa parar
    Reaproveita o caminho óptico já calculado por CTO (calcOrcamento):
    se o cabo (ou a fibra, ou a caixa) aparece no caminho, a CTO cai junto.
@@ -6855,6 +6930,43 @@ function fibrasDoCabo(caboId){
 const _OCUP_COR={servico:'#3CB371',fundida:'#5B9BFF',identificada:'#D4A027',livre:'#3A4050'};
 const _OCUP_NOME={servico:'em serviço',fundida:'fundida',identificada:'identificada',livre:'livre'};
 let _ocupOrd='ocupacao';
+/* ===== Acompanhamento do que o campo devolve ===== */
+async function abrirCampoPainel(){
+  const caixas=montarSnapshotCampo();
+  const cto=caixas.filter(c=>c.tipo==='cto');
+  const comSinal=cto.filter(c=>c.rx_previsto_dbm!=null).length;
+  abrirModalGenerico('📱 App do Técnico',`
+    <div class="cto-grid" style="margin-bottom:10px">
+      <div class="cto-cel"><span>Caixas a publicar</span><b>${caixas.length}</b></div>
+      <div class="cto-cel"><span>CTOs com sinal calculado</span><b style="color:${comSinal===cto.length?'#5FE0A0':'#E0913C'}">${comSinal}/${cto.length}</b></div>
+    </div>
+    <div class="info-box" style="margin-bottom:10px">O técnico abre <b>campo-cto.html</b>, o app localiza pelo GPS e mostra as CTOs num raio de <b>300 m</b> com portas livres, sinal projetado e clientes ligados. A publicação acontece sozinha a cada gravação; use o botão abaixo para forçar agora.</div>
+    <button class="btn" style="width:100%" onclick="publicarCampo(false)">📡 Publicar rede para o campo</button>
+    <div id="campo-retorno" style="margin-top:12px"><div style="color:var(--text-dim);font-size:12px">Carregando o que veio da rua…</div></div>`);
+  try{
+    const r=await nuvemCall({acao:'campo-retorno',projetos:projAtual._multi?projAtual._ids:[projAtual.id]});
+    const med=r.medicoes||[], pen=r.pendencias||[];
+    document.getElementById('campo-retorno').innerHTML=`
+      <div class="dr-sec">📏 Medições de campo (${med.length})</div>
+      ${med.length?`<table class="tbl"><thead><tr><th>Caixa</th><th>Ponto</th><th>Medido</th><th>Projetado</th><th>Técnico</th></tr></thead><tbody>
+        ${med.slice(0,20).map(m=>{
+          const c=caixas.find(x=>x.caixa_id===m.caixa_id);
+          const proj=c?(m.ponto==='entrada'?c.pot_entrada_dbm:c.pot_saida_dbm):null;
+          const dv=proj!=null?(+m.dbm-proj):null;
+          return `<tr><td><b>${_esc(m.caixa_nome||m.caixa_id)}</b><br><small style="color:var(--text-dim)">${new Date(m.criado_em).toLocaleString('pt-BR')}</small></td>
+            <td>${m.ponto}${m.porta?' '+m.porta:''}</td>
+            <td class="mono" style="color:${_corPot(+m.dbm)}">${(+m.dbm).toFixed(2)}</td>
+            <td class="mono">${proj!=null?proj.toFixed(2):'—'}${dv!=null?`<br><small style="color:${Math.abs(dv)>3?'#F87168':'var(--text-dim)'}">${dv>0?'+':''}${dv.toFixed(2)} dB</small>`:''}</td>
+            <td style="font-size:11.5px">${_esc(m.tecnico_nome||'—')}</td></tr>`}).join('')}
+        </tbody></table>`:'<div class="info-box">Nenhuma medição registrada ainda.</div>'}
+      <div class="dr-sec" style="margin-top:12px">⚠️ Divergências reportadas (${pen.filter(p=>!p.resolvido).length} abertas)</div>
+      ${pen.length?pen.slice(0,15).map(x=>`<div class="info-box" style="margin-bottom:6px;${x.resolvido?'opacity:.5':''}">
+        <b>${_esc(x.caixa_nome||'—')}</b> · ${_esc(x.tecnico_nome||'técnico')} · ${new Date(x.criado_em).toLocaleDateString('pt-BR')}<br>${_esc(x.descricao)}</div>`).join('')
+        :'<div class="info-box">Nenhuma divergência reportada.</div>'}`;
+  }catch(e){
+    document.getElementById('campo-retorno').innerHTML='<div class="info-box">Não consegui carregar o retorno do campo: '+_esc(e.message)+'</div>';
+  }
+}
 function abrirOcupacao(){
   const cabos=projAtual.cabos.map(c=>fibrasDoCabo(c.id)).filter(x=>x.cabo);
   const ord={ocupacao:(a,b)=>b.pct-a.pct,nome:(a,b)=>a.cabo.nome.localeCompare(b.cabo.nome,'pt-BR'),livres:(a,b)=>a.livres-b.livres}[_ocupOrd];
