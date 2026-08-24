@@ -951,22 +951,28 @@ async function _caixasPorTabela(){
     .sort((a,b)=>a.distancia_m-b.distancia_m)
     .slice(0,40);
 }
+function _mapVinc(x){
+  return { caixa_id:x.caixa_id, porta:x.porta, cliente_id:x.cliente_id,
+           nome:x.nome||'Cliente', login:x.login||'', ixc_id:x.ixc_id||null,
+           contrato:x.contrato||null, ativo:x.ativo, fone:x.fone||'',
+           endereco:x.endereco||'', origem:x.origem||null, vinculado_em:x.atualizado_em||null };
+}
+/* Os clientes vêm por RPC: o perfil "tecnico" não tem SELECT na tabela clientes
+   (a policy libera só admin/operador/visualizador). A função roda como definer e
+   devolve apenas os clientes das caixas dentro do raio. */
 async function carregarVinculosRede(){
-  const ids = _redeCaixas.map(c=>c.caixa_id);
-  if(!ids.length){ _redeVinc=[]; return; }
-  const { data } = await sb.from('ftth_cliente_instalacao')
-    .select('caixa_id,porta,cliente_id,origem,atualizado_em,clientes(razao,nome,ixc_login,ixc_id,ixc_status,status_contrato,whatsapp,tel1,endereco,numero,bairro,cidade,ativo)')
-    .in('caixa_id', ids);
-  _redeVinc = (data||[]).map(x=>{
-    const c = Array.isArray(x.clientes) ? x.clientes[0] : x.clientes;
-    return { caixa_id:x.caixa_id, porta:x.porta, cliente_id:x.cliente_id,
-             origem:x.origem||null, vinculado_em:x.atualizado_em||null,
-             nome:(c&&(c.razao||c.nome))||'Cliente', login:(c&&c.ixc_login)||'', ixc_id:(c&&c.ixc_id)||null,
-             ixc_status:(c&&c.ixc_status)||null, contrato:(c&&c.status_contrato)||null, ativo:(c&&c.ativo),
-             fone:(c&&(c.whatsapp||c.tel1))||'',
-             endereco:[(c&&c.endereco)||'', (c&&c.numero)||''].filter(Boolean).join(', ')
-                      + [(c&&c.bairro)?' — '+c.bairro:'', (c&&c.cidade)?'/'+c.cidade:''].join('') };
+  if(!_redeCaixas.length || !_redePos){ _redeVinc=[]; return; }
+  const { data, error } = await sb.rpc('campo_clientes_proximos', {
+    p_lat:_redePos.lat, p_lng:_redePos.lng, p_raio:_redeRaio
   });
+  if(error){ console.warn('[rede] clientes:', error.message); _redeVinc=[]; return; }
+  _redeVinc = (data||[]).map(_mapVinc);
+}
+/* recarrega só uma caixa (depois de vincular/liberar) */
+async function recarregarVincCaixa(caixaId){
+  const { data, error } = await sb.rpc('campo_clientes_caixa', { p_caixa_id: caixaId });
+  if(error){ console.warn('[rede] clientes caixa:', error.message); return; }
+  _redeVinc = _redeVinc.filter(v=>v.caixa_id!==caixaId).concat((data||[]).map(_mapVinc));
 }
 function _cliDaCx(id){ return _redeVinc.filter(c=>c.caixa_id===id); }
 function _livresCx(cx){
@@ -1050,16 +1056,16 @@ function abrirCTO(id){
     </div>
 
     <div class="row-sec">
-      <div class="row-sec-title">👥 Clientes ligados (${cls.length})</div>
-      ${cls.length?cls.map(c=>`
-        <div class="cli-row">
-          <span class="cli-nm"><span class="cli-dot" id="cdot-${c.cliente_id}"></span>${_escR(c.nome)}
-            <small>${c.login?_escR(c.login)+' · ':''}porta ${c.porta||'—'}</small></span>
+      <div class="row-sec-title">👥 Clientes vinculados (${cls.length})</div>
+      ${cls.length?cls.slice().sort((a,b)=>(a.porta||99)-(b.porta||99)).map(c=>`
+        <div class="cli-row" onclick="verPortaCTO(${c.porta||0})" style="cursor:pointer">
+          <span class="cli-nm"><span class="cli-dot" id="cdot-${c.cliente_id}"></span>${_escR(c.nome)} — Porta ${c.porta||'—'}
+            ${c.login?`<small>${_escR(c.login)}</small>`:''}</span>
           <span class="cli-sig" id="csig-${c.cliente_id}">—</span>
         </div>`).join('')
       :'<div style="padding:10px 12px;font-size:12.5px;color:var(--tx2)">Nenhum cliente vinculado a esta caixa.</div>'}
     </div>
-    ${cls.length?`<button class="btn-full btn-ghost" onclick="sinalClientesCTO()">📶 Ver status e sinal ao vivo</button>`:''}
+    ${cls.length?`<button class="btn-full btn-ghost" id="btn-sinal-cto" onclick="sinalClientesCTO()">📶 Atualizar status e sinal</button>`:''}
 
     <div style="display:flex;gap:8px;margin-top:10px">
       <a href="https://www.google.com/maps/dir/?api=1&destination=${cx.lat},${cx.lng}" target="_blank" rel="noopener"
@@ -1073,6 +1079,7 @@ function abrirCTO(id){
       Rede publicada em ${cx.atualizado_em?fmtDH(cx.atualizado_em):'—'} · consulta somente leitura
     </div>`;
   $('ov-cto').classList.add('open');
+  if(cls.length) sinalClientesCTO(true);   // status já aparece ao abrir
 }
 function fecharCTO(){ $('ov-cto').classList.remove('open'); }
 /* Clique na porta: livre → vincular o cliente da OS; ocupada → ver / liberar.
@@ -1210,7 +1217,7 @@ async function _vincular(porta, ident){
   if(error){ toast('Erro: '+error.message, 3800); return; }
   if(!data || data.ok===false){ toast(String((data&&data.erro)||'não foi possível vincular'), 4000); return; }
   fecharCTOForm();
-  await carregarVinculosRede();
+  await recarregarVincCaixa(_ctoSel.caixa_id);
   abrirCTO(_ctoSel.caixa_id);
   renderRede();
   toast('✅ '+(data.cliente||'Cliente')+' vinculado à porta '+porta, 3500);
@@ -1226,17 +1233,17 @@ async function liberarPortaCTO(porta){
   if(error){ toast('Erro: '+error.message, 3800); return; }
   if(!data || data.ok===false){ toast(String((data&&data.erro)||'não foi possível liberar'), 3500); return; }
   fecharCTOForm();
-  await carregarVinculosRede();
+  await recarregarVincCaixa(_ctoSel.caixa_id);
   abrirCTO(_ctoSel.caixa_id);
   renderRede();
   toast('Porta '+porta+' liberada');
 }
 /* status/sinal ao vivo pelo proxy do MoviFiber (mesma consulta do IXC) */
-async function sinalClientesCTO(){
+async function sinalClientesCTO(silencioso){
   if(!_ctoSel) return;
   const cls=_cliDaCx(_ctoSel.caixa_id).filter(c=>c.ixc_id);
-  if(!cls.length){ toast('Nenhum cliente com ID do IXC nesta caixa'); return; }
-  toast('Consultando o IXC…');
+  if(!cls.length){ if(!silencioso) toast('Nenhum cliente com ID do IXC nesta caixa'); return; }
+  if(!silencioso) toast('Consultando o IXC…');
   try{
     const { data:{ session } } = await sb.auth.getSession();
     const r = await fetch('/api/movifiber', {
@@ -1254,8 +1261,9 @@ async function sinalClientesCTO(){
       if(sig) sig.innerHTML = rx!=null ? `<span class="pot-${_potCls(rx)}">${rx.toFixed(1)} dBm</span>` : '—';
       if(dot){ if(st.online===true) dot.className='cli-dot on'; else if(st.online===false){ dot.className='cli-dot off'; off++; } }
     });
-    toast(off ? `${off} cliente(s) offline nesta caixa` : 'Todos online nesta caixa');
-  }catch(e){ toast('Sem status ao vivo: '+e.message, 3500); }
+    if(!silencioso) toast(off ? `${off} cliente(s) offline nesta caixa` : 'Todos online nesta caixa');
+    else if(off) toast(`⚠️ ${off} cliente(s) offline nesta caixa`, 3200);
+  }catch(e){ if(!silencioso) toast('Sem status ao vivo: '+e.message, 3500); }
 }
 
 /* ---------- retorno para o projeto ---------- */
