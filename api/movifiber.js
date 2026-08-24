@@ -196,7 +196,28 @@ async function campoPublicar(projetos, caixas, usuario) {
 
   const quando = new Date().toISOString();
   const quem = usuario ? (usuario.nome || usuario.email || null) : null;
-  const linhas = caixas.map(c => ({ ...c, atualizado_em: quando, atualizado_por: quem }));
+
+  // PostgREST exige que TODAS as linhas do lote tenham o mesmo conjunto de chaves
+  // (PGRST102 "All object keys must match"). CTO com sinal traz campos que CEO/POP
+  // nao tem, entao normalizamos: uniao das chaves, faltantes viram null.
+  const COLUNAS = [
+    'projeto_id','projeto_nome','caixa_id','nome','tipo','status','lat','lng','endereco','splitter',
+    'portas_total','portas_inativas','pot_entrada_dbm','pot_saida_dbm','rx_previsto_dbm','tx_real',
+    'olt_nome','pon','cabo_nome','fibra','perda_total_db','perda_fibra_db','perda_splitter_db',
+    'perda_conector_db','observacao'
+  ];
+  const linhas = caixas.map(c => {
+    const linha = {};
+    for (const k of COLUNAS) linha[k] = (c[k] === undefined ? null : c[k]);
+    linha.portas_inativas = Array.isArray(c.portas_inativas) ? c.portas_inativas : [];
+    linha.portas_total = c.portas_total == null ? 0 : c.portas_total;
+    linha.tx_real = c.tx_real === true;
+    linha.atualizado_em = quando;
+    linha.atualizado_por = quem;
+    return linha;
+  }).filter(l => l.projeto_id && l.caixa_id && l.nome && l.lat != null && l.lng != null);
+
+  if (!linhas.length) throw new Error('nenhuma caixa valida (falta id, nome ou coordenada)');
 
   let gravadas = 0;
   for (let i = 0; i < linhas.length; i += 500) {
@@ -206,7 +227,7 @@ async function campoPublicar(projetos, caixas, usuario) {
       headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify(lote)
     });
-    if (!r.ok) throw new Error('Supabase INSERT HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+    if (!r.ok) throw new Error('Supabase INSERT HTTP ' + r.status + ': ' + (await r.text()).slice(0, 300));
     gravadas += lote.length;
   }
   return { ok: true, gravadas, projetos: ids, em: quando };
