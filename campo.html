@@ -1025,7 +1025,7 @@ function abrirCTO(id){
       :(rx!=null&&_potCls(rx)==='warn'?`<div class="alert warn" style="margin-top:12px">⚠️ Previsto no limite (${rx.toFixed(1)} dBm). Drop longo aqui pode derrubar o cliente.</div>`:'')}
 
     <div class="row-sec" style="margin-top:14px">
-      <div class="row-sec-title">🔌 Portas — ${_livresCx(cx)} livre(s) de ${tot}</div>
+      <div class="row-sec-title">🔌 Portas — ${_livresCx(cx)} livre(s) de ${tot}${_aberta?' · toque numa livre para vincular a OS':''}</div>
       <div style="padding:12px">
         ${tot?`<div class="port-grid">${portas}</div>
           <div class="port-leg">
@@ -1062,11 +1062,91 @@ function abrirCTO(id){
   $('ov-cto').classList.add('open');
 }
 function fecharCTO(){ $('ov-cto').classList.remove('open'); }
+/* Clique na porta: livre → vincular o cliente da OS; ocupada → ver / liberar.
+   O vínculo é gravado no cadastro do cliente (ftth_cliente_instalacao), que é a
+   mesma fonte que o MoviFiber lê — sem tocar no projeto. */
 function verPortaCTO(p){
   if(!_ctoSel) return;
   if((_ctoSel.portas_inativas||[]).includes(p)){ toast('Porta '+p+' está desativada no projeto'); return; }
   const c=_cliDaCx(_ctoSel.caixa_id).find(x=>x.porta===p);
-  toast(c ? (c.nome + (c.login?' · '+c.login:'')) : ('Porta '+p+' livre — pode usar nesta instalação'), 3200);
+  const os=_aberta;
+  const podeOS = os && (os.cliente_id || os.login_cliente);
+
+  $('ctof-title').textContent = 'Porta '+String(p).padStart(2,'0')+' · '+_ctoSel.nome;
+  if(c){
+    $('ctof-body').innerHTML = `
+      <div class="alert">
+        <b>${_escR(c.nome)}</b><br>${c.login?_escR(c.login)+' · ':''}porta ${p} ocupada</div>
+      ${podeOS && String(os.cliente_id)===String(c.ixc_id||'')
+        ? '<div class="alert warn">Este é o cliente da OS aberta — a porta já está vinculada a ele.</div>' : ''}
+      <button class="btn-full btn-ghost" onclick="liberarPortaCTO(${p})">🔓 Liberar esta porta (vínculo errado)</button>
+      <button class="btn-full btn-ghost" onclick="fecharCTOForm()">Fechar</button>`;
+  }else{
+    $('ctof-body').innerHTML = `
+      <div class="alert">
+        Porta <b>${p}</b> livre — pode usar nesta instalação.</div>
+      ${podeOS
+        ? `<button class="btn-full" style="background:var(--ac);color:#fff" onclick="vincularPortaOS(${p})">
+             🔗 Vincular <b>${_escR((os.cliente||'cliente da OS').split('(')[0].trim())}</b> nesta porta</button>`
+        : `<div class="alert warn">Nenhuma OS aberta. Abra a OS do cliente em <b>Minhas OS</b> e volte aqui — ou busque o cliente abaixo.</div>`}
+      <label class="flabel" style="margin-top:12px">Ou buscar outro cliente (nome, login ou ID do IXC)</label>
+      <input class="finput" id="vinc-busca" placeholder="mínimo 3 letras" oninput="buscarClienteVinc(${p})">
+      <div id="vinc-res" style="margin-top:8px"></div>`;
+  }
+  $('ov-cto-form').classList.add('open');
+}
+
+async function vincularPortaOS(porta){
+  const os=_aberta;
+  if(!os){ toast('Nenhuma OS aberta'); return; }
+  await _vincular(porta, { p_ixc_id: os.cliente_id ? String(os.cliente_id) : null,
+                           p_login: os.login_cliente || null, p_os_id: os.id || null });
+}
+async function buscarClienteVinc(porta){
+  const termo=$('vinc-busca').value.trim();
+  const box=$('vinc-res');
+  if(termo.length<3){ box.innerHTML=''; return; }
+  const { data, error } = await sb.rpc('campo_buscar_cliente', { p_termo: termo });
+  if(error){ box.innerHTML='<div class="alert red">'+_escR(error.message)+'</div>'; return; }
+  if(!data || !data.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--tx2);padding:8px 2px">Nenhum cliente encontrado.</div>'; return; }
+  box.innerHTML = data.map(c=>`
+    <div class="cli-row" style="cursor:pointer" onclick="_vincular(${porta},{p_cliente_id:${c.cliente_id}})">
+      <span class="cli-nm">${_escR(c.nome)}
+        <small>${c.login?_escR(c.login):'sem login'}${c.caixa_atual?' · hoje em '+_escR(c.caixa_atual)+' porta '+(c.porta_atual||'—'):''}</small></span>
+      <span class="cli-sig">vincular →</span>
+    </div>`).join('');
+}
+async function _vincular(porta, ident){
+  ld(true);
+  const { data, error } = await sb.rpc('campo_vincular_porta', Object.assign({
+    p_caixa_id:_ctoSel.caixa_id, p_porta:porta, p_caixa_nome:_ctoSel.nome,
+    p_projeto:_ctoSel.projeto_id, p_tecnico_nome:_tec.nome,
+    p_cliente_id:null, p_ixc_id:null, p_login:null, p_os_id:(_aberta&&_aberta.id)||null
+  }, ident));
+  ld(false);
+  if(error){ toast('Erro: '+error.message, 3800); return; }
+  if(!data || data.ok===false){ toast(String((data&&data.erro)||'não foi possível vincular'), 4000); return; }
+  fecharCTOForm();
+  await carregarVinculosRede();
+  abrirCTO(_ctoSel.caixa_id);
+  renderRede();
+  toast('✅ '+(data.cliente||'Cliente')+' vinculado à porta '+porta, 3500);
+}
+async function liberarPortaCTO(porta){
+  if(!confirm('Liberar a porta '+porta+'?\n\nO vínculo do cliente com esta caixa será apagado e o projeto receberá um aviso.')) return;
+  ld(true);
+  const { data, error } = await sb.rpc('campo_liberar_porta', {
+    p_caixa_id:_ctoSel.caixa_id, p_porta:porta, p_projeto:_ctoSel.projeto_id,
+    p_caixa_nome:_ctoSel.nome, p_tecnico_id:_tec.id, p_tecnico_nome:_tec.nome, p_motivo:null
+  });
+  ld(false);
+  if(error){ toast('Erro: '+error.message, 3800); return; }
+  if(!data || data.ok===false){ toast(String((data&&data.erro)||'não foi possível liberar'), 3500); return; }
+  fecharCTOForm();
+  await carregarVinculosRede();
+  abrirCTO(_ctoSel.caixa_id);
+  renderRede();
+  toast('Porta '+porta+' liberada');
 }
 /* status/sinal ao vivo pelo proxy do MoviFiber (mesma consulta do IXC) */
 async function sinalClientesCTO(){
