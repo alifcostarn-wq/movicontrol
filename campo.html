@@ -352,6 +352,14 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 .cli-dot{width:7px;height:7px;border-radius:50%;background:var(--tx3);flex-shrink:0;display:inline-block;margin-right:7px}
 .cli-dot.on{background:var(--ac)} .cli-dot.off{background:var(--red)}
 .cli-sig{font-family:monospace;font-size:12px;color:var(--tx3);flex-shrink:0;text-align:right}
+.cli-ficha{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.cli-ficha-nome{font-size:17px;font-weight:800;line-height:1.2}
+.cli-ficha-sub{font-size:12px;color:var(--tx2);margin-top:3px;font-family:monospace}
+.cli-ficha-end{font-size:12px;color:var(--tx2);margin-top:6px;line-height:1.45}
+.cli-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cli-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:7px;border:1px solid var(--bd);color:var(--tx3);white-space:nowrap}
+.cli-tag.on{border-color:var(--ac);color:var(--ac);background:var(--ac2)}
+.cli-tag.off{border-color:var(--red);color:var(--red);background:var(--red-bg)}
 .vtabs{display:flex;gap:6px;background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:14px}
 .vtab{flex:1;padding:9px 6px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
 .vtab.on{background:var(--ac);color:#fff}
@@ -947,12 +955,17 @@ async function carregarVinculosRede(){
   const ids = _redeCaixas.map(c=>c.caixa_id);
   if(!ids.length){ _redeVinc=[]; return; }
   const { data } = await sb.from('ftth_cliente_instalacao')
-    .select('caixa_id,porta,cliente_id,clientes(razao,ixc_login,ixc_id)')
+    .select('caixa_id,porta,cliente_id,origem,atualizado_em,clientes(razao,nome,ixc_login,ixc_id,ixc_status,status_contrato,whatsapp,tel1,endereco,numero,bairro,cidade,ativo)')
     .in('caixa_id', ids);
   _redeVinc = (data||[]).map(x=>{
     const c = Array.isArray(x.clientes) ? x.clientes[0] : x.clientes;
     return { caixa_id:x.caixa_id, porta:x.porta, cliente_id:x.cliente_id,
-             nome:(c&&c.razao)||'Cliente', login:(c&&c.ixc_login)||'', ixc_id:(c&&c.ixc_id)||null };
+             origem:x.origem||null, vinculado_em:x.atualizado_em||null,
+             nome:(c&&(c.razao||c.nome))||'Cliente', login:(c&&c.ixc_login)||'', ixc_id:(c&&c.ixc_id)||null,
+             ixc_status:(c&&c.ixc_status)||null, contrato:(c&&c.status_contrato)||null, ativo:(c&&c.ativo),
+             fone:(c&&(c.whatsapp||c.tel1))||'',
+             endereco:[(c&&c.endereco)||'', (c&&c.numero)||''].filter(Boolean).join(', ')
+                      + [(c&&c.bairro)?' — '+c.bairro:'', (c&&c.cidade)?'/'+c.cidade:''].join('') };
   });
 }
 function _cliDaCx(id){ return _redeVinc.filter(c=>c.caixa_id===id); }
@@ -1074,13 +1087,40 @@ function verPortaCTO(p){
 
   $('ctof-title').textContent = 'Porta '+String(p).padStart(2,'0')+' · '+_ctoSel.nome;
   if(c){
+    const daOS = podeOS && (String(os.cliente_id)===String(c.ixc_id||'') || (os.login_cliente||'').toLowerCase()===(c.login||'').toLowerCase());
+    const fone = String(c.fone||'').replace(/\D/g,'');
+    const rxPrev = _n(_ctoSel.rx_previsto_dbm);
     $('ctof-body').innerHTML = `
-      <div class="alert">
-        <b>${_escR(c.nome)}</b><br>${c.login?_escR(c.login)+' · ':''}porta ${p} ocupada</div>
-      ${podeOS && String(os.cliente_id)===String(c.ixc_id||'')
-        ? '<div class="alert warn">Este é o cliente da OS aberta — a porta já está vinculada a ele.</div>' : ''}
+      <div class="cli-ficha">
+        <div class="cli-ficha-nome">${_escR(c.nome)}</div>
+        <div class="cli-ficha-sub">${c.login?_escR(c.login):'sem login'}${c.ixc_id?' · ID '+_escR(c.ixc_id):''} · porta ${p}</div>
+        ${c.endereco?`<div class="cli-ficha-end">📍 ${_escR(c.endereco)}</div>`:''}
+        <div class="cli-tags">
+          <span class="cli-tag ${c.ativo===false?'off':'on'}">${c.ativo===false?'Cadastro inativo':'Cadastro ativo'}</span>
+          ${c.contrato?`<span class="cli-tag">${_escR(c.contrato)}</span>`:''}
+          ${c.origem?`<span class="cli-tag">vínculo: ${_escR(c.origem)}</span>`:''}
+          ${daOS?'<span class="cli-tag on">cliente desta OS</span>':''}
+        </div>
+      </div>
+
+      <div class="row-sec" style="margin-top:12px">
+        <div class="row-sec-title">📶 Conexão agora</div>
+        <div id="cliport-diag" style="padding:12px">
+          <div style="font-size:12.5px;color:var(--tx2)">Consultando o IXC…</div>
+        </div>
+      </div>
+
+      <div class="diag-grid" style="margin-top:10px">
+        <div class="diag-cell"><div class="diag-cell-l">Sinal previsto nesta CTO</div>
+          <div class="diag-cell-v ${rxPrev!=null?'pot-'+_potCls(rxPrev):''}">${rxPrev!=null?rxPrev.toFixed(1)+' dBm':'—'}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">Vinculado em</div>
+          <div class="diag-cell-v" style="font-size:11.5px">${c.vinculado_em?fmtDH(c.vinculado_em):'—'}</div></div>
+      </div>
+
+      ${fone?`<a class="btn-full btn-blu" style="text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px" href="https://wa.me/55${fone}" target="_blank" rel="noopener">💬 WhatsApp ${_escR(c.fone)}</a>`:''}
       <button class="btn-full btn-ghost" onclick="liberarPortaCTO(${p})">🔓 Liberar esta porta (vínculo errado)</button>
       <button class="btn-full btn-ghost" onclick="fecharCTOForm()">Fechar</button>`;
+    diagClientePorta(c);
   }else{
     $('ctof-body').innerHTML = `
       <div class="alert">
@@ -1094,6 +1134,49 @@ function verPortaCTO(p){
       <div id="vinc-res" style="margin-top:8px"></div>`;
   }
   $('ov-cto-form').classList.add('open');
+}
+
+/* Status ao vivo do cliente que está na porta — mesma consulta do diagnóstico
+   da OS (radusuarios por id_cliente), só que sem sair da ficha da CTO. */
+async function diagClientePorta(c){
+  const box=$('cliport-diag'); if(!box) return;
+  if(!c.ixc_id){ box.innerHTML='<div style="font-size:12.5px;color:var(--tx2)">Cliente sem ID do IXC — não dá para consultar a conexão.</div>'; return; }
+  try{
+    const d = await ixcCall('radusuarios', { qtype:'radusuarios.id_cliente', query:String(c.ixc_id), oper:'=', rp:'20' });
+    const regs = d.registros||[];
+    if(!regs.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--tx2)">Nenhuma sessão encontrada para este cliente.</div>'; return; }
+    const r = regs.find(x=>x.online==='S') || regs[0];
+    const on = r.online==='S';
+    const q  = parseInt(r.count_desconexao||0);
+    const rx = _n(r.potencia_rx ?? r.rx_power ?? r.sinal_rx ?? r.onu_rx);
+    const seg = parseInt(r.tempo_conectado||0);
+    const tempo = seg ? [Math.floor(seg/86400)?Math.floor(seg/86400)+'d':'',
+                         Math.floor((seg%86400)/3600)?Math.floor((seg%86400)/3600)+'h':'',
+                         Math.floor((seg%3600)/60)?Math.floor((seg%3600)/60)+'m':''].filter(Boolean).join(' ') : '';
+    const rxPrev = _n(_ctoSel.rx_previsto_dbm);
+    const dv = (rx!=null && rxPrev!=null) ? (rx-rxPrev) : null;
+    box.innerHTML = `
+      <div class="diag-stat" style="margin-bottom:10px">
+        <span class="dg-dot ${on?'on':'off'}"></span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">${on?'🟢 Online':'🔴 Offline'}</div>
+          ${tempo?`<div style="font-size:11px;color:var(--tx3)">Conectado há ${tempo}</div>`:''}
+        </div>
+        ${rx!=null?`<div class="pot-${_potCls(rx)}" style="font-family:monospace;font-weight:700">${rx.toFixed(1)} dBm</div>`:''}
+      </div>
+      <div class="diag-grid">
+        <div class="diag-cell"><div class="diag-cell-l">IP atual</div><div class="diag-cell-v" style="font-size:12px">${r.ip||r.ip_aviso||'—'}</div></div>
+        <div class="diag-cell"><div class="diag-cell-l">Quedas</div><div class="diag-cell-v" style="color:${q>=3?'var(--red)':q>=1?'var(--amb)':'var(--ac)'}">${q}</div></div>
+        ${r.onu_mac?`<div class="diag-cell"><div class="diag-cell-l">MAC da ONU</div><div class="diag-cell-v" style="font-size:11px">${r.onu_mac}</div></div>`:''}
+        ${r.mac?`<div class="diag-cell"><div class="diag-cell-l">MAC do equipamento</div><div class="diag-cell-v" style="font-size:11px">${r.mac}</div></div>`:''}
+        ${r.id_caixa_ftth?`<div class="diag-cell"><div class="diag-cell-l">Caixa no IXC</div><div class="diag-cell-v" style="font-size:11px">${r.id_caixa_ftth}</div></div>`:''}
+        ${r.conexao?`<div class="diag-cell"><div class="diag-cell-l">Conexão / VLAN</div><div class="diag-cell-v" style="font-size:11px">${r.conexao}</div></div>`:''}
+      </div>
+      ${dv!=null?`<div class="alert ${Math.abs(dv)>3?'warn':''}" style="margin-top:10px">Medido ${rx.toFixed(1)} dBm · previsto ${rxPrev.toFixed(1)} dBm · desvio <b>${dv>0?'+':''}${dv.toFixed(1)} dB</b>${Math.abs(dv)>3?' — acima de 3 dB, verificar drop e conectores':''}</div>`:''}
+      ${(!on&&r.motivo_desconexao)?`<div class="alert warn" style="margin-top:10px">Última desconexão: ${r.motivo_desconexao}</div>`:''}`;
+  }catch(e){
+    box.innerHTML='<div style="font-size:12.5px;color:var(--tx2)">Não consegui consultar o IXC: '+_escR(e.message)+'</div>';
+  }
 }
 
 async function vincularPortaOS(porta){
