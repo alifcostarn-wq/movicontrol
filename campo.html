@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>moviTec</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Nunito:wght@800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
@@ -15,39 +16,73 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
-  --bg:#F4F3EF;--sf:#FFF;--sf2:#F9F8F6;--bd:#E4E2DC;
-  --tx:#1A1916;--tx2:#6B6861;--tx3:#A8A59E;
-  --ac:#1A5C3A;--ac2:#E8F2ED;
-  --red:#C23B2A;--red-bg:#FBF0EE;
-  --amb:#8A6200;--amb-bg:#FDF6E3;
-  --blu:#1A5CA0;--blu-bg:#EDF3FB;
-  --pur:#6B2FBB;--pur-bg:rgba(107,47,187,.1);
+  /* Identidade moviTec — o código ABNT das fibras é a linguagem visual do app */
+  --bg:#F1F3EE;--sf:#FFF;--sf2:#E7EAE3;--bd:#D6DBD1;
+  --tx:#0B0F12;--tx2:#59615A;--tx3:#8C948B;
+  --ac:#0E8A54;--ac2:#DFF2E8;
+  --red:#A6231F;--red-bg:#FBE3E2;
+  --amb:#8A5A00;--amb-bg:#FBEFD6;
+  --blu:#14508C;--blu-bg:#E1EBF7;
+  --pur:#5B3E8E;--pur-bg:#EDE6F7;
   --safe-top:env(safe-area-inset-top,0px);
   --safe-bot:env(safe-area-inset-bottom,0px);
+  /* 12 cores oficiais da bandeja, na ordem */
+  --f1:#00A651;--f2:#FFD800;--f3:#F2F2F2;--f4:#0072CE;--f5:#E4002B;--f6:#7D3F98;
+  --f7:#7B4A12;--f8:#F2A2C0;--f9:#1A1A1A;--f10:#9EA2A2;--f11:#F58220;--f12:#7FD4C1;
 }
 body.dk{
-  --bg:#0E1117;--sf:#181C27;--sf2:#1E2333;--bd:#262D40;
-  --tx:#E2E0DB;--tx2:#8A8799;--tx3:#4E4C58;
-  --ac:#3CB371;--ac2:#142A1C;
-  --red:#E05445;--red-bg:#28160F;
-  --amb:#D4A027;--amb-bg:#271E0A;
-  --blu:#4A8FD9;--blu-bg:#0D1825;
-  --pur:#9B5FEB;--pur-bg:rgba(155,95,235,.15);
+  --bg:#0B0F12;--sf:#131A1E;--sf2:#1B242A;--bd:#26333A;
+  --tx:#E8EEEA;--tx2:#9AA7A0;--tx3:#697770;
+  --ac:#17B26A;--ac2:#0E2A1D;
+  --red:#E5484D;--red-bg:#2E1516;
+  --amb:#F5A524;--amb-bg:#2C2210;
+  --blu:#4E9BF0;--blu-bg:#101F2E;
+  --pur:#B08AE8;--pur-bg:#1F1830;
 }
 html,body{height:100%;overflow:hidden}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);display:flex;flex-direction:column}
+body{font-family:'Inter Tight','DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--tx);
+  display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+/* três papéis tipográficos: Archivo dá o peso, Inter Tight lê, Mono é instrumento */
+.dp{font-family:'Archivo',sans-serif;letter-spacing:-.02em}
+.mn,.card-login,.diag-cell-v,.cli-sig,.cx-dist,.ocp-tag{font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-variant-numeric:tabular-nums}
 
 /* ---- TOPBAR ---- */
 .topbar{
+  position:relative;
   background:var(--sf);border-bottom:1px solid var(--bd);
   padding:calc(var(--safe-top) + 10px) 16px 10px;
   display:flex;align-items:center;justify-content:space-between;
   flex-shrink:0;position:sticky;top:0;z-index:20;
 }
-.topbar-brand{font-family:'Nunito',sans-serif;font-weight:900;font-size:18px;color:var(--ac)}
+.topbar-brand{display:flex;align-items:center;gap:9px;font-family:'Archivo',sans-serif;font-weight:800;
+  font-size:19px;letter-spacing:-.04em;color:var(--tx)}
+.topbar-brand span{color:var(--ac)}
+.espinha{display:flex;flex-direction:column;gap:1.5px;flex-shrink:0}
+.espinha i{display:block;width:14px;height:2px;border-radius:1px}
+.espinha i:nth-child(1){background:var(--f1)}.espinha i:nth-child(2){background:var(--f2)}
+.espinha i:nth-child(3){background:var(--f5)}.espinha i:nth-child(4){background:var(--f4)}
 .topbar-right{display:flex;align-items:center;gap:6px}
 .topbar-user{font-size:11px;color:var(--tx2);font-weight:500;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ico-btn{width:36px;height:36px;border-radius:9px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px}
+.tb-estado{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;
+  font-weight:500;letter-spacing:.06em;color:var(--tx2);background:var(--sf2);border-radius:20px;padding:6px 10px}
+.tb-estado i{width:6px;height:6px;border-radius:50%;background:var(--ac);box-shadow:0 0 0 3px var(--ac2)}
+.tb-estado.off i{background:var(--amb);box-shadow:0 0 0 3px var(--amb-bg)}
+.tb-conta{display:flex;align-items:center;gap:8px;background:var(--sf2);border:none;border-radius:22px;
+  padding:4px 11px 4px 4px;min-height:38px;cursor:pointer;font-family:inherit}
+.tb-conta:active{opacity:.75}
+.tb-av{width:29px;height:29px;border-radius:9px;background:var(--ac);color:#fff;font-weight:800;font-size:13px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tb-menu{display:none;position:absolute;top:calc(100% - 4px);right:12px;z-index:60;min-width:206px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:6px;box-shadow:0 18px 42px rgba(0,0,0,.24)}
+.tb-menu.open{display:block}
+.tb-menu button{width:100%;display:flex;align-items:center;gap:10px;padding:12px;border:none;background:none;
+  color:var(--tx);font-size:13.5px;font-weight:600;text-align:left;border-radius:10px;cursor:pointer;font-family:inherit}
+.tb-menu button:active{background:var(--sf2)}
+.tb-menu button.sair{color:var(--red)}
+.tb-menu hr{border:none;height:1px;background:var(--bd);margin:5px 6px}
+
 
 /* ---- SCROLL CONTAINER ---- */
 #main-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--safe-bot) + 80px)}
@@ -221,6 +256,61 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 .btn-blu{background:var(--blu);color:#fff}
 .btn-amb{background:var(--amb);color:#fff}
 
+/* ═══════════════════════════════════════════════════════════════════
+   IDENTIDADE — rabicho de fibra, tipografia de instrumento e superfícies
+   O rabicho (faixa de 5px à esquerda) codifica o estado do item, do mesmo
+   jeito que a cor da fibra identifica a posição na bandeja.
+   ═══════════════════════════════════════════════════════════════════ */
+.rab{position:relative;overflow:hidden;padding-left:5px}
+.rab:before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--rab,var(--bd))}
+.rab.s-aberta{--rab:var(--f4)}
+.rab.s-novo{--rab:var(--f4)}
+.rab.s-assumida{--rab:var(--f2)}
+.rab.s-atribuido{--rab:var(--f2)}
+.rab.s-executando,.rab.s-andamento{--rab:var(--f11)}
+.rab.s-finalizada,.rab.s-concluida{--rab:var(--f1)}
+.rab.s-cancelada{--rab:var(--f10)}
+.rab.s-reagendada{--rab:var(--f6)}
+.rab.urgente{--rab:var(--f5)}
+/* OS em execução: a faixa pulsa como sinal passando na fibra */
+.rab.s-executando:before,.rab.s-andamento:before{
+  background:linear-gradient(180deg,var(--f2),var(--f11));animation:pulso-fibra 2.6s ease-in-out infinite}
+@keyframes pulso-fibra{0%,100%{opacity:.55}50%{opacity:1}}
+
+.card{border-radius:14px}
+.card-num{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--tx3)}
+.card-title{font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;letter-spacing:-.02em;line-height:1.22}
+.card-login{font-family:'JetBrains Mono',monospace}
+.st{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;border-radius:6px;padding:4px 8px}
+.st-dot{display:none}
+.prio{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase}
+
+/* cartões da rota seguem a mesma gramática */
+.rota-card{border-radius:14px}
+.rota-cli{font-family:'Archivo',sans-serif;font-weight:700;font-size:15px;letter-spacing:-.02em}
+.rota-num{font-family:'Archivo',sans-serif;font-weight:800;border-radius:9px}
+.rota-kpi-n,.kpi-n{font-family:'Archivo',sans-serif;font-weight:800;letter-spacing:-.03em}
+.kpi-l,.rota-kpi-l{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.07em;text-transform:uppercase}
+.rota-tag{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.05em}
+
+/* filtros viram chaves, não pílulas coloridas */
+.fil{border-radius:9px;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:500;
+  letter-spacing:.05em;text-transform:uppercase;min-height:36px;padding:8px 13px}
+.fil.on{background:var(--tx);border-color:var(--tx);color:var(--bg)}
+
+/* botões */
+.btn-full{border-radius:12px;min-height:50px;font-size:14.5px;letter-spacing:-.01em}
+.btn-green{background:var(--ac)}
+.cta{font-family:'Inter Tight',sans-serif;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+
+/* folhas */
+.sheet{border-radius:20px 20px 0 0}
+.sheet-title{font-family:'Archivo',sans-serif;font-weight:700;font-size:20px;letter-spacing:-.025em;line-height:1.18}
+.sheet-sub{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.05em}
+.row-sec-title{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em}
+.diag-cell-l{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase}
+
 /* ---- ALERTA ---- */
 .alert{border-left:3px solid var(--ac);background:var(--ac2);border-radius:0 9px 9px 0;padding:10px 12px;font-size:12.5px;color:var(--ac);margin-bottom:14px;line-height:1.5}
 .alert.warn{border-color:var(--amb);background:var(--amb-bg);color:var(--amb)}
@@ -285,7 +375,10 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 #ls{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:200;padding:20px}
 #ls.hide{display:none}
 .lbox{background:var(--sf);border:1px solid var(--bd);border-radius:18px;padding:28px 24px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.12)}
-.llogo{font-family:'Nunito',sans-serif;font-weight:900;font-size:28px;color:var(--ac);text-align:center;margin-bottom:4px}
+.llogo{font-family:'Archivo',sans-serif;font-weight:800;font-size:30px;letter-spacing:-.045em;color:var(--tx);
+  text-align:center;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:11px}
+.llogo span{color:var(--ac)}
+.llogo .espinha i{width:18px;height:2.5px}
 .lsub{text-align:center;font-size:13px;color:var(--tx3);margin-bottom:24px}
 .lfield{margin-bottom:14px}
 .llabel{font-size:11.5px;font-weight:600;color:var(--tx2);display:block;margin-bottom:5px}
@@ -311,37 +404,47 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 /* ---- TABS (Minhas OS / Meu Estoque) ---- */
 /* ---- REDE / CTOs ---- */
 .rede-bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
-.cx-card{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:13px 14px;
+.cx-card{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:13px 14px 13px 17px;
   display:flex;align-items:center;gap:12px;margin-bottom:9px;cursor:pointer}
+.cx-card.vaga{--rab:var(--f1)} .cx-card.quase{--rab:var(--f2)} .cx-card.cheia{--rab:var(--f5)}
 .cx-card:active{opacity:.85}
-.cx-nome{font-weight:700;font-size:15px}
+.cx-nome{font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;letter-spacing:-.02em}
 .cx-sub{font-size:11.5px;color:var(--tx2);margin-top:2px}
 .cx-dist{font-family:monospace;font-size:11px;color:var(--tx3);margin-top:3px}
 .cx-dist.longe{color:var(--amb);font-weight:700}
 .cx-livres{flex-shrink:0;text-align:center;min-width:60px}
-.cx-livres b{display:block;font-size:23px;line-height:1;font-weight:800}
-.cx-livres span{font-size:9.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
+.cx-livres b{display:block;font-family:'Archivo',sans-serif;font-size:26px;line-height:1;font-weight:800;letter-spacing:-.03em}
+.cx-livres span{font-family:'JetBrains Mono',monospace;font-size:8.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em}
 .pot-ok{color:var(--ac)} .pot-warn{color:var(--amb)} .pot-bad{color:var(--red)} .pot-vazio{color:var(--tx3)}
 .budget{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:14px;
   display:flex;gap:14px;align-items:center;margin-bottom:10px}
-.gauge{width:66px;height:66px;border-radius:50%;border:3px solid var(--ac);flex-shrink:0;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace}
-.gauge b{font-size:15px;line-height:1;font-weight:700}
-.gauge span{font-size:8.5px;opacity:.75;margin-top:1px}
-.gauge.warn{border-color:var(--amb)} .gauge.bad{border-color:var(--red)} .gauge.vazio{border-color:var(--bd)}
+.gauge{position:relative;width:78px;height:78px;border-radius:50%;border:none;background:var(--sf2);
+  flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace}
+.gauge:before{content:'';position:absolute;inset:5px;border-radius:50%;border:2px solid var(--ac);opacity:.9}
+.gauge b{font-size:16px;line-height:1;font-weight:700}
+.gauge span{font-size:8.5px;color:var(--tx3);margin-top:2px}
+.gauge.warn:before{border-color:var(--amb)} .gauge.bad:before{border-color:var(--red)}
+.gauge.vazio:before{border-color:var(--bd)}
 .budget-det b{display:block;font-size:13px}
 .budget-det span{display:block;font-size:11.5px;color:var(--tx2);margin-top:2px}
 .breakdown{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--tx2);
   padding:10px 12px;background:var(--sf2);border:1px solid var(--bd);border-radius:10px}
 .breakdown div{display:flex;justify-content:space-between}
 .breakdown div.tot{color:var(--tx);font-weight:700;border-top:1px solid var(--bd);padding-top:5px;margin-top:2px}
-.port-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-@media(min-width:420px){.port-grid{grid-template-columns:repeat(6,1fr)}}
-.port{aspect-ratio:1;min-height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-family:monospace;font-size:14px;font-weight:700;cursor:pointer;border:1px solid transparent}
-.port.free{background:var(--sf2);color:var(--tx3);border:1px dashed var(--bd)}
-.port.used{background:var(--ac);color:#fff}
-.port.off{background:var(--red-bg);color:var(--red);border-color:var(--red);text-decoration:line-through}
+.port-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+@media(min-width:420px){.port-grid{grid-template-columns:repeat(8,1fr);gap:9px}}
+/* cada porta usa a cor da fibra correspondente na bandeja (ordem ABNT) */
+.port{position:relative;aspect-ratio:1;min-height:50px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;cursor:pointer;
+  border:2.5px solid var(--fib,var(--bd));background:transparent;color:var(--tx2);transition:transform .1s}
+.port:active{transform:scale(.94)}
+.port.free{background:transparent;color:var(--tx2)}
+.port.used{background:var(--fib,var(--ac));color:#0B0F12;border-color:var(--fib,var(--ac))}
+.port.used.escura{color:#fff}
+.port.off{border-color:var(--bd);color:var(--tx3);opacity:.55;background:transparent;text-decoration:none}
+.port.off:after{content:'';position:absolute;left:14%;right:14%;top:calc(50% - 1px);height:2px;
+  background:var(--red);transform:rotate(-38deg)}
 .port-leg{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--tx3)}
 .port-leg i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:-1px}
 .cli-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;
@@ -353,16 +456,31 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 .cli-dot.on{background:var(--ac)} .cli-dot.off{background:var(--red)}
 .cli-sig{font-family:monospace;font-size:12px;color:var(--tx3);flex-shrink:0;text-align:right}
 .cli-ficha{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:14px}
-.cli-ficha-nome{font-size:17px;font-weight:800;line-height:1.2}
+.cli-ficha-nome{font-family:'Archivo',sans-serif;font-size:19px;font-weight:700;line-height:1.18;letter-spacing:-.025em}
 .cli-ficha-sub{font-size:12px;color:var(--tx2);margin-top:3px;font-family:monospace}
 .cli-ficha-end{font-size:12px;color:var(--tx2);margin-top:6px;line-height:1.45}
 .cli-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.cli-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:7px;border:1px solid var(--bd);color:var(--tx3);white-space:nowrap}
+.cli-tag{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:500;letter-spacing:.05em;
+  text-transform:uppercase;padding:4px 9px;border-radius:7px;border:1px solid var(--bd);color:var(--tx3);white-space:nowrap}
 .cli-tag.on{border-color:var(--ac);color:var(--ac);background:var(--ac2)}
 .cli-tag.off{border-color:var(--red);color:var(--red);background:var(--red-bg)}
-.vtabs{display:flex;gap:6px;background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:14px}
-.vtab{flex:1;padding:9px 6px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
-.vtab.on{background:var(--ac);color:#fff}
+.vtabs{display:flex;gap:2px;border-bottom:1px solid var(--bd);margin:0 -14px 16px;padding:0 10px;
+  position:sticky;top:0;z-index:16;background:var(--bg)}
+.vtab{position:relative;flex:1 1 0;min-width:0;padding:9px 3px 11px;border:none;background:none;
+  cursor:pointer;font-family:inherit;color:var(--tx3);display:flex;flex-direction:column;align-items:center;gap:4px}
+.vt-ic{font-size:16px;line-height:1;opacity:.7;filter:grayscale(.35)}
+.vt-lb{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.vtab:after{content:'';position:absolute;left:14%;right:14%;bottom:-1px;height:2.5px;border-radius:2px;
+  background:transparent;transition:background .18s}
+.vtab.on{color:var(--tx)}
+.vtab.on .vt-ic{opacity:1;filter:none}
+.vtab.on .vt-lb{font-weight:700}
+.vtab.on:after{background:var(--aba,var(--ac))}
+.vt-bd{position:absolute;top:3px;right:calc(50% - 25px);background:var(--red);color:#fff;
+  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;
+  min-width:16px;text-align:center}
+@media(max-width:340px){.vt-lb{font-size:9px}.vt-ic{font-size:14px}}
 
 /* ---- ESTOQUE (técnico) ---- */
 .est-card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -406,7 +524,7 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 <!-- LOGIN -->
 <div id="ls">
   <div class="lbox">
-    <div class="llogo">moviTec</div>
+    <div class="llogo"><span class="espinha"><i></i><i></i><i></i><i></i></span>movi<span>Tec</span></div>
     <div class="lsub">Área do Técnico</div>
     <div class="lfield">
       <label class="llabel">E-mail</label>
@@ -423,11 +541,21 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 
 <!-- APP -->
 <div class="topbar">
-  <div class="topbar-brand">moviTec</div>
+  <div class="topbar-brand">
+    <span class="espinha"><i></i><i></i><i></i><i></i></span>movi<span>Tec</span>
+  </div>
   <div class="topbar-right">
-    <div class="topbar-user" id="tb-nome">—</div>
-    <button class="ico-btn" onclick="toggleTema()" title="Tema">☀️</button>
-    <button class="ico-btn" onclick="logout()" title="Sair">↩</button>
+    <span class="tb-estado" id="tb-estado"><i></i>ONLINE</span>
+    <button class="tb-conta" onclick="toggleMenuTopo(event)" title="Conta">
+      <span class="tb-av dp" id="tb-av">–</span>
+      <span class="topbar-user" id="tb-nome">—</span>
+    </button>
+    <div class="tb-menu" id="tb-menu">
+      <button onclick="toggleTema();fecharMenuTopo()">🌗 Alternar tema</button>
+      <button onclick="fecharMenuTopo();location.reload()">↻ Recarregar app</button>
+      <hr>
+      <button class="sair" onclick="fecharMenuTopo();logout()">↩ Sair da conta</button>
+    </div>
   </div>
 </div>
 
@@ -437,10 +565,10 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 
     <!-- TABS -->
     <div class="vtabs">
-      <button class="vtab on" id="tab-rota" onclick="trocarView('rota')">🗺️ Rota do Dia</button>
-      <button class="vtab" id="tab-os" onclick="trocarView('os')">🗂 Minhas OS</button>
-      <button class="vtab" id="tab-est" onclick="trocarView('estoque')">📦 Estoque</button>
-      <button class="vtab" id="tab-rede" onclick="trocarView('rede')">📡 CTOs</button>
+      <button class="vtab on" id="tab-rota" style="--aba:var(--f1)" onclick="trocarView('rota')"><span class="vt-ic">🗺️</span><span class="vt-lb">Rota</span></button>
+      <button class="vtab" id="tab-os" style="--aba:var(--f2)" onclick="trocarView('os')"><span class="vt-ic">🗂</span><span class="vt-lb">Minhas OS</span><span class="vt-bd" id="tab-os-bd" style="display:none">0</span></button>
+      <button class="vtab" id="tab-est" style="--aba:var(--f11)" onclick="trocarView('estoque')"><span class="vt-ic">📦</span><span class="vt-lb">Estoque</span></button>
+      <button class="vtab" id="tab-rede" style="--aba:var(--f4)" onclick="trocarView('rede')"><span class="vt-ic">📡</span><span class="vt-lb">CTOs</span></button>
     </div>
 
     <div id="view-rota">
@@ -761,6 +889,7 @@ async function logout(){
 async function entrar(){
   $('ls').classList.add('hide');
   $('tb-nome').textContent = _tec.nome||'Técnico';
+  _avatarTecnico(); attEstadoRede();
   if(localStorage.getItem('mtema')==='dk') document.body.classList.add('dk');
   // Busca config IXC completa do banco
   const { data: cfgs } = await sb.from('app_config').select('chave,valor');
@@ -839,6 +968,37 @@ function renderMeuEstoque(){
   }).join('');
 }
 
+/* menu da conta (tema, recarregar, sair) */
+function toggleMenuTopo(ev){
+  if(ev) ev.stopPropagation();
+  const m=$('tb-menu'); if(!m) return;
+  const abrir=!m.classList.contains('open');
+  m.classList.toggle('open',abrir);
+  if(abrir) setTimeout(()=>document.addEventListener('click',_fecharMenuFora),0);
+}
+function _fecharMenuFora(e){ const m=$('tb-menu'); if(m && !m.contains(e.target)) fecharMenuTopo(); }
+function fecharMenuTopo(){
+  const m=$('tb-menu'); if(m) m.classList.remove('open');
+  document.removeEventListener('click',_fecharMenuFora);
+}
+function _avatarTecnico(){
+  const av=$('tb-av'); if(av&&_tec) av.textContent=(String(_tec.nome||'?').trim()[0]||'?').toUpperCase();
+}
+/* OS pendentes aparecem na aba, sem precisar entrar nela */
+function attBadgeOS(){
+  const b=$('tab-os-bd'); if(!b) return;
+  const n=(_os||[]).filter(o=>['aberta','assumida','executando','andamento','atribuido','novo'].includes(o.status)).length;
+  b.textContent=n>99?'99+':n; b.style.display=n?'':'none';
+}
+/* o técnico precisa saber quando está sem sinal */
+function attEstadoRede(){
+  const e=$('tb-estado'); if(!e) return;
+  const on=navigator.onLine!==false;
+  e.classList.toggle('off',!on);
+  e.innerHTML='<i></i>'+(on?'ONLINE':'OFFLINE');
+}
+window.addEventListener('online',attEstadoRede);
+window.addEventListener('offline',attEstadoRede);
 function trocarView(v){
   _view = v;
   $('tab-rota').classList.toggle('on', v==='rota');
@@ -860,6 +1020,15 @@ function trocarView(v){
    clientes; e devolve medição e divergência. A ocupação vem do
    vínculo vivo (ftth_cliente_instalacao), nunca do resumo.
    ============================================================ */
+/* ordem oficial das 12 fibras — usada na bandeja e nas etiquetas */
+const ABNT_FIBRA=[
+  {nome:'verde',cor:'var(--f1)',escura:true},   {nome:'amarela',cor:'var(--f2)'},
+  {nome:'branca',cor:'var(--f3)'},              {nome:'azul',cor:'var(--f4)',escura:true},
+  {nome:'vermelha',cor:'var(--f5)',escura:true},{nome:'violeta',cor:'var(--f6)',escura:true},
+  {nome:'marrom',cor:'var(--f7)',escura:true},  {nome:'rosa',cor:'var(--f8)'},
+  {nome:'preta',cor:'var(--f9)',escura:true},   {nome:'cinza',cor:'var(--f10)'},
+  {nome:'laranja',cor:'var(--f11)'},            {nome:'água-marinha',cor:'var(--f12)'}
+];
 const REDE_DROP_M = 200;             // alcance de projeto do drop
 let _redePos = null, _redeRaio = 300, _redeCaixas = [], _redeVinc = [], _ctoSel = null, _redeCarregando = false;
 
@@ -994,7 +1163,7 @@ function renderRede(offline){
     const livres=_livresCx(cx), tot=cx.portas_total||0, d=Math.round(cx.distancia_m);
     const cor = livres===0 ? 'pot-bad' : (livres<=1 ? 'pot-warn' : 'pot-ok');
     const pot = _n(cx.pot_saida_dbm);
-    return `<div class="cx-card" onclick="abrirCTO('${cx.caixa_id}')">
+    return `<div class="cx-card rab ${livres===0?'cheia':(livres<=1?'quase':'vaga')}" onclick="abrirCTO('${cx.caixa_id}')">
       <div style="flex:1;min-width:0">
         <div class="cx-nome">${_escR(cx.nome)}</div>
         <div class="cx-sub">${cx.splitter?('Splitter '+_escR(cx.splitter)+' · '):''}${tot} portas${pot!=null?' · saída '+pot.toFixed(1)+' dBm':''}</div>
@@ -1017,7 +1186,10 @@ function abrirCTO(id){
   let portas='';
   for(let p=1;p<=tot;p++){
     const off=inat.includes(p), c=ocup[p];
-    portas += `<div class="port ${off?'off':(c?'used':'free')}" onclick="verPortaCTO(${p})">${String(p).padStart(2,'0')}</div>`;
+    const f=ABNT_FIBRA[(p-1)%12];
+    portas += `<div class="port ${off?'off':(c?'used':'free')}${(c&&!off&&f.escura)?' escura':''}"
+      style="--fib:${f.cor}" title="Fibra ${p} · ${f.nome}"
+      onclick="verPortaCTO(${p})">${String(p).padStart(2,'0')}</div>`;
   }
   const perdas=[['Fibra do trecho',_n(cx.perda_fibra_db)],['Splitters',_n(cx.perda_splitter_db)],['Conectores / DIO',_n(cx.perda_conector_db)]].filter(x=>x[1]!=null);
 
@@ -1048,9 +1220,10 @@ function abrirCTO(id){
       <div style="padding:12px">
         ${tot?`<div class="port-grid">${portas}</div>
           <div class="port-leg">
-            <span><i style="background:var(--ac)"></i>Ocupada</span>
-            <span><i style="background:var(--sf2);border:1px dashed var(--bd)"></i>Livre</span>
-            <span><i style="background:var(--red-bg);border:1px solid var(--red)"></i>Desativada</span>
+            <span><i style="background:var(--f1)"></i>Ocupada</span>
+            <span><i style="border:2px solid var(--f4)"></i>Livre</span>
+            <span><i style="border:2px solid var(--bd)"></i>Desativada</span>
+            <span style="width:100%;color:var(--tx3)">Cores na ordem ABNT da bandeja</span>
           </div>`:'<div style="font-size:12.5px;color:var(--tx2)">Caixa de passagem (sem splitter).</div>'}
       </div>
     </div>
@@ -1903,6 +2076,7 @@ function filtroInteligente(){
 /* ---- RENDER (aba Minhas OS — somente leitura) ---- */
 const ST_ATIVAS = ['aberta','assumida','executando','andamento'];
 function render(){
+  attBadgeOS();
   const el = $('lista');
   let lista;
   if(_fil==='ativas')           lista = _os.filter(o=>ST_ATIVAS.includes(o.status));
@@ -1927,10 +2101,12 @@ function render(){
   el.innerHTML = lista.map(os=>{
     const stCl = ST_CL[os.status]||'s-aberta';
     const stLb = ST_LB[os.status]||os.status;
+    // urgência puxa o rabicho para vermelho, mesmo em OS aberta
+    const urg  = (os.prioridade==='alta');
     const prCl = PR_CL[os.prioridade]||'p-media';
     const prLb = PR_LB[os.prioridade]||'Média';
     const num  = `#${String(os.numero||0).padStart(4,'0')}`;
-    return `<div class="card">
+    return `<div class="card rab ${stCl}${urg?' urgente':''}">
       <div class="card-body" onclick="abrirDet(${os.id})">
         <div class="card-top">
           <div style="flex:1">
