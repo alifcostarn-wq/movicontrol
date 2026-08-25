@@ -10335,7 +10335,7 @@ function ctxChave(l){ return l.id!=null ? 'id:'+l.id : 'ix:'+l._idx; }
 // Baixa parcial que continua efetivada. Se foi estornada, volta a ser título
 // em aberto e deixa de se enquadrar aqui.
 function _ctEhBaixaEfetivada(l){
-  return l.parcialDe!=null && (l.status==='Pago'||l.status==='Recebido');
+  return l.parcialDe!=null;
 }
 function ctxVTitulo(l,lado){ return l.valorTotalTitulo || (lado==='pagar'?(l.aPagar||l.pago):(l.aReceber||l.recebido)) || 0; }
 function ctxVAberto(l,lado){ return (lado==='pagar'? l.aPagar : l.aReceber) || 0; }
@@ -11331,11 +11331,9 @@ function renderContas(){
 
   // ----- CONTAS A PAGAR ----- (filtros independentes dos KPIs)
   // Filtro e ordenação: MESMA lógica de antes. Só a renderização mudou para grade em colunas.
-  // Uma baixa parcial EFETIVADA é movimento de caixa, não título: pertence ao
-  // Livro Diário e ao extrato, nunca à grade — o título original já mostra
-  // Valor / Baixado / Aberto, como no IXC.
-  // MAS o estorno devolve a baixa para "A Pagar"/"A Receber". Aí ela volta a ser
-  // uma obrigação em aberto e PRECISA aparecer, ou some dinheiro da tela.
+  // Baixa parcial nunca entra na grade: é movimento de caixa do título-pai,
+  // e o pai já mostra Valor / Baixado / Aberto, como no IXC.
+  // Estornada, ela é cancelada e o valor volta ao pai — também não vira linha.
   let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&!_ctEhBaixaEfetivada(l)&&matchPeriodoTabela(l));
   pagar=pagar.filter(l=>matchBusca(l,[l.fornecedor||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   pagar.sort((a,b)=>{
@@ -11602,7 +11600,8 @@ function salvarQuitar(){
       recebido:isRec?valor:0, pago:isRec?0:valor,
       valorLiquido:isRec?valor:-valor,
       dataEfetivacao:dataEfet,
-      historico:(l.historico?l.historico+' — ':'')+`Baixa parcial ${brl(valor,true)} de ${brl(aberto,true)}`+(obs?(' ('+obs+')'):''),
+      // texto puro: histórico é DADO, vai para CSV, auditoria e busca
+      historico:(l.historico?l.historico+' — ':'')+`Baixa parcial ${brlTxt(valor)} de ${brlTxt(aberto)}`+(obs?(' ('+obs+')'):''),
       lin:lc.length+10, parcialDe:l.id ?? null,
     };
     lc.push(baixa);
@@ -11683,6 +11682,61 @@ function estornarLancamento(idx, id=null){
     + `• Transferências posteriores NÃO são alteradas. Se o valor já foi transferido, a conta original ficará negativa — isso é esperado.`;
   if(!confirm(msg))return;
   const u = window._usuario||{};
+
+  // ── Estorno de BAIXA PARCIAL ───────────────────────────────────────────
+  // Uma baixa parcial não é um título: é um movimento de caixa do título-pai.
+  // Estornar tem de DEVOLVER o valor ao saldo em aberto do pai — nunca criar
+  // um título novo. Antes o registro virava "A Receber" com o valor da baixa,
+  // e a dívida aparecia duplicada: 8.900 no pai + 100 fantasma.
+  if(l.parcialDe != null){
+    const ip = lc.findIndex(x => x && x.id === l.parcialDe);
+    if(ip < 0){ showToast('Título de origem não encontrado. Atualize a tela.',true); return; }
+    const pai = lc[ip];
+    const paiRec  = isRec;
+    const campoAb = paiRec ? 'aReceber' : 'aPagar';
+    const campoOk = paiRec ? 'recebido' : 'pago';
+
+    // saldo do pai + o valor que volta = novo saldo em aberto
+    const abertoAtual = +(pai[campoAb] || 0);
+    // se o pai já estava quitado, o valor da quitação final segue baixado
+    const quitFinal   = (pai.status===(paiRec?'Recebido':'Pago')) ? +(pai[campoOk]||0) : 0;
+    const novoAberto  = +(abertoAtual + valor).toFixed(2);
+    const totalTitulo = +(pai.valorTotalTitulo || (abertoAtual + quitFinal + valor)).toFixed(2);
+    const baixadoRest = +(totalTitulo - novoAberto).toFixed(2);
+
+    const paiNovo = {...pai,
+      [campoAb]: novoAberto,
+      status: paiRec ? 'A Receber' : 'A Pagar',
+      dataEfetivacao: baixadoRest > 0.005 ? pai.dataEfetivacao : null,
+      valorLiquido: 0,
+      [campoOk]: 0,
+      parcial: baixadoRest > 0.005,
+      valorTotalTitulo: baixadoRest > 0.005 ? totalTitulo : null,
+      jaQuitado: baixadoRest > 0.005 ? baixadoRest : null,
+    };
+    delete paiNovo._valorOriginal;
+    lc[ip] = paiNovo;
+
+    // a baixa é anulada, não vira título. Cancelada, sai do caixa, do Livro
+    // Diário e da grade — mas continua no banco e no histórico de pagamentos.
+    lc[idx] = {...l,
+      estornado: true,
+      estornadoEm: new Date().toISOString(),
+      estornadoPor: (u.email||u.nome||'sistema'),
+      status: 'Cancelado', cancelado: true,
+      canceladoEm: new Date().toISOString(),
+      dataEfetivacao: null, valorLiquido: 0,
+      pago: 0, recebido: 0, aPagar: 0, aReceber: 0,
+      historico: (l.historico||'') + ` [ESTORNADO ${fmtData(hoje())} — valor devolvido ao título #${l.parcialDe}]`,
+    };
+    sd('sf_lancamentos',lc);
+    registrarAuditoria('estorno_baixa_parcial', isRec?'Contas a Receber':'Contas a Pagar', 'lancamentos', l.id,
+      `${brlTxt(valor)} devolvido ao título #${l.parcialDe} — em aberto ${brlTxt(abertoAtual)} → ${brlTxt(novoAberto)}`);
+    refreshFinanceiro();
+    showToast(`↩ ${brlTxt(valor)} devolvido ao título #${l.parcialDe} — agora ${brlTxt(novoAberto)} em aberto.`);
+    return;
+  }
+
   const novo = {...l,
     estornado: true,
     estornadoEm: new Date().toISOString(),
