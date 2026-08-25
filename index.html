@@ -4614,6 +4614,21 @@ textarea.cp-form-input{resize:vertical}
       <div class="section-label" id="bancos-section-label">Suas Contas</div>
       <div class="banco-grid" id="banco-grid"></div>
 
+      <!-- Conciliação bancária -->
+      <div id="conc-aviso-vinculo" style="display:none;margin:14px 0"></div>
+      <div id="conc-section" style="display:none;margin-top:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="section-label" style="margin-bottom:0">Conciliação bancária</div>
+          <span style="font-size:11.5px;color:var(--text3)">confira o extrato do banco contra o MoviOne</span>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="conc-arquivo" accept=".ofx,.OFX,text/plain" style="display:none" onchange="concCarregarOFX(this)">
+            <button class="btn" onclick="document.getElementById('conc-arquivo').click()">📄 Importar extrato OFX</button>
+            <button class="btn" id="conc-btn-limpar" style="display:none" onclick="concLimpar()">Limpar</button>
+          </div>
+        </div>
+        <div id="conc-corpo"></div>
+      </div>
+
       <!-- Extrato -->
       <div id="extrato-section" style="display:none">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
@@ -5750,6 +5765,10 @@ const _SYNC_MAP = {
       cancelado: l.cancelado || false,
       cancelado_em: l.canceladoEm || null,
       cancelado_por: l.canceladoPor || null,
+      conciliado: l.conciliado || false,
+      conciliado_em: l.conciliadoEm || null,
+      conciliado_por: l.conciliadoPor || null,
+      conciliado_fitid: l.conciliadoFitid || null,
     }),
     fromRow: (r) => ({
       id: r.id,
@@ -5788,6 +5807,10 @@ const _SYNC_MAP = {
       cancelado: r.cancelado || false,
       canceladoEm: r.cancelado_em,
       canceladoPor: r.cancelado_por,
+      conciliado: r.conciliado || false,
+      conciliadoEm: r.conciliado_em,
+      conciliadoPor: r.conciliado_por,
+      conciliadoFitid: r.conciliado_fitid,
     }),
   },
   sf_clientes: {
@@ -15158,6 +15181,109 @@ function _lancRealizado(l){
   return 0; // A Receber / A Pagar → não movimenta conta bancária
 }
 
+// ════════════════════════════════════════════════════════
+// CONCILIAÇÃO BANCÁRIA — importação de OFX e conferência
+//
+// O extrato do banco é a verdade. Conciliar é marcar quais lançamentos
+// do MoviOne já foram vistos no extrato. Nada é criado, alterado ou
+// baixado por aqui — só a marca de conferido.
+// ════════════════════════════════════════════════════════
+
+// OFX é SGML, não XML: muitas tags não fecham. Por isso lemos por bloco
+// STMTTRN e extraímos cada campo até a próxima tag, em vez de usar um
+// parser de XML (que quebra em quase todo arquivo de banco brasileiro).
+function parseOFX(texto){
+  const t = String(texto||'').replace(/\r/g,'');
+  const campo = (bloco, tag) => {
+    const m = bloco.match(new RegExp('<'+tag+'>([^<\n]*)','i'));
+    return m ? m[1].trim() : '';
+  };
+  const dataOFX = (v) => {
+    const m = String(v||'').match(/^(\d{4})(\d{2})(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  };
+  const blocos = t.split(/<STMTTRN>/i).slice(1);
+  const trans = blocos.map(b=>{
+    const bruto = b.split(/<\/STMTTRN>/i)[0];
+    const valor = parseFloat((campo(bruto,'TRNAMT')||'0').replace(',','.'));
+    return {
+      fitid: campo(bruto,'FITID'),
+      data:  dataOFX(campo(bruto,'DTPOSTED')),
+      valor: isNaN(valor) ? 0 : valor,
+      tipo:  campo(bruto,'TRNTYPE'),
+      memo:  (campo(bruto,'MEMO') || campo(bruto,'NAME') || '').trim(),
+    };
+  }).filter(x => x.data && x.valor !== 0);
+  return {
+    conta: campo(t,'ACCTID'),
+    banco: campo(t,'BANKID'),
+    inicio: dataOFX(campo(t,'DTSTART')),
+    fim: dataOFX(campo(t,'DTEND')),
+    transacoes: trans,
+  };
+}
+
+// Casamento automático. Só aceita par SEM ambiguidade: se duas linhas do
+// sistema servem para a mesma linha do banco, nenhuma é marcada — quem
+// decide é a pessoa. Conciliação errada é pior que conciliação pendente.
+function conciliarAuto(extrato, candidatos, toleranciaDias){
+  const tol = toleranciaDias==null ? 3 : toleranciaDias;
+  const usados = new Set();
+  const pares = [], semPar = [], ambiguos = [];
+
+  extrato.forEach(tx => {
+    const alvo = Math.abs(tx.valor);
+    const sinalEntrada = tx.valor > 0;
+    const possiveis = candidatos.filter(c => {
+      if(usados.has(c._key)) return false;
+      if(c.conciliado) return false;
+      if(Math.abs(Math.abs(c.valor) - alvo) > 0.005) return false;
+      if(c.entrada !== sinalEntrada) return false;
+      const d1 = new Date(c.data+'T00:00:00'), d2 = new Date(tx.data+'T00:00:00');
+      return Math.abs((d1-d2)/86400000) <= tol;
+    });
+    if(possiveis.length === 1){
+      usados.add(possiveis[0]._key);
+      pares.push({ tx, lanc: possiveis[0] });
+    } else if(possiveis.length > 1){
+      ambiguos.push({ tx, opcoes: possiveis });
+    } else {
+      semPar.push(tx);
+    }
+  });
+  return { pares, ambiguos, semPar };
+}
+
+// Lançamentos e movimentações de uma conta, num formato único para o
+// motor de conciliação.
+function candidatosConciliacao(bancoId, de, ate){
+  const banco = gdBancos().find(b=>b.id===bancoId);
+  if(!banco) return [];
+  const out = [];
+  gd('sf_lancamentos').forEach((l,i)=>{
+    if(!_lancNaConta(l, banco)) return;
+    if(l.status!=='Pago' && l.status!=='Recebido') return;
+    if(l.cancelado || l.status==='Cancelado') return;
+    const d = l.dataEfetivacao || l.data || '';
+    if(!d || (de && d<de) || (ate && d>ate)) return;
+    const ent = l.status==='Recebido';
+    out.push({ _key:'L'+(l.id??i), _tipo:'lanc', _idx:i, id:l.id,
+      data:d, valor:(ent?(l.recebido||0):(l.pago||0)), entrada:ent,
+      descricao:(l.historico||l.cliente||l.fornecedor||'—'),
+      conciliado:!!l.conciliado });
+  });
+  gdMov().forEach((m,i)=>{
+    if(m.contaId!==bancoId) return;
+    const d = m.data||'';
+    if(!d || (de && d<de) || (ate && d>ate)) return;
+    const v = parseFloat(m.valor||0);
+    out.push({ _key:'M'+(m.id??i), _tipo:'mov', _idx:i, id:m.id,
+      data:d, valor:Math.abs(v), entrada:v>0,
+      descricao:(m.descricao||'Movimentação'), conciliado:!!m.conciliado });
+  });
+  return out.sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+}
+
 function _lancNaConta(l, banco){
   if(!banco) return false;
   if(l.contaId!=null && banco.id!=null) return l.contaId===banco.id;
@@ -15259,12 +15385,198 @@ function renderBancos(){
     document.getElementById('extrato-section').style.display='';
     renderExtrato();
   }
+  renderAvisoVinculo();
+  renderConciliacao();
 }
 
 function selecionarConta(idx){
   extratoContaIdx=idx;
   extratoPagina=1;
+  _conc=null;                 // extrato carregado vale só para a conta escolhida
+  const bl=document.getElementById('conc-btn-limpar'); if(bl) bl.style.display='none';
   renderBancos();
+  renderConciliacao();
+}
+
+// ---------- conciliação: tela ----------
+let _conc = null;   // { extrato, resultado, bancoId }
+
+function concLimpar(){
+  _conc = null;
+  const el=document.getElementById('conc-arquivo'); if(el) el.value='';
+  const b=document.getElementById('conc-btn-limpar'); if(b) b.style.display='none';
+  renderConciliacao();
+}
+
+function concCarregarOFX(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  if(extratoContaIdx==null){ showToast('Selecione a conta antes de importar o extrato.',true); input.value=''; return; }
+  const banco = gdBancos()[extratoContaIdx];
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const ofx = parseOFX(r.result);
+      if(!ofx.transacoes.length){ showToast('Nenhuma transação encontrada neste arquivo.',true); return; }
+      const cand = candidatosConciliacao(banco.id, ofx.inicio, ofx.fim);
+      _conc = { extrato: ofx, bancoId: banco.id, resultado: conciliarAuto(ofx.transacoes, cand, 3), candidatos: cand };
+      document.getElementById('conc-btn-limpar').style.display='';
+      renderConciliacao();
+      showToast(`Extrato lido: ${ofx.transacoes.length} transações.`);
+    }catch(e){
+      console.error('[ofx]', e);
+      showToast('Não consegui ler este arquivo OFX.',true);
+    }
+  };
+  r.onerror = () => showToast('Falha ao abrir o arquivo.',true);
+  r.readAsText(f, 'ISO-8859-1');   // padrão dos bancos brasileiros
+  input.value='';
+}
+
+function renderConciliacao(){
+  const sec = document.getElementById('conc-section');
+  const corpo = document.getElementById('conc-corpo');
+  if(!sec || !corpo) return;
+  sec.style.display = (extratoContaIdx==null) ? 'none' : '';
+  if(extratoContaIdx==null) return;
+
+  if(!_conc){
+    corpo.innerHTML = `<div style="background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:26px;text-align:center">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">Nenhum extrato carregado.</div>
+      <div style="font-size:12px;color:var(--text3);max-width:56ch;margin:0 auto;line-height:1.6">
+        Baixe o extrato em <b>OFX</b> no internet banking e importe aqui. O MoviOne casa cada linha do banco com o lançamento correspondente e marca o que já foi conferido. Nada é criado nem baixado — só a marca de conferido.
+      </div></div>`;
+    return;
+  }
+
+  const { pares, ambiguos, semPar } = _conc.resultado;
+  const jaConc = _conc.candidatos.filter(c=>c.conciliado).length;
+  const pend = _conc.candidatos.filter(c=>!c.conciliado && !pares.some(p=>p.lanc._key===c._key)).length;
+
+  const card=(rot,val,cor,sub)=>`<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:9px;padding:11px 14px">
+      <div style="font-size:9.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">${rot}</div>
+      <div class="td-mono" style="font-size:17px;font-weight:600;color:${cor};margin-top:3px">${val}</div>
+      ${sub?`<div style="font-size:10.5px;color:var(--text3);margin-top:2px">${sub}</div>`:''}
+    </div>`;
+
+  const linha=(tx,lanc,acao)=>`<tr>
+      <td class="td-mono td-muted" style="white-space:nowrap">${fmtData(tx.data)}</td>
+      <td style="font-size:11.5px;max-width:230px;overflow:hidden;text-overflow:ellipsis">${ctxEsc(tx.memo||'—')}</td>
+      <td class="td-mono" style="white-space:nowrap;color:${tx.valor>0?'var(--accent)':'var(--danger)'}">${tx.valor>0?'+':'−'} ${brlTxt(Math.abs(tx.valor))}</td>
+      <td style="font-size:11.5px;max-width:250px;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">${lanc?ctxEsc(lanc.descricao):'<span class="td-muted">— sem correspondente —</span>'}</td>
+      <td style="white-space:nowrap">${acao}</td>
+    </tr>`;
+
+  const tabela=(titulo,cor,corpoHtml,vazio)=>corpoHtml
+    ? `<div style="margin-top:18px"><div style="font-size:12px;font-weight:700;color:${cor};margin-bottom:7px">${titulo}</div>
+       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:auto">
+       <table style="width:100%;border-collapse:collapse;font-size:12px">
+       <thead><tr style="background:var(--surface2)">
+         <th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;color:var(--text3)">Data</th>
+         <th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;color:var(--text3)">Extrato do banco</th>
+         <th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;color:var(--text3)">Valor</th>
+         <th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;color:var(--text3)">Lançamento no MoviOne</th>
+         <th style="padding:8px 10px"></th></tr></thead>
+       <tbody>${corpoHtml}</tbody></table></div></div>`
+    : (vazio||'');
+
+  corpo.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:6px">
+      ${card('Extrato', _conc.extrato.transacoes.length+' linhas', 'var(--info)', fmtData(_conc.extrato.inicio)+' a '+fmtData(_conc.extrato.fim))}
+      ${card('Casadas', pares.length, 'var(--accent)', 'prontas para conferir')}
+      ${card('Ambíguas', ambiguos.length, '#B35400', ambiguos.length?'escolha manual':'nenhuma')}
+      ${card('Só no banco', semPar.length, 'var(--danger)', semPar.length?'faltou lançar':'nenhuma')}
+      ${card('Já conferidas', jaConc, 'var(--text3)', pend+' pendentes no período')}
+    </div>
+    ${pares.length?`<div style="margin-top:14px"><button class="btn btn-primary" onclick="concConfirmarTodas()">✓ Conferir as ${pares.length} casadas</button></div>`:''}
+
+    ${tabela('✓ Casadas automaticamente', 'var(--accent)',
+      pares.map((p,i)=>linha(p.tx,p.lanc,
+        `<button class="btn" style="font-size:11px;padding:3px 9px" onclick="concConfirmarUma(${i})">Conferir</button>`)).join(''))}
+
+    ${tabela('⚠ Ambíguas — mais de um lançamento serve', '#B35400',
+      ambiguos.map((a,i)=>a.opcoes.map((o,j)=>linha(a.tx,o,
+        `<button class="btn" style="font-size:11px;padding:3px 9px" onclick="concEscolher(${i},${j})">É esta</button>`)).join('')).join(''))}
+
+    ${tabela('✗ Só no extrato — não existe no MoviOne', 'var(--danger)',
+      semPar.map(tx=>linha(tx,null,
+        `<span style="font-size:10.5px;color:var(--text3)">lançar manualmente</span>`)).join(''),
+      '')}
+
+    <div style="margin-top:14px;font-size:11.5px;color:var(--text3);line-height:1.6">
+      <b>Só no extrato</b> significa dinheiro que se moveu no banco e não está no MoviOne — tarifa, débito automático, pagamento esquecido. Lance esses e importe o arquivo de novo.
+    </div>`;
+}
+
+async function concMarcar(lanc, fitid){
+  if(lanc._tipo==='lanc'){
+    const lc = gd('sf_lancamentos');
+    const i = _resolverLancIdx(lc, lanc._idx, lanc.id);
+    if(i<0) return false;
+    const u = window._usuario||{};
+    lc[i] = {...lc[i], conciliado:true, conciliadoEm:new Date().toISOString(),
+             conciliadoPor:(u.email||u.nome||'sistema'), conciliadoFitid:fitid||null};
+    sd('sf_lancamentos', lc);
+  } else {
+    const mv = gdMov();
+    const i = mv.findIndex(x=>x.id===lanc.id);
+    if(i<0) return false;
+    mv[i] = {...mv[i], conciliado:true, conciliadoEm:new Date().toISOString(), conciliadoFitid:fitid||null};
+    sdMov(mv);
+  }
+  return true;
+}
+
+async function concConfirmarUma(i){
+  const p = _conc?.resultado?.pares?.[i]; if(!p) return;
+  if(await concMarcar(p.lanc, p.tx.fitid)){
+    p.lanc.conciliado = true;
+    _conc.resultado.pares.splice(i,1);
+    renderConciliacao();
+    showToast('✓ Conferido.');
+  }
+}
+
+async function concConfirmarTodas(){
+  const pares = _conc?.resultado?.pares || [];
+  if(!pares.length) return;
+  if(!confirm(`Marcar ${pares.length} lançamento(s) como conferidos contra o extrato?`)) return;
+  let n=0;
+  for(const p of pares){ if(await concMarcar(p.lanc, p.tx.fitid)) n++; }
+  registrarAuditoria('conciliacao','Contas Bancárias','lancamentos',null,
+    `${n} lançamento(s) conferidos contra o extrato de ${fmtData(_conc.extrato.inicio)} a ${fmtData(_conc.extrato.fim)}`);
+  _conc.resultado.pares = [];
+  renderConciliacao();
+  showToast(`✓ ${n} lançamento(s) conferidos.`);
+}
+
+async function concEscolher(iAmb, iOpc){
+  const a = _conc?.resultado?.ambiguos?.[iAmb]; if(!a) return;
+  const o = a.opcoes[iOpc]; if(!o) return;
+  if(await concMarcar(o, a.tx.fitid)){
+    o.conciliado = true;
+    _conc.resultado.ambiguos.splice(iAmb,1);
+    renderConciliacao();
+    showToast('✓ Conferido.');
+  }
+}
+
+// ---------- aviso do vínculo por nome ----------
+// O saldo casa lançamento com conta por ID e, na falta dele, pelo NOME.
+// Vínculo por nome quebra silenciosamente se a conta for renomeada — por
+// isso ele passa a ser visível em vez de invisível.
+function renderAvisoVinculo(){
+  const el = document.getElementById('conc-aviso-vinculo');
+  if(!el) return;
+  const soNome = gd('sf_lancamentos').filter(l =>
+    l.contaId==null && (l.conta||'').trim()!=='' &&
+    (l.status==='Pago'||l.status==='Recebido') && !l.cancelado).length;
+  if(!soNome){ el.style.display='none'; return; }
+  el.style.display='';
+  el.innerHTML = `<div style="background:rgba(194,90,0,.07);border-left:3px solid #FF8C2E;border-radius:0 9px 9px 0;padding:12px 16px;font-size:12.5px;color:#B35400;line-height:1.6">
+    <b>${soNome} lançamento(s) estão ligados à conta apenas pelo nome.</b>
+    Renomear a conta faria esses valores sumirem do saldo, sem erro na tela.
+    Reabra e salve cada um para gravar o vínculo por ID, ou me chame para corrigir em lote.</div>`;
 }
 
 // ---------- extrato ----------
