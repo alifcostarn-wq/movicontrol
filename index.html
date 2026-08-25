@@ -10311,6 +10311,11 @@ let ctxMenuColsAberto = false;
 let ctxAnaliseAberta = false;
 
 function ctxChave(l){ return l.id!=null ? 'id:'+l.id : 'ix:'+l._idx; }
+// Baixa parcial que continua efetivada. Se foi estornada, volta a ser título
+// em aberto e deixa de se enquadrar aqui.
+function _ctEhBaixaEfetivada(l){
+  return l.parcialDe!=null && (l.status==='Pago'||l.status==='Recebido');
+}
 function ctxVTitulo(l,lado){ return l.valorTotalTitulo || (lado==='pagar'?(l.aPagar||l.pago):(l.aReceber||l.recebido)) || 0; }
 function ctxVAberto(l,lado){ return (lado==='pagar'? l.aPagar : l.aReceber) || 0; }
 function ctxVBaixado(l,lado){
@@ -10537,6 +10542,78 @@ function ctxFecharDetalhe(){
   if(o) o.classList.remove('open');
   _ctxdIdx=null; _ctxdId=null;
 }
+// Histórico de pagamentos de um título: cada baixa parcial vinculada
+// (parcialDe) mais a quitação final, em ordem cronológica e com o
+// acumulado correndo até fechar o valor do título.
+//
+// Baixa estornada que voltou para "A Pagar"/"A Receber" aparece na lista
+// mas NÃO soma no acumulado — deixou de ser dinheiro movimentado e virou
+// obrigação em aberto de novo.
+function _ctxdHistPagamentos(lc, l, lado, stFeito){
+  if(l.id==null) return '';
+  const campoPago  = lado==='pagar' ? 'pago'    : 'recebido';
+  const campoAberto= lado==='pagar' ? 'aPagar'  : 'aReceber';
+
+  const itens = lc
+    .filter(b => b.parcialDe === l.id)
+    .map(b => {
+      const efetivada = b.status===stFeito;
+      return {
+        d: b.dataEfetivacao || b.data || '',
+        rotulo: efetivada ? 'Baixa parcial' : 'Baixa estornada',
+        valor: efetivada ? (b[campoPago]||0) : (b[campoAberto]||0),
+        conta: b.conta || '',
+        conta_ok: efetivada,
+        obs: efetivada
+              ? (b.estornado ? 'marcada como estornada, mas segue efetivada' : '')
+              : 'voltou a ficar em aberto',
+        alerta: !efetivada || !!b.estornado,
+      };
+    });
+
+  // a quitação final fica no próprio título, não numa linha separada
+  if(l.status===stFeito && (l[campoPago]||0) > 0){
+    itens.push({
+      d: l.dataEfetivacao || l.data || '',
+      rotulo: itens.length ? 'Quitação final' : 'Pagamento',
+      valor: l[campoPago]||0,
+      conta: l.conta||'', conta_ok:true, obs:'', alerta:false,
+    });
+  }
+
+  // só vale mostrar quando houve mais de um movimento
+  if(itens.length < 2) return '';
+
+  itens.sort((a,b)=> String(a.d).localeCompare(String(b.d)));
+
+  let acum = 0;
+  const linhas = itens.map(it=>{
+    if(it.conta_ok) acum += it.valor;
+    const corVal = it.conta_ok ? 'var(--text)' : 'var(--text3)';
+    const risco  = it.conta_ok ? '' : ';text-decoration:line-through';
+    return `<div style="display:grid;grid-template-columns:78px 1fr auto auto;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span class="mono" style="font-size:11px;color:var(--text3)">${it.d?fmtData(it.d):'—'}</span>
+      <span style="font-size:12px;color:${it.alerta?'#B35400':'var(--text2)'}">${it.rotulo}${it.conta?` · ${ctxEsc(it.conta)}`:''}${it.obs?`<br><span style="font-size:10.5px;color:#B35400">${it.obs}</span>`:''}</span>
+      <span class="mono" style="font-size:12px;font-weight:600;color:${corVal}${risco}">${brl(it.valor,true)}</span>
+      <span class="mono" style="font-size:11px;color:var(--text3);min-width:88px;text-align:right">${it.conta_ok?brl(acum,true):'—'}</span>
+    </div>`;
+  }).join('');
+
+  const total = ctxVTitulo(l,lado);
+  const falta = +(total - acum).toFixed(2);
+
+  return `<div class="ctxd-sec">Histórico de pagamentos — ${itens.length} movimento${itens.length!==1?'s':''}</div>
+    <div style="display:grid;grid-template-columns:78px 1fr auto auto;gap:10px;padding-bottom:5px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">
+      <span>Data</span><span>Movimento</span><span style="text-align:right">Valor</span><span style="text-align:right;min-width:88px">Acumulado</span>
+    </div>
+    ${linhas}
+    <div style="display:flex;justify-content:space-between;padding-top:9px;font-size:12px">
+      <span style="color:var(--text2)">Total baixado de ${brl(total,true)}</span>
+      <span class="mono" style="font-weight:700;color:${Math.abs(falta)<0.01?'#2F7D1B':'var(--text)'}">${brl(acum,true)}</span>
+    </div>
+    ${Math.abs(falta)>=0.01?`<div style="font-size:11.5px;color:var(--text3);margin-top:4px">Restam ${brl(falta,true)} em aberto.</div>`:''}`;
+}
+
 function ctxAbrirDetalhe(idx, id=null){
   const lc=gd('sf_lancamentos');
   // usa o mesmo resolvedor das ações, p/ não pegar índice trocado pelo Realtime
@@ -10599,10 +10676,13 @@ function ctxAbrirDetalhe(idx, id=null){
       + `</div>`;
   }
 
+  // ---- Histórico de pagamentos (baixas vinculadas + quitação final) ----
+  const secHist = _ctxdHistPagamentos(lc, l, lado, stFeito);
+
   // ---- Linha do tempo (só fatos gravados no registro) ----
   const eventos=[];
   eventos.push({d:l.dataOriginal||l.data, t:'Título emitido', c:''});
-  if(l.parcial && l.jaQuitado)
+  if(l.parcial && l.jaQuitado && !secHist)
     eventos.push({d:l.dataEfetivacao||'', t:`Baixa parcial de ${brl(l.jaQuitado,true)}`, c:'warn'});
   if(l.status===stFeito && l.dataEfetivacao)
     eventos.push({d:l.dataEfetivacao, t:`${ehPagar?'Pago':'Recebido'} — ${brl(vBx,true)}`, c:'ok'});
@@ -10655,6 +10735,7 @@ function ctxAbrirDetalhe(idx, id=null){
       <div class="ctxd-grid">${secDatas}</div>
       ${l.historico?`<div class="ctxd-sec">Histórico</div><div style="font-size:12.5px;line-height:1.6">${ctxEsc(l.historico)}</div>`:''}
       ${secGrupo}
+      ${secHist}
       ${secTL}
     </div>
     <div class="ctxd-foot">
@@ -11229,10 +11310,12 @@ function renderContas(){
 
   // ----- CONTAS A PAGAR ----- (filtros independentes dos KPIs)
   // Filtro e ordenação: MESMA lógica de antes. Só a renderização mudou para grade em colunas.
-  // As baixas parciais (parcialDe != null) são MOVIMENTOS de caixa, não títulos.
-  // Pertencem ao Livro Diário e ao extrato bancário, nunca à grade de contas —
-  // aqui o título original já mostra Valor / Baixado / Aberto, como no IXC.
-  let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&l.parcialDe==null&&matchPeriodoTabela(l));
+  // Uma baixa parcial EFETIVADA é movimento de caixa, não título: pertence ao
+  // Livro Diário e ao extrato, nunca à grade — o título original já mostra
+  // Valor / Baixado / Aberto, como no IXC.
+  // MAS o estorno devolve a baixa para "A Pagar"/"A Receber". Aí ela volta a ser
+  // uma obrigação em aberto e PRECISA aparecer, ou some dinheiro da tela.
+  let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&!_ctEhBaixaEfetivada(l)&&matchPeriodoTabela(l));
   pagar=pagar.filter(l=>matchBusca(l,[l.fornecedor||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   pagar.sort((a,b)=>{
     const va=ctxChaveOrd(a,cpSort.col,'pagar'), vb=ctxChaveOrd(b,cpSort.col,'pagar');
@@ -11252,7 +11335,7 @@ function renderContas(){
   if(cpb){let b=`<button onclick="cpNavPag(${cpPag-1})" ${cpPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpP;i++){if(i===1||i===tpP||Math.abs(i-cpPag)<=1)b+=`<button class="${i===cpPag?'active':''}" onclick="cpNavPag(${i})">${i}</button>`;else if(Math.abs(i-cpPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="cpNavPag(${cpPag+1})" ${cpPag===tpP?'disabled':''}>›</button>`;cpb.innerHTML=b;}
 
   // ----- CONTAS A RECEBER -----
-  let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&l.parcialDe==null&&matchPeriodoTabela(l));
+  let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&!_ctEhBaixaEfetivada(l)&&matchPeriodoTabela(l));
   receber=receber.filter(l=>matchBusca(l,[l.cliente||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   receber.sort((a,b)=>{
     const va=ctxChaveOrd(a,crSort.col,'receber'), vb=ctxChaveOrd(b,crSort.col,'receber');
