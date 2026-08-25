@@ -95,7 +95,7 @@ body.dark-mode{
   --pal-claro:#F8F1F1;--pal-navy:#22223B;
   --chart-grid:rgba(248,241,241,0.10);
   --accent-txt:#3C9D23;--danger-txt:#D00000;
-  --sidebar-bg:#101020;
+  --sidebar-bg:#14153A;
 }
 /* Sidebar cor fixa no dark — independente de --text */
 body.dark-mode .sidebar{background:var(--sidebar-bg,#101020)}
@@ -136,7 +136,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 /* ======== SIDEBAR ======== */
 /* ---- Sidebar collapsed state ---- */
-:root{--sidebar-collapsed:64px;--sidebar-bg:#1A1916}
+:root{--sidebar-collapsed:64px;--sidebar-bg:#111230}
 .sidebar{width:var(--sidebar);background:var(--sidebar-bg);height:100vh;display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.22s cubic-bezier(.4,0,.2,1)}
 .sidebar.collapsed{width:var(--sidebar-collapsed)}
 .main{transition:margin-left 0.22s cubic-bezier(.4,0,.2,1)}
@@ -144,11 +144,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 .sidebar-logo{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;overflow:hidden}
 .logo-mark{display:flex;align-items:center;gap:10px;min-width:0}
-.logo-icon{width:34px;height:34px;background:#3C9D23;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.logo-icon svg{width:18px;height:18px;fill:#fff}
+.logo-icon{width:34px;height:34px;background:#FCDF39;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-icon svg{width:18px;height:18px;fill:#3E44CE}
 .logo-texts{overflow:hidden;transition:opacity 0.18s,width 0.22s;white-space:nowrap}
 .sidebar.collapsed .logo-texts{opacity:0;width:0;pointer-events:none}
-.logo-text{font-family:'Nunito',sans-serif;font-size:16px;font-weight:800;color:#FFD3B0;letter-spacing:-0.3px;line-height:1}
+.logo-text{font-family:'Nunito',sans-serif;font-size:16px;font-weight:800;color:#FCDF39;letter-spacing:-0.3px;line-height:1}
 .logo-sub{font-family:'Nunito',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,0.65);margin-top:2px;letter-spacing:0.2px;display:flex;align-items:center;gap:5px}
 .logo-sub-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.4);display:inline-block;flex-shrink:0}
 
@@ -180,7 +180,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,0.78);font-size:13.5px;font-weight:400;border:none;background:none;width:100%;text-align:left;transition:all 0.13s;font-family:inherit;position:relative;min-width:0}
 .nav-item:hover{background:rgba(255,255,255,0.09);color:#fff}
-.nav-item.active{background:#3C9D23;color:#fff;font-weight:600}
+.nav-item.active{background:#5056E0;color:#fff;font-weight:600}
 .nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:0.85}
 .nav-item.active svg{opacity:1}
 .nav-item .nav-label{transition:opacity 0.18s,max-width 0.22s;white-space:nowrap;flex:1;min-width:0;max-width:210px}
@@ -4787,7 +4787,7 @@ textarea.cp-form-input{resize:vertical}
         <div class="form-grid">
           <div class="form-group"><label class="form-label">Vencimento<span>*</span></label><input type="date" id="l-data" style="width:100%" oninput="atualizarResumoLanc()"></div>
           <div class="form-group"><label class="form-label">Status<span>*</span></label><select id="l-status" style="width:100%" onchange="atualizarResumoLanc()"><option value="A Receber">A Receber</option><option value="Recebido">Recebido</option></select></div>
-          <div class="form-group full"><label class="form-label">Plano de Contas<span>*</span></label><select id="l-plano" style="width:100%" onchange="atualizarResumoLanc()"></select></div>
+          <div class="form-group full"><label class="form-label">Plano de Contas<span>*</span></label><div style="position:relative;margin-bottom:6px"><input id="l-plano-busca" class="cp-form-input" type="text" autocomplete="off" spellcheck="false" placeholder="Buscar plano — digite código ou nome (ex: juros, 5.6, energia)" style="width:100%;padding-right:66px" oninput="filtrarPlanoContas()" onkeydown="planoBuscaTecla(event)"><span id="l-plano-conta" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3);pointer-events:none"></span></div><select id="l-plano" style="width:100%" onchange="atualizarResumoLanc()"></select></div>
           <div class="form-group" id="lg-cli"><label class="form-label">Cliente</label><input type="text" id="l-cliente" placeholder="Nome do cliente" style="width:100%" oninput="atualizarResumoLanc()"></div>
           <div class="form-group" id="lg-for" style="display:none"><label class="form-label">Fornecedor</label><input type="text" id="l-fornecedor" placeholder="Nome do fornecedor" style="width:100%" oninput="atualizarResumoLanc()"></div>
           <div class="form-group"><label class="form-label">Conta<span>*</span></label><select id="l-conta" style="width:100%" onchange="atualizarResumoLanc()"></select></div>
@@ -12880,24 +12880,93 @@ function renderPag(prefix,total,tp,pkey){
 // ============================================================
 // POPULAR SELECT DE PLANO DE CONTAS DINAMICAMENTE
 // ============================================================
-function popularSelectPlano(){
+// Normaliza para busca: minúsculo e sem acento, para "tributario"
+// encontrar "Custos tributários".
+function _planoNorm(t){
+  return String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+// filtro opcional: casa contra "código + nome" e também contra o nome do grupo,
+// então "receitas" traz o grupo inteiro.
+function popularSelectPlano(filtro){
   const selPlano = document.getElementById('l-plano');
-  if(!selPlano) return;
-  
-  let html = '';
+  if(!selPlano) return 0;
+
+  const termos = _planoNorm(filtro).split(/\s+/).filter(Boolean);
+  const casa = (texto) => {
+    if(!termos.length) return true;
+    const t = _planoNorm(texto);
+    return termos.every(x => t.includes(x));
+  };
+
+  let html = '', achados = 0;
   PLANO_DATA.forEach(grupo => {
-    // Agrupa as opções por seção
+    const grupoCasa = casa(grupo.g);
     const opcoes = grupo.itens
       .filter(it => it.l >= 1) // Apenas níveis 1 e 2 (não o nível 0)
-      .map(it => `<option value="${it.c} ${it.n}">${'  '.repeat(it.l - 1)}${it.c} ${it.n}</option>`)
+      .filter(it => grupoCasa || casa(`${it.c} ${it.n}`))
+      .map(it => {
+        achados++;
+        return `<option value="${it.c} ${it.n}">${'  '.repeat(it.l - 1)}${it.c} ${it.n}</option>`;
+      })
       .join('');
-    
+
     if(opcoes){
       html += `<optgroup label="${grupo.g}">${opcoes}</optgroup>`;
     }
   });
-  
+
+  if(!achados) html = '<option value="" disabled selected>Nenhum plano encontrado</option>';
   selPlano.innerHTML = html;
+  return achados;
+}
+
+// Refaz a lista a cada tecla, preservando o plano já escolhido quando ele
+// continua visível. Com um único resultado, já seleciona — é o caso comum
+// de quem digita o código exato.
+function filtrarPlanoContas(){
+  const inp = document.getElementById('l-plano-busca');
+  const sel = document.getElementById('l-plano');
+  const cont= document.getElementById('l-plano-conta');
+  if(!inp || !sel) return;
+
+  const anterior = sel.value;
+  const achados = popularSelectPlano(inp.value);
+
+  const opts = Array.from(sel.options).filter(o=>!o.disabled);
+  if(opts.some(o=>o.value===anterior)) sel.value = anterior;
+  else if(opts.length) sel.selectedIndex = Array.from(sel.options).indexOf(opts[0]);
+
+  if(cont){
+    const q = (inp.value||'').trim();
+    cont.textContent = !q ? '' : (achados ? achados+(achados===1?' plano':' planos') : 'nenhum');
+    cont.style.color = (q && !achados) ? '#C40000' : 'var(--text3)';
+  }
+  if(typeof atualizarResumoLanc==='function') atualizarResumoLanc();
+}
+
+function planoBuscaTecla(ev){
+  const sel = document.getElementById('l-plano');
+  if(!sel) return;
+  // Enter confirma o resultado e sai do campo; setas navegam sem tirar a mão
+  // do teclado.
+  if(ev.key==='Enter'){ ev.preventDefault(); sel.focus(); return; }
+  if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){
+    ev.preventDefault();
+    const opts = Array.from(sel.options).filter(o=>!o.disabled);
+    if(!opts.length) return;
+    let i = opts.findIndex(o=>o.value===sel.value);
+    i = ev.key==='ArrowDown' ? Math.min(i+1, opts.length-1) : Math.max(i-1, 0);
+    sel.value = opts[i].value;
+    if(typeof atualizarResumoLanc==='function') atualizarResumoLanc();
+  }
+}
+
+function limparBuscaPlano(){
+  const inp = document.getElementById('l-plano-busca');
+  const cont= document.getElementById('l-plano-conta');
+  if(inp) inp.value='';
+  if(cont) cont.textContent='';
 }
 
 // ============================================================
@@ -13002,7 +13071,10 @@ function atualizarResumoLanc(){
 }
 
 function abrirModalLancamento(tipo=null,idx=null){
-  // Popular o select de plano de contas dinamicamente
+  // Popular o select de plano de contas dinamicamente.
+  // Limpa a busca antes: filtro remanescente da abertura anterior esconderia
+  // o plano do lançamento em edição e a atribuição de .value falharia.
+  limparBuscaPlano();
   popularSelectPlano();
   
   lancEditIdx=idx;
