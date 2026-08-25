@@ -6329,6 +6329,13 @@ async function _salvarMetaSupabase(chave, valor){
 async function _salvarPlanoSupabase(dados){
   await sbClient.from('plano').upsert({ id: 1, dados, updated_at: new Date().toISOString() });
 }
+// brl() devolve <span class="val-monetario">…</span> para o HTML.
+// Em toast, title, alert, confirm e CSV o destino é texto puro — ali a
+// marcação apareceria escrita na tela. Use brlTxt() nesses casos.
+function brlTxt(v,z=true){
+  if((!v&&v!==0)||(!z&&!v)) return '—';
+  return 'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 function brl(v,z=false){if((!v&&v!==0)||(!z&&!v))return'—';const txt='R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function brlN(v){const txt=parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});return`<span class="val-monetario">${txt}</span>`}
 function brlTxt(v){return'R$ '+parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
@@ -11556,7 +11563,7 @@ function salvarQuitar(){
   const mj=+(multa+juros).toFixed(2);
   const isRec=_quitarTipo==='receber';
   const aberto=isRec?(l.aReceber||0):(l.aPagar||0);
-  if(valor > aberto + 0.001){ showToast('O valor não pode ser maior que o saldo em aberto ('+brl(aberto,true)+').',true); return; }
+  if(valor > aberto + 0.001){ showToast('O valor não pode ser maior que o saldo em aberto ('+brlTxt(aberto)+').',true); return; }
   const parcial = valor < aberto - 0.001;
 
   if(parcial){
@@ -11590,7 +11597,7 @@ function salvarQuitar(){
     registrarAuditoria(isRec?'recebimento_parcial':'pagamento_parcial', isRec?'Contas a Receber':'Contas a Pagar','lancamentos', l.id, `${brl(valor,true)} de ${brl(aberto,true)} → ${contaNome} (restam ${brl(restante,true)})`+(mj>0?` + multa/juros ${brl(mj,true)}`:''));
     fecharModalQuitar();
     refreshFinanceiro();
-    showToast(`✓ Baixa parcial de ${brl(valor,true)}`+(mj>0?` (+ ${brl(mj,true)} multa/juros)`:'')+` — restam ${brl(restante,true)} em aberto.`);
+    showToast(`✓ Baixa parcial de ${brlTxt(valor)}`+(mj>0?` (+ ${brlTxt(mj)} multa/juros)`:'')+` — restam ${brlTxt(restante)} em aberto.`);
     return;
   }
 
@@ -11607,7 +11614,7 @@ function salvarQuitar(){
     registrarAuditoria('recebimento','Contas a Receber','lancamentos', l.id, (l.cliente||'')+' → '+contaNome+' — '+brl(valor,true)+(mj>0?` + multa/juros ${brl(mj,true)}`:''));
     fecharModalQuitar();
     refreshFinanceiro();
-    showToast('✓ Recebimento confirmado: '+brl(valor+mj,true)+(mj>0?` (inclui ${brl(mj,true)} de multa/juros)`:''));
+    showToast('✓ Recebimento confirmado: '+brlTxt(valor+mj)+(mj>0?` (inclui ${brlTxt(mj)} de multa/juros)`:''));
   } else {
     lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:totalOrig,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
@@ -11616,7 +11623,7 @@ function salvarQuitar(){
     registrarAuditoria('pagamento','Contas a Pagar','lancamentos', l.id, (l.fornecedor||'')+' ← '+contaNome+' — '+brl(valor,true)+(mj>0?` + multa/juros ${brl(mj,true)}`:''));
     fecharModalQuitar();
     refreshFinanceiro();
-    showToast('✓ Pagamento confirmado: '+brl(valor+mj,true)+(mj>0?` (inclui ${brl(mj,true)} de multa/juros)`:''));
+    showToast('✓ Pagamento confirmado: '+brlTxt(valor+mj)+(mj>0?` (inclui ${brlTxt(mj)} de multa/juros)`:''));
   }
 }
 
@@ -15041,7 +15048,11 @@ function fecharModal(id){document.getElementById(id).classList.remove('open');}
 let toastTimer;
 function showToast(msg,err=false){
   const t=document.getElementById('toast');
-  document.getElementById('toast-msg').textContent=msg;
+  // Rede de segurança: o destino é textContent, então marcação vazada
+  // apareceria escrita na tela. Remove só tags conhecidas de formatação,
+  // preservando um "<" solto de comparação no texto.
+  const limpo=String(msg==null?'':msg).replace(/<\/?(span|b|i|em|strong|div|br|small)\b[^>]*>/gi,'');
+  document.getElementById('toast-msg').textContent=limpo;
   t.style.background=err?'var(--danger)':'var(--text)';
   t.classList.add('show');
   clearTimeout(toastTimer);
@@ -15539,7 +15550,7 @@ function salvarTransferencia(){
   registrarAuditoria('transferencia','Transferências','mov_bancarias', pairId, `${bancos[origIdx]?.nome||''} → ${bancos[destIdx]?.nome||''} — ${brl(valor,true)} — ${_un}`);
   fecharModal('modal-transf');
   refreshFinanceiro();
-  showToast(`Transferência de ${brl(valor,true)} realizada!`);
+  showToast(`Transferência de ${brlTxt(valor)} realizada!`);
 }
 
 // ---------- exportar extrato CSV ----------
