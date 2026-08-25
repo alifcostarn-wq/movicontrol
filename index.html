@@ -7137,6 +7137,18 @@ function renderPainel(){
   const lc=gd('sf_lancamentos');
   const d=calcDRE(_painelModo);
 
+  // ---- Alcance de meses do painel ----
+  // Estava travado nos seis primeiros meses: em agosto a lista parava em junho,
+  // enquanto o total do topo somava o ano inteiro — os números não fechavam.
+  // Agora vai até o último mês COM movimento, e nunca menos que o mês
+  // corrente (o painel é sempre do ano atual, conforme o default do calcDRE).
+  const _mesesPainel = (()=>{
+    const chaves = ['rec','cv','mc','df','inv','lucro_op','resultado','desp_op'];
+    let ult = new Date().getMonth();
+    MESES.forEach((_,i)=>{ if(chaves.some(k=>(d[k]?.[i]||0)!==0)) ult = Math.max(ult,i); });
+    return Math.min(ult+1, 12);
+  })();
+
   // ---- Saldos — fonte única: sf_bancos ----
   const sg=document.getElementById('saldo-grid');
   const bancos=gdBancos();
@@ -7177,11 +7189,11 @@ function renderPainel(){
   document.getElementById('p-desp').innerHTML=brl(MESES.reduce((s,_,i)=>s+(d['desp_op'][i]||0),0),true);
   document.getElementById('p-bfr').style.width=(totalRec/Math.max(totalRec,1)*100)+'%';
   document.getElementById('p-bfd').style.width='100%';
-  document.getElementById('p-rec-rows').innerHTML=MESES.slice(0,6).map((m,i)=>`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${(d['rec'][i]||0)/maxR*100}%;background:#3C9D23"></div></div><span class="month-val">${d['rec'][i]?brlN(d['rec'][i]):'—'}</span></div>`).join('');
-  document.getElementById('p-desp-rows').innerHTML=MESES.slice(0,6).map((m,i)=>{const vd=d['desp_op'][i]||0;return`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${vd/maxDe*100}%;background:var(--danger)"></div></div><span class="month-val">${vd?brlN(vd):'—'}</span></div>`;}).join('');
+  document.getElementById('p-rec-rows').innerHTML=MESES.slice(0,_mesesPainel).map((m,i)=>`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${(d['rec'][i]||0)/maxR*100}%;background:#3C9D23"></div></div><span class="month-val">${d['rec'][i]?brlN(d['rec'][i]):'—'}</span></div>`).join('');
+  document.getElementById('p-desp-rows').innerHTML=MESES.slice(0,_mesesPainel).map((m,i)=>{const vd=d['desp_op'][i]||0;return`<div class="month-row"><span class="month-name">${m}</span><div class="mini-bar-track"><div class="mini-bar" style="width:${vd/maxDe*100}%;background:var(--danger)"></div></div><span class="month-val">${vd?brlN(vd):'—'}</span></div>`;}).join('');
 
   // ---- DRE resumida ----
-  const cols=MESES.slice(0,6);
+  const cols=MESES.slice(0,_mesesPainel);
   document.getElementById('dre-thead-p').innerHTML=`<tr><th style="text-align:left;min-width:200px">Conta</th>${cols.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr>`;
   const dreNav={rec:'fluxo',cv:'fluxo',mc:'fluxo',df:'fluxo',inv:'fluxo',lucro_op:'fluxo',resultado:'fluxo'};
   const lins=[
