@@ -7616,8 +7616,11 @@ function getLancFiltrados(){
     if(busca&&![(l.historico||''),(l.cliente||''),(l.fornecedor||''),(l.plano||'')].join(' ').toLowerCase().includes(busca))return false;
     if(fst&&l.status!==fst)return false;
     if(fco&&l.conta!==fco)return false;
-    if(fde&&(l.data||'')<fde)return false;
-    if(fat&&(l.data||'')>fat)return false;
+    // Efetivado entra pela data em que o dinheiro se moveu; em aberto, pelo
+    // vencimento. Mesmo critério do filtro de mês logo abaixo.
+    const dref=((l.status==='Pago'||l.status==='Recebido')&&l.dataEfetivacao)?l.dataEfetivacao:(l.data||'');
+    if(fde&&dref<fde)return false;
+    if(fat&&dref>fat)return false;
     return true;
   });
 }
@@ -10310,7 +10313,13 @@ let ctxAnaliseAberta = false;
 function ctxChave(l){ return l.id!=null ? 'id:'+l.id : 'ix:'+l._idx; }
 function ctxVTitulo(l,lado){ return l.valorTotalTitulo || (lado==='pagar'?(l.aPagar||l.pago):(l.aReceber||l.recebido)) || 0; }
 function ctxVAberto(l,lado){ return (lado==='pagar'? l.aPagar : l.aReceber) || 0; }
-function ctxVBaixado(l,lado){ return (lado==='pagar'? l.pago : l.recebido) || l.jaQuitado || 0; }
+function ctxVBaixado(l,lado){
+  // Com histórico de baixa parcial, o total baixado é o título menos o que
+  // sobrou em aberto. O campo pago/recebido guarda só a ÚLTIMA baixa, então
+  // usá-lo direto mostraria 358,10 num título de 6.000 já quitado.
+  if(l.valorTotalTitulo) return +(l.valorTotalTitulo - ((lado==='pagar'? l.aPagar : l.aReceber)||0)).toFixed(2);
+  return (lado==='pagar'? l.pago : l.recebido) || l.jaQuitado || 0;
+}
 
 function ctxCols(lado){
   const rotulo = lado==='pagar' ? 'Fornecedor' : 'Cliente';
@@ -11220,7 +11229,10 @@ function renderContas(){
 
   // ----- CONTAS A PAGAR ----- (filtros independentes dos KPIs)
   // Filtro e ordenação: MESMA lógica de antes. Só a renderização mudou para grade em colunas.
-  let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&matchPeriodoTabela(l));
+  // As baixas parciais (parcialDe != null) são MOVIMENTOS de caixa, não títulos.
+  // Pertencem ao Livro Diário e ao extrato bancário, nunca à grade de contas —
+  // aqui o título original já mostra Valor / Baixado / Aberto, como no IXC.
+  let pagar=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aPagar||l.pago||l.cancelado)&&l.parcialDe==null&&matchPeriodoTabela(l));
   pagar=pagar.filter(l=>matchBusca(l,[l.fornecedor||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   pagar.sort((a,b)=>{
     const va=ctxChaveOrd(a,cpSort.col,'pagar'), vb=ctxChaveOrd(b,cpSort.col,'pagar');
@@ -11240,7 +11252,7 @@ function renderContas(){
   if(cpb){let b=`<button onclick="cpNavPag(${cpPag-1})" ${cpPag===1?'disabled':''}>‹</button>`;for(let i=1;i<=tpP;i++){if(i===1||i===tpP||Math.abs(i-cpPag)<=1)b+=`<button class="${i===cpPag?'active':''}" onclick="cpNavPag(${i})">${i}</button>`;else if(Math.abs(i-cpPag)===2)b+='<button disabled>…</button>';}b+=`<button onclick="cpNavPag(${cpPag+1})" ${cpPag===tpP?'disabled':''}>›</button>`;cpb.innerHTML=b;}
 
   // ----- CONTAS A RECEBER -----
-  let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&matchPeriodoTabela(l));
+  let receber=lc.map((l,i)=>({...l,_idx:i})).filter(l=>(l.aReceber||l.recebido||l.cancelado)&&l.parcialDe==null&&matchPeriodoTabela(l));
   receber=receber.filter(l=>matchBusca(l,[l.cliente||'',l.historico||'',l.plano||'',String(l.id||'')])&&matchStatus(l)&&matchSituacao(l));
   receber.sort((a,b)=>{
     const va=ctxChaveOrd(a,crSort.col,'receber'), vb=ctxChaveOrd(b,crSort.col,'receber');
@@ -11500,8 +11512,12 @@ function salvarQuitar(){
   }
 
   // QUITAÇÃO TOTAL
+  // Se o título vinha de baixas parciais, o valor cheio é preservado em
+  // valorTotalTitulo — sem isso a grade passaria a exibir só a última parcela
+  // como se fosse o título inteiro.
+  const totalOrig = l.parcial ? (l.valorTotalTitulo || null) : null;
   if(isRec){
-    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:null,jaQuitado:null};
+    lc[_quitarIdx]={...l,status:'Recebido',recebido:valor,aReceber:0,_valorOriginal:valor,valorLiquido:valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:totalOrig,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     _pushMultaJuros(lc, true, multa, juros, contaNome, contaId, dataEfet, l);
     sd('sf_lancamentos',lc);
@@ -11510,7 +11526,7 @@ function salvarQuitar(){
     refreshFinanceiro();
     showToast('✓ Recebimento confirmado: '+brl(valor+mj,true)+(mj>0?` (inclui ${brl(mj,true)} de multa/juros)`:''));
   } else {
-    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:null,jaQuitado:null};
+    lc[_quitarIdx]={...l,status:'Pago',pago:valor,aPagar:0,_valorOriginal:valor,valorLiquido:-valor,dataEfetivacao:dataEfet,conta:contaNome,contaId:contaId,parcial:false,valorTotalTitulo:totalOrig,jaQuitado:null};
     if(obs)lc[_quitarIdx].historico=(l.historico?l.historico+' — ':'')+obs;
     _pushMultaJuros(lc, false, multa, juros, contaNome, contaId, dataEfet, l);
     sd('sf_lancamentos',lc);
