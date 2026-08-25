@@ -7674,8 +7674,10 @@ function getTransferenciasDiario(){
     if(fco&&origem!==fco&&destino!==fco)return;
     if(fde&&(s.data||'')<fde)return;
     if(fat&&(s.data||'')>fat)return;
-    const hist=`${brl(valor,true)} — ${s.descricao||'Transferência entre contas'}${usuario?(' · '+usuario):''}`;
-    if(busca&&![hist,origem,destino].join(' ').toLowerCase().includes(busca))return;
+    // O valor sai do histórico e vai para as colunas de saída/entrada.
+    // Antes ficava embutido aqui como HTML, espremendo a descrição.
+    const hist=`${s.descricao||'Transferência entre contas'}${usuario?(' · '+usuario):''}`;
+    if(busca&&![hist,origem,destino,brlTxt(valor)].join(' ').toLowerCase().includes(busca))return;
     rows.push({
       _transf:true, _pairId:s.pairId, _valor:valor, _origem:origem, _destino:destino, _usuario:usuario,
       status:'Transferência', data:s.data||'', dataEfetivacao:s.data||'',
@@ -7792,14 +7794,14 @@ function renderDiario(){
         <td><span class="status-badge" style="background:rgba(37,99,235,.14);color:var(--fin-blue)"><span class="status-dot" style="background:var(--fin-blue)"></span>Transferência</span></td>
         <td class="td-mono td-muted">${fmtData(l.data)}</td>
         <td class="td-mono td-muted">—</td>
-        <td style="font-size:11px;color:var(--text2)">Transferência</td>
+        <td style="font-size:11px;color:var(--text2)">Transferência entre contas<br><span style="font-size:9.5px;color:var(--text3)">não entra no DRE</span></td>
         <td class="td-muted">—</td>
         <td class="td-muted">—</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text2);font-size:11px">${l.historico}</td>
         <td class="td-mono td-muted">—</td>
+        <td class="td-mono" style="color:#4DA3E8;font-weight:600" title="Entrada em ${l._destino} — não é receita">+ ${brlTxt(l._valor)}</td>
         <td class="td-mono td-muted">—</td>
-        <td class="td-mono td-muted">—</td>
-        <td class="td-mono td-muted">—</td>
+        <td class="td-mono" style="color:#4DA3E8;font-weight:600" title="Saída de ${l._origem} — não é despesa">− ${brlTxt(l._valor)}</td>
         <td style="font-size:11px;color:#4DA3E8">${l._origem} → ${l._destino}</td>
         <td><div class="action-btns">
           <button class="action-btn del" onclick="cancelarTransferencia('${l._pairId}')" title="Cancelar transferência (reverte as duas pontas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
