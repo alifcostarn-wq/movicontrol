@@ -1964,6 +1964,9 @@ body.perfil-operador #nav-sec-admin{display:none !important}
 .cp-st-concluido{background:var(--accent2);color:var(--accent)}
 .cp-st-cancelado{background:var(--danger-bg);color:var(--danger)}
 .cp-st-aberto{background:rgba(107,47,187,0.1);color:#004E98}
+.cp-st-reagendado{background:rgba(107,47,187,.14);color:#6B2FBB}
+.cp-reag-info{font-size:10.5px;color:#6B2FBB;font-weight:600;margin-top:2px}
+.cp-reag-alerta{font-size:10.5px;color:#C40000;font-weight:700;margin-top:2px}
 body.dark-mode .cp-st-andamento{background:rgba(155,95,235,0.15);color:#004E98}
 .cp-prio{display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px}
 .cp-prio-alta{background:var(--danger-bg);color:var(--danger)}
@@ -2838,6 +2841,7 @@ textarea.cp-form-input{resize:vertical}
         <div class="cp-kpi azul"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--info-bg)">📞</div><span class="cp-kpi-badge cp-kb-info">Novos</span></div><div class="cp-kpi-num" id="kpi-ch-novos">—</div><div class="cp-kpi-lbl">Chamados Novos</div></div>
         <div class="cp-kpi laranja"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--warn-bg)">⏳</div><span class="cp-kpi-badge cp-kb-warn">Sem técnico</span></div><div class="cp-kpi-num" id="kpi-ch-aguard">—</div><div class="cp-kpi-lbl">Aguardando</div></div>
         <div class="cp-kpi roxo"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:rgba(107,47,187,.1)">🔧</div></div><div class="cp-kpi-num" id="kpi-ch-andamento">—</div><div class="cp-kpi-lbl">Em Andamento</div></div>
+        <div class="cp-kpi roxo"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:rgba(107,47,187,.1)">📅</div><span class="cp-kpi-badge" style="background:rgba(107,47,187,.12);color:#6B2FBB">Voltaram</span></div><div class="cp-kpi-num" id="kpi-ch-reag">—</div><div class="cp-kpi-lbl">Reagendados</div></div>
         <div class="cp-kpi verde"><div class="cp-kpi-top"><div class="cp-kpi-ico" style="background:var(--accent2)">✅</div><span class="cp-kpi-badge cp-kb-ok">Hoje</span></div><div class="cp-kpi-num" id="kpi-ch-hoje">—</div><div class="cp-kpi-lbl">Concluídos Hoje</div></div>
       </div>
       <div class="card" style="padding:0">
@@ -2852,6 +2856,7 @@ textarea.cp-form-input{resize:vertical}
               <option value="andamento">Em andamento</option>
               <option value="concluido">Concluído</option>
               <option value="cancelado">Cancelado</option>
+              <option value="reagendado">📅 Reagendado</option>
               <option value="aberto">Aberto (em OS)</option>
               <option value="__todos__">Todos (incluindo Abertos)</option>
             </select>
@@ -16908,6 +16913,8 @@ function renderChamados(){
   document.getElementById('kpi-ch-novos').textContent = _cpChamados.filter(c=>c.status==='novo').length;
   document.getElementById('kpi-ch-aguard').textContent = _cpChamados.filter(c=>!c.tecnico_id && !['concluido','cancelado'].includes(c.status)).length;
   document.getElementById('kpi-ch-andamento').textContent = _cpChamados.filter(c=>c.status==='andamento').length;
+  const _kr = document.getElementById('kpi-ch-reag');
+  if(_kr) _kr.textContent = _cpChamados.filter(c=>c.status==='reagendado').length;
   document.getElementById('kpi-ch-hoje').textContent = _cpChamados.filter(c=>c.status==='concluido' && c.data===hoje_).length;
 
   const lista = _cpChamados.filter(c=>{
@@ -16921,7 +16928,7 @@ function renderChamados(){
 
   if(!lista.length){ tb.innerHTML=`<tr><td colspan="8" class="cp-empty-row"><div class="cp-empty-ico">📭</div>Nenhum chamado encontrado</td></tr>`; return; }
 
-  const stMap = { novo:['cp-st-novo','Novo'], atribuido:['cp-st-atribuido','Atribuído'], andamento:['cp-st-andamento','Em andamento'], aberto:['cp-st-aberto','Aberto (em OS)'], concluido:['cp-st-concluido','Concluído'], cancelado:['cp-st-cancelado','Cancelado'] };
+  const stMap = { novo:['cp-st-novo','Novo'], atribuido:['cp-st-atribuido','Atribuído'], andamento:['cp-st-andamento','Em andamento'], reagendado:['cp-st-reagendado','📅 Reagendado'], aberto:['cp-st-aberto','Aberto (em OS)'], concluido:['cp-st-concluido','Concluído'], cancelado:['cp-st-cancelado','Cancelado'] };
   const prMap = { alta:'cp-prio-alta', media:'cp-prio-media', baixa:'cp-prio-baixa' };
 
   tb.innerHTML = lista.map(c=>{
@@ -16931,7 +16938,12 @@ function renderChamados(){
     return `<tr class="${prioRowCl}">
       <td style="font-size:11px;color:var(--text3);font-weight:600">#${String(c.id).slice(-5).toUpperCase()}</td>
       <td><div style="font-weight:600">${c.cliente}</div><div style="font-size:11px;color:var(--text3)">${c.telefone||''}${c.os_id?` · <span style="color:var(--accent);font-weight:600">${(()=>{const o=_cpOS.find(x=>x.id===c.os_id);return o?'OS #'+String(o.numero||0).padStart(4,'0'):'OS vinculada';})()}</span>`:''}</div></td>
-      <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${c.descricao}">${c.descricao}</td>
+      <td style="max-width:220px" title="${c.descricao}">
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.descricao}</div>
+        ${c.status==='reagendado' ? `<div class="${(c.reagendamentos||0)>=2?'cp-reag-alerta':'cp-reag-info'}">
+            📅 ${c.reagendado_motivo||'reagendado'}${c.reagendado_para?' · volta '+cpFmtData(c.reagendado_para):' · sem data definida'}${(c.reagendamentos||0)>=2?` · ${c.reagendamentos}ª vez`:''}
+          </div>` : ''}
+      </td>
       <td><span class="cp-prio ${prMap[c.prioridade]||'cp-prio-media'}">${(c.prioridade||'media').charAt(0).toUpperCase()+(c.prioridade||'media').slice(1)}</span></td>
       <td style="font-size:12px">${c.tecnico_nome||'<span style="color:var(--text3)">—</span>'}</td>
       <td><span class="cp-status ${stCl}"><span class="cp-status-dot"></span>${stLb}</span></td>
