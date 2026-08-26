@@ -199,6 +199,21 @@ body.dk .s-reagendada{background:rgba(107,47,187,.18);color:#9B5FEB}
 .foto-thumb .foto-status.up{background:rgba(26,92,58,.85);color:#fff}
 .foto-thumb .foto-status.err{background:rgba(200,30,30,.85);color:#fff}
 .foto-thumb .foto-status.pend{background:rgba(0,0,0,.5);color:#fff}
+.reag-datas{display:flex;gap:7px;overflow-x:auto;margin:10px 0 12px;padding-bottom:2px;scrollbar-width:none}
+.reag-datas::-webkit-scrollbar{display:none}
+.reag-data{flex:none;min-width:78px;padding:10px 12px;border-radius:11px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--tx2);font-family:inherit;cursor:pointer;text-align:center;line-height:1.25}
+.reag-data b{display:block;font-family:'Archivo',sans-serif;font-size:14px;font-weight:700}
+.reag-data small{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase}
+.reag-data.sel{border-color:var(--pur);background:var(--pur-bg);color:var(--pur)}
+.linha-turno{display:flex;gap:7px;margin-bottom:14px}
+.reag-turno{flex:1;padding:9px 4px;border-radius:10px;border:1px solid var(--bd);background:var(--sf2);
+  color:var(--tx2);font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;min-height:40px}
+.reag-turno.on{border-color:var(--pur);background:var(--pur-bg);color:var(--pur);font-weight:700}
+.reag-check{display:flex;gap:11px;align-items:flex-start;padding:12px 13px;border:1px solid var(--bd);
+  border-radius:11px;background:var(--sf2);margin-bottom:12px;cursor:pointer}
+.reag-check input{width:19px;height:19px;accent-color:var(--ac);flex-shrink:0;margin-top:1px}
+.reag-check small{display:block;font-size:11.5px;color:var(--tx3);margin-top:3px;line-height:1.45}
 .reagendar-opts{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .reagendar-opt{padding:13px 14px;border-radius:11px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-size:14px;font-weight:500;cursor:pointer;text-align:left;font-family:inherit}
 .reagendar-opt:active,.reagendar-opt.sel{border-color:var(--pur);background:var(--pur-bg);color:var(--pur);font-weight:700}
@@ -654,7 +669,7 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
       <div class="sheet-sub" id="reag-sub">—</div>
     </div>
     <div class="sheet-body">
-      <div class="alert warn">A OS sairá da rota de hoje e voltará como <b>Reagendada</b> para o admin visualizar e replanejar.</div>
+      <div class="alert warn">A OS sai da rota de hoje, o chamado volta ao admin marcado como <b>Reagendado</b> e o cliente é avisado no WhatsApp.</div>
       <label class="flabel">Motivo do reagendamento <span style="color:var(--red)">*</span></label>
       <div class="reagendar-opts" id="reag-opts">
         <button class="reagendar-opt" onclick="selMotivo(this,'cliente_ausente')">🚪 Cliente ausente / não atendeu</button>
@@ -667,6 +682,20 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
         <label class="flabel">Descreva o motivo</label>
         <textarea class="finput" id="reag-outro-txt" placeholder="Ex: cliente estava no hospital..." rows="3"></textarea>
       </div>
+
+      <label class="flabel">Voltar quando <span style="color:var(--red)">*</span></label>
+      <div class="reag-datas" id="reag-datas"></div>
+      <div class="linha-turno">
+        <button class="reag-turno" data-t="manha"  onclick="selTurno(this,'manha')">🌅 Manhã</button>
+        <button class="reag-turno" data-t="tarde"  onclick="selTurno(this,'tarde')">🌇 Tarde</button>
+        <button class="reag-turno on" data-t="dia" onclick="selTurno(this,'dia')">📅 Sem hora definida</button>
+      </div>
+
+      <label class="reag-check" id="reag-avisar-wrap">
+        <input type="checkbox" id="reag-avisar" checked>
+        <span><b>Avisar o cliente no WhatsApp</b><small id="reag-preview">—</small></span>
+      </label>
+
       <button class="btn-full btn-amb" id="btn-confirmar-reag" onclick="confirmarReagendar()" style="margin-top:4px" disabled>📅 Confirmar Reagendamento</button>
       <button class="btn-full btn-ghost" onclick="fecharReagendar()" style="margin-top:6px">Cancelar</button>
     </div>
@@ -2032,6 +2061,41 @@ async function _autoWaStatus(os, etapa){
   }
 }
 
+/* Aviso de reagendamento. Se a API do WhatsApp falhar, abre o wa.me com a
+   mensagem pronta para o técnico enviar do próprio aparelho — o cliente nunca
+   fica sem ser avisado por causa de indisponibilidade do gateway. */
+async function _avisarReagendamento(os, motivoCod, motivoTexto, dataISO){
+  const telDigits = (os.telefone||'').replace(/\D/g,'');
+  if(telDigits.length < 10) return;
+  const recipient = _telBR(telDigits);
+  const msg = _msgReagendamento(os, motivoCod, dataISO);
+  const cliId = parseInt(os.cliente_id)||null;
+  let ok=false, erro=null;
+  try{
+    const resp = await fetch(_proxyUrl, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-target':'evotrix' },
+      body: JSON.stringify({ channel:'67127520ecb37a364cc5e36d', recipient, body:msg, campaign:'os_notificacao' })
+    });
+    const txt = await resp.text(); let d; try{ d=JSON.parse(txt); }catch{ d={}; }
+    ok = resp.ok && d.ok !== false;
+    if(!ok) erro = (d.evotrix && (d.evotrix.message||d.evotrix.error)) || ('HTTP '+resp.status);
+  }catch(e){ erro = String(e.message||e); }
+
+  try{
+    await sb.rpc('registrar_sms_os', {
+      p_os_id:os.id, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
+      p_etapa:'reagendada', p_telefone:recipient, p_mensagem:msg,
+      p_status: ok?'enviado':'erro', p_erro: ok?null:String(erro).slice(0,300), p_ixc_id:null
+    });
+  }catch(_){}
+
+  if(ok){ toast('💬 Cliente avisado do reagendamento'); return; }
+  // plano B: manda pelo WhatsApp do próprio técnico
+  toast('Gateway indisponível — abrindo o WhatsApp para você enviar', 3800);
+  setTimeout(()=>{ window.open('https://wa.me/'+recipient+'?text='+encodeURIComponent(msg), '_blank'); }, 700);
+}
+
 async function _carregarHistSms(osId){
   const el = $('sms-hist'); if(!el || !osId) return;
   try {
@@ -2422,18 +2486,84 @@ async function rapidoDet(status){
 /* ---- REAGENDAMENTO ---- */
 let _reagOs = null, _reagMotivo = null;
 
+let _reagData = null, _reagTurno = 'dia';
+const DIA_SEM=['dom','seg','ter','qua','qui','sex','sáb'];
+function _ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
 function abrirReagendar(id){
   const os = _os.find(x=>x.id==id);
   if(!os){ toast('OS não encontrada.'); return; }
   _reagOs = os;
-  _reagMotivo = null;
-  $('reag-sub').textContent = `OS #${String(os.numero||0).padStart(4,'0')} — ${os.cliente||'—'}`;
-  // Reset seleção
+  _reagMotivo = null; _reagData = null; _reagTurno = 'dia';
+  $('reag-sub').textContent = `OS #${String(os.numero||0).padStart(4,'0')} — ${os.cliente||'—'}`
+    + ((os.reagendamentos||0) ? ` · ${os.reagendamentos+1}º reagendamento` : '');
   document.querySelectorAll('.reagendar-opt').forEach(b=>b.classList.remove('sel'));
   $('reag-outro-wrap').style.display = 'none';
   if($('reag-outro-txt')) $('reag-outro-txt').value = '';
+  // datas sugeridas: os próximos 5 dias úteis, mais "definir depois"
+  const opts=[]; const d=new Date(); let add=0;
+  while(opts.length<5){
+    add++; const x=new Date(); x.setDate(d.getDate()+add);
+    if(x.getDay()===0) continue;                       // domingo não entra
+    opts.push({v:_ymd(x), t:add===1?'Amanhã':DIA_SEM[x.getDay()], s:String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0')});
+  }
+  $('reag-datas').innerHTML = opts.map(o=>
+    `<button class="reag-data" onclick="selData(this,'${o.v}')"><b>${o.t}</b><small>${o.s}</small></button>`).join('')
+    + `<button class="reag-data" onclick="selData(this,'')"><b>A definir</b><small>admin agenda</small></button>`;
+  document.querySelectorAll('.reag-turno').forEach(b=>b.classList.toggle('on', b.dataset.t==='dia'));
+  const av=$('reag-avisar'); if(av) av.checked = ((os.telefone||'').replace(/\D/g,'').length>=10);
+  const wrap=$('reag-avisar-wrap');
+  if(wrap) wrap.style.display = ((os.telefone||'').replace(/\D/g,'').length>=10) ? '' : 'none';
+  _reagPreview();
   $('btn-confirmar-reag').disabled = true;
   $('ov-reagendar').classList.add('open');
+}
+function selData(btn, v){
+  document.querySelectorAll('.reag-data').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel'); _reagData = v || null;
+  _reagPreview(); _reagValidar();
+}
+function selTurno(btn, t){
+  document.querySelectorAll('.reag-turno').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on'); _reagTurno = t; _reagPreview();
+}
+function _reagValidar(){
+  // motivo e data são obrigatórios — "a definir" também é uma escolha explícita
+  const okData = document.querySelector('.reag-data.sel');
+  $('btn-confirmar-reag').disabled = !(_reagMotivo && okData);
+}
+function _dataBR(v){
+  if(!v) return null;
+  const [a,m,d]=v.split('-'); return d+'/'+m;
+}
+function _turnoTxt(){
+  return _reagTurno==='manha' ? ' pela manhã' : (_reagTurno==='tarde' ? ' à tarde' : '');
+}
+/* mensagem por motivo — o cliente precisa saber o que houve e o que vem agora */
+function _msgReagendamento(os, motivo, dataISO){
+  const nome = _nomeCli(os);
+  const num  = String(os.numero || os.id);
+  const quando = dataISO ? `*${_dataBR(dataISO)}*${_turnoTxt()}` : null;
+  const retorno = quando
+    ? `Reagendamos o seu atendimento para ${quando}.`
+    : `Nossa equipe entrará em contato para combinar a nova data.`;
+  const abertura = {
+    cliente_ausente:          `Estivemos no seu endereço e não encontramos ninguém no local. 🚪`,
+    endereco_nao_localizado:  `Estivemos na região mas não conseguimos localizar o seu endereço. 📍`,
+    cliente_pediu_remarcar:   `Conforme combinado, remarcamos o seu atendimento. 📆`,
+    problema_tecnico_externo: `Precisamos remarcar o seu atendimento por um imprevisto técnico. 🔧`,
+    outro:                    `Precisamos remarcar o seu atendimento.`
+  }[motivo] || `Precisamos remarcar o seu atendimento.`;
+  const fecho = (motivo==='cliente_ausente'||motivo==='endereco_nao_localizado')
+    ? `\n\nSe precisar de outro horário ou quiser passar uma referência do endereço, é só responder esta mensagem.`
+    : `\n\nQualquer dúvida, é só responder esta mensagem.`;
+  return `📡 *MoviOn*\n\nOlá ${nome}! ${abertura}\n\n${retorno}\n\nProtocolo: OS #${num}${fecho}`;
+}
+function _reagPreview(){
+  const el=$('reag-preview'); if(!el||!_reagOs) return;
+  el.textContent = _reagData
+    ? `Aviso: "reagendamos para ${_dataBR(_reagData)}${_turnoTxt()}"`
+    : 'Aviso: "nossa equipe entrará em contato para combinar a nova data"';
 }
 
 function fecharReagendar(){
@@ -2446,7 +2576,7 @@ function selMotivo(btn, motivo){
   btn.classList.add('sel');
   _reagMotivo = motivo;
   $('reag-outro-wrap').style.display = motivo==='outro' ? '' : 'none';
-  $('btn-confirmar-reag').disabled = false;
+  _reagPreview(); _reagValidar();
 }
 
 const MOTIVO_LB = {
@@ -2469,21 +2599,27 @@ async function confirmarReagendar(){
   const btn = $('btn-confirmar-reag');
   btn.disabled = true; btn.textContent = '⏳ Reagendando...';
 
+  const os = _reagOs, motivoCod = _reagMotivo, dataISO = _reagData;
+  const avisar = $('reag-avisar') && $('reag-avisar').checked;
   try {
-    const {error} = await sb.from('campo_os').update({
-      status: 'reagendada',
-      reagendado_em: new Date().toISOString(),
-      reagendado_motivo: motivoTexto,
-    }).eq('id', _reagOs.id);
-
+    // uma chamada só: atualiza a OS, devolve o chamado ao admin como "reagendado"
+    // e grava o histórico — sem risco de ficar pela metade
+    const { data, error } = await sb.rpc('campo_reagendar_os', {
+      p_os_id: os.id,
+      p_motivo: motivoTexto,
+      p_nova_data: dataISO || null,
+      p_turno: _reagTurno,
+      p_tecnico_nome: (_tec && _tec.nome) || null
+    });
     if(error) throw new Error(error.message);
+    if(data && data.ok === false) throw new Error(data.erro || 'não foi possível reagendar');
 
-    // Remove da rota local (para que a próxima OS desbloqueie imediatamente)
-    _rotaState.paradas = _rotaState.paradas.filter(p=>p.id!==_reagOs.id);
+    if(avisar) await _avisarReagendamento(os, motivoCod, motivoTexto, dataISO);
 
+    _rotaState.paradas = _rotaState.paradas.filter(p=>p.id!==os.id);
     fecharReagendar();
     await atualizar(false, false);
-    toast(`📅 OS reagendada — próxima OS desbloqueada!`, 3500);
+    toast(dataISO ? `📅 Reagendada para ${_dataBR(dataISO)} — chamado devolvido ao admin` : '📅 Reagendada — chamado devolvido ao admin', 3800);
   } catch(e){
     toast('Erro ao reagendar: '+e.message);
   } finally {
