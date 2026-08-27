@@ -1469,14 +1469,20 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
 .periodo-btn.act{background:var(--accent);color:#fff;border-color:var(--accent)}
 .filtro-label{font-size:11px;color:var(--text3);font-weight:500}
 /* Modal quitar */
-.modal-quitar-overlay{display:none;position:fixed;inset:0;background:rgba(26,25,22,0.45);z-index:200;align-items:center;justify-content:center}
+.modal-quitar-overlay{display:none;position:fixed;inset:0;background:rgba(26,25,22,0.45);z-index:200;align-items:center;justify-content:center;padding:20px}
 .modal-quitar-overlay.open{display:flex}
-.modal-quitar{background:var(--surface);border-radius:14px;width:420px;max-width:95vw;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.2)}
-.mq-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+/* Preencher multa/juros faz o resumo do total aparecer e o modal crescer. Sem
+   teto de altura, o overlay centralizado empurrava o topo para fora da tela e
+   os botões para baixo dela — sem rolagem para alcançar "Confirmar Pagamento".
+   Mesmo tratamento que .fx-modal e .ctxd-modal já usam: teto de altura, coluna
+   flex, e só o corpo rola; cabeçalho e rodapé ficam sempre visíveis. */
+.modal-quitar{background:var(--surface);border-radius:14px;width:420px;max-width:95vw;max-height:88vh;
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.2)}
+.mq-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
 .mq-title{font-size:14px;font-weight:600}
-.mq-body{padding:20px}
+.mq-body{padding:20px;overflow-y:auto;flex:1;min-height:0}
 .mq-desc{font-size:12px;color:var(--text2);margin-bottom:14px;padding:10px 13px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--danger)}
-.mq-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.mq-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
 
 /* ======== LIVRO DIÁRIO — KPI DO DIA + SELETOR DE MÊS ======== */
 .diario-kpi-hoje{
