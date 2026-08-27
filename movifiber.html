@@ -883,6 +883,17 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 .ins-cx input{width:auto;margin:0}
 .ins-cx small{color:var(--text-dim);font-family:'DM Mono',monospace;font-size:10.5px;margin-left:auto}
 .ins-previa{font-size:12.5px;color:var(--text-dim);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+/* faixa que aparece sobre o mapa enquanto se desenha a área de uma instabilidade */
+#ins-desenho{position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:1400;display:none;
+  gap:14px;align-items:center;flex-wrap:wrap;max-width:min(92vw,760px);
+  background:var(--surface);border:1px solid var(--danger);border-radius:13px;padding:11px 15px;
+  box-shadow:0 10px 34px rgba(0,0,0,.5);font-size:12.5px}
+#ins-desenho.on{display:flex}
+#ins-desenho .txt{line-height:1.5;color:var(--text-dim)}
+#ins-desenho .txt b{color:var(--text)}
+#ins-desenho .cnt{font-family:'DM Mono',monospace;color:var(--danger);white-space:nowrap}
+.ins-area-box{border:1px solid var(--border);border-radius:11px;padding:11px 12px;background:var(--bg);font-size:12.5px}
+.ins-area-box .ok{color:var(--accent);font-weight:600}
 .ins-previa b{color:var(--accent);font-size:15px;font-family:'DM Mono',monospace}
 </style>
 </head>
@@ -1070,6 +1081,12 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" id="tool-camadas" onclick="togglePainelCamadas()" title="Mostrar/ocultar camadas do mapa"><span class="ic">🗺️</span>Camadas</button>
   </div>
 
+  <div id="ins-desenho">
+    <span class="txt"><b>🔴 Marcando a área da instabilidade.</b><br>
+      Clique nos cantos da região atingida · <b>Enter</b> ou duplo-clique fecha o polígono · <b>Esc</b> limpa os pontos.</span>
+    <span class="cnt" id="ins-desenho-cnt">0 pontos</span>
+    <button class="btn ghost sm" onclick="insCancelarDesenho()">Cancelar</button>
+  </div>
   <div id="multi-barra"></div>
   <div id="subbar" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:899;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 12px;display:none;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:12px;color:var(--text-dim)"></div>
 
@@ -3311,8 +3328,9 @@ function cliqueMapa(e){
       +' · <b>Alt</b> ignora o imã · Enter finaliza · Esc cancela';
   }
   if(modo==='area'){
-    if(!areaTemp){areaTemp={pontos:[ll],poly:L.polygon([ll],{color:'#3CB371',weight:2,fillOpacity:.12,dashArray:'6 6'}).addTo(mapa)}}
+    if(!areaTemp){areaTemp={pontos:[ll],poly:L.polygon([ll],{color:_insDesenho?'#E05445':'#3CB371',weight:2,fillOpacity:.12,dashArray:'6 6'}).addTo(mapa)}}
     else{areaTemp.pontos.push(ll);areaTemp.poly.setLatLngs(areaTemp.pontos)}
+    if(_insDesenho)insContarPontos();
   }
 }
 function finalizarDesenho(){
@@ -3343,6 +3361,14 @@ function finalizarDesenho(){
     toast('Cabo criado'+((o||d)?(' · vinculado: '+(o||'?')+' ⇄ '+(d||'?')):'')+entre);
   }
   if(areaTemp&&areaTemp.pontos.length>2){
+    // desenhando para uma instabilidade: o polígono vai para o aviso, não vira
+    // área de cobertura do projeto — senão cada queda deixaria lixo no mapa
+    if(_insDesenho){
+      const pts=areaTemp.pontos.map(p=>[p[0],p[1]]);
+      cancelarDesenho();
+      insReceberArea(pts);
+      return;
+    }
     projAtual.seq.area++;
     projAtual.areas.push(_marcarProj({id:uid('area'),nome:'Área '+projAtual.seq.area,pontos:areaTemp.pontos}));
     salvar();renderTudo();toast('Área de cobertura criada');
@@ -9291,6 +9317,57 @@ const INS_VARS=[
   ['{{desde}}','quando a queda foi marcada']
 ];
 let _insLista=[], _insAvisos={}, _insFiltro='ativo', _insForm=null, _insPrev=null, _insBuscaCx='';
+/* Enquanto isto está preenchido, o próximo polígono desenhado no mapa vai para
+   a instabilidade em vez de virar área de cobertura do projeto. Guarda o
+   formulário inteiro para o operador não perder o que já tinha digitado. */
+let _insDesenho=null;
+
+function insContarPontos(){
+  const el=document.getElementById('ins-desenho-cnt');
+  if(el)el.textContent=(areaTemp?areaTemp.pontos.length:0)+' ponto(s)';
+}
+function insBarraDesenho(on){
+  const b=document.getElementById('ins-desenho');
+  if(b)b.classList.toggle('on',!!on);
+  if(on)insContarPontos();
+}
+/* Abre o mapa do projeto no modo de desenho. O formulário volta inteiro
+   quando o polígono fecha. */
+async function incDesenharArea(){
+  const f=_insForm;
+  if(!f||!f.projeto_id){toast('Escolha o projeto primeiro',true);return}
+  _insDesenho={form:JSON.parse(JSON.stringify(f))};
+  fecharModal('md-incidente');
+  try{
+    if(!projAtual||projAtual.id!==f.projeto_id||projAtual._multi)await abrirProjeto(f.projeto_id);
+  }catch(e){
+    _insDesenho=null;toast('Não consegui abrir o projeto: '+e.message,true);
+    abrirModal('md-incidente');return;
+  }
+  setModo('area');
+  insBarraDesenho(true);
+  toast('Clique nos cantos da área atingida');
+}
+function insReceberArea(pontos){
+  const pend=_insDesenho; _insDesenho=null;
+  insBarraDesenho(false);
+  if(!pend)return;
+  _insForm=pend.form;
+  _insForm.escopo='area';
+  _insForm.poligonoLivre=pontos;
+  _insForm.area_id='';
+  if(!_insForm.area_nome)_insForm.area_nome='Área marcada no mapa';
+  _insPrev=null;
+  abrirModal('md-incidente');
+  renderIncForm();
+  toast('Área marcada · '+pontos.length+' pontos');
+}
+function insCancelarDesenho(){
+  const pend=_insDesenho; _insDesenho=null;
+  insBarraDesenho(false);
+  try{cancelarDesenho();setModo('navegar')}catch(e){}
+  if(pend){_insForm=pend.form;abrirModal('md-incidente');renderIncForm()}
+}
 
 function _insQuando(iso){
   if(!iso)return '—';
@@ -9411,7 +9488,7 @@ async function abrirIncidente(pre){
     ||((DB.projetos[0]||{}).id||null);
   _insForm=Object.assign({
     id:null,titulo:'',tipo:'queda',escopo:'projeto',
-    projeto_id:padraoProj,area_id:'',caixas:[],
+    projeto_id:padraoProj,area_id:'',area_nome:'',poligonoLivre:null,caixas:[],
     mensagem:'',gatilho:'reclamacao',encerrar:false,previsao:''
   },pre||{});
   if(!_insForm.mensagem)_insForm.mensagem=INS_MODELOS[_insForm.tipo]||INS_MODELOS.queda;
@@ -9435,9 +9512,13 @@ async function editarIncidente(id){
   const i=_insLista.find(x=>String(x.id)===String(id)); if(!i)return;
   const p=DB.projetos.find(x=>x.id===i.projeto_id);
   const area=p?(p.areas||[]).find(a=>a.nome===i.area_nome):null;
+  // incidente cuja área foi desenhada na hora não existe como área do projeto:
+  // o polígono guardado no banco é a única cópia, então volta como está
+  const solto=(!area&&i.escopo==='area'&&Array.isArray(i.poligono)&&i.poligono.length>=3)?i.poligono:null;
   await abrirIncidente({
     id:i.id,titulo:i.titulo,tipo:i.tipo,escopo:i.escopo,
     projeto_id:i.projeto_id,area_id:area?area.id:'',
+    poligonoLivre:solto,area_nome:i.area_nome||'',
     caixas:(i.caixas||[]).slice(),mensagem:i.mensagem,
     gatilho:i.gatilho||'reclamacao',encerrar:!!i.encerrar,
     previsao:i.previsao?_insParaInput(i.previsao):'',
@@ -9456,7 +9537,7 @@ function incSet(campo,valor,rerender){
   if(rerender)renderIncForm();
 }
 async function incTrocarProjeto(id){
-  _insForm.projeto_id=id;_insForm.area_id='';_insForm.caixas=[];_insPrev=null;
+  _insForm.projeto_id=id;_insForm.area_id='';_insForm.caixas=[];_insForm.poligonoLivre=null;_insPrev=null;
   renderIncForm();
   await _insGarantirProjeto(id);
   renderIncForm();
@@ -9523,14 +9604,34 @@ function renderIncForm(){
 
   let escopoExtra='';
   if(f.escopo==='area'){
-    escopoExtra=carregando
-      ? '<div class="info-box">Baixando o projeto para ler as áreas…</div>'
-      : (areas.length
-        ? '<div class="campo"><label>Área de cobertura</label><select onchange="incSet(\'area_id\',this.value,true)">'
-          +'<option value="">— escolha a área —</option>'
-          +areas.map(a=>'<option value="'+_esc(a.id)+'" '+(f.area_id===a.id?'selected':'')+'>'+_esc(a.nome)+'</option>').join('')
-          +'</select><div class="info-box" style="margin-top:8px">A área usa o <b>polígono desenhado no mapa</b>: entra todo cliente com coordenada dentro dele, mesmo quem ainda não tem caixa vinculada.</div></div>'
-        : '<div class="info-box" style="border-left:3px solid var(--warn)">Este projeto não tem área desenhada. Desenhe uma área no mapa (ferramenta ⬠ Área) ou escolha outra abrangência.</div>');
+    const btnDesenhar='<button class="btn ghost sm" onclick="incDesenharArea()">🗺️ '
+      +(f.poligonoLivre?'Desenhar de novo':'Desenhar área no mapa')+'</button>';
+    if(carregando){
+      escopoExtra='<div class="info-box">Baixando o projeto para ler as áreas…</div>';
+    }else if(f.poligonoLivre&&f.poligonoLivre.length>=3){
+      // área desenhada agora, só para este aviso: não vira área do projeto
+      escopoExtra='<div class="campo"><label>Área atingida</label>'
+        +'<div class="ins-area-box"><span class="ok">✅ Área marcada no mapa</span> · '
+        +f.poligonoLivre.length+' pontos'
+        +'<div style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap">'+btnDesenhar
+        +(areas.length?'<button class="btn ghost sm" onclick="incSet(\'poligonoLivre\',null,true)">Usar uma área do projeto</button>':'')
+        +'</div></div></div>'
+        +'<div class="campo"><label>Nome da região (aparece na mensagem)</label>'
+        +'<input value="'+_esc(f.area_nome||'')+'" oninput="incSet(\'area_nome\',this.value)" placeholder="Ex.: Centro, Alto de São Manoel"></div>';
+    }else if(areas.length){
+      escopoExtra='<div class="campo"><label>Área de cobertura</label><select onchange="incSet(\'area_id\',this.value,true)">'
+        +'<option value="">— escolha a área —</option>'
+        +areas.map(a=>'<option value="'+_esc(a.id)+'" '+(f.area_id===a.id?'selected':'')+'>'+_esc(a.nome)+'</option>').join('')
+        +'</select>'
+        +'<div style="margin-top:8px">'+btnDesenhar+' <span style="font-size:11.5px;color:var(--text-dim)">para marcar uma região que ainda não existe como área</span></div>'
+        +'<div class="info-box" style="margin-top:8px">Entra todo cliente com coordenada dentro do polígono, mesmo quem ainda não tem caixa vinculada.</div></div>';
+    }else{
+      escopoExtra='<div class="campo"><label>Área atingida</label>'
+        +'<div class="ins-area-box">Este projeto ainda não tem área de cobertura desenhada.<br>'
+        +'Marque no mapa a região que caiu — o polígono vale só para este aviso e '
+        +'pega todo cliente com coordenada dentro dele.'
+        +'<div style="margin-top:10px">'+btnDesenhar+'</div></div></div>';
+    }
   }else if(f.escopo==='caixas'){
     escopoExtra=carregando
       ? '<div class="info-box">Baixando o projeto para ler as caixas…</div>'
@@ -9597,11 +9698,16 @@ function _insCriterio(){
   const p=_insProj();
   const base={escopo:f.escopo,projeto_id:f.projeto_id,projeto_nome:p?p.nome:null,caixas:[],poligono:[]};
   if(f.escopo==='area'){
-    const a=p?(p.areas||[]).find(x=>x.id===f.area_id):null;
-    if(!a){toast('Escolha a área atingida',true);return null}
-    if(!a.pontos||a.pontos.length<3){toast('Essa área não tem polígono válido',true);return null}
-    base.poligono=a.pontos.map(pt=>[+pt[0],+pt[1]]);
-    base.area_nome=a.nome;
+    if(f.poligonoLivre&&f.poligonoLivre.length>=3){
+      base.poligono=f.poligonoLivre.map(pt=>[+pt[0],+pt[1]]);
+      base.area_nome=String(f.area_nome||'').trim()||'Área marcada no mapa';
+    }else{
+      const a=p?(p.areas||[]).find(x=>x.id===f.area_id):null;
+      if(!a){toast('Marque a área no mapa ou escolha uma existente',true);return null}
+      if(!a.pontos||a.pontos.length<3){toast('Essa área não tem polígono válido',true);return null}
+      base.poligono=a.pontos.map(pt=>[+pt[0],+pt[1]]);
+      base.area_nome=a.nome;
+    }
   }else if(f.escopo==='caixas'){
     if(!f.caixas.length){toast('Marque ao menos uma caixa',true);return null}
     base.caixas=f.caixas;
