@@ -133,28 +133,82 @@ input:focus,select:focus{border-color:var(--accent)}
 .logo-fiber small{display:block;font-size:11px;font-weight:400;color:var(--text-dim);letter-spacing:2px}
 #home-card{width:520px;max-width:92vw;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px}
 #home-card h3{font-size:14px;color:var(--text-dim);font-weight:500;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
-.home-bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
-.home-busca{flex:1;min-width:200px;max-width:360px;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px}
-.home-ord{padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px}
-.home-cnt{font-size:12px;color:var(--text-dim);margin-left:auto}
-.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.proj-card{position:relative;padding:14px 14px 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:8px}
-.proj-card:hover{border-color:var(--accent);background:var(--accent-glow);transform:translateY(-1px)}
-.proj-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(60,179,113,.25)}
-.proj-chk{position:absolute;top:10px;right:10px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer}
+/* ============ HOME / MEUS PROJETOS ============ */
+.home-bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.home-busca{flex:1 1 220px;min-width:190px;max-width:380px;padding:10px 13px;border-radius:11px;
+  border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;transition:border-color .15s}
+.home-busca:focus{border-color:var(--accent);outline:none}
+/* width:auto anula a regra global de input,select — sem isso o seletor ocupava
+   a largura toda e caía sozinho numa segunda linha */
+.home-ord{width:auto;min-width:158px;padding:10px 12px;border-radius:11px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);font-size:12.5px}
+.home-cnt{font-size:11px;color:var(--text-dim);margin-left:auto;font-family:'DM Mono',monospace;letter-spacing:.6px;text-transform:uppercase}
+
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(312px,1fr));gap:14px}
+/* a cor do status manda na faixa lateral, no avatar e na etiqueta: um olhar na
+   coluna já diz em que pé está cada projeto */
+.proj-card{position:relative;padding:15px 16px 13px 19px;border:1px solid var(--border);border-radius:16px;
+  background:var(--surface);cursor:pointer;display:flex;flex-direction:column;gap:12px;overflow:hidden;
+  --st:var(--st-nao);transition:border-color .16s,box-shadow .16s,transform .16s}
+.proj-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--st)}
+.proj-card[data-st="obra"]{--st:var(--st-projeto)}
+.proj-card[data-st="implantado"]{--st:var(--st-impl)}
+.proj-card[data-st="certificado"]{--st:var(--st-cert)}
+.proj-card[data-st="nuvem"]{--st:var(--info)}
+.proj-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 12px 28px rgba(0,0,0,.26)}
+.proj-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+.proj-chk{position:absolute;top:11px;right:11px;width:26px;height:26px;display:flex;align-items:center;
+  justify-content:center;border-radius:8px;cursor:pointer;z-index:2}
 .proj-chk:hover{background:var(--surface2)}
 .proj-chk input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
-.proj-head{display:flex;align-items:center;gap:8px;padding-right:28px}
-.proj-nome{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.proj-tag{font-size:12px;opacity:.8}
-.proj-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--text-dim);font-family:'DM Mono'}
-.proj-prog{display:flex;align-items:center;gap:10px;font-size:12px}
-.proj-prog .bar{flex:1;height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;position:relative}
-.proj-prog .bar i{position:absolute;left:0;top:0;height:100%;display:block;border-radius:4px}
-.proj-prog .bar i.cert{background:#5B9BFF;opacity:.85}
-.proj-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim)}
-.home-selbar{position:sticky;bottom:0;margin-top:14px;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--surface);box-shadow:0 -6px 24px rgba(0,0,0,.35)}
-.home-dica{margin-top:12px;font-size:11.5px;color:var(--text-dim)}
+
+.proj-topo{display:flex;align-items:flex-start;gap:11px;padding-right:26px}
+.proj-ini{width:38px;height:38px;flex-shrink:0;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  font-family:'DM Mono',monospace;font-size:13px;font-weight:600;letter-spacing:.5px;color:var(--st);
+  background:var(--surface2);background:color-mix(in srgb,var(--st) 15%,transparent);
+  border:1px solid var(--border);border-color:color-mix(in srgb,var(--st) 32%,transparent)}
+.proj-id{flex:1;min-width:0}
+.proj-nome{font-size:14.5px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-sub{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:10.5px;color:var(--text-dim);flex-wrap:wrap}
+.proj-pill{display:inline-flex;align-items:center;font-size:9.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+  padding:3px 8px;border-radius:7px;color:var(--st);
+  background:var(--surface2);background:color-mix(in srgb,var(--st) 14%,transparent)}
+.proj-onde{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+
+.proj-barra .trk{height:7px;border-radius:5px;background:var(--surface2);overflow:hidden;position:relative}
+.proj-barra .trk i{position:absolute;left:0;top:0;height:100%;border-radius:5px}
+.proj-barra .trk i.impl{background:var(--st-impl)}
+.proj-barra .trk i.cert{background:var(--st-cert)}
+.proj-barra .leg{display:flex;gap:14px;margin-top:6px;font-size:10.5px;color:var(--text-dim);font-family:'DM Mono',monospace;flex-wrap:wrap}
+.proj-barra .leg span{display:inline-flex;align-items:center;gap:5px}
+.proj-barra .leg span::before{content:'';width:7px;height:7px;border-radius:2px;background:currentColor;opacity:.9}
+.proj-barra .leg b{color:var(--text);font-weight:600}
+.proj-barra .leg .l-impl{color:var(--st-impl)}
+.proj-barra .leg .l-cert{color:var(--st-cert)}
+
+.proj-nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(46px,1fr));gap:9px;
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:11px 0}
+.proj-num{min-width:0}
+.proj-num .v{font-family:'DM Mono',monospace;font-size:15.5px;line-height:1.1;display:block;white-space:nowrap}
+.proj-num .l{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);display:block;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-nuvem-box{font-size:11.5px;color:var(--text-dim);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);padding:11px 0;line-height:1.6}
+.proj-nuvem-box b{color:var(--text);font-family:'DM Mono',monospace}
+
+.proj-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--text-dim)}
+.proj-abrir{display:inline-flex;align-items:center;gap:5px;color:var(--accent);font-weight:700;font-size:11px;white-space:nowrap}
+@media (hover:hover){
+  .proj-abrir{opacity:0;transform:translateX(-5px);transition:opacity .16s,transform .16s}
+  .proj-card:hover .proj-abrir{opacity:1;transform:none}
+}
+
+.home-selbar{position:sticky;bottom:12px;margin-top:16px;display:flex;align-items:center;gap:12px;padding:11px 15px;
+  border:1px solid var(--accent);border-radius:14px;background:var(--surface);
+  box-shadow:0 -6px 28px rgba(0,0,0,.35);flex-wrap:wrap}
+.home-dica{margin-top:14px;font-size:11.5px;color:var(--text-dim);display:flex;align-items:center;gap:7px}
+.home-vazio{text-align:center;padding:46px 22px;border:1px dashed var(--border);border-radius:16px;color:var(--text-dim);font-size:12.5px;line-height:1.7}
+.home-vazio b{display:block;color:var(--text);font-size:15px;margin-bottom:7px}
 .proj-item{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;cursor:pointer;transition:.15s}
 .proj-item:hover{border-color:var(--accent);background:var(--accent-glow)}
 .proj-item b{font-size:15px}
@@ -2693,9 +2747,57 @@ function _homeStats(p){
     atualizado:p._atualizado?new Date(p._atualizado):(p.criado?new Date(p.criado):null),
     nuvem:!!(p._versao||p._stub||p._atualizado)};
 }
+/* Estado do projeto em uma palavra. É o que dá a cor da faixa, do avatar e da
+   etiqueta — em uma lista longa, dizer "24%" não responde a pergunta que o
+   operador faz de verdade: este projeto está parado, em obra ou entregue? */
+const PROJ_STATUS={
+  projeto:    'Em projeto',
+  obra:       'Em obra',
+  implantado: 'Implantado',
+  certificado:'Certificado',
+  nuvem:      'Na nuvem'
+};
+function _projStatus(st){
+  if(st.stub)return 'nuvem';               // conteúdo não baixado: % não significa nada
+  if(st.pctCert>=100)return 'certificado';
+  if(st.pct>=100)return 'implantado';
+  if(st.pct>0)return 'obra';
+  return 'projeto';
+}
+/* "FTTH-APODI APAMA" → "AA". O prefixo FTTH é igual em quase todos, então
+   entra fora da conta para as iniciais não ficarem todas "FT". */
+function _projIniciais(nome){
+  const limpo=String(nome||'').replace(/^ftth[\s\-_]*/i,'').trim()||String(nome||'').trim();
+  const ps=limpo.split(/[\s\-_]+/).filter(Boolean);
+  if(!ps.length)return '··';
+  if(ps.length===1)return ps[0].slice(0,2).toUpperCase();
+  return (ps[0][0]+ps[1][0]).toUpperCase();
+}
+function _projQuando(d){
+  if(!d||isNaN(d))return 'sem data';
+  const dias=Math.floor((Date.now()-d.getTime())/864e5);
+  if(dias<=0)return 'hoje';
+  if(dias===1)return 'ontem';
+  if(dias<7)return 'há '+dias+' dias';
+  if(dias<14)return 'há 1 semana';
+  if(dias<30)return 'há '+Math.floor(dias/7)+' semanas';
+  return 'em '+d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+}
+function _projKm(km){
+  if(!km)return null;
+  // rótulo curto de propósito: nas células estreitas "km de cabo" quebrava em
+  // duas linhas e desalinhava a fileira inteira de números
+  return km>=1?[km.toFixed(1).replace('.',','),'km']:[Math.round(km*1000),'m'];
+}
+function _projCelula(v,l){return '<div class="proj-num"><span class="v">'+v+'</span><span class="l">'+l+'</span></div>'}
+
 function renderHome(){
   const l=document.getElementById('lista-projetos');
-  if(!DB.projetos.length){l.innerHTML='<div class="vazio">Nenhum projeto ainda.<br>Crie o primeiro projeto FTTH para começar.</div>';return}
+  if(!DB.projetos.length){
+    l.innerHTML='<div class="home-vazio"><b>Nenhum projeto ainda</b>'
+      +'Crie o primeiro projeto FTTH para desenhar a rede no mapa,<br>ou importe um KMZ/KML que você já tenha.</div>';
+    return;
+  }
   const q=_homeBusca.trim().toLowerCase();
   let lista=DB.projetos.map(p=>({p,st:_homeStats(p)})).filter(x=>!q||x.p.nome.toLowerCase().includes(q));
   const ord={recente:(a,b)=>((b.st.atualizado||0)-(a.st.atualizado||0)),nome:(a,b)=>a.p.nome.localeCompare(b.p.nome,'pt-BR'),tamanho:(a,b)=>(b.st.elementos+b.st.cabos)-(a.st.elementos+a.st.cabos),progresso:(a,b)=>b.st.pct-a.st.pct}[_homeOrd]||(()=>0);
@@ -2711,35 +2813,63 @@ function renderHome(){
         <option value="tamanho" ${_homeOrd==='tamanho'?'selected':''}>Maiores</option>
         <option value="progresso" ${_homeOrd==='progresso'?'selected':''}>Mais implantados</option>
       </select>
-      <span class="home-cnt">${lista.length} de ${DB.projetos.length} projeto(s)</span>
+      <span class="home-cnt">${q?lista.length+' de '+DB.projetos.length:DB.projetos.length+' projeto'+(DB.projetos.length===1?'':'s')}</span>
     </div>`;
   const cards=lista.map(({p,st})=>{
     const sel=_homeSel.has(p.id);
-    const dt=st.atualizado?st.atualizado.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'}):'—';
-    const corPct=st.pct>=100?'#5B9BFF':(st.pct>=50?'#3CB371':(st.pct>0?'#E0913C':'var(--text-dim)'));
-    const stats=st.stub
-      ? `<span title="Na nuvem — conteúdo baixa ao abrir">☁️ ${st.elementos} elementos · ${st.cabos} cabos</span>`
-      : `<span title="POPs">🏢 ${st.pop}</span><span title="CTOs">📦 ${st.cto}</span><span title="Caixas de emenda">🔗 ${st.ceo}</span><span title="Cabos">〰️ ${st.cabos}</span><span title="Extensão de cabo">${st.km>=1?st.km.toFixed(1)+' km':Math.round(st.km*1000)+' m'}</span>${st.clientes?`<span title="Clientes vinculados">🏠 ${st.clientes}</span>`:''}`;
-    return `<div class="proj-card ${sel?'sel':''}" onclick="abrirProjeto('${p.id}')">
+    const status=_projStatus(st);
+
+    // corpo: projeto na nuvem ainda não tem conteúdo para medir
+    let corpo;
+    if(st.stub){
+      corpo=`<div class="proj-nuvem-box">Conteúdo guardado na nuvem.<br>
+        <b>${st.elementos}</b> elementos · <b>${st.cabos}</b> cabos — baixa ao abrir.</div>`;
+    }else{
+      const celulas=[];
+      if(st.pop)celulas.push(_projCelula(st.pop,st.pop>1?'POPs':'POP'));
+      if(st.cto)celulas.push(_projCelula(st.cto,'CTOs'));
+      if(st.ceo)celulas.push(_projCelula(st.ceo,'CEOs'));
+      const km=_projKm(st.km);
+      if(km)celulas.push(_projCelula(km[0],km[1]));
+      if(st.clientes)celulas.push(_projCelula(st.clientes,'clientes'));
+      if(!celulas.length)celulas.push(_projCelula('—','rede vazia'));
+      const legenda=st.pct
+        ? `<div class="leg"><span class="l-impl"><b>${st.pct}%</b> implantado</span>`
+          +(st.pctCert?`<span class="l-cert"><b>${st.pctCert}%</b> certificado</span>`:'')+`</div>`
+        : `<div class="leg"><span style="color:var(--text-dim)">nada implantado ainda</span></div>`;
+      corpo=`<div class="proj-barra">
+          <div class="trk"><i class="impl" style="width:${st.pct}%"></i><i class="cert" style="width:${st.pctCert}%"></i></div>
+          ${legenda}
+        </div>
+        <div class="proj-nums">${celulas.slice(0,5).join('')}</div>`;
+    }
+
+    return `<div class="proj-card ${sel?'sel':''}" data-st="${status}" onclick="abrirProjeto('${p.id}')">
       <label class="proj-chk" onclick="event.stopPropagation()" title="Marcar para abrir junto com outros">
         <input type="checkbox" class="chk-proj" value="${p.id}" ${sel?'checked':''} onchange="_homeToggle('${p.id}',this.checked)"></label>
-      <div class="proj-head">
-        <div class="proj-nome" title="${_esc(p.nome)}">${_esc(p.nome)}</div>
-        ${st.nuvem?'<span class="proj-tag" title="Sincronizado com a nuvem">☁️</span>':'<span class="proj-tag" title="Somente neste navegador">💾</span>'}
+      <div class="proj-topo">
+        <div class="proj-ini" aria-hidden="true">${_esc(_projIniciais(p.nome))}</div>
+        <div class="proj-id">
+          <div class="proj-nome" title="${_esc(p.nome)}">${_esc(p.nome)}</div>
+          <div class="proj-sub">
+            <span class="proj-pill">${PROJ_STATUS[status]}</span>
+            ${st.nuvem
+              ? '<span class="proj-onde" title="Sincronizado com a nuvem">☁️ nuvem</span>'
+              : '<span class="proj-onde" title="Existe só neste navegador — exporte ou salve na nuvem">💾 só local</span>'}
+          </div>
+        </div>
       </div>
-      <div class="proj-stats">${stats}</div>
-      <div class="proj-prog"><div class="bar"><i style="width:${st.pct}%;background:${corPct}"></i><i class="cert" style="width:${st.pctCert}%"></i></div>
-        <span class="mono" style="color:${corPct}">${st.pct}%</span></div>
-      <div class="proj-foot"><span>${st.pct>=100?'✅ implantado':(st.pct?'implantado '+st.pct+'%':'em projeto')}${st.pctCert?' · certificado '+st.pctCert+'%':''}</span><span>atualizado ${dt}</span></div>
+      ${corpo}
+      <div class="proj-foot"><span>atualizado ${_projQuando(st.atualizado)}</span><span class="proj-abrir">Abrir mapa →</span></div>
     </div>`}).join('');
   const selBar=nSel?`<div class="home-selbar">
-      <b>${nSel} projeto(s) marcado(s)</b>
+      <b>${nSel} ${nSel>1?'projetos marcados':'projeto marcado'}</b>
       <span style="color:var(--text-dim);font-size:12px">${[..._homeSel].map(id=>_esc(_nomeProj(id))).join(' · ')}</span>
       <span style="flex:1"></span>
       <button class="btn ghost sm" onclick="_homeSel.clear();renderHome()">Limpar</button>
       <button class="btn sm" onclick="abrirSelecionados()">${nSel>1?'🔗 Abrir juntos':'◎ Abrir'}</button>
-    </div>`:`<div class="home-dica">Marque 2 ou mais projetos para abri-los juntos no mesmo mapa (rede conectada entre projetos, com edição).</div>`;
-  l.innerHTML=barra+`<div class="proj-grid">${cards||'<div class="vazio">Nenhum projeto com esse nome.</div>'}</div>`+selBar;
+    </div>`:`<div class="home-dica">💡 Marque 2 ou mais projetos para abri-los juntos no mesmo mapa — a rede fica conectada entre eles, com edição.</div>`;
+  l.innerHTML=barra+`<div class="proj-grid">${cards||'<div class="home-vazio"><b>Nenhum projeto com esse nome</b>Tente outro termo ou limpe a busca.</div>'}</div>`+selBar;
 }
 /* mantém o cursor na busca após o re-render da lista */
 function _homeFocoBusca(){
