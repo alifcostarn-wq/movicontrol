@@ -11562,10 +11562,36 @@ function atualizarTotalQuitar(){
   box.style.display=(multa>0||juros>0)?'':'none';
 }
 
+/* Conta do plano a partir do código ("7.2.2" → "7.2.2 Juros Bancários e por
+   Atraso"), no mesmo formato que o select do lançamento grava. Resolver pelo
+   código faz o lançamento continuar certo se a empresa renomear a conta; se o
+   código não existir no plano dela, cai no rótulo padrão. */
+function _planoPorCodigo(codigo, padrao){
+  // try/catch de verdade: PLANO_DATA é `let` declarado mais abaixo no arquivo.
+  // Se algo quebrar antes daquela linha, até `typeof PLANO_DATA` lança — e
+  // classificar um acréscimo nunca pode impedir a baixa de um título.
+  try{
+    for(const g of (PLANO_DATA||[])){
+      const it=(g.itens||[]).find(x=>x.c===codigo);
+      if(it) return `${it.c} ${it.n}`;
+    }
+  }catch(e){ /* plano ainda não inicializado: segue com o rótulo padrão */ }
+  return padrao;
+}
+
 // Cria lançamentos separados e já efetivados para multa e juros (entram no caixa junto)
 function _pushMultaJuros(lc, isRec, multa, juros, contaNome, contaId, dataEfet, l){
-  const planoMJ = isRec ? '3.3 Recebimento de Juros' : '5.1 Despesas Financeiras';
-  const mk=(rotulo, val)=>({
+  /* Juros de atraso NÃO é despesa financeira: a 5.1 é tarifa de banco, aluguel
+     de maquininha, DOC/TED. Juros pago por atraso é saída não operacional e o
+     plano já tem a conta própria — 7.2.2. Classificado em 5.1, ele inflava a
+     despesa operacional no DRE e escondia o custo real do atraso. */
+  const planoJuros = isRec
+    ? _planoPorCodigo('3.3',   '3.3 Recebimento de Juros')
+    : _planoPorCodigo('7.2.2', '7.2.2 Juros Bancários e por Atraso');
+  const planoMulta = isRec
+    ? _planoPorCodigo('3.3',   '3.3 Recebimento de Juros')
+    : _planoPorCodigo('5.1',   '5.1 Despesas Financeiras');
+  const mk=(rotulo, val, planoMJ)=>({
     tipo:l.tipo||(isRec?'receber':'pagar'),
     data:dataEfet, dataOriginal:l.data||null,
     status:isRec?'Recebido':'Pago',
@@ -11578,8 +11604,8 @@ function _pushMultaJuros(lc, isRec, multa, juros, contaNome, contaId, dataEfet, 
     historico:`${rotulo} ref. ${l.historico||l.cliente||l.fornecedor||'título'}`,
     lin:lc.length+10,
   });
-  if(multa>0) lc.push(mk('Multa', multa));
-  if(juros>0) lc.push(mk('Juros', juros));
+  if(multa>0) lc.push(mk('Multa', multa, planoMulta));
+  if(juros>0) lc.push(mk('Juros', juros, planoJuros));
 }
 
 function salvarQuitar(){
