@@ -29,6 +29,10 @@
 //   fluxo.obter        -> fluxo ativo
 //   fluxo.salvar       -> grava nodes/edges (só admin)
 //   fluxo.simular      -> testa o fluxo sem WhatsApp (dry-run)
+//   instabilidades.listar -> quedas de regiao marcadas no MoviFiber
+//
+// INTEGRACAO MOVIFIBER: quedas marcadas la (movifiber_incidentes) viram
+//   resposta automatica aqui — ver a secao INSTABILIDADE DE REDE.
 // ============================================================================
 
 export const config = { api: { bodyParser: { sizeLimit: '2mb' } } };
@@ -765,11 +769,12 @@ async function chamadosAoVivo(e, ixcId) {
 // Uma consulta lenta ou um endpoint indisponível não pode derrubar o painel
 // inteiro: cada bloco falha sozinho e o front mostra o que conseguiu ler.
 async function montarPainelCliente(e, ixcId) {
-  const [fin, ctr, cx, ch] = await Promise.allSettled([
+  const [fin, ctr, cx, ch, ins] = await Promise.allSettled([
     financeiroAoVivo(e, ixcId),
     contratosAoVivo(e, ixcId),
     conexaoAoVivo(e, ixcId),
     chamadosAoVivo(e, ixcId),
+    instabilidadeDoIxcId(e, ixcId),
   ]);
   const ok = r => (r.status === 'fulfilled' ? r.value : null);
   const erro = r => (r.status === 'rejected' ? String(r.reason?.message || r.reason).slice(0, 180) : null);
@@ -778,8 +783,273 @@ async function montarPainelCliente(e, ixcId) {
     contratos: ok(ctr),
     conexao: ok(cx),
     chamados: ok(ch),
+    // queda que o MoviFiber já marcou para a região dele: o atendente precisa
+    // ver isso ANTES de mandar reiniciar o roteador
+    instabilidade: ok(ins),
     erros: { financeiro: erro(fin), contratos: erro(ctr), conexao: erro(cx), chamados: erro(ch) },
     lido_em: new Date().toISOString(),
+  };
+}
+
+// ============================================================================
+// INSTABILIDADE DE REDE — o aviso que o MoviFiber marcou
+// ----------------------------------------------------------------------------
+// O MoviFiber grava em movifiber_incidentes qual projeto / area / conjunto de
+// caixas esta fora do ar, junto com a lista de clientes atingidos. Aqui o bot
+// cruza: se QUEM escreveu esta na lista e a mensagem parece reclamacao de
+// conexao, ele responde na hora com o aviso, antes de rodar o fluxo.
+//
+// Duas travas de proposito:
+//   1. so responde a quem escreveu (nunca dispara em massa);
+//   2. so responde a quem esta na lista do incidente — cliente de outra regiao
+//      segue no fluxo normal, sem receber aviso que nao e dele.
+// ============================================================================
+const INC_CACHE_MS   = 60000;   // incidentes mudam pouco; 1 min evita 1 query por mensagem
+const INC_REAVISO_H  = 6;       // se o cliente insistir depois disso, avisa de novo
+let _incCache = { em: 0, dados: [] };
+
+async function incidentesAtivos(e) {
+  if (Date.now() - _incCache.em < INC_CACHE_MS) return _incCache.dados;
+  let dados = [];
+  try {
+    dados = await sb(e, 'movifiber_incidentes?status=eq.ativo&select=*&order=criado_em.desc&limit=50') || [];
+  } catch (err) {
+    // tabela ainda nao criada ou Supabase fora: o atendimento nao pode parar por isso
+    if (!/PGRST205|does not exist|404/i.test(err.message)) console.error('[atendimento] incidentes:', err.message);
+    dados = [];
+  }
+  _incCache = { em: Date.now(), dados };
+  return dados;
+}
+
+/* O cliente esta reclamando de conexao?
+   Vale ser generoso: o aviso so sai se ele TAMBEM estiver dentro de um
+   incidente ativo, entao um falso positivo apenas informa quem ja estava
+   mesmo sem internet. O caro seria o contrario — nao reconhecer e deixar o
+   cliente esperando na fila por uma queda que a operacao ja conhece. */
+const RX_QUEIXA_CONEXAO = [
+  /\b(sem|nao tenho|acabou|falta|faltando) (internet|net|conexao|sinal|rede|link|wifi|fibra)\b/,
+  /\b(internet|net|conexao|sinal|rede|link|wifi|fibra)\b[^.!?]{0,30}\b(caiu|caindo|parou|sumiu|off|offline|fora|ruim|lenta|lento|oscilando|instavel|travando|nao (funciona|vai|pega|conecta|navega))\b/,
+  /\b(caiu|caindo|parou|sumiu)\b[^.!?]{0,25}\b(internet|net|conexao|sinal|rede|link|wifi|fibra)\b/,
+  /\b(esta|ta|to|estou|tou) sem (internet|net|conexao|sinal|rede|nada)\b/,
+  /\bfora do ar\b/, /\bsem conexao\b/, /\bsem acesso\b/,
+  /\b(internet|net|conexao|sinal|rede)\b[^.!?]{0,20}\b(instabilidade|instavel|intermitente|oscilacao)\b/,
+  /\bluz vermelha\b/, /\bl ?o ?s\b.{0,12}\b(onu|ont|caixinha|aparelho|modem|roteador)\b/,
+  /\b(onu|ont|modem|roteador|caixinha)\b[^.!?]{0,20}\b(vermelh[ao]|piscando|apagad[ao]|sem luz)\b/,
+  /\b(rompimento|rompeu|fibra rompida|cabo rompido)\b/,
+  /\b(problema|defeito|falha|instabilidade)\b[^.!?]{0,25}\b(internet|net|conexao|sinal|rede|link|regiao|bairro|area|aqui)\b/,
+  /\b(minha|nossa|a)? ?(regiao|bairro|rua|area|cidade)\b[^.!?]{0,25}\b(sem|fora|caiu|problema|instabilidade)\b/,
+  /\bnao (esta|ta) (funcionando|pegando|navegando|conectando)\b/,
+  /\bnao (navega|conecta|carrega|abre nada)\b/,
+  /\b(internet|net|wifi)\b[^.!?]{0,15}\b(zero|pessima|horrivel|nao presta)\b/,
+];
+function pareceQueixaConexao(texto) {
+  const t = normalizarTxt(texto);
+  if (t.length < 3) return false;
+  return RX_QUEIXA_CONEXAO.some(rx => rx.test(t));
+}
+
+/* Descobre o cadastro de quem escreveu — só para saber em que região a pessoa
+   mora. Nenhum dado financeiro depende disto; a identificação por CPF do
+   fluxo continua sendo a única porta para fatura, contrato e bloqueio.
+   Ordem de confiança:
+     1. vínculo permanente da conversa (o atendente amarrou o cadastro);
+     2. sugestão gravada quando o cliente digitou um CPF válido no bot;
+     3. telefone — último recurso, e só quando os dígitos conferem de fato. */
+// 'whatsapp' primeiro porque e a unica que existe hoje na tabela `clientes`;
+// as demais ficam como rede de seguranca se o espelho do IXC mudar. Cada
+// coluna inexistente custa uma requisicao que volta 400 antes de ser pulada.
+const COLS_FONE_CLIENTE = ['whatsapp', 'telefone_celular', 'celular', 'fone', 'telefone'];
+
+async function clientePorIxcIdLeve(e, ixcId, nomeFallback) {
+  const c = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=id,ixc_id,razao,nome&limit=1`)
+    .catch(() => null);
+  if (c) return { id: c.id, ixc_id: String(c.ixc_id), nome: c.nome || c.razao || null };
+  // o cadastro pode não estar espelhado no Supabase; o ixc_id ainda serve para casar
+  return { id: null, ixc_id: String(ixcId), nome: nomeFallback || null };
+}
+
+/* O telefone no cadastro vem mascarado ("(84) 99999-0001"), então o filtro do
+   PostgREST é só uma PENEIRA: quem decide é a comparação dígito a dígito aqui,
+   feita depois. Sem essa conferência, um curinga largo casaria com o número de
+   outra pessoa — e o aviso sairia com o primeiro nome de um terceiro. */
+async function clientePorFone(e, fone) {
+  const locais = variantesFone(fone)
+    .map(f => f.replace(/^55/, ''))
+    .filter(v => v.length >= 10);                 // DDD + 8 ou 9 dígitos
+  if (!locais.length) return null;
+  const confere = valor => {
+    const d = soDigitos(valor).replace(/^55/, '');
+    if (d.length < 10) return false;
+    return locais.some(v => d === v || d.endsWith(v.slice(-8)) && d.startsWith(v.slice(0, 2)));
+  };
+  for (const col of COLS_FONE_CLIENTE) {
+    for (const v of locais) {
+      const ddd = v.slice(0, 2), meio = v.slice(-8, -4), fim = v.slice(-4);
+      const padrao = `*${ddd}*${meio}*${fim}*`;
+      let linhas;
+      try {
+        linhas = await sb(e, `clientes?${col}=ilike.${encodeURIComponent(padrao)}`
+          + `&select=id,ixc_id,razao,nome,${col}&limit=5`);
+      } catch { linhas = null; break; }           // coluna inexistente nesta base
+      for (const c of (linhas || [])) {
+        if (confere(c[col])) {
+          return { id: c.id, ixc_id: c.ixc_id == null ? null : String(c.ixc_id), nome: c.nome || c.razao || null };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function clienteDeQuemEscreveu(e, conversa, fone) {
+  if (conversa && conversa.cliente_ixc_id) {
+    return await clientePorIxcIdLeve(e, conversa.cliente_ixc_id, conversa.contato_nome);
+  }
+  if (conversa && conversa.cliente_sugerido_id) {
+    return await clientePorIxcIdLeve(e, conversa.cliente_sugerido_id, conversa.cliente_sugerido_nome);
+  }
+  return await clientePorFone(e, fone);
+}
+
+function incidenteDoCliente(incidentes, cliente) {
+  if (!cliente) return null;
+  const id = cliente.id == null ? null : String(cliente.id);
+  const ixc = cliente.ixc_id == null ? null : String(cliente.ixc_id);
+  return incidentes.find(i => {
+    const ids = Array.isArray(i.clientes_ids) ? i.clientes_ids.map(String) : [];
+    const ixcs = Array.isArray(i.clientes_ixc) ? i.clientes_ixc.map(String) : [];
+    return (id && ids.includes(id)) || (ixc && ixcs.includes(ixc));
+  }) || null;
+}
+
+/* A previsão vai para o cliente, então tem de sair no fuso DELE.
+   fmtDataHoraBR usa a hora da máquina, e a function roda em UTC — o cliente
+   leria "21:30" para uma previsão das 18:30. */
+const TZ_ISP = process.env.TZ_ISP || 'America/Fortaleza';
+function fmtDataHoraLocal(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return d.toLocaleString('pt-BR', {
+    timeZone: TZ_ISP, day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }).replace(',', '');
+}
+
+function textoDoIncidente(inc, cliente) {
+  const previsao = inc.previsao
+    ? fmtDataHoraLocal(inc.previsao)
+    : 'sem previsão fechada ainda';
+  const desde = inc.criado_em ? fmtDataHoraLocal(inc.criado_em) : '';
+  const primeiroNome = String(cliente?.nome || '').trim().split(/\s+/)[0] || '';
+  return montarTexto(inc.mensagem, {
+    cliente: primeiroNome,
+    regiao: inc.area_nome || inc.projeto_nome || 'sua região',
+    projeto: inc.projeto_nome || '',
+    previsao, desde,
+    protocolo: inc.protocolo || '',
+    titulo: inc.titulo || '',
+  });
+}
+
+/* Ja avisamos esta pessoa sobre este incidente ha pouco tempo?
+   Sem isto, quem manda tres mensagens seguidas ("oi", "sem internet", "alo")
+   recebe o mesmo aviso tres vezes. */
+async function jaAvisou(e, incidenteId, fone) {
+  try {
+    const desde = new Date(Date.now() - INC_REAVISO_H * 3600e3).toISOString();
+    const r = await sbUm(e,
+      `movifiber_incidente_avisos?incidente_id=eq.${encodeURIComponent(incidenteId)}`
+      + `&contato_fone=eq.${encodeURIComponent(fone)}&enviado_em=gte.${desde}&select=id&limit=1`);
+    return !!r;
+  } catch { return false; }
+}
+
+/* Responde o aviso de instabilidade, se for o caso.
+   Devolve null quando nao ha nada a fazer (o fluxo normal segue). */
+async function avisarInstabilidade(e, { conversa, fone, texto }) {
+  const incidentes = await incidentesAtivos(e);
+  if (!incidentes.length) return null;
+
+  // se todo incidente ativo espera reclamacao, o teste de texto vem primeiro:
+  // e barato e evita consultar cadastro a cada "bom dia".
+  const algumSemGatilho = incidentes.some(i => i.gatilho === 'qualquer');
+  const queixa = pareceQueixaConexao(texto);
+  if (!queixa && !algumSemGatilho) return null;
+
+  const cliente = await clienteDeQuemEscreveu(e, conversa, fone);
+  if (!cliente) return null;
+
+  const inc = incidenteDoCliente(incidentes, cliente);
+  if (!inc) return null;
+  if (inc.gatilho !== 'qualquer' && !queixa) return null;
+  if (await jaAvisou(e, inc.id, fone)) return null;
+
+  const corpo = textoDoIncidente(inc, cliente);
+  if (!corpo.trim()) return null;
+
+  let envio = null;
+  try {
+    envio = await waEnviar(e, fone, corpo);
+  } catch (err) {
+    console.error('[atendimento] aviso de instabilidade:', err.message);
+    return null;   // nao conseguiu falar: deixa o fluxo normal atender
+  }
+  await sb(e, 'atend_mensagens', {
+    method: 'POST', prefer: 'return=minimal',
+    body: {
+      conversa_id: conversa.id, direcao: 'bot', conteudo: corpo,
+      wa_id: idDaEvolution(envio), status: 'enviado',
+    },
+  }).catch(err => console.error('[atendimento] aviso/mensagem:', err.message));
+
+  await sb(e, 'movifiber_incidente_avisos', {
+    method: 'POST', prefer: 'return=minimal',
+    body: {
+      incidente_id: inc.id, conversa_id: conversa.id,
+      contato_fone: fone, cliente_ixc_id: cliente.ixc_id || null,
+    },
+  }).catch(err => console.error('[atendimento] aviso/registro:', err.message));
+
+  const patch = {
+    ultima_msg: corpo.slice(0, 200),
+    ultima_msg_em: new Date().toISOString(),
+  };
+  // a etiqueta e o que faz o atendente enxergar, no Kanban, que aquela fila
+  // toda e da mesma queda — sem ela cada card parece um problema isolado
+  const tags = Array.isArray(conversa.tags) ? conversa.tags : [];
+  const etiqueta = 'Instabilidade';
+  if (!tags.includes(etiqueta)) patch.tags = [...tags, etiqueta];
+  if (inc.encerrar) {
+    // aviso resolve sozinho: nao ocupa atendente com uma queda ja conhecida
+    patch.coluna = 'aguardando';
+    patch.bot_ativo = true;
+  }
+  await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+    method: 'PATCH', prefer: 'return=minimal', body: patch,
+  }).catch(err => console.error('[atendimento] aviso/conversa:', err.message));
+  Object.assign(conversa, patch);
+
+  await logFluxo(e, {
+    conversa_id: conversa.id, contato_fone: fone,
+    node_tipo: 'instabilidade', resultado: inc.protocolo || inc.id, entrada: texto,
+  });
+
+  return { incidente: inc, encerrou: !!inc.encerrar };
+}
+
+/* Instabilidade ativa de um cliente, para o painel do atendente. */
+async function instabilidadeDoIxcId(e, ixcId) {
+  const incidentes = await incidentesAtivos(e);
+  if (!incidentes.length) return null;
+  const cli = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=id,ixc_id&limit=1`).catch(() => null);
+  const inc = incidenteDoCliente(incidentes, { id: cli ? cli.id : null, ixc_id: ixcId });
+  if (!inc) return null;
+  return {
+    id: inc.id, protocolo: inc.protocolo || null, titulo: inc.titulo,
+    tipo: inc.tipo, regiao: inc.area_nome || inc.projeto_nome || null,
+    previsao: inc.previsao || null, desde: inc.criado_em || null,
+    afetados: inc.afetados || 0,
   };
 }
 
@@ -1753,11 +2023,31 @@ async function tratarWebhook(e, body) {
   // cliente voltar a escrever, o fluxo continua de onde parou.
   if (!texto) return { ok: true, bot: 'anexo recebido, aguardando texto', conversa_id: conversa.id };
 
-  const fluxo = await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
-  if (!fluxo) return { ok: true, bot: 'nenhum fluxo ativo', conversa_id: conversa.id };
-
   const sessao = await sbUm(e, `atend_sessoes?contato_fone=eq.${fone}&select=*&limit=1`);
   let sessaoValida = sessao && new Date(sessao.expira_em) > new Date() ? sessao : null;
+
+  // ---- Instabilidade já conhecida na região deste cliente (marcada no MoviFiber) ----
+  // Vem ANTES do fluxo de propósito: quem está numa queda que a operação já
+  // conhece não deveria percorrer um menu inteiro para ouvir isso. Fica de fora
+  // só quem está no meio da pesquisa de satisfação — ali a próxima mensagem que
+  // interessa é a nota. Qualquer falha aqui é silenciosa: o atendimento normal
+  // continua, um aviso que não saiu não pode derrubar a conversa.
+  if (!(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
+    try {
+      const aviso = await avisarInstabilidade(e, { conversa, fone, texto });
+      if (aviso && aviso.encerrou) {
+        return {
+          ok: true, conversa_id: conversa.id,
+          instabilidade: aviso.incidente.protocolo || aviso.incidente.id,
+        };
+      }
+    } catch (err) {
+      console.error('[atendimento] instabilidade:', err.message);
+    }
+  }
+
+  const fluxo = await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
+  if (!fluxo) return { ok: true, bot: 'nenhum fluxo ativo', conversa_id: conversa.id };
 
   // ---- Pesquisa de satisfação pendente ----
   // Dois relógios diferentes:
@@ -2821,6 +3111,19 @@ export default async function handler(req, res) {
       }
 
       // ===== STATUS DO WHATSAPP DA EMPRESA =====
+      // instabilidades ativas marcadas no MoviFiber (banner/consulta do atendente)
+      case 'instabilidades.listar': {
+        const itens = await incidentesAtivos(e);
+        return res.status(200).json({
+          ok: true,
+          instabilidades: itens.map(i => ({
+            id: i.id, protocolo: i.protocolo || null, titulo: i.titulo, tipo: i.tipo,
+            regiao: i.area_nome || i.projeto_nome || null, previsao: i.previsao || null,
+            desde: i.criado_em || null, afetados: i.afetados || 0,
+          })),
+        });
+      }
+
       case 'status.listar': {
         const itens = await sb(e, 'atend_status?excluido_em=is.null&select=*&order=publicado_em.desc&limit=30');
         return res.status(200).json({ ok: true, status: itens || [] });

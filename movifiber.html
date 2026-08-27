@@ -133,28 +133,82 @@ input:focus,select:focus{border-color:var(--accent)}
 .logo-fiber small{display:block;font-size:11px;font-weight:400;color:var(--text-dim);letter-spacing:2px}
 #home-card{width:520px;max-width:92vw;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px}
 #home-card h3{font-size:14px;color:var(--text-dim);font-weight:500;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
-.home-bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
-.home-busca{flex:1;min-width:200px;max-width:360px;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px}
-.home-ord{padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px}
-.home-cnt{font-size:12px;color:var(--text-dim);margin-left:auto}
-.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.proj-card{position:relative;padding:14px 14px 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:8px}
-.proj-card:hover{border-color:var(--accent);background:var(--accent-glow);transform:translateY(-1px)}
-.proj-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(60,179,113,.25)}
-.proj-chk{position:absolute;top:10px;right:10px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer}
+/* ============ HOME / MEUS PROJETOS ============ */
+.home-bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.home-busca{flex:1 1 220px;min-width:190px;max-width:380px;padding:10px 13px;border-radius:11px;
+  border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;transition:border-color .15s}
+.home-busca:focus{border-color:var(--accent);outline:none}
+/* width:auto anula a regra global de input,select — sem isso o seletor ocupava
+   a largura toda e caía sozinho numa segunda linha */
+.home-ord{width:auto;min-width:158px;padding:10px 12px;border-radius:11px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);font-size:12.5px}
+.home-cnt{font-size:11px;color:var(--text-dim);margin-left:auto;font-family:'DM Mono',monospace;letter-spacing:.6px;text-transform:uppercase}
+
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(312px,1fr));gap:14px}
+/* a cor do status manda na faixa lateral, no avatar e na etiqueta: um olhar na
+   coluna já diz em que pé está cada projeto */
+.proj-card{position:relative;padding:15px 16px 13px 19px;border:1px solid var(--border);border-radius:16px;
+  background:var(--surface);cursor:pointer;display:flex;flex-direction:column;gap:12px;overflow:hidden;
+  --st:var(--st-nao);transition:border-color .16s,box-shadow .16s,transform .16s}
+.proj-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--st)}
+.proj-card[data-st="obra"]{--st:var(--st-projeto)}
+.proj-card[data-st="implantado"]{--st:var(--st-impl)}
+.proj-card[data-st="certificado"]{--st:var(--st-cert)}
+.proj-card[data-st="nuvem"]{--st:var(--info)}
+.proj-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 12px 28px rgba(0,0,0,.26)}
+.proj-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+.proj-chk{position:absolute;top:11px;right:11px;width:26px;height:26px;display:flex;align-items:center;
+  justify-content:center;border-radius:8px;cursor:pointer;z-index:2}
 .proj-chk:hover{background:var(--surface2)}
 .proj-chk input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
-.proj-head{display:flex;align-items:center;gap:8px;padding-right:28px}
-.proj-nome{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.proj-tag{font-size:12px;opacity:.8}
-.proj-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--text-dim);font-family:'DM Mono'}
-.proj-prog{display:flex;align-items:center;gap:10px;font-size:12px}
-.proj-prog .bar{flex:1;height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;position:relative}
-.proj-prog .bar i{position:absolute;left:0;top:0;height:100%;display:block;border-radius:4px}
-.proj-prog .bar i.cert{background:#5B9BFF;opacity:.85}
-.proj-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim)}
-.home-selbar{position:sticky;bottom:0;margin-top:14px;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--surface);box-shadow:0 -6px 24px rgba(0,0,0,.35)}
-.home-dica{margin-top:12px;font-size:11.5px;color:var(--text-dim)}
+
+.proj-topo{display:flex;align-items:flex-start;gap:11px;padding-right:26px}
+.proj-ini{width:38px;height:38px;flex-shrink:0;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  font-family:'DM Mono',monospace;font-size:13px;font-weight:600;letter-spacing:.5px;color:var(--st);
+  background:var(--surface2);background:color-mix(in srgb,var(--st) 15%,transparent);
+  border:1px solid var(--border);border-color:color-mix(in srgb,var(--st) 32%,transparent)}
+.proj-id{flex:1;min-width:0}
+.proj-nome{font-size:14.5px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-sub{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:10.5px;color:var(--text-dim);flex-wrap:wrap}
+.proj-pill{display:inline-flex;align-items:center;font-size:9.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+  padding:3px 8px;border-radius:7px;color:var(--st);
+  background:var(--surface2);background:color-mix(in srgb,var(--st) 14%,transparent)}
+.proj-onde{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+
+.proj-barra .trk{height:7px;border-radius:5px;background:var(--surface2);overflow:hidden;position:relative}
+.proj-barra .trk i{position:absolute;left:0;top:0;height:100%;border-radius:5px}
+.proj-barra .trk i.impl{background:var(--st-impl)}
+.proj-barra .trk i.cert{background:var(--st-cert)}
+.proj-barra .leg{display:flex;gap:14px;margin-top:6px;font-size:10.5px;color:var(--text-dim);font-family:'DM Mono',monospace;flex-wrap:wrap}
+.proj-barra .leg span{display:inline-flex;align-items:center;gap:5px}
+.proj-barra .leg span::before{content:'';width:7px;height:7px;border-radius:2px;background:currentColor;opacity:.9}
+.proj-barra .leg b{color:var(--text);font-weight:600}
+.proj-barra .leg .l-impl{color:var(--st-impl)}
+.proj-barra .leg .l-cert{color:var(--st-cert)}
+
+.proj-nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(46px,1fr));gap:9px;
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:11px 0}
+.proj-num{min-width:0}
+.proj-num .v{font-family:'DM Mono',monospace;font-size:15.5px;line-height:1.1;display:block;white-space:nowrap}
+.proj-num .l{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);display:block;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-nuvem-box{font-size:11.5px;color:var(--text-dim);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);padding:11px 0;line-height:1.6}
+.proj-nuvem-box b{color:var(--text);font-family:'DM Mono',monospace}
+
+.proj-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--text-dim)}
+.proj-abrir{display:inline-flex;align-items:center;gap:5px;color:var(--accent);font-weight:700;font-size:11px;white-space:nowrap}
+@media (hover:hover){
+  .proj-abrir{opacity:0;transform:translateX(-5px);transition:opacity .16s,transform .16s}
+  .proj-card:hover .proj-abrir{opacity:1;transform:none}
+}
+
+.home-selbar{position:sticky;bottom:12px;margin-top:16px;display:flex;align-items:center;gap:12px;padding:11px 15px;
+  border:1px solid var(--accent);border-radius:14px;background:var(--surface);
+  box-shadow:0 -6px 28px rgba(0,0,0,.35);flex-wrap:wrap}
+.home-dica{margin-top:14px;font-size:11.5px;color:var(--text-dim);display:flex;align-items:center;gap:7px}
+.home-vazio{text-align:center;padding:46px 22px;border:1px dashed var(--border);border-radius:16px;color:var(--text-dim);font-size:12.5px;line-height:1.7}
+.home-vazio b{display:block;color:var(--text);font-size:15px;margin-bottom:7px}
 .proj-item{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;cursor:pointer;transition:.15s}
 .proj-item:hover{border-color:var(--accent);background:var(--accent-glow)}
 .proj-item b{font-size:15px}
@@ -748,6 +802,49 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 .tag.implantado{background:var(--accent-glow);color:var(--st-impl)}
 .tag.certificado{background:rgba(91,155,255,.12);color:var(--st-cert)}
 .tag.nao-implantado{background:var(--surface2);color:var(--st-nao)}
+/* ============ INSTABILIDADES (aviso automático no MoviTalk) ============ */
+.ins-topo{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.ins-fchip{padding:6px 13px;border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--text-dim);background:var(--surface)}
+.ins-fchip.on{border-color:var(--accent);color:var(--text);background:var(--accent-glow)}
+.ins-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.ins-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--danger);border-radius:14px;padding:14px 16px}
+.ins-card.ok{border-left-color:var(--st-impl,#3CB371);opacity:.72}
+.ins-card.manutencao{border-left-color:var(--warn)}
+.ins-card .ins-h{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px}
+.ins-card .ins-nome{font-weight:700;font-size:14px;line-height:1.25;flex:1}
+.ins-pulso{width:9px;height:9px;border-radius:50%;background:var(--danger);flex-shrink:0;margin-top:4px;
+  box-shadow:0 0 0 0 rgba(216,38,30,.6);animation:insPulso 1.8s infinite}
+.ins-card.ok .ins-pulso{background:#3CB371;animation:none}
+@keyframes insPulso{70%{box-shadow:0 0 0 9px rgba(216,38,30,0)}100%{box-shadow:0 0 0 0 rgba(216,38,30,0)}}
+.ins-meta{font-size:11.5px;color:var(--text-dim);line-height:1.75}
+.ins-meta b{color:var(--text)}
+.ins-nums{display:flex;gap:16px;margin:10px 0 4px}
+.ins-num{font-family:'DM Mono',monospace}
+.ins-num .v{font-size:19px;display:block;line-height:1.1}
+.ins-num .l{font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:var(--text-dim)}
+.ins-msg-prev{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:9px 11px;
+  font-size:11.5px;color:var(--text-dim);line-height:1.6;max-height:74px;overflow:hidden;position:relative;margin-top:8px;white-space:pre-wrap}
+.ins-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.ins-badge{font-size:9.5px;letter-spacing:.8px;padding:2px 8px;border-radius:6px;background:var(--surface2);
+  color:var(--text-dim);text-transform:uppercase;font-family:'DM Mono',monospace}
+.ins-seg{display:flex;gap:6px;flex-wrap:wrap}
+.ins-seg button{flex:1;min-width:96px;padding:9px 6px;border:1px solid var(--border);border-radius:9px;
+  font-size:12px;color:var(--text-dim);background:var(--bg)}
+.ins-seg button.on{border-color:var(--accent);background:var(--accent-glow);color:var(--text);font-weight:600}
+.ins-msg{width:100%;min-height:150px;resize:vertical;font-family:inherit;font-size:12.5px;line-height:1.65;
+  background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:11px 12px;outline:none}
+.ins-msg:focus{border-color:var(--accent)}
+.ins-vars{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.ins-vars button{font-family:'DM Mono',monospace;font-size:10.5px;padding:3px 8px;border:1px dashed var(--border);
+  border-radius:6px;color:var(--text-dim)}
+.ins-vars button:hover{border-color:var(--accent);color:var(--accent)}
+.ins-caixas{max-height:190px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg);padding:6px}
+.ins-cx{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px;cursor:pointer}
+.ins-cx:hover{background:var(--surface2)}
+.ins-cx input{width:auto;margin:0}
+.ins-cx small{color:var(--text-dim);font-family:'DM Mono',monospace;font-size:10.5px;margin-left:auto}
+.ins-previa{font-size:12.5px;color:var(--text-dim);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.ins-previa b{color:var(--accent);font-size:15px;font-family:'DM Mono',monospace}
 </style>
 </head>
 <body>
@@ -795,6 +892,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div class="nav-i on" data-pg="projetos" onclick="irPg('projetos')"><span class="ic" data-i="area"></span> Meus Projetos</div>
     <div class="navsec">Gerenciamento</div>
     <div class="nav-i" data-pg="cadastros" onclick="irPg('cadastros')"><span class="ic" data-i="dio"></span> Cadastros</div>
+    <div class="nav-i" data-pg="instab" onclick="irPg('instab')"><span class="ic">🔴</span> Instabilidades <span class="badge" id="instab-badge" style="display:none"></span></div>
     <div class="foot">
       <button class="btn ghost sm" style="width:100%" onclick="document.getElementById('imp-proj-file').click()">📂 Importar projeto</button>
       <input type="file" id="imp-proj-file" accept=".json" style="display:none" onchange="importarProjetoArquivo(event)">
@@ -820,6 +918,14 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         </div>
       </div>
       <div id="dashboard-body"></div>
+    </div>
+    <!-- INSTABILIDADES -->
+    <div class="pg" id="pg-instab">
+      <div class="pg-head">
+        <div><h1>🔴 Instabilidades</h1><p>Marque a região que está fora do ar. Quem reclamar no WhatsApp recebe o aviso na hora, pelo MoviTalk.</p></div>
+        <button class="btn" onclick="abrirIncidente()">+ Marcar instabilidade</button>
+      </div>
+      <div id="instab-body"></div>
     </div>
     <!-- CADASTROS -->
     <div class="pg" id="pg-cadastros">
@@ -881,6 +987,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <button class="dr-item" onclick="abrirMateriais()"><span class="ic">🧰</span> Lista de Materiais</button>
       <button class="dr-item" onclick="abrirRelArea()"><span class="ic">🗂️</span> Relatório por Área</button>
       <button class="dr-item" onclick="abrirPendencias()"><span class="ic">⚠️</span> Pendências <span class="badge" id="pend-badge" style="display:none"></span></button>
+      <button class="dr-item" onclick="abrirIncidenteDoMapa()" style="border:1px dashed var(--danger);color:var(--danger)"><span class="ic">🔴</span> Marcar instabilidade</button>
       </div>
       <div class="dr-sec dobra" onclick="toggleSecao(this)" data-sec="projeto">Projeto <span class="seta">▸</span></div>
       <div class="dr-grupo" data-grupo="projeto">
@@ -940,6 +1047,15 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 </div>
 
 <div id="ctx-menu"></div>
+
+<!-- ================= MODAL: MARCAR INSTABILIDADE ================= -->
+<div class="modal-bg" id="md-incidente">
+  <div class="modal" style="max-width:720px">
+    <div class="md-head"><b id="inc-titulo">🔴 Marcar instabilidade</b><button class="x" onclick="fecharModal('md-incidente')">✕</button></div>
+    <div class="md-body" id="inc-body"></div>
+    <div class="md-foot" id="inc-foot"></div>
+  </div>
+</div>
 
 <!-- ================= MODAL: VINCULAR CTO (MoviOne) ================= -->
 <div class="modal-bg" id="md-conexoes">
@@ -2605,6 +2721,7 @@ function irPg(pg){
   document.querySelectorAll('.nav-i').forEach(n=>n.classList.toggle('on',n.dataset.pg===pg));
   if(pg==='dashboard')initDashboard();
   if(pg==='cadastros')initCadastros();
+  if(pg==='instab')initInstab();
   if(pg==='projetos')renderHome();
 }
 function abrirProjetoSelecionado(){
@@ -2630,9 +2747,57 @@ function _homeStats(p){
     atualizado:p._atualizado?new Date(p._atualizado):(p.criado?new Date(p.criado):null),
     nuvem:!!(p._versao||p._stub||p._atualizado)};
 }
+/* Estado do projeto em uma palavra. É o que dá a cor da faixa, do avatar e da
+   etiqueta — em uma lista longa, dizer "24%" não responde a pergunta que o
+   operador faz de verdade: este projeto está parado, em obra ou entregue? */
+const PROJ_STATUS={
+  projeto:    'Em projeto',
+  obra:       'Em obra',
+  implantado: 'Implantado',
+  certificado:'Certificado',
+  nuvem:      'Na nuvem'
+};
+function _projStatus(st){
+  if(st.stub)return 'nuvem';               // conteúdo não baixado: % não significa nada
+  if(st.pctCert>=100)return 'certificado';
+  if(st.pct>=100)return 'implantado';
+  if(st.pct>0)return 'obra';
+  return 'projeto';
+}
+/* "FTTH-APODI APAMA" → "AA". O prefixo FTTH é igual em quase todos, então
+   entra fora da conta para as iniciais não ficarem todas "FT". */
+function _projIniciais(nome){
+  const limpo=String(nome||'').replace(/^ftth[\s\-_]*/i,'').trim()||String(nome||'').trim();
+  const ps=limpo.split(/[\s\-_]+/).filter(Boolean);
+  if(!ps.length)return '··';
+  if(ps.length===1)return ps[0].slice(0,2).toUpperCase();
+  return (ps[0][0]+ps[1][0]).toUpperCase();
+}
+function _projQuando(d){
+  if(!d||isNaN(d))return 'sem data';
+  const dias=Math.floor((Date.now()-d.getTime())/864e5);
+  if(dias<=0)return 'hoje';
+  if(dias===1)return 'ontem';
+  if(dias<7)return 'há '+dias+' dias';
+  if(dias<14)return 'há 1 semana';
+  if(dias<30)return 'há '+Math.floor(dias/7)+' semanas';
+  return 'em '+d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+}
+function _projKm(km){
+  if(!km)return null;
+  // rótulo curto de propósito: nas células estreitas "km de cabo" quebrava em
+  // duas linhas e desalinhava a fileira inteira de números
+  return km>=1?[km.toFixed(1).replace('.',','),'km']:[Math.round(km*1000),'m'];
+}
+function _projCelula(v,l){return '<div class="proj-num"><span class="v">'+v+'</span><span class="l">'+l+'</span></div>'}
+
 function renderHome(){
   const l=document.getElementById('lista-projetos');
-  if(!DB.projetos.length){l.innerHTML='<div class="vazio">Nenhum projeto ainda.<br>Crie o primeiro projeto FTTH para começar.</div>';return}
+  if(!DB.projetos.length){
+    l.innerHTML='<div class="home-vazio"><b>Nenhum projeto ainda</b>'
+      +'Crie o primeiro projeto FTTH para desenhar a rede no mapa,<br>ou importe um KMZ/KML que você já tenha.</div>';
+    return;
+  }
   const q=_homeBusca.trim().toLowerCase();
   let lista=DB.projetos.map(p=>({p,st:_homeStats(p)})).filter(x=>!q||x.p.nome.toLowerCase().includes(q));
   const ord={recente:(a,b)=>((b.st.atualizado||0)-(a.st.atualizado||0)),nome:(a,b)=>a.p.nome.localeCompare(b.p.nome,'pt-BR'),tamanho:(a,b)=>(b.st.elementos+b.st.cabos)-(a.st.elementos+a.st.cabos),progresso:(a,b)=>b.st.pct-a.st.pct}[_homeOrd]||(()=>0);
@@ -2648,35 +2813,63 @@ function renderHome(){
         <option value="tamanho" ${_homeOrd==='tamanho'?'selected':''}>Maiores</option>
         <option value="progresso" ${_homeOrd==='progresso'?'selected':''}>Mais implantados</option>
       </select>
-      <span class="home-cnt">${lista.length} de ${DB.projetos.length} projeto(s)</span>
+      <span class="home-cnt">${q?lista.length+' de '+DB.projetos.length:DB.projetos.length+' projeto'+(DB.projetos.length===1?'':'s')}</span>
     </div>`;
   const cards=lista.map(({p,st})=>{
     const sel=_homeSel.has(p.id);
-    const dt=st.atualizado?st.atualizado.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'}):'—';
-    const corPct=st.pct>=100?'#5B9BFF':(st.pct>=50?'#3CB371':(st.pct>0?'#E0913C':'var(--text-dim)'));
-    const stats=st.stub
-      ? `<span title="Na nuvem — conteúdo baixa ao abrir">☁️ ${st.elementos} elementos · ${st.cabos} cabos</span>`
-      : `<span title="POPs">🏢 ${st.pop}</span><span title="CTOs">📦 ${st.cto}</span><span title="Caixas de emenda">🔗 ${st.ceo}</span><span title="Cabos">〰️ ${st.cabos}</span><span title="Extensão de cabo">${st.km>=1?st.km.toFixed(1)+' km':Math.round(st.km*1000)+' m'}</span>${st.clientes?`<span title="Clientes vinculados">🏠 ${st.clientes}</span>`:''}`;
-    return `<div class="proj-card ${sel?'sel':''}" onclick="abrirProjeto('${p.id}')">
+    const status=_projStatus(st);
+
+    // corpo: projeto na nuvem ainda não tem conteúdo para medir
+    let corpo;
+    if(st.stub){
+      corpo=`<div class="proj-nuvem-box">Conteúdo guardado na nuvem.<br>
+        <b>${st.elementos}</b> elementos · <b>${st.cabos}</b> cabos — baixa ao abrir.</div>`;
+    }else{
+      const celulas=[];
+      if(st.pop)celulas.push(_projCelula(st.pop,st.pop>1?'POPs':'POP'));
+      if(st.cto)celulas.push(_projCelula(st.cto,'CTOs'));
+      if(st.ceo)celulas.push(_projCelula(st.ceo,'CEOs'));
+      const km=_projKm(st.km);
+      if(km)celulas.push(_projCelula(km[0],km[1]));
+      if(st.clientes)celulas.push(_projCelula(st.clientes,'clientes'));
+      if(!celulas.length)celulas.push(_projCelula('—','rede vazia'));
+      const legenda=st.pct
+        ? `<div class="leg"><span class="l-impl"><b>${st.pct}%</b> implantado</span>`
+          +(st.pctCert?`<span class="l-cert"><b>${st.pctCert}%</b> certificado</span>`:'')+`</div>`
+        : `<div class="leg"><span style="color:var(--text-dim)">nada implantado ainda</span></div>`;
+      corpo=`<div class="proj-barra">
+          <div class="trk"><i class="impl" style="width:${st.pct}%"></i><i class="cert" style="width:${st.pctCert}%"></i></div>
+          ${legenda}
+        </div>
+        <div class="proj-nums">${celulas.slice(0,5).join('')}</div>`;
+    }
+
+    return `<div class="proj-card ${sel?'sel':''}" data-st="${status}" onclick="abrirProjeto('${p.id}')">
       <label class="proj-chk" onclick="event.stopPropagation()" title="Marcar para abrir junto com outros">
         <input type="checkbox" class="chk-proj" value="${p.id}" ${sel?'checked':''} onchange="_homeToggle('${p.id}',this.checked)"></label>
-      <div class="proj-head">
-        <div class="proj-nome" title="${_esc(p.nome)}">${_esc(p.nome)}</div>
-        ${st.nuvem?'<span class="proj-tag" title="Sincronizado com a nuvem">☁️</span>':'<span class="proj-tag" title="Somente neste navegador">💾</span>'}
+      <div class="proj-topo">
+        <div class="proj-ini" aria-hidden="true">${_esc(_projIniciais(p.nome))}</div>
+        <div class="proj-id">
+          <div class="proj-nome" title="${_esc(p.nome)}">${_esc(p.nome)}</div>
+          <div class="proj-sub">
+            <span class="proj-pill">${PROJ_STATUS[status]}</span>
+            ${st.nuvem
+              ? '<span class="proj-onde" title="Sincronizado com a nuvem">☁️ nuvem</span>'
+              : '<span class="proj-onde" title="Existe só neste navegador — exporte ou salve na nuvem">💾 só local</span>'}
+          </div>
+        </div>
       </div>
-      <div class="proj-stats">${stats}</div>
-      <div class="proj-prog"><div class="bar"><i style="width:${st.pct}%;background:${corPct}"></i><i class="cert" style="width:${st.pctCert}%"></i></div>
-        <span class="mono" style="color:${corPct}">${st.pct}%</span></div>
-      <div class="proj-foot"><span>${st.pct>=100?'✅ implantado':(st.pct?'implantado '+st.pct+'%':'em projeto')}${st.pctCert?' · certificado '+st.pctCert+'%':''}</span><span>atualizado ${dt}</span></div>
+      ${corpo}
+      <div class="proj-foot"><span>atualizado ${_projQuando(st.atualizado)}</span><span class="proj-abrir">Abrir mapa →</span></div>
     </div>`}).join('');
   const selBar=nSel?`<div class="home-selbar">
-      <b>${nSel} projeto(s) marcado(s)</b>
+      <b>${nSel} ${nSel>1?'projetos marcados':'projeto marcado'}</b>
       <span style="color:var(--text-dim);font-size:12px">${[..._homeSel].map(id=>_esc(_nomeProj(id))).join(' · ')}</span>
       <span style="flex:1"></span>
       <button class="btn ghost sm" onclick="_homeSel.clear();renderHome()">Limpar</button>
       <button class="btn sm" onclick="abrirSelecionados()">${nSel>1?'🔗 Abrir juntos':'◎ Abrir'}</button>
-    </div>`:`<div class="home-dica">Marque 2 ou mais projetos para abri-los juntos no mesmo mapa (rede conectada entre projetos, com edição).</div>`;
-  l.innerHTML=barra+`<div class="proj-grid">${cards||'<div class="vazio">Nenhum projeto com esse nome.</div>'}</div>`+selBar;
+    </div>`:`<div class="home-dica">💡 Marque 2 ou mais projetos para abri-los juntos no mesmo mapa — a rede fica conectada entre eles, com edição.</div>`;
+  l.innerHTML=barra+`<div class="proj-grid">${cards||'<div class="home-vazio"><b>Nenhum projeto com esse nome</b>Tente outro termo ou limpe a busca.</div>'}</div>`+selBar;
 }
 /* mantém o cursor na busca após o re-render da lista */
 function _homeFocoBusca(){
@@ -8865,6 +9058,9 @@ function iniciarApp(){
       DB.projetos.filter(p=>!p._stub&&!idsNuvem.has(p.id)).forEach(p=>nuvemAgendarSalvar(p.id));
     }
   })();
+  // o contador de quedas ativas tem de aparecer no menu sem o operador precisar
+  // abrir a página — é o primeiro sinal de que a rede está com problema
+  recarregarInstab(true);
 }
 /* sessão já ativa: entra direto (o Supabase mantém o login entre visitas) */
 (async()=>{
@@ -8881,6 +9077,443 @@ function iniciarApp(){
     }
   }catch(e){console.warn('[login] sessão:',e.message)}
 })();
+
+/* ================= INSTABILIDADES (MoviFiber ➜ MoviTalk) =================
+   Aqui o operador diz "esta região está fora do ar". Quem responde o cliente é
+   o MoviTalk: quando alguém dessa região manda mensagem reclamando de conexão,
+   o bot já devolve o aviso, com previsão e protocolo, sem passar pela fila.
+
+   De propósito NÃO existe disparo em massa: o aviso é sempre resposta a quem
+   procurou o atendimento. Uma marcação errada, assim, não vira centenas de
+   mensagens indevidas — vira, no máximo, uma resposta errada para quem
+   escreveu, que o atendente corrige na mesma conversa. */
+const INS_TIPOS={
+  queda:      {rotulo:'Queda total',           icone:'🔴'},
+  lentidao:   {rotulo:'Lentidão / oscilação',  icone:'🟠'},
+  manutencao: {rotulo:'Manutenção programada', icone:'🛠️'},
+  rompimento: {rotulo:'Rompimento de fibra',   icone:'✂️'}
+};
+const INS_MODELOS={
+  queda:
+'Olá {{cliente}}! 👋\n\n'+
+'Identificamos uma *instabilidade na nossa rede* que afeta a região *{{regiao}}*. '+
+'Nossa equipe técnica já está no local trabalhando na correção.\n\n'+
+'⏱️ Previsão de normalização: *{{previsao}}*\n'+
+'📄 Protocolo: *{{protocolo}}*\n\n'+
+'Não é preciso abrir chamado nem reiniciar seus equipamentos — assim que o serviço for '+
+'restabelecido, sua conexão volta sozinha.\n\nObrigado pela compreensão! 💚',
+  lentidao:
+'Olá {{cliente}}! 👋\n\n'+
+'Estamos com uma *oscilação na rede* da região *{{regiao}}*, o que pode deixar sua internet '+
+'mais lenta que o normal. A equipe técnica já está atuando para normalizar.\n\n'+
+'⏱️ Previsão de normalização: *{{previsao}}*\n'+
+'📄 Protocolo: *{{protocolo}}*\n\n'+
+'Se depois desse horário a lentidão continuar, é só nos chamar aqui que abrimos um atendimento técnico. 💚',
+  manutencao:
+'Olá {{cliente}}! 👋\n\n'+
+'Estamos realizando uma *manutenção programada* na rede da região *{{regiao}}*, para melhorar '+
+'a qualidade da sua conexão. Durante o período o serviço pode ficar indisponível.\n\n'+
+'⏱️ Previsão de conclusão: *{{previsao}}*\n'+
+'📄 Protocolo: *{{protocolo}}*\n\n'+
+'Assim que a manutenção terminar, sua internet volta automaticamente. Obrigado pela paciência! 💚',
+  rompimento:
+'Olá {{cliente}}! 👋\n\n'+
+'Houve um *rompimento no cabo de fibra* que atende a região *{{regiao}}*. Nossa equipe já foi '+
+'deslocada para a emenda e o reparo está em andamento.\n\n'+
+'⏱️ Previsão de normalização: *{{previsao}}*\n'+
+'📄 Protocolo: *{{protocolo}}*\n\n'+
+'Não é necessário abrir chamado: assim que a fibra for emendada, sua conexão volta sozinha. '+
+'Obrigado pela compreensão! 💚'
+};
+const INS_VARS=[
+  ['{{cliente}}','primeiro nome de quem escreveu'],
+  ['{{regiao}}','área ou projeto atingido'],
+  ['{{previsao}}','previsão de normalização'],
+  ['{{protocolo}}','protocolo do incidente'],
+  ['{{desde}}','quando a queda foi marcada']
+];
+let _insLista=[], _insAvisos={}, _insFiltro='ativo', _insForm=null, _insPrev=null, _insBuscaCx='';
+
+function _insQuando(iso){
+  if(!iso)return '—';
+  const d=new Date(iso);
+  if(isNaN(d))return '—';
+  return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function _insDesde(iso){
+  if(!iso)return '';
+  const min=Math.floor((Date.now()-new Date(iso).getTime())/60000);
+  if(!isFinite(min)||min<0)return '';
+  if(min<60)return 'há '+min+' min';
+  const h=Math.floor(min/60);
+  if(h<24)return 'há '+h+'h'+String(min%60).padStart(2,'0');
+  return 'há '+Math.floor(h/24)+' dia(s)';
+}
+function _insEscopoTxt(i){
+  if(i.escopo==='area')  return 'Área '+(i.area_nome||'?')+(i.projeto_nome?' · '+i.projeto_nome:'');
+  if(i.escopo==='caixas')return (i.caixas||[]).length+' caixa(s)'+(i.projeto_nome?' · '+i.projeto_nome:'');
+  return 'Projeto inteiro'+(i.projeto_nome?' · '+i.projeto_nome:'');
+}
+
+async function initInstab(){
+  const b=document.getElementById('instab-body');
+  if(b&&!_insLista.length)b.innerHTML='<div class="vazio">Carregando…</div>';
+  await recarregarInstab(true);
+}
+async function recarregarInstab(silencioso){
+  try{
+    const d=await nuvemCall({acao:'inc-listar',status:'todos',limite:80});
+    _insLista=d.incidentes||[]; _insAvisos=d.avisos||{};
+  }catch(e){
+    const b=document.getElementById('instab-body');
+    if(b)b.innerHTML='<div class="info-box" style="border-left:3px solid var(--warn)">'
+      +'Não consegui ler as instabilidades.<br><b>'+_esc(e.message)+'</b>'
+      +'<br><br>Se a mensagem fala em tabela inexistente, rode a migration das instabilidades '
+      +'(o SQL está no cabeçalho da seção INSTABILIDADES em <b>api/movifiber.js</b>).</div>';
+    if(!silencioso)toast('Instabilidades: '+e.message,true);
+    atualizarBadgeInstab();
+    return false;
+  }
+  renderInstab(); atualizarBadgeInstab(); return true;
+}
+function atualizarBadgeInstab(){
+  const el=document.getElementById('instab-badge'); if(!el)return;
+  const n=_insLista.filter(i=>i.status==='ativo').length;
+  el.style.display=n?'inline-block':'none';
+  el.textContent=n;
+}
+function insFiltrar(f){_insFiltro=f;renderInstab()}
+function renderInstab(){
+  const b=document.getElementById('instab-body'); if(!b)return;
+  const ativos=_insLista.filter(i=>i.status==='ativo');
+  const lista=_insLista.filter(i=>_insFiltro==='todos'||i.status===_insFiltro);
+  const chip=(f,t)=>'<button class="ins-fchip '+(_insFiltro===f?'on':'')+'" onclick="insFiltrar(\''+f+'\')">'+t+'</button>';
+  const topo='<div class="ins-topo">'
+    +chip('ativo','🔴 Ativas ('+ativos.length+')')
+    +chip('resolvido','✅ Resolvidas')
+    +chip('todos','Todas')
+    +'<span style="flex:1"></span>'
+    +'<button class="btn ghost sm" onclick="recarregarInstab()">↻ Atualizar</button></div>';
+  if(!lista.length){
+    b.innerHTML=topo+'<div class="vazio">'
+      +(_insFiltro==='ativo'?'Nenhuma instabilidade ativa. A rede está limpa. ✅'
+        :'Nada para mostrar neste filtro.')+'</div>';
+    return;
+  }
+  b.innerHTML=topo+'<div class="ins-grid">'+lista.map(i=>{
+    const t=INS_TIPOS[i.tipo]||INS_TIPOS.queda;
+    const ativo=i.status==='ativo';
+    const avisados=_insAvisos[i.id]||0;
+    const acoes=ativo
+      ? '<button class="btn ghost sm" onclick="editarIncidente(\''+i.id+'\')">✏️ Editar</button>'
+        +'<button class="btn sm" onclick="resolverIncidente(\''+i.id+'\')">✅ Normalizado</button>'
+      : '<button class="btn ghost sm" onclick="reabrirIncidente(\''+i.id+'\')">↺ Reabrir</button>'
+        +'<button class="btn ghost sm" style="color:var(--danger)" onclick="excluirIncidente(\''+i.id+'\')">🗑️</button>';
+    return '<div class="ins-card '+(ativo?'':'ok')+' '+_esc(i.tipo||'')+'">'
+      +'<div class="ins-h"><span class="ins-pulso"></span>'
+        +'<span class="ins-nome">'+_esc(i.titulo||'Instabilidade')+'</span>'
+        +'<span class="ins-badge">'+_esc(i.protocolo||'')+'</span></div>'
+      +'<div class="ins-meta">'
+        +t.icone+' <b>'+t.rotulo+'</b><br>'
+        +'📍 '+_esc(_insEscopoTxt(i))+'<br>'
+        +'🕒 marcada em '+_insQuando(i.criado_em)+(ativo?' · <b>'+_insDesde(i.criado_em)+'</b>':'')
+        +(i.previsao?'<br>⏱️ previsão: <b>'+_insQuando(i.previsao)+'</b>':'')
+        +(i.status==='resolvido'?'<br>✅ normalizada em '+_insQuando(i.resolvido_em):'')
+      +'</div>'
+      +'<div class="ins-nums">'
+        +'<div class="ins-num"><span class="v">'+(i.afetados||0)+'</span><span class="l">clientes na área</span></div>'
+        +'<div class="ins-num"><span class="v">'+avisados+'</span><span class="l">já avisados</span></div>'
+      +'</div>'
+      +'<div class="ins-msg-prev">'+_esc((i.mensagem||'').slice(0,220))+'</div>'
+      +'<div class="ins-acoes">'+acoes+'</div>'
+    +'</div>';
+  }).join('')+'</div>';
+}
+
+/* ---- formulário ---- */
+function _insProjetos(){
+  return DB.projetos.slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
+}
+async function _insGarantirProjeto(id){
+  const p=DB.projetos.find(x=>x.id===id);
+  if(!p||!p._stub)return p||null;
+  try{return await nuvemCarregarProjeto(id)}catch(e){toast('Não baixei o projeto: '+e.message,true);return p}
+}
+function _insProj(){return DB.projetos.find(x=>x.id===_insForm.projeto_id)||null}
+function _insCaixasDoProjeto(){
+  const p=_insProj(); if(!p)return [];
+  return (p.elementos||[]).filter(e=>e.tipo==='cto'||e.tipo==='ceo')
+    .map(e=>({id:e.id,nome:e.nome||e.id,tipo:e.tipo}))
+    .sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}));
+}
+async function abrirIncidente(pre){
+  if(!DB.projetos.length){try{await nuvemCarregarLista()}catch(e){}}
+  const padraoProj=(pre&&pre.projeto_id)
+    ||(projAtual&&!projAtual._multi&&projAtual.id&&projAtual.id!=='__multi__'?projAtual.id:null)
+    ||((DB.projetos[0]||{}).id||null);
+  _insForm=Object.assign({
+    id:null,titulo:'',tipo:'queda',escopo:'projeto',
+    projeto_id:padraoProj,area_id:'',caixas:[],
+    mensagem:'',gatilho:'reclamacao',encerrar:false,previsao:''
+  },pre||{});
+  if(!_insForm.mensagem)_insForm.mensagem=INS_MODELOS[_insForm.tipo]||INS_MODELOS.queda;
+  _insPrev=null;_insBuscaCx='';
+  document.getElementById('inc-titulo').textContent=_insForm.id?'✏️ Editar instabilidade':'🔴 Marcar instabilidade';
+  abrirModal('md-incidente');
+  renderIncForm();
+  if(_insForm.projeto_id){
+    await _insGarantirProjeto(_insForm.projeto_id);
+    // na edicao, o projeto pode ter chegado so agora (era stub): so depois de
+    // baixado da para reencontrar a area que o incidente usava
+    if(_insForm.escopo==='area'&&!_insForm.area_id&&_insForm._areaNome){
+      const pr=_insProj();
+      const a=pr?(pr.areas||[]).find(x=>x.nome===_insForm._areaNome):null;
+      if(a)_insForm.area_id=a.id;
+    }
+    renderIncForm();
+  }
+}
+async function editarIncidente(id){
+  const i=_insLista.find(x=>String(x.id)===String(id)); if(!i)return;
+  const p=DB.projetos.find(x=>x.id===i.projeto_id);
+  const area=p?(p.areas||[]).find(a=>a.nome===i.area_nome):null;
+  await abrirIncidente({
+    id:i.id,titulo:i.titulo,tipo:i.tipo,escopo:i.escopo,
+    projeto_id:i.projeto_id,area_id:area?area.id:'',
+    caixas:(i.caixas||[]).slice(),mensagem:i.mensagem,
+    gatilho:i.gatilho||'reclamacao',encerrar:!!i.encerrar,
+    previsao:i.previsao?_insParaInput(i.previsao):'',
+    protocolo:i.protocolo,_areaNome:i.area_nome
+  });
+}
+/* datetime-local trabalha em horário local; o banco guarda ISO em UTC */
+function _insParaInput(iso){
+  const d=new Date(iso); if(isNaN(d))return '';
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+function incSet(campo,valor,rerender){
+  _insForm[campo]=valor;
+  if(campo==='escopo'||campo==='projeto_id')_insPrev=null;
+  if(rerender)renderIncForm();
+}
+async function incTrocarProjeto(id){
+  _insForm.projeto_id=id;_insForm.area_id='';_insForm.caixas=[];_insPrev=null;
+  renderIncForm();
+  await _insGarantirProjeto(id);
+  renderIncForm();
+}
+function incTrocarTipo(t){
+  const antigo=INS_MODELOS[_insForm.tipo]||'';
+  _insForm.tipo=t;
+  // só troca o texto se o operador ainda não escreveu o dele
+  if(!_insForm.mensagem.trim()||_insForm.mensagem.trim()===antigo.trim())_insForm.mensagem=INS_MODELOS[t]||_insForm.mensagem;
+  renderIncForm();
+}
+function incUsarModelo(){
+  _insForm.mensagem=INS_MODELOS[_insForm.tipo]||INS_MODELOS.queda;
+  renderIncForm();
+}
+function incInserirVar(v){
+  const t=document.getElementById('inc-f-msg'); if(!t)return;
+  const i=t.selectionStart==null?t.value.length:t.selectionStart;
+  const j=t.selectionEnd==null?i:t.selectionEnd;
+  t.value=t.value.slice(0,i)+v+t.value.slice(j);
+  _insForm.mensagem=t.value;
+  t.focus();t.setSelectionRange(i+v.length,i+v.length);
+}
+function incToggleCaixa(id,nome,on){
+  const l=_insForm.caixas.filter(c=>String(c.id)!==String(id));
+  if(on)l.push({id:String(id),nome:nome});
+  _insForm.caixas=l;_insPrev=null;
+  const c=document.getElementById('inc-cx-conta');
+  if(c)c.textContent=_insForm.caixas.length+' marcada(s)';
+}
+function incMarcarCaixas(todas){
+  _insForm.caixas=todas?_insCaixasVisiveis().map(c=>({id:String(c.id),nome:c.nome})):[];
+  _insPrev=null;renderIncForm();
+}
+function _insCaixasVisiveis(){
+  const q=_insBuscaCx.trim().toLowerCase();
+  return _insCaixasDoProjeto().filter(c=>!q||String(c.nome).toLowerCase().includes(q));
+}
+function incBuscarCaixa(v){
+  _insBuscaCx=v;
+  const cx=document.getElementById('inc-cx-lista');
+  if(cx)cx.innerHTML=_insListaCaixasHTML();
+}
+function _insListaCaixasHTML(){
+  const marcadas=new Set(_insForm.caixas.map(c=>String(c.id)));
+  const vis=_insCaixasVisiveis();
+  if(!vis.length)return '<div class="vazio" style="padding:14px 0">Nenhuma caixa neste projeto.</div>';
+  return vis.slice(0,400).map(c=>
+    '<label class="ins-cx"><input type="checkbox" '+(marcadas.has(String(c.id))?'checked':'')
+    +' onchange="incToggleCaixa(\''+_esc(c.id)+'\',\''+_esc(String(c.nome).replace(/'/g,"\\'"))+'\',this.checked)">'
+    +'<span>'+(c.tipo==='ceo'?'🔗':'📦')+' '+_esc(c.nome)+'</span><small>'+_esc(c.tipo.toUpperCase())+'</small></label>'
+  ).join('')+(vis.length>400?'<div class="vazio" style="padding:8px 0">+'+(vis.length-400)+' caixa(s) — refine a busca</div>':'');
+}
+function renderIncForm(){
+  const f=_insForm; if(!f)return;
+  const body=document.getElementById('inc-body'), foot=document.getElementById('inc-foot');
+  const p=_insProj();
+  const projs=_insProjetos();
+  const areas=p?(p.areas||[]):[];
+  const carregando=p&&p._stub;
+
+  const seg=(campo,ops,fn)=>'<div class="ins-seg">'+ops.map(o=>
+    '<button class="'+(f[campo]===o[0]?'on':'')+'" onclick="'+fn+'(\''+o[0]+'\')">'+o[1]+'</button>').join('')+'</div>';
+
+  let escopoExtra='';
+  if(f.escopo==='area'){
+    escopoExtra=carregando
+      ? '<div class="info-box">Baixando o projeto para ler as áreas…</div>'
+      : (areas.length
+        ? '<div class="campo"><label>Área de cobertura</label><select onchange="incSet(\'area_id\',this.value,true)">'
+          +'<option value="">— escolha a área —</option>'
+          +areas.map(a=>'<option value="'+_esc(a.id)+'" '+(f.area_id===a.id?'selected':'')+'>'+_esc(a.nome)+'</option>').join('')
+          +'</select><div class="info-box" style="margin-top:8px">A área usa o <b>polígono desenhado no mapa</b>: entra todo cliente com coordenada dentro dele, mesmo quem ainda não tem caixa vinculada.</div></div>'
+        : '<div class="info-box" style="border-left:3px solid var(--warn)">Este projeto não tem área desenhada. Desenhe uma área no mapa (ferramenta ⬠ Área) ou escolha outra abrangência.</div>');
+  }else if(f.escopo==='caixas'){
+    escopoExtra=carregando
+      ? '<div class="info-box">Baixando o projeto para ler as caixas…</div>'
+      : '<div class="campo"><label>Caixas atingidas <span id="inc-cx-conta" style="text-transform:none;color:var(--accent)">'
+        +f.caixas.length+' marcada(s)</span></label>'
+        +'<input placeholder="🔍 Buscar caixa…" value="'+_esc(_insBuscaCx)+'" oninput="incBuscarCaixa(this.value)" style="margin-bottom:7px">'
+        +'<div class="ins-caixas" id="inc-cx-lista">'+_insListaCaixasHTML()+'</div>'
+        +'<div style="display:flex;gap:6px;margin-top:7px">'
+          +'<button class="btn ghost sm" onclick="incMarcarCaixas(true)">Marcar as visíveis</button>'
+          +'<button class="btn ghost sm" onclick="incMarcarCaixas(false)">Limpar</button></div>'
+        +'<div class="info-box" style="margin-top:8px">Por caixa entra quem o <b>app do técnico</b> já amarrou naquela CTO. Numa queda de bairro inteiro, a <b>área</b> costuma pegar mais gente.</div></div>';
+  }
+
+  body.innerHTML=
+   '<div class="campo"><label>O que está acontecendo</label>'
+    +'<input id="inc-f-titulo" value="'+_esc(f.titulo)+'" oninput="incSet(\'titulo\',this.value)" '
+    +'placeholder="Ex.: Rompimento no backbone do Centro"></div>'
+   +'<div class="campo"><label>Tipo</label>'
+    +seg('tipo',Object.keys(INS_TIPOS).map(k=>[k,INS_TIPOS[k].icone+' '+INS_TIPOS[k].rotulo]),'incTrocarTipo')+'</div>'
+   +'<div class="campo"><label>Projeto</label>'
+    +(projs.length
+      ? '<select onchange="incTrocarProjeto(this.value)">'
+        +projs.map(x=>'<option value="'+_esc(x.id)+'" '+(f.projeto_id===x.id?'selected':'')+'>'+_esc(x.nome)+'</option>').join('')
+        +'</select>'
+      : '<div class="info-box">Nenhum projeto carregado.</div>')+'</div>'
+   +'<div class="campo"><label>Abrangência</label>'
+    +seg('escopo',[['projeto','🗂️ Projeto inteiro'],['area','⬠ Área do mapa'],['caixas','📦 Caixas específicas']],'incSetEscopo')+'</div>'
+   +escopoExtra
+   +'<div class="linha2">'
+     +'<div class="campo"><label>Previsão de normalização</label>'
+      +'<input type="datetime-local" value="'+_esc(f.previsao||'')+'" oninput="incSet(\'previsao\',this.value)"></div>'
+     +'<div class="campo"><label>Quando o bot responde</label>'
+      +'<select onchange="incSet(\'gatilho\',this.value)">'
+        +'<option value="reclamacao" '+(f.gatilho==='reclamacao'?'selected':'')+'>Só quando reclamar da conexão</option>'
+        +'<option value="qualquer" '+(f.gatilho==='qualquer'?'selected':'')+'>Em qualquer mensagem</option>'
+      +'</select></div>'
+   +'</div>'
+   +'<div class="campo"><label>Mensagem que o MoviTalk envia</label>'
+    +'<textarea id="inc-f-msg" class="ins-msg" oninput="incSet(\'mensagem\',this.value)">'+_esc(f.mensagem)+'</textarea>'
+    +'<div class="ins-vars">'
+      +INS_VARS.map(v=>'<button title="'+_esc(v[1])+'" onclick="incInserirVar(\''+v[0]+'\')">'+_esc(v[0])+'</button>').join('')
+      +'<button onclick="incUsarModelo()" style="border-style:solid">↺ modelo do tipo</button>'
+    +'</div></div>'
+   +'<label class="ins-cx" style="padding:9px 2px"><input type="checkbox" '+(f.encerrar?'checked':'')
+     +' onchange="incSet(\'encerrar\',this.checked)"><span>Encerrar o atendimento após o aviso '
+     +'<small style="display:block;color:var(--text-dim);margin:0;font-family:inherit">Sem isso, o cliente recebe o aviso e o menu do bot continua normalmente.</small></span></label>'
+   +'<div class="info-box ins-previa" style="margin-top:12px">'
+     +'<button class="btn ghost sm" onclick="incCalcularPrevia()">🎯 Quantos clientes?</button>'
+     +'<span id="inc-previa-res">'+(_insPrev
+        ? '<b>'+_insPrev.afetados+'</b> cliente(s) nesta abrangência'
+        : 'Confira o alcance antes de ativar.')+'</span></div>';
+
+  foot.innerHTML='<button class="btn ghost" onclick="fecharModal(\'md-incidente\')">Cancelar</button>'
+    +'<button class="btn" id="inc-btn-salvar" style="background:var(--danger);color:#fff" onclick="salvarIncidente()">'
+    +(f.id?'💾 Salvar alterações':'🔴 Ativar aviso')+'</button>';
+}
+function incSetEscopo(v){_insForm.escopo=v;_insPrev=null;renderIncForm()}
+
+/* Monta o critério e reclama do que falta — a mesma checagem serve para a
+   prévia e para o salvamento. */
+function _insCriterio(){
+  const f=_insForm;
+  if(!f.projeto_id){toast('Escolha o projeto',true);return null}
+  const p=_insProj();
+  const base={escopo:f.escopo,projeto_id:f.projeto_id,projeto_nome:p?p.nome:null,caixas:[],poligono:[]};
+  if(f.escopo==='area'){
+    const a=p?(p.areas||[]).find(x=>x.id===f.area_id):null;
+    if(!a){toast('Escolha a área atingida',true);return null}
+    if(!a.pontos||a.pontos.length<3){toast('Essa área não tem polígono válido',true);return null}
+    base.poligono=a.pontos.map(pt=>[+pt[0],+pt[1]]);
+    base.area_nome=a.nome;
+  }else if(f.escopo==='caixas'){
+    if(!f.caixas.length){toast('Marque ao menos uma caixa',true);return null}
+    base.caixas=f.caixas;
+  }
+  return base;
+}
+async function incCalcularPrevia(){
+  const alvo=document.getElementById('inc-previa-res');
+  const c=_insCriterio(); if(!c)return;
+  if(alvo)alvo.textContent='calculando…';
+  try{
+    const d=await nuvemCall(Object.assign({acao:'inc-previa'},c));
+    _insPrev=d;
+    const ex=(d.amostra||[]).slice(0,3).map(x=>_esc(x.nome||('#'+x.id))).join(', ');
+    if(alvo)alvo.innerHTML='<b>'+d.afetados+'</b> cliente(s) nesta abrangência'+(ex?' · ex.: '+ex:'');
+  }catch(e){
+    if(alvo)alvo.innerHTML='<span style="color:var(--danger)">'+_esc(e.message)+'</span>';
+  }
+}
+async function salvarIncidente(){
+  const f=_insForm;
+  if(!String(f.titulo||'').trim()){toast('Dê um título à instabilidade',true);return}
+  if(!String(f.mensagem||'').trim()){toast('Escreva a mensagem que o bot vai enviar',true);return}
+  const c=_insCriterio(); if(!c)return;
+  const p=_insProj();
+  const btn=document.getElementById('inc-btn-salvar');
+  const rot=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Salvando…'}
+  try{
+    const d=await nuvemCall({acao:'inc-salvar',incidente:{
+      id:f.id||undefined,
+      titulo:f.titulo.trim(),tipo:f.tipo,escopo:f.escopo,
+      projeto_id:f.projeto_id,projeto_nome:p?p.nome:null,
+      area_nome:c.area_nome||null,poligono:c.poligono,caixas:c.caixas,
+      mensagem:f.mensagem,gatilho:f.gatilho,encerrar:!!f.encerrar,
+      previsao:f.previsao?new Date(f.previsao).toISOString():null,
+      status:'ativo'
+    }});
+    fecharModal('md-incidente');
+    toast((f.id?'Instabilidade atualizada · ':'Aviso ativo no MoviTalk · ')+(d.afetados||0)+' cliente(s) na área');
+    await recarregarInstab(true);
+    if(document.getElementById('shell').style.display!=='none')irPg('instab');
+  }catch(e){
+    toast('Não salvou: '+e.message,true);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=rot}
+  }
+}
+async function resolverIncidente(id){
+  const i=_insLista.find(x=>String(x.id)===String(id));
+  if(!confirm('Marcar "'+((i&&i.titulo)||'esta instabilidade')+'" como normalizada?\n\nO bot para de avisar os clientes dessa região (em até 1 minuto).'))return;
+  try{await nuvemCall({acao:'inc-resolver',id});toast('Instabilidade encerrada');await recarregarInstab(true)}
+  catch(e){toast('Falhou: '+e.message,true)}
+}
+async function reabrirIncidente(id){
+  try{await nuvemCall({acao:'inc-reabrir',id});toast('Instabilidade reaberta');await recarregarInstab(true)}
+  catch(e){toast('Falhou: '+e.message,true)}
+}
+async function excluirIncidente(id){
+  if(!confirm('Excluir este registro de instabilidade? O histórico dos avisos enviados vai junto.'))return;
+  try{await nuvemCall({acao:'inc-excluir',id});toast('Registro excluído');await recarregarInstab(true)}
+  catch(e){toast('Falhou: '+e.message,true)}
+}
+/* Atalho do mapa: já vem com o projeto aberto escolhido. */
+function abrirIncidenteDoMapa(){
+  if(!projAtual){toast('Abra um projeto primeiro',true);return}
+  const pid=projAtual._multi?_projAlvo():projAtual.id;
+  if(!pid||pid==='__multi__'){toast('Escolha um projeto no mapa antes',true);return}
+  abrirIncidente({projeto_id:pid});
+}
 
 </script>
 </body>
