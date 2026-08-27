@@ -26,6 +26,11 @@
 //                             enviados: caixa apagada no projeto some do campo.
 //   - "campo-retorno"      -> {projetos:[ids]}  medicoes e divergencias que os
 //                             tecnicos registraram na rua.
+//   - "inc-listar"         -> instabilidades (incidentes) do MoviFiber.
+//   - "inc-previa"         -> quantos clientes um escopo atinge, antes de ativar.
+//   - "inc-salvar"         -> cria/edita a instabilidade e resolve os afetados.
+//   - "inc-resolver" / "inc-reabrir" / "inc-excluir" / "inc-avisos".
+//     O MoviTalk le esses incidentes e responde sozinho quem reclamar.
 //   - "debug-schema"       -> 1 registro cru de cada fonte (descobrir colunas).
 // ============================================================================
 
@@ -88,6 +93,21 @@ export default async function handler(req, res) {
     if (acao === 'campo-retorno')     return res.status(200).json(await campoRetorno(b.projetos || []));
     if (acao === 'cat-carregar')      return res.status(200).json(await catCarregar());
     if (acao === 'cat-salvar')        return res.status(200).json(await catSalvar(b.dados));
+
+    // ---- instabilidades (o que o MoviTalk responde sozinho ao cliente) ----
+    // Leitura segue a regra geral do proxy; ESCRITA exige usuario identificado
+    // mesmo com MOVIFIBER_EXIGE_LOGIN desligado: marcar uma regiao como fora do
+    // ar muda o que o bot fala com o cliente, entao tem de ter dono.
+    if (acao === 'inc-listar')        return res.status(200).json(await incListar(b));
+    if (acao === 'inc-previa')        return res.status(200).json(await incPrevia(b));
+    if (acao === 'inc-avisos')        return res.status(200).json(await incAvisos(b.id));
+    if (['inc-salvar', 'inc-resolver', 'inc-reabrir', 'inc-excluir'].includes(acao)) {
+      if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'faca login no MoviFiber para marcar instabilidade' });
+      if (acao === 'inc-salvar')      return res.status(200).json(await incSalvar(b.incidente, quem.usuario));
+      if (acao === 'inc-resolver')    return res.status(200).json(await incResolverIncidente(b.id, quem.usuario));
+      if (acao === 'inc-reabrir')     return res.status(200).json(await incReabrir(b.id));
+      if (acao === 'inc-excluir')     return res.status(200).json(await incExcluir(b.id));
+    }
     return res.status(400).json({ erro: 'acao desconhecida: ' + acao });
   } catch (e) {
     console.error('[movifiber-proxy]', e);
@@ -555,4 +575,288 @@ async function debugSchema() {
   } catch (e) { out.ixc_radusuarios = 'ERRO: ' + e.message; }
   out.dica = 'Confira nomes de potencia da ONU em ixc_fibra e ajuste F_RX_CANDIDATOS/F_TX_CANDIDATOS. Localizacao/vinculo saem de supabase_clientes.';
   return out;
+}
+
+// ============================================================================
+// INSTABILIDADES (INCIDENTES DE REDE)  —  MoviFiber ➜ MoviTalk
+// ----------------------------------------------------------------------------
+// O operador marca no MoviFiber que um projeto, uma area ou um conjunto de
+// caixas esta fora do ar. Este proxy resolve QUEM sao os clientes atingidos e
+// guarda o incidente. O MoviTalk (api/atendimento.js) le os incidentes ativos e,
+// quando um cliente atingido escreve reclamando, responde sozinho com o aviso.
+//
+// Nada aqui dispara mensagem em massa: o aviso e sempre uma RESPOSTA a quem
+// procurou o atendimento. Isso e proposital — evita transformar um engano de
+// marcacao em centenas de mensagens indevidas.
+//
+// MIGRATION (rode uma vez no SQL Editor do Supabase):
+//
+//   create table if not exists movifiber_incidentes (
+//     id            uuid primary key default gen_random_uuid(),
+//     protocolo     text unique,
+//     titulo        text not null,
+//     tipo          text not null default 'queda',      -- queda|lentidao|manutencao|rompimento
+//     escopo        text not null default 'projeto',    -- projeto|area|caixas
+//     projeto_id    text,
+//     projeto_nome  text,
+//     area_nome     text,
+//     poligono      jsonb  not null default '[]'::jsonb, -- [[lat,lng],...]
+//     caixas        jsonb  not null default '[]'::jsonb, -- [{id,nome}]
+//     mensagem      text not null,
+//     gatilho       text not null default 'reclamacao', -- reclamacao|qualquer
+//     encerrar      boolean not null default false,
+//     previsao      timestamptz,
+//     status        text not null default 'ativo',      -- ativo|resolvido
+//     clientes_ids  jsonb not null default '[]'::jsonb,
+//     clientes_ixc  jsonb not null default '[]'::jsonb,
+//     afetados      integer not null default 0,
+//     criado_em     timestamptz not null default now(),
+//     criado_por    text,
+//     atualizado_em timestamptz not null default now(),
+//     resolvido_em  timestamptz,
+//     resolvido_por text
+//   );
+//   create index if not exists movifiber_incidentes_status_idx  on movifiber_incidentes(status);
+//   create index if not exists movifiber_incidentes_projeto_idx on movifiber_incidentes(projeto_id);
+//
+//   create table if not exists movifiber_incidente_avisos (
+//     id           bigserial primary key,
+//     incidente_id uuid not null references movifiber_incidentes(id) on delete cascade,
+//     conversa_id  bigint,
+//     contato_fone text not null,
+//     cliente_ixc_id text,
+//     enviado_em   timestamptz not null default now()
+//   );
+//   create index if not exists movifiber_avisos_busca_idx
+//     on movifiber_incidente_avisos(incidente_id, contato_fone, enviado_em desc);
+//
+//   alter table movifiber_incidentes        enable row level security;
+//   alter table movifiber_incidente_avisos  enable row level security;
+//   -- sem policy: so a service_role (os proxies) enxerga. O front passa pelo proxy.
+// ============================================================================
+const SB_INC     = 'movifiber_incidentes';
+const SB_INC_AVI = 'movifiber_incidente_avisos';
+
+const INC_TIPOS  = ['queda', 'lentidao', 'manutencao', 'rompimento'];
+const INC_ESCOPOS = ['projeto', 'area', 'caixas'];
+
+function incErroTabela(status, corpo) {
+  // PGRST205 = tabela inexistente. Sem esta dica o operador ve so "HTTP 404".
+  if (status === 404 || /PGRST205|does not exist/i.test(String(corpo))) {
+    return new Error('tabela ' + SB_INC + ' nao existe — rode a migration das instabilidades '
+      + '(o SQL esta no cabecalho da secao INSTABILIDADES em api/movifiber.js)');
+  }
+  return new Error('Supabase HTTP ' + status + ': ' + String(corpo).slice(0, 300));
+}
+
+// Ray casting. Poligono = [[lat,lng],...]; o primeiro ponto NAO precisa repetir no fim.
+function pontoNoPoligono(lat, lng, poly) {
+  if (!isFinite(lat) || !isFinite(lng) || !Array.isArray(poly) || poly.length < 3) return false;
+  let dentro = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i], [yj, xj] = poly[j];
+    const corta = (xi > lng) !== (xj > lng)
+      && lat < ((yj - yi) * (lng - xi)) / ((xj - xi) || 1e-12) + yi;
+    if (corta) dentro = !dentro;
+  }
+  return dentro;
+}
+
+/* Quem esta dentro do incidente.
+   - projeto / caixas: parte do VINCULO FTTH (quem o campo ja amarrou na caixa).
+   - area: parte da COORDENADA do cliente, entao pega tambem quem ainda nao tem
+     vinculo de caixa registrado — numa queda de regiao esse pessoal reclama igual. */
+async function incResolverAfetados(o) {
+  const escopo = INC_ESCOPOS.includes(o.escopo) ? o.escopo : 'projeto';
+  const vistos = new Map();
+  const juntar = (id, nome, ixc, caixa) => {
+    if (id == null) return;
+    if (!vistos.has(String(id))) vistos.set(String(id), { id, nome: nome || null, ixc_id: ixc ?? null, caixa_id: caixa ?? null });
+  };
+
+  if (escopo === 'area') {
+    const poly = (Array.isArray(o.poligono) ? o.poligono : [])
+      .filter(p => Array.isArray(p) && p.length >= 2 && isFinite(+p[0]) && isFinite(+p[1]))
+      .map(p => [+p[0], +p[1]]);
+    if (poly.length < 3) throw new Error('area sem poligono valido (minimo 3 pontos)');
+    const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_CLIENTES}`
+      + `?select=${SB_ID},${SB_NOME},${SB_IXCID},${SB_LAT},${SB_LNG}`
+      + `&${SB_LAT}=not.is.null&${SB_LNG}=not.is.null`;
+    const linhas = await sbGetAll(url);
+    for (const c of linhas) {
+      if (pontoNoPoligono(+c[SB_LAT], +c[SB_LNG], poly)) juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], null);
+    }
+    return montarAfetados(vistos);
+  }
+
+  const base = `${process.env.SUPABASE_URL}/rest/v1/${SB_INSTAL}`
+    + `?select=projeto_ftth,caixa_id,caixa_nome,`
+    + `${SB_CLIENTES}!${SB_INSTAL}_cliente_id_fkey(${SB_ID},${SB_NOME},${SB_IXCID})`
+    + `&order=id.asc`;
+  const rows = await sbGetAll(base);
+  const caixas = new Set((o.caixas || []).map(c => String(c && c.id != null ? c.id : c)).filter(Boolean));
+  if (escopo === 'caixas' && !caixas.size) throw new Error('nenhuma caixa selecionada');
+  const projeto = o.projeto_id == null ? null : String(o.projeto_id);
+
+  for (const x of rows) {
+    const c = Array.isArray(x[SB_CLIENTES]) ? x[SB_CLIENTES][0] : x[SB_CLIENTES];
+    if (!c) continue;
+    if (escopo === 'caixas') {
+      if (!caixas.has(String(x.caixa_id))) continue;
+    } else {
+      if (!projeto || String(x.projeto_ftth) !== projeto) continue;
+    }
+    juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], x.caixa_id);
+  }
+  return montarAfetados(vistos);
+}
+function montarAfetados(mapa) {
+  const clientes = [...mapa.values()];
+  return {
+    clientes,
+    ids: clientes.map(c => c.id),
+    ixc: clientes.map(c => c.ixc_id).filter(v => v != null && v !== '').map(String),
+    total: clientes.length
+  };
+}
+
+function incProtocolo() {
+  return 'INC-' + Date.now().toString(36).toUpperCase().slice(-5)
+    + Math.random().toString(36).slice(2, 4).toUpperCase();
+}
+
+async function incListar(o = {}) {
+  const filtros = [];
+  if (o.status && o.status !== 'todos') filtros.push(`status=eq.${encodeURIComponent(o.status)}`);
+  if (o.projeto) filtros.push(`projeto_id=eq.${encodeURIComponent(o.projeto)}`);
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_INC}`
+    + `?select=*&order=criado_em.desc&limit=${Math.min(+o.limite || 60, 200)}`
+    + (filtros.length ? '&' + filtros.join('&') : '');
+  const r = await fetch(url, { headers: sbHeaders() });
+  if (!r.ok) throw incErroTabela(r.status, await r.text());
+  const incidentes = await r.json();
+
+  // quantos clientes ja receberam o aviso automatico em cada incidente ativo
+  const avisos = {};
+  const ativos = incidentes.filter(i => i.status === 'ativo').map(i => i.id);
+  if (ativos.length) {
+    const lista = ativos.map(i => `"${String(i).replace(/"/g, '')}"`).join(',');
+    const ra = await fetch(
+      `${process.env.SUPABASE_URL}/rest/v1/${SB_INC_AVI}?select=incidente_id,contato_fone&incidente_id=in.(${lista})`,
+      { headers: sbHeaders() });
+    if (ra.ok) {
+      const porInc = {};
+      for (const a of await ra.json()) {
+        (porInc[a.incidente_id] = porInc[a.incidente_id] || new Set()).add(a.contato_fone);
+      }
+      for (const k of Object.keys(porInc)) avisos[k] = porInc[k].size;
+    }
+  }
+  return { incidentes, avisos };
+}
+
+async function incSalvar(inc, usuario) {
+  if (!inc || typeof inc !== 'object') throw new Error('incidente invalido');
+  const titulo = String(inc.titulo || '').trim();
+  const mensagem = String(inc.mensagem || '').trim();
+  if (!titulo) throw new Error('informe um titulo para a instabilidade');
+  if (!mensagem) throw new Error('informe a mensagem que o bot vai enviar');
+  if (mensagem.length > 1200) throw new Error('mensagem muito longa (maximo 1200 caracteres)');
+
+  const escopo = INC_ESCOPOS.includes(inc.escopo) ? inc.escopo : 'projeto';
+  const caixas = (Array.isArray(inc.caixas) ? inc.caixas : [])
+    .map(c => ({ id: String(c.id ?? c), nome: String(c.nome ?? c.id ?? c) })).slice(0, 2000);
+  const poligono = (Array.isArray(inc.poligono) ? inc.poligono : [])
+    .filter(p => Array.isArray(p) && p.length >= 2).map(p => [+p[0], +p[1]]).slice(0, 5000);
+
+  const afetados = await incResolverAfetados({
+    escopo, projeto_id: inc.projeto_id, caixas, poligono
+  });
+
+  const agora = new Date().toISOString();
+  const quem = usuario ? (usuario.nome || usuario.email || null) : null;
+  const row = {
+    titulo, mensagem, escopo,
+    tipo: INC_TIPOS.includes(inc.tipo) ? inc.tipo : 'queda',
+    projeto_id: inc.projeto_id ? String(inc.projeto_id) : null,
+    projeto_nome: inc.projeto_nome ? String(inc.projeto_nome) : null,
+    area_nome: inc.area_nome ? String(inc.area_nome) : null,
+    poligono, caixas,
+    gatilho: inc.gatilho === 'qualquer' ? 'qualquer' : 'reclamacao',
+    encerrar: inc.encerrar === true,
+    previsao: inc.previsao || null,
+    status: inc.status === 'resolvido' ? 'resolvido' : 'ativo',
+    clientes_ids: afetados.ids,
+    clientes_ixc: afetados.ixc,
+    afetados: afetados.total,
+    atualizado_em: agora
+  };
+  if (inc.id) row.id = String(inc.id);
+  else {
+    row.protocolo = incProtocolo();
+    row.criado_em = agora;
+    row.criado_por = quem;
+  }
+
+  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_INC}`, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify(row)
+  });
+  if (!r.ok) throw incErroTabela(r.status, await r.text());
+  const salvo = (await r.json())[0] || row;
+  return { ok: true, incidente: salvo, afetados: afetados.total, amostra: afetados.clientes.slice(0, 8) };
+}
+
+async function incResolverIncidente(id, usuario) {
+  if (!id) throw new Error('id obrigatorio');
+  const agora = new Date().toISOString();
+  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_INC}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: JSON.stringify({
+      status: 'resolvido', resolvido_em: agora, atualizado_em: agora,
+      resolvido_por: usuario ? (usuario.nome || usuario.email || null) : null
+    })
+  });
+  if (!r.ok) throw incErroTabela(r.status, await r.text());
+  return { ok: true, incidente: (await r.json())[0] || null };
+}
+
+async function incReabrir(id) {
+  if (!id) throw new Error('id obrigatorio');
+  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_INC}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: JSON.stringify({ status: 'ativo', resolvido_em: null, resolvido_por: null, atualizado_em: new Date().toISOString() })
+  });
+  if (!r.ok) throw incErroTabela(r.status, await r.text());
+  return { ok: true, incidente: (await r.json())[0] || null };
+}
+
+async function incExcluir(id) {
+  if (!id) throw new Error('id obrigatorio');
+  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${SB_INC}?id=eq.${encodeURIComponent(id)}`,
+    { method: 'DELETE', headers: sbHeaders() });
+  if (!r.ok && r.status !== 404) throw incErroTabela(r.status, await r.text());
+  return { ok: true };
+}
+
+// Previa: quantos clientes o operador vai atingir ANTES de ativar o aviso.
+async function incPrevia(o) {
+  const a = await incResolverAfetados({
+    escopo: o.escopo, projeto_id: o.projeto_id,
+    caixas: o.caixas || [], poligono: o.poligono || []
+  });
+  return { ok: true, afetados: a.total, amostra: a.clientes.slice(0, 8) };
+}
+
+// Quem ja recebeu o aviso automatico deste incidente (acompanhamento no painel).
+async function incAvisos(id) {
+  if (!id) throw new Error('id obrigatorio');
+  const r = await fetch(
+    `${process.env.SUPABASE_URL}/rest/v1/${SB_INC_AVI}?select=*&incidente_id=eq.${encodeURIComponent(id)}&order=enviado_em.desc&limit=200`,
+    { headers: sbHeaders() });
+  if (!r.ok) throw incErroTabela(r.status, await r.text());
+  return { ok: true, avisos: await r.json() };
 }

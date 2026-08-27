@@ -354,6 +354,15 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .mq-box.cliente{background:var(--orange-soft);color:#92400e;border:1px solid #fcd9a4;}
 .mq-box.rede{background:var(--red-soft);color:var(--red);border:1px solid #fecaca;}
 .mq-box.normal{background:#f7f9fb;color:var(--text-mid);border:1px solid var(--line);}
+.inst-aviso{
+  border:1px solid #f0b4b0;background:var(--red-soft);border-radius:10px;
+  padding:10px 12px;margin-bottom:9px;line-height:1.55;
+}
+.inst-aviso .it{font-size:12px;font-weight:800;color:var(--red);display:flex;align-items:center;gap:6px}
+.inst-aviso .il{font-size:11px;color:var(--text-mid);margin-top:4px}
+.inst-aviso .il b{color:var(--text)}
+.inst-aviso .ip{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.4px;
+  color:var(--text-low);margin-top:5px;display:block}
 .con-alerta{
   font-size:10.5px;font-weight:700;color:var(--red);background:var(--red-soft);
   border-radius:7px;padding:6px 9px;margin-top:7px;line-height:1.4;
@@ -2187,15 +2196,36 @@ function blocoFinanceiro(c){
       </div>`:''}`;
 }
 
+/* Queda de região já marcada no MoviFiber.
+   Vem antes de tudo no bloco de conexão de propósito: sem isso o atendente lê
+   "OFFLINE", manda reiniciar o roteador e abre uma O.S. para um problema que a
+   operação já conhece e já tem equipe na rua. */
+function blocoInstabilidade(p){
+  const i=p&&p.instabilidade;
+  if(!i) return '';
+  const rot={queda:'Queda total',lentidao:'Lentidão / oscilação',manutencao:'Manutenção programada',rompimento:'Rompimento de fibra'}[i.tipo]||'Instabilidade';
+  const qd=v=>v?new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):null;
+  return `<div class="inst-aviso">
+    <div class="it">🔴 ${esc(rot)} na região deste cliente</div>
+    <div class="il"><b>${esc(i.titulo||'')}</b>${i.regiao?` · ${esc(i.regiao)}`:''}
+      ${i.desde?`<br>Marcada em ${esc(qd(i.desde))}`:''}
+      ${i.previsao?`<br>Previsão de normalização: <b>${esc(qd(i.previsao))}</b>`:'<br>Sem previsão fechada'}
+      ${i.afetados?`<br>${i.afetados} cliente(s) na mesma área`:''}
+      <br>O bot já avisa sozinho quem escrever reclamando — não precisa abrir O.S. por esta queda.</div>
+    ${i.protocolo?`<span class="ip">${esc(i.protocolo)}</span>`:''}
+  </div>`;
+}
+
 function blocoConexao(c){
   const p=c.painel;
   if(c.painelErro) return `<div class="ms-erro">Não consegui ler a conexão no IXC.</div>`;
   if(!p) return `<div class="ms-load">Consultando o Radius…</div>`;
-  if(p.erros&&p.erros.conexao) return `<div class="ms-erro">Radius indisponível.<br><b>${esc(p.erros.conexao)}</b></div>`;
+  const aviso=blocoInstabilidade(p);
+  if(p.erros&&p.erros.conexao) return aviso+`<div class="ms-erro">Radius indisponível.<br><b>${esc(p.erros.conexao)}</b></div>`;
   const cx=p.conexao;
-  if(!cx||!cx.logins||!cx.logins.length) return `<div class="ms-load">Nenhum login PPPoE encontrado para este cliente.</div>`;
+  if(!cx||!cx.logins||!cx.logins.length) return aviso+`<div class="ms-load">Nenhum login PPPoE encontrado para este cliente.</div>`;
 
-  return cx.logins.map(l=>{
+  return aviso+cx.logins.map(l=>{
     const q=l.quedas_hoje;
     const clsQ = q===null?'':(q===0?'quedas-0':(q<=3?'quedas-med':'quedas-alta'));
     return `
