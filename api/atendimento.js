@@ -856,7 +856,10 @@ function pareceQueixaConexao(texto) {
      1. vínculo permanente da conversa (o atendente amarrou o cadastro);
      2. sugestão gravada quando o cliente digitou um CPF válido no bot;
      3. telefone — último recurso, e só quando os dígitos conferem de fato. */
-const COLS_FONE_CLIENTE = ['telefone_celular', 'whatsapp', 'celular', 'fone', 'telefone'];
+// 'whatsapp' primeiro porque e a unica que existe hoje na tabela `clientes`;
+// as demais ficam como rede de seguranca se o espelho do IXC mudar. Cada
+// coluna inexistente custa uma requisicao que volta 400 antes de ser pulada.
+const COLS_FONE_CLIENTE = ['whatsapp', 'telefone_celular', 'celular', 'fone', 'telefone'];
 
 async function clientePorIxcIdLeve(e, ixcId, nomeFallback) {
   const c = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=id,ixc_id,razao,nome&limit=1`)

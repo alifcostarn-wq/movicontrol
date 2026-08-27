@@ -696,7 +696,12 @@ async function incResolverAfetados(o) {
   const rows = await sbGetAll(base);
   const caixas = new Set((o.caixas || []).map(c => String(c && c.id != null ? c.id : c)).filter(Boolean));
   if (escopo === 'caixas' && !caixas.size) throw new Error('nenhuma caixa selecionada');
-  const projeto = o.projeto_id == null ? null : String(o.projeto_id);
+  // projeto_ftth guarda o NOME do projeto ("FTTH-MAISA"), nao o id do MoviFiber
+  // ("prj-kj5ma6") — quem preenche e o app do tecnico, escolhendo pela lista.
+  // Aceitar os dois evita depender de qual deles chegou no vinculo.
+  const norm = v => String(v == null ? '' : v).trim().toUpperCase();
+  const alvos = new Set([o.projeto_id, o.projeto_nome].filter(Boolean).map(norm));
+  if (escopo === 'projeto' && !alvos.size) throw new Error('projeto nao informado');
 
   for (const x of rows) {
     const c = Array.isArray(x[SB_CLIENTES]) ? x[SB_CLIENTES][0] : x[SB_CLIENTES];
@@ -704,7 +709,7 @@ async function incResolverAfetados(o) {
     if (escopo === 'caixas') {
       if (!caixas.has(String(x.caixa_id))) continue;
     } else {
-      if (!projeto || String(x.projeto_ftth) !== projeto) continue;
+      if (!alvos.has(norm(x.projeto_ftth))) continue;
     }
     juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], x.caixa_id);
   }
@@ -770,7 +775,7 @@ async function incSalvar(inc, usuario) {
     .filter(p => Array.isArray(p) && p.length >= 2).map(p => [+p[0], +p[1]]).slice(0, 5000);
 
   const afetados = await incResolverAfetados({
-    escopo, projeto_id: inc.projeto_id, caixas, poligono
+    escopo, projeto_id: inc.projeto_id, projeto_nome: inc.projeto_nome, caixas, poligono
   });
 
   const agora = new Date().toISOString();
@@ -845,7 +850,7 @@ async function incExcluir(id) {
 // Previa: quantos clientes o operador vai atingir ANTES de ativar o aviso.
 async function incPrevia(o) {
   const a = await incResolverAfetados({
-    escopo: o.escopo, projeto_id: o.projeto_id,
+    escopo: o.escopo, projeto_id: o.projeto_id, projeto_nome: o.projeto_nome,
     caixas: o.caixas || [], poligono: o.poligono || []
   });
   return { ok: true, afetados: a.total, amostra: a.clientes.slice(0, 8) };
