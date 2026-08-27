@@ -96,25 +96,64 @@ input:focus,select:focus{border-color:var(--accent)}
 .proj-sel{display:flex;gap:10px;align-items:center}
 .proj-sel select{width:210px}
 /* KPI cards */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
-.kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px}
-.kpi .lbl{font-size:10.5px;letter-spacing:1.5px;color:var(--text-dim);display:flex;align-items:center;gap:7px;text-transform:uppercase}
-.kpi .lbl .ic{color:var(--accent)}
-.kpi .big{font-size:30px;font-weight:700;margin:8px 0 2px;font-family:'DM Sans'}
-.kpi .sub{font-size:11.5px;color:var(--text-dim)}
-.panels{display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:18px}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px}
-.panel h3{font-size:12px;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;display:flex;align-items:center;gap:8px;margin-bottom:14px}
-.donut-wrap{display:flex;flex-direction:column;align-items:center;gap:8px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-dim)}
-.legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}
-.bars{display:flex;align-items:flex-end;gap:26px;height:180px;padding:10px 20px 0;border-bottom:1px solid var(--border)}
-.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%}
-.bar-stack{flex:1;width:46px;display:flex;flex-direction:column-reverse;border-radius:5px 5px 0 0;overflow:hidden}
-.bar-lbl{font-size:11px;color:var(--text-dim)}
-.alert-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
-.alert-row .nm{font-size:12px;color:var(--text-dim);width:150px;flex-shrink:0}
-.alert-bar{flex:1;height:26px;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:12px;font-weight:600;font-family:'DM Mono';color:#1A1400}
+/* ============ DASHBOARD ============ */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:14px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 17px;
+  display:flex;flex-direction:column;gap:9px;--kc:var(--accent)}
+.kpi .lbl{font-size:9.5px;letter-spacing:1.4px;color:var(--text-dim);display:flex;align-items:center;gap:7px;text-transform:uppercase}
+.kpi .lbl .ic{color:var(--kc);font-size:12px}
+.kpi .big{font-size:30px;font-weight:700;line-height:1;font-family:'DM Sans',sans-serif}
+.kpi .big small{font-size:13px;font-weight:600;color:var(--text-dim);margin-left:4px;letter-spacing:0}
+.kpi .sub{font-size:11px;color:var(--text-dim);line-height:1.5}
+/* medidor: uma razão contra um limite não é gráfico de pizza, é uma barra */
+.kpi .medidor{height:5px;border-radius:4px;background:var(--surface2);overflow:hidden;position:relative}
+.kpi .medidor i{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:var(--kc)}
+
+.panels{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;margin-bottom:14px;align-items:start}
+.panels.um{grid-template-columns:1fr}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px}
+.panel h3{font-size:10.5px;letter-spacing:1.3px;color:var(--text-dim);text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.panel .ph-sub{font-size:11.5px;color:var(--text-dim);margin-bottom:14px;line-height:1.5}
+.panel .ph-sub b{color:var(--text)}
+.legend{display:flex;gap:13px;flex-wrap:wrap;font-size:10.5px;color:var(--text-dim);margin-bottom:13px}
+.legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:5px;position:relative;top:1px}
+
+/* barras empilhadas horizontais — rótulo longo cabe e a escala não mente */
+.st-linha{margin-bottom:14px}
+.st-linha:last-child{margin-bottom:0}
+.st-cab{display:flex;align-items:baseline;gap:8px;font-size:12.5px;margin-bottom:6px}
+.st-cab .t{margin-left:auto;font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim)}
+.st-trk{height:9px;border-radius:5px;background:var(--surface2);display:flex;gap:2px;overflow:hidden}
+.st-trk i{display:block;height:100%}
+.st-det{font-size:10.5px;color:var(--text-dim);margin-top:5px;font-family:'DM Mono',monospace;line-height:1.5}
+
+/* ocupação por caixa */
+.oc-lin{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:12px}
+.oc-lin .n{width:96px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oc-trk{flex:1;height:8px;border-radius:5px;background:var(--surface2);overflow:hidden;min-width:40px}
+.oc-trk i{display:block;height:100%;border-radius:5px}
+.oc-lin .v{width:52px;text-align:right;font-family:'DM Mono',monospace;font-size:11.5px;flex-shrink:0;white-space:nowrap}
+
+/* pendências */
+.pend-lista{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px}
+.pend{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--border);
+  border-radius:12px;background:var(--bg);border-left:3px solid var(--pc,var(--text-dim))}
+.pend .pv{font-family:'DM Mono',monospace;font-size:18px;line-height:1;color:var(--pc,var(--text));min-width:24px}
+.pend .pl{font-size:11.5px;color:var(--text-dim);line-height:1.4}
+.pend .pl b{display:block;color:var(--text);font-size:12px;font-weight:600;margin-bottom:1px}
+
+/* comparativo entre projetos — o selecionado em destaque, o resto de contexto */
+.cmp-lin{display:flex;align-items:center;gap:11px;margin-bottom:9px;font-size:12px;
+  cursor:pointer;padding:4px 6px;border-radius:9px;transition:background .13s}
+.cmp-lin:hover{background:var(--surface2)}
+.cmp-lin .n{width:150px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-dim)}
+.cmp-lin.on .n{color:var(--text);font-weight:700}
+.cmp-trk{flex:1;height:8px;border-radius:5px;background:var(--surface2);overflow:hidden;min-width:60px}
+.cmp-trk i{display:block;height:100%;border-radius:5px;background:var(--st-nao);opacity:.55}
+.cmp-lin.on .cmp-trk i{background:var(--accent);opacity:1}
+.cmp-lin .v{width:42px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)}
+.cmp-lin.on .v{color:var(--text)}
 /* Cadastros */
 .cad-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
 .cad-tab{padding:9px 15px;font-size:13px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px}
@@ -8713,96 +8752,215 @@ function abrirQR(){
 
 /* ================= DASHBOARD ================= */
 function statusCor(s){return{'implantado':'#3CB371','certificado':'#5B9BFF','projeto':'#D4A027','nao-implantado':'#F87168'}[s]||'#8B90A0'}
-function donutSVG(segs,centro,sub){
-  const tot=segs.reduce((s,x)=>s+x.v,0)||1;
-  let acc=0,paths='';
-  const R=52,C=2*Math.PI*R;
-  segs.forEach(sg=>{
-    const frac=sg.v/tot, len=frac*C;
-    paths+=`<circle cx="70" cy="70" r="${R}" fill="none" stroke="${sg.cor}" stroke-width="16" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-acc}" transform="rotate(-90 70 70)"/>`;
-    acc+=len;
-  });
-  if(!segs.length||tot===0)paths=`<circle cx="70" cy="70" r="${R}" fill="none" stroke="#2C3040" stroke-width="16"/>`;
-  return `<svg width="140" height="140" viewBox="0 0 140 140">${paths}
-    <text x="70" y="66" text-anchor="middle" fill="var(--text)" font-size="24" font-weight="700" font-family="DM Sans">${centro}</text>
-    <text x="70" y="86" text-anchor="middle" fill="var(--text-dim)" font-size="11" font-family="DM Sans">${sub||''}</text></svg>`;
+/* ================= DASHBOARD =================
+   O que a tela precisa responder, nesta ordem: quanto da rede já está no chão,
+   onde ainda cabe cliente, e o que está pendente. Tudo é calculado a partir do
+   projeto ESCOLHIDO no seletor — que não é necessariamente o projeto aberto no
+   mapa, então nada aqui usa projAtual. */
+const DASH_ST=['certificado','implantado','projeto','nao-implantado'];
+
+function dashMetros(pts,folga){
+  let m=0;
+  for(let i=1;i<(pts||[]).length;i++){
+    const a=pts[i-1],b=pts[i],R=6371000;
+    const dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;
+    const x=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;
+    m+=2*R*Math.asin(Math.sqrt(x));
+  }
+  return m*(1+(folga||0)/100);
 }
+/* Capacidade da caixa = saídas do splitter. Sem splitter cadastrado não dá para
+   afirmar que há porta livre — a caixa entra como pendência, não como vaga. */
+function dashCapCTO(e){
+  const m=String(e.splitter||'').match(/:\s*(\d+)/);
+  return m?+m[1]:0;
+}
+function dashStats(p){
+  const els=p.elementos||[], cabos=p.cabos||[], clientes=p.clientes||[];
+  const feito=x=>['implantado','certificado'].includes(x&&x.status);
+  const st=x=>(x&&x.status)||'projeto';
+
+  let mTot=0,mImpl=0;
+  cabos.forEach(c=>{const m=dashMetros(c.pontos,c.folga);mTot+=m;if(feito(c))mImpl+=m});
+
+  const tot=els.length+cabos.length;
+  const impl=els.filter(feito).length+cabos.filter(feito).length;
+
+  const ctos=els.filter(e=>e.tipo==='cto');
+  const semSplit=ctos.filter(e=>!dashCapCTO(e));
+  const ocupadas=e=>clientes.filter(c=>c.ctoId===e.id).length;
+  const comCap=ctos.filter(e=>dashCapCTO(e)).map(e=>{
+    const cap=dashCapCTO(e), oc=Math.min(ocupadas(e),cap);
+    return {e,cap,oc,livres:cap-oc,pct:Math.round(oc/cap*100)};
+  });
+  const portas=comCap.reduce((n,x)=>n+x.cap,0);
+  const usadas=comCap.reduce((n,x)=>n+x.oc,0);
+
+  return {
+    els,cabos,clientes,ctos,comCap,semSplit,
+    porTipo:t=>els.filter(e=>e.tipo===t),
+    tot,impl,pct:tot?Math.round(impl/tot*100):0,
+    mTot,mImpl,pctM:mTot?Math.round(mImpl/mTot*100):0,
+    portas,usadas,livres:portas-usadas,pctPortas:portas?Math.round(usadas/portas*100):0,
+    lotadas:comCap.filter(x=>x.livres<=0).length,
+    quase:comCap.filter(x=>x.livres>0&&x.livres<=2).length,
+    ctosAtivas:ctos.filter(feito).length,
+    conectados:clientes.filter(c=>c.ctoId).length,
+    st
+  };
+}
+
 function initDashboard(){
   const sel=document.getElementById('dash-proj');
-  sel.innerHTML=DB.projetos.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')||'<option>— sem projetos —</option>';
+  const atual=sel.value;
+  sel.innerHTML=DB.projetos.map(p=>`<option value="${_esc(p.id)}">${_esc(p.nome)}</option>`).join('')
+    ||'<option value="">— sem projetos —</option>';
+  if(atual&&DB.projetos.some(p=>p.id===atual))sel.value=atual;
   renderDashboard();
+}
+function dashIrPara(id){
+  const sel=document.getElementById('dash-proj');
+  if(!sel)return;
+  sel.value=id;renderDashboard();
+}
+function dashKpi(cor,ic,rot,valor,unidade,sub,medidor){
+  return `<div class="kpi" style="--kc:${cor}">
+    <div class="lbl"><span class="ic">${ic}</span> ${rot}</div>
+    <div class="big">${valor}${unidade?`<small>${unidade}</small>`:''}</div>
+    ${medidor!=null?`<div class="medidor"><i style="width:${Math.max(0,Math.min(100,medidor))}%"></i></div>`:''}
+    <div class="sub">${sub}</div>
+  </div>`;
+}
+/* Uma linha = um tipo de elemento, repartida por status.
+   As cores de status do MoviFiber reprovam no teste de daltonismo entre
+   "em projeto" (amarelo) e "não implantado" (salmão) — ΔE 6 em deuteranopia.
+   São as mesmas cores do mapa, então em vez de trocá-las a linha traz a
+   contagem escrita de cada status: a cor deixa de ser o único canal. */
+function dashLinhaStatus(rotulo,itens,st){
+  const n=itens.length;
+  if(!n)return '';
+  const partes=DASH_ST.map(k=>({k,n:itens.filter(x=>st(x)===k).length})).filter(x=>x.n);
+  return `<div class="st-linha">
+    <div class="st-cab"><span class="n">${rotulo}</span><span class="t">${n}</span></div>
+    <div class="st-trk">${partes.map(x=>
+      `<i style="width:${x.n/n*100}%;background:${statusCor(x.k)}" title="${x.n} ${labelStatus(x.k)}"></i>`).join('')}</div>
+    <div class="st-det">${partes.map(x=>`${x.n} ${labelStatus(x.k).toLowerCase()}`).join(' · ')}</div>
+  </div>`;
+}
+function dashCorOcup(livres){
+  if(livres<=0)return 'var(--danger)';
+  if(livres<=2)return 'var(--warn)';
+  return 'var(--accent)';
 }
 function renderDashboard(){
   const id=document.getElementById('dash-proj').value;
   const p=DB.projetos.find(x=>x.id===id);
   const body=document.getElementById('dashboard-body');
-  if(!p){body.innerHTML='<div class="vazio">Crie um projeto para ver os indicadores.</div>';return}
-  const els=p.elementos||[], cabos=p.cabos||[], clientes=p.clientes||[];
-  const ct=t=>els.filter(e=>e.tipo===t).length;
-  const ctos=els.filter(e=>e.tipo==='cto');
-  // metragem
-  const geo=(pts)=>{let m=0;for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];const R=6371000,dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;const x=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLng/2)**2;m+=2*R*Math.asin(Math.sqrt(x))}return m};
-  let mTot=0,mImpl=0;
-  cabos.forEach(c=>{const m=geo(c.pontos)*(1+(c.folga||0)/100);mTot+=m;if(['implantado','certificado'].includes(c.status))mImpl+=m});
-  // implantação geral
-  const totEl=els.length+cabos.length;
-  const implEl=els.filter(e=>['implantado','certificado'].includes(e.status)).length+cabos.filter(c=>['implantado','certificado'].includes(c.status)).length;
-  const pctImpl=totEl?Math.round(implEl/totEl*100):0;
-  // infra por status (barras)
-  const grupos=[{t:'cto',l:'CTOs'},{t:'ceo',l:'CEOs'},{t:'pop',l:'POPs'},{t:'poste',l:'Postes'}];
-  const stList=['implantado','certificado','projeto','nao-implantado'];
-  // clientes 30d (simplificado: todos)
-  const ctoAtivas=ctos.filter(c=>['implantado','certificado'].includes(c.status)).length;
-  body.innerHTML=`
-  <div class="kpi-grid">
-    <div class="kpi"><div class="lbl"><span class="ic">◉</span> Infraestrutura</div><div class="big">${ct('cto')+ct('ceo')+ct('pop')}</div><div class="sub">${ct('cto')} CTOs · ${ct('pop')} POPs · ${ct('poste')} postes</div></div>
-    <div class="kpi"><div class="lbl"><span class="ic">◍</span> Clientes</div><div class="big">${clientes.length}</div><div class="sub">${clientes.filter(c=>c.ctoId).length} vinculados</div></div>
-    <div class="kpi"><div class="lbl"><span class="ic">〜</span> Cabos</div><div class="big">${(mTot/1000).toFixed(1)}km</div><div class="sub">${cabos.length} cabos cadastrados</div></div>
-    <div class="kpi"><div class="lbl"><span class="ic">↗</span> Implantação</div><div class="big">${pctImpl}%</div><div class="sub">${ctos.length?Math.round(ctoAtivas/ctos.length*100):0}% das CTOs ativas</div></div>
-  </div>
-  <div class="panels">
-    <div class="panel">
-      <h3>↗ Taxa de Implantação</h3>
-      <div class="donut-wrap">${donutSVG([{v:pctImpl,cor:'#3CB371'},{v:100-pctImpl,cor:'#2C3040'}],pctImpl+'%','Implantação')}
-        <div class="sub" style="font-size:11px;color:var(--text-dim)">${(mImpl).toFixed(0)}m implantados de ${(mTot).toFixed(0)}m</div></div>
-    </div>
-    <div class="panel">
-      <h3>▦ Infraestrutura por Status</h3>
-      <div class="legend" style="margin-bottom:12px">${stList.map(s=>`<span><i style="background:${statusCor(s)}"></i>${labelStatus(s)}</span>`).join('')}</div>
-      <div class="bars">${grupos.map(g=>{
-        const its=els.filter(e=>e.tipo===g.t);
-        const max=Math.max(1,...grupos.map(gg=>els.filter(e=>e.tipo===gg.t).length));
-        return `<div class="bar-col"><div class="bar-stack" style="height:${its.length/max*100}%">${stList.map(s=>{
-          const n=its.filter(e=>(e.status||'projeto')===s).length;
-          return n?`<div style="height:${n/Math.max(1,its.length)*100}%;background:${statusCor(s)}"></div>`:'';
-        }).join('')}</div><div class="bar-lbl">${g.l} (${its.length})</div></div>`;
-      }).join('')}</div>
-    </div>
-  </div>
-  <div class="panels" style="grid-template-columns:1fr 1fr">
-    <div class="panel">
-      <h3>〜 Cabos (metragem)</h3>
-      <div class="donut-wrap">${donutSVG([{v:mImpl,cor:'#3CB371'},{v:Math.max(0,mTot-mImpl),cor:'#F87168'}],(mTot).toFixed(0)+'m','Total')}
-      <div class="legend"><span><i style="background:#3CB371"></i>Implantado</span><span><i style="background:#F87168"></i>Não implantado</span></div></div>
-    </div>
-    <div class="panel">
-      <h3>⚠ Alertas e Pendências</h3>
-      ${alertasDash(p)}
-    </div>
+  if(!p){body.innerHTML='<div class="home-vazio"><b>Nenhum projeto para medir</b>Crie um projeto FTTH e os indicadores aparecem aqui.</div>';return}
+  if(p._stub){
+    body.innerHTML=`<div class="home-vazio"><b>${_esc(p.nome)} ainda não foi baixado</b>
+      O conteúdo deste projeto está na nuvem. Abra o mapa uma vez para o dashboard poder medir a rede.
+      <div style="margin-top:14px"><button class="btn" onclick="abrirProjeto('${_esc(p.id)}')">◎ Abrir mapa</button></div></div>`;
+    return;
+  }
+  const d=dashStats(p);
+  const km=v=>v>=1000?(v/1000).toFixed(1).replace('.',',')+' km':Math.round(v)+' m';
+
+  // ---- 1. indicadores de topo ----
+  const kpis=
+    dashKpi('var(--st-impl)','↗','Implantação',d.pct,'%',
+      `<b>${d.impl}</b> de ${d.tot} itens no chão`,d.pct)
+   +dashKpi(d.portas?(d.livres<=0?'var(--danger)':(d.pctPortas>=85?'var(--warn)':'var(--accent)')):'var(--text-dim)',
+      '◫','Portas livres',
+      d.portas?d.livres:'—',d.portas?'de '+d.portas:'',
+      d.portas?`${d.pctPortas}% ocupadas em ${d.comCap.length} caixa(s)`
+              :`nenhuma CTO com splitter definido`,
+      d.portas?d.pctPortas:null)
+   +dashKpi('var(--st-cert)','〜','Rede lançada',km(d.mTot),'',
+      `${d.cabos.length} cabo(s) · ${d.pctM}% implantado`,d.pctM)
+   +dashKpi('var(--info)','◍','Clientes',d.conectados,'',
+      `${d.clientes.length} no projeto · ${d.ctosAtivas} CTO(s) ativa(s)`,
+      d.clientes.length?Math.round(d.conectados/d.clientes.length*100):0);
+
+  // ---- 2. implantação por tipo ----
+  const linhas=[
+    dashLinhaStatus('CTOs',d.porTipo('cto'),d.st),
+    dashLinhaStatus('CEOs',d.porTipo('ceo'),d.st),
+    dashLinhaStatus('POPs',d.porTipo('pop'),d.st),
+    dashLinhaStatus('Postes',d.porTipo('poste'),d.st),
+    dashLinhaStatus('Cabos',d.cabos,d.st)
+  ].filter(Boolean).join('');
+  const painelStatus=`<div class="panel">
+    <h3>▦ Implantação por tipo</h3>
+    <div class="ph-sub">Cada linha mostra o total do tipo repartido pelo estado em que está.</div>
+    <div class="legend">${DASH_ST.map(k=>`<span><i style="background:${statusCor(k)}"></i>${labelStatus(k)}</span>`).join('')}</div>
+    ${linhas||'<div class="vazio" style="padding:14px 0">Projeto sem elementos.</div>'}
   </div>`;
-}
-function alertasDash(p){
-  const semConexao=(p.cabos||[]).filter(c=>!c.origemId||!c.destinoId).length;
-  const ctosPlan=(p.elementos||[]).filter(e=>e.tipo==='cto'&&(e.status==='projeto')).length;
-  const ctosSemSplit=(p.elementos||[]).filter(e=>e.tipo==='cto'&&!e.splitter).length;
-  const rows=[
-    {l:'Cabos sem conexão',v:semConexao,cor:'#E8A030'},
-    {l:'CTOs em planejamento',v:ctosPlan,cor:'#7B8AA5'},
-    {l:'CTOs sem splitter',v:ctosSemSplit,cor:'#F87168'}
-  ].filter(r=>r.v>0);
-  if(!rows.length)return '<div class="vazio" style="padding:20px">✅ Sem pendências</div>';
-  const max=Math.max(...rows.map(r=>r.v));
-  return rows.map(r=>`<div class="alert-row"><div class="nm">${r.l}</div><div class="alert-bar" style="background:${r.cor};width:${Math.max(20,r.v/max*100)}%">${r.v}</div></div>`).join('');
+
+  // ---- 3. capacidade das caixas ----
+  // só entram caixas que já têm cliente: uma lista de "0/8" repetido não diz nada
+  const usadasLista=d.comCap.filter(x=>x.oc>0).sort((a,b)=>b.pct-a.pct||a.livres-b.livres);
+  const criticas=usadasLista.slice(0,6);
+  const painelOcup=`<div class="panel">
+    <h3>◫ Ocupação das caixas</h3>
+    <div class="ph-sub">${d.portas
+      ? `<b>${d.livres}</b> porta(s) livre(s) de ${d.portas}${d.lotadas?` · <b style="color:var(--danger)">${d.lotadas} cheia(s)</b>`:''}${d.quase?` · ${d.quase} quase cheia(s)`:''}`
+      : 'Defina o splitter das CTOs para o sistema saber quantas portas existem.'}</div>
+    ${criticas.length?criticas.map(x=>`
+      <div class="oc-lin" title="${_esc(x.e.nome||x.e.id)}: ${x.oc} de ${x.cap} portas em uso, ${x.livres} livre(s)">
+        <span class="n">${_esc(x.e.nome||x.e.id)}</span>
+        <span class="oc-trk"><i style="width:${x.pct}%;background:${dashCorOcup(x.livres)}"></i></span>
+        <span class="v" style="color:${dashCorOcup(x.livres)}">${x.oc}/${x.cap}</span>
+      </div>`).join('')
+      +`<div class="legend" style="margin:12px 0 0">
+          <span><i style="background:var(--accent)"></i>com folga</span>
+          <span><i style="background:var(--warn)"></i>1 a 2 livres</span>
+          <span><i style="background:var(--danger)"></i>cheia</span>
+          ${usadasLista.length>6?`<span style="margin-left:auto">${criticas.length} de ${usadasLista.length} em uso</span>`:''}
+        </div>`
+    :(d.portas
+      ? '<div class="vazio" style="padding:14px 0">Nenhuma porta ocupada ainda — as '+d.portas+' estão livres.</div>'
+      : '<div class="vazio" style="padding:14px 0">Nenhuma CTO com splitter definido.</div>')}
+  </div>`;
+
+  // ---- 4. pendências ----
+  const pend=[
+    {v:d.semSplit.length, t:'CTOs sem splitter',   d:'sem isso não dá para contar porta livre', c:'var(--danger)'},
+    {v:(p.cabos||[]).filter(c=>!c.origemId||!c.destinoId).length, t:'Cabos sem conexão', d:'pontas soltas no diagrama', c:'var(--warn)'},
+    {v:d.lotadas, t:'CTOs lotadas', d:'não aceitam novo cliente', c:'var(--danger)'},
+    {v:d.porTipo('cto').filter(e=>d.st(e)==='projeto').length, t:'CTOs em projeto', d:'ainda não foram para a rua', c:'var(--st-projeto)'},
+    {v:d.clientes.filter(c=>!c.ctoId).length, t:'Clientes sem caixa', d:'não sabemos de qual CTO saem', c:'var(--st-nao)'}
+  ].filter(x=>x.v>0);
+  const painelPend=`<div class="panel">
+    <h3>⚠ Pendências</h3>
+    <div class="ph-sub">O que impede este projeto de ser considerado documentado.</div>
+    ${pend.length?`<div class="pend-lista">${pend.map(x=>
+      `<div class="pend" style="--pc:${x.c}"><span class="pv">${x.v}</span>
+        <span class="pl"><b>${x.t}</b>${x.d}</span></div>`).join('')}</div>`
+    :'<div class="vazio" style="padding:18px 0">✅ Nada pendente neste projeto.</div>'}
+  </div>`;
+
+  // ---- 5. comparativo entre projetos (o selecionado em destaque) ----
+  const outros=DB.projetos.filter(x=>!x._stub).map(x=>{
+    const e=(x.elementos||[]),c=(x.cabos||[]);
+    const t=e.length+c.length;
+    const i=e.concat(c).filter(o=>['implantado','certificado'].includes(o.status)).length;
+    return {p:x,pct:t?Math.round(i/t*100):0,t};
+  }).sort((a,b)=>b.pct-a.pct);
+  const painelCmp=outros.length>1?`<div class="panel">
+    <h3>≡ Implantação dos seus projetos</h3>
+    <div class="ph-sub">Clique para ver os indicadores de outro projeto.</div>
+    ${outros.map(x=>`
+      <div class="cmp-lin ${x.p.id===p.id?'on':''}" onclick="dashIrPara('${_esc(x.p.id)}')">
+        <span class="n" title="${_esc(x.p.nome)}">${_esc(x.p.nome)}</span>
+        <span class="cmp-trk"><i style="width:${x.pct}%"></i></span>
+        <span class="v">${x.pct}%</span>
+      </div>`).join('')}
+  </div>`:'';
+
+  body.innerHTML=`<div class="kpi-grid">${kpis}</div>
+    <div class="panels">${painelStatus}${painelOcup}</div>
+    <div class="panels${painelCmp?'':' um'}">${painelPend}${painelCmp}</div>`;
 }
 
 /* ================= CADASTROS ================= */
