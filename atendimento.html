@@ -250,9 +250,27 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
   background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
   box-shadow:var(--shadow);height:100%;min-height:0;display:none;
   grid-template-columns:1fr 330px;overflow:hidden;
+  transition:grid-template-columns .18s ease;
 }
 .modal.aberto{display:grid;}
-@media(max-width:1100px){ .modal{grid-template-columns:1fr;} .m-side{display:none;} }
+/* cadastro recolhido: a conversa ocupa a largura inteira */
+.modal.sem-ficha{grid-template-columns:1fr 0;}
+.modal.sem-ficha .m-side{display:none;}
+/* aba lateral para trazer o cadastro de volta */
+.ficha-toggle{
+  position:absolute;top:14px;right:12px;z-index:4;width:30px;height:30px;border-radius:9px;
+  border:1px solid var(--line);background:var(--card);color:var(--text-mid);cursor:pointer;
+  font-size:13px;display:flex;align-items:center;justify-content:center;font-family:inherit;
+  box-shadow:var(--shadow);
+}
+.ficha-toggle:hover{border-color:var(--green);color:var(--green-deep);}
+.ficha-x{
+  float:right;border:none;background:transparent;cursor:pointer;font-size:17px;line-height:1;
+  color:var(--text-low);padding:0 2px;font-family:inherit;
+}
+.ficha-x:hover{color:var(--text);}
+.m-chat{position:relative;}
+@media(max-width:1020px){ .modal{grid-template-columns:1fr;} .m-side{display:none;} .ficha-toggle{display:none;} }
 @media(max-width:900px){
   .overlay{
     position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;
@@ -613,7 +631,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
    As mesmas etapas de sempre (Novos, Aguardando atendimento, Em atendimento,
    Aguardando cliente, Resolvidos), só que empilhadas como filtro numa coluna
    e os cards em lista. O card e o modal continuam idênticos. */
-.painel-lista{display:grid;grid-template-columns:376px 1fr;gap:14px;align-items:stretch;
+.painel-lista{display:grid;grid-template-columns:290px 1fr;gap:12px;align-items:stretch;
   height:calc(100vh - 132px);min-height:420px;}
 /* O overlay usa display:contents, então quem entra no grid é o próprio .modal.
    Ele e o estado vazio dividem a mesma célula: um aparece, o outro some. */
@@ -642,7 +660,13 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
   text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);
   background:var(--bg);display:flex;justify-content:space-between;gap:8px;
 }
-.lista-conv{flex:1;overflow-y:auto;padding:9px;}
+/* com a coluna mais estreita, o card respira menos e o nome pode truncar */
+.lista-conv{flex:1;overflow-y:auto;padding:8px;}
+.lista-conv .card-c{padding:10px;}
+.lista-conv .cc-name{font-size:12.5px;}
+.lista-conv .cc-msg{font-size:12px;-webkit-line-clamp:2;}
+.lista-conv .cc-att{max-width:88px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.etapa{font-size:12px;padding:8px 11px;}
 .lista-conv .card-c{margin-bottom:8px;cursor:pointer;}
 .lista-conv .card-c.sel{border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft);}
 .lista-vazia{padding:26px 14px;text-align:center;font-size:12.5px;color:var(--text-low);}
@@ -2892,6 +2916,7 @@ function openModal(id){
         <div class="m-hsub"><span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor||'Sem setor')}</span> · ${esc(c.fone)} · ${cl.lead?'lead':'cliente desde '+esc(cl.desde)+' · '+esc(cl.plano)}</div>
       </div>
       <button class="m-close" id="mClose">✕</button>
+      <button class="ficha-toggle" id="fichaAbrir" title="Mostrar dados do cliente" style="display:none">‹</button>
     </div>
     <div class="bot-bar ${c.botAtivo===false?'humano':''}">
       <span class="bb-dot"></span>
@@ -2927,7 +2952,9 @@ function openModal(id){
   </div>
   <div class="m-side">
     <div class="ms-sec">
-      <h3>Cadastro do cliente</h3>
+      <h3>Cadastro do cliente
+        <button class="ficha-x" id="fichaRecolher" title="Recolher painel do cliente">›</button>
+      </h3>
       ${c.clienteVinculado ? `
         <div class="vinc-box">
           <div class="vinc-nome">${esc(c.clienteVinculado.nome||c.nome)}</div>
@@ -3010,9 +3037,15 @@ function openModal(id){
   // em tela larga o atendimento ocupa o painel ao lado da lista; em tela
   // estreita continua sobreposto, porque não cabem os dois lado a lado
   $('#modal').classList.add('aberto');
+  // a escolha de esconder o cadastro vale para todas as conversas, não só
+  // a que está aberta — senão volta a aparecer a cada troca
+  $('#modal').classList.toggle('sem-ficha', fichaRecolhida);
+  aplicarFicha();
   const pe=$('#painelEspera'); if(pe) pe.style.display='none';
   if(window.innerWidth<=900) $('#overlay').classList.add('open');
   $('#mClose').onclick=closeModal;
+  const bRec=$('#fichaRecolher'); if(bRec) bRec.onclick=()=>alternarFicha(true);
+  const bAbr=$('#fichaAbrir');    if(bAbr) bAbr.onclick=()=>alternarFicha(false);
   $('#mThread').scrollTop=99999;
   pintarBarraResposta(c);
 
@@ -3293,6 +3326,17 @@ function openModal(id){
       .catch(err=>toast('Falha: '+err.message));
   });
 }
+/* Painel do cliente retrátil: em tela menor a conversa fica espremida entre a
+   lista e os 330px do cadastro. Recolher devolve essa largura para o texto. */
+let fichaRecolhida = false;
+function aplicarFicha(){
+  const m=$('#modal'); if(!m) return;
+  m.classList.toggle('sem-ficha', fichaRecolhida);
+  const abrir=$('#fichaAbrir');
+  if(abrir) abrir.style.display = fichaRecolhida ? 'flex' : 'none';
+}
+function alternarFicha(v){ fichaRecolhida = v; aplicarFicha(); }
+
 function closeModal(){
   $('#overlay').classList.remove('open');
   $('#modal').classList.remove('aberto');
