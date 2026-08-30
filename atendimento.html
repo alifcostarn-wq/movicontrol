@@ -242,15 +242,24 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 }
 
 /* ============ MODAL (conversa + 360) ============ */
-.overlay{
-  position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;
-  align-items:center;justify-content:center;z-index:50;padding:24px;
-}
-.overlay.open{display:flex;}
+/* O atendimento deixou de ser um balão sobre a tela: ocupa o painel à direita
+   da lista. Em telas estreitas volta a ser sobreposto, porque não há largura
+   para as duas coisas ao mesmo tempo. */
+.overlay{display:contents;}
 .modal{
-  background:var(--card);border-radius:18px;box-shadow:var(--shadow-lg);
-  width:min(1060px,100%);height:min(680px,100%);display:grid;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);height:100%;min-height:0;display:none;
   grid-template-columns:1fr 330px;overflow:hidden;
+}
+.modal.aberto{display:grid;}
+@media(max-width:1100px){ .modal{grid-template-columns:1fr;} .m-side{display:none;} }
+@media(max-width:900px){
+  .overlay{
+    position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;
+    align-items:center;justify-content:center;z-index:50;padding:16px;
+  }
+  .overlay.open{display:flex;}
+  .modal{box-shadow:var(--shadow-lg);height:min(680px,100%);width:min(1060px,100%);}
 }
 .m-chat{display:flex;flex-direction:column;border-right:1px solid var(--line);min-width:0;min-height:0;}
 .m-head{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--line);flex-shrink:0;}
@@ -604,8 +613,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
    As mesmas etapas de sempre (Novos, Aguardando atendimento, Em atendimento,
    Aguardando cliente, Resolvidos), só que empilhadas como filtro numa coluna
    e os cards em lista. O card e o modal continuam idênticos. */
-.painel-lista{display:grid;grid-template-columns:376px 1fr;gap:14px;align-items:start;
-  height:calc(100vh - 236px);min-height:420px;}
+.painel-lista{display:grid;grid-template-columns:376px 1fr;gap:14px;align-items:stretch;
+  height:calc(100vh - 132px);min-height:420px;}
+/* O overlay usa display:contents, então quem entra no grid é o próprio .modal.
+   Ele e o estado vazio dividem a mesma célula: um aparece, o outro some. */
+.painel-lista .painel-espera,
+.painel-lista .modal{grid-column:2;grid-row:1;min-height:0;}
 .col-etapas{
   background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
   box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;height:100%;
@@ -1379,9 +1392,9 @@ select.transf{
       </select>
     </div>
     <nav class="nav" id="nav">
-      <div class="nav-item active" data-view="kanban" title="Kanban">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-<span>Kanban</span>
+      <div class="nav-item active" data-view="kanban" title="Atendimento">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h11"/></svg>
+<span>Atendimento</span>
       </div>
       <div class="nav-item" data-view="agendamentos" title="Agendamentos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
@@ -1445,7 +1458,6 @@ select.transf{
     <div class="content">
 
       <!-- KPIs -->
-      <div class="kpis" id="kpis"></div>
 
       <!-- FILTER BAR (etiquetas + risco) -->
       <div class="filterbar" id="filterbar" style="display:none;"></div>
@@ -1457,13 +1469,14 @@ select.transf{
           <div class="regua-lista"><span id="reguaTxt"></span><span id="reguaQtd"></span></div>
           <div class="lista-conv" id="listaConv"></div>
         </aside>
-        <section class="painel-espera">
+        <section class="painel-espera" id="painelEspera">
           <div class="pe-in">
             <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
             <h3>Escolha uma conversa</h3>
             <p>As etapas ficam à esquerda. Clique numa conversa para abrir o atendimento com os dados do cliente.</p>
           </div>
         </section>
+        <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
       </div>
 
       <!-- AUX VIEWS -->
@@ -1474,9 +1487,6 @@ select.transf{
 </div>
 
 <!-- MODAL -->
-<div class="overlay" id="overlay">
-  <div class="modal" id="modal"></div>
-</div>
 
 <div class="toast" id="toast"></div>
 
@@ -2025,7 +2035,9 @@ function renderKpis(){
   const av = state.avaliacoes || {};
   const media = av.total ? Number(av.media).toFixed(1).replace('.',',') : '—';
   const qtdAv = av.total || 0;
-  $('#kpis').innerHTML=`
+  const elKpis = $('#kpis');
+  if(!elKpis) return;          // na tela de atendimento os números vivem nas etapas
+  elKpis.innerHTML=`
     <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${n}</div><div class="kpi-lbl">No bot</div></div></div>
     <div class="kpi ${fila.length?'r':'g'}"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${fila.length}</div><div class="kpi-lbl">Aguardando atend.${fila.length?` · ${esperaLbl}`:''}</div></div></div>
     <div class="kpi b"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${a}</div><div class="kpi-lbl">Em atendimento</div></div></div>
@@ -2995,7 +3007,11 @@ function openModal(id){
     </div>
   </div>`;
 
-  $('#overlay').classList.add('open');
+  // em tela larga o atendimento ocupa o painel ao lado da lista; em tela
+  // estreita continua sobreposto, porque não cabem os dois lado a lado
+  $('#modal').classList.add('aberto');
+  const pe=$('#painelEspera'); if(pe) pe.style.display='none';
+  if(window.innerWidth<=900) $('#overlay').classList.add('open');
   $('#mClose').onclick=closeModal;
   $('#mThread').scrollTop=99999;
   pintarBarraResposta(c);
@@ -3277,8 +3293,13 @@ function openModal(id){
       .catch(err=>toast('Falha: '+err.message));
   });
 }
-function closeModal(){ $('#overlay').classList.remove('open'); modalId=null; respondendoA=null; renderAll(); }
-$('#overlay').onclick=e=>{ if(e.target.id==='overlay') closeModal(); };
+function closeModal(){
+  $('#overlay').classList.remove('open');
+  $('#modal').classList.remove('aberto');
+  const pe=$('#painelEspera'); if(pe) pe.style.display='';
+  modalId=null; respondendoA=null; renderAll();
+}
+$('#overlay').onclick=e=>{ if(e.target.id==='overlay' && window.innerWidth<=900) closeModal(); };
 
 /* ================= AUX VIEWS ================= */
 function renderEtiquetas(a, emb){
@@ -3300,8 +3321,8 @@ function renderAtalhos(a, emb){
 
 function renderAux(){
   const a=$('#auxview'); const b=$('#board'); const fb=$('#filterbar'); const k=$('#kpis');
-  if(view==='kanban'){ a.style.display='none'; b.style.display='grid'; k.style.display='grid'; return; }
-  b.style.display='none'; fb.style.display='none'; k.style.display=view==='relatorios'?'grid':'none';
+  if(view==='kanban'){ a.style.display='none'; b.style.display='grid'; if(k) k.style.display='grid'; return; }
+  b.style.display='none'; fb.style.display='none'; if(k) k.style.display=view==='relatorios'?'grid':'none';
   a.style.display='block';
   if(view==='etiquetas'){ renderEtiquetas(a); }
   else if(view==='atalhos'){ renderAtalhos(a); }
