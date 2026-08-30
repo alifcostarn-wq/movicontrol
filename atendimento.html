@@ -191,7 +191,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 /* ============ CARD ============ */
 .card-c{
   background:#fbfcfd;border:1px solid var(--line);border-radius:12px;padding:11px 11px 9px;
-  cursor:grab;transition:box-shadow .15s,transform .15s;
+  cursor:pointer;transition:box-shadow .15s,transform .15s;
 }
 .card-c:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px);}
 .card-c.dragging{opacity:.45;}
@@ -599,6 +599,57 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .anexo-bar .ab-s{font-size:10.5px;color:var(--text-mid);margin-top:1px;}
 .anexo-bar .ab-x{border:none;background:transparent;cursor:pointer;font-size:15px;color:var(--text-mid);padding:0 4px;font-family:inherit;}
 .anexo-bar .ab-x:hover{color:var(--red);}
+
+/* ═══════ LISTA DE ATENDIMENTO — substitui o quadro de colunas ═══════════
+   As mesmas etapas de sempre (Novos, Aguardando atendimento, Em atendimento,
+   Aguardando cliente, Resolvidos), só que empilhadas como filtro numa coluna
+   e os cards em lista. O card e o modal continuam idênticos. */
+.painel-lista{display:grid;grid-template-columns:376px 1fr;gap:14px;align-items:start;
+  height:calc(100vh - 236px);min-height:420px;}
+.col-etapas{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;height:100%;
+}
+.etapas{display:flex;flex-direction:column;gap:5px;padding:12px;border-bottom:1px solid var(--line);}
+.etapa{
+  font-size:12.5px;font-weight:700;padding:9px 12px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--line);background:var(--card);color:var(--text-mid);
+  display:flex;align-items:center;gap:9px;transition:.15s;
+}
+.etapa:hover{border-color:var(--text-low);background:#fafbfc;}
+.etapa.on{background:var(--text);border-color:var(--text);color:#fff;}
+.etapa i{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
+.etapa .et-nome{flex:1;}
+.etapa .et-n{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;
+  background:rgba(0,0,0,.07);border-radius:6px;padding:1px 8px;}
+.etapa.on .et-n{background:rgba(255,255,255,.24);}
+.etapa .et-n.zero{opacity:.42;}
+.regua-lista{
+  padding:9px 14px;font-size:10.5px;font-weight:700;color:var(--text-low);
+  text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);
+  background:var(--bg);display:flex;justify-content:space-between;gap:8px;
+}
+.lista-conv{flex:1;overflow-y:auto;padding:9px;}
+.lista-conv .card-c{margin-bottom:8px;cursor:pointer;}
+.lista-conv .card-c.sel{border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft);}
+.lista-vazia{padding:26px 14px;text-align:center;font-size:12.5px;color:var(--text-low);}
+
+/* área à direita quando nenhuma conversa está aberta */
+.painel-espera{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);height:100%;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:40px;
+}
+.painel-espera .pe-in{max-width:340px;}
+.painel-espera svg{width:52px;height:52px;stroke:var(--text-low);fill:none;stroke-width:1.5;margin-bottom:14px;}
+.painel-espera h3{font-size:16px;font-weight:800;color:var(--text-mid);}
+.painel-espera p{font-size:12.5px;color:var(--text-low);margin-top:7px;line-height:1.6;}
+@media(max-width:900px){
+  .painel-lista{grid-template-columns:1fr;height:auto;}
+  .painel-espera{display:none;}
+  .col-etapas{height:auto;}
+  .lista-conv{max-height:none;}
+}
 
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
@@ -1400,7 +1451,20 @@ select.transf{
       <div class="filterbar" id="filterbar" style="display:none;"></div>
 
       <!-- KANBAN -->
-      <div class="board" id="board" style="display:grid;"></div>
+      <div class="painel-lista" id="board">
+        <aside class="col-etapas">
+          <div class="etapas" id="etapas"></div>
+          <div class="regua-lista"><span id="reguaTxt"></span><span id="reguaQtd"></span></div>
+          <div class="lista-conv" id="listaConv"></div>
+        </aside>
+        <section class="painel-espera">
+          <div class="pe-in">
+            <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
+            <h3>Escolha uma conversa</h3>
+            <p>As etapas ficam à esquerda. Clique numa conversa para abrir o atendimento com os dados do cliente.</p>
+          </div>
+        </section>
+      </div>
 
       <!-- AUX VIEWS -->
       <div id="auxview" style="display:none;"></div>
@@ -1991,23 +2055,65 @@ function passa(c){
 function statusBadge(col){
   return {novos:['novo','No bot'],fila:['fila','Na fila'],atendimento:['atend','Atendimento'],aguardando:['aguard','Aguard. cliente'],resolvidos:['resolv','Resolvido']}[col]||['novo',col];
 }
-function renderBoard(){
-  const b=$('#board');
-  b.innerHTML=COLS.map(col=>{
-    const cards=state.conversas.filter(c=>c.col===col.id && passa(c));
-    return `<div class="column" data-col="${col.id}">
-      <div class="col-head"><h2>${col.nome}</h2><span class="col-count">${cards.length}</span><span class="col-menu">⋮</span></div>
-      <div class="col-body" data-drop="${col.id}">
-        ${cards.map(c=>cardHTML(c,col.id)).join('')||'<div style="font-size:12px;color:var(--text-low);text-align:center;padding:14px;">Nenhuma conversa</div>'}
-      </div>
-      <div class="col-foot">+ Ver mais</div>
-    </div>`;
-  }).join('');
+/* ============ LISTA DE ATENDIMENTO — no lugar do quadro ============
+   Mesmas etapas, mesmos cards, mesmo modal. O que muda: em vez de 5 colunas
+   lado a lado com arrastar-e-soltar, uma etapa por vez e a lista abaixo.
+   Sem drag-and-drop: a mudança de etapa continua pelo seletor "Situação do
+   atendimento" dentro do modal, que já existia. */
+let etapaAtual = 'fila';
 
-  // events
-  b.querySelectorAll('[data-assumir]').forEach(btn=>{
+function renderBoard(){
+  renderEtapas();
+  renderListaConv();
+}
+
+function renderEtapas(){
+  const el = $('#etapas'); if(!el) return;
+  const cont = {};
+  state.conversas.filter(passa).forEach(c=>{ cont[c.col]=(cont[c.col]||0)+1; });
+  el.innerHTML = COLS.map(k=>`
+    <div class="etapa ${etapaAtual===k.id?'on':''}" data-e="${k.id}">
+      <i style="background:${corEtapa(k.id)}"></i><span class="et-nome">${esc(k.nome)}</span>
+      <span class="et-n ${cont[k.id]?'':'zero'}">${cont[k.id]||0}</span>
+    </div>`).join('');
+  el.querySelectorAll('.etapa').forEach(x=>x.onclick=()=>{
+    etapaAtual = x.dataset.e; renderEtapas(); renderListaConv();
+  });
+}
+
+/* mesma cor que a borda superior da coluna usava no quadro */
+function corEtapa(id){
+  return {novos:'#00a859', fila:'#ef4444', atendimento:'#3b82f6',
+          aguardando:'#f59e0b', resolvidos:'#8b5cf6'}[id] || '#94a3b8';
+}
+
+function renderListaConv(){
+  const el = $('#listaConv'); if(!el) return;
+  const cards = state.conversas.filter(c=>c.col===etapaAtual && passa(c));
+
+  // cada etapa tem a ordem que faz sentido para ela
+  if(etapaAtual==='fila'){
+    cards.sort((a,b)=> new Date(a.filaDesde||0) - new Date(b.filaDesde||0));
+  } else {
+    cards.sort((a,b)=> (b.unread||0)-(a.unread||0));
+  }
+
+  const legenda = {
+    novos:'Ordem de chegada', fila:'Quem espera há mais tempo primeiro',
+    atendimento:'Em andamento agora', aguardando:'Aguardando resposta do cliente',
+    resolvidos:'Mais recentes primeiro',
+  }[etapaAtual] || '';
+  $('#reguaTxt').textContent = legenda;
+  $('#reguaQtd').textContent = cards.length + (cards.length===1?' conversa':' conversas');
+
+  el.innerHTML = cards.length
+    ? cards.map(c=>cardHTML(c, etapaAtual)).join('')
+    : '<div class="lista-vazia">Nenhuma conversa nesta etapa.</div>';
+
+  // assumir direto pelo card — mesmo comportamento de antes
+  el.querySelectorAll('[data-assumir]').forEach(btn=>{
     btn.onclick=async ev=>{
-      ev.stopPropagation();          // não abre o modal ao assumir pelo card
+      ev.stopPropagation();
       const c=state.conversas.find(x=>x.id===+btn.dataset.assumir);
       if(!c) return;
       const avisar=confirm(`Assumir o atendimento de ${c.nome}?\n\nOK = avisa o cliente que o setor entrou na conversa\nCancelar = assume em silêncio`);
@@ -2019,22 +2125,12 @@ function renderBoard(){
       }catch(err){ btn.disabled=false; btn.textContent='✋ Assumir atendimento'; toast('Falha: '+err.message); }
     };
   });
-  b.querySelectorAll('.card-c').forEach(el=>{
-    el.onclick=()=>openModal(+el.dataset.id);
-    el.ondragstart=e=>{ e.dataTransfer.setData('text/plain',el.dataset.id); el.classList.add('dragging'); };
-    el.ondragend=()=>el.classList.remove('dragging');
-  });
-  b.querySelectorAll('.col-body').forEach(z=>{
-    z.ondragover=e=>{ e.preventDefault(); z.classList.add('dragover'); };
-    z.ondragleave=()=>z.classList.remove('dragover');
-    z.ondrop=e=>{
-      e.preventDefault(); z.classList.remove('dragover');
-      const id=+e.dataTransfer.getData('text/plain');
-      const c=state.conversas.find(x=>x.id===id);
-      if(c && c.col!==z.dataset.drop){ const nova=z.dataset.drop; api.patchConversa(c,{coluna:nova}).then(()=>{c.col=nova;renderAll();}); c.col=nova; renderAll(); toast(`${c.nome} → ${COLS.find(k=>k.id===nova).nome}`); }
-    };
+  el.querySelectorAll('.card-c').forEach(x=>{
+    x.classList.toggle('sel', +x.dataset.id===modalId);
+    x.onclick=()=>openModal(+x.dataset.id);
   });
 }
+
 // Há quanto tempo o cliente espera por um humano. É o número que vira métrica
 // de cobrança do time, então aparece no card antes de alguém abrir a conversa.
 function esperaTexto(c){
@@ -2059,7 +2155,7 @@ function cardHTML(c,col){
   if(c.cliente.recorrente) flags.push(`<span class="cc-tag warn">${esc(c.cliente.recorrente.toUpperCase())}</span>`);
   const tags=c.tags.map(t=>`<span class="cc-tag">${esc(t)}</span>`).join('');
   const espera=col==='fila'?esperaTexto(c):null;
-  return `<div class="card-c" draggable="true" data-id="${c.id}">
+  return `<div class="card-c" data-id="${c.id}">
     <div class="cc-top">
       ${avatarHTML(c)}
       <div class="cc-name">${esc(c.nome)}</div>
@@ -2740,6 +2836,7 @@ function openModal(id){
       .catch(err=>{ c._msgsCarregadas=false; toast('Falha ao carregar mensagens: '+err.message); });
   }
   if(c.unread){ c.unread=0; api.patchConversa(c,{nao_lidas:0}); }
+  renderListaConv();          // destaca o card aberto na lista
   // foto do WhatsApp: busca na 1ª abertura e revalida a cada 12h (o link expira)
   const avatarVelho = !c.avatarEm || (Date.now()-new Date(c.avatarEm).getTime()) > 12*3600*1000;
   if(avatarVelho && !c._avatarBuscando){
