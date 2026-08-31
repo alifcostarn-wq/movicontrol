@@ -284,11 +284,48 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .m-head .cc-av{width:40px;height:40px;font-size:13px;}
 .m-hinfo{flex:1;min-width:0;}
 .m-hname{font-size:15px;font-weight:800;}
-.m-hsub{font-size:11.5px;color:var(--text-mid);margin-top:1px;}
+.m-hsub{font-size:11.5px;color:var(--text-mid);margin-top:1px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+/* conversa sem setor é um problema a resolver, não um estado a informar */
+.sem-setor{
+  font-family:inherit;font-size:11px;font-weight:700;padding:2px 9px;border-radius:6px;
+  border:1px solid var(--orange);background:var(--orange-soft);color:#b45309;cursor:pointer;
+}
+.sem-setor:hover{background:var(--orange);color:#fff;}
 .m-close{
   width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--card);
   display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--text-mid);
 }
+/* Busca dentro da conversa: numa thread longa com PIX, valores e comprovantes,
+   achar algo antes disso só rolando até o topo. */
+.busca-thread{
+  display:none;align-items:center;gap:8px;padding:8px 14px;background:var(--card);
+  border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.busca-thread.on{display:flex;}
+.busca-thread input{
+  flex:1;border:1px solid var(--line);border-radius:9px;padding:7px 11px;
+  font-family:inherit;font-size:12.5px;outline:none;
+}
+.busca-thread input:focus{border-color:var(--green);}
+.busca-thread .bt-nav{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+.busca-thread .bt-btn{
+  border:1px solid var(--line);background:var(--card);border-radius:7px;width:26px;height:26px;
+  cursor:pointer;font-size:11px;color:var(--text-mid);font-family:inherit;
+}
+.busca-thread .bt-btn:hover{border-color:var(--green);color:var(--green-deep);}
+.busca-thread .bt-btn:disabled{opacity:.4;cursor:default;}
+.busca-thread .bt-cont{font-size:11px;color:var(--text-low);font-weight:600;min-width:52px;text-align:center;}
+mark.achou{background:#fde68a;color:var(--text);border-radius:3px;padding:0 1px;}
+mark.achou.atual{background:var(--orange);color:#fff;}
+.mb.piscando{animation:mbPisca 1.2s ease;}
+@keyframes mbPisca{0%,100%{box-shadow:var(--shadow);}40%{box-shadow:0 0 0 3px var(--orange);}}
+
+/* separador de dia: numa conversa que atravessa dias, "09:00" sozinho confunde */
+.dia-sep{align-self:center;font-size:10px;font-weight:800;color:var(--text-mid);
+  background:#e8edf3;border-radius:20px;padding:3px 12px;margin:4px 0;
+  text-transform:uppercase;letter-spacing:.05em;}
+
 .m-thread{flex:1;min-height:0;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:9px;background:#f7f9fb;}
 .mb{max-width:70%;padding:9px 13px;border-radius:12px;font-size:13px;line-height:1.5;box-shadow:var(--shadow);}
 .mb.in{align-self:flex-start;background:#fff;border-bottom-left-radius:3px;}
@@ -641,20 +678,25 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
   background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
   box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;height:100%;
 }
-.etapas{display:flex;flex-direction:column;gap:5px;padding:12px;border-bottom:1px solid var(--line);}
+/* Etapas em grade compacta: antes eram 5 blocos empilhados que comiam ~230px
+   do topo e deixavam só 2 conversas visíveis. Agora ocupam cerca de 80px. */
+.etapas{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:10px;border-bottom:1px solid var(--line);}
 .etapa{
-  font-size:12.5px;font-weight:700;padding:9px 12px;border-radius:10px;cursor:pointer;
+  font-size:10.5px;font-weight:700;padding:7px 4px;border-radius:9px;cursor:pointer;
   border:1px solid var(--line);background:var(--card);color:var(--text-mid);
-  display:flex;align-items:center;gap:9px;transition:.15s;
+  display:flex;flex-direction:column;align-items:center;gap:1px;transition:.15s;
+  text-align:center;line-height:1.15;
 }
 .etapa:hover{border-color:var(--text-low);background:#fafbfc;}
-.etapa.on{background:var(--text);border-color:var(--text);color:#fff;}
-.etapa i{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
-.etapa .et-nome{flex:1;}
-.etapa .et-n{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;
-  background:rgba(0,0,0,.07);border-radius:6px;padding:1px 8px;}
-.etapa.on .et-n{background:rgba(255,255,255,.24);}
-.etapa .et-n.zero{opacity:.42;}
+.etapa.on{color:#fff;border-color:transparent;}
+.etapa i{display:none;}
+.etapa .et-nome{order:2;font-size:9px;opacity:.88;}
+.etapa .et-n{order:1;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;}
+.etapa .et-n.zero{opacity:.35;}
+/* a fila ocupa a linha inteira: é a única etapa com relógio correndo */
+.etapa.destaque{grid-column:1/-1;flex-direction:row;justify-content:center;gap:8px;padding:8px;}
+.etapa.destaque .et-nome{order:1;font-size:11px;opacity:1;}
+.etapa.destaque .et-n{order:2;font-size:14px;}
 .regua-lista{
   padding:9px 14px;font-size:10.5px;font-weight:700;color:var(--text-low);
   text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);
@@ -1692,6 +1734,7 @@ const api = {
     const j = await chamar('mensagens.listar', { conversa_id:id });
     const msgs = (j.mensagens||[]).map(m=>({
       id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
+      dia: String(m.created_at).slice(0,10),
       tipo: m.tipo || 'texto', link: m.midia_link || null,
       respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
       status: m.status || null,
@@ -2107,11 +2150,20 @@ function renderEtapas(){
   const el = $('#etapas'); if(!el) return;
   const cont = {};
   state.conversas.filter(passa).forEach(c=>{ cont[c.col]=(cont[c.col]||0)+1; });
-  el.innerHTML = COLS.map(k=>`
-    <div class="etapa ${etapaAtual===k.id?'on':''}" data-e="${k.id}">
-      <i style="background:${corEtapa(k.id)}"></i><span class="et-nome">${esc(k.nome)}</span>
-      <span class="et-n ${cont[k.id]?'':'zero'}">${cont[k.id]||0}</span>
-    </div>`).join('');
+  // "Aguardando atendimento" vem primeiro e em destaque — é a única etapa
+  // com relógio correndo contra o time
+  const ordem = ['fila','novos','atendimento','aguardando','resolvidos'];
+  const curto = {fila:'Aguardando atendimento', novos:'Novos', atendimento:'Em atendimento',
+                 aguardando:'Aguard. cliente', resolvidos:'Resolvidos'};
+  el.innerHTML = ordem.map(id=>{
+    const k = COLS.find(x=>x.id===id); if(!k) return '';
+    const cor = corEtapa(id), ativa = etapaAtual===id;
+    return `<div class="etapa ${ativa?'on':''} ${id==='fila'?'destaque':''}" data-e="${id}"
+       ${ativa?`style="background:${cor}"`:''} title="${esc(k.nome)}">
+      <span class="et-n ${cont[id]?'':'zero'}">${cont[id]||0}</span>
+      <span class="et-nome">${curto[id]||esc(k.nome)}</span>
+    </div>`;
+  }).join('');
   el.querySelectorAll('.etapa').forEach(x=>x.onclick=()=>{
     etapaAtual = x.dataset.e; renderEtapas(); renderListaConv();
   });
@@ -2913,9 +2965,12 @@ function openModal(id){
       ${avatarHTML(c)}
       <div class="m-hinfo">
         <div class="m-hname">${esc(c.nome)}<span class="rename-ico" id="mRename" title="Renomear contato">✎</span></div>
-        <div class="m-hsub"><span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor||'Sem setor')}</span> · ${esc(c.fone)} · ${cl.lead?'lead':'cliente desde '+esc(cl.desde)+' · '+esc(cl.plano)}</div>
+        <div class="m-hsub">${c.setor
+          ? `<span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor)}</span>`
+          : `<button class="sem-setor" id="mSemSetor" title="Definir o setor agora">⚠ Sem setor — definir</button>`
+        } · ${esc(c.fone)}${cl.lead?' · lead':''}</div>
       </div>
-      <button class="m-close" id="mClose">✕</button>
+      <button class="m-close" id="mBuscar" title="Buscar nesta conversa (Ctrl+F)">🔍</button>
       <button class="ficha-toggle" id="fichaAbrir" title="Mostrar dados do cliente" style="display:none">‹</button>
     </div>
     <div class="bot-bar ${c.botAtivo===false?'humano':''}">
@@ -2929,8 +2984,22 @@ function openModal(id){
         ${c.col!=='resolvidos' ? `<button class="bb-btn fim" id="mFinalizar">Finalizar</button>` : ''}
       </div>
     </div>
+    <div class="busca-thread" id="buscaThread">
+      <input id="btInput" placeholder="Buscar nesta conversa…">
+      <span class="bt-cont" id="btCont"></span>
+      <div class="bt-nav">
+        <button class="bt-btn" id="btAnt" title="Anterior">▲</button>
+        <button class="bt-btn" id="btProx" title="Próximo">▼</button>
+        <button class="bt-btn" id="btFechar" title="Fechar busca">✕</button>
+      </div>
+    </div>
     <div class="m-thread" id="mThread">
-      ${c.msgs.map(m=>m.t==='sys'
+      ${(()=>{ let ultimoDia=null; return c.msgs.map(m=>{
+        // separador só quando o dia muda — numa conversa de vários dias,
+        // "09:00" sozinho não diz de quando é
+        let sep='';
+        if(m.dia && m.dia!==ultimoDia){ sep=`<div class="dia-sep">${rotuloDia(m.dia)}</div>`; ultimoDia=m.dia; }
+        return sep + (m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
         :`<div class="mb ${m.t}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
             m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
@@ -2938,7 +3007,8 @@ function openModal(id){
               <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
           }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${
             m.id?`<button class="mb-reply" data-responder="${m.id}" title="Responder esta mensagem">↩ responder</button>`:''
-          }<span class="tm">${esc(m.h||'')}${checkHTML(m)}</span></div></div>`).join('')}
+          }<span class="tm">${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
+      }).join(''); })()}
     </div>
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
@@ -3043,7 +3113,19 @@ function openModal(id){
   aplicarFicha();
   const pe=$('#painelEspera'); if(pe) pe.style.display='none';
   if(window.innerWidth<=900) $('#overlay').classList.add('open');
-  $('#mClose').onclick=closeModal;
+  const bBusca=$('#mBuscar'); if(bBusca) bBusca.onclick=btAbrir;
+  const bi=$('#btInput');
+  if(bi){
+    let deb;
+    bi.oninput=()=>{ clearTimeout(deb); deb=setTimeout(()=>btBuscar(bi.value), 220); };
+    bi.onkeydown=e=>{
+      if(e.key==='Enter'){ e.preventDefault(); btIr(btAtual + (e.shiftKey?-1:1)); }
+      if(e.key==='Escape'){ btFechar(); }
+    };
+  }
+  const bp=$('#btProx');   if(bp) bp.onclick=()=>btIr(btAtual+1);
+  const ba=$('#btAnt');    if(ba) ba.onclick=()=>btIr(btAtual-1);
+  const bf=$('#btFechar'); if(bf) bf.onclick=btFechar;
   const bRec=$('#fichaRecolher'); if(bRec) bRec.onclick=()=>alternarFicha(true);
   const bAbr=$('#fichaAbrir');    if(bAbr) bAbr.onclick=()=>alternarFicha(false);
   $('#mThread').scrollTop=99999;
@@ -3135,6 +3217,8 @@ function openModal(id){
     setTimeout(()=>alvo.classList.remove('destacada'),1200);
   });
   // transferir de setor
+  const bSemSetor=$('#mSemSetor');
+  if(bSemSetor) bSemSetor.onclick=()=>abrirTransferencia(c);
   const bTransf=$('#mTransferir');
   if(bTransf) bTransf.onclick=()=>abrirTransferencia(c);
 
@@ -3326,6 +3410,93 @@ function openModal(id){
       .catch(err=>toast('Falha: '+err.message));
   });
 }
+/* "Hoje" e "Ontem" valem mais que a data crua para quem lê a thread */
+function rotuloDia(iso){
+  if(!iso) return '';
+  const [a,m,d] = iso.split('-').map(Number);
+  const dt = new Date(a, m-1, d);
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const dif = Math.round((hoje - dt)/86400000);
+  if(dif===0) return 'Hoje';
+  if(dif===1) return 'Ontem';
+  if(dif<7) return dt.toLocaleDateString('pt-BR',{weekday:'long'});
+  return dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+/* ===== BUSCA DENTRO DA CONVERSA ===== */
+let btAchados = [], btAtual = -1;
+
+function btLimpar(){
+  document.querySelectorAll('#mThread mark.achou').forEach(m=>{
+    const pai = m.parentNode;
+    pai.replaceChild(document.createTextNode(m.textContent), m);
+    pai.normalize();
+  });
+  btAchados = []; btAtual = -1;
+  const c=$('#btCont'); if(c) c.textContent='';
+}
+
+function btBuscar(termo){
+  btLimpar();
+  const t = String(termo||'').trim();
+  if(t.length < 2){ return; }
+  const alvo = t.toLowerCase();
+  // percorre só nós de texto: assim não quebra o HTML das bolhas (citações,
+  // anexos, risquinhos) ao inserir o destaque
+  document.querySelectorAll('#mThread .mb').forEach(bolha=>{
+    const andador = document.createTreeWalker(bolha, NodeFilter.SHOW_TEXT);
+    const nos=[]; let n;
+    while(n = andador.nextNode()){
+      if(n.parentElement.closest('.tm,.mb-reply,.mb-foot')) continue;  // hora e botões fora
+      if(n.nodeValue.toLowerCase().includes(alvo)) nos.push(n);
+    }
+    nos.forEach(no=>{
+      const partes = no.nodeValue.split(new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'));
+      const frag = document.createDocumentFragment();
+      partes.forEach(p=>{
+        if(p.toLowerCase()===alvo){
+          const m=document.createElement('mark'); m.className='achou'; m.textContent=p;
+          frag.appendChild(m); btAchados.push(m);
+        } else if(p) frag.appendChild(document.createTextNode(p));
+      });
+      no.parentNode.replaceChild(frag, no);
+    });
+  });
+  if(btAchados.length){ btAtual=0; btIr(0); }
+  btContador();
+}
+
+function btContador(){
+  const c=$('#btCont'); if(!c) return;
+  c.textContent = btAchados.length ? (btAtual+1)+' de '+btAchados.length : 'nada encontrado';
+  const a=$('#btAnt'), p=$('#btProx');
+  if(a) a.disabled = btAchados.length<2;
+  if(p) p.disabled = btAchados.length<2;
+}
+
+function btIr(i){
+  if(!btAchados.length) return;
+  btAchados.forEach(m=>m.classList.remove('atual'));
+  btAtual = (i + btAchados.length) % btAchados.length;
+  const m = btAchados[btAtual];
+  m.classList.add('atual');
+  m.scrollIntoView({block:'center', behavior:'smooth'});
+  const bolha = m.closest('.mb');
+  if(bolha){ bolha.classList.add('piscando'); setTimeout(()=>bolha.classList.remove('piscando'),1300); }
+  btContador();
+}
+
+function btAbrir(){
+  const b=$('#buscaThread'); if(!b) return;
+  b.classList.add('on');
+  const i=$('#btInput'); if(i){ i.focus(); i.select(); }
+}
+function btFechar(){
+  const b=$('#buscaThread'); if(b) b.classList.remove('on');
+  const i=$('#btInput'); if(i) i.value='';
+  btLimpar();
+}
+
 /* Painel do cliente retrátil: em tela menor a conversa fica espremida entre a
    lista e os 330px do cadastro. Recolher devolve essa largura para o texto. */
 let fichaRecolhida = false;
@@ -3337,8 +3508,16 @@ function aplicarFicha(){
 }
 function alternarFicha(v){ fichaRecolhida = v; aplicarFicha(); }
 
+// Ctrl+F com conversa aberta busca DENTRO dela, não na página
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='f' && modalId){
+    e.preventDefault(); btAbrir();
+  }
+});
+
 function closeModal(){
   $('#overlay').classList.remove('open');
+  btFechar();
   $('#modal').classList.remove('aberto');
   const pe=$('#painelEspera'); if(pe) pe.style.display='';
   modalId=null; respondendoA=null; renderAll();
