@@ -136,6 +136,21 @@ function evoFalhaTemporaria(txt) {
   return /connection closed|timed out|not ready|connecting|econnreset|socket hang up/i.test(String(txt || ''));
 }
 
+/* Estado real da instância. "Connection Closed" pode ser oscilação de segundos
+   OU sessão derrubada de vez (celular desconectado, sessão expirada, WhatsApp
+   aberto em outro lugar). Só o connectionState distingue os dois — sem
+   consultar, o sistema repete três vezes e culpa o azar quando na verdade o
+   número precisa ser reconectado pelo QR. */
+async function evoEstado(e) {
+  try {
+    const r = await fetchComPrazo(`${e.EVO_URL}/instance/connectionState/${e.EVO_INST}`,
+      { headers: { apikey: e.EVO_KEY } }, 10000);
+    if (r.status === 404) return 'nao_criada';
+    const d = await r.json().catch(() => null);
+    return d?.instance?.state || d?.state || 'desconhecido';
+  } catch { return 'indisponivel'; }
+}
+
 async function evoPost(e, rota, corpo, ms = 30000, tentativas = 3) {
   let ultimo = null;
   for (let i = 1; i <= tentativas; i++) {
@@ -156,8 +171,23 @@ async function evoPost(e, rota, corpo, ms = 30000, tentativas = 3) {
     await new Promise(r2 => setTimeout(r2, i * 2500));   // espera crescente
   }
   if (evoFalhaTemporaria(ultimo)) {
-    throw new Error('A conexão do WhatsApp caiu por um instante. Tente de novo — '
-      + 'se repetir, reconecte em Configurações › Integrações.');
+    // pergunta à Evolution em que pé está a sessão antes de culpar o acaso
+    const estado = await evoEstado(e);
+    if (estado === 'open') {
+      throw new Error('O WhatsApp está conectado, mas o envio falhou três vezes. '
+        + 'Aguarde alguns segundos e tente de novo.');
+    }
+    if (estado === 'nao_criada') {
+      throw new Error('A instância do WhatsApp não existe. Crie e leia o QR Code em '
+        + 'Configurações › Integrações.');
+    }
+    if (estado === 'indisponivel') {
+      throw new Error('Não consegui falar com o servidor do WhatsApp (Evolution). '
+        + 'Verifique se ele está no ar.');
+    }
+    throw new Error(`O WhatsApp está DESCONECTADO (estado: ${estado}). `
+      + 'Nenhuma mensagem sai enquanto isso. Reconecte lendo o QR Code em '
+      + 'Configurações › Integrações.');
   }
   throw new Error(ultimo || 'Falha no envio.');
 }
@@ -2017,6 +2047,33 @@ async function tratarWebhook(e, body) {
     conversa.coluna = 'novos';
     conversa.bot_ativo = true;
     conversa.rating = null;
+  } else if (conversa.coluna === 'aguardando') {
+    // O cliente voltou: devolve para "Em atendimento" com o MESMO atendente.
+    // Sem isto a conversa ficava presa em "Aguardando cliente" mesmo com
+    // resposta nova — a coluna virava um buraco de onde nada saía sozinho.
+    const cfgRow = await sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null);
+    const retomar = !cfgRow || cfgRow.dados?.retomar_ativo !== false;
+    if (retomar && conversa.assumido_por) {
+      await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: {
+          coluna: 'atendimento', bot_ativo: false,
+          aguardando_desde: null, aviso_inatividade_em: null,
+        },
+      });
+      conversa.coluna = 'atendimento';
+      conversa.bot_ativo = false;
+    } else {
+      // ninguém tinha assumido: entra na fila para quem estiver livre pegar
+      await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: {
+          coluna: 'fila', fila_desde: new Date().toISOString(),
+          aguardando_desde: null, aviso_inatividade_em: null,
+        },
+      });
+      conversa.coluna = 'fila';
+    }
   }
 
   // anexo (comprovante, foto do equipamento, PDF): baixa e guarda
@@ -2494,10 +2551,96 @@ async function tratarCron(e) {
     }
   }
 
+  // ==========================================================================
+  // CICLO DE ESPERA DO ATENDIMENTO HUMANO
+  // Três estágios, todos configuráveis: mover para "Aguardando cliente",
+  // avisar que vai encerrar, e encerrar. Antes disso, conversa assumida por
+  // humano ficava parada indefinidamente — o relógio só corria para o bot.
+  // ==========================================================================
+  const cfgRow = await sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null);
+  const cfgAt = (cfgRow && cfgRow.dados) || {};
+  const agoraMs = Date.now();
+  let movidas = 0, avisadas = 0, encerradasHumano = 0;
+
+  // 1) sem resposta do cliente → move para "Aguardando cliente"
+  // Só move se a ÚLTIMA mensagem foi nossa: se o cliente falou por último,
+  // quem está devendo resposta é o atendente, não ele.
+  if (cfgAt.aguardar_ativo !== false) {
+    const min = Math.max(1, Number(cfgAt.aguardar_min ?? 10));
+    const corte = new Date(agoraMs - min * 60000).toISOString();
+    const alvos = await sb(e,
+      `atend_conversas?coluna=eq.atendimento&bot_ativo=is.false&deleted_at=is.null` +
+      `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=40`);
+    for (const c of (alvos || [])) {
+      const ult = await sbUm(e,
+        `atend_mensagens?conversa_id=eq.${c.id}&select=direcao&order=created_at.desc&limit=1`);
+      if (!ult || ult.direcao === 'in') continue;   // bola está com a gente
+      await sb(e, `atend_conversas?id=eq.${c.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { coluna: 'aguardando', aguardando_desde: new Date().toISOString(), aviso_inatividade_em: null },
+      });
+      movidas++;
+    }
+  }
+
+  // 2) parado em "Aguardando cliente" → avisa uma vez que vai encerrar
+  if (cfgAt.aviso_ativo !== false) {
+    const min = Math.max(1, Number(cfgAt.aviso_min ?? 60));
+    const corte = new Date(agoraMs - min * 60000).toISOString();
+    const alvos = await sb(e,
+      `atend_conversas?coluna=eq.aguardando&deleted_at=is.null&aviso_inatividade_em=is.null` +
+      `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
+    const txt = String(cfgAt.aviso_texto || 'Continua por aí? Se não tivermos retorno, vou encerrar este atendimento em breve. 🙂');
+    for (const c of (alvos || [])) {
+      try {
+        const env = await waEnviar(e, c.contato_fone, txt);
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: { conversa_id: c.id, direcao: 'bot', conteudo: txt, wa_id: idDaEvolution(env), status: 'enviado' },
+        });
+      } catch (err) { console.error('[inatividade aviso]', err.message); }
+      // carimba mesmo se o envio falhar: senão avisaria de novo a cada rodada
+      await sb(e, `atend_conversas?id=eq.${c.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { aviso_inatividade_em: new Date().toISOString() },
+      });
+      avisadas++;
+    }
+  }
+
+  // 3) avisado e ainda sem resposta → encerra
+  if (cfgAt.encerrar_ativo !== false) {
+    const min = Math.max(1, Number(cfgAt.encerrar_min ?? 30));
+    const corte = new Date(agoraMs - min * 60000).toISOString();
+    const alvos = await sb(e,
+      `atend_conversas?coluna=eq.aguardando&deleted_at=is.null` +
+      `&aviso_inatividade_em=lt.${corte}&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
+    const txt = String(cfgAt.encerrar_texto || 'Como não tivemos retorno, encerrei este atendimento. É só mandar outra mensagem quando precisar. 💚');
+    for (const c of (alvos || [])) {
+      try {
+        const env = await waEnviar(e, c.contato_fone, txt);
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: { conversa_id: c.id, direcao: 'bot', conteudo: txt, wa_id: idDaEvolution(env), status: 'enviado' },
+        });
+      } catch (err) { console.error('[inatividade encerra]', err.message); }
+      await sb(e, `atend_conversas?id=eq.${c.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: {
+          coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0,
+          aguardando_desde: null, aviso_inatividade_em: null,
+        },
+      });
+      await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
+        { method: 'DELETE', prefer: 'return=minimal' });
+      encerradasHumano++;
+    }
+  }
+
   // ---- encerra conversas paradas com o BOT em espera ----
   // Só mexe em conversa onde o bot está no comando: se um humano assumiu,
   // ele decide quando encerrar, não o relógio.
-  const minutos = Number(process.env.ATEND_INATIVIDADE_MIN || 30);
+  const minutos = Number(cfgAt.bot_inatividade_min ?? process.env.ATEND_INATIVIDADE_MIN ?? 30);
   const limite = new Date(Date.now() - minutos * 60000).toISOString();
   const paradas = await sb(e,
     `atend_conversas?bot_ativo=is.true&coluna=in.(novos,atendimento)&deleted_at=is.null` +
@@ -2570,6 +2713,7 @@ async function tratarCron(e) {
   catch (err) { console.error('[campanhas]', err.message); campanhas = { erro: err.message }; }
 
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
+           espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
            cobranca: auto, campanhas };
 }
@@ -2850,7 +2994,11 @@ export default async function handler(req, res) {
 
         const agendamentos = await sb(e,
           `atend_agendamentos?select=id,conversa_id,texto,quando,enviado_em&enviado_em=is.null&order=quando&limit=200`);
-        return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos, avaliacoes });
+        // estado do WhatsApp junto do bootstrap: descobrir que a conexão caiu
+        // só ao tentar enviar significa perder a mensagem e o tempo do cliente
+        let wa = 'desconhecido';
+        try { wa = await evoEstado(e); } catch {}
+        return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos, avaliacoes, whatsapp: wa });
       }
 
       case 'agendamentos.criar': {
@@ -3939,6 +4087,43 @@ export default async function handler(req, res) {
             assumido_por: c.assumido_por || user.id,
             coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
             nao_lidas: 0, updated_by: user.id,
+          },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // ===== PARÂMETROS DO ATENDIMENTO =====
+      case 'atendconfig.obter': {
+        const c = await sbUm(e, 'atend_config?id=eq.1&select=dados');
+        return res.status(200).json({ ok: true, config: (c && c.dados) || {} });
+      }
+
+      case 'atendconfig.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const d = body.config && typeof body.config === 'object' ? body.config : null;
+        if (!d) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        await sb(e, 'atend_config?id=eq.1', {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { dados: d, updated_at: new Date().toISOString(), updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // atendente marca manualmente que está esperando o cliente
+      case 'conversas.aguardar': {
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório.' });
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!await podeVerConversa(user, c)) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            coluna: 'aguardando', bot_ativo: false,
+            aguardando_desde: new Date().toISOString(),
+            aviso_inatividade_em: null, updated_by: user.id,
           },
         });
         return res.status(200).json({ ok: true });
