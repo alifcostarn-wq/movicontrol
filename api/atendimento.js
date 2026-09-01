@@ -206,6 +206,29 @@ async function waEnviarMidia(e, fone, { base64, tipo = 'document', mimetype, nom
   try { return JSON.parse(txt); } catch { return { raw: txt }; }
 }
 
+/* Áudio de voz tem endpoint PRÓPRIO na Evolution. Mandado por sendMedia, ele
+   chega como arquivo anexado — o cliente vê um clipe para baixar em vez da
+   bolha de voz com onda e velocidade. É a diferença entre "recebi um áudio"
+   e "recebi um arquivo .ogg". */
+async function waEnviarAudio(e, fone, base64) {
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
+  const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
+  if (!limpo) throw new Error('Áudio vazio.');
+  const r = await fetchComPrazo(`${e.EVO_URL}/message/sendWhatsAppAudio/${e.EVO_INST}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+    body: JSON.stringify({
+      number: normalizarFone(fone),
+      audio: limpo,
+      // a Evolution converte para o formato que o WhatsApp usa em nota de voz
+      encoding: true,
+    }),
+  }, 40000);
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`Evolution ${r.status}: ${txt.slice(0, 300)}`);
+  try { return JSON.parse(txt); } catch { return { raw: txt }; }
+}
+
 // O IXC devolve o PDF do boleto em base64, mas a chave muda por versão.
 function acharBase64(obj, prof = 0) {
   if (!obj || prof > 8) return null;
@@ -264,7 +287,7 @@ async function baixarMidia(e, waId) {
 const EXT_POR_MIME = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
   'application/pdf': 'pdf', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
-  'audio/aac': 'aac', 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/3gpp': '3gp',
+  'audio/aac': 'aac', 'audio/webm': 'webm', 'audio/ogg; codecs=opus': 'ogg', 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/3gpp': '3gp',
   // figurinha do WhatsApp é webp (estática ou animada)
   'application/vnd.ms-excel': 'xls', 'text/plain': 'txt',
 };
@@ -3810,6 +3833,99 @@ export default async function handler(req, res) {
           });
         }
         return res.status(200).json({ ok: true });
+      }
+
+      // atendente grava e envia áudio como nota de voz
+      case 'mensagens.enviar_audio': {
+        const id = Number(body.conversa_id);
+        const bruto = String(body.base64 || '').replace(/^data:[^;]+;base64,/, '');
+        if (!id || !bruto) return res.status(400).json({ ok: false, error: 'conversa_id e áudio obrigatórios.' });
+
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+
+        const bytes = Buffer.from(bruto, 'base64');
+        if (!bytes.length) return res.status(400).json({ ok: false, error: 'Áudio vazio ou corrompido.' });
+        if (bytes.length > 16 * 1024 * 1024) {
+          return res.status(400).json({ ok: false, error: 'Áudio acima de 16 MB — o WhatsApp não aceita.' });
+        }
+
+        // envia primeiro: se o WhatsApp recusar, não deixa arquivo órfão
+        const env = await waEnviarAudio(e, c.contato_fone, bruto);
+
+        let caminho = null;
+        try {
+          caminho = await guardarMidia(e, id, idDaEvolution(env) || `voz-${Date.now()}`, {
+            base64: bruto, mimetype: body.mimetype || 'audio/ogg',
+          });
+        } catch (err) { console.error('[atendimento] storage audio:', err.message); }
+
+        const seg = Number(body.duracao) || null;
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            conversa_id: id, direcao: 'out', autor_id: user.id,
+            conteudo: seg ? `🎤 Áudio (${seg}s)` : '🎤 Áudio',
+            tipo: 'audio', midia_url: caminho,
+            wa_id: idDaEvolution(env), status: 'enviado',
+          },
+        });
+
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            ultima_msg: 'Você: 🎤 Áudio', ultima_msg_em: new Date().toISOString(),
+            bot_ativo: false,
+            atendente_id: c.atendente_id || user.id,
+            setor: c.setor || user.setor || null,
+            assumido_em: c.assumido_em || new Date().toISOString(),
+            assumido_por: c.assumido_por || user.id,
+            coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
+            nao_lidas: 0, updated_by: user.id,
+          },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // ===== RELATÓRIOS =====
+      // Agregação vem do banco: calcular no navegador limitaria o relatório às
+      // conversas carregadas na tela, e o número ficaria errado justamente
+      // quando o volume crescesse.
+      case 'relatorio.painel': {
+        const de = String(body.de || '').slice(0, 10);
+        const ate = String(body.ate || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate)) {
+          return res.status(400).json({ ok: false, error: 'Período inválido.' });
+        }
+        const arg = { p_de: de, p_ate: ate };
+        const chamarRpc = fn => sb(e, 'rpc/' + fn, { method: 'POST', body: arg })
+          .catch(err => { console.error('[relatorio]', fn, err.message); return null; });
+
+        // em paralelo: seis consultas em série deixariam a tela lenta
+        const [resumo, porDia, atendentes, setores, horarios, bot] = await Promise.all([
+          chamarRpc('rel_resumo'), chamarRpc('rel_por_dia'), chamarRpc('rel_atendentes'),
+          chamarRpc('rel_setores'), chamarRpc('rel_horarios'), chamarRpc('rel_bot'),
+        ]);
+        return res.status(200).json({
+          ok: true, periodo: { de, ate },
+          resumo: (resumo && resumo[0]) || null,
+          por_dia: porDia || [], atendentes: atendentes || [],
+          setores: setores || [], horarios: horarios || [], bot: bot || [],
+        });
+      }
+
+      // exportação em CSV para quem quer cruzar no Excel
+      case 'relatorio.exportar': {
+        const de = String(body.de || '').slice(0, 10);
+        const ate = String(body.ate || '').slice(0, 10);
+        const linhas = await sb(e,
+          `atend_conversas?deleted_at=is.null&created_at=gte.${de}&created_at=lt.${ate}` +
+          `&select=id,contato_nome,contato_fone,setor,coluna,rating,created_at,fila_desde,assumido_em,ultima_msg_em` +
+          `&order=created_at.desc&limit=5000`);
+        return res.status(200).json({ ok: true, linhas: linhas || [] });
       }
 
       case 'clientes.buscar': {
