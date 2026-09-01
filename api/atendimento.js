@@ -128,6 +128,40 @@ async function logFluxo(e, reg) {
 // ============================================================================
 // `opts.quoted` = { wa_id, texto, fromMe } da mensagem citada. A Evolution
 // precisa da key original para o WhatsApp renderizar o balão de resposta.
+/* O Baileys derruba a sessão por instantes e a restabelece sozinho. Nesses
+   segundos qualquer envio falha com "Connection Closed" / "Timed Out". Repetir
+   resolve; não repetir faz o atendente perder a mensagem por um erro que já
+   passou. Vale para texto, mídia e áudio. */
+function evoFalhaTemporaria(txt) {
+  return /connection closed|timed out|not ready|connecting|econnreset|socket hang up/i.test(String(txt || ''));
+}
+
+async function evoPost(e, rota, corpo, ms = 30000, tentativas = 3) {
+  let ultimo = null;
+  for (let i = 1; i <= tentativas; i++) {
+    try {
+      const r = await fetchComPrazo(`${e.EVO_URL}/${rota}/${e.EVO_INST}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+        body: JSON.stringify(corpo),
+      }, ms);
+      const txt = await r.text();
+      if (r.ok) { try { return JSON.parse(txt); } catch { return { raw: txt }; } }
+      ultimo = `Evolution ${r.status}: ${txt.slice(0, 250)}`;
+      if (!evoFalhaTemporaria(txt) || i === tentativas) break;
+    } catch (err) {
+      ultimo = String(err.message);
+      if (!evoFalhaTemporaria(ultimo) || i === tentativas) break;
+    }
+    await new Promise(r2 => setTimeout(r2, i * 2500));   // espera crescente
+  }
+  if (evoFalhaTemporaria(ultimo)) {
+    throw new Error('A conexão do WhatsApp caiu por um instante. Tente de novo — '
+      + 'se repetir, reconecte em Configurações › Integrações.');
+  }
+  throw new Error(ultimo || 'Falha no envio.');
+}
+
 async function waEnviar(e, fone, texto, opts = {}) {
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
     throw new Error('Evolution API não configurada (EVOLUTION_URL / EVOLUTION_APIKEY / EVOLUTION_INSTANCE).');
@@ -144,15 +178,8 @@ async function waEnviar(e, fone, texto, opts = {}) {
       message: { conversation: String(opts.quoted.texto || '').slice(0, 500) },
     };
   }
-  const r = await fetchComPrazo(`${e.EVO_URL}/message/sendText/${e.EVO_INST}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
-    // Evolution v2. Em v1 o corpo é { number, textMessage: { text } }.
-    body: JSON.stringify(corpo),
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`Evolution ${r.status}: ${txt.slice(0, 300)}`);
-  try { return JSON.parse(txt); } catch { return { raw: txt }; }
+  // Evolution v2. Em v1 o corpo é { number, textMessage: { text } }.
+  return evoPost(e, 'message/sendText', corpo);
 }
 
 // O id que o WhatsApp devolve é o que permite CITAR essa mensagem depois.
@@ -189,21 +216,14 @@ async function waEnviarMidia(e, fone, { base64, tipo = 'document', mimetype, nom
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
   const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!limpo) throw new Error('Arquivo vazio.');
-  const r = await fetchComPrazo(`${e.EVO_URL}/message/sendMedia/${e.EVO_INST}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
-    body: JSON.stringify({
-      number: normalizarFone(fone),
-      mediatype: tipo,                        // 'document' | 'image'
-      mimetype: mimetype || (tipo === 'image' ? 'image/png' : 'application/pdf'),
-      media: limpo,
-      fileName: nomeArquivo || 'arquivo.pdf',
-      caption: legenda || '',
-    }),
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`Evolution ${r.status}: ${txt.slice(0, 300)}`);
-  try { return JSON.parse(txt); } catch { return { raw: txt }; }
+  return evoPost(e, 'message/sendMedia', {
+    number: normalizarFone(fone),
+    mediatype: tipo,                        // 'document' | 'image' | 'video'
+    mimetype: mimetype || (tipo === 'image' ? 'image/png' : 'application/pdf'),
+    media: limpo,
+    fileName: nomeArquivo || 'arquivo.pdf',
+    caption: legenda || '',
+  }, 45000);
 }
 
 /* Áudio de voz tem endpoint PRÓPRIO na Evolution. Mandado por sendMedia, ele
@@ -214,19 +234,10 @@ async function waEnviarAudio(e, fone, base64) {
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
   const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!limpo) throw new Error('Áudio vazio.');
-  const r = await fetchComPrazo(`${e.EVO_URL}/message/sendWhatsAppAudio/${e.EVO_INST}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
-    body: JSON.stringify({
-      number: normalizarFone(fone),
-      audio: limpo,
-      // a Evolution converte para o formato que o WhatsApp usa em nota de voz
-      encoding: true,
-    }),
-  }, 40000);
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`Evolution ${r.status}: ${txt.slice(0, 300)}`);
-  try { return JSON.parse(txt); } catch { return { raw: txt }; }
+
+  // a rota aceita apenas number e audio; campo extra é recusado
+  return evoPost(e, 'message/sendWhatsAppAudio',
+    { number: normalizarFone(fone), audio: limpo }, 45000);
 }
 
 // O IXC devolve o PDF do boleto em base64, mas a chave muda por versão.
@@ -2590,7 +2601,11 @@ async function autenticar(e, req) {
     nome: p.nome,
     email: p.email,
     setor: p.atend_setor || null,                                     // null = vê tudo
-    admin: !!p.atend_admin || ['admin', 'operador'].includes(p.perfil),
+    // Admin do ATENDIMENTO é decidido pelo atend_admin, não pelo perfil do
+    // MoviOn. 'operador' ali significa acesso ao financeiro/estoque — herdar
+    // isso como admin do atendimento anulava o filtro de setor: quem fosse
+    // operador via todas as conversas, mesmo com setor definido.
+    admin: !!p.atend_admin || p.perfil === 'admin',
   };
 }
 
@@ -2598,6 +2613,27 @@ async function autenticar(e, req) {
 // Conversa SEM setor (cliente não escolheu, ou pediu atendente direto) fica
 // visível para todo mundo: quem assumir é que define o setor. Por isso o filtro
 // é "meu setor OU nenhum setor", não só o meu.
+/* O atendente só enxerga clientes de conversas do seu setor. Sem isto, saber
+   o id do IXC bastava para ler fatura, endereço e conexão de qualquer cliente
+   — inclusive de conversa que ele não pode abrir. Admin e usuário sem setor
+   definido continuam vendo tudo. */
+async function podeVerCliente(e, user, ixcId) {
+  if (user.admin || !user.setor) return true;
+  const id = String(ixcId || '').trim();
+  if (!id) return false;
+  const achou = await sbUm(e,
+    `atend_conversas?cliente_ixc_id=eq.${encodeURIComponent(id)}&deleted_at=is.null` +
+    `&or=(setor.eq.${encodeURIComponent(user.setor)},setor.is.null)&select=id&limit=1`);
+  return !!achou;
+}
+
+/* Mesma ideia para acesso por conversa. */
+async function podeVerConversa(user, c) {
+  if (!c) return false;
+  if (user.admin || !user.setor) return true;
+  return !c.setor || c.setor === user.setor;
+}
+
 function filtroSetor(user) {
   if (user.admin || !user.setor) return '';
   return `&or=(setor.eq.${encodeURIComponent(user.setor)},setor.is.null)`;
@@ -2974,6 +3010,12 @@ export default async function handler(req, res) {
       case 'cliente.painel': {
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        // Sem esta checagem, qualquer atendente logado lia fatura, endereço e
+        // conexão de QUALQUER cliente só informando o id do IXC — mesmo de
+        // conversa que ele não pode abrir.
+        if (!await podeVerCliente(e, user, ixcId)) {
+          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
+        }
         const painel = await montarPainelCliente(e, ixcId);
         return res.status(200).json({ ok: true, ...painel });
       }
@@ -3028,6 +3070,9 @@ export default async function handler(req, res) {
       case 'cliente.faturas': {
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        if (!await podeVerCliente(e, user, ixcId)) {
+          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
+        }
         const d = await ixc(e, 'fn_areceber', {
           qtype: 'fn_areceber.id_cliente', query: ixcId, oper: '=', rp: '100',
           sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
@@ -3141,6 +3186,9 @@ export default async function handler(req, res) {
       case 'cliente.contrato': {
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        if (!await podeVerCliente(e, user, ixcId)) {
+          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
+        }
 
         const [cli, ctr] = await Promise.all([
           ixc(e, 'cliente', { qtype: 'cliente.id', query: ixcId, oper: '=', rp: '1' }).catch(() => null),
@@ -3198,6 +3246,9 @@ export default async function handler(req, res) {
       case 'cliente.extrato': {
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        if (!await podeVerCliente(e, user, ixcId)) {
+          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
+        }
         const d = await ixc(e, 'fn_areceber', {
           qtype: 'fn_areceber.id_cliente', query: ixcId, oper: '=', rp: '200',
           sortname: 'fn_areceber.data_vencimento', sortorder: 'desc',
@@ -3263,8 +3314,11 @@ export default async function handler(req, res) {
       case 'conversa.avatar': {
         const id = Number(body.conversa_id);
         if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório.' });
-        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=id,contato_fone,avatar_url,avatar_em`);
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=id,contato_fone,avatar_url,avatar_em,setor`);
         if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!await podeVerConversa(user, c)) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
 
         // O link do CDN da Meta expira; revalidamos a cada 12h para não ficar
         // batendo na Evolution a cada abertura de conversa.
@@ -3886,6 +3940,68 @@ export default async function handler(req, res) {
             coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
             nao_lidas: 0, updated_by: user.id,
           },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // ===== EQUIPE E SETORES =====
+      case 'equipe.listar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const pessoas = await sb(e,
+          'perfis?atendimento=is.true&select=id,nome,email,perfil,atend_setor,atend_admin&order=nome.asc');
+        const setores = await sb(e, 'atend_setores?select=*&order=nome.asc');
+        // quantas conversas abertas cada setor tem: ajuda a decidir a lotação
+        const carga = await sb(e,
+          'atend_conversas?deleted_at=is.null&coluna=in.(novos,fila,atendimento,aguardando)&select=setor');
+        const porSetor = {};
+        (carga || []).forEach(c => { const k = c.setor || '(sem setor)'; porSetor[k] = (porSetor[k] || 0) + 1; });
+        return res.status(200).json({ ok: true, pessoas: pessoas || [], setores: setores || [], carga: porSetor });
+      }
+
+      case 'equipe.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const alvo = String(body.id || '').trim();
+        if (!alvo) return res.status(400).json({ ok: false, error: 'id obrigatório.' });
+
+        const patch = {};
+        if ('setor' in body) patch.atend_setor = body.setor || null;   // null = vê todos
+        if ('admin' in body) patch.atend_admin = !!body.admin;
+        if ('atendimento' in body) patch.atendimento = !!body.atendimento;
+        if (!Object.keys(patch).length) return res.status(400).json({ ok: false, error: 'Nada a alterar.' });
+
+        // Não deixa o último admin se rebaixar: sem admin ninguém consegue
+        // mais definir setor de ninguém, e a recuperação só via banco.
+        if (patch.atend_admin === false || patch.atendimento === false) {
+          const admins = await sb(e, 'perfis?atendimento=is.true&atend_admin=is.true&select=id');
+          const lista = (admins || []).map(x => x.id);
+          if (lista.length <= 1 && lista.includes(alvo)) {
+            return res.status(400).json({ ok: false, error: 'Este é o último administrador do atendimento.' });
+          }
+        }
+        await sb(e, `perfis?id=eq.${alvo}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'setores.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        if (body.remover) {
+          const nome = String(body.remover);
+          // conversa órfã fica invisível para todos exceto admin — antes de
+          // apagar, devolve para "sem setor", que a fila geral enxerga
+          await sb(e, `atend_conversas?setor=eq.${encodeURIComponent(nome)}`,
+            { method: 'PATCH', prefer: 'return=minimal', body: { setor: null } });
+          await sb(e, `perfis?atend_setor=eq.${encodeURIComponent(nome)}`,
+            { method: 'PATCH', prefer: 'return=minimal', body: { atend_setor: null } });
+          await sb(e, `atend_setores?nome=eq.${encodeURIComponent(nome)}`,
+            { method: 'DELETE', prefer: 'return=minimal' });
+          return res.status(200).json({ ok: true, removido: nome });
+        }
+        const nome = String(body.nome || '').trim();
+        if (!nome) return res.status(400).json({ ok: false, error: 'Nome do setor obrigatório.' });
+        await sb(e, 'atend_setores?on_conflict=nome', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: { nome, cor: body.cor || '#3b82f6' },
         });
         return res.status(200).json({ ok: true });
       }
