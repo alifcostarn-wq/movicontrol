@@ -864,6 +864,29 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   border-left:3px solid var(--green);background:var(--green-soft);border-radius:9px;flex-shrink:0;}
 .grav-previa audio{flex:1;height:34px;}
 
+
+/* ---- equipe e setores ---- */
+.eq-secao{margin-bottom:22px;}
+.eq-secao h3{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-low);margin-bottom:10px;}
+.eq-setores{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px;margin-bottom:11px;}
+.eq-setor{border:1px solid var(--line);border-left:4px solid var(--sc);border-radius:10px;padding:11px;background:var(--card);}
+.es-topo{display:flex;align-items:center;gap:7px;font-size:13px;}
+.es-dot{width:9px;height:9px;border-radius:50%;background:var(--sc);flex-shrink:0;}
+.es-topo b{flex:1;}
+.es-x{border:none;background:transparent;cursor:pointer;color:var(--text-low);font-size:13px;padding:0 3px;font-family:inherit;}
+.es-x:hover{color:var(--red);}
+.es-meta{font-size:11px;color:var(--text-low);margin-top:4px;}
+.eq-novo{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.eq-novo input[type=color]{width:38px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer;}
+.eq-sel{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-family:inherit;font-size:12.5px;min-width:140px;}
+.eq-sel:disabled{opacity:.5;}
+.eq-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:6px;display:inline-block;}
+.eq-tag.ok{background:var(--green-soft);color:var(--green-deep);}
+.eq-tag.admin{background:var(--purple-soft);color:var(--purple);}
+.eq-tag.alerta{background:var(--orange-soft);color:#b45309;}
+.eq-tab td{vertical-align:middle;}
+
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
@@ -2884,6 +2907,126 @@ function abrirEmojis(anchorBtn, textarea, onInsert){
 
 
 
+
+/* ═══════════ EQUIPE E SETORES ═══════════════════════════════════════════════
+   Setor define O QUE cada atendente enxerga. Quem tem setor definido só vê
+   conversas do próprio setor e as que ainda não têm setor (fila geral) — nem
+   pelo painel do cliente, que também passou a checar.
+   Quem fica SEM setor vê tudo: é a configuração certa para supervisão, e a
+   errada para um atendente comum. */
+let EQ = { pessoas:[], setores:[], carga:{}, carregado:false };
+
+async function renderEquipe(el){
+  el.innerHTML='<div class="pn-load">Carregando equipe…</div>';
+  try{
+    const j=await chamar('equipe.listar',{});
+    EQ.pessoas=j.pessoas||[]; EQ.setores=j.setores||[]; EQ.carga=j.carga||{};
+    EQ.carregado=true;
+  }catch(e){ el.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
+  eqPintar(el);
+}
+
+function eqPintar(el){
+  const semSetor = EQ.pessoas.filter(p=>!p.atend_setor && !p.atend_admin).length;
+  el.innerHTML=`
+    <div class="vsub" style="margin-bottom:14px">
+      O setor define o que cada pessoa enxerga. Quem tem setor vê apenas as conversas
+      dele e as que ainda não foram encaminhadas. Quem fica sem setor vê tudo.
+    </div>
+
+    ${semSetor?`<div class="cp-aviso">
+      <b>${semSetor} atendente(s) sem setor definido</b> — eles enxergam todas as conversas,
+      inclusive de outros setores. Defina o setor de quem não precisa dessa visão.
+    </div>`:''}
+
+    <div class="eq-secao">
+      <h3>Setores</h3>
+      <div class="eq-setores">
+        ${EQ.setores.map(st=>{
+          const n=EQ.pessoas.filter(p=>p.atend_setor===st.nome).length;
+          const conv=EQ.carga[st.nome]||0;
+          return `<div class="eq-setor" style="--sc:${st.cor||'#3b82f6'}">
+            <div class="es-topo"><span class="es-dot"></span><b>${esc(st.nome)}</b>
+              <button class="es-x" data-delsetor="${esc(st.nome)}" title="Remover setor">✕</button></div>
+            <div class="es-meta">${n} pessoa(s) · ${conv} conversa(s) aberta(s)</div>
+          </div>`;
+        }).join('') || '<div class="if-cli-sub">Nenhum setor cadastrado.</div>'}
+      </div>
+      <div class="eq-novo">
+        <input class="cp-nome" id="eqNome" placeholder="Nome do novo setor" style="flex:1;min-width:150px">
+        <input type="color" id="eqCor" value="#3b82f6" title="Cor">
+        <button class="btn primary" id="eqAdd">Adicionar setor</button>
+      </div>
+    </div>
+
+    <div class="eq-secao">
+      <h3>Quem atende</h3>
+      <div class="rel-tab-wrap"><table class="rel-tab eq-tab">
+        <thead><tr><th>Pessoa</th><th>Setor</th><th>Enxerga</th><th>Admin do atendimento</th></tr></thead>
+        <tbody>${EQ.pessoas.map(p=>`
+          <tr>
+            <td><b>${esc(p.nome||p.email)}</b><div class="if-cli-sub">${esc(p.email||'')}</div></td>
+            <td>
+              <select class="eq-sel" data-setor="${p.id}" ${p.atend_admin?'disabled':''}>
+                <option value="">— sem setor —</option>
+                ${EQ.setores.map(st=>`<option value="${esc(st.nome)}" ${p.atend_setor===st.nome?'selected':''}>${esc(st.nome)}</option>`).join('')}
+              </select>
+            </td>
+            <td>${p.atend_admin
+              ? '<span class="eq-tag admin">Todas as conversas</span>'
+              : p.atend_setor
+                ? `<span class="eq-tag ok">${esc(p.atend_setor)} + fila geral</span>`
+                : '<span class="eq-tag alerta">Todas as conversas</span>'}</td>
+            <td><label class="cob-check" style="margin:0">
+              <input type="checkbox" data-admin="${p.id}" ${p.atend_admin?'checked':''}> admin
+            </label></td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+      <div class="rel-nota">
+        Admin do atendimento vê tudo e configura a equipe — é independente do perfil do MoviOn.
+        Quem é operador do financeiro não vira admin daqui automaticamente.
+      </div>
+    </div>`;
+
+  el.querySelectorAll('[data-setor]').forEach(sel=>sel.onchange=async()=>{
+    sel.disabled=true;
+    try{
+      await chamar('equipe.salvar',{id:sel.dataset.setor, setor:sel.value||null});
+      toast(sel.value?('Setor definido: '+sel.value):'Setor removido — passa a ver tudo');
+      renderEquipe(el);
+    }catch(e){ toast('Falha: '+e.message); sel.disabled=false; }
+  });
+
+  el.querySelectorAll('[data-admin]').forEach(ck=>ck.onchange=async()=>{
+    ck.disabled=true;
+    try{
+      await chamar('equipe.salvar',{id:ck.dataset.admin, admin:ck.checked});
+      toast(ck.checked?'Agora é admin do atendimento':'Deixou de ser admin');
+      renderEquipe(el);
+    }catch(e){ toast('Falha: '+e.message); ck.checked=!ck.checked; ck.disabled=false; }
+  });
+
+  el.querySelectorAll('[data-delsetor]').forEach(b=>b.onclick=async()=>{
+    const nome=b.dataset.delsetor;
+    const n=EQ.carga[nome]||0;
+    if(!confirm(`Remover o setor "${nome}"?\n\n`
+      +(n?`As ${n} conversa(s) abertas dele voltam para a fila geral, visível a todos.\n`:'')
+      +'Quem estava nesse setor passa a ver todas as conversas.')) return;
+    try{ await chamar('setores.salvar',{remover:nome}); toast('Setor removido'); renderEquipe(el); }
+    catch(e){ toast('Falha: '+e.message); }
+  });
+
+  const add=el.querySelector('#eqAdd');
+  if(add) add.onclick=async()=>{
+    const nome=el.querySelector('#eqNome').value.trim();
+    if(!nome){ toast('Informe o nome do setor'); return; }
+    try{
+      await chamar('setores.salvar',{nome, cor:el.querySelector('#eqCor').value});
+      toast('Setor criado'); renderEquipe(el);
+    }catch(e){ toast('Falha: '+e.message); }
+  };
+}
+
 /* ═══════════ GRAVAÇÃO DE ÁUDIO ══════════════════════════════════════════════
    Pensado para headset de escritório: pede a maior taxa que o navegador der,
    desliga os processamentos que degradam voz captada de perto e mostra o nível
@@ -3047,11 +3190,28 @@ function gravFinalizar(){
   const kb=Math.round(GRAV.blob.size/1024);
   const el=$('#mReplyBar'); if(!el) return;
   el.innerHTML=`<div class="grav-previa">
-    <audio controls src="${GRAV.url}"></audio>
+    <audio id="gravAudio" controls preload="metadata" src="${GRAV.url}"></audio>
     <span style="font-size:11px;color:var(--text-mid);font-weight:600;white-space:nowrap">${gravFmt(seg)} · ${kb} KB</span>
     <button class="grav-btn cancelar" id="gravRefazer">Refazer</button>
     <button class="grav-btn enviar" id="gravEnviar">Enviar áudio</button>
   </div>`;
+  // Força o navegador a percorrer o arquivo até o fim para descobrir a
+  // duração real. Sem isto o player mostra "Infinity", a barra não anda e o
+  // play muitas vezes não funciona — é limitação do WebM gerado ao vivo,
+  // não do arquivo em si.
+  const au=$('#gravAudio');
+  if(au){
+    au.addEventListener('loadedmetadata', ()=>{
+      if(au.duration===Infinity || isNaN(au.duration)){
+        au.currentTime = 1e101;
+        au.addEventListener('timeupdate', function volta(){
+          au.removeEventListener('timeupdate', volta);
+          au.currentTime = 0;
+        });
+      }
+    }, {once:true});
+    au.load();
+  }
   $('#gravRefazer').onclick=()=>{ gravCancelar(); gravIniciar(GRAV.conversa); };
   $('#gravEnviar').onclick=()=>gravEnviar(seg, tipo);
 }
@@ -3060,6 +3220,9 @@ async function gravEnviar(seg, tipo){
   const c=GRAV.conversa; if(!c || !GRAV.blob) return;
   const b=$('#gravEnviar');
   b.disabled=true; b.textContent='Enviando…';
+  // o servidor tenta 3 vezes quando a sessão do WhatsApp oscila; avisar evita
+  // que o atendente ache que travou e recarregue a página perdendo a gravação
+  const aviso=setTimeout(()=>{ if(b) b.textContent='Reenviando…'; }, 6000);
   try{
     const base64=await lerArquivo(GRAV.blob);
     await chamar('mensagens.enviar_audio',{
@@ -3074,9 +3237,11 @@ async function gravEnviar(seg, tipo){
     openModal(c.id); renderAll();
     toast('Áudio enviado');
   }catch(e){
+    // a gravação NÃO é descartada: o erro costuma ser temporário e refazer o
+    // áudio por causa disso é o pior desfecho possível
     toast('Falha ao enviar: '+e.message);
-    b.disabled=false; b.textContent='Enviar áudio';
-  }
+    b.disabled=false; b.textContent='Tentar enviar de novo';
+  }finally{ clearTimeout(aviso); }
 }
 
 /* ═══════════ RELATÓRIOS ═════════════════════════════════════════════════════
@@ -4406,6 +4571,7 @@ function renderAux(){
         <div class="cfg-tab ${configTab==='fluxo'?'on':''}" data-tab="fluxo">🔀 Fluxo do Bot</div>
         <div class="cfg-tab ${configTab==='atalhos'?'on':''}" data-tab="atalhos">⚡ Atalhos</div>
         <div class="cfg-tab ${configTab==='etiquetas'?'on':''}" data-tab="etiquetas">🏷️ Etiquetas</div>
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
       </div>`;
     // o editor de fluxo precisa da largura toda: fica FORA da moldura
@@ -4423,6 +4589,7 @@ function renderAux(){
     }
     else if(configTab==='atalhos'){ renderAtalhos(body, true); }
     else if(configTab==='etiquetas'){ renderEtiquetas(body, true); }
+    else if(configTab==='equipe' && USUARIO&&USUARIO.admin){ renderEquipe(body); }
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);
     } else {
