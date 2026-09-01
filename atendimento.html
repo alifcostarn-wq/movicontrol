@@ -621,6 +621,14 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   padding:0;line-height:1;
 }
 .emo-btn:hover{border-color:var(--green);background:var(--green-soft);}
+/* aviso de conexão no cabeçalho */
+.wa-off{
+  display:inline-flex;align-items:center;gap:7px;background:var(--red);color:#fff;
+  font-size:11.5px;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;
+  animation:waPisca 2s ease-in-out infinite;
+}
+@keyframes waPisca{0%,100%{opacity:1}50%{opacity:.72}}
+.wa-off-dot{width:8px;height:8px;border-radius:50%;background:#fff;}
 .emo-pop{
   position:absolute;bottom:calc(100% + 8px);left:0;width:min(346px,88vw);
   background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-lg);
@@ -886,6 +894,22 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .eq-tag.admin{background:var(--purple-soft);color:var(--purple);}
 .eq-tag.alerta{background:var(--orange-soft);color:#b45309;}
 .eq-tab td{vertical-align:middle;}
+
+
+/* ---- tempos do atendimento ---- */
+.tp-fluxo{max-width:640px;}
+.tp-etapa{display:flex;gap:12px;border:1px solid var(--line);border-left:4px solid var(--tc);
+  border-radius:11px;padding:13px;background:var(--card);}
+.tp-num{width:26px;height:26px;border-radius:50%;background:var(--tc);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
+.tp-corpo{flex:1;min-width:0;}
+.tp-linha{display:flex;align-items:center;gap:7px;font-size:12.5px;margin:7px 0;flex-wrap:wrap;}
+.tp-linha input{width:74px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;
+  font-family:inherit;font-size:13px;text-align:right;}
+.tp-nota{font-size:11px;color:var(--text-mid);line-height:1.55;margin-top:6px;}
+.tp-seta{text-align:center;color:var(--text-low);font-size:16px;margin:5px 0;}
+.tp-resumo{margin-top:12px;font-size:12.5px;color:var(--text-mid);background:var(--green-soft);
+  border:1px solid #bfe9d4;border-radius:9px;padding:11px 13px;max-width:640px;line-height:1.6;}
 
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
@@ -1675,6 +1699,7 @@ select.transf{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M7 12h10M10 19h4"/></svg>
         Filtros
       </button>
+      <span id="waAviso"></span>
       <button class="btn" id="btnStatus" title="Publicar status no WhatsApp da empresa">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="4 2.4"/><circle cx="12" cy="12" r="3.4"/></svg>
         Status
@@ -2093,6 +2118,7 @@ async function carregarTudo(){
   state.tags     = (j.etiquetas||[]).map(t=>t.nome);
   state.atalhos  = (j.atalhos||[]).map(a=>({ id:a.id, t:a.titulo, m:a.mensagem }));
   state.avaliacoes = j.avaliacoes || { media:null, total:0 };
+  state.whatsapp = j.whatsapp || 'desconhecido';
   state.rules    = (j.regras||[]).map(r=>({ id:r.id, kw:r.palavra, acao:r.acao }));
   state.fluxo    = j.fluxo ? { id:j.fluxo.id, nodes:j.fluxo.nodes||[], edges:j.fluxo.edges||[] } : { nodes:[], edges:[] };
   state.conversas = (j.conversas||[]).map(mapearConversa);
@@ -2907,6 +2933,121 @@ function abrirEmojis(anchorBtn, textarea, onInsert){
 
 
 
+
+
+/* ═══════════ TEMPOS DO ATENDIMENTO ══════════════════════════════════════════
+   Três estágios encadeados para conversa parada com atendente humano. Antes
+   disso o relógio só corria para o bot: conversa assumida por gente ficava em
+   "Em atendimento" indefinidamente, e "Aguardando cliente" só era alcançada
+   movendo na mão, num select escondido no painel lateral. */
+async function renderTempos(el){
+  el.innerHTML='<div class="pn-load">Carregando…</div>';
+  let cfg={};
+  try{ cfg=(await chamar('atendconfig.obter',{})).config||{}; }
+  catch(e){ el.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
+
+  const g=(k,p)=>cfg[k]!==undefined?cfg[k]:p;
+  el.innerHTML=`
+    <div class="vsub" style="margin-bottom:16px">
+      O que fazer quando o cliente para de responder. Cada etapa puxa a seguinte:
+      primeiro sai da fila ativa, depois é avisado, depois encerra.
+    </div>
+
+    <div class="tp-fluxo">
+      <div class="tp-etapa" style="--tc:var(--blue)">
+        <div class="tp-num">1</div>
+        <div class="tp-corpo">
+          <label class="cob-check"><input type="checkbox" id="tpA" ${g('aguardar_ativo',true)?'checked':''}>
+            <b>Mover para “Aguardando cliente”</b></label>
+          <div class="tp-linha">após
+            <input type="number" id="tpAmin" min="1" max="1440" value="${g('aguardar_min',10)}"> minutos sem resposta
+          </div>
+          <div class="tp-nota">
+            Só move quando a última mensagem foi <b>nossa</b>. Se o cliente falou por último,
+            quem deve resposta é o atendente — e a conversa continua na fila ativa.
+          </div>
+        </div>
+      </div>
+
+      <div class="tp-seta">↓</div>
+
+      <div class="tp-etapa" style="--tc:var(--orange)">
+        <div class="tp-num">2</div>
+        <div class="tp-corpo">
+          <label class="cob-check"><input type="checkbox" id="tpB" ${g('aviso_ativo',true)?'checked':''}>
+            <b>Avisar que vai encerrar</b></label>
+          <div class="tp-linha">após
+            <input type="number" id="tpBmin" min="1" max="10080" value="${g('aviso_min',60)}"> minutos em “Aguardando cliente”
+          </div>
+          <textarea class="cp-txt" id="tpBtxt" style="min-height:70px">${esc(g('aviso_texto',''))}</textarea>
+          <div class="tp-nota">Enviado uma única vez por conversa.</div>
+        </div>
+      </div>
+
+      <div class="tp-seta">↓</div>
+
+      <div class="tp-etapa" style="--tc:var(--red)">
+        <div class="tp-num">3</div>
+        <div class="tp-corpo">
+          <label class="cob-check"><input type="checkbox" id="tpC" ${g('encerrar_ativo',true)?'checked':''}>
+            <b>Encerrar o atendimento</b></label>
+          <div class="tp-linha">após
+            <input type="number" id="tpCmin" min="1" max="10080" value="${g('encerrar_min',30)}"> minutos do aviso, sem resposta
+          </div>
+          <textarea class="cp-txt" id="tpCtxt" style="min-height:70px">${esc(g('encerrar_texto',''))}</textarea>
+          <div class="tp-nota">A conversa vai para “Resolvidos” e a pesquisa de satisfação não é enviada — não houve conclusão de fato.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cp-box" style="margin-top:16px">
+      <label class="cob-check"><input type="checkbox" id="tpR" ${g('retomar_ativo',true)?'checked':''}>
+        <b>Devolver para “Em atendimento” quando o cliente responder</b></label>
+      <div class="tp-nota">
+        Volta com o mesmo atendente. Sem isto a conversa fica presa em “Aguardando cliente”
+        mesmo com mensagem nova — a coluna vira um buraco de onde nada sai sozinho.
+      </div>
+    </div>
+
+    <div class="cp-box">
+      <div class="cp-lab">Conversas ainda no bot</div>
+      <div class="tp-linha">encerrar após
+        <input type="number" id="tpBot" min="1" max="1440" value="${g('bot_inatividade_min',30)}"> minutos parada
+      </div>
+      <div class="tp-nota">Vale só para quem não foi assumido por ninguém.</div>
+    </div>
+
+    <button class="btn primary" id="tpSalvar" style="margin-top:12px;font-weight:800;padding:11px 20px">Salvar tempos</button>
+    <div class="tp-resumo" id="tpResumo"></div>`;
+
+  const atualizar=()=>{
+    const a=+$('#tpAmin').value||10, b=+$('#tpBmin').value||60, c2=+$('#tpCmin').value||30;
+    const tot=a+b+c2;
+    const h=Math.floor(tot/60), m=tot%60;
+    // o total importa mais que cada etapa: é quanto tempo o cliente tem no total
+    $('#tpResumo').innerHTML=`Do silêncio ao encerramento: <b>${h?h+'h ':''}${m}min</b> no total
+      — ${a}min para sair da fila, ${b}min até o aviso, ${c2}min até encerrar.`;
+  };
+  ['tpAmin','tpBmin','tpCmin'].forEach(id=>{ const e2=$('#'+id); if(e2) e2.oninput=atualizar; });
+  atualizar();
+
+  $('#tpSalvar').onclick=async()=>{
+    const b=$('#tpSalvar'); b.disabled=true; b.textContent='Salvando…';
+    try{
+      await chamar('atendconfig.salvar',{config:{
+        aguardar_ativo:$('#tpA').checked, aguardar_min:+$('#tpAmin').value||10,
+        aviso_ativo:$('#tpB').checked, aviso_min:+$('#tpBmin').value||60,
+        aviso_texto:$('#tpBtxt').value.trim(),
+        encerrar_ativo:$('#tpC').checked, encerrar_min:+$('#tpCmin').value||30,
+        encerrar_texto:$('#tpCtxt').value.trim(),
+        retomar_ativo:$('#tpR').checked,
+        bot_inatividade_min:+$('#tpBot').value||30,
+      }});
+      toast('Tempos salvos');
+    }catch(e){ toast('Falha: '+e.message); }
+    b.disabled=false; b.textContent='Salvar tempos';
+  };
+}
 
 /* ═══════════ EQUIPE E SETORES ═══════════════════════════════════════════════
    Setor define O QUE cada atendente enxerga. Quem tem setor definido só vê
@@ -3986,6 +4127,8 @@ function openModal(id){
         ${c.botAtivo===false
           ? `<button class="bb-btn" id="mDevolver">Devolver ao bot</button>`
           : `<button class="bb-btn solid" id="mAssumir">Assumir atendimento</button>`}
+        ${(c.botAtivo===false && c.col!=='aguardando' && c.col!=='resolvidos')
+          ? `<button class="bb-btn" id="mAguardar" title="Marcar que estamos esperando o cliente responder">⏳ Aguardar cliente</button>` : ''}
         ${c.col!=='resolvidos' ? `<button class="bb-btn fim" id="mFinalizar">Finalizar</button>` : ''}
       </div>
     </div>
@@ -4363,6 +4506,15 @@ function openModal(id){
     }catch(err){ bAssumir.disabled=false; toast('Falha: '+err.message); }
   };
 
+  const bAguardar=$('#mAguardar');
+  if(bAguardar) bAguardar.onclick=async()=>{
+    bAguardar.disabled=true; bAguardar.textContent='Movendo…';
+    try{
+      await chamar('conversas.aguardar',{id:c.id});
+      await recarregarConversas();
+      toast('Movido para Aguardando cliente — volta sozinho quando ele responder');
+    }catch(e){ toast('Falha: '+e.message); bAguardar.disabled=false; bAguardar.textContent='⏳ Aguardar cliente'; }
+  };
   const bDevolver=$('#mDevolver');
   if(bDevolver) bDevolver.onclick=async()=>{
     if(!confirm('Devolver esta conversa para o bot? Ele volta a responder automaticamente.')) return;
@@ -4571,6 +4723,7 @@ function renderAux(){
         <div class="cfg-tab ${configTab==='fluxo'?'on':''}" data-tab="fluxo">🔀 Fluxo do Bot</div>
         <div class="cfg-tab ${configTab==='atalhos'?'on':''}" data-tab="atalhos">⚡ Atalhos</div>
         <div class="cfg-tab ${configTab==='etiquetas'?'on':''}" data-tab="etiquetas">🏷️ Etiquetas</div>
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='tempos'?'on':''}" data-tab="tempos">⏱ Tempos do atendimento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
       </div>`;
@@ -4589,6 +4742,7 @@ function renderAux(){
     }
     else if(configTab==='atalhos'){ renderAtalhos(body, true); }
     else if(configTab==='etiquetas'){ renderEtiquetas(body, true); }
+    else if(configTab==='tempos' && USUARIO&&USUARIO.admin){ renderTempos(body); }
     else if(configTab==='equipe' && USUARIO&&USUARIO.admin){ renderEquipe(body); }
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);
@@ -5327,7 +5481,27 @@ function aplicarSlim(){
   if(b) b.onclick=()=>{ sidebarSlim=!sidebarSlim; aplicarSlim(); };
 })();
 
-function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); }
+/* Conexão caída sem aviso é o pior cenário: o atendente escreve, envia, e só
+   descobre pelo erro — com a mensagem perdida e o cliente esperando. */
+function renderAvisoWA(){
+  const el=$('#waAviso'); if(!el) return;
+  const st=state.whatsapp;
+  if(st==='open' || st==='desconhecido'){ el.innerHTML=''; return; }
+  const txt = st==='nao_criada' ? 'WhatsApp não configurado'
+            : st==='indisponivel' ? 'Servidor do WhatsApp fora do ar'
+            : st==='connecting' ? 'WhatsApp reconectando…'
+            : 'WhatsApp DESCONECTADO';
+  el.innerHTML=`<span class="wa-off" title="Nenhuma mensagem sai enquanto isso. Clique para reconectar.">
+    <span class="wa-off-dot"></span>${txt}</span>`;
+  const b=el.querySelector('.wa-off');
+  if(b && USUARIO && USUARIO.admin) b.onclick=()=>{
+    view='config'; configTab='integracoes';
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active', x.dataset.view==='config'));
+    renderAll();
+  };
+}
+
+function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoWA(); }
 /* o render inicial acontece depois do login, em entrar() */
 </script>
 </body>
