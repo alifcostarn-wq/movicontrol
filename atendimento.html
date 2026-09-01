@@ -777,6 +777,13 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .cp-pz.on{background:var(--green);border-color:var(--green);color:#fff;}
 .cp-risco{border-radius:9px;padding:10px 12px;font-size:11.5px;line-height:1.55;}
 .cp-risco b{display:block;font-size:12.5px;margin-bottom:3px;}
+/* cartões das notificações automáticas (o que vem a seguir) */
+.nt-futuro{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;}
+.nt-card{display:flex;gap:12px;border:1px solid var(--line);border-radius:11px;padding:13px;background:#fbfcfd;}
+.nt-ico{font-size:22px;flex-shrink:0;}
+.nt-tit{font-size:13.5px;font-weight:700;}
+.nt-desc{font-size:12px;color:var(--text-mid);line-height:1.5;margin-top:3px;}
+.nt-nota{font-size:11px;color:var(--text-low);line-height:1.5;margin-top:6px;font-style:italic;}
 
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
@@ -1526,6 +1533,10 @@ select.transf{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
 <span>Contatos</span>
       </div>
+      <div class="nav-item" data-view="notificacoes" title="Notificações">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-7-8-3z"/></svg>
+<span>Notificações</span>
+      </div>
       <div class="nav-item" data-view="relatorios" title="Relatórios">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
 <span>Relatórios</span>
@@ -1561,10 +1572,6 @@ select.transf{
       <button class="btn" id="btnFiltros">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M7 12h10M10 19h4"/></svg>
         Filtros
-      </button>
-      <button class="btn" id="btnCampanha" title="Enviar notificação em massa">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-7-8-3z"/></svg>
-        Notificar
       </button>
       <button class="btn" id="btnStatus" title="Publicar status no WhatsApp da empresa">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="4 2.4"/><circle cx="12" cy="12" r="3.4"/></svg>
@@ -2080,11 +2087,6 @@ async function entrar(session){
     $('#shell').style.display='';
     // status é comunicação institucional: só admin publica. Precisa ser aqui,
     // depois do login — no carregamento do script USUARIO ainda não existe.
-    const bCp=$('#btnCampanha');
-    if(bCp){
-      if(USUARIO&&USUARIO.admin) bCp.onclick=()=>abrirCampanhas();
-      else bCp.style.display='none';
-    }
     const bSt=$('#btnStatus');
     if(bSt){
       if(USUARIO&&USUARIO.admin) bSt.onclick=()=>abrirStatusWA();
@@ -2801,45 +2803,53 @@ function abrirEmojis(anchorBtn, textarea, onInsert){
 }
 
 
-/* ═══════════ CAMPANHAS — notificação em massa ═══════════════════════════════
-   O envio NÃO acontece no clique: a campanha entra numa fila e o servidor
-   manda aos poucos, com intervalo irregular, dentro da janela de horário.
-   Rajada de centenas de mensagens iguais é o padrão que o WhatsApp usa para
-   identificar spam — e o número aqui é o mesmo que atende os clientes. */
-let CP = { bairros:[], sel:new Set(), previa:null, aba:'nova', prazo:60 };
+/* ═══════════ MÓDULO NOTIFICAÇÕES ════════════════════════════════════════════
+   Nasce como módulo, não como botão, porque vai crescer: hoje só o envio
+   manual em massa; adiante as notificações automáticas (vencimento, queda de
+   sinal, pós-instalação) entram como abas ao lado, dividindo a mesma base de
+   público, ritmo e proteção do número.
 
-async function abrirCampanhas(){
-  const ov=document.createElement('div');
-  ov.className='tr-overlay';
-  ov.innerHTML=`<div class="pn-modal" style="width:min(1000px,100%);max-height:92vh;">
-    <div class="pn-head"><h3>📣 Notificação em massa</h3><button class="pn-x" id="cpX">✕</button></div>
-    <div class="pn-body" id="cpBody"><div class="pn-load">Carregando bairros…</div></div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
-  ov.querySelector('#cpX').onclick=()=>ov.remove();
-  try{
-    const j=await chamar('campanha.filtros',{});
-    CP.bairros=j.bairros||[]; CP.sel=new Set(); CP.previa=null; CP.aba='nova';
-    cpRender();
-  }catch(e){ document.getElementById('cpBody').innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; }
-}
+   O envio NÃO acontece no clique: a notificação entra numa fila e o servidor
+   manda aos poucos, com intervalo irregular. Rajada de centenas de mensagens
+   iguais é o padrão que o WhatsApp usa para identificar spam — e o número
+   aqui é o mesmo que atende os clientes. */
+let NT = { aba:'nova', bairros:[], sel:new Set(), previa:null, prazo:60, carregado:false };
 
-function cpRender(){
-  const b=document.getElementById('cpBody'); if(!b) return;
-  b.innerHTML=`
-    <div class="cfg-tabs" style="margin-bottom:14px">
-      <div class="cfg-tab ${CP.aba==='nova'?'on':''}" data-cpa="nova">Nova notificação</div>
-      <div class="cfg-tab ${CP.aba==='hist'?'on':''}" data-cpa="hist">Enviadas</div>
+async function renderNotificacoes(a){
+  a.innerHTML = `<div class="viewbox">
+    <h2>Notificações</h2>
+    <div class="vsub">Avisos enviados aos clientes pelo WhatsApp da empresa.</div>
+    <div class="cfg-tabs" id="ntTabs">
+      <div class="cfg-tab ${NT.aba==='nova'?'on':''}" data-nt="nova">📣 Envio manual</div>
+      <div class="cfg-tab ${NT.aba==='hist'?'on':''}" data-nt="hist">🗂 Enviadas</div>
+      <div class="cfg-tab ${NT.aba==='auto'?'on':''}" data-nt="auto">⚙️ Automáticas</div>
+      <div class="cfg-tab ${NT.aba==='naoperturbe'?'on':''}" data-nt="naoperturbe">🔕 Não perturbe</div>
     </div>
-    <div id="cpConteudo"></div>`;
-  b.querySelectorAll('[data-cpa]').forEach(x=>x.onclick=()=>{ CP.aba=x.dataset.cpa; cpRender(); });
-  CP.aba==='nova' ? cpFormulario() : cpHistorico();
+    <div id="ntCorpo"><div class="pn-load">Carregando…</div></div>
+  </div>`;
+  a.querySelectorAll('[data-nt]').forEach(x=>x.onclick=()=>{ NT.aba=x.dataset.nt; renderNotificacoes(a); });
+
+  if(!(USUARIO&&USUARIO.admin) && NT.aba!=='hist'){
+    document.getElementById('ntCorpo').innerHTML =
+      '<div class="ms-erro">Apenas administradores podem enviar notificações.</div>';
+    return;
+  }
+  if(NT.aba==='nova')            ntFormulario();
+  else if(NT.aba==='hist')       ntHistorico();
+  else if(NT.aba==='auto')       ntAutomaticas();
+  else                           ntNaoPerturbe();
 }
 
-function cpFormulario(){
-  const el=document.getElementById('cpConteudo');
-  const totalBase=CP.bairros.reduce((s,x)=>s+Number(x.ativos||0),0);
+/* ---- aba: envio manual ---- */
+async function ntFormulario(){
+  const el=document.getElementById('ntCorpo');
+  if(!NT.carregado){
+    try{
+      const j=await chamar('campanha.filtros',{});
+      NT.bairros=j.bairros||[]; NT.carregado=true;
+    }catch(e){ el.innerHTML=`<div class="ms-erro">Falha ao carregar bairros: ${esc(e.message)}</div>`; return; }
+  }
+  const totalBase=NT.bairros.reduce((s,x)=>s+Number(x.ativos||0),0);
   el.innerHTML=`
     <div class="cp-aviso">
       <b>Só clientes com contrato ativo recebem.</b> Cancelados ficam de fora automaticamente —
@@ -2849,43 +2859,40 @@ function cpFormulario(){
       <div>
         <div class="cp-box">
           <div class="cp-lab">Nome da notificação (uso interno)</div>
-          <input class="cp-nome" id="cpNome" placeholder="Ex: Aviso de manutenção — MAISA">
+          <input class="cp-nome" id="ntNome" placeholder="Ex: Aviso de manutenção — MAISA">
         </div>
         <div class="cp-box">
           <div class="cp-lab">Mensagem</div>
-          <textarea class="cp-txt" id="cpTexto" placeholder="Bom dia %nomecliente%! Informamos que haverá manutenção programada na sua região..."></textarea>
+          <textarea class="cp-txt" id="ntTexto" placeholder="Bom dia %nomecliente%! Informamos que haverá manutenção programada na sua região hoje, das 14h às 17h."></textarea>
           <div class="cp-nota">
             Use <b>%nomecliente%</b> para o primeiro nome. Personalizar não é só simpatia:
             evita que centenas de mensagens saiam idênticas, o que chama atenção do antispam.
           </div>
         </div>
         <div class="cp-box">
-          <div class="cp-lab">Bairros — ${CP.bairros.length} com clientes ativos</div>
-          <div class="cp-bairros" id="cpBairros">
-            ${CP.bairros.map(x=>`<span class="cp-b ${CP.sel.has(x.bairro)?'on':''}" data-b="${esc(x.bairro)}">
+          <div class="cp-lab">Bairros — ${NT.bairros.length} com clientes ativos</div>
+          <div class="cp-bairros" id="ntBairros">
+            ${NT.bairros.map(x=>`<span class="cp-b ${NT.sel.has(x.bairro)?'on':''}" data-b="${esc(x.bairro)}">
               ${esc(x.bairro)}<small>${x.ativos}</small></span>`).join('')}
           </div>
           <div class="cp-nota">Nenhum selecionado = toda a base ativa (${totalBase} clientes).</div>
         </div>
       </div>
-
       <div>
-        <div class="cp-previa" id="cpPrevia">
-          <div class="n">—</div><div class="l">destinatários</div>
-        </div>
+        <div class="cp-previa" id="ntPrevia"><div class="n">—</div><div class="l">destinatários</div></div>
         <div class="cp-box" style="margin-top:12px">
           <div class="cp-lab">Em quanto tempo precisa chegar?</div>
-          <div class="cp-prazos" id="cpPrazos">
+          <div class="cp-prazos" id="ntPrazos">
             ${[[15,'15 min'],[30,'30 min'],[60,'1 hora'],[120,'2 horas'],[240,'4 horas']]
-              .map(([v,l])=>`<span class="cp-pz ${v===60?'on':''}" data-pz="${v}">${l}</span>`).join('')}
+              .map(([v,l])=>`<span class="cp-pz ${v===NT.prazo?'on':''}" data-pz="${v}">${l}</span>`).join('')}
           </div>
-          <div class="cp-ritmo" id="cpRitmo"></div>
+          <div class="cp-ritmo" id="ntRitmo"></div>
           <div class="cp-nota">
             <b>A notificação vence no prazo.</b> Quem não receber até lá fica de fora —
             aviso que chega depois avisa de algo que já aconteceu.
           </div>
         </div>
-        <button class="btn if-btn-primario" id="cpEnviar" style="width:100%;background:var(--green);color:#fff;border-color:var(--green);font-weight:800;padding:12px;">
+        <button class="btn primary" id="ntEnviar" style="width:100%;font-weight:800;padding:12px;">
           Colocar na fila de envio
         </button>
         <div class="cp-nota" style="text-align:center">Você pode pausar a qualquer momento.</div>
@@ -2894,42 +2901,40 @@ function cpFormulario(){
 
   el.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>{
     const b=x.dataset.b;
-    CP.sel.has(b) ? CP.sel.delete(b) : CP.sel.add(b);
-    x.classList.toggle('on', CP.sel.has(b));
-    cpAtualizarPrevia();
+    NT.sel.has(b) ? NT.sel.delete(b) : NT.sel.add(b);
+    x.classList.toggle('on', NT.sel.has(b));
+    ntPrevia();
   });
   el.querySelectorAll('[data-pz]').forEach(x=>x.onclick=()=>{
-    CP.prazo=+x.dataset.pz;
+    NT.prazo=+x.dataset.pz;
     el.querySelectorAll('[data-pz]').forEach(y=>y.classList.remove('on'));
-    x.classList.add('on');
-    cpAtualizarPrevia();
+    x.classList.add('on'); ntPrevia();
   });
-  document.getElementById('cpEnviar').onclick=cpCriar;
-  cpAtualizarPrevia();
+  document.getElementById('ntEnviar').onclick=ntCriar;
+  ntPrevia();
 }
 
-let cpDeb;
-function cpAtualizarPrevia(){
-  clearTimeout(cpDeb);
-  cpDeb=setTimeout(async ()=>{
-    const p=document.getElementById('cpPrevia'); if(!p) return;
+let ntDeb;
+function ntPrevia(){
+  clearTimeout(ntDeb);
+  ntDeb=setTimeout(async ()=>{
+    const p=document.getElementById('ntPrevia'); if(!p) return;
     try{
       const j=await chamar('campanha.previa',{
-        filtros:{ bairros: CP.sel.size?[...CP.sel]:null }, prazo_min: CP.prazo||60 });
-      CP.previa=j;
+        filtros:{ bairros: NT.sel.size?[...NT.sel]:null }, prazo_min: NT.prazo });
+      NT.previa=j;
       p.innerHTML=`<div class="n">${j.total}</div><div class="l">destinatários ativos</div>`;
-
-      // O risco vem do ritmo necessário para caber no prazo. Mostrar isso
-      // deixa a escolha consciente em vez de silenciosa.
-      const r=document.getElementById('cpRitmo'); if(!r) return;
+      const r=document.getElementById('ntRitmo'); if(!r) return;
       if(!j.total){ r.innerHTML=''; return; }
+      // o risco vem do ritmo necessário para caber no prazo: mostrar isso
+      // deixa a escolha consciente em vez de silenciosa
       const cores={baixo:['var(--green-soft)','var(--green-deep)','✅ Ritmo seguro'],
                    medio:['var(--orange-soft)','#b45309','⚠️ Ritmo acelerado'],
                    alto:['var(--red-soft)','var(--red)','🚨 Ritmo arriscado']};
       const [bg,fg,lbl]=cores[j.risco]||cores.baixo;
       r.innerHTML=`<div class="cp-risco" style="background:${bg};color:${fg}">
         <b>${lbl}</b>
-        <div>1 mensagem a cada <b>${j.intervalo}s</b> para atender ${j.total} em ${CP.prazo||60} min.</div>
+        <div>1 mensagem a cada <b>${j.intervalo}s</b> para atender ${j.total} em ${NT.prazo} min.</div>
         ${j.risco==='alto'?'<div style="margin-top:5px">Ritmo alto aumenta o risco de o WhatsApp limitar o número — que é o mesmo do atendimento. Considere aumentar o prazo ou reduzir os bairros.</div>':''}
         ${!j.cabe?`<div style="margin-top:5px"><b>${j.nao_cabem} cliente(s) não vão caber neste prazo</b> e ficarão de fora.</div>`:''}
       </div>`;
@@ -2937,36 +2942,35 @@ function cpAtualizarPrevia(){
   }, 260);
 }
 
-async function cpCriar(){
-  const nome=(document.getElementById('cpNome').value||'').trim();
-  const texto=(document.getElementById('cpTexto').value||'').trim();
+async function ntCriar(){
+  const nome=(document.getElementById('ntNome').value||'').trim();
+  const texto=(document.getElementById('ntTexto').value||'').trim();
   if(!texto){ toast('Escreva a mensagem'); return; }
-  if(!CP.previa || !CP.previa.total){ toast('Nenhum destinatário nos filtros'); return; }
-
-  const pz=CP.prazo||60;
-  const j=CP.previa;
+  if(!NT.previa || !NT.previa.total){ toast('Nenhum destinatário nos filtros'); return; }
+  const j=NT.previa;
   if(!confirm(`Enviar para ${j.total} cliente(s) ativos?\n\n`
-    +`Ritmo: 1 mensagem a cada ~${j.intervalo}s\n`
-    +`Prazo: ${pz} minutos${j.cabe?'':`\n\nATENÇÃO: ${j.nao_cabem} não vão caber no prazo e ficarão de fora.`}\n\n`
+    +`Ritmo: 1 mensagem a cada ~${j.intervalo}s\nPrazo: ${NT.prazo} minutos`
+    +`${j.cabe?'':`\n\nATENÇÃO: ${j.nao_cabem} não vão caber no prazo e ficarão de fora.`}\n\n`
     +`Passado o prazo, quem não recebeu fica de fora — a notificação não continua depois.`)) return;
 
-  const b=document.getElementById('cpEnviar');
+  const b=document.getElementById('ntEnviar');
   b.disabled=true; b.textContent='Preparando…';
   try{
     await chamar('campanha.criar',{
       nome, texto, enfileirar:true,
-      filtros:{ bairros: CP.sel.size?[...CP.sel]:null },
-      intervalo_seg:j.intervalo, prazo_min:pz,
+      filtros:{ bairros: NT.sel.size?[...NT.sel]:null },
+      intervalo_seg:j.intervalo, prazo_min:NT.prazo,
       // aviso urgente não espera janela comercial
       janela_ini:'00:00', janela_fim:'23:59', dias_semana:[0,1,2,3,4,5,6],
     }, 60000);
     toast('Notificação na fila — o envio já começou');
-    CP.aba='hist'; cpRender();
+    NT.aba='hist'; renderNotificacoes($('#auxview'));
   }catch(e){ toast('Falha: '+e.message); b.disabled=false; b.textContent='Colocar na fila de envio'; }
 }
 
-async function cpHistorico(){
-  const el=document.getElementById('cpConteudo');
+/* ---- aba: enviadas ---- */
+async function ntHistorico(){
+  const el=document.getElementById('ntCorpo');
   el.innerHTML='<div class="pn-load">Carregando…</div>';
   try{
     const j=await chamar('campanha.listar',{});
@@ -2978,29 +2982,79 @@ async function cpHistorico(){
           <span class="ci-nome">${esc(c.nome)}</span>
           <span class="cp-st ${c.status}">${c.status}</span>
         </div>
-        <div style="font-size:12px;color:var(--text-mid);line-height:1.5">${esc(String(c.texto).slice(0,120))}${c.texto.length>120?'…':''}</div>
+        <div style="font-size:12px;color:var(--text-mid);line-height:1.5">${esc(String(c.texto).slice(0,140))}${c.texto.length>140?'…':''}</div>
         <div class="cp-barra"><div style="width:${pct}%"></div></div>
         <div class="cp-meta">
-          <span>${c.enviados} de ${c.total} enviadas${c.falhas?` · ${c.falhas} falha(s)`:''}</span>
+          <span>${c.enviados} de ${c.total} enviadas${c.falhas?` · ${c.falhas} falha(s)`:''}${c.nao_enviados?` · ${c.nao_enviados} fora do prazo`:''}</span>
           <span>${new Date(c.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
         </div>
         ${c.erro?`<div class="ms-erro" style="margin-top:7px;font-size:11px">${esc(c.erro)}</div>`:''}
-        <div class="cp-acts">
-          ${['enfileirada','enviando'].includes(c.status)?`<button class="btn" style="font-size:11px" data-cps="${c.id}|pausada">⏸ Pausar</button>`:''}
-          ${c.status==='pausada'?`<button class="btn" style="font-size:11px" data-cps="${c.id}|enfileirada">▶ Retomar</button>`:''}
-          ${['enfileirada','enviando','pausada'].includes(c.status)?`<button class="btn" style="font-size:11px" data-cps="${c.id}|cancelada">✕ Cancelar</button>`:''}
-        </div>
+        ${USUARIO&&USUARIO.admin?`<div class="cp-acts">
+          ${['enfileirada','enviando'].includes(c.status)?`<button class="btn" style="font-size:11px" data-nts="${c.id}|pausada">⏸ Pausar</button>`:''}
+          ${c.status==='pausada'?`<button class="btn" style="font-size:11px" data-nts="${c.id}|enfileirada">▶ Retomar</button>`:''}
+          ${['enfileirada','enviando','pausada'].includes(c.status)?`<button class="btn" style="font-size:11px" data-nts="${c.id}|cancelada">✕ Cancelar</button>`:''}
+        </div>`:''}
       </div>`;
     }).join('') : '<div class="pn-load">Nenhuma notificação enviada ainda.</div>';
 
-    el.querySelectorAll('[data-cps]').forEach(b=>b.onclick=async()=>{
-      const [id,st]=b.dataset.cps.split('|');
+    el.querySelectorAll('[data-nts]').forEach(b=>b.onclick=async()=>{
+      const [id,st]=b.dataset.nts.split('|');
       if(st==='cancelada' && !confirm('Cancelar esta notificação? O que já foi enviado não volta atrás.')) return;
       b.disabled=true;
-      try{ await chamar('campanha.status',{id:+id,status:st}); cpHistorico(); }
+      try{ await chamar('campanha.status',{id:+id,status:st}); ntHistorico(); }
       catch(e){ toast('Falha: '+e.message); b.disabled=false; }
     });
   }catch(e){ el.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; }
+}
+
+/* ---- aba: automáticas (próxima etapa) ---- */
+function ntAutomaticas(){
+  document.getElementById('ntCorpo').innerHTML=`
+    <div class="cp-aviso" style="background:var(--blue-soft);border-color:#bcd4fb;color:#1d4ed8">
+      Espaço reservado para as notificações que o sistema envia sozinho, sem alguém clicar.
+    </div>
+    <div class="nt-futuro">
+      ${[['📅','Lembrete de vencimento','Aviso alguns dias antes da fatura vencer, para quem espera o boleto chegar.','A régua de cobrança do MoviOn já faz isso — falta trazer para cá.'],
+         ['📡','Queda de sinal na região','Avisa os clientes da área afetada assim que a instabilidade é marcada no MoviFiber.','Depende do módulo de instabilidades já existente.'],
+         ['🔧','Pós-instalação','Mensagem alguns dias depois da instalação, perguntando como está a conexão.','Usa a data de ativação do contrato no IXC.'],
+         ['⭐','Pesquisa de satisfação','Já existe hoje: enviada ao encerrar um atendimento.','Ativa — configurada no fluxo do bot.']]
+        .map(([i,t,d,n])=>`<div class="nt-card">
+          <div class="nt-ico">${i}</div>
+          <div><div class="nt-tit">${t}</div><div class="nt-desc">${d}</div>
+          <div class="nt-nota">${n}</div></div>
+        </div>`).join('')}
+    </div>
+    <div class="cp-nota" style="margin-top:14px">
+      Todas usarão a mesma fila, o mesmo controle de ritmo e a mesma lista de não perturbe
+      do envio manual — o que já está construído aqui.
+    </div>`;
+}
+
+/* ---- aba: não perturbe ---- */
+async function ntNaoPerturbe(){
+  const el=document.getElementById('ntCorpo');
+  el.innerHTML=`
+    <div class="cp-aviso">
+      Clientes nesta lista não recebem notificações em massa. Registrar o pedido de quem
+      não quer receber protege a empresa e evita denúncia de spam.
+    </div>
+    <div class="cp-box" style="max-width:520px">
+      <div class="cp-lab">Adicionar telefone</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input class="cp-nome" id="ntOpFone" placeholder="55849xxxxxxxx" style="flex:1;min-width:160px">
+        <input class="cp-nome" id="ntOpMotivo" placeholder="motivo (opcional)" style="flex:1;min-width:160px">
+        <button class="btn primary" id="ntOpAdd">Adicionar</button>
+      </div>
+      <div class="cp-nota">O cliente continua recebendo cobrança e respostas de atendimento — só fica fora dos avisos em massa.</div>
+    </div>`;
+  document.getElementById('ntOpAdd').onclick=async()=>{
+    const f=document.getElementById('ntOpFone').value.trim();
+    if(!f){ toast('Informe o telefone'); return; }
+    try{
+      await chamar('campanha.optout',{fone:f,motivo:document.getElementById('ntOpMotivo').value.trim()});
+      toast('Adicionado à lista'); ntNaoPerturbe();
+    }catch(e){ toast('Falha: '+e.message); }
+  };
 }
 
 /* ===== STATUS DO WHATSAPP DA EMPRESA ===== */
@@ -3807,7 +3861,8 @@ function renderAux(){
   if(view==='kanban'){ a.style.display='none'; b.style.display='grid'; if(k) k.style.display='grid'; return; }
   b.style.display='none'; fb.style.display='none'; if(k) k.style.display=view==='relatorios'?'grid':'none';
   a.style.display='block';
-  if(view==='etiquetas'){ renderEtiquetas(a); }
+  if(view==='notificacoes'){ renderNotificacoes(a); }
+  else if(view==='etiquetas'){ renderEtiquetas(a); }
   else if(view==='atalhos'){ renderAtalhos(a); }
   else if(view==='config'){
     const abas=`<div class="cfg-tabs" id="cfgTabs">
