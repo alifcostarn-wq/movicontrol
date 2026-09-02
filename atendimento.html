@@ -348,6 +348,25 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 .m-composer textarea:focus{border-color:var(--green);}
 .m-composer{align-items:flex-end;}
+/* ---- botão único que abre os recursos em leque ---- */
+.mais-wrap{position:relative;flex-shrink:0;}
+.mais-btn svg{width:17px;height:17px;transition:transform .2s;}
+.mais-wrap.aberto .mais-btn{background:var(--green);border-color:var(--green);color:#fff;}
+.mais-wrap.aberto .mais-btn svg{transform:rotate(45deg);}
+.mais-leque{
+  position:absolute;bottom:calc(100% + 8px);left:0;display:flex;flex-direction:column;gap:6px;
+  opacity:0;visibility:hidden;transform:translateY(6px);transition:.16s ease;
+}
+.mais-wrap.aberto .mais-leque{opacity:1;visibility:visible;transform:none;}
+.mais-leque .leq{box-shadow:var(--shadow-lg);background:var(--card);}
+.mais-leque .leq:hover{border-color:var(--green);background:var(--green-soft);}
+/* sobem em sequência: o movimento indica de onde vieram */
+.mais-wrap.aberto .leq:nth-child(1){transition-delay:.02s;}
+.mais-wrap.aberto .leq:nth-child(2){transition-delay:.05s;}
+.mais-wrap.aberto .leq:nth-child(3){transition-delay:.08s;}
+@media(prefers-reduced-motion:reduce){
+  .mais-leque,.mais-btn svg{transition:none;}
+}
 .m-send{
   width:42px;height:42px;border-radius:11px;background:var(--green);border:none;cursor:pointer;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
@@ -3130,7 +3149,10 @@ function abrirEmojis(anchorBtn, textarea, onInsert){
     });
   };
   desenhar();
-  anchorBtn.parentElement.appendChild(pop);
+  // ancora no composer, não no botão: o botão agora vive dentro do leque, que
+  // fecha ao ser usado — o painel sumiria junto
+  const base = anchorBtn.closest('.m-composer') || anchorBtn.parentElement;
+  base.appendChild(pop);
   // fecha ao clicar fora
   setTimeout(()=>{
     const fora = ev=>{
@@ -3487,6 +3509,7 @@ function gravNivel(){
 }
 
 function gravPintarBarra(){
+  document.querySelector('.mais-wrap')?.classList.remove('aberto');
   const el=$('#mReplyBar'); if(!el) return;
   el.innerHTML=`<div class="grav-bar">
     <span class="grav-ponto"></span>
@@ -4372,10 +4395,19 @@ function openModal(id){
     <div id="mReplyBar"></div>
     <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
-      <button class="emo-btn" id="mAudio" type="button" title="Gravar áudio">🎤</button>
-      <button class="emo-btn" id="mAnexo" type="button" title="Enviar arquivo">📎</button>
+      <!-- os três recursos saem de baixo de um botão só: lado a lado eles
+           empurravam o campo de texto, que é onde o atendente passa o tempo -->
+      <div class="mais-wrap">
+        <button class="emo-btn mais-btn" id="mMais" type="button" title="Anexo, emoji e áudio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="mais-leque" id="mLeque">
+          <button class="emo-btn leq" id="mAudio" type="button" title="Gravar áudio">🎤</button>
+          <button class="emo-btn leq" id="mAnexo" type="button" title="Enviar arquivo">📎</button>
+          <button class="emo-btn leq" id="mEmoji" type="button" title="Emojis">😊</button>
+        </div>
+      </div>
       <input type="file" id="mArquivo" style="display:none" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip">
-      <button class="emo-btn" id="mEmoji" type="button" title="Emojis">😊</button>
       <textarea id="mInput" rows="1" placeholder="Digite uma mensagem..."></textarea>
       <button class="m-send" id="mSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
     </div>
@@ -4507,19 +4539,39 @@ function openModal(id){
       if(!it) return;                       // texto normal segue o caminho padrão
       ev.preventDefault();
       const f=it.getAsFile(); if(!f) return;
+      document.querySelector('.mais-wrap')?.classList.remove('aberto');
       pintarBarraAnexo(c,f,'preparando imagem…');
       const arq=await comprimirImagem(new File([f],'print.png',{type:f.type}));
       if(arq.size>ANEXO_MAX_BYTES){ toast('Imagem grande demais.'); pintarBarraResposta(c); return; }
       c._anexo=arq; pintarBarraAnexo(c,arq);
     };
+    // abre/fecha o leque; fecha ao clicar fora ou apertar Esc
+    const wrap=document.querySelector('.mais-wrap'), bMais=$('#mMais');
+    const fecharLeque=()=>{ if(wrap) wrap.classList.remove('aberto'); };
+    if(bMais && wrap){
+      bMais.onclick=ev=>{
+        ev.stopPropagation();
+        wrap.classList.toggle('aberto');
+        if(wrap.classList.contains('aberto')){
+          const fora=e2=>{
+            if(wrap.contains(e2.target)) return;
+            fecharLeque(); document.removeEventListener('click', fora);
+          };
+          setTimeout(()=>document.addEventListener('click', fora), 0);
+        }
+      };
+      document.addEventListener('keydown', e2=>{ if(e2.key==='Escape') fecharLeque(); });
+    }
+
     const bAud=$('#mAudio');
     if(bAud) bAud.onclick=()=>{
+      fecharLeque();
       if(GRAV.rec){ gravParar(); return; }      // clicar de novo para
       gravIniciar(c);
     };
     const bAnx=$('#mAnexo'), inpArq=$('#mArquivo');
     if(bAnx&&inpArq){
-      bAnx.onclick=()=>inpArq.click();
+      bAnx.onclick=()=>{ fecharLeque(); inpArq.click(); };
       inpArq.onchange=async ()=>{
         const f=inpArq.files&&inpArq.files[0];
         inpArq.value='';                       // permite reescolher o mesmo arquivo
@@ -4544,6 +4596,9 @@ function openModal(id){
     const bEmo=$('#mEmoji');
     if(bEmo) bEmo.onclick=ev=>{
       ev.stopPropagation();
+      // o painel de emoji abre a partir do próprio composer, então o leque
+      // pode fechar sem tirar o painel da tela
+      fecharLeque();
       abrirEmojis(bEmo, inp, pos=>{
         c.rascunho=inp.value; c._cursor=pos; c._digitando=true; cresce();
       });
