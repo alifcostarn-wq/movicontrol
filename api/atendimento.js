@@ -35,7 +35,10 @@
 //   resposta automatica aqui — ver a secao INSTABILIDADE DE REDE.
 // ============================================================================
 
-export const config = { api: { bodyParser: { sizeLimit: '2mb' } } };
+// A Vercel corta o corpo da requisição em ~4,5 MB e o base64 infla o arquivo em
+// 33%. O limite de 2 MB de antes rejeitava anexo e status de imagem que o painel
+// já tinha comprimido para caber — a compressão mira ~3 MB.
+export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
 
 const MAX_PASSOS_FLUXO = 15;   // trava anti-loop
 const MAX_TENTATIVAS   = 3;    // respostas não reconhecidas antes de transbordar
@@ -336,6 +339,26 @@ const EXT_POR_MIME = {
 async function guardarMidia(e, conversaId, waId, arq) {
   const ext = EXT_POR_MIME[arq.mimetype.split(';')[0]] || 'bin';
   const caminho = `conversas/${conversaId}/${Date.now()}-${(waId || 'sem-id').slice(-12)}.${ext}`;
+  const bytes = Buffer.from(arq.base64, 'base64');
+  const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
+    method: 'POST',
+    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': arq.mimetype },
+    body: bytes,
+  });
+  if (!r.ok) throw new Error(`Storage ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  return caminho;
+}
+
+// Mídia do status da empresa. Fica fora de `conversas/` porque não pertence a
+// nenhuma conversa: é uma publicação da empresa inteira e some do WhatsApp em
+// 24h, mas o histórico do painel continua precisando mostrar o que foi ao ar.
+async function guardarStatusMidia(e, arq) {
+  const mime = arq.mimetype.split(';')[0];
+  // `.bin` faria a Evolution tratar o arquivo como binário genérico. Quando o
+  // mime não está na tabela, o subtipo (video/quicktime -> quicktime) ainda é um
+  // palpite melhor do que nada.
+  const ext = EXT_POR_MIME[mime] || (mime.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin';
+  const caminho = `status/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const bytes = Buffer.from(arq.base64, 'base64');
   const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
     method: 'POST',
@@ -1923,6 +1946,45 @@ async function waFotoPerfil(e, fone) {
   }
 }
 
+// Pergunta à Evolution como está cada mensagem de uma conversa. É a rede de
+// segurança dos risquinhos: o webhook `messages.update` pode estar desligado na
+// instância, pode ter caído enquanto a function dormia ou o ACK pode ter chegado
+// antes de a mensagem ser gravada aqui. Sem isto o painel fica preso em
+// "enviado" para sempre, sem nenhum erro visível.
+// O formato da resposta mudou entre as versões da Evolution, então varremos o
+// que vier atrás de pares (key.id, status) em vez de apostar num caminho fixo.
+async function waStatusDoChat(e, fone, limite = 60) {
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return [];
+  const jid = `${normalizarFone(fone)}@s.whatsapp.net`;
+  let dados = null;
+  try {
+    const r = await fetchComPrazo(`${e.EVO_URL}/chat/findMessages/${e.EVO_INST}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+      body: JSON.stringify({ where: { key: { remoteJid: jid } }, page: 1, offset: limite }),
+    }, 15000);
+    if (!r.ok) return [];
+    dados = await r.json().catch(() => null);
+  } catch (err) {
+    console.error('[atendimento] findMessages:', err.message);
+    return [];
+  }
+
+  const achados = [];
+  const visto = new Set();
+  const varrer = (o, prof = 0) => {
+    if (!o || prof > 6 || achados.length > 400) return;
+    if (Array.isArray(o)) { for (const x of o) varrer(x, prof + 1); return; }
+    if (typeof o !== 'object') return;
+    const waId = idDoAck(o);
+    const st = normalizarAck(statusDoAck(o));
+    if (waId && st && !visto.has(waId)) { visto.add(waId); achados.push({ waId, status: st }); }
+    for (const v of Object.values(o)) varrer(v, prof + 1);
+  };
+  varrer(dados);
+  return achados;
+}
+
 // ============================================================================
 // ACK — confirmação de entrega/leitura vinda do WhatsApp
 // ----------------------------------------------------------------------------
@@ -1942,28 +2004,59 @@ function normalizarAck(v) {
   return null;
 }
 
+// O id da mensagem muda de nome conforme a versão da Evolution: ora vem dentro
+// de `key`, ora solto como `keyId`/`messageId`. Sem cobrir todos, o ACK chega e
+// é descartado em silêncio — que é exatamente o que fazia o risquinho nunca sair
+// de "enviado".
+function idDoAck(d) {
+  return d?.key?.id || d?.keyId || d?.messageId || d?.message_id || d?.id || null;
+}
+
+function statusDoAck(d) {
+  return d?.status ?? d?.update?.status ?? d?.ack ?? d?.receipt?.status ?? null;
+}
+
+// Aplica um status a uma mensagem já gravada, sem deixar retroceder: um ACK de
+// "entregue" que chega atrasado não pode apagar o "lido" que já apareceu.
+async function aplicarStatus(e, waId, novo) {
+  const msg = await sbUm(e, `atend_mensagens?wa_id=eq.${encodeURIComponent(waId)}&select=id,status,direcao`);
+  if (!msg) return false;                                     // mensagem não é nossa
+  // o WhatsApp também confirma a leitura do que o CLIENTE mandou (feita por nós);
+  // risquinho só faz sentido no que saiu daqui
+  if (msg.direcao === 'in') return false;
+  if (PESO_STATUS[novo] <= PESO_STATUS[msg.status || 'pendente']) return false;
+  await sb(e, `atend_mensagens?id=eq.${msg.id}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { status: novo, status_em: new Date().toISOString() },
+  });
+  return true;
+}
+
 async function tratarAckMensagem(e, body) {
-  // o payload varia: pode vir um objeto ou um array de updates
+  // o payload varia: pode vir um objeto, um array de updates ou um objeto com
+  // a lista dentro de `updates`/`messages`
   const bruto = body.data || body.message || body;
-  const itens = Array.isArray(bruto) ? bruto : [bruto];
-  let aplicados = 0;
+  const itens = Array.isArray(bruto) ? bruto
+    : Array.isArray(bruto?.updates) ? bruto.updates
+    : Array.isArray(bruto?.messages) ? bruto.messages
+    : [bruto];
 
+  // o mesmo lote pode trazer "entregue" e "lido" da mesma mensagem: fica só o
+  // mais avançado, para não gastar duas idas ao banco e não depender da ordem
+  const melhor = new Map();
   for (const d of itens) {
-    const waId = d?.key?.id || d?.keyId || d?.id || null;
-    const novo = normalizarAck(d?.status ?? d?.update?.status ?? d?.ack);
+    const waId = idDoAck(d);
+    const novo = normalizarAck(statusDoAck(d));
     if (!waId || !novo) continue;
-
-    const msg = await sbUm(e, `atend_mensagens?wa_id=eq.${encodeURIComponent(waId)}&select=id,status`);
-    if (!msg) continue;                                   // mensagem não é nossa
-    if (PESO_STATUS[novo] <= PESO_STATUS[msg.status || 'pendente']) continue;  // não retrocede
-
-    await sb(e, `atend_mensagens?id=eq.${msg.id}`, {
-      method: 'PATCH', prefer: 'return=minimal',
-      body: { status: novo, status_em: new Date().toISOString() },
-    });
-    aplicados++;
+    const atual = melhor.get(waId);
+    if (!atual || PESO_STATUS[novo] > PESO_STATUS[atual]) melhor.set(waId, novo);
   }
-  return { ok: true, acks: aplicados };
+
+  let aplicados = 0;
+  for (const [waId, novo] of melhor) {
+    if (await aplicarStatus(e, waId, novo)) aplicados++;
+  }
+  return { ok: true, acks: aplicados, vistos: melhor.size };
 }
 
 // ============================================================================
@@ -3499,6 +3592,16 @@ export default async function handler(req, res) {
 
       case 'status.listar': {
         const itens = await sb(e, 'atend_status?excluido_em=is.null&select=*&order=publicado_em.desc&limit=30');
+        // status de imagem/vídeo guarda o CAMINHO no storage (o link assinado
+        // expira em horas, o histórico vive para sempre). Assina na hora de
+        // listar para a miniatura abrir no painel.
+        for (const x of (itens || [])) {
+          if (x.tipo && x.tipo !== 'text' && x.conteudo && !/^https?:\/\//.test(x.conteudo)) {
+            x.midia_link = await assinarMidia(e, x.conteudo).catch(() => null);
+          } else if (x.tipo && x.tipo !== 'text') {
+            x.midia_link = x.conteudo;
+          }
+        }
         return res.status(200).json({ ok: true, status: itens || [] });
       }
 
@@ -3508,13 +3611,45 @@ export default async function handler(req, res) {
           return res.status(400).json({ ok: false, error: 'Evolution API não configurada.' });
         }
         const tipo = ['text', 'image', 'video'].includes(body.tipo) ? body.tipo : 'text';
-        const conteudo = String(body.conteudo || '').trim();
-        if (!conteudo) return res.status(400).json({ ok: false, error: 'Conteúdo obrigatório.' });
-        if (tipo === 'text' && conteudo.length > 700) {
-          return res.status(400).json({ ok: false, error: 'Status de texto suporta até 700 caracteres.' });
-        }
-        if (tipo !== 'text' && !/^https?:\/\//.test(conteudo)) {
-          return res.status(400).json({ ok: false, error: 'Para imagem/vídeo, informe uma URL pública.' });
+        const legenda = String(body.legenda || '').trim().slice(0, 700);
+
+        // `conteudo` é o que fica gravado no histórico; `envio` é o que vai para
+        // a Evolution. Para texto os dois são iguais. Para imagem/vídeo enviados
+        // do painel, o histórico guarda o caminho no storage (permanente) e a
+        // Evolution recebe um link assinado (temporário, mas público — é assim
+        // que o WhatsApp consegue baixar o arquivo).
+        let conteudo = String(body.conteudo || '').trim();
+        let envio = conteudo;
+
+        if (tipo === 'text') {
+          if (!conteudo) return res.status(400).json({ ok: false, error: 'Conteúdo obrigatório.' });
+          if (conteudo.length > 700) {
+            return res.status(400).json({ ok: false, error: 'Status de texto suporta até 700 caracteres.' });
+          }
+        } else {
+          const bruto = String(body.base64 || '').replace(/^data:[^;]+;base64,/, '');
+          if (bruto) {
+            const mimetype = String(body.mimetype || '').split(';')[0].toLowerCase();
+            const familia = tipo === 'image' ? 'image/' : 'video/';
+            if (!mimetype.startsWith(familia)) {
+              return res.status(400).json({ ok: false, error: `Arquivo não é ${tipo === 'image' ? 'uma imagem' : 'um vídeo'}.` });
+            }
+            const bytes = Buffer.from(bruto, 'base64');
+            if (!bytes.length) return res.status(400).json({ ok: false, error: 'Arquivo vazio ou corrompido.' });
+            if (bytes.length > 16 * 1024 * 1024) {
+              return res.status(400).json({ ok: false, error: 'Arquivo acima de 16 MB — o WhatsApp não aceita.' });
+            }
+            conteudo = await guardarStatusMidia(e, { base64: bruto, mimetype });
+            // 24h: é quanto tempo o status fica no ar. O WhatsApp baixa o
+            // arquivo na hora da publicação, mas um link curto demais quebraria
+            // uma retentativa da Evolution.
+            envio = await assinarMidia(e, conteudo, 24 * 3600);
+            if (!envio) {
+              return res.status(500).json({ ok: false, error: 'Não consegui gerar o link do arquivo no storage.' });
+            }
+          } else if (!/^https?:\/\//.test(conteudo)) {
+            return res.status(400).json({ ok: false, error: 'Escolha um arquivo ou informe uma URL pública.' });
+          }
         }
 
         const lista = Array.isArray(body.destinatarios) ? body.destinatarios.filter(Boolean) : [];
@@ -3522,14 +3657,14 @@ export default async function handler(req, res) {
 
         const payload = {
           type: tipo,
-          content: conteudo,
+          content: envio,
           allContacts: paraTodos,
         };
         if (tipo === 'text') {
           payload.backgroundColor = body.cor_fundo || '#00A859';
           payload.font = Number.isFinite(+body.fonte) ? Number(body.fonte) : 1;
-        } else if (body.legenda) {
-          payload.caption = String(body.legenda).slice(0, 700);
+        } else if (legenda) {
+          payload.caption = legenda;
         }
         if (!paraTodos) {
           payload.statusJidList = lista.map(n => {
@@ -3556,7 +3691,7 @@ export default async function handler(req, res) {
         await sb(e, 'atend_status', {
           method: 'POST', prefer: 'return=minimal',
           body: {
-            tipo, conteudo, legenda: body.legenda || null,
+            tipo, conteudo, legenda: legenda || null,
             cor_fundo: payload.backgroundColor || null, fonte: payload.font ?? null,
             destino: paraTodos ? 'todos' : 'lista',
             destinatarios: paraTodos ? null : lista,
@@ -4299,6 +4434,49 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, mensagens: msgs });
       }
 
+      // Recarrega os risquinhos direto da Evolution. O painel chama ao abrir a
+      // conversa, para não depender de o webhook `messages.update` ter chegado.
+      case 'mensagens.sincronizar_status': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório' });
+        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=id,contato_fone,setor`);
+        if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!await podeVerConversa(user, c)) {
+          return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
+        }
+
+        const achados = await waStatusDoChat(e, c.contato_fone);
+        if (!achados.length) return res.status(200).json({ ok: true, atualizados: 0, consultados: 0 });
+
+        // só mexe no que é desta conversa e ainda não está no status final
+        const nossas = await sb(e,
+          `atend_mensagens?conversa_id=eq.${id}&direcao=neq.in&wa_id=not.is.null&select=id,wa_id,status&order=created_at.desc&limit=300`);
+        const porWaId = new Map((nossas || []).map(m => [m.wa_id, m]));
+
+        // Na primeira sincronização de uma conversa antiga dezenas de mensagens
+        // mudam de uma vez. Um PATCH por mensagem estouraria o tempo da function,
+        // então agrupamos por status: no máximo um PATCH por estado.
+        const mudou = {};
+        const porStatus = new Map();
+        for (const { waId, status } of achados) {
+          const m = porWaId.get(waId);
+          if (!m) continue;
+          if (PESO_STATUS[status] <= PESO_STATUS[m.status || 'pendente']) continue;
+          if (!porStatus.has(status)) porStatus.set(status, []);
+          porStatus.get(status).push(m.id);
+          mudou[m.id] = status;
+        }
+        for (const [status, ids] of porStatus) {
+          await sb(e, `atend_mensagens?id=in.(${ids.join(',')})`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: { status, status_em: new Date().toISOString() },
+          });
+        }
+        return res.status(200).json({
+          ok: true, atualizados: Object.keys(mudou).length, consultados: achados.length, status: mudou,
+        });
+      }
+
       // atendente assume a conversa mesmo com o bot no comando
       case 'conversas.assumir': {
         const id = Number(body.conversa_id);
@@ -4659,6 +4837,91 @@ export default async function handler(req, res) {
         if (!base64bruto) return res.status(200).json({ ok: true, conectado: true }); // já conectado, sem QR novo
         const base64 = base64bruto.includes(',') ? base64bruto.split(',').pop() : base64bruto;
         return res.status(200).json({ ok: true, base64 });
+      }
+
+      // Diagnóstico dos vistos: o risquinho de "entregue/lido" só existe se a
+      // instância mandar o evento MESSAGES_UPDATE para cá. Como o webhook é
+      // configurado fora do app, o sintoma "não mostra que chegou" quase sempre
+      // é este evento desmarcado — aqui dá para ver e corrigir sem terminal.
+      case 'whatsapp.webhook': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
+          return res.status(200).json({ ok: false, error: 'Evolution API não configurada nas variáveis da Vercel.' });
+        }
+        let cfg = null;
+        try {
+          const r = await fetchComPrazo(`${e.EVO_URL}/webhook/find/${e.EVO_INST}`,
+            { headers: { apikey: e.EVO_KEY } }, 12000);
+          if (r.ok) cfg = await r.json().catch(() => null);
+        } catch { /* sem config: o painel mostra "não configurado" */ }
+
+        const dados = cfg?.webhook || cfg || {};
+        const eventos = (dados.events || dados.Events || []).map(x => String(x).toUpperCase());
+        return res.status(200).json({
+          ok: true,
+          configurado: !!dados.url,
+          ativo: dados.enabled !== false && !!dados.url,
+          url: dados.url || null,
+          eventos,
+          recebe_mensagens: eventos.some(x => x.includes('MESSAGES_UPSERT')),
+          recebe_vistos: eventos.some(x => x.includes('MESSAGES_UPDATE')),
+          tem_secret: !!e.WH_SECRET,
+        });
+      }
+
+      case 'whatsapp.webhook_salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
+          return res.status(400).json({ ok: false, error: 'Evolution API não configurada nas variáveis da Vercel.' });
+        }
+        // preserva a URL que já está lá; a do painel é só o palpite inicial
+        let atual = null;
+        try {
+          const r = await fetchComPrazo(`${e.EVO_URL}/webhook/find/${e.EVO_INST}`,
+            { headers: { apikey: e.EVO_KEY } }, 12000);
+          if (r.ok) atual = await r.json().catch(() => null);
+        } catch { /* segue com a URL informada */ }
+
+        const dados = atual?.webhook || atual || {};
+        const url = String(dados.url || body.url || '').trim();
+        if (!/^https?:\/\//.test(url)) {
+          return res.status(400).json({ ok: false, error: 'URL do webhook inválida.' });
+        }
+
+        // mantém o que já estava marcado e garante os três que o MoviTalk usa
+        const EVENTOS = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE'];
+        const eventos = Array.from(new Set([
+          ...(dados.events || []).map(x => String(x).toUpperCase()),
+          ...EVENTOS,
+        ]));
+
+        const headers = { ...(dados.headers || {}) };
+        if (e.WH_SECRET) headers['x-atend-secret'] = e.WH_SECRET;
+
+        const corpo = {
+          enabled: true, url, headers,
+          webhookByEvents: false, byEvents: false,
+          webhookBase64: false, base64: false,
+          events: eventos,
+        };
+        // a Evolution mudou o formato entre versões: o corpo aninhado é o atual,
+        // o plano é o antigo. Tenta os dois antes de dizer que falhou.
+        let erro = null;
+        for (const payload of [{ webhook: corpo }, corpo]) {
+          try {
+            const r = await fetchComPrazo(`${e.EVO_URL}/webhook/set/${e.EVO_INST}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+              body: JSON.stringify(payload),
+            }, 15000);
+            if (r.ok) { erro = null; break; }
+            erro = `Evolution ${r.status}: ${(await r.text()).slice(0, 200)}`;
+          } catch (err) {
+            erro = String(err.message).slice(0, 200);
+          }
+        }
+        if (erro) return res.status(200).json({ ok: false, error: erro });
+        return res.status(200).json({ ok: true, url, eventos });
       }
 
       case 'whatsapp.desconectar': {

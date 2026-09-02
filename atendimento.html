@@ -623,6 +623,51 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   font-size:11.5px;line-height:1.55;background:var(--orange-soft);color:#92400e;
   border:1px solid #fcd9a4;border-radius:9px;padding:10px 12px;margin-bottom:14px;
 }
+/* modo do status: texto ou mídia */
+.st-tabs{display:flex;gap:6px;margin-bottom:12px;}
+.st-tab{
+  border:1px solid var(--line);background:var(--card);border-radius:9px;padding:7px 13px;
+  font-family:inherit;font-size:12.5px;font-weight:700;color:var(--text-mid);cursor:pointer;
+}
+.st-tab.on{background:var(--green-soft);border-color:var(--green);color:var(--green-deep);}
+.st-drop{
+  border:1.5px dashed var(--line);border-radius:11px;min-height:150px;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+  text-align:center;padding:16px;color:var(--text-low);font-size:12.5px;line-height:1.5;
+  background:#fbfcfd;transition:border-color .15s,background .15s;
+}
+.st-drop:hover,.st-drop.dragover{border-color:var(--green);background:var(--green-soft);}
+.st-drop b{color:var(--text);font-size:13px;}
+.st-drop .st-ico{font-size:26px;}
+.st-arq{
+  display:flex;align-items:center;gap:9px;margin-top:9px;border:1px solid var(--line);
+  border-radius:9px;padding:8px 10px;font-size:12px;background:var(--card);
+}
+.st-arq .st-nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;}
+.st-arq .st-tam{color:var(--text-low);font-size:11px;}
+.st-arq button{border:none;background:transparent;cursor:pointer;font-size:15px;color:var(--text-mid);font-family:inherit;}
+.st-preview.midia{padding:0;background:#0b141a !important;overflow:hidden;}
+.st-preview.midia img,.st-preview.midia video{
+  max-width:100%;max-height:260px;object-fit:contain;border-radius:14px;display:block;
+}
+.st-legenda{
+  width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-top:10px;
+  font-family:inherit;font-size:12.5px;outline:none;resize:vertical;min-height:52px;line-height:1.5;
+}
+.st-legenda:focus{border-color:var(--green);}
+.sh-thumb{
+  width:44px;height:44px;border-radius:8px;object-fit:cover;background:#e8edf1;flex-shrink:0;
+}
+.sh-tipo{
+  display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.4px;padding:1px 6px;
+  border-radius:5px;background:var(--green-soft);color:var(--green-deep);margin-right:5px;
+  vertical-align:middle;
+}
+/* no celular a coluna de 240px da prévia espremia o editor: empilha */
+@media (max-width:640px){
+  .st-wrap{grid-template-columns:1fr;}
+  .st-preview{min-height:150px;}
+}
 
 /* ---- figurinha e GIF ---- */
 .mb-sticker{max-width:140px;max-height:140px;background:none !important;border:none !important;}
@@ -2009,6 +2054,20 @@ const api = {
     if(atual && atual!==c){ atual.msgs = msgs; atual._msgsCarregadas = true; }
     c.msgs = msgs; c._msgsCarregadas = true;
     return msgs;
+  },
+  // Repergunta ao WhatsApp em que pé está cada mensagem enviada. O webhook de
+  // ACK pode não ter chegado (evento desligado na instância, function dormindo),
+  // e sem isto o risquinho fica parado em "enviado" para sempre.
+  async sincronizarStatus(c){
+    const id = c.id;
+    const j = await chamar('mensagens.sincronizar_status', { conversa_id:id });
+    const mudou = j.status || {};
+    if(!Object.keys(mudou).length) return 0;
+    // o objeto da conversa pode ter sido trocado pelo realtime durante o await
+    const atual = state.conversas.find(x=>x.id===id) || c;
+    (atual.msgs||[]).forEach(m=>{ if(mudou[m.id]) m.status = mudou[m.id]; });
+    if(atual!==c) (c.msgs||[]).forEach(m=>{ if(mudou[m.id]) m.status = mudou[m.id]; });
+    return Object.keys(mudou).length;
   },
   async buscarAvatar(c){
     const j = await chamar('conversa.avatar', { conversa_id:c.id });
@@ -4123,9 +4182,16 @@ async function ntNaoPerturbe(){
 
 /* ===== STATUS DO WHATSAPP DA EMPRESA ===== */
 const ST_CORES = ['#00A859','#0F766E','#1D4ED8','#7C3AED','#B91C1C','#B45309','#0F172A','#475569'];
+// vídeo não dá para comprimir no navegador: acima disso o corpo da requisição
+// estoura o limite da function e o envio falharia sem explicação
+const ST_VIDEO_MAX = 2.6 * 1024 * 1024;
 
 function abrirStatusWA(){
   let cor = ST_CORES[0], enviando = false;
+  let modo = 'text';            // 'text' | 'midia'
+  let arquivo = null;           // File escolhido no modo mídia
+  let previewURL = null;        // objectURL da prévia (liberado ao trocar/fechar)
+
   const ov = document.createElement('div');
   ov.className = 'tr-overlay';
   ov.innerHTML = `<div class="pn-modal" style="width:min(760px,100%);">
@@ -4135,14 +4201,32 @@ function abrirStatusWA(){
         <b>Quem vê:</b> só clientes que têm o número da empresa salvo na agenda.
         Não substitui o aviso direto na conversa — use como reforço.
       </div>
+      <div class="st-tabs">
+        <button class="st-tab on" data-modo="text">✏️ Texto</button>
+        <button class="st-tab" data-modo="midia">🖼️ Imagem ou vídeo</button>
+      </div>
       <div class="st-wrap">
         <div>
-          <textarea class="st-txt" id="stTexto" maxlength="700"
-            placeholder="Ex: Estamos com uma instabilidade na região do Centro. Nossa equipe já está atuando e a previsão de normalização é até as 18h."></textarea>
-          <div class="st-conta"><span id="stCount">0</span>/700</div>
-          <div style="font-size:11px;font-weight:700;color:var(--text-low);margin-top:10px;">COR DE FUNDO</div>
-          <div class="st-cores" id="stCores">
-            ${ST_CORES.map((c,i)=>`<div class="st-cor ${i===0?'on':''}" data-cor="${c}" style="background:${c}"></div>`).join('')}
+          <div id="stPainelTexto">
+            <textarea class="st-txt" id="stTexto" maxlength="700"
+              placeholder="Ex: Estamos com uma instabilidade na região do Centro. Nossa equipe já está atuando e a previsão de normalização é até as 18h."></textarea>
+            <div class="st-conta"><span id="stCount">0</span>/700</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-low);margin-top:10px;">COR DE FUNDO</div>
+            <div class="st-cores" id="stCores">
+              ${ST_CORES.map((c,i)=>`<div class="st-cor ${i===0?'on':''}" data-cor="${c}" style="background:${c}"></div>`).join('')}
+            </div>
+          </div>
+          <div id="stPainelMidia" style="display:none;">
+            <div class="st-drop" id="stDrop">
+              <span class="st-ico">🖼️</span>
+              <b>Escolher imagem ou vídeo</b>
+              <span>Clique aqui ou arraste o arquivo.<br>Imagem é reduzida automaticamente; vídeo até 2,6 MB.</span>
+            </div>
+            <input type="file" id="stFile" accept="image/*,video/*" style="display:none;">
+            <div id="stArqInfo"></div>
+            <textarea class="st-legenda" id="stLegenda" maxlength="700"
+              placeholder="Legenda (opcional) — aparece embaixo da imagem no status."></textarea>
+            <div class="st-conta"><span id="stCountLeg">0</span>/700</div>
           </div>
         </div>
         <div>
@@ -4158,20 +4242,95 @@ function abrirStatusWA(){
     </div>
   </div>`;
   document.body.appendChild(ov);
-  const fechar=()=>ov.remove();
+
+  const soltarPreview=()=>{ if(previewURL){ URL.revokeObjectURL(previewURL); previewURL=null; } };
+  const fechar=()=>{ soltarPreview(); ov.remove(); };
   ov.onclick=e=>{ if(e.target===ov) fechar(); };
   ov.querySelector('#stX').onclick=fechar;
 
   const txt=ov.querySelector('#stTexto'), prev=ov.querySelector('#stPrev'), cont=ov.querySelector('#stCount');
+  const leg=ov.querySelector('#stLegenda'), contLeg=ov.querySelector('#stCountLeg');
+  const painelTexto=ov.querySelector('#stPainelTexto'), painelMidia=ov.querySelector('#stPainelMidia');
+  const arqInfo=ov.querySelector('#stArqInfo'), file=ov.querySelector('#stFile'), drop=ov.querySelector('#stDrop');
+
+  const ehVideo=()=>!!arquivo && /^video\//.test(arquivo.type);
+  const fmtTam=b=> b>1048576 ? (b/1048576).toFixed(1)+' MB' : Math.round(b/1024)+' KB';
+
   const pintar=()=>{
-    prev.textContent = txt.value.trim() || 'Digite o texto…';
-    prev.style.background = cor;
-    prev.style.opacity = txt.value.trim() ? '1' : '.55';
+    contLeg.textContent = leg.value.length;
     cont.textContent = txt.value.length;
-    // texto curto fica maior, como no WhatsApp
-    prev.style.fontSize = txt.value.length<60?'19px':txt.value.length<180?'15px':'13px';
+    if(modo==='text'){
+      prev.className='st-preview';
+      prev.textContent = txt.value.trim() || 'Digite o texto…';
+      prev.style.background = cor;
+      prev.style.opacity = txt.value.trim() ? '1' : '.55';
+      // texto curto fica maior, como no WhatsApp
+      prev.style.fontSize = txt.value.length<60?'19px':txt.value.length<180?'15px':'13px';
+      return;
+    }
+    prev.style.opacity='1'; prev.style.fontSize='';
+    if(!arquivo){
+      prev.className='st-preview';
+      prev.style.background='#0b141a';
+      prev.textContent='Escolha uma imagem ou vídeo…';
+      prev.style.opacity='.55';
+      return;
+    }
+    prev.className='st-preview midia';
+    prev.innerHTML = ehVideo()
+      ? `<video src="${previewURL}" controls playsinline muted></video>`
+      : `<img src="${previewURL}" alt="Prévia do status">`;
   };
-  txt.oninput=pintar; pintar(); txt.focus();
+
+  const mostrarArquivo=()=>{
+    if(!arquivo){ arqInfo.innerHTML=''; return; }
+    arqInfo.innerHTML=`<div class="st-arq">
+      <span>${ehVideo()?'🎬':'🖼️'}</span>
+      <span class="st-nome">${esc(arquivo.name)}</span>
+      <span class="st-tam">${fmtTam(arquivo.size)}</span>
+      <button id="stArqX" title="Remover arquivo">✕</button>
+    </div>`;
+    arqInfo.querySelector('#stArqX').onclick=()=>{ soltarPreview(); arquivo=null; file.value=''; mostrarArquivo(); pintar(); };
+  };
+
+  const escolher=async(f)=>{
+    if(!f) return;
+    if(!/^(image|video)\//.test(f.type)){ toast('O status aceita só imagem ou vídeo.'); return; }
+    let final=f;
+    if(/^image\//.test(f.type)){
+      final = await comprimirImagem(f);
+      // comprimirImagem devolve o original quando não consegue encolher (GIF,
+      // webp, foto já otimizada): sem esta trava o envio só falharia no servidor
+      if(final.size > ANEXO_MAX_BYTES){
+        toast('Imagem grande demais mesmo depois de reduzir. Salve em JPG e tente de novo.');
+        return;
+      }
+    } else if(f.size > ST_VIDEO_MAX){
+      toast('Vídeo acima de 2,6 MB. Reduza a duração ou a qualidade antes de publicar.');
+      return;
+    }
+    soltarPreview();
+    arquivo = final;
+    previewURL = URL.createObjectURL(final);
+    mostrarArquivo(); pintar();
+  };
+
+  file.onchange=()=>escolher(file.files && file.files[0]);
+  drop.onclick=()=>file.click();
+  drop.ondragover=e=>{ e.preventDefault(); drop.classList.add('dragover'); };
+  drop.ondragleave=()=>drop.classList.remove('dragover');
+  drop.ondrop=e=>{ e.preventDefault(); drop.classList.remove('dragover'); escolher(e.dataTransfer.files && e.dataTransfer.files[0]); };
+
+  txt.oninput=pintar; leg.oninput=pintar; pintar(); txt.focus();
+
+  ov.querySelectorAll('[data-modo]').forEach(b=>b.onclick=()=>{
+    modo=b.dataset.modo;
+    ov.querySelectorAll('.st-tab').forEach(x=>x.classList.toggle('on', x===b));
+    painelTexto.style.display = modo==='text' ? '' : 'none';
+    painelMidia.style.display = modo==='midia' ? '' : 'none';
+    pintar();
+    if(modo==='text') txt.focus();
+  });
 
   ov.querySelectorAll('[data-cor]').forEach(el=>el.onclick=()=>{
     cor=el.dataset.cor;
@@ -4183,18 +4342,30 @@ function abrirStatusWA(){
   const carregarHist=()=>chamar('status.listar',{})
     .then(j=>{
       const st=j.status||[];
-      hist.innerHTML = st.length ? st.map(x=>`
+      hist.innerHTML = st.length ? st.map(x=>{
+        const midia = x.tipo && x.tipo!=='text';
+        const rotuloTipo = x.tipo==='image' ? 'IMAGEM' : x.tipo==='video' ? 'VÍDEO' : '';
+        // imagem/vídeo guardam o arquivo, não texto: o que se lê é a legenda
+        const corpo = midia ? (x.legenda || '(sem legenda)') : String(x.conteudo||'');
+        const thumb = midia && x.midia_link
+          ? (x.tipo==='image'
+              ? `<img class="sh-thumb" src="${esc(x.midia_link)}" alt="">`
+              : `<video class="sh-thumb" src="${esc(x.midia_link)}" muted playsinline></video>`)
+          : '';
+        return `
         <div class="st-item ${x.erro?'falhou':''}">
           <div style="display:flex;align-items:flex-start;gap:9px;">
+            ${thumb}
             <div style="flex:1;min-width:0;">
-              <div class="sh-t">${esc(String(x.conteudo).slice(0,200))}</div>
+              <div class="sh-t">${rotuloTipo?`<span class="sh-tipo">${rotuloTipo}</span>`:''}${esc(corpo.slice(0,200))}</div>
               <div class="sh-m">${esc(new Date(x.publicado_em).toLocaleString('pt-BR'))}
                 · ${x.destino==='todos'?'todos os contatos':'lista'}
                 ${x.erro?`· <b style="color:var(--red)">falhou: ${esc(x.erro.slice(0,80))}</b>`:''}</div>
             </div>
             <button class="fin-copy" data-delst="${x.id}" title="Excluir status">🗑 excluir</button>
           </div>
-        </div>`).join('') : '<div style="font-size:12px;color:var(--text-low)">Nenhum status publicado ainda.</div>';
+        </div>`;
+      }).join('') : '<div style="font-size:12px;color:var(--text-low)">Nenhum status publicado ainda.</div>';
       hist.querySelectorAll('[data-delst]').forEach(b=>b.onclick=async()=>{
         if(!confirm('Excluir este status?\n\nSe já passou de 24h ou o WhatsApp não permitir, ele sai apenas do histórico daqui.')) return;
         b.disabled=true; b.textContent='excluindo…';
@@ -4210,14 +4381,30 @@ function abrirStatusWA(){
 
   const btn=ov.querySelector('#stEnviar');
   btn.onclick=async()=>{
-    const v=txt.value.trim();
-    if(!v){ toast('Escreva o texto do status'); txt.focus(); return; }
     if(enviando) return;
+    let dados;
+    if(modo==='text'){
+      const v=txt.value.trim();
+      if(!v){ toast('Escreva o texto do status'); txt.focus(); return; }
+      dados={ tipo:'text', conteudo:v, cor_fundo:cor, fonte:1 };
+    } else {
+      if(!arquivo){ toast('Escolha a imagem ou o vídeo do status'); return; }
+      dados={ tipo: ehVideo()?'video':'image', legenda: leg.value.trim() };
+    }
     if(!confirm('Publicar este status no WhatsApp da empresa?')) return;
     enviando=true; btn.disabled=true; btn.textContent='Publicando…';
     try{
-      await chamar('status.publicar',{ tipo:'text', conteudo:v, cor_fundo:cor, fonte:1 }, 30000);
-      toast('Status publicado'); txt.value=''; pintar();
+      if(modo==='midia'){
+        // o arquivo só é lido agora: converter antes travaria a prévia à toa
+        btn.textContent='Enviando arquivo…';
+        dados.base64 = await lerArquivo(arquivo);
+        dados.mimetype = arquivo.type || (ehVideo()?'video/mp4':'image/jpeg');
+      }
+      await chamar('status.publicar', dados, 90000);
+      toast('Status publicado');
+      if(modo==='text'){ txt.value=''; }
+      else { soltarPreview(); arquivo=null; file.value=''; leg.value=''; mostrarArquivo(); }
+      pintar();
     }catch(err){
       toast('Falha: '+err.message);
     }finally{
@@ -4291,14 +4478,26 @@ function pintarBarraAnexo(c, arq, estado){
 }
 
 function openModal(id){
+  // openModal também é o "repintar": só reinicia o relógio dos vistos quando a
+  // conversa de fato muda, senão cada render adiaria a conferência para sempre
+  const trocouConversa = modalId!==id;
   modalId=id;
   const c=state.conversas.find(x=>x.id===id);
   if(!c) return;
+  if(trocouConversa) ligarVistos();
   // primeira abertura: busca a thread no servidor e reabre já preenchida
   if(!c._msgsCarregadas){
     c._msgsCarregadas=true;
     api.carregarMensagens(c)
-      .then(()=>{ if(modalId===id) openModal(id); })
+      .then(()=>{
+        if(modalId===id) openModal(id);
+        // em segundo plano: a thread já apareceu, os risquinhos se acertam logo
+        // depois. Falha aqui é o WhatsApp fora do ar, não erro do atendente —
+        // por isso o catch é próprio e silencioso.
+        api.sincronizarStatus(c)
+          .then(n=>{ if(n && modalId===id) openModal(id); })
+          .catch(()=>{});
+      })
       .catch(err=>{ c._msgsCarregadas=false; toast('Falha ao carregar mensagens: '+err.message); });
   }
   // trocou de conversa com gravação em curso: descarta
@@ -4944,10 +5143,31 @@ document.addEventListener('keydown', e=>{
   }
 });
 
+/* Conferência periódica dos vistos enquanto a conversa está aberta.
+   O ACK do WhatsApp chega por webhook (`messages.update`) e o realtime pinta na
+   hora — mas se esse evento estiver desligado na instância, ou o webhook falhar,
+   os risquinhos congelam. Este relógio pergunta direto à Evolution de tempos em
+   tempos, só com a conversa aberta e a aba em primeiro plano. */
+let _vistosTimer = null;
+function pararVistos(){ if(_vistosTimer){ clearInterval(_vistosTimer); _vistosTimer=null; } }
+function ligarVistos(){
+  pararVistos();
+  _vistosTimer = setInterval(async()=>{
+    if(document.hidden || !modalId) return;
+    const c = state.conversas.find(x=>x.id===modalId);
+    if(!c || !c.msgs || !c.msgs.some(m=>m.t!=='in' && m.t!=='sys' && m.status!=='lido' && m.status!=='erro')) return;
+    try{
+      const n = await api.sincronizarStatus(c);
+      if(n && modalId===c.id) openModal(c.id);
+    }catch{ /* WhatsApp fora: tenta de novo no próximo ciclo */ }
+  }, 30000);
+}
+
 function closeModal(){
   // gravação aberta não pode sobreviver à troca de conversa: o áudio iria
   // para o cliente errado
   if(GRAV.rec || GRAV.blob) gravCancelar();
+  pararVistos();
   $('#overlay').classList.remove('open');
   btFechar();
   $('#modal').classList.remove('aberto');
@@ -5099,9 +5319,11 @@ async function atualizarStatusWA(){
     if(j.status==='open'){
       body.innerHTML=`<div class="wa-num">✅ WhatsApp conectado</div>
         <div class="wa-sub">O MoviTalk já está recebendo e enviando mensagens por este número.</div>
-        <div class="wa-actions"><button class="fbtn" id="btnDesconWA">Desconectar este número</button></div>`;
+        <div class="wa-actions"><button class="fbtn" id="btnDesconWA">Desconectar este número</button></div>
+        <div id="waVistos" style="margin-top:18px;"></div>`;
       $('#btnDesconWA').onclick=desconectarWA;
       pararPollWA();
+      verificarVistos();
     } else {
       // desconectada ou conectando: mostra o QR e fica de olho até conectar
       await mostrarQR();
@@ -5168,6 +5390,50 @@ async function desconectarWA(){
   if(!confirm('Desconectar este número do MoviTalk? Será preciso escanear o QR Code de novo depois.')) return;
   try{ await chamar('whatsapp.desconectar',{}); await atualizarStatusWA(); }
   catch(err){ toast('Falha: '+err.message); }
+}
+
+/* ---- Vistos (entregue / lido) ----------------------------------------------
+   Os risquinhos dependem do evento MESSAGES_UPDATE da Evolution chegar aqui.
+   Esse evento é marcado no webhook da instância, fora do app — e quando ele
+   está desligado a mensagem sai normalmente, só que o risquinho nunca passa de
+   "enviado". Como não existe erro nenhum na tela, ficava impossível descobrir.
+   Este bloco mostra o estado real e conserta com um clique. */
+async function verificarVistos(){
+  const el=$('#waVistos'); if(!el) return;
+  el.innerHTML=`<div class="wa-sub">Verificando as confirmações de entrega…</div>`;
+  let j;
+  try{ j=await chamar('whatsapp.webhook',{}); }
+  catch(err){ el.innerHTML=`<div class="wa-sub" style="color:var(--red)">${esc(err.message)}</div>`; return; }
+
+  const ok = j.ativo && j.recebe_vistos;
+  const linha=(bom,txt)=>`<div style="font-size:12px;line-height:1.7;color:var(--text-mid)">
+    <b style="color:${bom?'var(--green-deep)':'var(--red)'}">${bom?'✓':'✕'}</b> ${txt}</div>`;
+
+  el.innerHTML=`
+    <div style="font-size:11px;font-weight:700;color:var(--text-low);margin-bottom:7px;">
+      VISTOS DAS MENSAGENS (ENTREGUE / LIDO)</div>
+    <div style="border:1px solid ${ok?'var(--line)':'#fecaca'};background:${ok?'#fbfcfd':'#fff6f6'};
+                border-radius:10px;padding:12px 14px;text-align:left;">
+      ${linha(j.ativo, j.ativo?'Webhook ativo na Evolution.':'Webhook desligado ou sem URL na instância.')}
+      ${linha(j.recebe_mensagens, 'Evento <code>MESSAGES_UPSERT</code> (mensagens que chegam).')}
+      ${linha(j.recebe_vistos, 'Evento <code>MESSAGES_UPDATE</code> — é ele que traz o ✓✓ de entregue e lido.')}
+      ${j.url?`<div style="font-size:10.5px;color:var(--text-low);margin-top:7px;word-break:break-all;">${esc(j.url)}</div>`:''}
+      ${ok?'':`<button class="btn primary" id="btnVistos" style="margin-top:11px;">Ativar as confirmações agora</button>`}
+      ${ok?'':`<div style="font-size:11px;color:var(--text-low);margin-top:8px;line-height:1.6;">
+        Enquanto isso, o painel consulta o WhatsApp sozinho ao abrir cada conversa —
+        os risquinhos aparecem, só com alguns segundos de atraso.</div>`}
+    </div>`;
+
+  const b=$('#btnVistos');
+  if(b) b.onclick=async()=>{
+    if(!confirm('Isto reconfigura o webhook desta instância na Evolution API para também mandar as confirmações de entrega e leitura.\n\nOs eventos que já estavam marcados continuam marcados. Confirmar?')) return;
+    b.disabled=true; b.textContent='Ativando…';
+    try{
+      await chamar('whatsapp.webhook_salvar',{ url: location.origin+'/api/atendimento' });
+      toast('Confirmações ativadas');
+    }catch(err){ toast('Falha: '+err.message); }
+    verificarVistos();
+  };
 }
 
 function renderChatInterno(a){
