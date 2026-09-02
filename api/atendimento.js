@@ -1954,21 +1954,39 @@ async function waFotoPerfil(e, fone) {
 // O formato da resposta mudou entre as versões da Evolution, então varremos o
 // que vier atrás de pares (key.id, status) em vez de apostar num caminho fixo.
 async function waStatusDoChat(e, fone, limite = 60) {
-  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return [];
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return { achados: [], erro: 'Evolution não configurada.' };
   const jid = `${normalizarFone(fone)}@s.whatsapp.net`;
-  let dados = null;
-  try {
-    const r = await fetchComPrazo(`${e.EVO_URL}/chat/findMessages/${e.EVO_INST}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
-      body: JSON.stringify({ where: { key: { remoteJid: jid } }, page: 1, offset: limite }),
-    }, 15000);
-    if (!r.ok) return [];
-    dados = await r.json().catch(() => null);
-  } catch (err) {
-    console.error('[atendimento] findMessages:', err.message);
-    return [];
+  let dados = null, erro = null;
+
+  // A rota mudou de assinatura entre as versões da Evolution. Tentamos as duas
+  // formas conhecidas e guardamos o motivo da falha: a primeira versão disto
+  // devolvia lista vazia em silêncio, então quando não funcionava não havia
+  // absolutamente nada para investigar.
+  const tentativas = [
+    { where: { key: { remoteJid: jid } }, page: 1, offset: limite },
+    { where: { remoteJid: jid }, limit: limite },
+  ];
+  for (const corpo of tentativas) {
+    try {
+      const r = await fetchComPrazo(`${e.EVO_URL}/chat/findMessages/${e.EVO_INST}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+        body: JSON.stringify(corpo),
+      }, 15000);
+      if (!r.ok) {
+        erro = `Evolution ${r.status}: ${(await r.text()).slice(0, 160)}`;
+        console.error('[atendimento] findMessages', erro);
+        continue;
+      }
+      dados = await r.json().catch(() => null);
+      erro = null;
+      break;
+    } catch (err) {
+      erro = String(err.message).slice(0, 160);
+      console.error('[atendimento] findMessages:', erro);
+    }
   }
+  if (!dados) return { achados: [], erro: erro || 'A Evolution não devolveu mensagens.' };
 
   const achados = [];
   const visto = new Set();
@@ -1982,7 +2000,13 @@ async function waStatusDoChat(e, fone, limite = 60) {
     for (const v of Object.values(o)) varrer(v, prof + 1);
   };
   varrer(dados);
-  return achados;
+  // Nesta versão da Evolution as mensagens podem vir sem o campo de status —
+  // aí o histórico não serve para nada e o webhook é o único caminho. Dizer
+  // isso é melhor do que devolver "0 atualizados" e parecer que está tudo bem.
+  return {
+    achados,
+    erro: achados.length ? null : 'Esta Evolution devolveu as mensagens sem o status de entrega.',
+  };
 }
 
 // ============================================================================
@@ -4445,8 +4469,10 @@ export default async function handler(req, res) {
           return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
         }
 
-        const achados = await waStatusDoChat(e, c.contato_fone);
-        if (!achados.length) return res.status(200).json({ ok: true, atualizados: 0, consultados: 0 });
+        const { achados, erro: erroEvo } = await waStatusDoChat(e, c.contato_fone);
+        if (!achados.length) {
+          return res.status(200).json({ ok: true, atualizados: 0, consultados: 0, aviso: erroEvo });
+        }
 
         // só mexe no que é desta conversa e ainda não está no status final
         const nossas = await sb(e,

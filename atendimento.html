@@ -693,6 +693,14 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 @keyframes waPisca{0%,100%{opacity:1}50%{opacity:.72}}
 .wa-off-dot{width:8px;height:8px;border-radius:50%;background:#fff;}
+/* aviso de vistos desligados: laranja, porque é ajuste pendente e não queda —
+   o vermelho do .wa-off já significa "nada sai daqui" */
+.vt-off{
+  display:inline-flex;align-items:center;gap:7px;background:var(--orange,#f59e0b);color:#fff;
+  font-size:11.5px;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;
+  white-space:nowrap;flex-shrink:0;
+}
+.vt-off:hover{filter:brightness(.94);}
 .emo-pop{
   position:absolute;bottom:calc(100% + 8px);left:0;width:min(346px,88vw);
   background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-lg);
@@ -1821,6 +1829,7 @@ select.transf{
         Filtros
       </button>
       <span id="waAviso"></span>
+      <span id="vistoAviso"></span>
       <button class="btn" id="btnSom" title="Alerta sonoro de mensagem nova"></button>
       <button class="btn" id="btnStatus" title="Publicar status no WhatsApp da empresa">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="4 2.4"/><circle cx="12" cy="12" r="3.4"/></svg>
@@ -2511,6 +2520,9 @@ async function entrar(session){
     }
     renderAll();
     ligarRealtime();
+    // em segundo plano: se o WhatsApp não estiver mandando os vistos, o aviso
+    // com o conserto aparece no cabeçalho. Não bloqueia a entrada no painel.
+    checarConfigVistos().catch(()=>{});
   }catch(e){
     $('#carregando').classList.remove('show');
     $('#tela-login').style.display='';
@@ -6033,6 +6045,43 @@ function renderAvisoWA(){
   };
 }
 
+/* Aviso de vistos desligados, no cabeçalho.
+   O conserto morava só em Configurações → Integrações e ninguém o encontrava:
+   quem sente o problema está na conversa, não nas configurações. Aqui o próprio
+   MoviTalk avisa e conserta em um clique. Só aparece para admin (só admin pode
+   reconfigurar) e só quando o evento realmente está faltando. */
+let _vistosCfg = null;        // null = ainda não verificado nesta sessão
+let _vistosChecando = false;
+
+async function checarConfigVistos(forcar){
+  if(!USUARIO || !USUARIO.admin) return null;
+  if(_vistosCfg && !forcar) return _vistosCfg;
+  if(_vistosChecando) return _vistosCfg;
+  _vistosChecando = true;
+  try{ _vistosCfg = await chamar('whatsapp.webhook',{}); }
+  catch{ _vistosCfg = null; }          // Evolution fora: não enche o cabeçalho de erro
+  finally{ _vistosChecando = false; }
+  renderAvisoVistos();
+  return _vistosCfg;
+}
+
+function renderAvisoVistos(){
+  const el=$('#vistoAviso'); if(!el) return;
+  const c=_vistosCfg;
+  // sem dado ainda, ou já está tudo certo: nada no cabeçalho
+  if(!c || !c.ok || (c.ativo && c.recebe_vistos)){ el.innerHTML=''; return; }
+  el.innerHTML=`<span class="vt-off" title="O WhatsApp não está avisando quando a mensagem chega e quando o cliente lê. Clique para ativar.">
+    ⚠ Vistos desligados — ativar</span>`;
+  el.querySelector('.vt-off').onclick=async()=>{
+    if(!confirm('Ativar as confirmações de entrega e leitura?\n\nIsto marca o evento MESSAGES_UPDATE no webhook desta instância da Evolution. Os eventos que já estavam marcados continuam marcados, e a URL atual é preservada.')) return;
+    try{
+      await chamar('whatsapp.webhook_salvar',{ url: location.origin+'/api/atendimento' });
+      toast('Vistos ativados — os risquinhos começam a andar nas próximas mensagens');
+    }catch(err){ toast('Falha ao ativar: '+err.message); }
+    await checarConfigVistos(true);
+  };
+}
+
 function renderSomBotao(){
   const b=$('#btnSom'); if(!b) return;
   const bloqueado = SOM.ligado && !SOM.liberado;
@@ -6048,7 +6097,7 @@ function renderSomBotao(){
           : 'Alerta sonoro ligado — clique com o botão direito para ajustar';
 }
 
-function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoWA(); renderSomBotao(); atualizarTituloAlerta(); }
+function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoWA(); renderAvisoVistos(); renderSomBotao(); atualizarTituloAlerta(); }
 
 /* painel de ajuste: tipo de toque, volume e teste */
 function abrirAjusteSom(){
