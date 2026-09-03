@@ -4542,7 +4542,7 @@ function pintarBarraAnexo(c, arq, estado){
 let secoesAbertas = new Set();
 
 function prepararSecoesCliente(zerar){
-  if(zerar) secoesAbertas = new Set();
+  if(zerar){ secoesAbertas = new Set(); fichaAbertaPeloNome = false; }
   const painel = $('#modal') && $('#modal').querySelector('.m-side');
   if(!painel) return;
   painel.querySelectorAll('.ms-sec').forEach((sec, i) => {
@@ -4562,18 +4562,44 @@ function prepararSecoesCliente(zerar){
   });
 }
 
-/* Clique no nome do cliente: mostra o cadastro. No desktop garante o painel
-   aberto e destaca o bloco; no celular o painel é uma aba separada. */
+/* Clique no nome do cliente: ALTERNA o cadastro — mostra no primeiro clique,
+   retrai no segundo. O fechamento desfaz exatamente o que a abertura fez: se
+   foi o nome que abriu o painel lateral, é o nome que o recolhe de volta; se o
+   atendente já tinha o painel aberto por conta dele, o painel fica onde estava
+   e só o bloco do cadastro fecha. No celular a ficha é uma aba, então alterna
+   entre "Cliente" e "Conversa". */
+let fichaAbertaPeloNome = false;
+
 function abrirCadastroCliente(){
   const modal = $('#modal'); if(!modal) return;
-  if(window.innerWidth <= 1020){
-    const aba = modal.querySelector('.m-aba[data-aba="cliente"]');
-    if(aba) aba.click();
-  } else if(fichaRecolhida){
-    alternarFicha(false);
-  }
   const sec = modal.querySelector('.m-side .ms-sec.recolhivel');
   if(!sec) return;
+
+  const noCelular = window.innerWidth <= 1020;
+  const abaCliente = modal.querySelector('.m-aba[data-aba="cliente"]');
+  const vendoFicha = noCelular
+    ? !!(abaCliente && abaCliente.classList.contains('on'))
+    : !fichaRecolhida;
+  const jaAberto = vendoFicha && !sec.classList.contains('recolhida');
+
+  if(jaAberto){
+    secoesAbertas.delete(sec.dataset.sec);
+    sec.classList.add('recolhida');
+    if(noCelular){
+      const abaChat = modal.querySelector('.m-aba[data-aba="chat"]');
+      if(abaChat) abaChat.click();
+    } else if(fichaAbertaPeloNome){
+      alternarFicha(true);                 // zera fichaAbertaPeloNome junto
+    }
+    return;
+  }
+
+  if(noCelular){
+    if(abaCliente) abaCliente.click();
+  } else if(fichaRecolhida){
+    alternarFicha(false);
+    fichaAbertaPeloNome = true;            // depois: alternarFicha limpa a marca
+  }
   secoesAbertas.add(sec.dataset.sec);
   sec.classList.remove('recolhida');
   sec.classList.add('destaque');
@@ -5291,7 +5317,13 @@ function aplicarFicha(){
   const abrir=$('#fichaAbrir');
   if(abrir) abrir.style.display = fichaRecolhida ? 'flex' : 'none';
 }
-function alternarFicha(v){ fichaRecolhida = v; aplicarFicha(); }
+function alternarFicha(v){
+  fichaRecolhida = v;
+  // o atendente mexeu no painel por conta própria: o nome não é mais o dono
+  // dessa decisão e não deve recolher o painel dele no próximo clique
+  fichaAbertaPeloNome = false;
+  aplicarFicha();
+}
 
 // Ctrl+F com conversa aberta busca DENTRO dela, não na página
 document.addEventListener('keydown', e=>{
