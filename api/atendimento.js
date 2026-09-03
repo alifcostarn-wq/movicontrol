@@ -512,13 +512,31 @@ function fmtHoraBR(d) { return d ? `${pad2(d.getHours())}:${pad2(d.getMinutes())
 function fmtDataHoraBR(d) { return d ? `${fmtDataBR(d)} ${fmtHoraBR(d)}` : null; }
 
 // ---- FINANCEIRO -----------------------------------------------------------
+// Lê as faturas de um cliente no IXC.
+//
+// O IXC devolve no máximo `rp` registros. Todas as consultas daqui pediam em
+// ordem CRESCENTE — então, para um cliente antigo com mais faturas que o
+// limite, o corte caía nas mais NOVAS. E a fatura em aberto é sempre uma das
+// mais novas. O resultado era o pior possível: "nenhuma fatura em aberto"
+// justamente para os clientes de casa mais antigos (uma cliente com 108
+// faturas e um boleto aberto aparecia como em dia, no painel e no bot).
+//
+// Agora pedimos as mais RECENTES (desc) e reordenamos aqui para crescente,
+// que é a ordem que o resto do código espera: a 2ª via manda a fatura mais
+// antiga primeiro, a cobrança começa pela mais atrasada.
+async function faturasDoCliente(e, ixcId, rp = 100) {
+  const d = await ixc(e, 'fn_areceber', {
+    qtype: 'fn_areceber.id_cliente', query: String(ixcId), oper: '=', rp: String(rp),
+    sortname: 'fn_areceber.data_vencimento', sortorder: 'desc',
+  });
+  const regs = d.registros || [];
+  const emMs = f => { const v = parseDataIXC(f.data_vencimento); return v ? v.getTime() : 0; };
+  return regs.slice().sort((a, b) => emMs(a) - emMs(b));
+}
+
 // R = recebido/pago, C = cancelado. Qualquer outro status está em aberto.
 async function financeiroAoVivo(e, ixcId) {
-  const d = await ixc(e, 'fn_areceber', {
-    qtype: 'fn_areceber.id_cliente', query: String(ixcId), oper: '=', rp: '100',
-    sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
-  });
-  const todas = d.registros || [];
+  const todas = await faturasDoCliente(e, ixcId, 100);
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
 
   const abertas = todas.filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
@@ -1203,12 +1221,9 @@ const CONECTORES = {
   async enviar_fatura({ e, conversa, vars, texto }) {
     const id = vars.cliente_id || conversa.cliente_ixc_id;
     if (!id) return { resultado: 'sem_cliente' };
-    const d = await ixc(e, 'fn_areceber', {
-      qtype: 'fn_areceber.id_cliente', query: String(id), oper: '=', rp: '50',
-      sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
-    });
     // R=recebido/pago, C=cancelado — qualquer outro está em aberto
-    const abertas = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
+    const abertas = (await faturasDoCliente(e, id, 100))
+      .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
     if (!abertas.length) return { resultado: 'sem_debito', anexoTexto: 'Não encontrei faturas em aberto. Está tudo em dia! ✅' };
 
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
@@ -1319,11 +1334,8 @@ const CONECTORES = {
     if (!id) return { resultado: 'sem_cliente' };
     let faturaId = vars.fatura_id;
     if (!faturaId) {
-      const d = await ixc(e, 'fn_areceber', {
-        qtype: 'fn_areceber.id_cliente', query: String(id), oper: '=', rp: '50',
-        sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
-      });
-      const ab = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
+      const ab = (await faturasDoCliente(e, id, 100))
+        .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
       if (!ab.length) return { resultado: 'sem_debito', anexoTexto: 'Você não tem faturas em aberto. ✅' };
       faturaId = ab[0].id;
     }
@@ -2829,11 +2841,10 @@ async function cobrancaAutomatica(e) {
     // fatura lida do IXC AGORA: quem pagou hoje de manhã não pode ser cobrado
     let abertas = [];
     try {
-      const d = await ixc(e, 'fn_areceber', {
-        qtype: 'fn_areceber.id_cliente', query: chave, oper: '=', rp: '50',
-        sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
-      });
-      abertas = (d.registros || []).filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
+      // rp menor aqui de propósito: isto roda para a base inteira a cada ciclo,
+      // e 50 faturas recentes já cobrem qualquer dívida cobrável
+      abertas = (await faturasDoCliente(e, chave, 50))
+        .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
     } catch (err) { continue; }
 
     for (const f of abertas) {
@@ -3652,12 +3663,8 @@ export default async function handler(req, res) {
         if (!await podeVerCliente(e, user, ixcId)) {
           return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
         }
-        const d = await ixc(e, 'fn_areceber', {
-          qtype: 'fn_areceber.id_cliente', query: ixcId, oper: '=', rp: '100',
-          sortname: 'fn_areceber.data_vencimento', sortorder: 'asc',
-        });
         const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-        const itens = (d.registros || [])
+        const itens = (await faturasDoCliente(e, ixcId, 100))
           .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()))
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
