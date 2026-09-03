@@ -5748,6 +5748,11 @@ function renderChatInterno(a){
     const dm = tipo==='dm' ? (EQUIPE.find(p=>p.nome===nome)||{}).id : null;
     try{
       await chamar('chat.zumbido', { canal: tipo==='canal'?nome:null, dm_para: dm });
+      // toca do meu lado também, como o MSN fazia: é a confirmação de que o
+      // zumbido saiu. Só DEPOIS da resposta do servidor — se o cooldown
+      // recusar, o som seria uma confirmação mentirosa.
+      // O realtime não duplica: zumbidoParaMim ignora o que eu mesmo mandei.
+      tocarZumbido();
       await recarregarChat();
       toast('Atenção chamada 🔔');
     }catch(err){ toast(err.message); }
