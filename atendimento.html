@@ -792,6 +792,28 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .etapa.destaque{grid-column:1/-1;flex-direction:row;justify-content:center;gap:8px;padding:8px;}
 .etapa.destaque .et-nome{order:1;font-size:11px;opacity:1;}
 .etapa.destaque .et-n{order:2;font-size:14px;}
+/* Tem gente esperando: pisca em vermelho até alguém assumir. Parado, um
+   contador vira paisagem — e esta é a única etapa em que o cliente está do
+   outro lado olhando o relógio. Vem DEPOIS do .novo-alerta de propósito:
+   se as duas condições baterem juntas, o alerta da fila é que tem de vencer. */
+.etapa.destaque.alerta{
+  border-color:var(--red);color:var(--red);
+  animation:filaAlerta 1.15s ease-in-out infinite;
+}
+.etapa.destaque.alerta .et-n{opacity:1;}
+@keyframes filaAlerta{
+  0%,100%{background:var(--card);box-shadow:0 0 0 0 rgba(239,68,68,0);}
+  50%{background:var(--red-soft);box-shadow:0 0 0 3px rgba(239,68,68,.34);}
+}
+/* selecionada, o fundo já é vermelho sólido: aí quem pisca é o anel em volta */
+.etapa.destaque.alerta.on{
+  color:#fff;border-color:transparent;
+  animation:filaAlertaAtiva 1.15s ease-in-out infinite;
+}
+@keyframes filaAlertaAtiva{
+  0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}
+  50%{box-shadow:0 0 0 4px rgba(239,68,68,.45);}
+}
 .regua-lista{
   padding:9px 14px;font-size:10.5px;font-weight:700;color:var(--text-low);
   text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);
@@ -1053,6 +1075,9 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .am-x:hover{color:var(--red);}
 @media(prefers-reduced-motion:reduce){
   .card-c.novo-alerta,.etapa.novo-alerta{animation:none;border-color:var(--green);}
+  /* sem piscar, mas o alerta não pode sumir: fica vermelho fixo */
+  .etapa.destaque.alerta{animation:none;background:var(--red-soft);border-color:var(--red);}
+  .etapa.destaque.alerta.on{animation:none;}
 }
 
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
@@ -2678,7 +2703,10 @@ function renderEtapas(){
   el.innerHTML = ordem.map(id=>{
     const k = COLS.find(x=>x.id===id); if(!k) return '';
     const cor = corEtapa(id), ativa = etapaAtual===id;
-    return `<div class="etapa ${ativa?'on':''} ${id==='fila'?'destaque':''} ${PISCA_ETAPA.has(id)&&!ativa?'novo-alerta':''}" data-e="${id}"
+    // a contagem usada aqui é a MESMA que aparece no número: se há filtro
+    // ativo, pisca de acordo com o que o atendente está enxergando
+    const alertaFila = id==='fila' && (cont[id]||0) > 0;
+    return `<div class="etapa ${ativa?'on':''} ${id==='fila'?'destaque':''} ${alertaFila?'alerta':''} ${PISCA_ETAPA.has(id)&&!ativa?'novo-alerta':''}" data-e="${id}"
        ${ativa?`style="background:${cor}"`:''} title="${esc(k.nome)}">
       <span class="et-n ${cont[id]?'':'zero'}">${cont[id]||0}</span>
       <span class="et-nome">${curto[id]||esc(k.nome)}</span>
