@@ -3178,6 +3178,11 @@ async function tratarCron(e) {
   try { campanhas = await processarCampanhas(e); }
   catch (err) { console.error('[campanhas]', err.message); campanhas = { erro: err.message }; }
 
+  // ---- chat interno: mensagens programadas e prazos de tarefa ----
+  let interno = null;
+  try { interno = await entregarChatAgendado(e); }
+  catch (err) { console.error('[chat interno]', err.message); interno = { erro: err.message }; }
+
   // pagamento confirmado: substitui o SMS que o IXC manda hoje pelo gateway
   // Gammu/Evotrix — ver o comentário grande na função para o porquê
   let pagamento = null;
@@ -3187,7 +3192,64 @@ async function tratarCron(e) {
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
-           cobranca: auto, campanhas, pagamento };
+           cobranca: auto, campanhas, pagamento, interno };
+}
+
+// ============================================================================
+// CHAT INTERNO — mensagens programadas e lembrete de prazo de tarefa
+// ----------------------------------------------------------------------------
+// Reivindica antes de postar, como o resto do ciclo: o mesmo gatilho roda em
+// vários containers ao mesmo tempo, e mensagem repetida no chat da equipe é
+// tão ruim quanto no do cliente.
+// ============================================================================
+async function entregarChatAgendado(e) {
+  const agora = new Date().toISOString();
+  let postadas = 0, lembretes = 0;
+
+  const pend = await sb(e,
+    `atend_chat_agendado?enviado_em=is.null&quando=lte.${agora}&select=*&order=quando.asc&limit=50`);
+  for (const ag of (pend || [])) {
+    // carimba primeiro: quem conseguir marcar é quem posta
+    const meu = await sb(e, `atend_chat_agendado?id=eq.${ag.id}&enviado_em=is.null`, {
+      method: 'PATCH', prefer: 'return=representation',
+      body: { enviado_em: new Date().toISOString() },
+    });
+    if (!meu || !meu.length) continue;
+    try {
+      await sb(e, 'atend_chat_interno', {
+        method: 'POST', prefer: 'return=minimal',
+        body: { canal: ag.canal, dm_para: ag.dm_para, autor_id: ag.autor_id, texto: ag.texto },
+      });
+      postadas++;
+    } catch (err) {
+      await sb(e, `atend_chat_agendado?id=eq.${ag.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { erro: String(err.message).slice(0, 250) },
+      }).catch(() => {});
+    }
+  }
+
+  // prazo vencido e tarefa ainda pendente: um lembrete, uma vez só
+  const vencidas = await sb(e,
+    `atend_tarefas?status=eq.pendente&avisado_em=is.null&prazo=not.is.null&prazo=lte.${agora}` +
+    `&select=id,titulo,responsavel_id,criado_por&limit=50`);
+  for (const t of (vencidas || [])) {
+    const meu = await sb(e, `atend_tarefas?id=eq.${t.id}&avisado_em=is.null`, {
+      method: 'PATCH', prefer: 'return=representation',
+      body: { avisado_em: new Date().toISOString() },
+    });
+    if (!meu || !meu.length) continue;
+    await sb(e, 'atend_chat_interno', {
+      method: 'POST', prefer: 'return=minimal',
+      body: {
+        canal: null, dm_para: t.responsavel_id, autor_id: t.criado_por || t.responsavel_id,
+        texto: `⏰ O prazo da tarefa "${t.titulo}" chegou e ela ainda está pendente.`,
+      },
+    }).catch(err => console.error('[tarefas] lembrete:', err.message));
+    lembretes++;
+  }
+
+  return { postadas, lembretes };
 }
 
 // ============================================================================
@@ -3526,6 +3588,116 @@ export default async function handler(req, res) {
           }
         }
         return res.status(200).json({ ok: true, canais, dm, equipe: perfis });
+      }
+
+      // ---- mensagem programada do chat interno ----
+      case 'chat.agendar': {
+        const texto = String(body.texto || '').trim();
+        const quando = String(body.quando || '').trim();
+        if (!texto) return res.status(400).json({ ok: false, error: 'texto obrigatório' });
+        if (!body.canal && !body.dm_para) return res.status(400).json({ ok: false, error: 'informe canal ou dm_para' });
+        const dt = new Date(quando);
+        if (isNaN(dt.getTime())) return res.status(400).json({ ok: false, error: 'Data e hora inválidas.' });
+        if (dt.getTime() < Date.now() - 60000) {
+          return res.status(400).json({ ok: false, error: 'Escolha um horário no futuro.' });
+        }
+        await sb(e, 'atend_chat_agendado', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            canal: body.canal || null, dm_para: body.dm_para || null,
+            autor_id: user.id, texto, quando: dt.toISOString(),
+          },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'chat.agendados': {
+        // só os meus: quem agendou é quem cancela
+        const itens = await sb(e,
+          `atend_chat_agendado?autor_id=eq.${user.id}&enviado_em=is.null&select=*&order=quando.asc&limit=100`);
+        return res.status(200).json({ ok: true, agendados: itens || [] });
+      }
+
+      case 'chat.agendado.cancelar': {
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        const ag = await sbUm(e, `atend_chat_agendado?id=eq.${id}&select=autor_id,enviado_em`);
+        if (!ag) return res.status(404).json({ ok: false, error: 'Agendamento não encontrado.' });
+        if (ag.enviado_em) return res.status(400).json({ ok: false, error: 'Esta mensagem já foi enviada.' });
+        if (ag.autor_id !== user.id && !user.admin) {
+          return res.status(403).json({ ok: false, error: 'Só quem agendou pode cancelar.' });
+        }
+        await sb(e, `atend_chat_agendado?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true });
+      }
+
+      // ---- tarefas da equipe ----
+      case 'tarefas.listar': {
+        // atendente vê as suas; admin vê tudo, que é o ponto de acompanhar
+        const filtro = user.admin ? '' : `&responsavel_id=eq.${user.id}`;
+        const [itens, equipe] = await Promise.all([
+          sb(e, `atend_tarefas?select=*${filtro}&order=status.asc,prazo.asc.nullslast,created_at.desc&limit=300`),
+          sb(e, 'perfis?select=id,nome&atendimento=is.true'),
+        ]);
+        return res.status(200).json({ ok: true, tarefas: itens || [], equipe: equipe || [] });
+      }
+
+      case 'tarefas.criar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores criam tarefas.' });
+        const titulo = String(body.titulo || '').trim();
+        const responsavel = String(body.responsavel_id || '').trim();
+        if (!titulo) return res.status(400).json({ ok: false, error: 'Informe o que precisa ser feito.' });
+        if (!responsavel) return res.status(400).json({ ok: false, error: 'Escolha o responsável.' });
+        let prazo = null;
+        if (body.prazo) {
+          const dt = new Date(body.prazo);
+          if (isNaN(dt.getTime())) return res.status(400).json({ ok: false, error: 'Prazo inválido.' });
+          prazo = dt.toISOString();
+        }
+        const criada = await sbUm(e, 'atend_tarefas', {
+          method: 'POST', headers: { Prefer: 'return=representation' },
+          body: {
+            titulo: titulo.slice(0, 200), descricao: String(body.descricao || '').trim().slice(0, 2000) || null,
+            responsavel_id: responsavel, criado_por: user.id, prazo,
+          },
+        });
+        // avisa no chat interno: tarefa que ninguém vê não é tarefa
+        const aviso = `📋 Nova tarefa: ${titulo}` + (prazo ? `\nPrazo: ${fmtDataHoraBR(new Date(prazo))}` : '');
+        await sb(e, 'atend_chat_interno', {
+          method: 'POST', prefer: 'return=minimal',
+          body: { canal: null, dm_para: responsavel, autor_id: user.id, texto: aviso },
+        }).catch(err => console.error('[tarefas] aviso:', err.message));
+        return res.status(200).json({ ok: true, tarefa: criada });
+      }
+
+      case 'tarefas.concluir': {
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        const t = await sbUm(e, `atend_tarefas?id=eq.${id}&select=*`);
+        if (!t) return res.status(404).json({ ok: false, error: 'Tarefa não encontrada.' });
+        if (t.responsavel_id !== user.id && !user.admin) {
+          return res.status(403).json({ ok: false, error: 'Só o responsável conclui a tarefa.' });
+        }
+        const voltar = body.reabrir === true;
+        await sb(e, `atend_tarefas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: voltar
+            ? { status: 'pendente', concluida_em: null, concluida_por: null }
+            : { status: 'concluida', concluida_em: new Date().toISOString(), concluida_por: user.id },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'tarefas.excluir': {
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        const t = await sbUm(e, `atend_tarefas?id=eq.${id}&select=criado_por`);
+        if (!t) return res.status(404).json({ ok: false, error: 'Tarefa não encontrada.' });
+        if (!user.admin && t.criado_por !== user.id) {
+          return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        }
+        await sb(e, `atend_tarefas?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true });
       }
 
       case 'chat.enviar': {

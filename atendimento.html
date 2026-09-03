@@ -669,6 +669,40 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   .st-preview{min-height:150px;}
 }
 
+/* ---- chat interno: agendadas e tarefas ---- */
+.ci-prog{
+  display:flex;align-items:center;gap:8px;padding:7px 11px;margin:0 0 8px;
+  background:var(--blue-soft);border:1px solid #bcd4fb;border-radius:9px;
+  font-size:11.5px;color:#1d4ed8;
+}
+.ci-prog b{font-weight:800;}
+.ci-prog .cp-x{margin-left:auto;cursor:pointer;font-weight:800;opacity:.7;}
+.ci-prog .cp-x:hover{opacity:1;}
+.tf-topo{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.tf-topo h3{font-size:14px;font-weight:800;flex:1;}
+.tf-item{
+  display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);
+  border-radius:11px;padding:11px 13px;margin-bottom:9px;background:var(--card);
+}
+.tf-item.feita{opacity:.6;}
+.tf-item.feita .tf-tit{text-decoration:line-through;}
+.tf-item.atrasada{border-color:#fecaca;background:#fff6f6;}
+.tf-chk{
+  width:19px;height:19px;border-radius:6px;border:2px solid var(--line);cursor:pointer;
+  flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:#fff;background:var(--card);
+}
+.tf-chk.on{background:var(--green);border-color:var(--green);}
+.tf-corpo{flex:1;min-width:0;}
+.tf-tit{font-size:13px;font-weight:700;line-height:1.35;}
+.tf-desc{font-size:11.5px;color:var(--text-mid);margin-top:3px;line-height:1.5;white-space:pre-wrap;}
+.tf-meta{font-size:10.5px;color:var(--text-low);margin-top:5px;display:flex;gap:9px;flex-wrap:wrap;}
+.tf-prazo{font-weight:700;}
+.tf-prazo.venceu{color:var(--red);}
+.tf-del{border:none;background:transparent;cursor:pointer;color:var(--text-low);font-size:14px;font-family:inherit;}
+.tf-del:hover{color:var(--red);}
+.tf-vazio{font-size:12.5px;color:var(--text-low);text-align:center;padding:26px 10px;}
+
 /* ---- reação com emoji ---- */
 .mb-reac{
   display:flex;align-items:center;gap:7px;max-width:70%;padding:5px 11px 5px 8px;
@@ -2191,6 +2225,11 @@ const api = {
     await chamar('agendamentos.cancelar', { id });
     state.agendamentos = state.agendamentos.filter(a=>a.id!=id);
   },
+  async agendarChat(alvo, texto, quando){
+    const [tipo,nome] = alvo.split(':');
+    const dm = tipo==='dm' ? (EQUIPE.find(p=>p.nome===nome)||{}).id : null;
+    await chamar('chat.agendar', { canal: tipo==='canal'?nome:null, dm_para: dm, texto, quando });
+  },
   async enviarChat(alvo, texto){
     const [tipo,nome] = alvo.split(':');
     const dm = tipo==='dm' ? (EQUIPE.find(p=>p.nome===nome)||{}).id : null;
@@ -2580,6 +2619,11 @@ async function entrar(session){
     // com o conserto aparece no cabeçalho. Não bloqueia a entrada no painel.
     checarConfigVistos().catch(()=>{});
     ligarCicloInatividade();
+    // tarefas e programadas: a barra lateral mostra o contador de pendentes,
+    // então precisam estar carregadas antes de alguém abrir o Chat Interno
+    Promise.all([carregarTarefas(), carregarAgendadosChat()])
+      .then(()=>{ if(view==='chatinterno') renderAux(); })
+      .catch(()=>{});
   }catch(e){
     $('#carregando').classList.remove('show');
     $('#tela-login').style.display='';
@@ -5439,6 +5483,10 @@ function renderAux(){
   }
   else if(view==='chatinterno'){
     renderChatInterno(a);
+    // atualiza em segundo plano: a tela já apareceu com o que estava em memória
+    Promise.all([carregarTarefas(), carregarAgendadosChat()])
+      .then(()=>{ if(view==='chatinterno') renderChatInterno(a); })
+      .catch(()=>{});
   }
   else if(view==='fluxo'){
     renderFluxo(a);
@@ -5607,32 +5655,47 @@ async function verificarVistos(){
 }
 
 function renderChatInterno(a){
+  // "tarefas" é um destino próprio na mesma barra lateral: colaboração da
+  // equipe (recado + tarefa) fica num lugar só, não espalhada por telas
+  if(ciAtivo==='tarefas'){ renderTarefas(a); return; }
+
   const [tipo,nome]=ciAtivo.split(':');
   const thread = tipo==='canal' ? (state.chatInterno.canais[nome]||[]) : (state.chatInterno.dm[nome]||[]);
   const outros = ATENDENTES.filter(x=>x!==(USUARIO&&USUARIO.nome) && x!=='— Bot —');
+  const pendentes = (CI_AGENDADOS||[]).filter(g=>{
+    const meuDm = tipo==='dm' ? (EQUIPE.find(p=>p.nome===nome)||{}).id : null;
+    return tipo==='canal' ? g.canal===nome : g.dm_para===meuDm;
+  });
+
   a.innerHTML=`<div class="ci-wrap${ciEmThread?' emThread':''}">
-    <div class="ci-list">
-      <div class="ci-sec-lbl">Canais por setor</div>
-      <div class="ci-item ${ciAtivo==='canal:Geral'?'on':''}" data-ci="canal:Geral"><span class="ci-dot" style="background:#94a3b8"></span>Geral</div>
-      ${SETORES.map(s=>`<div class="ci-item ${ciAtivo==='canal:'+s.id?'on':''}" data-ci="canal:${esc(s.id)}"><span class="ci-dot" style="background:${s.cor}"></span>${esc(s.id)}</div>`).join('')}
-      <div class="ci-sec-lbl">Direto</div>
-      ${outros.map(nm=>`<div class="ci-item ${ciAtivo==='dm:'+nm?'on':''}" data-ci="dm:${esc(nm)}"><span class="ci-av" style="background:${avColor(nm.length)}">${ini(nm)}</span>${esc(nm)}</div>`).join('')}
-    </div>
+    ${ciBarraLateral(outros)}
     <div class="ci-main">
       <div class="ci-head"><button class="ci-voltar only-mobile" id="ciVoltar">‹ Voltar</button>${tipo==='canal'?'# ':'💬 '}${esc(nome)}</div>
       <div class="ci-thread" id="ciThread">
+        ${pendentes.map(g=>`<div class="ci-prog">🕒 <span>Programada para <b>${esc(fmtQuandoISO(g.quando))}</b>: ${esc(String(g.texto).slice(0,70))}${String(g.texto).length>70?'…':''}</span>
+          <span class="cp-x" data-cancelag="${g.id}" title="Cancelar">✕</span></div>`).join('')}
         ${thread.length?thread.map(m=>`<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${esc(m.x)}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
           :'<div class="sched-empty" style="align-self:center;">Nenhuma mensagem ainda. Comece a conversa!</div>'}
       </div>
       <div class="ci-composer">
         <input id="ciInput" placeholder="Mensagem para ${tipo==='canal'?'#'+esc(nome):esc(nome)}...">
+        <button class="fbtn" id="ciAgendar" title="Programar esta mensagem para depois">🕒</button>
         <button class="m-send" id="ciSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
       </div>
     </div>
   </div>`;
-  a.querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>{ ciAtivo=el.dataset.ci; ciEmThread=true; renderChatInterno(a); });
+  ciLigarBarra(a);
   const volt=$('#ciVoltar'); if(volt) volt.onclick=()=>{ ciEmThread=false; renderChatInterno(a); };
   const th=$('#ciThread'); if(th) th.scrollTop=99999;
+
+  a.querySelectorAll('[data-cancelag]').forEach(el=>el.onclick=async()=>{
+    if(!confirm('Cancelar esta mensagem programada?')) return;
+    try{
+      await chamar('chat.agendado.cancelar',{ id:Number(el.dataset.cancelag) });
+      await carregarAgendadosChat(); renderChatInterno(a); toast('Programação cancelada');
+    }catch(err){ toast('Falha: '+err.message); }
+  });
+
   const sendCi=()=>{
     const v=$('#ciInput').value.trim(); if(!v)return;
     const alvo = tipo==='canal' ? (state.chatInterno.canais[nome] ||= []) : (state.chatInterno.dm[nome] ||= []);
@@ -5643,6 +5706,185 @@ function renderChatInterno(a){
   };
   $('#ciSend').onclick=sendCi;
   $('#ciInput').onkeydown=e=>{ if(e.key==='Enter') sendCi(); };
+  $('#ciAgendar').onclick=()=>abrirAgendarChat(a, ciAtivo, $('#ciInput').value.trim());
+}
+
+/* barra lateral compartilhada entre as threads e a aba de tarefas */
+function ciBarraLateral(outros){
+  const pend = (TAREFAS||[]).filter(t=>t.status==='pendente').length;
+  return `<div class="ci-list">
+      <div class="ci-sec-lbl">Equipe</div>
+      <div class="ci-item ${ciAtivo==='tarefas'?'on':''}" data-ci="tarefas">
+        <span class="ci-dot" style="background:#f59e0b"></span>📋 Tarefas${pend?` <b style="margin-left:auto">${pend}</b>`:''}</div>
+      <div class="ci-sec-lbl">Canais por setor</div>
+      <div class="ci-item ${ciAtivo==='canal:Geral'?'on':''}" data-ci="canal:Geral"><span class="ci-dot" style="background:#94a3b8"></span>Geral</div>
+      ${SETORES.map(s=>`<div class="ci-item ${ciAtivo==='canal:'+s.id?'on':''}" data-ci="canal:${esc(s.id)}"><span class="ci-dot" style="background:${s.cor}"></span>${esc(s.id)}</div>`).join('')}
+      <div class="ci-sec-lbl">Direto</div>
+      ${outros.map(nm=>`<div class="ci-item ${ciAtivo==='dm:'+nm?'on':''}" data-ci="dm:${esc(nm)}"><span class="ci-av" style="background:${avColor(nm.length)}">${ini(nm)}</span>${esc(nm)}</div>`).join('')}
+    </div>`;
+}
+function ciLigarBarra(a){
+  a.querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>{ ciAtivo=el.dataset.ci; ciEmThread=true; renderChatInterno(a); });
+}
+
+/* ── mensagens programadas ────────────────────────────────────────────────── */
+let CI_AGENDADOS = [];
+async function carregarAgendadosChat(){
+  try{ CI_AGENDADOS = (await chamar('chat.agendados',{})).agendados||[]; }
+  catch{ CI_AGENDADOS = []; }
+}
+function fmtQuandoISO(iso){
+  const d=new Date(iso); if(isNaN(d)) return String(iso);
+  return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+// datetime-local quer o horário LOCAL sem fuso; toISOString devolve UTC e
+// jogaria o padrão 3h para trás
+function paraInputLocal(d){
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function abrirAgendarChat(a, alvo, textoInicial){
+  const [tipo,nome]=alvo.split(':');
+  const daqui=new Date(Date.now()+3600000);
+  const ov=document.createElement('div');
+  ov.className='tr-overlay';
+  ov.innerHTML=`<div class="pn-modal" style="width:min(480px,100%)">
+    <div class="pn-head"><h3>🕒 Programar mensagem</h3><button class="pn-x" id="agX">✕</button></div>
+    <div class="pn-body">
+      <div class="vsub" style="margin-bottom:12px">
+        Vai para ${tipo==='canal'?'o canal <b>#'+esc(nome)+'</b>':'<b>'+esc(nome)+'</b>'} no horário escolhido,
+        mesmo com o painel fechado.
+      </div>
+      <div class="cp-lab">Mensagem</div>
+      <textarea class="cp-txt" id="agTxt" style="min-height:90px">${esc(textoInicial||'')}</textarea>
+      <div class="cp-lab" style="margin-top:11px">Quando enviar</div>
+      <input type="datetime-local" class="transf" id="agQuando" value="${paraInputLocal(daqui)}">
+      <button class="btn primary" id="agOk" style="width:100%;margin-top:14px">Programar</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const fechar=()=>ov.remove();
+  ov.onclick=e=>{ if(e.target===ov) fechar(); };
+  $('#agX').onclick=fechar;
+  $('#agTxt').focus();
+  $('#agOk').onclick=async()=>{
+    const txt=$('#agTxt').value.trim(), q=$('#agQuando').value;
+    if(!txt){ toast('Escreva a mensagem'); return; }
+    if(!q){ toast('Escolha data e hora'); return; }
+    const b=$('#agOk'); b.disabled=true; b.textContent='Programando…';
+    try{
+      await api.agendarChat(alvo, txt, new Date(q).toISOString());
+      await carregarAgendadosChat();
+      const inp=$('#ciInput'); if(inp) inp.value='';
+      fechar(); renderChatInterno(a); toast('Mensagem programada');
+    }catch(err){ toast('Falha: '+err.message); b.disabled=false; b.textContent='Programar'; }
+  };
+}
+
+/* ── tarefas da equipe ────────────────────────────────────────────────────── */
+let TAREFAS = [], TAREFAS_EQUIPE = [];
+async function carregarTarefas(){
+  try{
+    const j=await chamar('tarefas.listar',{});
+    TAREFAS=j.tarefas||[]; TAREFAS_EQUIPE=j.equipe||[];
+  }catch{ TAREFAS=[]; }
+}
+
+function renderTarefas(a){
+  const admin = !!(USUARIO&&USUARIO.admin);
+  const nomeDe = id => (TAREFAS_EQUIPE.find(p=>p.id===id)||{}).nome || 'Usuário';
+  const agora = Date.now();
+  const outros = ATENDENTES.filter(x=>x!==(USUARIO&&USUARIO.nome) && x!=='— Bot —');
+
+  a.innerHTML=`<div class="ci-wrap${ciEmThread?' emThread':''}">
+    ${ciBarraLateral(outros)}
+    <div class="ci-main">
+      <div class="ci-head"><button class="ci-voltar only-mobile" id="ciVoltar">‹ Voltar</button>📋 Tarefas</div>
+      <div class="ci-thread" style="display:block;padding:16px;">
+        <div class="tf-topo">
+          <h3>${admin?'Tarefas da equipe':'Minhas tarefas'}</h3>
+          ${admin?'<button class="btn primary" id="tfNova">＋ Nova tarefa</button>':''}
+        </div>
+        ${TAREFAS.length ? TAREFAS.map(t=>{
+          const feita = t.status==='concluida';
+          const venceu = !feita && t.prazo && new Date(t.prazo).getTime() < agora;
+          return `<div class="tf-item ${feita?'feita':''} ${venceu?'atrasada':''}">
+            <div class="tf-chk ${feita?'on':''}" data-tf="${t.id}" data-feita="${feita?1:0}"
+                 title="${feita?'Reabrir':'Marcar como concluída'}">${feita?'✓':''}</div>
+            <div class="tf-corpo">
+              <div class="tf-tit">${esc(t.titulo)}</div>
+              ${t.descricao?`<div class="tf-desc">${esc(t.descricao)}</div>`:''}
+              <div class="tf-meta">
+                <span>👤 ${esc(nomeDe(t.responsavel_id))}</span>
+                ${t.prazo?`<span class="tf-prazo ${venceu?'venceu':''}">🕒 ${esc(fmtQuandoISO(t.prazo))}${venceu?' — atrasada':''}</span>`:''}
+                ${feita&&t.concluida_em?`<span>✅ concluída ${esc(fmtQuandoISO(t.concluida_em))}</span>`:''}
+              </div>
+            </div>
+            ${admin?`<button class="tf-del" data-tfdel="${t.id}" title="Excluir">🗑</button>`:''}
+          </div>`;
+        }).join('') : `<div class="tf-vazio">${admin?'Nenhuma tarefa criada. Use “Nova tarefa” para atribuir a alguém.':'Você não tem tarefas pendentes. 🎉'}</div>`}
+      </div>
+    </div>
+  </div>`;
+  ciLigarBarra(a);
+  const volt=$('#ciVoltar'); if(volt) volt.onclick=()=>{ ciEmThread=false; renderChatInterno(a); };
+
+  a.querySelectorAll('[data-tf]').forEach(el=>el.onclick=async()=>{
+    try{
+      await chamar('tarefas.concluir',{ id:Number(el.dataset.tf), reabrir: el.dataset.feita==='1' });
+      await carregarTarefas(); renderTarefas(a);
+    }catch(err){ toast('Falha: '+err.message); }
+  });
+  a.querySelectorAll('[data-tfdel]').forEach(el=>el.onclick=async()=>{
+    if(!confirm('Excluir esta tarefa?')) return;
+    try{
+      await chamar('tarefas.excluir',{ id:Number(el.dataset.tfdel) });
+      await carregarTarefas(); renderTarefas(a); toast('Tarefa excluída');
+    }catch(err){ toast('Falha: '+err.message); }
+  });
+  const nova=$('#tfNova'); if(nova) nova.onclick=()=>abrirNovaTarefa(a);
+}
+
+function abrirNovaTarefa(a){
+  const eq = (TAREFAS_EQUIPE.length?TAREFAS_EQUIPE:EQUIPE).filter(p=>p.nome);
+  const ov=document.createElement('div');
+  ov.className='tr-overlay';
+  ov.innerHTML=`<div class="pn-modal" style="width:min(520px,100%)">
+    <div class="pn-head"><h3>📋 Nova tarefa</h3><button class="pn-x" id="tnX">✕</button></div>
+    <div class="pn-body">
+      <div class="cp-lab">O que precisa ser feito</div>
+      <input class="transf" id="tnTit" maxlength="200" placeholder="Ex: Retornar ligação do cliente do Centro">
+      <div class="cp-lab" style="margin-top:11px">Detalhes (opcional)</div>
+      <textarea class="cp-txt" id="tnDesc" style="min-height:70px"></textarea>
+      <div class="cp-lab" style="margin-top:11px">Responsável</div>
+      <select class="transf" id="tnResp">${eq.map(p=>`<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join('')}</select>
+      <div class="cp-lab" style="margin-top:11px">Prazo (opcional)</div>
+      <input type="datetime-local" class="transf" id="tnPrazo">
+      <div class="tp-nota" style="margin-top:8px">
+        O responsável recebe um aviso no chat interno na hora, e outro se o prazo chegar com a tarefa aberta.
+      </div>
+      <button class="btn primary" id="tnOk" style="width:100%;margin-top:14px">Criar tarefa</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const fechar=()=>ov.remove();
+  ov.onclick=e=>{ if(e.target===ov) fechar(); };
+  $('#tnX').onclick=fechar;
+  $('#tnTit').focus();
+  $('#tnOk').onclick=async()=>{
+    const titulo=$('#tnTit').value.trim();
+    if(!titulo){ toast('Escreva o que precisa ser feito'); return; }
+    const b=$('#tnOk'); b.disabled=true; b.textContent='Criando…';
+    try{
+      const pz=$('#tnPrazo').value;
+      await chamar('tarefas.criar',{
+        titulo, descricao:$('#tnDesc').value.trim(),
+        responsavel_id:$('#tnResp').value,
+        prazo: pz ? new Date(pz).toISOString() : null,
+      });
+      await Promise.all([carregarTarefas(), recarregarChat().catch(()=>{})]);
+      fechar(); renderTarefas(a); toast('Tarefa criada');
+    }catch(err){ toast('Falha: '+err.message); b.disabled=false; b.textContent='Criar tarefa'; }
+  };
 }
 
 /* ================= FLUXO DO BOT (canvas) ================= */
