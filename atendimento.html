@@ -3278,11 +3278,15 @@ function abrirEmojis(anchorBtn, textarea, onInsert){
    movendo na mão, num select escondido no painel lateral. */
 async function renderTempos(el){
   el.innerHTML='<div class="pn-load">Carregando…</div>';
-  let cfg={};
-  try{ cfg=(await chamar('atendconfig.obter',{})).config||{}; }
+  let cfg={}, cfgPag={};
+  try{
+    const [a,b]=await Promise.all([chamar('atendconfig.obter',{}), chamar('pagamento.config.obter',{})]);
+    cfg=a.config||{}; cfgPag=b.config||{};
+  }
   catch(e){ el.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
 
   const g=(k,p)=>cfg[k]!==undefined?cfg[k]:p;
+  const gp=(k,p)=>cfgPag[k]!==undefined?cfgPag[k]:p;
   el.innerHTML=`
     <div class="vsub" style="margin-bottom:16px">
       O que fazer quando o cliente para de responder. Cada etapa puxa a seguinte:
@@ -3353,6 +3357,20 @@ async function renderTempos(el){
       <div class="tp-nota">Vale só para quem não foi assumido por ninguém.</div>
     </div>
 
+    <div class="cp-box" style="margin-top:16px;border-color:var(--green);">
+      <label class="cob-check"><input type="checkbox" id="tpPagAtivo" ${gp('ativo',true)?'checked':''}>
+        <b>💰 Avisar pagamento confirmado</b></label>
+      <div class="tp-nota" style="margin-bottom:9px;">
+        Substitui o SMS que o IXC manda hoje (gateway "Gammu" → Evotrix). O MoviTalk pergunta
+        ao IXC quem pagou nos últimos dias e avisa pela própria conversa do cliente.
+      </div>
+      <textarea class="cp-txt" id="tpPagTxt" style="min-height:70px">${esc(gp('texto',''))}</textarea>
+      <div class="tp-nota">
+        Placeholders: {nome}, {primeiro_nome}, {valor}, {vencimento}. Deixe em branco para usar o padrão.
+      </div>
+      <button class="btn" id="tpPagSalvar" style="margin-top:9px;">Salvar aviso de pagamento</button>
+    </div>
+
     <button class="btn primary" id="tpSalvar" style="margin-top:12px;font-weight:800;padding:11px 20px">Salvar tempos</button>
     <div class="tp-resumo" id="tpResumo"></div>`;
 
@@ -3382,6 +3400,19 @@ async function renderTempos(el){
       toast('Tempos salvos');
     }catch(e){ toast('Falha: '+e.message); }
     b.disabled=false; b.textContent='Salvar tempos';
+  };
+
+  // ação e tabela próprias — não colide com o save acima, que substitui o
+  // JSON inteiro de "Tempos do atendimento"
+  $('#tpPagSalvar').onclick=async()=>{
+    const b=$('#tpPagSalvar'); b.disabled=true; b.textContent='Salvando…';
+    try{
+      await chamar('pagamento.config.salvar',{config:{
+        ativo:$('#tpPagAtivo').checked, texto:$('#tpPagTxt').value.trim(),
+      }});
+      toast('Aviso de pagamento salvo');
+    }catch(e){ toast('Falha: '+e.message); }
+    b.disabled=false; b.textContent='Salvar aviso de pagamento';
   };
 }
 

@@ -2531,6 +2531,181 @@ async function entregarCobranca(e, o) {
   return { conversaId: c ? c.id : null, anexos: extras.length };
 }
 
+// ============================================================================
+// AVISO DE PAGAMENTO CONFIRMADO
+// ----------------------------------------------------------------------------
+// Hoje o IXC manda essa confirmação por SMS, através de um gateway cadastrado
+// lá como tipo "Gammu" cujo campo Usuário guarda
+// 67127520ecb37a364cc5e36d — o MESMO id de canal já craveado como
+// EVOTRIX_CHANNEL em api/ixc-proxy.js. Ou seja: o IXC acha que fala com um
+// gateway de modem SMS, mas por trás disso algo converte para a Evotrix.
+// Decifrar o protocolo que o IXC fala com esse tipo de gateway é arriscado —
+// não é HTTP simples e documentado, e o mesmo gateway provavelmente atende
+// outros tipos de SMS (senha, aviso de bloqueio) que não dá pra enumerar
+// daqui. Em vez de interceptar, o MoviTalk pergunta ao IXC quem pagou
+// recentemente e avisa pela conversa — o mesmo caminho que a régua de
+// cobrança já usa do lado da inadimplência.
+//
+// Combinado: este aviso SUBSTITUI o SMS. A troca do lado do IXC (desligar ou
+// reapontar o tipo de notificação que hoje usa o gateway Gammu) é manual, no
+// próprio cadastro de SMS do IXC — não dá pra fazer daqui.
+// ============================================================================
+function pagTexto(tpl, nome, valor, vencimento) {
+  const venc = vencimento ? String(vencimento).slice(0, 10).split('-').reverse().join('/') : '—';
+  return String(tpl)
+    .replace(/{nome}/g, nome || 'cliente')
+    .replace(/{primeiro_nome}/g, (nome || 'cliente').split(' ')[0])
+    .replace(/{valor}/g, 'R$ ' + Number(valor || 0).toFixed(2).replace('.', ','))
+    .replace(/{vencimento}/g, venc);
+}
+
+// o nome do campo de data de baixa muda entre instalações do IXC — é por
+// isso que existe a ação `ixc.diagnostico`. Resolve pela mesma cadeia de
+// nomes candidatos que o resto do código já usa para esta informação.
+function dataBaixaIXC(f) {
+  return parseDataIXC(pick(f, 'pagamento_data', 'baixa_data', 'credito_data',
+                            'data_recebimento', 'data_pagamento'));
+}
+
+async function avisarPagamentosConfirmados(e) {
+  const cfgRow = await sbUm(e, 'atend_pagamento_config?id=eq.1&select=dados').catch(() => null);
+  const cfg = (cfgRow && cfgRow.dados) || {};
+  if (cfg.ativo === false) return { pagamento: 'desligado' };
+
+  let d;
+  try {
+    // mesma forma de chamada que cobrancaAutomatica já usa em produção
+    // (qtype/query/oper), só que filtrando por status em vez de por cliente
+    d = await ixc(e, 'fn_areceber', {
+      qtype: 'fn_areceber.status', query: 'R', oper: '=',
+      sortname: 'fn_areceber.data_vencimento', sortorder: 'desc', rp: '200',
+    });
+  } catch (err) {
+    console.error('[pagamento confirmado]', err.message);
+    return { pagamento: 'erro ao consultar IXC', erro: err.message };
+  }
+  const regs = (d.registros || []).filter(f => /^\d+$/.test(String(f.id)));
+
+  // 1ª execução: o ledger está vazio, "novo" não tem referência nenhuma —
+  // sem isto, toda fatura já paga há meses viraria uma confirmação de
+  // pagamento hoje e sairia pra base inteira de uma vez. Mesma cautela que a
+  // régua de cobrança já tomou no bootstrap dela (ifCobCarregar, index.html):
+  // registra o que já existe como visto, sem avisar ninguém, e passa a
+  // avisar só do próximo pagamento em diante.
+  const jaTemLedger = await sbUm(e, 'atend_pagamento_avisos?select=id&limit=1');
+  if (!jaTemLedger) {
+    const linhas = regs.map(f => ({
+      fatura_id: String(f.id), cliente_ixc_id: f.id_cliente ? String(f.id_cliente) : null,
+      valor: f.valor != null ? Number(f.valor) : null,
+      data_pagamento: dataBaixaIXC(f) ? dataBaixaIXC(f).toISOString().slice(0, 10) : null,
+      status: 'backfill',
+    }));
+    if (linhas.length) {
+      try { await sb(e, 'atend_pagamento_avisos', { method: 'POST', prefer: 'return=minimal', body: linhas }); }
+      catch (err) { console.error('[pagamento confirmado] backfill:', err.message); }
+    }
+    return { pagamento: 'backfill', registros: linhas.length };
+  }
+
+  // janela de 3 dias: cobre fim de semana sem execução e uma eventual
+  // reprocessagem do lado do IXC. O dedupe por fatura_id é quem garante que
+  // nenhum cliente recebe a mesma confirmação duas vezes, não a janela.
+  const corte = Date.now() - 3 * 864e5;
+  const candidatos = regs.filter(f => { const dt = dataBaixaIXC(f); return dt && dt.getTime() >= corte; });
+  if (!candidatos.length) return { pagamento: 'sem pagamentos recentes' };
+
+  const tpl = String(cfg.texto ||
+    'Recebemos a confirmação do seu pagamento de {valor}, referente à fatura de {vencimento}. Muito obrigado! 💚 — MoviOn');
+
+  let enviados = 0, semTelefone = 0, falhas = 0, jaAvisadas = 0;
+  for (const f of candidatos) {
+    const faturaId = String(f.id);
+    const ixcId = f.id_cliente ? String(f.id_cliente) : null;
+    const valor = f.valor != null ? Number(f.valor) : null;
+    const dt = dataBaixaIXC(f);
+    const dataPagamento = dt ? dt.toISOString().slice(0, 10) : null;
+
+    // REIVINDICA ANTES DE ENVIAR: unique(fatura_id) na tabela é o mutex. Sem
+    // isto, duas execuções do ciclo rodando em paralelo — é normal aqui, o
+    // mesmo gatilho de webhook/painel dispara em vários containers ao mesmo
+    // tempo — podiam mandar a MESMA confirmação de pagamento duas vezes pro
+    // cliente.
+    let claim;
+    try {
+      claim = await sb(e, 'atend_pagamento_avisos', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: { fatura_id: faturaId, cliente_ixc_id: ixcId, valor, data_pagamento: dataPagamento },
+      });
+      claim = Array.isArray(claim) ? claim[0] : claim;
+    } catch {
+      jaAvisadas++;               // 409 de unique: outra execução já pegou esta fatura
+      continue;
+    }
+
+    let cli = null;
+    if (ixcId) {
+      try { cli = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=nome,tel1,tel2&limit=1`); }
+      catch { /* segue sem nome/telefone do cadastro */ }
+    }
+    const nome = (cli && cli.nome) || null;
+    const fone = normalizarFone(pick(cli || {}, 'tel1', 'tel2') || '');
+
+    if (!fone) {
+      semTelefone++;
+      await sb(e, `atend_pagamento_avisos?id=eq.${claim.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { cliente_nome: nome, status: 'sem_telefone' },
+      }).catch(() => {});
+      continue;
+    }
+
+    const texto = pagTexto(tpl, nome, valor, f.data_vencimento);
+
+    // acha ou cria a conversa — mesmo padrão de entregarCobranca (cobrança),
+    // só sem os extras de trilha/etapa/anexo que não fazem sentido aqui
+    let c = await sbUm(e, `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=id,coluna&limit=1`);
+    if (!c) {
+      const nova = await sb(e, 'atend_conversas', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: {
+          contato_fone: fone, contato_nome: nome || fone, coluna: 'aguardando',
+          setor: 'Financeiro', bot_ativo: true, cliente_ixc_id: ixcId,
+        },
+      });
+      c = Array.isArray(nova) ? nova[0] : nova;
+    }
+
+    let env = null, erro = null;
+    try { env = await waEnviar(e, fone, texto); }
+    catch (err) { erro = String(err.message).slice(0, 250); falhas++; }
+
+    if (!erro && c) {
+      await sb(e, 'atend_mensagens', {
+        method: 'POST', prefer: 'return=minimal',
+        body: { conversa_id: c.id, direcao: 'bot', conteudo: texto, wa_id: idDaEvolution(env), status: 'enviado' },
+      });
+      const patch = {
+        ultima_msg: 'Pagamento confirmado: ' + texto.slice(0, 160),
+        ultima_msg_em: new Date().toISOString(),
+      };
+      // não rouba atendimento em andamento — mesma regra de entregarCobranca
+      if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
+      await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+      enviados++;
+    }
+
+    await sb(e, `atend_pagamento_avisos?id=eq.${claim.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: {
+        contato_fone: fone, cliente_nome: nome, conversa_id: c ? c.id : null,
+        wa_id: env ? idDaEvolution(env) : null, status: erro ? 'erro' : 'enviado', erro,
+      },
+    }).catch(err => console.error('[pagamento confirmado] ledger:', err.message));
+  }
+
+  return { pagamento: 'ok', enviados, sem_telefone: semTelefone, falhas, ja_avisadas: jaAvisadas };
+}
+
 function cobDiasEntre(a, b) {
   const d1 = parseDataIXC(a), d2 = parseDataIXC(b);
   if (!d1 || !d2) return null;
@@ -2942,10 +3117,16 @@ async function tratarCron(e) {
   try { campanhas = await processarCampanhas(e); }
   catch (err) { console.error('[campanhas]', err.message); campanhas = { erro: err.message }; }
 
+  // pagamento confirmado: substitui o SMS que o IXC manda hoje pelo gateway
+  // Gammu/Evotrix — ver o comentário grande na função para o porquê
+  let pagamento = null;
+  try { pagamento = await avisarPagamentosConfirmados(e); }
+  catch (err) { console.error('[pagamento confirmado]', err.message); pagamento = { erro: err.message }; }
+
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
-           cobranca: auto, campanhas };
+           cobranca: auto, campanhas, pagamento };
 }
 
 // ============================================================================
@@ -4387,6 +4568,26 @@ export default async function handler(req, res) {
         await sb(e, 'atend_config?id=eq.1', {
           method: 'PATCH', prefer: 'return=minimal',
           body: { dados: d, updated_at: new Date().toISOString(), updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // Aviso de pagamento confirmado — tabela própria (atend_pagamento_config),
+      // fora de atend_config: aquele save acima SUBSTITUI o JSON inteiro, e
+      // salvar "Tempos do atendimento" apagaria estas chaves em silêncio se
+      // elas morassem lá.
+      case 'pagamento.config.obter': {
+        const c = await sbUm(e, 'atend_pagamento_config?id=eq.1&select=dados');
+        return res.status(200).json({ ok: true, config: (c && c.dados) || {} });
+      }
+
+      case 'pagamento.config.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const dp = body.config && typeof body.config === 'object' ? body.config : null;
+        if (!dp) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        await sb(e, 'atend_pagamento_config?id=eq.1', {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { dados: dp, updated_at: new Date().toISOString(), updated_by: user.id },
         });
         return res.status(200).json({ ok: true });
       }
