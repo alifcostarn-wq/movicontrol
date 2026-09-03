@@ -2711,6 +2711,39 @@ async function cobrancaAutomatica(e) {
 // ============================================================================
 // CRON — agendamentos vencidos + limpeza de sessões
 // ============================================================================
+// ============================================================================
+// GATILHO DO CICLO DE INATIVIDADE
+// ----------------------------------------------------------------------------
+// O ciclo de espera (mover → avisar → encerrar) estava escrito e configurado,
+// mas NADA o chamava: não havia cron na Vercel, nem agendador externo. Ficou
+// parado desde sempre — nenhuma conversa jamais foi avisada.
+//
+// Cron da Vercel não resolve neste plano: no Hobby o agendador roda no máximo
+// uma vez por dia, e o primeiro estágio é de 10 minutos. Então o ciclo passa a
+// pegar carona no tráfego que o painel já produz — mensagem que chega pelo
+// webhook, painel abrindo, e um relógio do próprio painel enquanto ele fica
+// aberto. Nenhuma configuração externa, nada para o cliente manter.
+//
+// A trava de frequência aqui é só economia: quem garante que ninguém avisa o
+// cliente duas vezes são as reivindicações atômicas lá dentro do ciclo.
+// ============================================================================
+// A trava é só economia — quem impede aviso repetido são as reivindicações
+// atômicas dentro do ciclo. Por isso ela mora na memória do container e NÃO no
+// banco: `atendconfig.salvar` substitui o JSON de configuração inteiro, então
+// gravar um carimbo lá poderia reverter, em silêncio, um ajuste que o admin
+// acabou de salvar. Alguns containers varrendo em paralelo custa algumas
+// consultas leves; reverter configuração do cliente não tem preço de volta.
+const VARRER_CADA_MS = 2 * 60 * 1000;
+let _ultimaVarredura = 0;
+
+async function talvezVarrer(e, forcar) {
+  const agora = Date.now();
+  if (!forcar && agora - _ultimaVarredura < VARRER_CADA_MS) return { varrido: false };
+  _ultimaVarredura = agora;
+  const r = await tratarCron(e);
+  return { varrido: true, ...r };
+}
+
 async function tratarCron(e) {
   const agora = new Date().toISOString();
   const pend = await sb(e,
@@ -2779,6 +2812,16 @@ async function tratarCron(e) {
       `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
     const txt = String(cfgAt.aviso_texto || 'Continua por aí? Se não tivermos retorno, vou encerrar este atendimento em breve. 🙂');
     for (const c of (alvos || [])) {
+      // CARIMBA ANTES DE ENVIAR, e só segue se o carimbo foi nosso. O filtro
+      // `aviso_inatividade_em=is.null` dentro do próprio UPDATE faz do carimbo
+      // uma reivindicação atômica: se duas varreduras rodarem ao mesmo tempo,
+      // uma volta de mãos vazias e o cliente não recebe o aviso duas vezes.
+      // Carimbar antes também evita repetir o aviso quando o envio falha.
+      const meu = await sb(e, `atend_conversas?id=eq.${c.id}&aviso_inatividade_em=is.null`, {
+        method: 'PATCH', prefer: 'return=representation',
+        body: { aviso_inatividade_em: new Date().toISOString() },
+      });
+      if (!meu || !meu.length) continue;                  // outra rodada pegou antes
       try {
         const env = await waEnviar(e, c.contato_fone, txt);
         await sb(e, 'atend_mensagens', {
@@ -2786,11 +2829,6 @@ async function tratarCron(e) {
           body: { conversa_id: c.id, direcao: 'bot', conteudo: txt, wa_id: idDaEvolution(env), status: 'enviado' },
         });
       } catch (err) { console.error('[inatividade aviso]', err.message); }
-      // carimba mesmo se o envio falhar: senão avisaria de novo a cada rodada
-      await sb(e, `atend_conversas?id=eq.${c.id}`, {
-        method: 'PATCH', prefer: 'return=minimal',
-        body: { aviso_inatividade_em: new Date().toISOString() },
-      });
       avisadas++;
     }
   }
@@ -2804,6 +2842,16 @@ async function tratarCron(e) {
       `&aviso_inatividade_em=lt.${corte}&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
     const txt = String(cfgAt.encerrar_texto || 'Como não tivemos retorno, encerrei este atendimento. É só mandar outra mensagem quando precisar. 💚');
     for (const c of (alvos || [])) {
+      // mesma ideia do aviso: mover a coluna É a reivindicação. Quem conseguir
+      // tirar de "aguardando" é quem manda a despedida — nunca as duas rodadas.
+      const meu = await sb(e, `atend_conversas?id=eq.${c.id}&coluna=eq.aguardando`, {
+        method: 'PATCH', prefer: 'return=representation',
+        body: {
+          coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0,
+          aguardando_desde: null, aviso_inatividade_em: null,
+        },
+      });
+      if (!meu || !meu.length) continue;
       try {
         const env = await waEnviar(e, c.contato_fone, txt);
         await sb(e, 'atend_mensagens', {
@@ -2811,13 +2859,6 @@ async function tratarCron(e) {
           body: { conversa_id: c.id, direcao: 'bot', conteudo: txt, wa_id: idDaEvolution(env), status: 'enviado' },
         });
       } catch (err) { console.error('[inatividade encerra]', err.message); }
-      await sb(e, `atend_conversas?id=eq.${c.id}`, {
-        method: 'PATCH', prefer: 'return=minimal',
-        body: {
-          coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0,
-          aguardando_desde: null, aviso_inatividade_em: null,
-        },
-      });
       await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
         { method: 'DELETE', prefer: 'return=minimal' });
       encerradasHumano++;
@@ -2835,16 +2876,18 @@ async function tratarCron(e) {
   let encerradas = 0;
 
   for (const c of (paradas || [])) {
+    // tirar da coluna é a reivindicação: só quem conseguir manda a despedida
+    const meu = await sb(e, `atend_conversas?id=eq.${c.id}&coluna=in.(novos,atendimento)`, {
+      method: 'PATCH', prefer: 'return=representation',
+      body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
+    });
+    if (!meu || !meu.length) continue;
     const despedida = 'Como não tivemos retorno, vou encerrar este atendimento por aqui. 👋\n' +
       'Se precisar, é só mandar outra mensagem que começamos de novo. A MoviOn agradece! 💚';
     try { await waEnviar(e, c.contato_fone, despedida); } catch (err) { console.error('[atendimento]', err.message); }
     await sb(e, 'atend_mensagens', {
       method: 'POST', prefer: 'return=minimal',
       body: { conversa_id: c.id, direcao: 'bot', conteudo: despedida },
-    });
-    await sb(e, `atend_conversas?id=eq.${c.id}`, {
-      method: 'PATCH', prefer: 'return=minimal',
-      body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
     });
     await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
     encerradas++;
@@ -3136,6 +3179,9 @@ export default async function handler(req, res) {
         return res.status(401).json({ ok: false, error: 'Secret do webhook inválido.' });
       }
       const r = await tratarWebhook(e, body);
+      // carona no tráfego real: cada mensagem que chega também faz o ciclo de
+      // inatividade andar. Nunca deixa a entrada de mensagem quebrar por isso.
+      try { await talvezVarrer(e); } catch (err) { console.error('[inatividade]', err.message); }
       return res.status(200).json(r);
     }
 
@@ -3144,7 +3190,7 @@ export default async function handler(req, res) {
       if (e.WH_SECRET && segredo !== e.WH_SECRET) {
         return res.status(401).json({ ok: false, error: 'Secret inválido.' });
       }
-      return res.status(200).json(await tratarCron(e));
+      return res.status(200).json(await tratarCron(e));   // agendador externo: sempre roda
     }
 
     // ---- daqui pra baixo exige usuário logado ---------------------------
@@ -3154,6 +3200,13 @@ export default async function handler(req, res) {
 
       case 'me':
         return res.status(200).json({ ok: true, user });
+
+      // O painel chama de tempos em tempos enquanto está aberto. É o gatilho
+      // que cobre o caso mais importante do ciclo: o atendente falou por último
+      // e o cliente NÃO respondeu — não chega webhook nenhum, então sem isto o
+      // primeiro estágio nunca dispararia numa conversa silenciosa.
+      case 'inatividade.varrer':
+        return res.status(200).json({ ok: true, ...(await talvezVarrer(e)) });
 
       // tudo que o app precisa para abrir, numa chamada só
       case 'bootstrap': {

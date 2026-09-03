@@ -2565,6 +2565,7 @@ async function entrar(session){
     // em segundo plano: se o WhatsApp não estiver mandando os vistos, o aviso
     // com o conserto aparece no cabeçalho. Não bloqueia a entrada no painel.
     checarConfigVistos().catch(()=>{});
+    ligarCicloInatividade();
   }catch(e){
     $('#carregando').classList.remove('show');
     $('#tela-login').style.display='';
@@ -6166,6 +6167,26 @@ $('#lg-form').addEventListener('submit', fazerLogin);
   }catch(e){ /* cai na tela de login */ }
   $('#lg-email').focus();
 })();
+
+/* ═══════════ CICLO DE ESPERA (mover → avisar → encerrar) ════════════════════
+   Os três estágios são executados no servidor, mas alguém precisa dar a
+   partida. O plano da Vercel é Hobby, onde o agendador roda no máximo uma vez
+   por dia — inútil para um primeiro estágio de 10 minutos. Então o painel
+   aberto é um dos gatilhos: cutuca o servidor de tempos em tempos e ele decide
+   se já passou tempo suficiente (a trava de frequência é lá, não aqui).
+
+   Esta é a única fonte que cobre a conversa silenciosa: se o atendente falou
+   por último e o cliente sumiu, não chega webhook nenhum para dar a partida. */
+function ligarCicloInatividade(){
+  const cutucar = () => {
+    if(document.hidden) return;               // aba escondida: outro alguém cutuca
+    chamar('inatividade.varrer', {}, 20000).catch(()=>{});
+  };
+  cutucar();
+  setInterval(cutucar, 3 * 60 * 1000);
+  // voltar para a aba depois de um tempo fora vale uma checada na hora
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) cutucar(); });
+}
 
 /* o token do Supabase expira em 1h — renova sozinho */
 setInterval(async()=>{
