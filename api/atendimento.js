@@ -2084,6 +2084,62 @@ async function tratarAckMensagem(e, body) {
 }
 
 // ============================================================================
+// REAÇÃO COM EMOJI
+// ----------------------------------------------------------------------------
+// Vira uma mensagem própria do tipo `reacao`, citando a mensagem reagida — o
+// painel já sabe desenhar citação, então a reação aparece amarrada ao que ela
+// responde em vez de solta no meio da conversa.
+// Reação NÃO é uma demanda nova: não conta como não lida, não reabre conversa
+// resolvida e não aciona o bot. É só um sinal de que a pessoa viu e reagiu.
+// ============================================================================
+async function tratarReacao(e, { fone, waId, emoji, alvoWaId }) {
+  if (!alvoWaId) return { ok: true, ignorado: 'reação sem mensagem alvo' };
+
+  const conversa = await sbUm(e,
+    `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=id&limit=1`);
+  if (!conversa) return { ok: true, ignorado: 'reação sem conversa' };
+
+  const alvo = await sbUm(e,
+    `atend_mensagens?wa_id=eq.${encodeURIComponent(alvoWaId)}&conversa_id=eq.${conversa.id}` +
+    `&select=id,conteudo,direcao&limit=1`);
+  if (!alvo) return { ok: true, ignorado: 'mensagem reagida não está no histórico' };
+
+  // texto vazio = o cliente REMOVEU a reação; some do painel também
+  if (!emoji) {
+    await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&tipo=eq.reacao&direcao=eq.in&responde_a=eq.${alvo.id}`,
+      { method: 'DELETE', prefer: 'return=minimal' });
+    return { ok: true, reacao: 'removida' };
+  }
+
+  if (waId) {
+    const jaTem = await sbUm(e, `atend_mensagens?wa_id=eq.${encodeURIComponent(waId)}&select=id&limit=1`);
+    if (jaTem) return { ok: true, ignorado: 'duplicada' };
+  }
+
+  // uma reação por mensagem: trocar o emoji substitui, não empilha
+  await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&tipo=eq.reacao&direcao=eq.in&responde_a=eq.${alvo.id}`,
+    { method: 'DELETE', prefer: 'return=minimal' });
+
+  await sb(e, 'atend_mensagens', {
+    method: 'POST', prefer: 'return=minimal',
+    body: {
+      conversa_id: conversa.id, direcao: 'in', tipo: 'reacao',
+      conteudo: emoji.slice(0, 16), wa_id: waId,
+      responde_a: alvo.id,
+      quote_texto: String(alvo.conteudo || '').slice(0, 200),
+      quote_direcao: alvo.direcao,
+    },
+  });
+
+  await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { ultima_msg: `Reagiu com ${emoji}`.slice(0, 200), ultima_msg_em: new Date().toISOString() },
+  });
+
+  return { ok: true, reacao: emoji };
+}
+
+// ============================================================================
 // WEBHOOK — mensagem recebida da Evolution API
 // ============================================================================
 async function tratarWebhook(e, body) {
@@ -2109,6 +2165,20 @@ async function tratarWebhook(e, body) {
   }
 
   const msg = d.message || {};
+
+  // ---- reação com emoji ------------------------------------------------
+  // Chega como messages.upsert normal, mas com reactionMessage no lugar do
+  // texto. Antes caía no fluxo comum com conteúdo vazio: não aparecia na
+  // conversa e ainda cutucava o bot com uma mensagem em branco.
+  if (msg.reactionMessage) {
+    return await tratarReacao(e, {
+      fone,
+      waId: key.id || null,
+      emoji: String(msg.reactionMessage.text || '').trim(),
+      alvoWaId: msg.reactionMessage.key?.id || null,
+    });
+  }
+
   const texto = (
     msg.conversation ||
     msg.extendedTextMessage?.text ||

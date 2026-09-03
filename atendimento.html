@@ -669,6 +669,21 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   .st-preview{min-height:150px;}
 }
 
+/* ---- reação com emoji ---- */
+.mb-reac{
+  display:flex;align-items:center;gap:7px;max-width:70%;padding:5px 11px 5px 8px;
+  border-radius:14px;background:var(--card);border:1px solid var(--line);
+  box-shadow:var(--shadow);font-size:11.5px;color:var(--text-mid);
+}
+.mb-reac[data-irpara]{cursor:pointer;}
+.mb-reac[data-irpara]:hover{border-color:var(--green);}
+.mb-reac.in{align-self:flex-start;}
+.mb-reac.out{align-self:flex-end;}
+.rc-emo{font-size:18px;line-height:1;}
+.rc-txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rc-txt b{color:var(--text);font-weight:700;}
+.rc-h{font-size:9.5px;color:var(--text-low);flex-shrink:0;}
+
 /* ---- figurinha e GIF ---- */
 .mb-sticker{max-width:140px;max-height:140px;background:none !important;border:none !important;}
 .mb-gif{position:relative;display:inline-block;}
@@ -1043,6 +1058,23 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
+/* Seções do cadastro recolhíveis. O painel tem dez blocos empilhados e o
+   atendente usa um ou dois por conversa: aberto por padrão, dava uma parede de
+   dados para rolar toda vez. Só bloco COM título recolhe — a faixa de pílulas
+   não tem h3 e continua sempre à vista, que é o resumo de olhada rápida. */
+.ms-sec.recolhivel > h3{cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;}
+.ms-sec.recolhivel > h3::before{
+  content:'▾';font-size:9px;line-height:1;color:var(--text-low);
+  transition:transform .15s;flex-shrink:0;
+}
+.ms-sec.recolhida > h3::before{transform:rotate(-90deg);}
+.ms-sec.recolhida > *:not(h3){display:none !important;}
+.ms-sec.recolhivel > h3:hover{color:var(--text);}
+/* o nome do cliente vira o atalho para o cadastro */
+.m-hname{cursor:pointer;}
+.m-hname:hover{text-decoration:underline;text-underline-offset:3px;}
+.ms-sec.destaque{animation:msPisca 1.1s ease-out 1;}
+@keyframes msPisca{0%{background:var(--green-soft)}100%{background:transparent}}
 .pills{display:flex;gap:7px;}
 .pill{flex:1;text-align:center;border-radius:10px;padding:8px 4px;}
 .pill .pl{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
@@ -2283,7 +2315,8 @@ function ligarRealtime(){
       const id = p.new.conversa_id;
       // não alerta pela conversa que já está aberta na tela: o atendente está
       // olhando para ela, o bipe só atrapalha
-      if(p.new.direcao==='in' && (modalId!==id || document.hidden)) tocarAlerta();
+      // reação não bipa: é um sinal leve, não uma pergunta esperando resposta
+      if(p.new.direcao==='in' && p.new.tipo!=='reacao' && (modalId!==id || document.hidden)) tocarAlerta();
       atualizarTituloAlerta();
       const c = state.conversas.find(x=>x.id===id);
       if(!c) return;
@@ -2318,7 +2351,7 @@ const SOM = {
   ctx:null, liberado:false,
   ligado: localStorage.getItem('mt_som')!=='0',
   tipo:  localStorage.getItem('mt_som_tipo')||'duplo',
-  vol:  +(localStorage.getItem('mt_som_vol')||'0.5'),
+  vol:  +(localStorage.getItem('mt_som_vol')||'0.8'),
   ultimo:0,
 };
 
@@ -2356,14 +2389,23 @@ function tocarAlerta(forcar){
     if(SOM.ctx.state==='suspended') SOM.ctx.resume();
     const t0=SOM.ctx.currentTime;
     const notas=(SOM_TIPOS[SOM.tipo]||SOM_TIPOS.duplo).notas;
+    // Um limitador na saída deixa subir o ganho sem estourar quando duas notas
+    // se sobrepõem. Sem ele, o teto tinha que ficar baixo para o toque não
+    // distorcer — e era por isso que o alerta se perdia no barulho da operação.
+    const saida = SOM.ctx.createDynamicsCompressor();
+    saida.threshold.value = -8; saida.knee.value = 6;
+    saida.ratio.value = 12;     saida.attack.value = 0.002; saida.release.value = 0.12;
+    saida.connect(SOM.ctx.destination);
     notas.forEach(([hz,atraso,dur])=>{
       const o=SOM.ctx.createOscillator(), g=SOM.ctx.createGain();
-      o.type='sine';
-      o.connect(g); g.connect(SOM.ctx.destination);
+      // triângulo tem harmônicos: atravessa a conversa da sala, enquanto a
+      // senoide pura some. Continua macio o bastante para 8h de uso.
+      o.type='triangle';
+      o.connect(g); g.connect(saida);
       o.frequency.value=hz;
       // ataque curto e queda suave: onda quadrada seca incomoda em 8h de uso
       g.gain.setValueAtTime(0, t0+atraso);
-      g.gain.linearRampToValueAtTime(SOM.vol*0.22, t0+atraso+0.012);
+      g.gain.linearRampToValueAtTime(SOM.vol*0.9, t0+atraso+0.012);
       g.gain.exponentialRampToValueAtTime(.0001, t0+atraso+dur);
       o.start(t0+atraso); o.stop(t0+atraso+dur+.02);
     });
@@ -4489,6 +4531,88 @@ function pintarBarraAnexo(c, arq, estado){
   if(x) x.onclick=()=>{ c._anexo=null; pintarBarraResposta(c); };
 }
 
+/* ═══════════ SEÇÕES DO CADASTRO ═════════════════════════════════════════════
+   O painel do cliente empilha dez blocos e o atendente usa um ou dois por
+   conversa. Agora todos nascem recolhidos e abrem no clique do título; o nome
+   do cliente no topo da conversa é o atalho para o Cadastro.
+
+   Quais estão abertos é lembrado enquanto a conversa fica aberta (o modal é
+   remontado a cada mensagem nova — sem isso o bloco fecharia sozinho na cara
+   do atendente), e zera ao trocar de conversa, que é o "por padrão". */
+let secoesAbertas = new Set();
+
+function prepararSecoesCliente(zerar){
+  if(zerar) secoesAbertas = new Set();
+  const painel = $('#modal') && $('#modal').querySelector('.m-side');
+  if(!painel) return;
+  painel.querySelectorAll('.ms-sec').forEach((sec, i) => {
+    const h3 = sec.querySelector(':scope > h3');
+    if(!h3) return;                       // faixa de pílulas: resumo, fica sempre visível
+    const chave = h3.textContent.trim().slice(0, 40) || String(i);
+    sec.dataset.sec = chave;
+    sec.classList.add('recolhivel');
+    sec.classList.toggle('recolhida', !secoesAbertas.has(chave));
+    h3.onclick = ev => {
+      // o ✎ de renomear e o › de recolher vivem dentro do título
+      if(ev.target.closest('button')) return;
+      const abrindo = sec.classList.contains('recolhida');
+      if(abrindo) secoesAbertas.add(chave); else secoesAbertas.delete(chave);
+      sec.classList.toggle('recolhida', !abrindo);
+    };
+  });
+}
+
+/* Clique no nome do cliente: mostra o cadastro. No desktop garante o painel
+   aberto e destaca o bloco; no celular o painel é uma aba separada. */
+function abrirCadastroCliente(){
+  const modal = $('#modal'); if(!modal) return;
+  if(window.innerWidth <= 1020){
+    const aba = modal.querySelector('.m-aba[data-aba="cliente"]');
+    if(aba) aba.click();
+  } else if(fichaRecolhida){
+    alternarFicha(false);
+  }
+  const sec = modal.querySelector('.m-side .ms-sec.recolhivel');
+  if(!sec) return;
+  secoesAbertas.add(sec.dataset.sec);
+  sec.classList.remove('recolhida');
+  sec.classList.add('destaque');
+  sec.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  setTimeout(()=>sec.classList.remove('destaque'), 1200);
+}
+
+/* ═══════════ ÁUDIO QUE SOBREVIVE AO REPINTAR ════════════════════════════════
+   openModal reescreve o modal inteiro, e ele roda a cada mensagem nova, foto de
+   perfil carregada, painel do IXC respondido… Como o <audio> era destruído
+   junto, o áudio do cliente parava no meio sempre que chegava uma mensagem.
+
+   A saída não é adiar o repintar (o atendente precisa ver a mensagem nova): é
+   NÃO destruir o player. Um elemento de mídia continua tocando mesmo depois de
+   sair do DOM, então guardamos a referência viva antes de trocar o HTML e
+   transplantamos o mesmo nó para dentro da árvore nova. Não há corte nem
+   reinício — é literalmente o mesmo player. */
+function preservarMidiaTocando(){
+  // só players com controles (áudio e vídeo do cliente); GIF é autoplay mudo e
+  // não interessa preservar
+  for(const el of document.querySelectorAll('#mThread .mb-audio')){
+    if(el.paused || el.ended) continue;
+    const bolha = el.closest('.mb');
+    const msgId = bolha && bolha.dataset.msgid;
+    if(!msgId) continue;
+    return { el, msgId, tag: el.tagName.toLowerCase() };
+  }
+  return null;
+}
+
+function restaurarMidiaTocando(vivo){
+  if(!vivo) return;
+  const novo = document.querySelector(`#mThread .mb[data-msgid="${vivo.msgId}"] ${vivo.tag}.mb-audio`);
+  // a mensagem sumiu da thread (apagada, filtrada): o player fica órfão tocando,
+  // então encerra para não virar som fantasma
+  if(!novo || !novo.parentNode){ try{ vivo.el.pause(); }catch{} return; }
+  novo.parentNode.replaceChild(vivo.el, novo);
+}
+
 function openModal(id){
   // openModal também é o "repintar": só reinicia o relógio dos vistos quando a
   // conversa de fato muda, senão cada render adiaria a conferência para sempre
@@ -4546,6 +4670,9 @@ function openModal(id){
 
   const meusAg = state.agendamentos.filter(a=>a.convId===c.id);
 
+  // pega o player vivo ANTES de trocar o HTML — depois disso o nó antigo já foi
+  const _midiaViva = preservarMidiaTocando();
+
   $('#modal').innerHTML=`
   <div class="m-abas only-mobile">
     <div class="m-aba on" data-aba="chat">💬 Conversa</div>
@@ -4592,6 +4719,15 @@ function openModal(id){
         // "09:00" sozinho não diz de quando é
         let sep='';
         if(m.dia && m.dia!==ultimoDia){ sep=`<div class="dia-sep">${rotuloDia(m.dia)}</div>`; ultimoDia=m.dia; }
+        // reação não é mensagem: é um selo preso ao que ela responde. Bolha
+        // cheia daria a entender que o cliente escreveu um emoji sozinho.
+        if(m.tipo==='reacao'){
+          const alvo = m.quoteTexto ? `<b>${esc(m.quoteTexto.slice(0,60))}</b>` : 'sua mensagem';
+          return sep + `<div class="mb-reac ${m.t==='in'?'in':'out'}" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
+            <span class="rc-emo">${esc(m.x)}</span>
+            <span class="rc-txt">reagiu a ${alvo}</span>
+            <span class="rc-h">${esc(m.h||'')}</span></div>`;
+        }
         return sep + (m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
         :`<div class="mb ${m.t}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
@@ -4729,8 +4865,12 @@ function openModal(id){
   const bp=$('#btProx');   if(bp) bp.onclick=()=>btIr(btAtual+1);
   const ba=$('#btAnt');    if(ba) ba.onclick=()=>btIr(btAtual-1);
   const bf=$('#btFechar'); if(bf) bf.onclick=btFechar;
-  const bRec=$('#fichaRecolher'); if(bRec) bRec.onclick=()=>alternarFicha(true);
+  const bRec=$('#fichaRecolher'); if(bRec) bRec.onclick=ev=>{ ev.stopPropagation(); alternarFicha(true); };
   const bAbr=$('#fichaAbrir');    if(bAbr) bAbr.onclick=()=>alternarFicha(false);
+  prepararSecoesCliente(trocouConversa);
+  // devolve o player que já estava tocando para a árvore nova, no lugar do
+  // elemento recém-criado: o áudio do cliente não para quando chega mensagem
+  restaurarMidiaTocando(_midiaViva);
   $('#mThread').scrollTop=99999;
   pintarBarraResposta(c);
 
@@ -5028,11 +5168,16 @@ function openModal(id){
   $('#mSetor').onchange=e=>{ c.setor=e.target.value; api.patchConversa(c,{setor:c.setor}); renderAll(); toast('Movido para o setor '+c.setor); };
   // notas
   $('#mNotas').onchange=e=>{ c.notas=e.target.value; api.patchConversa(c,{notas:c.notas}); toast('Nota salva'); };
-  // renomear contato
-  $('#mRename').onclick=()=>{
+  // renomear contato — para o clique não abrir o cadastro junto
+  $('#mRename').onclick=ev=>{
+    ev.stopPropagation();
     const novo=prompt('Novo nome do contato:', c.nome);
     if(novo && novo.trim()){ c.nome=novo.trim(); api.patchConversa(c,{contato_nome:c.nome}); openModal(c.id); renderAll(); toast('Contato renomeado'); }
   };
+  // o nome é o atalho para a ficha: é onde o atendente olha quando quer saber
+  // quem é a pessoa do outro lado
+  const hNome=$('#modal').querySelector('.m-hname');
+  if(hNome){ hNome.title='Ver cadastro do cliente'; hNome.onclick=abrirCadastroCliente; }
   // agendar mensagem
   $('#mAgendar').onclick=()=>{
     const texto=prompt('Mensagem a agendar:'); if(!texto||!texto.trim())return;
