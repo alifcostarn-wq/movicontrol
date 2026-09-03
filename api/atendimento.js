@@ -2661,14 +2661,21 @@ async function avisarPagamentosConfirmados(e) {
 
     const texto = pagTexto(tpl, nome, valor, f.data_vencimento);
 
-    // acha ou cria a conversa — mesmo padrão de entregarCobranca (cobrança),
-    // só sem os extras de trilha/etapa/anexo que não fazem sentido aqui
+    // Acha ou cria a conversa. Nasce em "Resolvidos" DE PROPÓSITO: isto é um
+    // recibo, não um atendimento aberto. Quando nascia em "Aguardando cliente",
+    // o card aparecia no quadro da equipe, alguém clicava "Assumir" e depois
+    // "Finalizar" — e quem tinha acabado de pagar a fatura recebia quatro
+    // mensagens em vez de uma: o recibo, o "assumimos seu atendimento", a
+    // pesquisa de satisfação e o "não recebemos sua avaliação".
+    // Em "Resolvidos" a conversa fica inerte: fora da fila da equipe e fora do
+    // ciclo de inatividade. Se o cliente responder, o webhook reabre em "Novos"
+    // com o bot ativo — que é exatamente o comportamento desejado.
     let c = await sbUm(e, `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=id,coluna&limit=1`);
     if (!c) {
       const nova = await sb(e, 'atend_conversas', {
         method: 'POST', headers: { Prefer: 'return=representation' },
         body: {
-          contato_fone: fone, contato_nome: nome || fone, coluna: 'aguardando',
+          contato_fone: fone, contato_nome: nome || fone, coluna: 'resolvidos',
           setor: 'Financeiro', bot_ativo: true, cliente_ixc_id: ixcId,
         },
       });
@@ -2684,13 +2691,16 @@ async function avisarPagamentosConfirmados(e) {
         method: 'POST', prefer: 'return=minimal',
         body: { conversa_id: c.id, direcao: 'bot', conteudo: texto, wa_id: idDaEvolution(env), status: 'enviado' },
       });
-      const patch = {
-        ultima_msg: 'Pagamento confirmado: ' + texto.slice(0, 160),
-        ultima_msg_em: new Date().toISOString(),
-      };
-      // não rouba atendimento em andamento — mesma regra de entregarCobranca
-      if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
-      await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+      // NÃO mexe na coluna: um recibo não muda o estado do atendimento. Conversa
+      // resolvida continua resolvida, conversa em andamento continua com quem
+      // está atendendo. Só o resumo da lista é atualizado.
+      await sb(e, `atend_conversas?id=eq.${c.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: {
+          ultima_msg: 'Pagamento confirmado: ' + texto.slice(0, 160),
+          ultima_msg_em: new Date().toISOString(),
+        },
+      });
       enviados++;
     }
 
