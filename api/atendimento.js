@@ -1832,7 +1832,13 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         // atendimento. Só encerramento por inatividade fica de fora (o cliente
         // sumiu, não houve atendimento a avaliar). Para pular num nó específico,
         // basta marcar pesquisa:false nele no editor de fluxo.
-        if (no.pesquisa !== false && !conversa.rating) {
+        // `conversa.rating` é o valor lido no INÍCIO da execução. Se o cliente
+        // acabou de dar a nota num nó de captura deste mesmo passo, ela está em
+        // out.patch e ainda não foi gravada — olhar só o primeiro fazia o fluxo
+        // pedir a nota DE NOVO logo depois de recebê-la: o cliente avaliava,
+        // era agradecido, e a pesquisa saía outra vez na sequência.
+        const jaAvaliou = conversa.rating || out.patch.rating;
+        if (no.pesquisa !== false && !jaAvaliou) {
           out.enviar.push({ texto: TEXTO_PESQUISA, node: no.id });
           out.sessao = {
             node_atual: null,
