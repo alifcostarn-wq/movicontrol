@@ -669,6 +669,33 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   .st-preview{min-height:150px;}
 }
 
+/* ---- chamar atenção (o zumbido do MSN) ---- */
+/* O tremor é só transform: não mexe no foco nem no que está sendo digitado.
+   Um atendente no meio de uma conversa com cliente é sacudido, percebe, e não
+   perde uma tecla do que escrevia. */
+.zumbindo{animation:zumbir .82s cubic-bezier(.36,.07,.19,.97) 1;}
+@keyframes zumbir{
+  0%,100%{transform:translate3d(0,0,0);}
+  8%,24%,40%{transform:translate3d(-9px,3px,0);}
+  16%,32%,48%{transform:translate3d(9px,-3px,0);}
+  60%{transform:translate3d(-5px,2px,0);}
+  72%{transform:translate3d(5px,-2px,0);}
+  84%{transform:translate3d(-2px,1px,0);}
+}
+@media(prefers-reduced-motion:reduce){
+  /* sem sacudir, mas o chamado não pode passar batido: pisca a borda */
+  .zumbindo{animation:zumbirSuave .9s ease-in-out 2;}
+  @keyframes zumbirSuave{0%,100%{box-shadow:none}50%{box-shadow:inset 0 0 0 3px var(--orange,#f59e0b)}}
+}
+.ci-zum{
+  align-self:center;display:flex;align-items:center;gap:7px;margin:6px 0;
+  background:var(--orange-soft,#fff4e5);border:1px solid #fcd9a4;color:#92400e;
+  border-radius:20px;padding:5px 13px;font-size:11.5px;font-weight:700;
+}
+.ci-zum .zt{font-weight:400;opacity:.8;font-size:10.5px;}
+.ci-zumbtn{position:relative;}
+.ci-zumbtn:disabled{opacity:.45;cursor:not-allowed;}
+
 /* ---- chat interno: agendadas e tarefas ---- */
 .ci-prog{
   display:flex;align-items:center;gap:8px;padding:7px 11px;margin:0 0 8px;
@@ -2389,7 +2416,11 @@ function ligarRealtime(){
       m.status = p.new.status;
       if(modalId===c.id) openModal(c.id);
     })
-    .on('postgres_changes', { event:'INSERT', schema:'public', table:'atend_chat_interno' }, ()=>{
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'atend_chat_interno' }, (p)=>{
+      if(zumbidoParaMim(p.new)){
+        const de = (EQUIPE.find(x=>x.id===p.new.autor_id)||{}).nome;
+        receberZumbido(de, p.new.canal ? '#'+p.new.canal : null);
+      }
       recarregarChat().catch(()=>{});
     })
     .subscribe();
@@ -5674,11 +5705,14 @@ function renderChatInterno(a){
       <div class="ci-thread" id="ciThread">
         ${pendentes.map(g=>`<div class="ci-prog">🕒 <span>Programada para <b>${esc(fmtQuandoISO(g.quando))}</b>: ${esc(String(g.texto).slice(0,70))}${String(g.texto).length>70?'…':''}</span>
           <span class="cp-x" data-cancelag="${g.id}" title="Cancelar">✕</span></div>`).join('')}
-        ${thread.length?thread.map(m=>`<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${esc(m.x)}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
+        ${thread.length?thread.map(m=> m.tipo==='zumbido'
+          ? `<div class="ci-zum">🔔 ${esc(m.de===(USUARIO&&USUARIO.nome)?'Você chamou a atenção':m.de+' chamou sua atenção')}<span class="zt">${esc(m.h)}</span></div>`
+          : `<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${esc(m.x)}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
           :'<div class="sched-empty" style="align-self:center;">Nenhuma mensagem ainda. Comece a conversa!</div>'}
       </div>
       <div class="ci-composer">
         <input id="ciInput" placeholder="Mensagem para ${tipo==='canal'?'#'+esc(nome):esc(nome)}...">
+        <button class="fbtn ci-zumbtn" id="ciZumbido" title="Chamar atenção — sacode a tela de quem está do outro lado">🔔</button>
         <button class="fbtn" id="ciAgendar" title="Programar esta mensagem para depois">🕒</button>
         <button class="m-send" id="ciSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
       </div>
@@ -5707,6 +5741,19 @@ function renderChatInterno(a){
   $('#ciSend').onclick=sendCi;
   $('#ciInput').onkeydown=e=>{ if(e.key==='Enter') sendCi(); };
   $('#ciAgendar').onclick=()=>abrirAgendarChat(a, ciAtivo, $('#ciInput').value.trim());
+
+  $('#ciZumbido').onclick=async()=>{
+    const b=$('#ciZumbido'); if(b.disabled) return;
+    b.disabled=true;
+    const dm = tipo==='dm' ? (EQUIPE.find(p=>p.nome===nome)||{}).id : null;
+    try{
+      await chamar('chat.zumbido', { canal: tipo==='canal'?nome:null, dm_para: dm });
+      await recarregarChat();
+      toast('Atenção chamada 🔔');
+    }catch(err){ toast(err.message); }
+    // o servidor tem o cooldown de verdade; aqui é só para o dedo não insistir
+    setTimeout(()=>{ const x=$('#ciZumbido'); if(x) x.disabled=false; }, 15000);
+  };
 }
 
 /* barra lateral compartilhada entre as threads e a aba de tarefas */
@@ -5725,6 +5772,57 @@ function ciBarraLateral(outros){
 }
 function ciLigarBarra(a){
   a.querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>{ ciAtivo=el.dataset.ci; ciEmThread=true; renderChatInterno(a); });
+}
+
+/* ── chamar atenção (o zumbido do MSN) ───────────────────────────────────────
+   Som grave e trêmulo, deliberadamente diferente do bipe de mensagem: quem
+   ouve sabe na hora que é um chamado direto, não mais uma conversa entrando. */
+function tocarZumbido(){
+  if(!SOM.ligado) return;                    // respeita o botão de som do cabeçalho
+  try{
+    SOM.ctx = SOM.ctx || new (window.AudioContext||window.webkitAudioContext)();
+    if(SOM.ctx.state==='suspended') SOM.ctx.resume();
+    const t0=SOM.ctx.currentTime, dur=.55;
+    const o=SOM.ctx.createOscillator(), g=SOM.ctx.createGain();
+    const lfo=SOM.ctx.createOscillator(), lfoG=SOM.ctx.createGain();
+    o.type='sawtooth'; o.frequency.value=110;
+    // vibrato: é o que dá a sensação de "zumbido" em vez de uma nota grave
+    lfo.type='sine'; lfo.frequency.value=17; lfoG.gain.value=26;
+    lfo.connect(lfoG); lfoG.connect(o.frequency);
+    const filtro=SOM.ctx.createBiquadFilter();
+    filtro.type='lowpass'; filtro.frequency.value=900;
+    o.connect(filtro); filtro.connect(g); g.connect(SOM.ctx.destination);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(SOM.vol*0.55, t0+.02);
+    g.gain.exponentialRampToValueAtTime(.0001, t0+dur);
+    o.start(t0); lfo.start(t0); o.stop(t0+dur+.02); lfo.stop(t0+dur+.02);
+  }catch(e){}
+}
+
+/* Sacode a janela inteira, como o MSN fazia. É transform puro: o foco e o que
+   está sendo digitado não são tocados. */
+function sacudirTela(){
+  const alvo = document.querySelector('#shell') || document.body;
+  alvo.classList.remove('zumbindo');
+  void alvo.offsetWidth;                     // reinicia a animação se vier outro
+  alvo.classList.add('zumbindo');
+  setTimeout(()=>alvo.classList.remove('zumbindo'), 1000);
+}
+
+/* Chegou um zumbido para mim: sacode, toca e avisa de onde veio — quem está
+   em outra tela precisa saber para onde ir. */
+function receberZumbido(de, origem){
+  sacudirTela(); tocarZumbido();
+  const onde = origem ? ` em ${origem}` : '';
+  toast(`🔔 ${de||'Alguém'} chamou sua atenção${onde}`);
+}
+
+/* Decide se um INSERT do chat interno é um zumbido dirigido a mim. */
+function zumbidoParaMim(linha){
+  if(!linha || linha.tipo!=='zumbido') return false;
+  const eu = USUARIO && USUARIO.id;
+  if(!eu || linha.autor_id===eu) return false;     // o meu próprio não me sacode
+  return linha.dm_para ? linha.dm_para===eu : !!linha.canal;
 }
 
 /* ── mensagens programadas ────────────────────────────────────────────────── */

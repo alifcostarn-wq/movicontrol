@@ -3578,6 +3578,7 @@ export default async function handler(req, res) {
           const item = {
             de: nomeDe[l.autor_id] || 'Usuário',
             x: l.texto,
+            tipo: l.tipo || 'texto',
             h: new Date(l.created_at).toTimeString().slice(0, 5),
           };
           if (l.canal) {
@@ -3588,6 +3589,38 @@ export default async function handler(req, res) {
           }
         }
         return res.status(200).json({ ok: true, canais, dm, equipe: perfis });
+      }
+
+      // ---- "chamar atenção" (o zumbido do MSN) ----
+      // Vira uma mensagem normal com tipo diferente: entra no histórico e no
+      // realtime que já existem. O cooldown NÃO é detalhe — sem ele o recurso
+      // deixa de ser um chamado e vira ferramenta de importunar colega.
+      case 'chat.zumbido': {
+        if (!body.canal && !body.dm_para) return res.status(400).json({ ok: false, error: 'informe canal ou dm_para' });
+        const destino = body.canal
+          ? `canal=eq.${encodeURIComponent(body.canal)}`
+          : `dm_para=eq.${body.dm_para}`;
+        const ultimo = await sbUm(e,
+          `atend_chat_interno?autor_id=eq.${user.id}&tipo=eq.zumbido&${destino}` +
+          `&select=created_at&order=created_at.desc&limit=1`);
+        const ESPERA = 15000;
+        if (ultimo) {
+          const falta = ESPERA - (Date.now() - new Date(ultimo.created_at).getTime());
+          if (falta > 0) {
+            return res.status(200).json({
+              ok: false, espere: Math.ceil(falta / 1000),
+              error: `Aguarde ${Math.ceil(falta / 1000)}s para chamar a atenção de novo.`,
+            });
+          }
+        }
+        await sb(e, 'atend_chat_interno', {
+          method: 'POST', prefer: 'return=minimal',
+          body: {
+            canal: body.canal || null, dm_para: body.dm_para || null,
+            autor_id: user.id, tipo: 'zumbido', texto: 'chamou sua atenção',
+          },
+        });
+        return res.status(200).json({ ok: true });
       }
 
       // ---- mensagem programada do chat interno ----
