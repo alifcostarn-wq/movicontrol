@@ -85,6 +85,40 @@ function variantesFone(fone) {
   return [...out];
 }
 
+// Acha a conversa do cliente cobrindo as DUAS formas do número.
+//
+// O WhatsApp entrega de um jeito e o cadastro do IXC guarda de outro: o mesmo
+// cliente é "558494215475" para o WhatsApp e "5584994215475" no IXC. Com busca
+// exata, o mesmo cliente ganhava DUAS conversas — a do bot, criada pela
+// mensagem que ele mandou, e a da notificação de pagamento, criada a partir do
+// cadastro — e o atendente via o histórico partido ao meio.
+//
+// A regra que resolve de vez: quem manda no número é o WHATSAPP. Toda mensagem
+// que chega adota o número de quem enviou (`adotarFoneDoWhatsApp` abaixo), e
+// todo envio nosso procura por variante e usa o número que a conversa já tem —
+// que é, por construção, o que o WhatsApp entrega.
+async function conversaPorFone(e, fone, select = '*') {
+  const lista = variantesFone(fone).map(f => `"${f}"`).join(',');
+  if (!lista) return null;
+  // a mais antiga primeiro: é a conversa de verdade do cliente, com histórico
+  const achadas = await sb(e,
+    `atend_conversas?contato_fone=in.(${lista})&deleted_at=is.null&select=${select}&order=id.asc&limit=1`);
+  return (achadas && achadas[0]) || null;
+}
+
+// Mensagem recebida é a fonte da verdade do número. Se a conversa foi criada a
+// partir do cadastro (com o 9º dígito) e o cliente escreve do número sem ele,
+// a conversa passa a usar o número dele — e as nossas respostas seguintes saem
+// pelo caminho que comprovadamente entrega.
+async function adotarFoneDoWhatsApp(e, conversa, fone) {
+  if (!conversa || !fone || conversa.contato_fone === fone) return conversa;
+  await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
+    method: 'PATCH', prefer: 'return=minimal', body: { contato_fone: fone },
+  }).catch(err => console.error('[fone] adotar:', err.message));
+  conversa.contato_fone = fone;
+  return conversa;
+}
+
 function fmtMoeda(v) {
   return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
 }
@@ -2107,8 +2141,7 @@ async function tratarAckMensagem(e, body) {
 async function tratarReacao(e, { fone, waId, emoji, alvoWaId }) {
   if (!alvoWaId) return { ok: true, ignorado: 'reação sem mensagem alvo' };
 
-  const conversa = await sbUm(e,
-    `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=id&limit=1`);
+  const conversa = await conversaPorFone(e, fone, 'id,contato_fone');
   if (!conversa) return { ok: true, ignorado: 'reação sem conversa' };
 
   const alvo = await sbUm(e,
@@ -2220,8 +2253,9 @@ async function tratarWebhook(e, body) {
   // acha ou cria a conversa. Uma por telefone, para sempre — igual ao Evotrix:
   // se já resolveu antes, REABRE a mesma conversa e mantém todo o histórico.
   // Nunca cria um card novo pra quem já é conhecido pelo número.
-  let conversa = await sbUm(e,
-    `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=*&limit=1`);
+  let conversa = await conversaPorFone(e, fone);
+  // o número de quem escreveu passa a ser o número da conversa
+  if (conversa) conversa = await adotarFoneDoWhatsApp(e, conversa, fone);
 
   if (!conversa) {
     conversa = await sbUm(e, 'atend_conversas', {
@@ -2441,7 +2475,9 @@ async function tratarWebhook(e, body) {
    divergiriam, e a do cron é a que ninguém está olhando. */
 async function entregarCobranca(e, o) {
   const nome = o.nome || o.fone;
-  let c = await sbUm(e, `atend_conversas?contato_fone=eq.${o.fone}&deleted_at=is.null&select=*&limit=1`);
+  let c = await conversaPorFone(e, o.fone);
+  // conversa achada manda no número: é o que o WhatsApp entrega de fato
+  if (c && c.contato_fone) o.fone = c.contato_fone;
   if (!c) {
     const nova = await sb(e, 'atend_conversas', {
       method: 'POST', headers: { Prefer: 'return=representation' },
@@ -2682,7 +2718,11 @@ async function avisarPagamentosConfirmados(e) {
     // Em "Resolvidos" a conversa fica inerte: fora da fila da equipe e fora do
     // ciclo de inatividade. Se o cliente responder, o webhook reabre em "Novos"
     // com o bot ativo — que é exatamente o comportamento desejado.
-    let c = await sbUm(e, `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=id,coluna&limit=1`);
+    let c = await conversaPorFone(e, fone, 'id,coluna,contato_fone');
+    // conversa achada manda no número: o cadastro do IXC guarda com o 9º dígito,
+    // o WhatsApp entrega sem ele. Mandar pelo número da conversa é o que evita
+    // o recibo abrir um bate-papo paralelo ao do bot.
+    const foneEnvio = (c && c.contato_fone) || fone;
     if (!c) {
       const nova = await sb(e, 'atend_conversas', {
         method: 'POST', headers: { Prefer: 'return=representation' },
@@ -2695,7 +2735,7 @@ async function avisarPagamentosConfirmados(e) {
     }
 
     let env = null, erro = null;
-    try { env = await waEnviar(e, fone, texto); }
+    try { env = await waEnviar(e, foneEnvio, texto); }
     catch (err) { erro = String(err.message).slice(0, 250); falhas++; }
 
     if (!erro && c) {
@@ -2719,7 +2759,7 @@ async function avisarPagamentosConfirmados(e) {
     await sb(e, `atend_pagamento_avisos?id=eq.${claim.id}`, {
       method: 'PATCH', prefer: 'return=minimal',
       body: {
-        contato_fone: fone, cliente_nome: nome, conversa_id: c ? c.id : null,
+        contato_fone: foneEnvio, cliente_nome: nome, conversa_id: c ? c.id : null,
         wa_id: env ? idDaEvolution(env) : null, status: erro ? 'erro' : 'enviado', erro,
       },
     }).catch(err => console.error('[pagamento confirmado] ledger:', err.message));
@@ -3541,8 +3581,7 @@ export default async function handler(req, res) {
         if (!fone || fone.length < 12) return res.status(400).json({ ok: false, error: 'Telefone inválido. Use DDD + número.' });
 
         // já existe conversa com esse número (mesmo resolvida)? reaproveita — nunca duplica
-        const existente = await sbUm(e,
-          `atend_conversas?contato_fone=eq.${fone}&deleted_at=is.null&select=*&limit=1`);
+        const existente = await conversaPorFone(e, fone);
         if (existente) {
           if (existente.coluna === 'resolvidos') {
             await sb(e, `atend_conversas?id=eq.${existente.id}`, {
