@@ -9384,7 +9384,9 @@ function insReceberArea(pontos){
   _insForm.escopo='area';
   _insForm.poligonoLivre=pontos;
   _insForm.area_id='';
-  if(!_insForm.area_nome)_insForm.area_nome='Área marcada no mapa';
+  // NÃO preencher com "Área marcada no mapa": isso é rótulo de tela, e ele
+  // acabava indo dentro da mensagem do cliente no lugar do nome do bairro.
+  // Campo vazio mostra o placeholder e obriga a escrever o nome de verdade.
   _insPrev=null;
   insVoltarDoDesenho(pend);
   abrirModal('md-incidente');
@@ -9648,9 +9650,7 @@ function renderIncForm(){
         +f.poligonoLivre.length+' pontos'
         +'<div style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap">'+btnDesenhar
         +(areas.length?'<button class="btn ghost sm" onclick="incSet(\'poligonoLivre\',null,true)">Usar uma área do projeto</button>':'')
-        +'</div></div></div>'
-        +'<div class="campo"><label>Nome da região (aparece na mensagem)</label>'
-        +'<input value="'+_esc(f.area_nome||'')+'" oninput="incSet(\'area_nome\',this.value)" placeholder="Ex.: Centro, Alto de São Manoel"></div>';
+        +'</div></div></div>';
     }else if(areas.length){
       escopoExtra='<div class="campo"><label>Área de cobertura</label><select onchange="incSet(\'area_id\',this.value,true)">'
         +'<option value="">— escolha a área —</option>'
@@ -9693,6 +9693,13 @@ function renderIncForm(){
    +'<div class="campo"><label>Abrangência</label>'
     +seg('escopo',[['projeto','🗂️ Projeto inteiro'],['area','⬠ Área do mapa'],['caixas','📦 Caixas específicas']],'incSetEscopo')+'</div>'
    +escopoExtra
+   /* O nome da região é o que o cliente lê em {{regiao}}. Vale para as três
+      abrangências: numa queda por caixas, sem ele o cliente recebia o código
+      do projeto. */
+   +'<div class="campo"><label>Nome da região <span style="text-transform:none;color:var(--accent)">— é isto que o cliente lê na mensagem</span></label>'
+    +'<input id="inc-f-regiao" value="'+_esc(f.area_nome||'')+'" oninput="incSet(\'area_nome\',this.value)" '
+    +'placeholder="Ex.: Centro, Alto de São Manoel, Cond. Vila Real">'
+    +'<div id="inc-bairros" class="ins-vars" style="margin-top:7px">'+_insBairrosHTML()+'</div></div>'
    +'<div class="linha2">'
      +'<div class="campo"><label>Previsão de normalização</label>'
       +'<input type="datetime-local" value="'+_esc(f.previsao||'')+'" oninput="incSet(\'previsao\',this.value)"></div>'
@@ -9723,6 +9730,23 @@ function renderIncForm(){
 }
 function incSetEscopo(v){_insForm.escopo=v;_insPrev=null;renderIncForm()}
 
+/* Bairros de quem está dentro da abrangência, para o operador não ter de
+   adivinhar como o cliente chama aquele pedaço da cidade. Vêm da prévia. */
+function _insBairrosHTML(){
+  const bs=(_insPrev&&_insPrev.bairros)||[];
+  if(!bs.length) return '<span style="font-size:11px;color:var(--text-dim)">'
+    +'Toque em <b>Quantos clientes?</b> abaixo para ver os bairros de quem está na abrangência.</span>';
+  return '<span style="font-size:11px;color:var(--text-dim);margin-right:4px">bairros da área:</span>'
+    + bs.map(b=>'<button type="button" onclick="incUsarBairro(this.dataset.b)" data-b="'+_esc(b.nome)+'">'
+        +_esc(b.nome)+' <span style="opacity:.6">'+b.qtd+'</span></button>').join('');
+}
+function incUsarBairro(nome){
+  _insForm.area_nome=nome;
+  const el=document.getElementById('inc-f-regiao');
+  if(el)el.value=nome;
+  incErroCaixa(null);
+}
+
 /* Monta o critério e reclama do que falta — a mesma checagem serve para a
    prévia e para o salvamento. */
 function _insCriterio(){
@@ -9733,18 +9757,20 @@ function _insCriterio(){
   if(f.escopo==='area'){
     if(f.poligonoLivre&&f.poligonoLivre.length>=3){
       base.poligono=f.poligonoLivre.map(pt=>[+pt[0],+pt[1]]);
-      base.area_nome=String(f.area_nome||'').trim()||'Área marcada no mapa';
     }else{
       const a=p?(p.areas||[]).find(x=>x.id===f.area_id):null;
       if(!a){toast('Marque a área no mapa ou escolha uma existente',true);return null}
       if(!a.pontos||a.pontos.length<3){toast('Essa área não tem polígono válido',true);return null}
       base.poligono=a.pontos.map(pt=>[+pt[0],+pt[1]]);
-      base.area_nome=a.nome;
     }
   }else if(f.escopo==='caixas'){
     if(!f.caixas.length){toast('Marque ao menos uma caixa',true);return null}
     base.caixas=f.caixas;
   }
+  // O nome da região vale para QUALQUER abrangência: é ele que o cliente lê em
+  // {{regiao}}. Sem isso, uma queda por caixas mandava o código do projeto
+  // ("FTTH-MAISA") para o cliente.
+  base.area_nome=String(f.area_nome||'').trim()||null;
   return base;
 }
 async function incCalcularPrevia(){
@@ -9756,6 +9782,8 @@ async function incCalcularPrevia(){
     _insPrev=d;
     const ex=(d.amostra||[]).slice(0,3).map(x=>_esc(x.nome||('#'+x.id))).join(', ');
     if(alvo)alvo.innerHTML='<b>'+d.afetados+'</b> cliente(s) nesta abrangência'+(ex?' · ex.: '+ex:'');
+    const bx=document.getElementById('inc-bairros');
+    if(bx)bx.innerHTML=_insBairrosHTML();
   }catch(e){
     if(alvo)alvo.innerHTML='<span style="color:var(--danger)">'+_esc(e.message)+'</span>';
   }
@@ -9764,6 +9792,14 @@ async function salvarIncidente(){
   const f=_insForm;
   if(!String(f.titulo||'').trim()){toast('Dê um título à instabilidade',true);return}
   if(!String(f.mensagem||'').trim()){toast('Escreva a mensagem que o bot vai enviar',true);return}
+  // {{regiao}} entra na mensagem que o cliente lê: sem nome de gente ali, sai
+  // um rótulo de sistema no lugar do bairro
+  if(String(f.mensagem).includes('{{regiao}}') && !String(f.area_nome||'').trim()){
+    incErroCaixa('Falta o <b>nome da região</b>. A mensagem usa {{regiao}} e é isso que o cliente vai ler — escreva o bairro, a rua ou o condomínio.');
+    const el=document.getElementById('inc-f-regiao'); if(el){el.focus();el.scrollIntoView({block:'center'})}
+    toast('Informe o nome da região',true);
+    return;
+  }
   const c=_insCriterio(); if(!c)return;
   const p=_insProj();
   const btn=document.getElementById('inc-btn-salvar');

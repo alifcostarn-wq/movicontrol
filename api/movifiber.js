@@ -681,9 +681,9 @@ function pontoNoPoligono(lat, lng, poly) {
 async function incResolverAfetados(o) {
   const escopo = INC_ESCOPOS.includes(o.escopo) ? o.escopo : 'projeto';
   const vistos = new Map();
-  const juntar = (id, nome, ixc, caixa) => {
+  const juntar = (id, nome, ixc, caixa, bairro) => {
     if (id == null) return;
-    if (!vistos.has(String(id))) vistos.set(String(id), { id, nome: nome || null, ixc_id: ixc ?? null, caixa_id: caixa ?? null });
+    if (!vistos.has(String(id))) vistos.set(String(id), { id, nome: nome || null, ixc_id: ixc ?? null, caixa_id: caixa ?? null, bairro: bairro || null });
   };
 
   if (escopo === 'area') {
@@ -692,18 +692,18 @@ async function incResolverAfetados(o) {
       .map(p => [+p[0], +p[1]]);
     if (poly.length < 3) throw new Error('area sem poligono valido (minimo 3 pontos)');
     const url = `${process.env.SUPABASE_URL}/rest/v1/${SB_CLIENTES}`
-      + `?select=${SB_ID},${SB_NOME},${SB_IXCID},${SB_LAT},${SB_LNG}`
+      + `?select=${SB_ID},${SB_NOME},${SB_IXCID},${SB_LAT},${SB_LNG},bairro`
       + `&${SB_LAT}=not.is.null&${SB_LNG}=not.is.null`;
     const linhas = await sbGetAll(url);
     for (const c of linhas) {
-      if (pontoNoPoligono(+c[SB_LAT], +c[SB_LNG], poly)) juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], null);
+      if (pontoNoPoligono(+c[SB_LAT], +c[SB_LNG], poly)) juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], null, c.bairro);
     }
     return montarAfetados(vistos);
   }
 
   const base = `${process.env.SUPABASE_URL}/rest/v1/${SB_INSTAL}`
     + `?select=projeto_ftth,caixa_id,caixa_nome,`
-    + `${SB_CLIENTES}!${SB_INSTAL}_cliente_id_fkey(${SB_ID},${SB_NOME},${SB_IXCID})`
+    + `${SB_CLIENTES}!${SB_INSTAL}_cliente_id_fkey(${SB_ID},${SB_NOME},${SB_IXCID},bairro)`
     + `&order=id.asc`;
   const rows = await sbGetAll(base);
   const caixas = new Set((o.caixas || []).map(c => String(c && c.id != null ? c.id : c)).filter(Boolean));
@@ -723,16 +723,30 @@ async function incResolverAfetados(o) {
     } else {
       if (!alvos.has(norm(x.projeto_ftth))) continue;
     }
-    juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], x.caixa_id);
+    juntar(c[SB_ID], c[SB_NOME], c[SB_IXCID], x.caixa_id, c.bairro);
   }
   return montarAfetados(vistos);
 }
 function montarAfetados(mapa) {
   const clientes = [...mapa.values()];
+  // Os bairros de quem está dentro. Servem para o painel sugerir o nome da
+  // REGIÃO que vai na mensagem: quem marca a área no mapa não tem por que
+  // adivinhar como o cliente chama aquele pedaço da cidade.
+  const conta = new Map();
+  for (const c of clientes) {
+    const b = String(c.bairro || '').trim();
+    if (!b) continue;
+    conta.set(b, (conta.get(b) || 0) + 1);
+  }
+  const bairros = [...conta.entries()]
+    .map(([nome, qtd]) => ({ nome, qtd }))
+    .sort((a, b) => b.qtd - a.qtd)
+    .slice(0, 6);
   return {
     clientes,
     ids: clientes.map(c => c.id),
     ixc: clientes.map(c => c.ixc_id).filter(v => v != null && v !== '').map(String),
+    bairros,
     total: clientes.length
   };
 }
@@ -779,6 +793,16 @@ async function incSalvar(inc, usuario) {
   if (!titulo) throw new Error('informe um titulo para a instabilidade');
   if (!mensagem) throw new Error('informe a mensagem que o bot vai enviar');
   if (mensagem.length > 1200) throw new Error('mensagem muito longa (maximo 1200 caracteres)');
+  // {{regiao}} vai DENTRO da mensagem que o cliente le. Sem um nome de gente,
+  // ele recebia "instabilidade na regiao Area marcada no mapa" — o rotulo
+  // interno do desenho virava texto de atendimento.
+  const regiao = String(inc.area_nome || '').trim();
+  if (mensagem.includes('{{regiao}}')) {
+    if (!regiao) throw new Error('informe o nome da regiao (bairro, rua, condominio) — ele aparece na mensagem do cliente');
+    if (/^area marcada no mapa$/i.test(regiao.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) {
+      throw new Error('troque "Area marcada no mapa" pelo nome real da regiao — e isso que o cliente vai ler');
+    }
+  }
 
   const escopo = INC_ESCOPOS.includes(inc.escopo) ? inc.escopo : 'projeto';
   const caixas = (Array.isArray(inc.caixas) ? inc.caixas : [])
@@ -797,7 +821,7 @@ async function incSalvar(inc, usuario) {
     tipo: INC_TIPOS.includes(inc.tipo) ? inc.tipo : 'queda',
     projeto_id: inc.projeto_id ? String(inc.projeto_id) : null,
     projeto_nome: inc.projeto_nome ? String(inc.projeto_nome) : null,
-    area_nome: inc.area_nome ? String(inc.area_nome) : null,
+    area_nome: regiao || null,
     poligono, caixas,
     gatilho: inc.gatilho === 'qualquer' ? 'qualquer' : 'reclamacao',
     encerrar: inc.encerrar === true,
@@ -822,7 +846,7 @@ async function incSalvar(inc, usuario) {
   });
   if (!r.ok) throw incErroTabela(r.status, await r.text());
   const salvo = (await r.json())[0] || row;
-  return { ok: true, incidente: salvo, afetados: afetados.total, amostra: afetados.clientes.slice(0, 8) };
+  return { ok: true, incidente: salvo, afetados: afetados.total, amostra: afetados.clientes.slice(0, 8), bairros: afetados.bairros };
 }
 
 async function incResolverIncidente(id, usuario) {
@@ -865,7 +889,7 @@ async function incPrevia(o) {
     escopo: o.escopo, projeto_id: o.projeto_id, projeto_nome: o.projeto_nome,
     caixas: o.caixas || [], poligono: o.poligono || []
   });
-  return { ok: true, afetados: a.total, amostra: a.clientes.slice(0, 8) };
+  return { ok: true, afetados: a.total, amostra: a.clientes.slice(0, 8), bairros: a.bairros };
 }
 
 // Quem ja recebeu o aviso automatico deste incidente (acompanhamento no painel).
