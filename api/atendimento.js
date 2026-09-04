@@ -38,7 +38,16 @@
 // A Vercel corta o corpo da requisição em ~4,5 MB e o base64 infla o arquivo em
 // 33%. O limite de 2 MB de antes rejeitava anexo e status de imagem que o painel
 // já tinha comprimido para caber — a compressão mira ~3 MB.
-export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
+// maxDuration: a régua de cobrança pausa 8s entre um cliente e o outro (rajada
+// queima o número no WhatsApp). Com o padrão de 10s da Vercel dava tempo de UM
+// envio e a função morria no meio do laço — desperdiçando a consulta de faturas
+// e correndo o risco de mandar de novo o que não chegou a ser registrado.
+export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
+
+// Quanto a cobrança automática pode ocupar de uma execução antes de parar por
+// conta própria. Sai bem antes do corte da plataforma: parar sozinha deixa o
+// registro consistente, ser morta no meio não.
+const COB_ORCAMENTO_MS = Number(process.env.ATEND_COB_ORCAMENTO_MS || 45000);
 
 const MAX_PASSOS_FLUXO = 15;   // trava anti-loop
 const MAX_TENTATIVAS   = 3;    // respostas não reconhecidas antes de transbordar
@@ -2845,12 +2854,17 @@ async function cobrancaAutomatica(e) {
   const agora = new Date();
   const hojeISO = agora.toISOString().slice(0, 10);
 
-  // Snapshot velho = classificação de risco desatualizada. Parar é mais seguro
-  // que cobrar com base em perfil de semanas atrás.
+  // Retrato velho = classificação de risco desatualizada. Isso derruba a trilha
+  // de RISCO, que é a única que decide por score — antes derrubava tudo, e a
+  // cobrança inteira parava em silêncio uma semana depois de alguém abrir a
+  // tela pela última vez. Lembrete, vencimento e recuperação dependem só da
+  // data de vencimento da fatura, que é lida do IXC na hora.
   const maisNovo = await sbUm(e, 'atend_cobranca_perfis?select=atualizado_em&order=atualizado_em.desc&limit=1');
   const idadeDias = maisNovo ? (Date.now() - new Date(maisNovo.atualizado_em).getTime()) / 86400000 : 999;
-  if (idadeDias > Number(cfg.auto_max_dias_perfil ?? 7)) {
-    return { ok: true, auto: 'perfis desatualizados', idade_dias: Math.round(idadeDias) };
+  const retratoVelho = idadeDias > Number(cfg.auto_max_dias_perfil ?? 7);
+  const trilhasAtivas = retratoVelho ? trilhas.filter(t => t !== 'risco') : trilhas;
+  if (!trilhasAtivas.length) {
+    return { ok: true, auto: 'só a trilha de risco está ligada e o retrato está velho', idade_dias: Math.round(idadeDias) };
   }
 
   const regua = (await sb(e, 'atend_cobranca_regua?ativo=eq.true&select=*&order=dias.asc')) || [];
@@ -2864,6 +2878,53 @@ async function cobrancaAutomatica(e) {
   const optout = new Set(((await sb(e, 'atend_cobranca_optout?select=contato_fone')) || []).map(o => String(o.contato_fone)));
   const perfis = (await sb(e, 'atend_cobranca_perfis?select=*')) || [];
   const porId = new Map(perfis.map(p => [String(p.ixc_id), p]));
+
+  // ---- QUEM ENTRA NA RÉGUA -------------------------------------------------
+  // Antes o universo era a lista de perfis: um retrato de risco que só é
+  // regravado quando alguém abre a tela de cobrança do MoviOne. Isso amarrava
+  // a cobrança de TODA a base a alguém lembrar de abrir uma tela — e cobria
+  // 331 de 1.921 clientes. Agora quem manda é a FATURA EM ABERTO no IXC, que
+  // é a verdade do momento; o perfil, quando existe, segue decidindo risco e
+  // folga por hábito. Uma consulta só para a base inteira, no lugar de uma
+  // por cliente.
+  const diasRegua = regua.map(x => Number(x.dias) || 0);
+  const maisCedo = Math.min(...diasRegua);        // ex.: -3 (antes de vencer)
+  const maisTarde = Math.max(...diasRegua);       // ex.: 30 (bem atrasada)
+  const folgaTeto = Number(cfg.habito_folga_teto ?? 5) + Number(cfg.habito_folga_dias ?? 1);
+  const diaISO = d => new Date(d).toISOString().slice(0, 10);
+  const inicioJanela = diaISO(Date.now() - (maisTarde + folgaTeto + 2) * 864e5);
+  const fimJanela = diaISO(Date.now() - (maisCedo - 1) * 864e5);
+
+  let faturasBase = [];
+  try {
+    const d = await ixc(e, 'fn_areceber', {
+      qtype: 'fn_areceber.data_vencimento', query: inicioJanela, oper: '>=',
+      sortname: 'fn_areceber.data_vencimento', sortorder: 'asc', rp: '5000',
+    });
+    faturasBase = (d.registros || []).filter(f =>
+      /^\d+$/.test(String(f.id))
+      && !['R', 'C'].includes(String(f.status || '').toUpperCase())
+      && String(f.data_vencimento || '').slice(0, 10) <= fimJanela);
+  } catch (err) {
+    console.error('[cobranca auto] faturas:', err.message);
+    return { ok: true, auto: 'erro ao ler faturas do IXC', erro: err.message };
+  }
+  if (!faturasBase.length) return { ok: true, auto: 'nenhuma fatura na janela', janela: [inicioJanela, fimJanela] };
+
+  // agrupa por cliente, da mais antiga para a mais nova (é a que se cobra primeiro)
+  const porCliente = new Map();
+  for (const f of faturasBase) {
+    const k = String(f.id_cliente || '');
+    if (!k) continue;
+    if (!porCliente.has(k)) porCliente.set(k, []);
+    porCliente.get(k).push(f);
+  }
+
+  // telefone: o espelho do MoviOne tem WhatsApp de 1.915 dos 1.921 clientes,
+  // e ler daqui evita uma ida ao IXC por cliente
+  const cadastros = (await sb(e,
+    'clientes?ixc_id=not.is.null&select=ixc_id,nome,razao,whatsapp,tel1')) || [];
+  const cadPorIxc = new Map(cadastros.map(c => [String(c.ixc_id), c]));
 
   // histórico recente: dedupe, cooldown e teto por cliente
   const desde90 = new Date(Date.now() - 90 * 864e5).toISOString();
@@ -2882,37 +2943,47 @@ async function cobrancaAutomatica(e) {
   const enviados = [];
   const pausa = ms => new Promise(r => setTimeout(r, ms));
   const intervalo = Math.max(1, Number(cfg.intervalo_segundos ?? 8)) * 1000;
+  const prazo = Date.now() + COB_ORCAMENTO_MS;
+  let faltouTempo = false;
 
-  for (const p of perfis) {
+  for (const [chave, abertas] of porCliente) {
     if (restanteHoje <= 0) break;
-    if (p.grupo === 'cancelado') continue;
-    const fone = normalizarFone(p.fone || '');
+    // acabou o tempo desta execução: para limpo e continua na próxima. As
+    // travas de repetição (fatura+etapa, cooldown, teto do dia) garantem que
+    // recomeçar do início não cobra ninguém duas vezes.
+    // O primeiro envio da rodada sempre passa: se a pausa entrasse na conta já
+    // na largada, um orçamento menor que o intervalo travaria a régua em zero
+    // envio por rodada, para sempre. Do segundo em diante, só continua se
+    // couber a pausa — que é o que impede a rajada de queimar o número.
+    if (enviados.length && Date.now() + intervalo > prazo) { faltouTempo = true; break; }
+    const p = porId.get(chave) || null;
+    // sem perfil não dá para saber que é cancelado; com perfil, respeita
+    if (p && p.grupo === 'cancelado') continue;
+    const cad = cadPorIxc.get(chave) || null;
+    const fone = normalizarFone((p && p.fone) || (cad && (cad.whatsapp || cad.tel1)) || '');
     if (!fone) continue;
     if (cfg.respeitar_optout !== false && optout.has(fone)) continue;
 
-    const chave = String(p.ixc_id);
     if (Number(cfg.cooldown_dias ?? 3) > 0 && ult[chave] &&
         (Date.now() - ult[chave]) / 864e5 < Number(cfg.cooldown_dias)) continue;
     if (Number(cfg.max_por_cliente_mes ?? 6) > 0 &&
         (noMes[chave] || 0) >= Number(cfg.max_por_cliente_mes)) continue;
 
-    // fatura lida do IXC AGORA: quem pagou hoje de manhã não pode ser cobrado
-    let abertas = [];
-    try {
-      // rp menor aqui de propósito: isto roda para a base inteira a cada ciclo,
-      // e 50 faturas recentes já cobrem qualquer dívida cobrável
-      abertas = (await faturasDoCliente(e, chave, 50))
-        .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
-    } catch (err) { continue; }
+    // nome para a mensagem: perfil, senão cadastro do MoviOne, senão o do IXC
+    const nomeCli = (p && p.nome) || (cad && (cad.nome || cad.razao))
+      || (abertas[0] && abertas[0].razao) || 'cliente';
+    // o resto da máquina de decisão continua esperando um "perfil"; sem
+    // retrato, entra um vazio — que é lido como "sem risco conhecido"
+    const perfil = p || { ixc_id: chave, nome: nomeCli, fone };
 
     for (const f of abertas) {
       if (restanteHoje <= 0) break;
       const dias = cobDiasEntre(f.data_vencimento, hojeISO);
       if (dias === null) continue;
       // mesmas regras da tela: cancelado fora, negativado em trilha própria
-      if (p.grupo === 'cancelado') continue;
+      if (perfil.grupo === 'cancelado') continue;
       let trilha;
-      if (p.grupo === 'negativado') trilha = 'negativacao';
+      if (perfil.grupo === 'negativado') trilha = 'negativacao';
       else if (dias > 0) {
         const vencTot = abertas.filter(x => (cobDiasEntre(x.data_vencimento, hojeISO) || 0) > 0)
           .reduce((acc, x) => acc + Number(x.valor || 0), 0);
@@ -2923,10 +2994,10 @@ async function cobrancaAutomatica(e) {
         trilha = eleg ? 'negativacao' : 'recuperacao';
       }
       else if (dias === 0) trilha = 'faturamento';
-      else trilha = cobEmRiscoSrv(p, cfg) ? 'risco' : 'faturamento';
-      if (!trilhas.includes(trilha)) continue;
+      else trilha = cobEmRiscoSrv(perfil, cfg) ? 'risco' : 'faturamento';
+      if (!trilhasAtivas.includes(trilha)) continue;
 
-      const diasEf = dias - (trilha === 'recuperacao' ? cobFolgaSrv(p, cfg) : 0);
+      const diasEf = dias - (trilha === 'recuperacao' ? cobFolgaSrv(perfil, cfg) : 0);
       const cand = regua.filter(et => (et.trilha || 'recuperacao') === trilha && diasEf >= et.dias);
       if (!cand.length) continue;
       const etapa = cand[cand.length - 1];
@@ -2934,24 +3005,28 @@ async function cobrancaAutomatica(e) {
       if (feitas.has(f.id + '|' + etapa.etapa_id)) continue;
       if (Number(f.valor) < Number(etapa.valor_min ?? cfg.valor_minimo ?? 0)) continue;
       if (etapa.valor_max != null && Number(f.valor) > Number(etapa.valor_max)) continue;
-      if (Array.isArray(etapa.grupos) && etapa.grupos.length && !etapa.grupos.includes(p.grupo)) continue;
-      if (etapa.risco_min != null && (p.score ?? 0) < Number(etapa.risco_min)) continue;
-      if (etapa.risco_max != null && (p.score ?? 0) > Number(etapa.risco_max)) continue;
+      // filtro por grupo/score só faz sentido com retrato; sem ele, a etapa
+      // que exige grupo ou faixa de risco simplesmente não se aplica
+      if (Array.isArray(etapa.grupos) && etapa.grupos.length && !etapa.grupos.includes(perfil.grupo)) continue;
+      if (etapa.risco_min != null && (perfil.score ?? 0) < Number(etapa.risco_min)) continue;
+      if (etapa.risco_max != null && (perfil.score ?? 0) > Number(etapa.risco_max)) continue;
       if (!cobJanelaOkSrv(etapa, cfg, agora)) continue;
 
-      const texto = cobTexto(etapa.tpl, p, f, dias);
+      const texto = cobTexto(etapa.tpl, perfil, f, dias);
       try {
         await entregarCobranca(e, {
           fone, texto, faturaId: String(f.id), etapaId: etapa.etapa_id, etapaNome: etapa.nome,
-          ixcId: chave, nome: p.nome, valor: Number(f.valor), vencimento: f.data_vencimento,
+          ixcId: chave, nome: nomeCli, valor: Number(f.valor), vencimento: f.data_vencimento,
           anexarBoleto: etapa.anexar_boleto === true, anexarPix: etapa.anexar_pix === true,
           canal: 'automatico', userId: null,
         });
-        enviados.push({ cliente: p.nome, etapa: etapa.nome, trilha });
+        enviados.push({ cliente: nomeCli, etapa: etapa.nome, trilha });
         feitas.add(f.id + '|' + etapa.etapa_id);
         ult[chave] = Date.now();
         noMes[chave] = (noMes[chave] || 0) + 1;
         restanteHoje--;
+        // o registro do envio já foi gravado por entregarCobranca: se a
+        // função morrer durante esta espera, ninguém é cobrado de novo
         await pausa(intervalo);          // ritmo humano: rajada queima o número
       } catch (err) {
         console.error('[cobranca auto]', err.message);
@@ -2959,7 +3034,9 @@ async function cobrancaAutomatica(e) {
       break;                             // no máximo 1 cobrança por cliente por execução
     }
   }
-  return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20) };
+  return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20),
+           clientes_na_janela: porCliente.size, retrato_dias: Math.round(idadeDias),
+           retrato_velho: retratoVelho, continua: faltouTempo };
 }
 
 // ============================================================================
