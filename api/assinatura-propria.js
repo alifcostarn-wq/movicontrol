@@ -276,15 +276,62 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: 'Ação inválida para cliente' });
     }
 
-    // ══════════════ TARGET: ADMIN (MoviControl) ══════════════
-    const perfil = await sb(`perfis?id=eq.${userId}&select=perfil`);
-    if (!perfil.ok || !perfil.data?.length || !['admin', 'operador'].includes(perfil.data[0].perfil)) {
+    // ══════════════ TARGET: EQUIPE (MoviControl e MoviTalk) ══════════════
+    // O MoviTalk entra por aqui com x-target:atendimento. Ele usa o MESMO motor
+    // de assinatura do MoviControl — mesma tabela, mesmo PDF, mesmo certificado,
+    // mesmo bucket — porque um contrato assinado não pode depender de por qual
+    // tela da casa ele foi gerado.
+    const perfil = await sb(`perfis?id=eq.${userId}&select=perfil,atendimento`);
+    const p0 = perfil.data?.[0];
+    const ehGestor = !!p0 && ['admin', 'operador'].includes(p0.perfil);
+    if (!perfil.ok || !p0) return res.status(403).json({ ok: false, error: 'Perfil não encontrado' });
+    if (target === 'atendimento') {
+      // mesma regra do login do MoviTalk: quem atende, assina.
+      if (!p0.atendimento && !ehGestor) {
+        return res.status(403).json({ ok: false, error: 'Usuário sem acesso ao Centro de Atendimento' });
+      }
+    } else if (!ehGestor) {
       return res.status(403).json({ ok: false, error: 'Acesso restrito a administradores' });
     }
 
+    // O MoviTalk só conhece o cliente pelo id do IXC (é o que fica gravado na
+    // conversa). O MoviControl conhece pelo id local. Os dois entram aqui.
+    async function resolverClienteId(b) {
+      if (b.cliente_id) return { id: Number(b.cliente_id) };
+      const ixc = String(b.cliente_ixc_id ?? '').trim();
+      if (!ixc) return { erro: 'cliente_id ou cliente_ixc_id obrigatório' };
+      const r = await sb(`clientes?ixc_id=eq.${encodeURIComponent(ixc)}&select=id,nome&limit=1`);
+      if (!r.ok) return { erro: 'Falha ao consultar o cadastro' };
+      if (!r.data?.length) return { erro: `Cliente do IXC #${ixc} ainda não foi importado para o MoviOne` };
+      return { id: r.data[0].id, nome: r.data[0].nome };
+    }
+
+    // Uma chamada só devolve tudo que a tela de assinatura precisa. São três
+    // consultas que sempre andam juntas e, numa função serverless que acabou de
+    // acordar, três idas e voltas custam mais que a soma das três queries.
+    if (action === 'painel_assinatura') {
+      const alvo = await resolverClienteId(req.body || {});
+      if (alvo.erro) return res.status(400).json({ ok: false, error: alvo.erro });
+      const [cli, mods, equips] = await Promise.all([
+        sb(`clientes?id=eq.${alvo.id}&select=id,nome,cnpj,ie,endereco,numero,bairro,cidade,uf,cep,cep_full,whatsapp,tel1,ixc_id`),
+        sb('modelos_documento?ativo=eq.true&assinavel=eq.true&select=id,nome,categoria,conteudo_html&order=ordem.asc'),
+        sb(`campo_comodato?cliente_id=eq.${alvo.id}&status=eq.ativo&select=id,serial,mac,modelo,status,campo_estoque(nome,categoria)`),
+      ]);
+      const equipamentos = (equips.data || []).map(e => ({
+        tipo: e.campo_estoque?.categoria || 'Equipamento',
+        nome: e.campo_estoque?.nome || '',
+        modelo: e.modelo || '', serial: e.serial || '', mac: e.mac || '',
+      }));
+      return res.status(200).json({
+        ok: true, cliente: cli.data?.[0] || null,
+        modelos: mods.data || [], equipamentos,
+      });
+    }
+
     if (action === 'listar_lotes') {
-      const { cliente_id } = req.body;
-      if (!cliente_id) return res.status(400).json({ ok: false, error: 'cliente_id obrigatório' });
+      const alvo = await resolverClienteId(req.body || {});
+      if (alvo.erro) return res.status(400).json({ ok: false, error: alvo.erro });
+      const cliente_id = alvo.id;
       const lotes = await sb(`assinatura_lotes?cliente_id=eq.${cliente_id}&select=*&order=criado_em.desc`);
       if (!lotes.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar lotes' });
       const out = [];
@@ -301,8 +348,11 @@ export default async function handler(req, res) {
     }
 
     if (action === 'upload_pdf') {
-      const { cliente_id, nome_arquivo, pdf_base64 } = req.body;
-      if (!cliente_id || !nome_arquivo || !pdf_base64) return res.status(400).json({ ok: false, error: 'cliente_id, nome_arquivo e pdf_base64 obrigatórios' });
+      const { nome_arquivo, pdf_base64 } = req.body;
+      if (!nome_arquivo || !pdf_base64) return res.status(400).json({ ok: false, error: 'nome_arquivo e pdf_base64 obrigatórios' });
+      const alvo = await resolverClienteId(req.body || {});
+      if (alvo.erro) return res.status(400).json({ ok: false, error: alvo.erro });
+      const cliente_id = alvo.id;
       const key = `assinaturas/contratos/${cliente_id}/${Date.now()}_${nome_arquivo.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const buf = Buffer.from(pdf_base64, 'base64');
       const up = await r2Upload(key, buf, 'application/pdf');
@@ -311,10 +361,13 @@ export default async function handler(req, res) {
     }
 
     if (action === 'criar_lote') {
-      const { cliente_id, ixc_contrato_id, documentos } = req.body;
-      if (!cliente_id || !Array.isArray(documentos) || !documentos.length) {
-        return res.status(400).json({ ok: false, error: 'cliente_id e documentos[] obrigatórios' });
+      const { ixc_contrato_id, documentos } = req.body;
+      if (!Array.isArray(documentos) || !documentos.length) {
+        return res.status(400).json({ ok: false, error: 'documentos[] obrigatório' });
       }
+      const alvo = await resolverClienteId(req.body || {});
+      if (alvo.erro) return res.status(400).json({ ok: false, error: alvo.erro });
+      const cliente_id = alvo.id;
       const lote = await sb('assinatura_lotes', {
         method: 'POST',
         body: JSON.stringify({ cliente_id, ixc_contrato_id: ixc_contrato_id || null, status: 'pendente', codigo_verificacao: gerarCodigoVerificacao(new Date()) })
