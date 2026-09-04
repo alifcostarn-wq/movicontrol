@@ -126,6 +126,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .btn .badge-n{background:var(--green);color:#fff;font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;}
 
 .content{flex:1;overflow:auto;padding:20px 26px;}
+.oculto{display:none !important;}
 
 /* ============ KPIs ============ */
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:11px;margin-bottom:18px;}
@@ -1188,10 +1189,15 @@ textarea.notas{
   font-family:inherit;font-size:12px;resize:vertical;min-height:64px;outline:none;color:var(--text);
 }
 textarea.notas:focus{border-color:var(--green);}
-select.transf{
+/* os campos de texto e data com esta classe nunca chegaram a ser estilizados:
+   a regra só pegava <select>. Nas janelas de nova tarefa e de agendamento eles
+   apareciam com a largura padrão do navegador, sem borda e sem alinhar com o
+   resto do formulário. */
+select.transf,input.transf{
   width:100%;border:1px solid var(--line);border-radius:9px;padding:8px 10px;
   font-family:inherit;font-size:12.5px;font-weight:600;outline:none;background:var(--card);color:var(--text);
 }
+select.transf:focus,input.transf:focus{border-color:var(--green);}
 .ia-note{
   font-size:11px;line-height:1.55;color:var(--text-mid);background:#f7f9fb;
   border:1.5px dashed #cbd5e1;border-radius:9px;padding:9px 11px;
@@ -1600,10 +1606,15 @@ select.transf{
 #carregando.show{display:flex;}
 
 /* ============================================================
-   MOBILE — celular em pé (até 860px)
+   MOBILE — atender pelo navegador do celular
+   O painel nasceu para monitor largo. Aqui ele é remontado para
+   uma tela de ~390px, onde cada pixel vertical é conversa que o
+   atendente vê ou deixa de ver, e onde o dedo (não o mouse) é
+   quem clica.
    ============================================================ */
 .only-mobile{display:none;}
 .drawer-back{display:none;}
+.m-voltar{display:none;}
 
 @media (max-width:860px){
   body{font-size:15px;}
@@ -1615,139 +1626,272 @@ select.transf{
 
   /* --- sidebar vira gaveta --- */
   .sidebar{
-    position:fixed;top:0;left:0;bottom:0;width:264px;z-index:120;
+    position:fixed;top:0;left:0;bottom:0;width:min(280px,84vw);z-index:120;
     transform:translateX(-100%);transition:transform .22s ease;
-    overflow-y:auto;padding-bottom:20px;
+    overflow-y:auto;padding:calc(22px + env(safe-area-inset-top)) 12px calc(20px + env(safe-area-inset-bottom));
   }
   .sidebar.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.4);}
+  .sb-toggle{display:none;}            /* recolher menu não faz sentido numa gaveta */
   .drawer-back{
     display:block;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:110;
     opacity:0;pointer-events:none;transition:opacity .22s;
   }
   .drawer-back.open{opacity:1;pointer-events:auto;}
-  .nav-item{padding:13px 12px;font-size:14.5px;}
+  .nav-item{padding:14px 12px;font-size:15px;}
+  .sector-sel{padding:11px 10px;font-size:15px;}
 
-  /* --- header compacto --- */
-  .header{padding:11px 14px;gap:9px;flex-wrap:wrap;}
-  .h-title{gap:10px;}
-  .wa-badge{width:36px;height:36px;border-radius:11px;}
-  .wa-badge svg{width:19px;height:19px;}
-  .h-title h1{font-size:17px;}
+  /* --- CABEÇALHO EM UMA LINHA SÓ ---------------------------------------
+     Antes ele quebrava em quatro faixas (título, avisos, "Novo", busca) e
+     ocupava quase metade da tela do celular antes da primeira conversa
+     aparecer. Agora é uma única faixa de ícones; a busca só aparece quando
+     a lupa é tocada, e os avisos de WhatsApp/vistos ganham a própria linha
+     apenas quando existem — que é justamente quando precisam ser vistos. */
+  .header{
+    padding:9px 10px;padding-top:calc(9px + env(safe-area-inset-top));
+    gap:6px;flex-wrap:wrap;
+  }
+  .h-title{gap:8px;min-width:0;}
+  .wa-badge{width:32px;height:32px;border-radius:9px;box-shadow:none;}
+  .wa-badge svg{width:17px;height:17px;}
+  .h-title h1{font-size:16px;}
   .h-title p{display:none;}
-  .search-box{order:5;width:100%;flex:1 0 100%;padding:10px 13px;}
-  .btn{padding:10px 13px;font-size:13px;}
-  #btnStatus{font-size:0;padding:10px 12px;}
-  #btnStatus svg{margin:0;}
-  #btnNovo{font-size:0;padding:10px 14px;}
-  #btnNovo::before{content:'＋ Novo';font-size:13px;}
+  .h-spacer{flex:1;}
   .hamb{
-    display:flex;align-items:center;justify-content:center;width:38px;height:38px;
+    display:flex;align-items:center;justify-content:center;width:40px;height:40px;
     border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;flex-shrink:0;
   }
-  .hamb svg{width:19px;height:19px;stroke:var(--text);}
-
-  .content{padding:14px;}
-
-  /* --- KPIs: rolagem horizontal --- */
-  .kpis{
-    display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;
-    margin:0 -14px 16px;padding:0 14px 4px;-webkit-overflow-scrolling:touch;
+  .hamb svg{width:20px;height:20px;stroke:var(--text);}
+  /* botões viram quadrados de 40px: só o ícone, tamanho de dedo */
+  .header .btn{
+    width:40px;height:40px;padding:0;font-size:0;gap:0;flex-shrink:0;
+    justify-content:center;border-radius:10px;
   }
-  .kpis::-webkit-scrollbar{display:none;}
-  .kpi{flex:0 0 152px;scroll-snap-align:start;padding:13px;}
-  .kpi-ico{width:38px;height:38px;border-radius:10px;}
-  .kpi-ico svg{width:19px;height:19px;}
-  .kpi-num{font-size:21px;}
-  .kpi-lbl{font-size:11px;}
-
-  /* --- Kanban: colunas deslizam na horizontal --- */
-  .board{
-    display:flex !important;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
-    margin:0 -14px;padding:0 14px 8px;-webkit-overflow-scrolling:touch;
+  .header .btn svg{width:18px;height:18px;}
+  /* o rótulo inteiro ("Novo Atendimento") não cabe: fica só o sinal de mais,
+     e é o ::before que carrega o tamanho — a caixa continua com font-size:0
+     para o texto original não vazar por cima dos vizinhos */
+  #btnNovo{overflow:hidden;}
+  #btnNovo::before{content:'＋';font-size:20px;font-weight:400;line-height:1;}
+  /* a busca dorme fora da linha e só ocupa espaço quando é chamada */
+  .search-box{display:none;}
+  .header.busca-on .search-box{
+    display:flex;order:9;flex:1 0 100%;width:100%;padding:11px 13px;
   }
-  .board::-webkit-scrollbar{display:none;}
-  .column{flex:0 0 86vw;scroll-snap-align:center;max-height:none;height:auto;min-height:0;}
-  .col-body{max-height:calc(100dvh - 300px);}
-  .col-head{min-height:0;}
-  .kpis{display:flex;}
-  .card-c{padding:14px;}
-  .cc-name{font-size:14.5px;}
-  .cc-msg{font-size:13px;}
+  .search-box input{font-size:16px;}   /* 16px evita o zoom automático do iOS */
+  .header.busca-on #btnBuscaMob{background:var(--green-soft);border-color:var(--green);color:var(--green-deep);}
+  /* avisos ficam com a linha inteira: são estado do sistema, não decoração */
+  #waAviso,#vistoAviso{order:10;flex:1 0 100%;}
+  #waAviso:empty,#vistoAviso:empty{display:none;}
+  #waAviso .wa-chip,#vistoAviso .wa-chip,
+  #waAviso > *,#vistoAviso > *{width:100%;justify-content:center;}
 
-  /* --- Modal ocupa a tela toda --- */
+  .content{padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));}
+
+  /* --- LISTA DE ATENDIMENTO ------------------------------------------
+     Ocupa a altura toda com rolagem própria, para os filtros de etapa
+     ficarem parados no topo enquanto a lista corre — no celular, ter de
+     rolar de volta até em cima para trocar de etapa é o que mais cansa. */
+  .painel-lista{grid-template-columns:1fr;grid-template-rows:1fr;height:auto;min-height:0;gap:0;}
+  .painel-espera{display:none;}
+  .col-etapas{height:100%;min-height:0;}
+  .lista-conv{max-height:none;padding:8px;}
+  .lista-conv .card-c{padding:13px;margin-bottom:9px;}
+  .lista-conv .cc-name{font-size:14.5px;}
+  .lista-conv .cc-msg{font-size:13px;}
+  .lista-conv .cc-att{max-width:none;}
+  .cc-assumir{padding:13px;font-size:13.5px;}
+  .cc-av{width:38px;height:38px;font-size:13px;}
+  /* etapas: alvos de dedo, não de mouse */
+  .etapas{grid-template-columns:repeat(4,1fr);gap:6px;padding:9px;}
+  .etapa{min-height:50px;padding:7px 3px;justify-content:center;}
+  .etapa .et-nome{font-size:9.5px;}
+  .etapa .et-n{font-size:16px;}
+  .etapa.destaque{min-height:46px;}
+  .regua-lista{padding:8px 12px;font-size:10px;}
+
+  /* --- ATENDIMENTO EM TELA CHEIA -------------------------------------- */
   .overlay{padding:0;}
   .modal{
-    width:100%;height:100dvh;max-height:100dvh;border-radius:0;
+    width:100%;height:100dvh;max-height:100dvh;border-radius:0;border:none;
     grid-template-columns:1fr;grid-template-rows:auto 1fr;
   }
   .m-chat{border-right:none;}
   .m-chat.oculto{display:none;}
-  .m-side{display:none;padding:14px;}
+  .m-side{display:none;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));}
   .m-side.visivel{display:block;}
-  .m-quick{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;}
-  .m-quick::-webkit-scrollbar{display:none;}
-  .mq{flex-shrink:0;}
-  .mb{max-width:84%;font-size:14px;}
-  .m-composer textarea{font-size:16px;}   /* 16px evita o zoom automático do iOS */
-  .m-thread{padding:14px;}
-  .acts{grid-template-columns:1fr;}
   .m-abas{
-    display:flex;gap:6px;padding:9px 14px 0;border-bottom:1px solid var(--line);
+    display:flex;align-items:stretch;gap:4px;padding:calc(6px + env(safe-area-inset-top)) 8px 0;
+    border-bottom:1px solid var(--line);background:var(--card);
   }
+  .m-voltar{
+    display:flex;align-items:center;justify-content:center;width:40px;flex-shrink:0;
+    border:none;background:transparent;color:var(--text-mid);font-family:inherit;
+    font-size:26px;line-height:1;cursor:pointer;padding:0 0 4px;
+  }
+  .m-voltar:active{color:var(--green-deep);}
   .m-aba{
-    flex:1;text-align:center;font-size:12.5px;font-weight:700;padding:9px 4px;
+    flex:1;text-align:center;font-size:13px;font-weight:700;padding:12px 4px;
     border-radius:9px 9px 0 0;cursor:pointer;color:var(--text-mid);border-bottom:2.5px solid transparent;
   }
   .m-aba.on{color:var(--green-deep);border-bottom-color:var(--green);background:var(--green-soft);}
+  .m-head{padding:11px 12px;gap:9px;}
+  .m-hname{font-size:15px;}
+  .m-close{width:40px;height:40px;flex-shrink:0;}
+  /* barra do bot: os botões que mudam o rumo do atendimento não podem ser
+     tiras de 27px espremidas — aqui eles quebram em linha e engordam */
+  .bot-bar{flex-wrap:wrap;padding:9px 12px;gap:7px;}
+  .bot-bar .bb-acts{margin-left:0;flex:1 0 100%;flex-wrap:wrap;gap:7px;}
+  .bb-btn{flex:1 1 auto;min-height:40px;padding:9px 12px;font-size:12.5px;}
+  .m-quick{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding:10px 12px 4px;}
+  .m-quick::-webkit-scrollbar{display:none;}
+  .mq{flex-shrink:0;padding:9px 13px;font-size:12px;}
+  .mb{max-width:84%;font-size:14px;}
+  .mb-reply{opacity:.85;padding:9px 12px;font-size:11px;}
+  .m-thread{padding:14px;}
+  .m-composer{
+    padding:10px 12px;padding-bottom:calc(12px + env(safe-area-inset-bottom));gap:8px;
+  }
+  .m-composer textarea{font-size:16px;min-height:44px;}
+  .m-send{width:46px;height:46px;}
+  .busca-thread input{font-size:16px;}
+  .busca-thread .bt-btn{width:36px;height:36px;}
+  /* ficha do cliente: colunas duplas viram pilha, botões viram alvos */
+  .acts{grid-template-columns:1fr;}
+  .act{padding:13px 10px;font-size:13px;}
+  .igrid{grid-template-columns:1fr;}
+  .vinc-btn{min-height:40px;padding:10px 14px;font-size:12.5px;}
+  .fin-copy{min-height:34px;padding:7px 11px;}
+  .ficha-x{width:40px;height:40px;font-size:20px;}
+  .ms-sec select,.ms-sec input{font-size:16px;min-height:44px;}
 
-  /* --- Chat interno: lista OU thread, nunca os dois --- */
-  .ci-wrap{grid-template-columns:1fr;height:calc(100dvh - 190px);}
-  .ci-list{border-right:none;border-bottom:1px solid var(--line);}
+  /* --- CHAT INTERNO: lista OU conversa, nunca as duas --- */
+  /* As telas com altura própria (chat interno, editor de fluxo) mediam-se em
+     "100vh menos um número fixo" — e o número nunca batia, porque o cabeçalho
+     do celular cresce quando há aviso de WhatsApp. Aqui elas simplesmente
+     ocupam o que sobra da tela. */
+  .content{display:flex;flex-direction:column;}
+  #auxview,#board{flex:1;min-height:0;}
+  #auxview{display:flex;flex-direction:column;}
+  /* cresce para ocupar o que sobra, mas nunca encolhe abaixo do conteúdo:
+     tela curta preenche a altura, tela longa continua rolando */
+  #auxview > *{flex:1 0 auto;min-height:0;}
+  .ci-wrap,.flow-wrap{height:auto;min-height:0;}
+  .ci-wrap{grid-template-columns:1fr;}
+  .ci-list{border-right:none;padding:10px 8px;}
   .ci-wrap.emThread .ci-list{display:none;}
   .ci-wrap:not(.emThread) .ci-main{display:none;}
-  .ci-msg{max-width:82%;}
-  .ci-composer input{font-size:16px;}
+  .ci-item{padding:12px 10px;font-size:14px;}
+  .ci-msg{max-width:84%;}
+  /* input + zumbido + agendar + enviar não cabem em 390px sem encolher o
+     campo: sem isto o botão de enviar ficava cortado fora da tela */
+  .ci-composer{padding:10px 10px;padding-bottom:calc(12px + env(safe-area-inset-bottom));gap:6px;}
+  .ci-composer input{font-size:16px;min-height:44px;min-width:0;flex:1 1 0;padding:11px;}
+  .ci-composer .fbtn{flex-shrink:0;padding:0;width:44px;height:44px;display:flex;
+    align-items:center;justify-content:center;font-size:17px;}
+  .ci-composer .m-send{width:46px;height:46px;flex-shrink:0;}
   .ci-voltar{
-    display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:13px;font-weight:700;
     color:var(--green-deep);background:var(--green-soft);border:none;border-radius:8px;
-    padding:6px 11px;cursor:pointer;margin-right:4px;font-family:inherit;
+    min-height:36px;padding:6px 12px;cursor:pointer;margin-right:4px;font-family:inherit;flex-shrink:0;
   }
 
   /* --- Fluxo do bot: canvas continua, painel vira rodapé --- */
-  .flow-wrap{height:calc(100dvh - 175px);}
   .flow-body{flex-direction:column;}
   .flow-side{width:auto;border-left:none;border-top:1px solid var(--line);max-height:44%;}
-  .flow-toolbar{gap:6px;padding:9px 12px;}
-  .fbtn{padding:8px 10px;font-size:11px;}
+  .flow-toolbar{gap:6px;padding:9px 10px;}
+  .fbtn{padding:10px 12px;font-size:12px;}
   .flow-canvas-outer{min-height:210px;}
 
-  /* --- telas auxiliares --- */
-  .viewbox{padding:16px;}
-  .rule-line{flex-wrap:wrap;gap:7px;}
+  /* --- TELAS AUXILIARES (Agendamentos, Conversas, Contatos, Config…) --- */
+  .viewbox{padding:15px 13px;max-width:none;}
+  .viewbox h2{font-size:18px;}
+  /* abas de Configurações: uma fita que desliza, em vez de sete rótulos
+     empilhados em coluna quebrando palavra no meio */
+  .cfg-tabs{
+    flex-wrap:nowrap;overflow-x:auto;gap:14px;margin:0 -13px 16px;padding:0 13px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .cfg-tabs::-webkit-scrollbar{display:none;}
+  .cfg-tab{flex:0 0 auto;white-space:nowrap;padding:11px 2px 13px;font-size:13px;}
+  /* linhas de lista: em vez de espremer nome + descrição + status na mesma
+     faixa, a descrição desce para a linha de baixo */
+  .rule-line{flex-wrap:wrap;gap:8px;padding:12px 13px;}
+  .rule-desc{flex:1 0 100%;order:5;font-size:13px;}
+  .rule-del{
+    margin-left:auto;display:flex;align-items:center;justify-content:center;
+    width:40px;height:40px;font-size:16px;flex-shrink:0;
+  }
   .add-row{flex-direction:column;}
-  .add-row input{flex:1 1 auto !important;}
-  .igrid{grid-template-columns:1fr;}
-  .toast{left:14px;right:14px;bottom:14px;transform:translateY(90px);text-align:center;}
+  .add-row input{flex:1 1 auto !important;font-size:16px;min-height:44px;}
+  .add-row .btn{width:100%;justify-content:center;min-height:46px;}
+  .viewbox input[type=text],.viewbox input[type=date],.viewbox input[type=datetime-local],
+  .viewbox input[type=number],.viewbox input[type=password],.viewbox select,.viewbox textarea{
+    font-size:16px;min-height:44px;
+  }
+  .toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));transform:translateY(90px);text-align:center;}
   .toast.show{transform:translateY(0);}
+
+  /* --- TABELAS DE RELATÓRIO ------------------------------------------
+     Seis colunas em 390px viram seis colunas ilegíveis. A moldura já rolava
+     na horizontal; faltava a tabela poder ser mais larga que ela. */
+  /* dois indicadores por linha em vez de um: com um só, ver os seis números
+     do período virava meia dúzia de rolagens */
+  .rel-kpis{grid-template-columns:repeat(2,1fr);gap:8px;}
+  .rel-k{padding:11px;}
+  .rk-n{font-size:22px;}
+  .rel-tab,.ex-tab{min-width:560px;}
+  .rel-tab-wrap,.ex-wrap{overflow-x:auto;margin:0 -13px;padding:0 13px;-webkit-overflow-scrolling:touch;}
+  .rel-periodo{flex-wrap:wrap;gap:8px;}
+  .rel-periodo input[type=date]{font-size:16px;min-height:42px;}
+  .rl-nome{width:78px;}
+  .rl-sub{margin-left:87px;}
+
+  /* --- JANELAS (transferir, 2ª via, status, nova tarefa, agendar, som,
+         buscar cliente) VIRAM FOLHA QUE SOBE DE BAIXO ----------------------
+     Centralizada no meio da tela, a janela some atrás do teclado assim que
+     o atendente toca num campo. Ancorada no rodapé, ela sobe junto com o
+     teclado e o botão de confirmar continua ao alcance do polegar. */
+  .tr-overlay,.cli-overlay{align-items:flex-end;padding:0;}
+  .tr-modal,.pn-modal,.cli-modal{
+    width:100% !important;max-width:none;border-radius:18px 18px 0 0;
+    max-height:88dvh;padding-bottom:env(safe-area-inset-bottom);
+  }
+  .pn-body,.cli-lista{padding-bottom:calc(18px + env(safe-area-inset-bottom));}
+  .tr-modal{padding:18px 16px calc(18px + env(safe-area-inset-bottom));}
+  .pn-x{width:40px;height:40px;font-size:22px;}
+  .cli-busca input,.pn-body input,.pn-body select,.pn-body textarea{font-size:16px;min-height:44px;}
+  .tr-op{padding:14px 13px;}
 
   /* --- login --- */
   .lg-card{width:100%;max-width:380px;margin:16px;padding:26px 22px;}
-  .lg-f input{font-size:16px;}
+  .lg-f input{font-size:16px;min-height:46px;}
 }
 
-/* celular pequeno */
+/* celular pequeno (SE, Androids de 360px): com cinco ícones mais o menu, o
+   nome escrito é o que sobra — some ele e fica o selo verde, que é como o
+   atendente reconhece o app na aba mesmo assim. Sem isto o "+" caía sozinho
+   numa segunda linha e roubava mais 45px de conversa. */
 @media (max-width:400px){
-  .column{flex:0 0 89vw;}
-  .h-title h1{font-size:16px;}
+  .h-title h1{display:none;}
+  .header{gap:5px;padding-left:8px;padding-right:8px;}
+  .header .btn,.hamb{width:38px;height:38px;}
+  .etapa .et-nome{font-size:9px;}
+  .lista-conv .card-c{padding:11px;}
 }
 
-/* celular deitado: aproveita a largura */
-@media (max-width:860px) and (orientation:landscape){
-  .column{flex:0 0 46vw;}
-  .modal{grid-template-columns:1fr 300px;grid-template-rows:1fr;}
+/* celular deitado: cabe a lista e o atendimento lado a lado outra vez */
+@media (max-width:1020px) and (orientation:landscape) and (max-height:560px){
+  .painel-lista{grid-template-columns:270px 1fr;}
+  .modal{grid-template-columns:1fr 290px;grid-template-rows:auto 1fr;}
   .m-side{display:block;}
   .m-chat.oculto{display:flex;}
-  .m-abas{display:none;}
+  /* deitado cabem conversa e cadastro juntos, então as abas não servem — mas
+     o botão de voltar tem de ficar: sem ele o atendimento também vira beco
+     sem saída aqui, que foi o problema que a barra veio resolver */
+  .m-abas{grid-column:1/-1;padding:0 6px;border-bottom:1px solid var(--line);}
+  .m-aba{display:none;}
+  .m-voltar{width:44px;padding:4px 0;font-size:24px;}
+  .header{padding-top:calc(6px + env(safe-area-inset-top));padding-bottom:6px;}
 }
 </style>
 </head>
@@ -1927,6 +2071,9 @@ select.transf{
         </div>
       </div>
       <div class="h-spacer"></div>
+      <button class="btn only-mobile" id="btnBuscaMob" aria-label="Buscar conversa">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      </button>
       <div class="search-box">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
         <input id="search" placeholder="Buscar conversa...">
@@ -1970,7 +2117,7 @@ select.transf{
       </div>
 
       <!-- AUX VIEWS -->
-      <div id="auxview" style="display:none;"></div>
+      <div id="auxview" class="oculto"></div>
 
     </div>
   </div>
@@ -3228,7 +3375,7 @@ function htmlExtrato(j){
       <div class="ex-r"><div class="n" style="color:${r.em_atraso?'var(--red)':'var(--green-deep)'}">${r.em_atraso||0}</div><div class="l">Pagas em atraso</div></div>
       <div class="ex-r"><div class="n" style="color:${r.atraso_medio>5?'#b45309':'var(--green-deep)'}">${r.atraso_medio||0}d</div><div class="l">Atraso médio</div></div>
     </div>
-    <table class="ex-tab">
+    <div class="ex-wrap"><table class="ex-tab">
       <thead><tr><th>Emissão</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Atraso</th></tr></thead>
       <tbody>${ps.map(p=>`<tr>
         <td>${esc(p.emissao||'—')}</td>
@@ -3237,7 +3384,7 @@ function htmlExtrato(j){
         <td><b>${fmtR$(p.valor_pago)}</b></td>
         <td class="${p.atraso>0?'ex-atraso':'ex-ok'}">${p.atraso==null?'—':(p.atraso>0?p.atraso+'d':'em dia')}</td>
       </tr>`).join('')}</tbody>
-    </table>`;
+    </table></div>`;
 }
 
 /* ===== RISQUINHOS DE ENTREGA/LEITURA (só em mensagens que saíram) ===== */
@@ -4764,6 +4911,7 @@ function openModal(id){
 
   $('#modal').innerHTML=`
   <div class="m-abas only-mobile">
+    <button class="m-voltar" id="mVoltar" aria-label="Voltar para a lista de conversas">‹</button>
     <div class="m-aba on" data-aba="chat">💬 Conversa</div>
     <div class="m-aba" data-aba="cliente">👤 Cliente</div>
   </div>
@@ -5145,6 +5293,9 @@ function openModal(id){
   });
   // transferir
   $('#mTransf').onchange=e=>{ c.atendente=e.target.value; const p=EQUIPE.find(x=>x.nome===c.atendente); api.patchConversa(c,{atendente_id:p?p.id:null}); renderAll(); toast('Transferido para '+c.atendente); };
+  // no celular o atendimento cobre a tela inteira: sem este botão não há
+  // como voltar para a lista — o toque no fundo do overlay não existe mais
+  const bVoltar=$('#mVoltar'); if(bVoltar) bVoltar.onclick=()=>closeModal();
   // abas mobile
   document.querySelectorAll('.m-aba').forEach(el=>el.onclick=()=>{
     const alvo=el.dataset.aba;
@@ -5441,10 +5592,12 @@ function renderAtalhos(a, emb){
 
 function renderAux(){
   const a=$('#auxview'); const b=$('#board'); const fb=$('#filterbar'); const k=$('#kpis');
-  if(view==='kanban'){ a.style.display='none'; b.style.display='grid'; if(k) k.style.display='grid'; return; }
+  // ligar/desligar por CLASSE, não por style inline: o estilo inline vencia a
+  // folha de estilos e impedia o celular de esticar estas áreas até o rodapé
+  if(view==='kanban'){ a.classList.add('oculto'); b.classList.remove('oculto'); if(k) k.style.display='grid'; return; }
   // relatórios agora tem KPIs próprios, do período escolhido
-  b.style.display='none'; fb.style.display='none'; if(k) k.style.display='none';
-  a.style.display='block';
+  b.classList.add('oculto'); fb.style.display='none'; if(k) k.style.display='none';
+  a.classList.remove('oculto');
   if(view==='notificacoes'){ renderNotificacoes(a); }
   else if(view==='etiquetas'){ renderEtiquetas(a); }
   else if(view==='atalhos'){ renderAtalhos(a); }
@@ -6459,6 +6612,14 @@ document.querySelectorAll('.nav-item').forEach(el=>el.onclick=()=>{
   abrirGaveta(false);              // no celular, fecha a gaveta ao escolher
 });
 $('#search').oninput=e=>{ busca=e.target.value.toLowerCase(); renderBoard(); };
+// No celular a caixa de busca fica guardada: aberta o tempo todo ela empurrava
+// o cabeçalho para uma terceira linha e comia meia tela de conversas.
+$('#btnBuscaMob').onclick=()=>{
+  const h=document.querySelector('.header');
+  const abriu=h.classList.toggle('busca-on');
+  if(abriu) setTimeout(()=>$('#search').focus(),60);
+  else if(busca){ $('#search').value=''; busca=''; renderBoard(); }
+};
 $('#btnFiltros').onclick=()=>{ const fb=$('#filterbar'); fb.style.display=fb.style.display==='none'?'flex':'none'; };
 $('#sectorSel').onchange=e=>{ meuSetor=e.target.value; renderAll(); };
 $('#btnNovo').onclick=async()=>{
