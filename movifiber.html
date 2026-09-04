@@ -3269,7 +3269,12 @@ function attHint(){
   const h=document.getElementById('hint');if(!h)return;
   // em Navegar não há o que instruir: a dica some e o mapa ganha a faixa de baixo
   if(modo==='navegar'){h.style.display='none';return}
-  h.style.display='';h.innerHTML=HINTS[modo]||'';
+  h.style.display='';
+  // desenhando a área de uma instabilidade, o rodapé dizia "Área de cobertura"
+  // e contradizia a barra vermelha do topo
+  h.innerHTML=(modo==='area'&&_insDesenho)
+    ? '<b>Área da instabilidade:</b> clique os vértices da região atingida · <b>Enter</b> finaliza'
+    : (HINTS[modo]||'');
 }
 function renderSubbar(){
   const sb=document.getElementById('subbar');
@@ -9331,12 +9336,34 @@ function insBarraDesenho(on){
   if(b)b.classList.toggle('on',!!on);
   if(on)insContarPontos();
 }
+/* Põe o mapa na frente. Não dá para confiar no abrirProjeto para isso: quando
+   o projeto JÁ está aberto (voltarHome volta para o painel mas não esquece o
+   projeto), ele é pulado inteiro — e com ele as duas linhas que trocam de tela.
+   O resultado era o desenho começar num mapa invisível: o operador clicava em
+   "Desenhar área no mapa", o formulário sumia e nada acontecia. */
+function insMostrarMapa(){
+  document.getElementById('shell').style.display='none';
+  document.getElementById('tela-editor').style.display='block';
+  // o Leaflet mede o container ao criar; se ele estava escondido, as medidas
+  // ficaram zeradas e o clique cairia na coordenada errada
+  if(mapa)setTimeout(()=>{try{mapa.invalidateSize()}catch(e){}},60);
+}
+/* Volta para de onde o desenho partiu: quem veio da tela de Instabilidades
+   volta para ela; quem já estava no mapa continua no mapa. */
+function insVoltarDoDesenho(pend){
+  if(!pend||pend.origem!=='shell')return;
+  try{destruirLuzSetas()}catch(e){}
+  document.getElementById('tela-editor').style.display='none';
+  document.getElementById('shell').style.display='flex';
+}
+
 /* Abre o mapa do projeto no modo de desenho. O formulário volta inteiro
    quando o polígono fecha. */
 async function incDesenharArea(){
   const f=_insForm;
   if(!f||!f.projeto_id){toast('Escolha o projeto primeiro',true);return}
-  _insDesenho={form:JSON.parse(JSON.stringify(f))};
+  const noMapa=document.getElementById('tela-editor').style.display==='block';
+  _insDesenho={form:JSON.parse(JSON.stringify(f)),origem:noMapa?'mapa':'shell'};
   fecharModal('md-incidente');
   try{
     if(!projAtual||projAtual.id!==f.projeto_id||projAtual._multi)await abrirProjeto(f.projeto_id);
@@ -9344,6 +9371,7 @@ async function incDesenharArea(){
     _insDesenho=null;toast('Não consegui abrir o projeto: '+e.message,true);
     abrirModal('md-incidente');return;
   }
+  insMostrarMapa();
   setModo('area');
   insBarraDesenho(true);
   toast('Clique nos cantos da área atingida');
@@ -9358,6 +9386,7 @@ function insReceberArea(pontos){
   _insForm.area_id='';
   if(!_insForm.area_nome)_insForm.area_nome='Área marcada no mapa';
   _insPrev=null;
+  insVoltarDoDesenho(pend);
   abrirModal('md-incidente');
   renderIncForm();
   toast('Área marcada · '+pontos.length+' pontos');
@@ -9366,7 +9395,10 @@ function insCancelarDesenho(){
   const pend=_insDesenho; _insDesenho=null;
   insBarraDesenho(false);
   try{cancelarDesenho();setModo('navegar')}catch(e){}
-  if(pend){_insForm=pend.form;abrirModal('md-incidente');renderIncForm()}
+  if(pend){
+    insVoltarDoDesenho(pend);
+    _insForm=pend.form;abrirModal('md-incidente');renderIncForm();
+  }
 }
 
 function _insQuando(iso){
