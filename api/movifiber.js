@@ -282,7 +282,14 @@ async function validarUsuario(token) {
   const emCache = _cacheUsuarios.get(token);
   if (emCache && emCache.exp > agora) return emCache.dado;
 
-  const anon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
+  // O /auth/v1/user exige um apikey do projeto — QUALQUER um serve, porque quem
+  // identifica a pessoa e o token dela no Authorization. Antes so a anon key
+  // valia, e ela e uma variavel separada que ninguem sabia ser necessaria: sem
+  // ela na Vercel, TODA marcacao de instabilidade voltava 401 dizendo "faca
+  // login", com o operador ja logado. A service_role, que o proxy sempre tem,
+  // resolve a chamada igual e nunca sai do servidor.
+  const anon = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY
+    || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   let dado;
   try {
     // 1) o token e valido?
@@ -290,7 +297,11 @@ async function validarUsuario(token) {
       headers: { apikey: anon, Authorization: `Bearer ${token}` }
     });
     if (!r.ok) {
-      dado = { ok: false, motivo: 'sessao expirada: entre novamente' };
+      // 401 aqui e sessao vencida; 4xx/5xx com apikey ruim e problema DO SERVIDOR,
+      // e mandar o operador "entrar de novo" so faz ele repetir o login a toa
+      dado = { ok: false, motivo: r.status === 401 || r.status === 403
+        ? 'sessao expirada: saia e entre novamente no MoviFiber'
+        : 'o servidor nao conseguiu conferir a sessao (Supabase HTTP ' + r.status + ')' };
     } else {
       const u = await r.json();
       // 2) esse usuario tem o MoviFiber liberado?
@@ -299,8 +310,9 @@ async function validarUsuario(token) {
         headers: { ...sbHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ p_id: u.id })
       });
-      const liberado = rp.ok ? await rp.json() : false;
-      if (liberado === true) {
+      if (!rp.ok) {
+        dado = { ok: false, motivo: 'nao consegui conferir a permissao do MoviFiber (Supabase HTTP ' + rp.status + ')' };
+      } else if (await rp.json() === true) {
         // busca o nome do cadastro para o historico ficar legivel
         let nome = null;
         try {
@@ -310,11 +322,11 @@ async function validarUsuario(token) {
         } catch (e) {}
         dado = { ok: true, usuario: { id: u.id, email: u.email, nome } };
       } else {
-        dado = { ok: false, motivo: 'usuario sem acesso liberado ao MoviFiber' };
+        dado = { ok: false, motivo: 'seu usuario nao tem o MoviFiber liberado — peca a um admin para marcar "MoviFiber" no cadastro de usuarios do MoviOne' };
       }
     }
   } catch (e) {
-    dado = { ok: false, motivo: 'falha ao validar credencial' };
+    dado = { ok: false, motivo: 'falha ao falar com o Supabase: ' + (e.message || e) };
   }
   // cache de 60s (positivo) / 10s (negativo), com teto de entradas
   _cacheUsuarios.set(token, { exp: agora + (dado.ok ? 60000 : 10000), dado });
