@@ -1159,7 +1159,11 @@ async function avisarInstabilidade(e, { conversa, fone, texto }) {
   const tags = Array.isArray(conversa.tags) ? conversa.tags : [];
   const etiqueta = 'Instabilidade';
   if (!tags.includes(etiqueta)) patch.tags = [...tags, etiqueta];
-  if (inc.encerrar) {
+  // "encerrar" só vale para conversa que ainda está com o bot. Se um atendente
+  // assumiu, tirar o card dele e devolver ao bot no meio do atendimento seria
+  // pior que o problema: o aviso sai, a conversa continua onde está.
+  const comHumano = conversa.bot_ativo === false;
+  if (inc.encerrar && !comHumano) {
     // aviso resolve sozinho: nao ocupa atendente com uma queda ja conhecida
     patch.coluna = 'aguardando';
     patch.bot_ativo = true;
@@ -1174,7 +1178,7 @@ async function avisarInstabilidade(e, { conversa, fone, texto }) {
     node_tipo: 'instabilidade', resultado: inc.protocolo || inc.id, entrada: texto,
   });
 
-  return { incidente: inc, encerrou: !!inc.encerrar };
+  return { incidente: inc, encerrou: !!inc.encerrar && !comHumano };
 }
 
 /* Instabilidade ativa de um cliente, para o painel do atendente. */
@@ -2345,14 +2349,6 @@ async function tratarWebhook(e, body) {
     },
   });
 
-  // humano assumiu → bot fica quieto
-  if (conversa.bot_ativo === false) return { ok: true, bot: 'inativo', conversa_id: conversa.id };
-
-  // Anexo sem legenda não tem o que interpretar: fica guardado e visível no
-  // painel para o atendente abrir e decidir. O bot NÃO é desligado — se o
-  // cliente voltar a escrever, o fluxo continua de onde parou.
-  if (!texto) return { ok: true, bot: 'anexo recebido, aguardando texto', conversa_id: conversa.id };
-
   const sessao = await sbUm(e, `atend_sessoes?contato_fone=eq.${fone}&select=*&limit=1`);
   let sessaoValida = sessao && new Date(sessao.expira_em) > new Date() ? sessao : null;
 
@@ -2362,6 +2358,14 @@ async function tratarWebhook(e, body) {
   // só quem está no meio da pesquisa de satisfação — ali a próxima mensagem que
   // interessa é a nota. Qualquer falha aqui é silenciosa: o atendimento normal
   // continua, um aviso que não saiu não pode derrubar a conversa.
+  //
+  // E vem ANTES do corte do "humano assumiu", de propósito. O aviso de queda
+  // não é o bot conversando: é informação da operação, e justamente numa queda
+  // grande a maioria das conversas já está com um atendente. Com o corte antes
+  // daqui, o aviso parava de sair conforme a equipe ia assumindo os cards —
+  // some exatamente quando mais precisa aparecer. Quem está com atendente
+  // recebe o aviso e NADA mais muda: a conversa não é encerrada nem devolvida
+  // ao bot (isso é decidido dentro de avisarInstabilidade).
   if (!(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
     try {
       const aviso = await avisarInstabilidade(e, { conversa, fone, texto });
@@ -2375,6 +2379,14 @@ async function tratarWebhook(e, body) {
       console.error('[atendimento] instabilidade:', err.message);
     }
   }
+
+  // humano assumiu → bot fica quieto
+  if (conversa.bot_ativo === false) return { ok: true, bot: 'inativo', conversa_id: conversa.id };
+
+  // Anexo sem legenda não tem o que interpretar: fica guardado e visível no
+  // painel para o atendente abrir e decidir. O bot NÃO é desligado — se o
+  // cliente voltar a escrever, o fluxo continua de onde parou.
+  if (!texto) return { ok: true, bot: 'anexo recebido, aguardando texto', conversa_id: conversa.id };
 
   const fluxo = await sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1');
   if (!fluxo) return { ok: true, bot: 'nenhum fluxo ativo', conversa_id: conversa.id };
