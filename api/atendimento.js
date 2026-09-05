@@ -695,6 +695,63 @@ const TEXTO_PESQUISA =
   'Responda com o número de 1 a 5.';
 const MIN_INSISTIR_PESQUISA = () => Number(process.env.ATEND_PESQUISA_MIN || 15);
 
+// Mensagem de encerramento para quando a pesquisa está travada. Sem ela o
+// cliente ficava sem NENHUM retorno ao atendente finalizar: a pesquisa era a
+// própria despedida.
+const TEXTO_ENCERRAMENTO =
+  'Seu atendimento foi encerrado por aqui. 👋\n' +
+  'Se precisar de algo, é só mandar outra mensagem. A MoviOn agradece! 💚';
+
+// ----------------------------------------------------------------------------
+// TRAVA MENSAL DA PESQUISA DE SATISFAÇÃO
+// ----------------------------------------------------------------------------
+// Quem fala com a gente três vezes na semana recebia a mesma pergunta três
+// vezes. Vira ruído, o cliente para de responder e a nota deixa de medir
+// alguma coisa. Agora a pesquisa sai no máximo uma vez por cliente dentro da
+// janela (padrão 30 dias corridos — "uma vez por mês" sem o buraco da virada
+// de mês, onde dia 31 e dia 1º passariam os dois).
+//
+// A trava conta o DISPARO, não só a resposta: travar apenas em quem respondeu
+// deixaria quem ignora a pesquisa sendo perguntado em todo atendimento — que é
+// exatamente o caso mais repetitivo.
+const DIAS_PESQUISA_PADRAO = 30;
+
+async function pesquisaJanelaDias(e) {
+  try {
+    const cfg = await sbUm(e, 'atend_config?id=eq.1&select=dados');
+    const d = Number(cfg?.dados?.pesquisa_intervalo_dias);
+    return Number.isFinite(d) && d >= 0 ? d : DIAS_PESQUISA_PADRAO;
+  } catch { return DIAS_PESQUISA_PADRAO; }
+}
+
+/* Data do último disparo dentro da janela, ou null quando pode perguntar.
+   Olha as duas formas do número (com e sem o 9º dígito): é o mesmo cliente. */
+async function pesquisaRecente(e, fone, dias) {
+  if (!dias) return null;                       // 0 = trava desligada
+  const lista = variantesFone(fone).map(f => `"${f}"`).join(',');
+  if (!lista) return null;
+  const corte = new Date(Date.now() - dias * 864e5).toISOString();
+  try {
+    const r = await sb(e, `atend_pesquisa_envios?contato_fone=in.(${lista})` +
+      `&enviado_em=gte.${corte}&select=enviado_em&order=enviado_em.desc&limit=1`);
+    return (r && r[0]) ? r[0].enviado_em : null;
+  } catch (err) {
+    // banco fora do ar não pode calar a pesquisa: no pior caso pergunta demais
+    console.error('[pesquisa] trava mensal:', err.message);
+    return null;
+  }
+}
+
+async function registrarPesquisaEnviada(e, { fone, conversaId, origem }) {
+  await sb(e, 'atend_pesquisa_envios', {
+    method: 'POST', prefer: 'return=minimal',
+    body: {
+      contato_fone: normalizarFone(fone), conversa_id: conversaId || null,
+      origem: origem || null,
+    },
+  }).catch(err => console.error('[pesquisa] livro:', err.message));
+}
+
 const MOTIVO_QUEDA = {
   'lost-carrier':        ['Perda de sinal', 'O enlace caiu fisicamente: roteador/ONU desligado, falta de energia ou rompimento na fibra. É a causa mais comum.', 'cliente'],
   'user-request':        ['Cliente desconectou', 'O próprio equipamento do cliente encerrou a conexão — normalmente reinício do roteador.', 'cliente'],
@@ -1627,8 +1684,14 @@ function inferirSetorEscolhido(aresta, noDestino, setores) {
 /**
  * Roda o fluxo a partir do estado atual.
  * Não toca no banco nem envia WhatsApp — devolve o que precisa acontecer.
+ *
+ * `pesquisaLiberada` é uma função assíncrona opcional que responde se este
+ * cliente pode receber a pesquisa agora (trava mensal). Vem de fora, e não
+ * lida daqui, para o fluxo continuar sem banco: quem simula um fluxo no editor
+ * não consulta nada, e o custo da consulta só aparece quando o nó `fim` é
+ * realmente alcançado. Ausente = liberado.
  */
-async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
+async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada }) {
   const { nodes, saidas } = indexarFluxo(fluxo);
   const out = { enviar: [], logs: [], patch: {}, sessao: null, limparSessao: false };
   const vars = { ...(sessao?.variaveis || {}), ultima_msg: texto };
@@ -1851,7 +1914,10 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto }) {
         // pedir a nota DE NOVO logo depois de recebê-la: o cliente avaliava,
         // era agradecido, e a pesquisa saía outra vez na sequência.
         const jaAvaliou = conversa.rating || out.patch.rating;
-        if (no.pesquisa !== false && !jaAvaliou) {
+        // trava mensal: uma pesquisa por cliente por janela (padrão 30 dias)
+        const naJanela = (no.pesquisa !== false && !jaAvaliou && pesquisaLiberada)
+          ? await pesquisaLiberada() : true;
+        if (no.pesquisa !== false && !jaAvaliou && naJanela) {
           out.enviar.push({ texto: TEXTO_PESQUISA, node: no.id });
           out.sessao = {
             node_atual: null,
@@ -2437,6 +2503,17 @@ async function tratarWebhook(e, body) {
           atendente_id: conversa.atendente_id || null, setor: conversa.setor || null,
         },
       }).catch(err => console.error('[atendimento] avaliacao:', err.message));
+      // fecha o disparo no livro da trava mensal — é o que separa
+      // "perguntamos e ele respondeu" de "perguntamos e ele ignorou"
+      {
+        const lista = variantesFone(fone).map(f => `"${f}"`).join(',');
+        if (lista) {
+          await sb(e, `atend_pesquisa_envios?contato_fone=in.(${lista})&respondido_em=is.null`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: { respondido_em: new Date().toISOString(), rating: n },
+          }).catch(err => console.error('[pesquisa] livro (resposta):', err.message));
+        }
+      }
       const agrade = (n >= 4
         ? 'Obrigado pela avaliação! 💚 Ficamos felizes em ajudar.'
         : 'Obrigado pela avaliação. Vamos usar seu retorno para melhorar. 🙏')
@@ -2482,8 +2559,21 @@ async function tratarWebhook(e, body) {
     sessaoValida = null;
   }
 
-  const out = await rodarFluxo(e, { fluxo, sessao: sessaoValida, conversa, texto });
+  // consultada só se o fluxo chegar no nó `fim`, e uma vez por mensagem
+  let travaLida;
+  const pesquisaLiberada = async () => {
+    if (travaLida === undefined) {
+      travaLida = !(await pesquisaRecente(e, fone, await pesquisaJanelaDias(e)));
+    }
+    return travaLida;
+  };
+  const out = await rodarFluxo(e, { fluxo, sessao: sessaoValida, conversa, texto, pesquisaLiberada });
   await aplicarResultado(e, conversa, out);
+
+  // o fluxo armou a espera da nota: registra o disparo para a trava mensal
+  if (out.sessao && out.sessao.aguardando === 'rating_humano') {
+    await registrarPesquisaEnviada(e, { fone, conversaId: conversa.id, origem: 'fim_bot' });
+  }
 
   return { ok: true, conversa_id: conversa.id, enviadas: out.enviar.length, patch: out.patch };
 }
@@ -5339,8 +5429,13 @@ export default async function handler(req, res) {
           },
         });
 
+        // trava mensal: se este cliente já foi perguntado dentro da janela,
+        // encerra sem repetir a pesquisa — mas ainda se despede, senão o
+        // cliente ficaria sem retorno nenhum (a pesquisa era a despedida)
+        const travadaAte = await pesquisaRecente(e, c.contato_fone, await pesquisaJanelaDias(e));
+
         let pesquisaEnviada = false;
-        if (body.pesquisa !== false && !c.rating) {
+        if (body.pesquisa !== false && !c.rating && !travadaAte) {
           // mensagem única: já encerra e pede a nota, sem um "atendimento
           // encerrado" separado antes
           const texto = String(body.texto_pesquisa || '').trim() || TEXTO_PESQUISA;
@@ -5370,6 +5465,26 @@ export default async function handler(req, res) {
               },
             });
             pesquisaEnviada = true;
+            await registrarPesquisaEnviada(e, {
+              fone: c.contato_fone, conversaId: id, origem: 'finalizacao_humana',
+            });
+          } catch (err) { console.error('[atendimento]', err.message); }
+        }
+
+        // Despedida quando foi a TRAVA MENSAL que segurou a pesquisa: ela era a
+        // própria mensagem de encerramento, e sem nada no lugar o cliente
+        // ficaria sem retorno nenhum. Não vale para os outros casos: quem já
+        // deu a nota nesta conversa acabou de ser agradecido e despedido, e
+        // pesquisa:false é um pedido explícito de silêncio.
+        const despedir = travadaAte && !c.rating && body.pesquisa !== false
+          && !String(body.mensagem || '').trim();
+        if (!pesquisaEnviada && despedir) {
+          try {
+            const env = await waEnviar(e, c.contato_fone, TEXTO_ENCERRAMENTO);
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: id, direcao: 'out', conteudo: TEXTO_ENCERRAMENTO, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
+            });
           } catch (err) { console.error('[atendimento]', err.message); }
         }
 
@@ -5377,7 +5492,10 @@ export default async function handler(req, res) {
         if (!pesquisaEnviada) {
           await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
         }
-        return res.status(200).json({ ok: true, pesquisa: pesquisaEnviada });
+        return res.status(200).json({
+          ok: true, pesquisa: pesquisaEnviada,
+          pesquisa_travada: !pesquisaEnviada && !!travadaAte, pesquisa_ultima: travadaAte || null,
+        });
       }
 
       // devolve o controle para o bot

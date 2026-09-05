@@ -4069,6 +4069,20 @@ async function renderTempos(el){
       </div>
     </div>
 
+    <div class="cp-box" style="border-color:var(--blue)">
+      <div class="cp-lab">⭐ Pesquisa de satisfação</div>
+      <div class="tp-linha">no máximo 1 pesquisa por cliente a cada
+        <input type="number" id="tpPesqDias" min="0" max="365" value="${g('pesquisa_intervalo_dias',30)}"> dias
+      </div>
+      <div class="tp-nota">
+        Vale para os dois caminhos: fim do fluxo do bot e “Finalizar” do atendente.
+        Quem fala com a gente três vezes na semana recebia a mesma pergunta três vezes —
+        aí o cliente para de responder e a nota deixa de medir alguma coisa.
+        Dentro da trava o atendimento é encerrado com uma despedida, sem a pergunta.
+        <b>0 desliga a trava</b> e volta a perguntar em todo atendimento.
+      </div>
+    </div>
+
     <div class="cp-box">
       <div class="cp-lab">Conversas ainda no bot</div>
       <div class="tp-linha">encerrar após
@@ -4116,6 +4130,8 @@ async function renderTempos(el){
         encerrar_texto:$('#tpCtxt').value.trim(),
         retomar_ativo:$('#tpR').checked,
         bot_inatividade_min:+$('#tpBot').value||30,
+        // campo vazio volta ao padrão; 0 digitado é intencional (desliga a trava)
+        pesquisa_intervalo_dias:(d=>Number.isFinite(d)&&d>=0?Math.min(365,d):30)(parseInt($('#tpPesqDias').value,10)),
       }});
       toast('Tempos salvos');
     }catch(e){ toast('Falha: '+e.message); }
