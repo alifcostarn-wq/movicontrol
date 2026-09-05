@@ -2506,16 +2506,49 @@ async function entregarCobranca(e, o) {
   // conversa achada manda no número: é o que o WhatsApp entrega de fato
   if (c && c.contato_fone) o.fone = c.contato_fone;
   if (!c) {
+    // Nasce em "Resolvidos" DE PROPÓSITO — mesma regra da confirmação de
+    // pagamento: cobrança é notificação, não atendimento aberto. Nascendo em
+    // "Aguardando cliente" o card entrava na fila da equipe e, pior, no ciclo
+    // de inatividade: quem só recebeu o boleto e não respondeu levava o
+    // "continua por aí? vou encerrar" e depois o "encerrei este atendimento",
+    // sem nunca ter falado com ninguém.
+    // Em "Resolvidos" a conversa fica inerte. Se o cliente responder, o
+    // webhook reabre em "Novos" com o bot ativo — é aí, e só aí, que o
+    // atendimento começa.
     const nova = await sb(e, 'atend_conversas', {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: {
-        contato_fone: o.fone, contato_nome: nome, coluna: 'aguardando',
+        contato_fone: o.fone, contato_nome: nome, coluna: 'resolvidos',
         setor: 'Financeiro', bot_ativo: true, cliente_ixc_id: o.ixcId || null,
         created_by: o.userId || null,
       },
     });
     c = Array.isArray(nova) ? nova[0] : nova;
   }
+
+  // RESERVA ANTES DE ENVIAR. O índice uq_cobranca_envio_ok(fatura_id, etapa_id)
+  // WHERE status='enviado' é o mutex. Gravar o livro DEPOIS do envio deixava
+  // duas execuções simultâneas — normal aqui: o mesmo gatilho de cron/painel
+  // roda em containers diferentes — mandarem o MESMO boleto duas vezes pro
+  // cliente; o segundo insert falhava, mas o WhatsApp já tinha saído.
+  // Se o envio falhar, a linha vira 'erro' logo abaixo e a trava se abre
+  // sozinha para a próxima tentativa.
+  const registro = {
+    fatura_id: String(o.faturaId), etapa_id: String(o.etapaId), etapa_nome: o.etapaNome || null,
+    cliente_ixc_id: o.ixcId || null, cliente_nome: nome, contato_fone: o.fone,
+    conversa_id: c ? c.id : null,
+    canal: o.somenteRegistrar ? (o.canal || 'manual') : (o.canal || 'whatsapp'),
+    valor: o.valor != null ? Number(o.valor) : null, vencimento: o.vencimento || null,
+    texto: o.texto, status: 'enviado', enviado_por: o.userId || null,
+  };
+  let livro = null, jaTinha = false;
+  try {
+    const linha = await sb(e, 'atend_cobranca_envios', {
+      method: 'POST', headers: { Prefer: 'return=representation' }, body: registro,
+    });
+    livro = Array.isArray(linha) ? linha[0] : linha;
+  } catch { jaTinha = true; }          // 409 do índice: outra execução pegou esta etapa
+  if (jaTinha && !o.forcar) return { conversaId: c ? c.id : null, anexos: 0, duplicado: true };
 
   let env = null, erro = null;
   const extras = [];
@@ -2583,24 +2616,35 @@ async function entregarCobranca(e, o) {
       ultima_msg: 'Cobrança: ' + o.texto.slice(0, 160),
       ultima_msg_em: new Date().toISOString(), updated_by: o.userId || null,
     };
-    // não rouba atendimento em andamento
-    if (['resolvidos', 'novos'].includes(c.coluna)) patch.coluna = 'aguardando';
+    // NÃO mexe na coluna nem no bot_ativo: notificação não muda o estado do
+    // atendimento. Conversa resolvida continua resolvida (fora da fila e fora
+    // do ciclo de inatividade), conversa em andamento continua com quem está
+    // atendendo. Só o resumo da lista é atualizado.
     if (!c.cliente_ixc_id && o.ixcId) patch.cliente_ixc_id = o.ixcId;
     await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
   }
 
-  await sb(e, 'atend_cobranca_envios', {
-    method: 'POST', prefer: 'return=minimal',
-    body: {
-      fatura_id: String(o.faturaId), etapa_id: String(o.etapaId), etapa_nome: o.etapaNome || null,
-      cliente_ixc_id: o.ixcId || null, cliente_nome: nome, contato_fone: o.fone,
-      conversa_id: c ? c.id : null,
-      canal: o.somenteRegistrar ? (o.canal || 'manual') : (o.canal || 'whatsapp'),
-      valor: o.valor != null ? Number(o.valor) : null, vencimento: o.vencimento || null,
-      texto: o.texto, wa_id: env ? idDaEvolution(env) : null,
-      status: erro ? 'erro' : 'enviado', erro, enviado_por: o.userId || null,
-    },
-  });
+  // fecha a reserva com o resultado real do envio
+  const fecho = {
+    conversa_id: c ? c.id : null, contato_fone: o.fone,
+    wa_id: env ? idDaEvolution(env) : null,
+    status: erro ? 'erro' : 'enviado', erro,
+  };
+  if (livro) {
+    await sb(e, `atend_cobranca_envios?id=eq.${livro.id}`,
+      { method: 'PATCH', prefer: 'return=minimal', body: fecho })
+      .catch(err => console.error('[cobranca] livro:', err.message));
+  } else if (!erro) {
+    // reenvio forçado pelo atendente: atualiza a linha que já existia em vez de
+    // criar uma segunda, que o índice recusaria e derrubaria um envio bem-sucedido.
+    // Se o reenvio falhar não mexe em nada: o registro do envio que deu certo
+    // antes continua valendo.
+    await sb(e, `atend_cobranca_envios?fatura_id=eq.${encodeURIComponent(String(o.faturaId))}` +
+      `&etapa_id=eq.${encodeURIComponent(String(o.etapaId))}&status=eq.enviado`,
+      { method: 'PATCH', prefer: 'return=minimal',
+        body: { ...fecho, texto: o.texto, enviado_em: new Date().toISOString(), enviado_por: o.userId || null } })
+      .catch(err => console.error('[cobranca] livro (reenvio):', err.message));
+  }
 
   if (erro) throw new Error(erro);
   return { conversaId: c ? c.id : null, anexos: extras.length };
@@ -2941,6 +2985,7 @@ async function cobrancaAutomatica(e) {
   });
 
   const enviados = [];
+  let duplicados = 0;
   const pausa = ms => new Promise(r => setTimeout(r, ms));
   const intervalo = Math.max(1, Number(cfg.intervalo_segundos ?? 8)) * 1000;
   const prazo = Date.now() + COB_ORCAMENTO_MS;
@@ -3014,14 +3059,17 @@ async function cobrancaAutomatica(e) {
 
       const texto = cobTexto(etapa.tpl, perfil, f, dias);
       try {
-        await entregarCobranca(e, {
+        const rc = await entregarCobranca(e, {
           fone, texto, faturaId: String(f.id), etapaId: etapa.etapa_id, etapaNome: etapa.nome,
           ixcId: chave, nome: nomeCli, valor: Number(f.valor), vencimento: f.data_vencimento,
           anexarBoleto: etapa.anexar_boleto === true, anexarPix: etapa.anexar_pix === true,
           canal: 'automatico', userId: null,
         });
-        enviados.push({ cliente: nomeCli, etapa: etapa.nome, trilha });
         feitas.add(f.id + '|' + etapa.etapa_id);
+        // outra execução já tinha reservado esta etapa: nada saiu daqui, então
+        // não gasta cota do dia nem a pausa entre mensagens
+        if (rc && rc.duplicado) { duplicados++; break; }
+        enviados.push({ cliente: nomeCli, etapa: etapa.nome, trilha });
         ult[chave] = Date.now();
         noMes[chave] = (noMes[chave] || 0) + 1;
         restanteHoje--;
@@ -3035,7 +3083,7 @@ async function cobrancaAutomatica(e) {
     }
   }
   return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20),
-           clientes_na_janela: porCliente.size, retrato_dias: Math.round(idadeDias),
+           duplicados, clientes_na_janela: porCliente.size, retrato_dias: Math.round(idadeDias),
            retrato_velho: retratoVelho, continua: faltouTempo };
 }
 
@@ -3256,6 +3304,12 @@ async function tratarCron(e) {
     for (const sx of (pend2 || [])) {
       const ate = sx.variaveis && sx.variaveis.insistir_ate ? new Date(sx.variaveis.insistir_ate).getTime() : 0;
       if (!ate || agoraMs < ate) continue;                  // ainda dentro da janela
+      // APAGA A SESSÃO ANTES DE ENVIAR: o DELETE com retorno é a reivindicação.
+      // Apagando depois, duas varreduras simultâneas liam a mesma sessão e o
+      // cliente recebia "Não recebemos sua avaliação" duas vezes seguidas.
+      const minha = await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(sx.contato_fone)}`,
+        { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+      if (!minha || !minha.length) continue;                // outra rodada pegou antes
       const msg = 'Não recebemos sua avaliação, tudo bem. 🙂\n'
         + 'Seu atendimento foi encerrado. Se precisar de algo, é só mandar uma mensagem. A MoviOn agradece! 💚';
       try {
@@ -3267,8 +3321,6 @@ async function tratarCron(e) {
           });
         }
       } catch (err) { console.error('[atendimento]', err.message); }
-      await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(sx.contato_fone)}`,
-        { method: 'DELETE', prefer: 'return=minimal' });
       pesquisasEncerradas++;
     }
   } catch (err) { console.error('[atendimento] pesquisa cron:', err.message); }
@@ -4699,8 +4751,9 @@ export default async function handler(req, res) {
             valor: body.valor, vencimento: body.vencimento, canal: body.canal,
             anexarBoleto: body.anexar_boleto === true, anexarPix: body.anexar_pix === true,
             somenteRegistrar: body.somente_registrar === true, userId: user.id,
+            forcar: body.forcar === true,
           });
-          return res.status(200).json({ ok: true, conversa_id: r.conversaId, anexos: r.anexos });
+          return res.status(200).json({ ok: true, conversa_id: r.conversaId, anexos: r.anexos, duplicado: r.duplicado === true });
         } catch (err) {
           return res.status(200).json({ ok: false, error: String(err.message).slice(0, 250) });
         }
