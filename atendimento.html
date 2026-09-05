@@ -1082,6 +1082,34 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .tp-resumo{margin-top:12px;font-size:12.5px;color:var(--text-mid);background:var(--green-soft);
   border:1px solid #bfe9d4;border-radius:9px;padding:11px 13px;max-width:640px;line-height:1.6;}
 
+/* ---- horário de funcionamento ---- */
+.hr-dia{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.hr-dia:last-child{border-bottom:0;}
+.hr-nome{width:96px;flex-shrink:0;font-size:12.5px;font-weight:700;padding-top:6px;}
+.hr-faixas{flex:1;min-width:190px;display:flex;flex-direction:column;gap:6px;}
+.hr-faixa{display:flex;align-items:center;gap:6px;font-size:12.5px;}
+.hr-faixa input[type=time]{border:1px solid var(--line);border-radius:8px;padding:5px 8px;
+  font-family:inherit;font-size:13px;background:var(--card);color:var(--text);}
+.hr-mini{border:1px solid var(--line);background:var(--card);border-radius:8px;width:28px;height:28px;
+  cursor:pointer;font-size:14px;line-height:1;color:var(--text-mid);flex-shrink:0;}
+.hr-mini:hover{border-color:var(--red);color:var(--red);}
+.hr-fechado{font-size:12px;color:var(--text-low);padding-top:6px;font-style:italic;}
+.hr-agora{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;
+  border-radius:999px;padding:6px 13px;border:1px solid var(--line);}
+.hr-agora.on{background:var(--green-soft);border-color:#bfe9d4;color:#186c43;}
+.hr-agora.off{background:#fdeaea;border-color:#f3c6c6;color:#a33;}
+.hr-fer{display:flex;align-items:center;gap:7px;font-size:12.5px;margin:6px 0;flex-wrap:wrap;}
+.hr-fer input[type=date]{border:1px solid var(--line);border-radius:8px;padding:5px 8px;
+  font-family:inherit;font-size:13px;background:var(--card);color:var(--text);}
+.hr-fer input[type=text]{flex:1;min-width:130px;border:1px solid var(--line);border-radius:8px;
+  padding:5px 9px;font-family:inherit;font-size:13px;background:var(--card);color:var(--text);}
+.hr-previa{white-space:pre-wrap;font-size:12.5px;line-height:1.6;background:var(--bg);
+  border:1px dashed var(--line);border-radius:10px;padding:11px 13px;margin-top:8px;color:var(--text-mid);}
+@media (max-width:860px){
+  .hr-nome{width:100%;padding-top:0;}
+  .hr-faixa input[type=time]{flex:1;min-width:0;}
+}
+
 
 /* ---- alerta sonoro ---- */
 #btnSom{padding:9px 11px;}
@@ -3996,6 +4024,271 @@ function abrirEmojis(anchorBtn, textarea, onInsert){
    disso o relógio só corria para o bot: conversa assumida por gente ficava em
    "Em atendimento" indefinidamente, e "Aguardando cliente" só era alcançada
    movendo na mão, num select escondido no painel lateral. */
+// ---- Horário de funcionamento --------------------------------------------
+// O bot atende 24h; a equipe não. Aqui se diz quando a equipe está de fato
+// disponível — e o que o cliente ouve quando escreve fora disso.
+const HR_DIAS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const HR_ORDEM = [1,2,3,4,5,6,0];              // a semana começa na segunda
+let hrCfg = null;
+let hrSit = null;   // situação (aberto/fechado, quando volta) devolvida pelo servidor
+
+function hrFaixasHTML(semana){
+  const faixas = (hrCfg.dias||{})[String(semana)] || [];
+  if(!faixas.length) return `<div class="hr-fechado">fechado</div>`;
+  return faixas.map((f,i)=>`
+    <div class="hr-faixa">
+      <input type="time" data-d="${semana}" data-i="${i}" data-c="de" value="${esc(f.de||'')}">
+      <span>às</span>
+      <input type="time" data-d="${semana}" data-i="${i}" data-c="ate" value="${esc(f.ate||'')}">
+      <button class="hr-mini" data-rm="${semana}:${i}" title="Remover faixa">✕</button>
+    </div>`).join('');
+}
+
+function hrRender(el){
+  const g=(k,p)=>hrCfg[k]!==undefined&&hrCfg[k]!==null?hrCfg[k]:p;
+  const feriados = Array.isArray(hrCfg.feriados)?hrCfg.feriados:[];
+  el.innerHTML=`
+    <div class="vsub" style="margin-bottom:14px">
+      O bot atende 24 horas; a equipe não. Quem escreve fora do horário recebe um aviso
+      dizendo que a mensagem foi registrada e <b>quando</b> será respondida — que é a única
+      informação que falta ao cliente àquela hora.
+    </div>
+
+    <div id="hrAgora" style="margin-bottom:14px"></div>
+
+    <div class="cp-box">
+      <label class="cob-check"><input type="checkbox" id="hrAtivo" ${g('ativo',false)?'checked':''}>
+        <b>Avisar quando o cliente escrever fora do horário</b></label>
+      <div class="tp-linha" style="margin-top:9px">Fuso horário
+        <select id="hrFuso" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-family:inherit;font-size:13px;background:var(--card);color:var(--text);">
+          ${['America/Fortaleza','America/Sao_Paulo','America/Manaus','America/Belem','America/Recife','America/Bahia','America/Cuiaba','America/Rio_Branco']
+            .map(f=>`<option value="${f}" ${g('fuso','America/Fortaleza')===f?'selected':''}>${f.split('/')[1].replace(/_/g,' ')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="tp-nota">
+        O servidor roda em UTC. Sem o fuso certo, “18:00” fecharia às 15:00 aqui.
+      </div>
+    </div>
+
+    <div class="cp-box">
+      <div class="cp-lab">🕐 Grade da semana</div>
+      <div class="tp-linha" style="margin-bottom:4px">
+        <button class="btn" id="hrComercial" style="font-size:11.5px;padding:5px 10px">Comercial (Seg–Sex 08–18, Sáb 08–12)</button>
+        <button class="btn" id="hrCopiar" style="font-size:11.5px;padding:5px 10px">Copiar segunda para os dias úteis</button>
+      </div>
+      ${HR_ORDEM.map(s=>`
+        <div class="hr-dia">
+          <div class="hr-nome">${HR_DIAS[s]}</div>
+          <div class="hr-faixas">${hrFaixasHTML(s)}</div>
+          <button class="hr-mini" data-add="${s}" title="Adicionar faixa" style="margin-top:2px">＋</button>
+        </div>`).join('')}
+      <div class="tp-nota">
+        Duas faixas no mesmo dia cobrem o intervalo do almoço: 08:00–12:00 e 13:30–18:00.
+        Dia sem faixa nenhuma é dia fechado.
+      </div>
+    </div>
+
+    <div class="cp-box">
+      <div class="cp-lab">📅 Feriados e datas fechadas</div>
+      <div id="hrFeriados">${feriados.map((f,i)=>`
+        <div class="hr-fer">
+          <input type="date" data-f="${i}" data-c="data" value="${esc(String(f.data||'').slice(0,10))}">
+          <input type="text" data-f="${i}" data-c="nome" placeholder="Natal, feriado municipal…" value="${esc(f.nome||'')}">
+          <button class="hr-mini" data-rmf="${i}">✕</button>
+        </div>`).join('')}</div>
+      <button class="btn" id="hrAddFer" style="font-size:11.5px;padding:5px 10px;margin-top:6px">+ Adicionar data</button>
+      <div class="tp-nota">Fecha o dia inteiro, independente da grade da semana.</div>
+    </div>
+
+    <div class="cp-box">
+      <div class="cp-lab">💬 Mensagem enviada ao cliente</div>
+      <textarea class="cp-txt" id="hrTexto" style="min-height:120px" placeholder="Deixe em branco para usar o texto padrão.">${esc(g('texto',''))}</textarea>
+      <div class="tp-nota">
+        Marcadores: <b>{volta}</b> (“amanhã às 08:00”), <b>{horarios}</b> (a grade resumida),
+        <b>{primeiro_nome}</b>, <b>{feriado}</b>.
+      </div>
+      <div class="cp-lab" style="margin-top:12px">Mensagem só para feriados <span style="text-transform:none;font-weight:600">(opcional)</span></div>
+      <textarea class="cp-txt" id="hrTextoFer" style="min-height:80px" placeholder="Em branco usa a mensagem acima.">${esc(g('texto_feriado',''))}</textarea>
+      <div class="cp-lab" style="margin-top:12px">Linha de urgência <span style="text-transform:none;font-weight:600">(opcional, entra no fim da mensagem)</span></div>
+      <input type="text" id="hrEmerg" placeholder="Ex.: Emergências: (84) 90000-0000" value="${esc(g('emergencia',''))}"
+        style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;background:var(--card);color:var(--text);">
+      <div class="cp-lab" style="margin-top:12px">Prévia</div>
+      <div class="hr-previa" id="hrPrevia"></div>
+    </div>
+
+    <div class="cp-box">
+      <div class="tp-linha">repetir o aviso no máximo a cada
+        <input type="number" id="hrRepetir" min="0" max="168" value="${g('repetir_horas',12)}" style="width:74px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-family:inherit;font-size:13px;text-align:right;"> horas
+      </div>
+      <div class="tp-nota">Quem manda cinco mensagens seguidas às 23h recebe <b>um</b> aviso. 0 avisa em toda mensagem.</div>
+      <label class="cob-check" style="margin-top:10px"><input type="checkbox" id="hrParar" ${g('parar_bot',false)?'checked':''}>
+        <b>Fora do horário o bot também não responde</b></label>
+      <div class="tp-nota">
+        Desmarcado (recomendado): o cliente recebe o aviso e o bot segue atendendo — 2ª via de boleto,
+        Pix e desbloqueio funcionam de madrugada sem ninguém. Marcado: só o aviso sai.
+      </div>
+    </div>
+
+    <button class="btn primary" id="hrSalvar" style="margin-top:4px;font-weight:800;padding:11px 20px">Salvar horários</button>`;
+
+  // ---- edição da grade
+  el.querySelectorAll('.hr-faixa input').forEach(i=>i.onchange=()=>{
+    const d=i.dataset.d, k=Number(i.dataset.i);
+    hrCfg.dias=hrCfg.dias||{}; hrCfg.dias[d]=hrCfg.dias[d]||[];
+    hrCfg.dias[d][k][i.dataset.c]=i.value;
+    hrPrevia();
+  });
+  el.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
+    const d=b.dataset.add; hrCfg.dias=hrCfg.dias||{}; hrCfg.dias[d]=hrCfg.dias[d]||[];
+    const ult=hrCfg.dias[d][hrCfg.dias[d].length-1];
+    hrCfg.dias[d].push(ult?{de:'13:30',ate:'18:00'}:{de:'08:00',ate:'18:00'});
+    hrSync(); hrRender(el);
+  });
+  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+    const [d,k]=b.dataset.rm.split(':');
+    hrCfg.dias[d].splice(Number(k),1); hrSync(); hrRender(el);
+  });
+  $('#hrComercial').onclick=()=>{
+    hrSync();
+    hrCfg.dias={'1':[{de:'08:00',ate:'12:00'},{de:'13:30',ate:'18:00'}]};
+    for(const d of [2,3,4,5]) hrCfg.dias[String(d)]=JSON.parse(JSON.stringify(hrCfg.dias['1']));
+    hrCfg.dias['6']=[{de:'08:00',ate:'12:00'}]; hrCfg.dias['0']=[];
+    hrRender(el);
+  };
+  $('#hrCopiar').onclick=()=>{
+    hrSync();
+    const base=(hrCfg.dias||{})['1']||[];
+    hrCfg.dias=hrCfg.dias||{};
+    for(const d of [2,3,4,5]) hrCfg.dias[String(d)]=JSON.parse(JSON.stringify(base));
+    hrRender(el);
+  };
+
+  // ---- feriados
+  el.querySelectorAll('#hrFeriados input').forEach(i=>i.onchange=()=>{
+    const k=Number(i.dataset.f);
+    hrCfg.feriados=hrCfg.feriados||[];
+    hrCfg.feriados[k]=hrCfg.feriados[k]||{};
+    hrCfg.feriados[k][i.dataset.c]=i.value;
+  });
+  el.querySelectorAll('[data-rmf]').forEach(b=>b.onclick=()=>{
+    hrCfg.feriados.splice(Number(b.dataset.rmf),1); hrSync(); hrRender(el);
+  });
+  $('#hrAddFer').onclick=()=>{
+    hrCfg.feriados=Array.isArray(hrCfg.feriados)?hrCfg.feriados:[];
+    hrCfg.feriados.push({data:'',nome:''}); hrSync(); hrRender(el);
+  };
+
+  ['hrTexto','hrTextoFer','hrEmerg'].forEach(id=>{ const c=$('#'+id); if(c) c.oninput=hrPrevia; });
+  $('#hrFuso').onchange=hrPrevia;
+  hrPrevia();
+
+  $('#hrSalvar').onclick=async()=>{
+    const b=$('#hrSalvar'); b.disabled=true; b.textContent='Salvando…';
+    try{
+      const r=await chamar('horario.config.salvar',{config:hrLer()});
+      hrPintarAgora(r.agora);
+      toast('Horários salvos');
+    }catch(e){ toast('Falha: '+e.message); }
+    b.disabled=false; b.textContent='Salvar horários';
+  };
+}
+
+// Puxa os campos de texto para hrCfg. Chamado antes de todo re-render: sem
+// isto, clicar em "+ adicionar faixa" redesenha a partir de hrCfg e apaga a
+// mensagem que a pessoa acabou de escrever.
+function hrSync(){
+  if(!$('#hrAtivo')) return;
+  hrCfg.ativo=$('#hrAtivo').checked;
+  hrCfg.fuso=$('#hrFuso').value;
+  hrCfg.texto=$('#hrTexto').value;
+  hrCfg.texto_feriado=$('#hrTextoFer').value;
+  hrCfg.emergencia=$('#hrEmerg').value;
+  hrCfg.parar_bot=$('#hrParar').checked;
+  const d=parseInt($('#hrRepetir').value,10);
+  hrCfg.repetir_horas=Number.isFinite(d)&&d>=0?Math.min(168,d):12;
+}
+
+function hrLer(){
+  hrSync();
+  const dias={};
+  for(const s of HR_ORDEM){
+    const f=((hrCfg.dias||{})[String(s)]||[]).filter(x=>x&&x.de&&x.ate);
+    if(f.length) dias[String(s)]=f;
+  }
+  return {
+    ativo:!!hrCfg.ativo, fuso:hrCfg.fuso||'America/Fortaleza', dias,
+    feriados:(hrCfg.feriados||[]).filter(f=>f&&f.data),
+    texto:String(hrCfg.texto||'').trim(),
+    texto_feriado:String(hrCfg.texto_feriado||'').trim(),
+    emergencia:String(hrCfg.emergencia||'').trim(),
+    repetir_horas:hrCfg.repetir_horas??12,
+    parar_bot:!!hrCfg.parar_bot,
+  };
+}
+
+// Resumo da grade igual ao do servidor: "Seg a Sex 08:00–18:00 · Sáb 08:00–12:00".
+// Vale a duplicação — a prévia precisa responder a cada tecla, sem ida ao servidor.
+function hrResumo(dias){
+  const curto=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const chave=s=>((dias||{})[String(s)]||[]).filter(f=>f.de&&f.ate)
+    .map(f=>f.de+'–'+f.ate).join(', ');
+  const blocos=[];
+  for(const s of HR_ORDEM){
+    const k=chave(s); if(!k) continue;
+    const u=blocos[blocos.length-1];
+    if(u&&u.k===k&&HR_ORDEM.indexOf(s)===HR_ORDEM.indexOf(u.fim)+1) u.fim=s;
+    else blocos.push({k,ini:s,fim:s});
+  }
+  if(!blocos.length) return 'sob consulta';
+  return blocos.map(b=>{
+    const d=b.ini===b.fim?curto[b.ini]
+      :(HR_ORDEM.indexOf(b.fim)-HR_ORDEM.indexOf(b.ini)===1?`${curto[b.ini]} e ${curto[b.fim]}`
+      :`${curto[b.ini]} a ${curto[b.fim]}`);
+    return `${d} ${b.k}`;
+  }).join(' · ');
+}
+
+function hrPrevia(){
+  const alvo=$('#hrPrevia'); if(!alvo) return;
+  const cfg=hrLer();
+  const padrao='Olá! 👋 Chegamos a receber sua mensagem, mas neste momento estamos fora do horário de atendimento.\n\n'
+    +'🕐 *Nosso horário:* {horarios}\n\n'
+    +'Voltamos a atender {volta}. Sua mensagem já está registrada e será respondida assim que abrirmos. 💚';
+  // {volta} de verdade é calculado no servidor, no fuso configurado. Aqui, na
+  // prévia, usa-se o último valor que ele devolveu; antes disso, um exemplo.
+  const primeira=(((cfg.dias||{})['1']||[])[0]||{}).de||'08:00';
+  const volta=(hrSit&&hrSit.volta)||('amanhã às '+primeira);
+  const txt=(cfg.texto||padrao)
+    .replace(/{volta}/g,volta)
+    .replace(/{horarios}/g,hrResumo(cfg.dias))
+    .replace(/{primeiro_nome}/g,'João').replace(/{nome}/g,'João')
+    .replace(/{feriado}/g,'feriado');
+  alvo.textContent=txt+(cfg.emergencia?'\n\n'+cfg.emergencia:'');
+}
+
+function hrPintarAgora(sit){
+  hrSit=sit||hrSit;
+  const alvo=$('#hrAgora'); if(!alvo||!sit) return;
+  // o texto vai num <span> só: o gap do flex separa o emoji da frase, e não
+  // cada pedaço dela — senão sai "Agora estamos  fechados" com dois espaços
+  const selo=(cls,emoji,html)=>`<span class="hr-agora ${cls}"><span>${emoji}</span><span>${html}</span></span>`;
+  if(!sit.ligado){ alvo.innerHTML=selo('','⚪','Aviso desligado — o cliente não recebe nada fora do horário'); return; }
+  alvo.innerHTML=sit.aberto
+    ? selo('on','🟢','Agora estamos <b>abertos</b>')
+    : selo('off','🔴',`Agora estamos <b>fechados</b> — voltamos ${esc(sit.volta||'')}`);
+}
+
+async function renderHorarios(el){
+  el.innerHTML='<div class="pn-load">Carregando…</div>';
+  let sit=null;
+  try{
+    const r=await chamar('horario.config.obter',{});
+    hrCfg=r.config||{}; sit=r.agora;
+  }catch(e){ el.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
+  hrRender(el);
+  hrPintarAgora(sit);
+}
+
 async function renderTempos(el){
   el.innerHTML='<div class="pn-load">Carregando…</div>';
   let cfg={}, cfgPag={};
@@ -6126,6 +6419,7 @@ function renderAux(){
         <div class="cfg-tab ${configTab==='atalhos'?'on':''}" data-tab="atalhos">⚡ Atalhos</div>
         <div class="cfg-tab ${configTab==='etiquetas'?'on':''}" data-tab="etiquetas">🏷️ Etiquetas</div>
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='tempos'?'on':''}" data-tab="tempos">⏱ Tempos do atendimento</div>`:''}
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='horarios'?'on':''}" data-tab="horarios">🕐 Horário de funcionamento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
       </div>`;
@@ -6145,6 +6439,7 @@ function renderAux(){
     else if(configTab==='atalhos'){ renderAtalhos(body, true); }
     else if(configTab==='etiquetas'){ renderEtiquetas(body, true); }
     else if(configTab==='tempos' && USUARIO&&USUARIO.admin){ renderTempos(body); }
+    else if(configTab==='horarios' && USUARIO&&USUARIO.admin){ renderHorarios(body); }
     else if(configTab==='equipe' && USUARIO&&USUARIO.admin){ renderEquipe(body); }
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);

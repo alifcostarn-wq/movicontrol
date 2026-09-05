@@ -752,6 +752,205 @@ async function registrarPesquisaEnviada(e, { fone, conversaId, origem }) {
   }).catch(err => console.error('[pesquisa] livro:', err.message));
 }
 
+// ============================================================================
+// HORÁRIO DE FUNCIONAMENTO
+// ----------------------------------------------------------------------------
+// O bot atende 24h; a EQUIPE não. Quem escreve às 23h ficava sem resposta
+// nenhuma até a manhã seguinte, sem saber se a mensagem chegou. O aviso não
+// substitui o atendimento: diz que a mensagem foi registrada e quando ela será
+// respondida — que é a única informação que falta ao cliente àquela hora.
+//
+// Tudo é calculado no fuso configurado, não no relógio do servidor: a Vercel
+// roda em UTC, e sem isso "18:00" fecharia às 15:00 no Nordeste.
+// ============================================================================
+const FUSO_PADRAO = 'America/Fortaleza';
+const DIAS_NOME = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira',
+                   'quinta-feira', 'sexta-feira', 'sábado'];
+const DIAS_CURTO = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+const TEXTO_FORA_HORARIO =
+  'Olá! 👋 Chegamos a receber sua mensagem, mas neste momento estamos fora do horário de atendimento.\n\n' +
+  '🕐 *Nosso horário:* {horarios}\n\n' +
+  'Voltamos a atender {volta}. Sua mensagem já está registrada e será respondida assim que abrirmos. 💚';
+
+function hmParaMin(hm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+
+const minParaHm = min =>
+  String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+
+/* Data/hora do cliente no fuso do provedor. Devolve as partes já prontas para
+   comparar com a grade: o dia da semana sai de uma data UTC montada com esses
+   mesmos números, então não há risco de virar o dia por causa do fuso. */
+function partesNoFuso(data, fuso) {
+  let p = null;
+  try {
+    const f = new Intl.DateTimeFormat('en-CA', {
+      timeZone: fuso || FUSO_PADRAO, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    p = Object.fromEntries(f.formatToParts(data).map(x => [x.type, x.value]));
+  } catch {
+    // fuso inválido ou runtime sem ICU: cai no horário de Brasília (UTC-3)
+    const d = new Date(data.getTime() - 3 * 3600e3);
+    p = {
+      year: String(d.getUTCFullYear()), month: String(d.getUTCMonth() + 1).padStart(2, '0'),
+      day: String(d.getUTCDate()).padStart(2, '0'),
+      hour: String(d.getUTCHours()).padStart(2, '0'), minute: String(d.getUTCMinutes()).padStart(2, '0'),
+    };
+  }
+  const ano = Number(p.year), mes = Number(p.month), dia = Number(p.day);
+  const hora = Number(p.hour) % 24;                       // en-CA pode devolver 24:00
+  return {
+    ano, mes, dia,
+    minutos: hora * 60 + Number(p.minute),
+    iso: `${p.year}-${p.month}-${p.day}`,
+    semana: new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay(),
+  };
+}
+
+/* Faixas válidas de um dia da semana, ordenadas e sem lixo. */
+function faixasDoDia(cfg, semana) {
+  const bruto = (cfg.dias || {})[String(semana)] || [];
+  return (Array.isArray(bruto) ? bruto : [])
+    .map(f => ({ ini: hmParaMin(f.de), fim: hmParaMin(f.ate) }))
+    .filter(f => f.ini != null && f.fim != null && f.fim > f.ini)
+    .sort((a, b) => a.ini - b.ini);
+}
+
+function feriadoDe(cfg, iso) {
+  const lista = Array.isArray(cfg.feriados) ? cfg.feriados : [];
+  return lista.find(f => String(f && (f.data ?? f)).slice(0, 10) === iso) || null;
+}
+
+/* "Seg a Sex 08:00–18:00 · Sáb 08:00–12:00" — dias seguidos com a mesma grade
+   viram uma faixa só, senão o aviso vira uma tabela de sete linhas. */
+function resumoHorarios(cfg) {
+  const chave = s => faixasDoDia(cfg, s).map(f => minParaHm(f.ini) + '–' + minParaHm(f.fim)).join(', ');
+  // a semana começa na segunda: "Seg a Sex" é como as pessoas leem
+  const ordem = [1, 2, 3, 4, 5, 6, 0];
+  const blocos = [];
+  for (const s of ordem) {
+    const k = chave(s);
+    if (!k) continue;
+    const ult = blocos[blocos.length - 1];
+    if (ult && ult.k === k && ordem.indexOf(s) === ordem.indexOf(ult.fim) + 1) ult.fim = s;
+    else blocos.push({ k, ini: s, fim: s });
+  }
+  if (!blocos.length) return 'sob consulta';
+  return blocos.map(b => {
+    const dias = b.ini === b.fim ? DIAS_CURTO[b.ini]
+      : (ordem.indexOf(b.fim) - ordem.indexOf(b.ini) === 1
+          ? `${DIAS_CURTO[b.ini]} e ${DIAS_CURTO[b.fim]}`
+          : `${DIAS_CURTO[b.ini]} a ${DIAS_CURTO[b.fim]}`);
+    return `${dias} ${b.k}`;
+  }).join(' · ');
+}
+
+/* Situação agora: aberto ou fechado, por que, e quando abre de novo. */
+function horarioSituacao(cfg, agora = new Date()) {
+  const conf = cfg || {};
+  if (conf.ativo !== true) return { ligado: false, aberto: true };
+
+  const hoje = partesNoFuso(agora, conf.fuso);
+  const feriadoHoje = feriadoDe(conf, hoje.iso);
+  const faixasHoje = feriadoHoje ? [] : faixasDoDia(conf, hoje.semana);
+  const aberto = faixasHoje.some(f => hoje.minutos >= f.ini && hoje.minutos < f.fim);
+
+  // próxima abertura: varre até 8 dias à frente pulando feriados e dias fechados
+  let proxima = null;
+  for (let d = 0; d <= 8 && !proxima; d++) {
+    const base = new Date(Date.UTC(hoje.ano, hoje.mes - 1, hoje.dia + d));
+    const iso = base.toISOString().slice(0, 10);
+    if (feriadoDe(conf, iso)) continue;
+    for (const f of faixasDoDia(conf, base.getUTCDay())) {
+      if (d === 0 && f.ini <= hoje.minutos) continue;      // já passou hoje
+      proxima = { dias: d, hm: minParaHm(f.ini), semana: base.getUTCDay(), iso };
+      break;
+    }
+  }
+
+  const rotulo = !proxima ? 'assim que reabrirmos'
+    : proxima.dias === 0 ? `hoje às ${proxima.hm}`
+    : proxima.dias === 1 ? `amanhã às ${proxima.hm}`
+    : proxima.dias < 7   ? `${DIAS_NOME[proxima.semana]} às ${proxima.hm}`
+    : `${proxima.iso.slice(8, 10)}/${proxima.iso.slice(5, 7)} às ${proxima.hm}`;
+
+  return {
+    ligado: true, aberto, feriado: feriadoHoje || null,
+    proxima, volta: rotulo, horarios: resumoHorarios(conf),
+  };
+}
+
+function textoForaHorario(cfg, sit, nome) {
+  const padrao = (sit.feriado && String(cfg.texto_feriado || '').trim())
+    || String(cfg.texto || '').trim() || TEXTO_FORA_HORARIO;
+  const extra = String(cfg.emergencia || '').trim();
+  return padrao
+    .replace(/{nome}/g, nome || 'tudo bem')
+    .replace(/{primeiro_nome}/g, String(nome || '').split(' ')[0] || 'tudo bem')
+    .replace(/{volta}/g, sit.volta)
+    .replace(/{horarios}/g, sit.horarios)
+    .replace(/{feriado}/g, (sit.feriado && (sit.feriado.nome || 'feriado')) || 'feriado')
+    + (extra ? '\n\n' + extra : '');
+}
+
+async function horarioConfig(e) {
+  try {
+    const row = await sbUm(e, 'atend_horario_config?id=eq.1&select=dados');
+    return (row && row.dados) || {};
+  } catch (err) {
+    console.error('[horario] config:', err.message);
+    return {};
+  }
+}
+
+/* Avisa que estamos fechados. Devolve { avisou, parar } — `parar` diz se o bot
+   deve ficar quieto depois do aviso (opção do painel). */
+async function avisarForaDoHorario(e, { conversa, fone }) {
+  const cfg = await horarioConfig(e);
+  const sit = horarioSituacao(cfg, new Date());
+  if (!sit.ligado || sit.aberto) return { avisou: false, parar: false };
+
+  // um aviso por janela: quem manda cinco mensagens seguidas às 23h recebe UM
+  const horas = Math.max(0, Number(cfg.repetir_horas ?? 12));
+  const ultimo = conversa.aviso_horario_em ? new Date(conversa.aviso_horario_em).getTime() : 0;
+  if (horas && ultimo && Date.now() - ultimo < horas * 3600e3) {
+    return { avisou: false, parar: cfg.parar_bot === true };
+  }
+
+  const texto = textoForaHorario(cfg, sit, conversa.contato_nome);
+  if (!texto.trim()) return { avisou: false, parar: false };
+
+  // CARIMBA ANTES DE ENVIAR: o carimbo é a reivindicação. Duas mensagens do
+  // cliente chegando juntas disparam dois webhooks em containers diferentes —
+  // sem isso os dois passariam pela checagem e o aviso sairia em dobro.
+  const meu = await sb(e, `atend_conversas?id=eq.${conversa.id}` +
+    (ultimo ? `&aviso_horario_em=eq.${encodeURIComponent(conversa.aviso_horario_em)}` : '&aviso_horario_em=is.null'), {
+    method: 'PATCH', headers: { Prefer: 'return=representation' },
+    body: { aviso_horario_em: new Date().toISOString() },
+  }).catch(() => null);
+  if (!meu || !meu.length) return { avisou: false, parar: cfg.parar_bot === true };
+
+  try {
+    const env = await waEnviar(e, fone, texto);
+    await sb(e, 'atend_mensagens', {
+      method: 'POST', prefer: 'return=minimal',
+      body: { conversa_id: conversa.id, direcao: 'bot', conteudo: texto, wa_id: idDaEvolution(env), status: 'enviado' },
+    });
+  } catch (err) {
+    console.error('[horario] aviso:', err.message);
+    return { avisou: false, parar: false };
+  }
+  conversa.aviso_horario_em = new Date().toISOString();
+  return { avisou: true, parar: cfg.parar_bot === true };
+}
+
 const MOTIVO_QUEDA = {
   'lost-carrier':        ['Perda de sinal', 'O enlace caiu fisicamente: roteador/ONU desligado, falta de energia ou rompimento na fibra. É a causa mais comum.', 'cliente'],
   'user-request':        ['Cliente desconectou', 'O próprio equipamento do cliente encerrou a conexão — normalmente reinício do roteador.', 'cliente'],
@@ -2455,8 +2654,24 @@ async function tratarWebhook(e, body) {
     }
   }
 
+  // ---- Fora do horário de funcionamento ----
+  // Vem depois da instabilidade (uma queda conhecida é a informação mais útil
+  // que existe àquela hora) e ANTES do corte do "humano assumiu": à meia-noite
+  // ninguém está no card, e quem está devendo resposta é a equipe. Fica de fora
+  // só quem está no meio da pesquisa — ali a próxima mensagem é a nota.
+  let pararPorHorario = false;
+  if (!(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
+    try {
+      const r = await avisarForaDoHorario(e, { conversa, fone });
+      pararPorHorario = r.parar;
+    } catch (err) { console.error('[atendimento] horário:', err.message); }
+  }
+
   // humano assumiu → bot fica quieto
   if (conversa.bot_ativo === false) return { ok: true, bot: 'inativo', conversa_id: conversa.id };
+
+  // painel configurado para só avisar: o bot não responde fora do horário
+  if (pararPorHorario) return { ok: true, bot: 'fora do horário', conversa_id: conversa.id };
 
   // Anexo sem legenda não tem o que interpretar: fica guardado e visível no
   // painel para o atendente abrir e decidir. O bot NÃO é desligado — se o
@@ -5095,6 +5310,41 @@ export default async function handler(req, res) {
       // fora de atend_config: aquele save acima SUBSTITUI o JSON inteiro, e
       // salvar "Tempos do atendimento" apagaria estas chaves em silêncio se
       // elas morassem lá.
+      // ---- Horário de funcionamento (tabela própria, ver a migração) ----
+      case 'horario.config.obter': {
+        const c = await sbUm(e, 'atend_horario_config?id=eq.1&select=dados');
+        const dados = (c && c.dados) || {};
+        return res.status(200).json({
+          ok: true, config: dados,
+          padrao: { texto: TEXTO_FORA_HORARIO, fuso: FUSO_PADRAO },
+          agora: horarioSituacao(dados, new Date()),
+        });
+      }
+
+      case 'horario.config.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const dh = body.config && typeof body.config === 'object' ? body.config : null;
+        if (!dh) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        // valida a grade aqui também: horário quebrado salvo em silêncio vira
+        // "fechado o dia inteiro" sem ninguém entender por quê
+        for (const [semana, faixas] of Object.entries(dh.dias || {})) {
+          for (const f of (Array.isArray(faixas) ? faixas : [])) {
+            const ini = hmParaMin(f.de), fim = hmParaMin(f.ate);
+            if (ini == null || fim == null) {
+              return res.status(400).json({ ok: false, error: `Horário inválido em ${DIAS_NOME[semana] || semana}: use HH:MM.` });
+            }
+            if (fim <= ini) {
+              return res.status(400).json({ ok: false, error: `Em ${DIAS_NOME[semana] || semana}, o fim (${f.ate}) precisa ser depois do início (${f.de}).` });
+            }
+          }
+        }
+        await sb(e, 'atend_horario_config?id=eq.1', {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { dados: dh, updated_at: new Date().toISOString(), updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true, agora: horarioSituacao(dh, new Date()) });
+      }
+
       case 'pagamento.config.obter': {
         const c = await sbUm(e, 'atend_pagamento_config?id=eq.1&select=dados');
         return res.status(200).json({ ok: true, config: (c && c.dados) || {} });
