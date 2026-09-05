@@ -3113,6 +3113,23 @@ async function tratarCron(e) {
   const agoraMs = Date.now();
   let movidas = 0, avisadas = 0, encerradasHumano = 0;
 
+  // Atendimento ENCERRADO esperando a nota não é atendimento parado. O relógio
+  // de inatividade não pode correr para ele: o cliente já foi convidado a
+  // responder a pesquisa, e "continua por aí? vou encerrar" logo depois de
+  // "como você avalia?" contradiz a mensagem anterior e atrapalha a resposta.
+  // Quem cuida de pesquisa sem resposta é o bloco da pesquisa, mais abaixo,
+  // que tem o próprio relógio.
+  const naPesquisa = new Set();
+  const naPesquisaFone = new Set();
+  try {
+    const sess = await sb(e, 'atend_sessoes?aguardando=eq.rating_humano&select=conversa_id,contato_fone');
+    for (const sx of (sess || [])) {
+      if (sx.conversa_id != null) naPesquisa.add(String(sx.conversa_id));
+      if (sx.contato_fone) naPesquisaFone.add(String(sx.contato_fone));
+    }
+  } catch (err) { console.error('[inatividade] pesquisa pendente:', err.message); }
+  const esperandoNota = c => naPesquisa.has(String(c.id)) || naPesquisaFone.has(String(c.contato_fone));
+
   // 1) sem resposta do cliente → move para "Aguardando cliente"
   // Só move se a ÚLTIMA mensagem foi nossa: se o cliente falou por último,
   // quem está devendo resposta é o atendente, não ele.
@@ -3123,6 +3140,7 @@ async function tratarCron(e) {
       `atend_conversas?coluna=eq.atendimento&bot_ativo=is.false&deleted_at=is.null` +
       `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=40`);
     for (const c of (alvos || [])) {
+      if (esperandoNota(c)) continue;
       const ult = await sbUm(e,
         `atend_mensagens?conversa_id=eq.${c.id}&select=direcao&order=created_at.desc&limit=1`);
       if (!ult || ult.direcao === 'in') continue;   // bola está com a gente
@@ -3143,6 +3161,7 @@ async function tratarCron(e) {
       `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
     const txt = String(cfgAt.aviso_texto || 'Continua por aí? Se não tivermos retorno, vou encerrar este atendimento em breve. 🙂');
     for (const c of (alvos || [])) {
+      if (esperandoNota(c)) continue;
       // CARIMBA ANTES DE ENVIAR, e só segue se o carimbo foi nosso. O filtro
       // `aviso_inatividade_em=is.null` dentro do próprio UPDATE faz do carimbo
       // uma reivindicação atômica: se duas varreduras rodarem ao mesmo tempo,
@@ -3173,6 +3192,7 @@ async function tratarCron(e) {
       `&aviso_inatividade_em=lt.${corte}&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
     const txt = String(cfgAt.encerrar_texto || 'Como não tivemos retorno, encerrei este atendimento. É só mandar outra mensagem quando precisar. 💚');
     for (const c of (alvos || [])) {
+      if (esperandoNota(c)) continue;
       // mesma ideia do aviso: mover a coluna É a reivindicação. Quem conseguir
       // tirar de "aguardando" é quem manda a despedida — nunca as duas rodadas.
       const meu = await sb(e, `atend_conversas?id=eq.${c.id}&coluna=eq.aguardando`, {
@@ -5252,6 +5272,20 @@ export default async function handler(req, res) {
         // Pesquisa de satisfação: antes só existia no fim do fluxo do bot, então
         // atendimento encerrado por humano nunca era avaliado — justamente o que
         // mais importa medir. Só não repergunta se o cliente já deu nota.
+        // Fecha a conversa ANTES de pedir a nota. Na ordem antiga a pesquisa
+        // saía primeiro e a conversa seguia alguns instantes na coluna antiga,
+        // com o relógio de inatividade ainda correndo — deu tempo de o ciclo
+        // mandar "continua por aí? vou encerrar" 2 segundos depois da pesquisa.
+        // Mexer em ultima_msg_em junto zera esse relógio de qualquer forma.
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, updated_by: user.id,
+            aguardando_desde: null, aviso_inatividade_em: null,
+            ultima_msg_em: new Date().toISOString(),
+          },
+        });
+
         let pesquisaEnviada = false;
         if (body.pesquisa !== false && !c.rating) {
           // mensagem única: já encerra e pede a nota, sem um "atendimento
@@ -5286,10 +5320,6 @@ export default async function handler(req, res) {
           } catch (err) { console.error('[atendimento]', err.message); }
         }
 
-        await sb(e, `atend_conversas?id=eq.${id}`, {
-          method: 'PATCH', prefer: 'return=minimal',
-          body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, updated_by: user.id },
-        });
         // se estamos esperando a nota, a sessão precisa sobreviver
         if (!pesquisaEnviada) {
           await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
