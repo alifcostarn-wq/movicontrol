@@ -3689,7 +3689,12 @@ async function asnPdfBase64(modelo, dados){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'px', format:'a4', hotfixes:['px_scaling'], compress:true });
   await new Promise(res=>{
-    doc.html(cont.querySelector('.asn-pdf-page'), { callback:()=>res(), x:0, y:0, width:595, windowWidth:794, autoPaging:'text' });
+    // autoPaging:'text' mantém o contrato VETORIAL — o texto é desenhado como
+    // texto, não como foto da página. É o que faz cada contrato pesar dezenas
+    // de KB em vez de alguns MB, e ele fica guardado no R2 para sempre.
+    doc.html(cont.querySelector('.asn-pdf-page'), {
+      callback:()=>res(), x:0, y:0, width:595, windowWidth:794, autoPaging:'text',
+    });
   });
   cont.innerHTML='';
   return doc.output('datauristring').split(',')[1];
@@ -5521,6 +5526,11 @@ function abrirStatusWA(){
 // Foto de celular moderna tem 5-12 MB — sem reduzir antes, o envio falharia
 // sempre. Além disso, guardar o original ocuparia storage à toa.
 const ANEXO_MAX_BYTES = 3 * 1024 * 1024;   // ~4 MB depois do base64
+// Teto DE MIRA da compressão, bem abaixo do limite técnico: o anexo fica
+// guardado enquanto a conversa existir, e 400 KB já entregam uma foto de conta
+// ou de equipamento perfeitamente legível no painel e no celular. Parar em
+// 3 MB só porque "cabe no envio" era encher o Storage à toa.
+const ANEXO_ALVO_BYTES = 400 * 1024;
 
 function lerArquivo(blob){
   return new Promise((ok,err)=>{
@@ -5546,14 +5556,24 @@ async function comprimirImagem(file){
     const escala = Math.max(w,h)>MAX ? MAX/Math.max(w,h) : 1;
     w=Math.round(w*escala); h=Math.round(h*escala);
     const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
-    cv.getContext('2d').drawImage(img,0,0,w,h);
+    const ctx=cv.getContext('2d');
+    // fundo branco: PNG com transparência vira JPEG com fundo preto sem isto,
+    // e print de tela recortado chega aqui com alfa o tempo todo
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+    ctx.drawImage(img,0,0,w,h);
     URL.revokeObjectURL(url);
     let q=0.82, blob=null;
-    // reduz a qualidade até caber; para em 0.5 para não virar borrão
-    for(let i=0;i<4;i++){
+    // mira ANEXO_ALVO_BYTES, não o limite de envio: a foto fica guardada para
+    // sempre. Para em 0.55 para não virar borrão — abaixo disso o texto de um
+    // comprovante começa a não dar mais para ler.
+    for(let i=0;i<5;i++){
       blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
-      if(blob && blob.size<=ANEXO_MAX_BYTES) break;
-      q-=0.12; if(q<0.5) break;
+      if(blob && blob.size<=ANEXO_ALVO_BYTES) break;
+      q-=0.09; if(q<0.55) break;
+    }
+    // se nem no mínimo coube no alvo, o que manda é o limite técnico do envio
+    if(blob && blob.size>ANEXO_MAX_BYTES){
+      blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.5));
     }
     if(blob && blob.size<file.size) return new File([blob], file.name.replace(/\.\w+$/,'')+'.jpg', {type:'image/jpeg'});
     return file;

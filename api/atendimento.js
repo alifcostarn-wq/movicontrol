@@ -42,7 +42,15 @@
 // queima o número no WhatsApp). Com o padrão de 10s da Vercel dava tempo de UM
 // envio e a função morria no meio do laço — desperdiçando a consulta de faturas
 // e correndo o risco de mandar de novo o que não chegou a ser registrado.
+import { otimizarMidia, emKB } from '../lib/midia.mjs';
+
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
+
+// Teto do que entra no Storage. O WhatsApp aceita documento de até 100 MB;
+// puxar isso para a memória como base64 (que infla 33%) derruba a função antes
+// de qualquer coisa. Acima do teto a mensagem é guardada sem o anexo e o
+// motivo fica no log, em vez de a conversa inteira falhar.
+const MIDIA_TETO_MB = Number(process.env.ATEND_MIDIA_TETO_MB || 30);
 
 // Quanto a cobrança automática pode ocupar de uma execução antes de parar por
 // conta própria. Sai bem antes do corte da plataforma: parar sozinha deixa o
@@ -364,6 +372,11 @@ async function baixarMidia(e, waId) {
   const d = await r.json();
   const b64 = d?.base64 || d?.media || null;
   if (!b64) throw new Error('Evolution não devolveu o arquivo');
+  // base64 ocupa ~4/3 do arquivo: mede aqui, antes de decodificar
+  const bytes = Math.floor(b64.length * 3 / 4);
+  if (bytes > MIDIA_TETO_MB * 1048576) {
+    throw new Error(`arquivo de ${emKB(bytes)} acima do teto de ${MIDIA_TETO_MB} MB`);
+  }
   return {
     base64: b64.includes(',') ? b64.split(',').pop() : b64,
     mimetype: d?.mimetype || 'application/octet-stream',
@@ -380,13 +393,25 @@ const EXT_POR_MIME = {
 };
 
 async function guardarMidia(e, conversaId, waId, arq) {
-  const ext = EXT_POR_MIME[arq.mimetype.split(';')[0]] || 'bin';
+  // Comprime ANTES de subir. O anexo fica guardado enquanto a conversa
+  // existir: o que entra aqui grande fica grande para sempre. Foto mandada
+  // como documento (o WhatsApp não recomprime essas) chega com os 5-8 MB da
+  // câmera e sai com algumas centenas de KB, sem diferença visível no painel.
+  const otim = await otimizarMidia(Buffer.from(arq.base64, 'base64'), arq.mimetype);
+  if (otim.motivo === 'comprimido') {
+    console.log(`[midia] ${arq.mimetype} ${emKB(otim.antes)} → ${emKB(otim.depois)} (${otim.mimetype})`);
+  } else if (otim.motivo && otim.motivo.startsWith('falhou')) {
+    console.error(`[midia] ${arq.mimetype}: ${otim.motivo} — guardando o original`);
+  }
+  if (otim.bytes.length > MIDIA_TETO_MB * 1048576) {
+    throw new Error(`arquivo de ${emKB(otim.bytes.length)} acima do teto de ${MIDIA_TETO_MB} MB`);
+  }
+  const ext = EXT_POR_MIME[otim.mimetype.split(';')[0]] || 'bin';
   const caminho = `conversas/${conversaId}/${Date.now()}-${(waId || 'sem-id').slice(-12)}.${ext}`;
-  const bytes = Buffer.from(arq.base64, 'base64');
   const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
     method: 'POST',
-    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': arq.mimetype },
-    body: bytes,
+    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': otim.mimetype },
+    body: otim.bytes,
   });
   if (!r.ok) throw new Error(`Storage ${r.status}: ${(await r.text()).slice(0, 160)}`);
   return caminho;
@@ -396,17 +421,20 @@ async function guardarMidia(e, conversaId, waId, arq) {
 // nenhuma conversa: é uma publicação da empresa inteira e some do WhatsApp em
 // 24h, mas o histórico do painel continua precisando mostrar o que foi ao ar.
 async function guardarStatusMidia(e, arq) {
-  const mime = arq.mimetype.split(';')[0];
+  const otim = await otimizarMidia(Buffer.from(arq.base64, 'base64'), arq.mimetype);
+  if (otim.motivo === 'comprimido') {
+    console.log(`[midia status] ${arq.mimetype} ${emKB(otim.antes)} → ${emKB(otim.depois)}`);
+  }
   // `.bin` faria a Evolution tratar o arquivo como binário genérico. Quando o
   // mime não está na tabela, o subtipo (video/quicktime -> quicktime) ainda é um
   // palpite melhor do que nada.
+  const mime = otim.mimetype.split(';')[0];
   const ext = EXT_POR_MIME[mime] || (mime.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin';
   const caminho = `status/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const bytes = Buffer.from(arq.base64, 'base64');
   const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
     method: 'POST',
-    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': arq.mimetype },
-    body: bytes,
+    headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': otim.mimetype },
+    body: otim.bytes,
   });
   if (!r.ok) throw new Error(`Storage ${r.status}: ${(await r.text()).slice(0, 160)}`);
   return caminho;
