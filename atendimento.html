@@ -1312,19 +1312,43 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
 .ci-composer input:focus{border-color:var(--green);}
 
 /* ============ FLUXO DO BOT (canvas) ============ */
-.flow-wrap{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;height:calc(100vh - 200px);overflow:hidden;}
-.flow-toolbar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+/* O editor do bot é a tela mais apertada do painel: o desenho precisa de
+   espaço, e cada barra a mais come altura de canvas. Duas medidas contra isso —
+   as barras viram UMA linha só, e existe um modo tela cheia que tira o painel
+   inteiro da frente. */
+/* a altura real é medida em flowAjustarAltura(); este calc é só o valor do
+   primeiro quadro, antes da medição */
+.flow-wrap{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;height:calc(100vh - 250px);min-height:380px;overflow:hidden;}
+/* tela cheia: cobre tudo, inclusive a barra lateral e o cabeçalho */
+body.flow-full{overflow:hidden;}
+body.flow-full .flow-wrap{position:fixed;inset:0;z-index:6000;height:100vh;min-height:0;
+  border-radius:0;box-shadow:none;
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
+.flow-toolbar{display:flex;align-items:center;gap:7px;padding:9px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
 .flow-toolbar .ftlabel{font-size:11px;font-weight:700;color:var(--text-low);margin-right:2px;}
+.flow-sep{width:1px;align-self:stretch;background:var(--line);margin:0 3px;}
+.viewbox.flow-topo{margin-bottom:10px;padding:10px 16px 0;}
+.viewbox.flow-topo .cfg-tabs{margin-bottom:0;}
+.cfg-mini{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-low);margin-bottom:2px;}
 .fbtn{
   font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 12px;border-radius:8px;
   border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px;
 }
 .fbtn:hover{border-color:var(--green);color:var(--green-deep);}
 .fbtn.warn{background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;}
-.flow-body{flex:1;display:flex;overflow:hidden;}
-.flow-canvas-outer{flex:1;overflow:auto;position:relative;background-color:#f7f9fb;
-  background-image:radial-gradient(#dde4ec 1.4px, transparent 1.4px);background-size:22px 22px;}
-.flow-canvas{position:relative;width:2520px;height:1560px;}
+.flow-body{flex:1;display:flex;overflow:hidden;min-height:0;}
+/* overflow:hidden, e não auto: quem navega o desenho é o ARRASTE, não a barra
+   de rolagem. Rolar um canvas de 2500px em duas barrinhas era metade da
+   sensação de aperto. O ponto do grid acompanha o zoom e o deslocamento, senão
+   o fundo "desliza" por baixo dos blocos e embaralha a leitura. */
+.flow-canvas-outer{flex:1;overflow:hidden;position:relative;background-color:#f7f9fb;
+  background-image:radial-gradient(#dde4ec 1.4px, transparent 1.4px);
+  background-size:22px 22px;cursor:grab;touch-action:none;}
+.flow-canvas-outer.arrastando{cursor:grabbing;}
+.flow-canvas-outer.espaco{cursor:grab;}
+.flow-canvas{position:absolute;top:0;left:0;width:4000px;height:2600px;transform-origin:0 0;will-change:transform;}
 .flow-canvas svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;}
 .flow-node{
   position:absolute;width:196px;background:#fff;border:2px solid var(--line);border-radius:12px;
@@ -1345,7 +1369,8 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
 .fzoom{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
 .fzoom button{border:none;background:var(--card);font-family:inherit;font-size:13px;font-weight:800;width:28px;height:28px;cursor:pointer;color:var(--text-mid);}
 .fzoom button:hover{background:#f2f5f8;}
-.fzoom .fz-val{font-size:10.5px;font-weight:700;color:var(--text-low);width:40px;text-align:center;}
+.fzoom .fz-val{font-size:10.5px;font-weight:700;color:var(--text-low);width:40px;text-align:center;cursor:pointer;}
+.fzoom .fz-val:hover{color:var(--green-deep);}
 .conn-pick{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
 .conn-opt{display:flex;gap:8px;align-items:flex-start;padding:8px 9px;border:1.5px solid var(--line);border-radius:9px;cursor:pointer;}
 .conn-opt:hover{border-color:#99f6e4;background:#f0fdfa;}
@@ -1362,7 +1387,19 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
 .fn-title{font-size:12.5px;font-weight:700;line-height:1.3;}
 .fn-text{font-size:10.5px;color:var(--text-mid);margin-top:4px;line-height:1.4;white-space:pre-line;max-height:70px;overflow:hidden;}
 .flow-node.ia-node{border-style:dashed;border-color:#c4b5fd;}
-.flow-side{width:290px;border-left:1px solid var(--line);padding:16px;overflow-y:auto;flex-shrink:0;}
+.flow-side{width:290px;border-left:1px solid var(--line);padding:16px;overflow-y:auto;flex-shrink:0;
+  transition:width .16s ease,padding .16s ease;}
+/* recolher a lateral devolve 290px de largura ao desenho — é o gesto de quem
+   está só arrumando os blocos, sem editar conteúdo */
+.flow-body.side-off .flow-side{width:0;padding:0;border-left:none;overflow:hidden;}
+.flow-lado-btn{position:absolute;top:10px;right:10px;z-index:5;width:30px;height:30px;border-radius:8px;
+  border:1px solid var(--line);background:var(--card);color:var(--text-mid);cursor:pointer;
+  font-size:13px;line-height:1;box-shadow:var(--shadow);}
+.flow-lado-btn:hover{border-color:var(--green);color:var(--green-deep);}
+/* dica de navegação, discreta, no canto do canvas */
+.flow-dica{position:absolute;left:12px;bottom:10px;z-index:4;pointer-events:none;
+  font-size:10.5px;color:var(--text-low);background:rgba(255,255,255,.86);
+  border:1px solid var(--line);border-radius:8px;padding:5px 9px;line-height:1.5;}
 .flow-side h3{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-low);margin-bottom:9px;}
 .flow-empty{font-size:12px;color:var(--text-low);line-height:1.6;}
 .flow-field{margin-bottom:12px;}
@@ -1371,7 +1408,10 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
   width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;
   font-family:inherit;font-size:12.5px;outline:none;color:var(--text);
 }
-.flow-field textarea{min-height:80px;resize:vertical;}
+/* o texto do bloco é o campo mais usado do editor: 80px mostravam três linhas
+   de um menu que costuma ter seis */
+.flow-field textarea{min-height:132px;resize:vertical;line-height:1.5;}
+body.flow-full .flow-field textarea{min-height:200px;}
 .flow-field input:focus,.flow-field select:focus,.flow-field textarea:focus{border-color:var(--green);}
 .flow-hint{font-size:10.5px;color:var(--text-low);background:#f7f9fb;border:1px dashed var(--line);border-radius:8px;padding:9px 10px;line-height:1.5;margin-top:14px;}
 
@@ -1909,11 +1949,31 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
   }
 
   /* --- Fluxo do bot: canvas continua, painel vira rodapé --- */
+  /* As duas barras quebravam em quatro linhas num celular e sobravam 260px de
+     desenho. Viram fitas de uma linha só que deslizam de lado — o mesmo
+     recurso já usado nas abas de Configurações. */
+  .flow-botbar,.flow-toolbar{
+    flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scrollbar-width:none;padding:8px 10px;
+  }
+  .flow-botbar::-webkit-scrollbar,.flow-toolbar::-webkit-scrollbar{display:none;}
+  .flow-botbar > *,.flow-toolbar > *{flex-shrink:0;}
+  .flow-botbar select{max-width:190px;}
+  /* o espaçador que empurra os botões para a direita não faz sentido numa fita */
+  .flow-botbar > span[style*="flex:1"],.flow-toolbar > span[style*="flex:1"]{display:none;}
   .flow-body{flex-direction:column;}
   .flow-side{width:auto;border-left:none;border-top:1px solid var(--line);max-height:44%;}
+  .flow-body.side-off .flow-side{width:auto;height:0;max-height:0;border-top:none;padding:0;}
   .flow-toolbar{gap:6px;padding:9px 10px;}
   .fbtn{padding:10px 12px;font-size:12px;}
-  .flow-canvas-outer{min-height:210px;}
+  /* o desenho fica com o que sobrar, e nunca menos que isto */
+  .flow-canvas-outer{min-height:300px;flex:1;}
+  /* no celular a dica ocuparia meia tela e o dedo já arrasta por instinto */
+  .flow-dica{display:none;}
+  .flow-lado-btn{width:38px;height:38px;font-size:15px;}
+  /* tela cheia no celular é o modo em que dá para desenhar de verdade */
+  body.flow-full .flow-wrap{height:100dvh;}
+  body.flow-full .flow-side{max-height:38%;}
 
   /* --- TELAS AUXILIARES (Agendamentos, Conversas, Contatos, Config…) --- */
   .viewbox{padding:15px 13px;max-width:none;}
@@ -2955,6 +3015,15 @@ async function sair(){
 
 let filtroTag=null, filtroRisco=false, busca='', view='kanban', modalId=null, meuSetor='todos', ciAtivo='canal:Geral', ciEmThread=false;
 let flowSelected=null, flowConnecting=null, flowDrag=null, flowZoom=1;
+// Deslocamento do desenho dentro da moldura. O canvas não rola mais: ele é
+// TRANSLADADO, que é o que permite arrastar com o mouse/trackpad como num
+// aplicativo de diagrama. Persistem entre re-renders para o desenho não
+// "pular de volta" a cada bloco editado.
+let flowPanX=0, flowPanY=0, flowSideOff=false, flowEspaco=false, flowVistaId=null;
+// 'ajuste' = a vista veio de "Enquadrar" e deve se refazer quando a moldura
+// mudar de tamanho; 'livre' = a pessoa posicionou o desenho na mão, e mexer
+// nisso por conta própria seria tirar o mapa de baixo do dedo dela.
+let flowVistaModo='livre';
 let configTab='regras';
 
 /* ================= HELPERS ================= */
@@ -6440,11 +6509,15 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
       </div>`;
     // o editor de fluxo precisa da largura toda: fica FORA da moldura
+    // No editor do bot o cabeçalho encolhe: o título ocupava ~45px que fazem
+    // falta no desenho, e as abas sozinhas já dizem onde a pessoa está.
     a.innerHTML = configTab==='fluxo'
-      ? `<div class="viewbox" style="margin-bottom:12px;padding-bottom:14px;"><h2>Configurações</h2>${abas}</div><div id="cfgBody"></div>`
+      ? `<div class="viewbox flow-topo"><div class="cfg-mini">Configurações ›</div>${abas}</div><div id="cfgBody"></div>`
       : `<div class="viewbox"><h2>Configurações</h2>${abas}<div id="cfgBody"></div></div>`;
     a.querySelectorAll('.cfg-tab').forEach(el=>el.onclick=()=>{
       if(configTab==='integracoes' && el.dataset.tab!=='integracoes') pararPollWA();
+      // a tela cheia é do editor do bot: sair da aba precisa devolver o painel
+      if(configTab==='fluxo' && el.dataset.tab!=='fluxo') document.body.classList.remove('flow-full');
       configTab=el.dataset.tab; renderAux();
     });
     const body=$('#cfgBody');
@@ -7067,6 +7140,8 @@ async function renderFluxo(a){
   const nodes=state.fluxo.nodes, edges=state.fluxo.edges;
   const podeEditar=!!(USUARIO&&USUARIO.admin);
 
+  // Uma barra só, e não duas: cada linha de botão custava ~50px de altura do
+  // desenho, que é justamente o que faltava.
   a.innerHTML=`<div class="flow-wrap">
     <div class="flow-botbar">
       <select id="botSelect">${fluxosLista.map(f=>`<option value="${f.id}" ${f.id===fluxoAtualId?'selected':''}>${f.ativo?'🟢':'⚪'} ${esc(f.nome)} · ${f.blocos} blocos</option>`).join('')}</select>
@@ -7078,39 +7153,56 @@ async function renderFluxo(a){
         <button class="fbtn" id="btnNovoBotVazio">+ Novo bot</button>
         <button class="fbtn danger" id="btnExcluirBot" ${state.fluxo.ativo?'disabled title="Em produção — publique outro bot antes de excluir este"':''}>🗑 Excluir</button>
       `:''}
+      <span style="flex:1;"></span>
+      ${podeEditar?`
+      <button class="fbtn solid" id="btnSalvarFluxo" ${fluxoSujo?'':'disabled'}>💾 Salvar</button>
+      <span class="ftlabel" id="flowStatus" style="color:${fluxoSujo?'#b45309':'var(--green-deep)'};">${fluxoSujo?'● não salvo':'✓ salvo'}</span>
+      `:''}
+      <button class="fbtn" id="btnFlowFull" title="Tela cheia (F)">⛶ Tela cheia</button>
     </div>
     <div class="flow-toolbar">
       ${podeEditar?`
-      <span class="ftlabel">Adicionar bloco:</span>
+      <span class="ftlabel">Adicionar:</span>
       <button class="fbtn" data-addnode="menu">💬 Menu</button>
       <button class="fbtn" data-addnode="mensagem">📝 Mensagem</button>
       <button class="fbtn" data-addnode="condicao">🔀 Condição</button>
       <button class="fbtn" data-addnode="acao">⚙️ Ação</button>
-      <button class="fbtn" data-addnode="setor">🏷️ Encaminhar setor</button>
+      <button class="fbtn" data-addnode="setor">🏷️ Setor</button>
       <button class="fbtn" data-addnode="fim">🏁 Fim</button>
       <button class="fbtn" data-addnode="ia">🔌 IA</button>
+      <span class="flow-sep"></span>
+      <button class="fbtn warn" id="flowCancelConn" style="display:none;">✕ Cancelar conexão</button>
       `:'<span class="ftlabel" style="color:var(--text-low);">Modo leitura — apenas administradores editam</span>'}
       <span style="flex:1;"></span>
-      <div class="fzoom"><button id="fzOut">−</button><span class="fz-val" id="fzVal">100%</span><button id="fzIn">+</button></div>
-      ${podeEditar?`
-      <button class="fbtn solid" id="btnSalvarFluxo" ${fluxoSujo?'':'disabled'}>💾 Salvar</button>
-      <span class="ftlabel" id="flowStatus" style="min-width:130px;color:${fluxoSujo?'#b45309':'var(--green-deep)'};">${fluxoSujo?'● alterações não salvas':'✓ salvo'}</span>
-      <button class="fbtn warn" id="flowCancelConn" style="display:none;">✕ Cancelar conexão</button>
-      `:''}
+      <button class="fbtn" id="fzFit" title="Enquadrar todos os blocos (0)">⤢ Enquadrar</button>
+      <div class="fzoom">
+        <button id="fzOut" title="Reduzir">−</button>
+        <span class="fz-val" id="fzVal" title="Clique para voltar a 100%">100%</span>
+        <button id="fzIn" title="Ampliar">+</button>
+      </div>
     </div>
-    <div class="flow-body">
+    <div class="flow-body${flowSideOff?' side-off':''}" id="flowBody">
       <div class="flow-canvas-outer" id="flowOuter">
         <div class="flow-canvas" id="flowCanvas">
           <svg id="flowSvg"><defs><marker id="arrowh" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#94a3b8"/></marker></defs></svg>
           ${nodes.map(n=>flowNodeHTML(n)).join('')}
         </div>
+        <button class="flow-lado-btn" id="flowLado" title="${flowSideOff?'Mostrar o painel de edição':'Esconder o painel e usar a tela toda'}">${flowSideOff?'‹':'›'}</button>
+        <div class="flow-dica">Arraste o fundo para mover · role com dois dedos · Ctrl/⌘ + rolagem para o zoom</div>
       </div>
       <div class="flow-side" id="flowSide">${flowSideHTML()}</div>
     </div>
   </div>`;
   bindBotBar(a);
   if(podeEditar) bindFlowEvents(a);
-  requestAnimationFrame(drawFlowEdges);
+  requestAnimationFrame(()=>{
+    flowAjustarAltura();
+    drawFlowEdges();
+    // primeira vez que este bot aparece: começa pelo bloco de início, num zoom
+    // legível. Abrir num canto vazio do canvas de 4000px era o que dava a
+    // sensação de estar perdido antes mesmo de começar.
+    if(flowVistaId!==fluxoAtualId){ flowVistaId=fluxoAtualId; flowIrParaInicio(); }
+  });
 }
 
 function bindBotBar(a){
@@ -7285,20 +7377,234 @@ function drawFlowEdges(){
   });
   svg.innerHTML=out;
 }
+/* ============ NAVEGAÇÃO DO CANVAS: ARRASTAR E AMPLIAR ============
+   O desenho não rola mais em barrinhas: ele é transladado. São quatro gestos,
+   todos os que a mão já espera num notebook —
+     • arrastar o fundo com o botão esquerdo (ou o do meio, em qualquer lugar);
+     • rolar com dois dedos no trackpad, que anda nos dois eixos;
+     • Ctrl/⌘ + rolagem (a pinça do trackpad), ampliando NO PONTO DO CURSOR e
+       não no canto, senão o que se estava olhando some da tela;
+     • segurar espaço e arrastar, para quando o fundo está coberto de blocos.
+   O ponto do grid é movido junto com o desenho: parado, ele daria a impressão
+   de que os blocos deslizam sobre um fundo fixo. */
+const FLOW_ZOOM_MIN=0.25, FLOW_ZOOM_MAX=2;
+
+/* A altura do editor era um "100vh menos um número fixo", e o número nunca
+   batia: acima dele ficam o cabeçalho, a moldura de Configurações e as abas,
+   que mudam de altura com o aviso do WhatsApp e com a largura da tela. O
+   resultado era o editor terminando ABAIXO do fim da janela — a área que
+   faltava estava sendo desperdiçada fora da tela. Aqui ele mede e ocupa
+   exatamente o que sobra. */
+function flowAjustarAltura(){
+  const w=document.querySelector('.flow-wrap');
+  if(!w) return;
+  if(document.body.classList.contains('flow-full')){ w.style.height=''; return; }
+  const topo=w.getBoundingClientRect().top;
+  const folga=16;                                  // respiro no rodapé
+  w.style.height=Math.max(380, window.innerHeight-topo-folga)+'px';
+}
+window.addEventListener('resize', ()=>{
+  if(!document.querySelector('.flow-wrap')) return;
+  flowAjustarAltura();
+  if(flowVistaModo==='ajuste') flowEnquadrar(); else flowAplicarVista();
+  drawFlowEdges();
+});
+
+function flowAplicarVista(){
+  const c=$('#flowCanvas'), o=$('#flowOuter'); if(!c||!o) return;
+  c.style.transform=`translate(${flowPanX}px, ${flowPanY}px) scale(${flowZoom})`;
+  o.style.backgroundSize=(22*flowZoom)+'px '+(22*flowZoom)+'px';
+  o.style.backgroundPosition=flowPanX+'px '+flowPanY+'px';
+  const v=$('#fzVal'); if(v) v.textContent=Math.round(flowZoom*100)+'%';
+}
+
+/* Amplia mantendo fixo o ponto sob o cursor (px/py são relativos à moldura). */
+function flowZoomPara(novo, px, py){
+  const z=Math.min(FLOW_ZOOM_MAX,Math.max(FLOW_ZOOM_MIN,novo));
+  if(z===flowZoom) return;
+  flowPanX = px - (px-flowPanX)*(z/flowZoom);
+  flowPanY = py - (py-flowPanY)*(z/flowZoom);
+  flowZoom = z;
+  flowAplicarVista();
+}
+
+/* Retângulo que envolve todos os blocos, em coordenadas do desenho. */
+function flowCaixaBlocos(){
+  const ns=(state.fluxo&&state.fluxo.nodes)||[];
+  if(!ns.length) return null;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const n of ns){
+    const el=fnEl(n.id);
+    const w=el?el.offsetWidth:196, h=el?el.offsetHeight:110;
+    x0=Math.min(x0,n.x); y0=Math.min(y0,n.y);
+    x1=Math.max(x1,n.x+w); y1=Math.max(y1,n.y+h);
+  }
+  return { x0,y0,x1,y1, w:x1-x0, h:y1-y0 };
+}
+
+/* Enquadra TODOS os blocos: é a visão de conjunto, para achar de novo uma
+   parte do fluxo que ficou longe. Pode ficar pequeno demais para ler — e tudo
+   bem, quem pede isto quer enxergar o mapa, não o texto. */
+function flowEnquadrar(){
+  const o=$('#flowOuter'); if(!o) return;
+  const c=flowCaixaBlocos();
+  if(!c){ flowZoom=1; flowPanX=40; flowPanY=40; flowVistaModo='ajuste'; flowAplicarVista(); return; }
+  const folga=60;
+  const z=Math.min(FLOW_ZOOM_MAX, Math.max(FLOW_ZOOM_MIN,
+    Math.min((o.clientWidth-folga*2)/Math.max(1,c.w), (o.clientHeight-folga*2)/Math.max(1,c.h))));
+  flowZoom=z;
+  flowPanX=(o.clientWidth-c.w*z)/2 - c.x0*z;
+  flowPanY=(o.clientHeight-c.h*z)/2 - c.y0*z;
+  flowVistaModo='ajuste';
+  flowAplicarVista();
+}
+
+/* Vista de abertura: o começo do fluxo, num zoom em que dá para LER.
+   Enquadrar tudo na abertura levava o bot de exemplo a 25% — o mapa inteiro
+   na tela e nenhuma palavra legível, que é abrir perdido de outro jeito. */
+function flowIrParaInicio(){
+  const o=$('#flowOuter'); if(!o) return;
+  const ns=(state.fluxo&&state.fluxo.nodes)||[];
+  if(!ns.length){ flowZoom=1; flowPanX=60; flowPanY=60; flowAplicarVista(); return; }
+  const c=flowCaixaBlocos();
+  const cabe=Math.min((o.clientWidth-120)/Math.max(1,c.w), (o.clientHeight-120)/Math.max(1,c.h));
+  // cabe inteiro? mostra inteiro. Não cabe? 80%, que é onde o texto do bloco
+  // ainda se lê, e começa pelo bloco de início.
+  if(cabe>=0.75){ flowEnquadrar(); flowVistaModo='ajuste'; return; }
+  const ini = ns.find(n=>n.tipo==='inicio')
+    || ns.slice().sort((a,b)=>(a.y-b.y)||(a.x-b.x))[0];
+  flowZoom=0.8;
+  flowPanX=90-ini.x*flowZoom;
+  flowPanY=90-ini.y*flowZoom;
+  flowVistaModo='livre';
+  flowAplicarVista();
+}
+
+/* Tela cheia do editor. O ganho não é estético: numa tela de 1440x900 o canvas
+   passa de ~920x590 para a janela inteira — mais que o dobro de área para o
+   mesmo desenho. Sair pelo botão ou pelo Esc. */
+function flowTelaCheia(a, ligar){
+  const on = ligar===undefined ? !document.body.classList.contains('flow-full') : !!ligar;
+  document.body.classList.toggle('flow-full', on);
+  const b=$('#btnFlowFull');
+  if(b){ b.textContent = on?'⤡ Sair da tela cheia':'⛶ Tela cheia'; b.classList.toggle('solid',on); }
+  // a moldura mudou de tamanho. Se a vista veio de "Enquadrar", refaz o
+  // enquadramento — a área dobrou, insistir no zoom antigo desperdiçaria ela.
+  requestAnimationFrame(()=>{
+    flowAjustarAltura();
+    if(flowVistaModo==='ajuste') flowEnquadrar(); else flowAplicarVista();
+    drawFlowEdges();
+  });
+}
+
+// Atalhos do editor. Só valem com o editor na tela e fora de um campo de texto
+// — senão digitar "f" no texto de um bloco jogaria o painel em tela cheia.
+document.addEventListener('keydown', ev=>{
+  if(!$('#flowOuter')) return;
+  const campo = ev.target && (ev.target.tagName==='INPUT' || ev.target.tagName==='TEXTAREA' || ev.target.isContentEditable);
+  if(ev.code==='Space' && !campo && !ev.repeat){
+    flowEspaco=true; $('#flowOuter').classList.add('espaco'); ev.preventDefault();
+  }
+  if(campo) return;
+  if(ev.key==='Escape' && document.body.classList.contains('flow-full')) flowTelaCheia(null,false);
+  else if(ev.key==='f'||ev.key==='F') flowTelaCheia();
+  else if(ev.key==='0') flowEnquadrar();
+  else if(ev.key==='+'||ev.key==='=') { const o=$('#flowOuter'); flowZoomPara(flowZoom+0.15,o.clientWidth/2,o.clientHeight/2); }
+  else if(ev.key==='-'||ev.key==='_') { const o=$('#flowOuter'); flowZoomPara(flowZoom-0.15,o.clientWidth/2,o.clientHeight/2); }
+});
+document.addEventListener('keyup', ev=>{
+  if(ev.code==='Space'){ flowEspaco=false; const o=$('#flowOuter'); if(o) o.classList.remove('espaco'); }
+});
+// sair da tela cheia ao trocar de aba/tela: o modo é do editor, não do painel
+window.addEventListener('blur', ()=>{ flowEspaco=false; });
+
 function bindFlowEvents(a){
   $('#flowCancelConn').style.display = flowConnecting?'inline-flex':'none';
   $('#flowCancelConn').onclick=()=>{ flowConnecting=null; renderFluxo(a); };
 
-  // zoom
-  const applyZoom=()=>{ const c=$('#flowCanvas'); c.style.transform=`scale(${flowZoom})`; c.style.transformOrigin='0 0'; $('#fzVal').textContent=Math.round(flowZoom*100)+'%'; };
-  applyZoom();
-  $('#fzIn').onclick=()=>{ flowZoom=Math.min(1.4,flowZoom+0.1); applyZoom(); };
-  $('#fzOut').onclick=()=>{ flowZoom=Math.max(0.4,flowZoom-0.1); applyZoom(); };
+  const outer=$('#flowOuter');
+  flowAplicarVista();
+
+  const passo=(k)=>{
+    const o=$('#flowOuter');
+    flowZoomPara(flowZoom+k, o.clientWidth/2, o.clientHeight/2);   // amplia pelo centro
+  };
+  $('#fzIn').onclick=()=>passo(0.15);
+  $('#fzOut').onclick=()=>passo(-0.15);
+  $('#fzVal').onclick=()=>{ const o=$('#flowOuter'); flowZoomPara(1,o.clientWidth/2,o.clientHeight/2); };
+  $('#fzFit').onclick=()=>flowEnquadrar();
+
+  // ---- rolagem do trackpad: dois dedos anda, pinça (ctrl) amplia ----
+  outer.addEventListener('wheel', ev=>{
+    ev.preventDefault();
+    if(ev.ctrlKey || ev.metaKey){
+      const r=outer.getBoundingClientRect();
+      // deltaY do gesto de pinça é pequeno; o fator dá um passo confortável
+      flowZoomPara(flowZoom * Math.exp(-ev.deltaY/220), ev.clientX-r.left, ev.clientY-r.top);
+    }else{
+      flowPanX-=ev.deltaX; flowPanY-=ev.deltaY;
+      flowAplicarVista();
+    }
+    flowVistaModo='livre';
+  }, { passive:false });
+
+  // ---- arrastar o fundo ----
+  outer.addEventListener('mousedown', ev=>{
+    // clique num bloco é do bloco (mover/selecionar); aqui só o fundo,
+    // ou qualquer lugar com o botão do meio / espaço segurado
+    const noBloco = ev.target.closest('.flow-node');
+    const podeArrastar = ev.button===1 || flowEspaco || (ev.button===0 && !noBloco);
+    if(!podeArrastar) return;
+    ev.preventDefault();
+    outer.classList.add('arrastando');
+    const sx=ev.clientX, sy=ev.clientY, px=flowPanX, py=flowPanY;
+    let andou=false;
+    const mover=mv=>{
+      if(Math.abs(mv.clientX-sx)+Math.abs(mv.clientY-sy)>3) andou=true;
+      flowPanX=px+(mv.clientX-sx); flowPanY=py+(mv.clientY-sy);
+      flowVistaModo='livre'; flowAplicarVista();
+    };
+    const soltar=()=>{
+      document.removeEventListener('mousemove',mover);
+      document.removeEventListener('mouseup',soltar);
+      outer.classList.remove('arrastando');
+      // clique limpo no vazio: desmarca o bloco selecionado
+      if(!andou && ev.button===0 && !noBloco && flowSelected!==null){
+        flowSelected=null; renderFluxo(a);
+      }
+    };
+    document.addEventListener('mousemove',mover);
+    document.addEventListener('mouseup',soltar);
+  });
+
+  // ---- toque: um dedo arrasta o fundo ----
+  outer.addEventListener('touchstart', ev=>{
+    if(ev.touches.length!==1 || ev.target.closest('.flow-node')) return;
+    const t=ev.touches[0], sx=t.clientX, sy=t.clientY, px=flowPanX, py=flowPanY;
+    const mover=mv=>{
+      if(mv.touches.length!==1) return;
+      flowPanX=px+(mv.touches[0].clientX-sx); flowPanY=py+(mv.touches[0].clientY-sy);
+      flowAplicarVista(); mv.preventDefault();
+    };
+    const soltar=()=>{ outer.removeEventListener('touchmove',mover); outer.removeEventListener('touchend',soltar); };
+    outer.addEventListener('touchmove',mover,{passive:false});
+    outer.addEventListener('touchend',soltar);
+  }, { passive:true });
+
+  // ---- painel lateral e tela cheia ----
+  $('#flowLado').onclick=()=>{ flowSideOff=!flowSideOff; renderFluxo(a); };
+  $('#btnFlowFull').onclick=()=>flowTelaCheia(a);
 
   a.querySelectorAll('[data-addnode]').forEach(el=>el.onclick=()=>{
     const tipo=el.dataset.addnode;
     const id=(state.fluxo.nodes.reduce((m,n)=>Math.max(m,n.id),0))+1;
-    const base={x:120+((id*24)%400),y:120+((id*37)%300)};
+    // nasce no CENTRO da vista atual, com um leve escalonamento para dois
+    // blocos seguidos não se sobreporem. Nascer sempre em (120,120) fazia o
+    // bloco novo aparecer fora da tela assim que o desenho era arrastado.
+    const o=$('#flowOuter');
+    const cx=o?(o.clientWidth/2-flowPanX)/flowZoom-98:140;
+    const cy=o?(o.clientHeight/2-flowPanY)/flowZoom-55:120;
+    const base={x:Math.round(cx+((id*26)%90)), y:Math.round(cy+((id*22)%90))};
     let novo;
     if(tipo==='setor') novo={id,tipo,titulo:'Encaminhar → '+SETORES[0].id,texto:'',...base,setor:SETORES[0].id};
     else if(tipo==='acao') novo={id,tipo,conector:'abrir_chamado',titulo:'Nova ação',texto:'',...base};
@@ -7437,6 +7743,7 @@ document.querySelectorAll('.nav-item').forEach(el=>el.onclick=()=>{
   }
   if(view==='integracoes' && el.dataset.view!=='integracoes') pararPollWA();
   if(view==='config' && el.dataset.view!=='config') pararPollWA();
+  document.body.classList.remove('flow-full');   // a tela cheia é só do editor
   view=el.dataset.view; renderAll();
   abrirGaveta(false);              // no celular, fecha a gaveta ao escolher
 });
