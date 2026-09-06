@@ -4049,9 +4049,10 @@ function hrRender(el){
   const feriados = Array.isArray(hrCfg.feriados)?hrCfg.feriados:[];
   el.innerHTML=`
     <div class="vsub" style="margin-bottom:14px">
-      O bot atende 24 horas; a equipe não. Quem escreve fora do horário recebe um aviso
-      dizendo que a mensagem foi registrada e <b>quando</b> será respondida — que é a única
-      informação que falta ao cliente àquela hora.
+      O bot atende 24 horas; a equipe não. O aviso sai <b>só quando o cliente pede para falar
+      com um atendente</b> e a conversa entra na fila — quem resolveu sozinho com o bot
+      (2ª via, Pix, desbloqueio) não precisa ouvir que a equipe não está. Aí sim ele recebe
+      que a mensagem foi registrada e <b>quando</b> será respondida.
     </div>
 
     <div id="hrAgora" style="margin-bottom:14px"></div>
@@ -4112,7 +4113,7 @@ function hrRender(el){
       <div class="cp-lab" style="margin-top:12px">Linha de urgência <span style="text-transform:none;font-weight:600">(opcional, entra no fim da mensagem)</span></div>
       <input type="text" id="hrEmerg" placeholder="Ex.: Emergências: (84) 90000-0000" value="${esc(g('emergencia',''))}"
         style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;background:var(--card);color:var(--text);">
-      <div class="cp-lab" style="margin-top:12px">Prévia</div>
+      <div class="cp-lab" style="margin-top:12px">Prévia — o que o cliente recebe depois do “encaminhando para um atendente”</div>
       <div class="hr-previa" id="hrPrevia"></div>
     </div>
 
@@ -4120,12 +4121,9 @@ function hrRender(el){
       <div class="tp-linha">repetir o aviso no máximo a cada
         <input type="number" id="hrRepetir" min="0" max="168" value="${g('repetir_horas',12)}" style="width:74px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-family:inherit;font-size:13px;text-align:right;"> horas
       </div>
-      <div class="tp-nota">Quem manda cinco mensagens seguidas às 23h recebe <b>um</b> aviso. 0 avisa em toda mensagem.</div>
-      <label class="cob-check" style="margin-top:10px"><input type="checkbox" id="hrParar" ${g('parar_bot',false)?'checked':''}>
-        <b>Fora do horário o bot também não responde</b></label>
       <div class="tp-nota">
-        Desmarcado (recomendado): o cliente recebe o aviso e o bot segue atendendo — 2ª via de boleto,
-        Pix e desbloqueio funcionam de madrugada sem ninguém. Marcado: só o aviso sai.
+        Quem pede atendente duas vezes na mesma noite recebe <b>um</b> aviso.
+        0 avisa em todo pedido de atendente.
       </div>
     </div>
 
@@ -4203,7 +4201,6 @@ function hrSync(){
   hrCfg.texto=$('#hrTexto').value;
   hrCfg.texto_feriado=$('#hrTextoFer').value;
   hrCfg.emergencia=$('#hrEmerg').value;
-  hrCfg.parar_bot=$('#hrParar').checked;
   const d=parseInt($('#hrRepetir').value,10);
   hrCfg.repetir_horas=Number.isFinite(d)&&d>=0?Math.min(168,d):12;
 }
@@ -4222,7 +4219,6 @@ function hrLer(){
     texto_feriado:String(hrCfg.texto_feriado||'').trim(),
     emergencia:String(hrCfg.emergencia||'').trim(),
     repetir_horas:hrCfg.repetir_horas??12,
-    parar_bot:!!hrCfg.parar_bot,
   };
 }
 
@@ -4251,9 +4247,9 @@ function hrResumo(dias){
 function hrPrevia(){
   const alvo=$('#hrPrevia'); if(!alvo) return;
   const cfg=hrLer();
-  const padrao='Olá! 👋 Chegamos a receber sua mensagem, mas neste momento estamos fora do horário de atendimento.\n\n'
+  const padrao='⚠️ Só um detalhe: neste momento estamos fora do horário de atendimento.\n\n'
     +'🕐 *Nosso horário:* {horarios}\n\n'
-    +'Voltamos a atender {volta}. Sua mensagem já está registrada e será respondida assim que abrirmos. 💚';
+    +'Seu atendimento já está na fila e será respondido {volta}. Não precisa mandar de novo. 💚';
   // {volta} de verdade é calculado no servidor, no fuso configurado. Aqui, na
   // prévia, usa-se o último valor que ele devolveu; antes disso, um exemplo.
   const primeira=(((cfg.dias||{})['1']||[])[0]||{}).de||'08:00';

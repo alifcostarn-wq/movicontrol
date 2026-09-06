@@ -768,10 +768,12 @@ const DIAS_NOME = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira',
                    'quinta-feira', 'sexta-feira', 'sábado'];
 const DIAS_CURTO = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
+// Este texto sai LOGO DEPOIS do "encaminhando para um atendente" — por isso
+// começa confirmando a fila, e não cumprimentando de novo.
 const TEXTO_FORA_HORARIO =
-  'Olá! 👋 Chegamos a receber sua mensagem, mas neste momento estamos fora do horário de atendimento.\n\n' +
+  '⚠️ Só um detalhe: neste momento estamos fora do horário de atendimento.\n\n' +
   '🕐 *Nosso horário:* {horarios}\n\n' +
-  'Voltamos a atender {volta}. Sua mensagem já está registrada e será respondida assim que abrirmos. 💚';
+  'Seu atendimento já está na fila e será respondido {volta}. Não precisa mandar de novo. 💚';
 
 function hmParaMin(hm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm ?? '').trim());
@@ -910,22 +912,20 @@ async function horarioConfig(e) {
   }
 }
 
-/* Avisa que estamos fechados. Devolve { avisou, parar } — `parar` diz se o bot
-   deve ficar quieto depois do aviso (opção do painel). */
+/* Avisa que estamos fechados. Chamado SÓ no transbordo para atendente humano:
+   quem resolveu com o bot não precisa ouvir que a equipe não está. */
 async function avisarForaDoHorario(e, { conversa, fone }) {
   const cfg = await horarioConfig(e);
   const sit = horarioSituacao(cfg, new Date());
-  if (!sit.ligado || sit.aberto) return { avisou: false, parar: false };
+  if (!sit.ligado || sit.aberto) return { avisou: false };
 
   // um aviso por janela: quem manda cinco mensagens seguidas às 23h recebe UM
   const horas = Math.max(0, Number(cfg.repetir_horas ?? 12));
   const ultimo = conversa.aviso_horario_em ? new Date(conversa.aviso_horario_em).getTime() : 0;
-  if (horas && ultimo && Date.now() - ultimo < horas * 3600e3) {
-    return { avisou: false, parar: cfg.parar_bot === true };
-  }
+  if (horas && ultimo && Date.now() - ultimo < horas * 3600e3) return { avisou: false };
 
   const texto = textoForaHorario(cfg, sit, conversa.contato_nome);
-  if (!texto.trim()) return { avisou: false, parar: false };
+  if (!texto.trim()) return { avisou: false };
 
   // CARIMBA ANTES DE ENVIAR: o carimbo é a reivindicação. Duas mensagens do
   // cliente chegando juntas disparam dois webhooks em containers diferentes —
@@ -935,7 +935,7 @@ async function avisarForaDoHorario(e, { conversa, fone }) {
     method: 'PATCH', headers: { Prefer: 'return=representation' },
     body: { aviso_horario_em: new Date().toISOString() },
   }).catch(() => null);
-  if (!meu || !meu.length) return { avisou: false, parar: cfg.parar_bot === true };
+  if (!meu || !meu.length) return { avisou: false };
 
   try {
     const env = await waEnviar(e, fone, texto);
@@ -945,10 +945,10 @@ async function avisarForaDoHorario(e, { conversa, fone }) {
     });
   } catch (err) {
     console.error('[horario] aviso:', err.message);
-    return { avisou: false, parar: false };
+    return { avisou: false };
   }
   conversa.aviso_horario_em = new Date().toISOString();
-  return { avisou: true, parar: cfg.parar_bot === true };
+  return { avisou: true };
 }
 
 const MOTIVO_QUEDA = {
@@ -1885,12 +1885,13 @@ function inferirSetorEscolhido(aresta, noDestino, setores) {
  * Não toca no banco nem envia WhatsApp — devolve o que precisa acontecer.
  *
  * `pesquisaLiberada` é uma função assíncrona opcional que responde se este
- * cliente pode receber a pesquisa agora (trava mensal). Vem de fora, e não
- * lida daqui, para o fluxo continuar sem banco: quem simula um fluxo no editor
- * não consulta nada, e o custo da consulta só aparece quando o nó `fim` é
- * realmente alcançado. Ausente = liberado.
+ * cliente pode receber a pesquisa agora (trava mensal). `foraDoHorario` é o
+ * mesmo desenho: responde se a equipe está fora do expediente. Ambas vêm de
+ * fora, e não são lidas daqui, para o fluxo continuar sem banco: quem simula
+ * um fluxo no editor não consulta nada, e o custo da consulta só aparece
+ * quando o nó que precisa dela é realmente alcançado.
  */
-async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada }) {
+async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada, foraDoHorario }) {
   const { nodes, saidas } = indexarFluxo(fluxo);
   const out = { enviar: [], logs: [], patch: {}, sessao: null, limparSessao: false };
   const vars = { ...(sessao?.variaveis || {}), ultima_msg: texto };
@@ -2085,10 +2086,18 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada 
         out.patch.fila_desde = new Date().toISOString();
         out.patch.assumido_em = null;
         out.patch.assumido_por = null;
+        // "em instantes" às 23h é promessa que não se cumpre. Fora do
+        // expediente o encaminhamento é anunciado seco, e o aviso de horário
+        // — mandado logo depois, pelo webhook — é quem diz quando a equipe volta.
+        const fechado = foraDoHorario ? await foraDoHorario() : false;
         out.enviar.push({
-          texto: out.patch.setor
-            ? `Encaminhando para o setor ${out.patch.setor}. Um atendente continua com você em instantes. 👤`
-            : 'Encaminhando para um atendente. Já já alguém continua com você. 👤',
+          texto: fechado
+            ? (out.patch.setor
+                ? `Encaminhando para o setor ${out.patch.setor}. 👤`
+                : 'Encaminhando para um atendente. 👤')
+            : (out.patch.setor
+                ? `Encaminhando para o setor ${out.patch.setor}. Um atendente continua com você em instantes. 👤`
+                : 'Encaminhando para um atendente. Já já alguém continua com você. 👤'),
           node: no.id,
         });
         out.logs.push({ node_id: no.id, node_tipo: 'setor', resultado: out.patch.setor });
@@ -2654,24 +2663,8 @@ async function tratarWebhook(e, body) {
     }
   }
 
-  // ---- Fora do horário de funcionamento ----
-  // Vem depois da instabilidade (uma queda conhecida é a informação mais útil
-  // que existe àquela hora) e ANTES do corte do "humano assumiu": à meia-noite
-  // ninguém está no card, e quem está devendo resposta é a equipe. Fica de fora
-  // só quem está no meio da pesquisa — ali a próxima mensagem é a nota.
-  let pararPorHorario = false;
-  if (!(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
-    try {
-      const r = await avisarForaDoHorario(e, { conversa, fone });
-      pararPorHorario = r.parar;
-    } catch (err) { console.error('[atendimento] horário:', err.message); }
-  }
-
   // humano assumiu → bot fica quieto
   if (conversa.bot_ativo === false) return { ok: true, bot: 'inativo', conversa_id: conversa.id };
-
-  // painel configurado para só avisar: o bot não responde fora do horário
-  if (pararPorHorario) return { ok: true, bot: 'fora do horário', conversa_id: conversa.id };
 
   // Anexo sem legenda não tem o que interpretar: fica guardado e visível no
   // painel para o atendente abrir e decidir. O bot NÃO é desligado — se o
@@ -2774,7 +2767,7 @@ async function tratarWebhook(e, body) {
     sessaoValida = null;
   }
 
-  // consultada só se o fluxo chegar no nó `fim`, e uma vez por mensagem
+  // consultadas só se o fluxo chegar no nó que precisa delas, e uma vez por mensagem
   let travaLida;
   const pesquisaLiberada = async () => {
     if (travaLida === undefined) {
@@ -2782,8 +2775,30 @@ async function tratarWebhook(e, body) {
     }
     return travaLida;
   };
-  const out = await rodarFluxo(e, { fluxo, sessao: sessaoValida, conversa, texto, pesquisaLiberada });
+  let fechadoLido;
+  const foraDoHorario = async () => {
+    if (fechadoLido === undefined) {
+      const sit = horarioSituacao(await horarioConfig(e), new Date());
+      fechadoLido = sit.ligado && !sit.aberto;
+    }
+    return fechadoLido;
+  };
+  const out = await rodarFluxo(e, {
+    fluxo, sessao: sessaoValida, conversa, texto, pesquisaLiberada, foraDoHorario,
+  });
   await aplicarResultado(e, conversa, out);
+
+  // ---- Fora do horário de funcionamento ----
+  // Sai SÓ no transbordo para atendente humano — quando o fluxo põe a conversa
+  // na fila. Quem está resolvendo com o bot (2ª via, Pix, desbloqueio) não
+  // precisa ouvir que a equipe não está: o bot está, e resolveu. O aviso
+  // interessa exatamente a quem acabou de pedir uma pessoa.
+  if (out.patch && out.patch.coluna === 'fila') {
+    try {
+      conversa.coluna = 'fila';
+      await avisarForaDoHorario(e, { conversa, fone });
+    } catch (err) { console.error('[atendimento] horário:', err.message); }
+  }
 
   // o fluxo armou a espera da nota: registra o disparo para a trava mensal
   if (out.sessao && out.sessao.aguardando === 'rating_humano') {
