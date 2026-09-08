@@ -3100,6 +3100,9 @@ async function entregarCobranca(e, o) {
     canal: o.somenteRegistrar ? (o.canal || 'manual') : (o.canal || 'whatsapp'),
     valor: o.valor != null ? Number(o.valor) : null, vencimento: o.vencimento || null,
     texto: o.texto, status: 'enviado', enviado_por: o.userId || null,
+    // intenção da etapa; o resultado real é gravado no fecho, mais abaixo
+    anexo_boleto: o.anexarBoleto ? false : null,
+    anexo_pix: o.anexarPix ? false : null,
   };
   let livro = null, jaTinha = false;
   try {
@@ -3110,11 +3113,17 @@ async function entregarCobranca(e, o) {
   } catch { jaTinha = true; }          // 409 do índice: outra execução pegou esta etapa
   if (jaTinha && !o.forcar) return { conversaId: c ? c.id : null, anexos: 0, duplicado: true };
 
-  let env = null, erro = null;
+  let env = null, erro = null, erroBruto = '';
   const extras = [];
+  // O que a etapa PEDIU e o que de fato saiu. null = a etapa nem pedia.
+  // Sem isto o livro dizia "enviado" sem dizer o quê, e a pergunta "o boleto
+  // foi?" só tinha resposta abrindo a conversa do cliente, uma a uma.
+  let okBoleto = o.anexarBoleto ? false : null;
+  let okPix = o.anexarPix ? false : null;
+  const falhas = [];
   if (!o.somenteRegistrar) {
     try { env = await waEnviar(e, o.fone, o.texto); }
-    catch (err) { erro = String(err.message).slice(0, 250); }
+    catch (err) { erroBruto = String(err.message); erro = erroBruto.slice(0, 250); }
 
     if (!erro && (o.anexarBoleto || o.anexarPix) && /^\d+$/.test(String(o.faturaId))) {
       let pdf = null, pix = null;
@@ -3125,13 +3134,23 @@ async function entregarCobranca(e, o) {
             atualiza_boleto: 'N', tipo_boleto: 'arquivo', base64: 'S',
           }, 'listar');
           pdf = acharBase64(b);
-        } catch (err) { console.error('[cobranca] boleto:', err.message); }
+          // o IXC responder sem erro E sem PDF é o caso silencioso: a fatura
+          // não tem boleto gerado, ou o gateway dela não emite arquivo
+          if (!pdf) falhas.push('IXC não devolveu o PDF da fatura ' + o.faturaId);
+        } catch (err) {
+          falhas.push('IXC (get_boleto): ' + String(err.message).slice(0, 90));
+          console.error('[cobranca] boleto:', err.message);
+        }
       }
       if (o.anexarPix) {
         try {
           const g = await ixc(e, 'get_pix', { id_areceber: String(o.faturaId) }, 'listar');
           pix = acharPix(g);
-        } catch (err) { console.error('[cobranca] pix:', err.message); }
+          if (!pix) falhas.push('IXC não devolveu o Pix da fatura ' + o.faturaId);
+        } catch (err) {
+          falhas.push('IXC (get_pix): ' + String(err.message).slice(0, 90));
+          console.error('[cobranca] pix:', err.message);
+        }
       }
       const pausa = () => new Promise(r => setTimeout(r, 700));
       if (pdf) {
@@ -3143,14 +3162,22 @@ async function entregarCobranca(e, o) {
             nomeArquivo: `fatura-${o.faturaId}.pdf`, legenda: leg,
           });
           extras.push({ texto: leg, tipo: 'documento', wa: idDaEvolution(r1) });
-        } catch (err) { console.error('[cobranca] envio pdf:', err.message); }
+          okBoleto = true;
+        } catch (err) {
+          falhas.push('WhatsApp recusou o PDF: ' + String(err.message).slice(0, 90));
+          console.error('[cobranca] envio pdf:', err.message);
+        }
       }
       if (pix) {
         try {
           await pausa();
           const r2 = await waEnviar(e, o.fone, pix);
           extras.push({ texto: pix, tipo: 'texto', wa: idDaEvolution(r2) });
-        } catch (err) { console.error('[cobranca] envio pix:', err.message); }
+          okPix = true;
+        } catch (err) {
+          falhas.push('WhatsApp recusou o Pix: ' + String(err.message).slice(0, 90));
+          console.error('[cobranca] envio pix:', err.message);
+        }
       }
     }
   }
@@ -3184,11 +3211,38 @@ async function entregarCobranca(e, o) {
     await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
   }
 
+  // O anexo que era para ir e não foi vira ERRO VISÍVEL, não silêncio. Foi
+  // exatamente assim que "o boleto não está indo" ficou sem resposta: o livro
+  // dizia 'enviado' porque o TEXTO tinha saído.
+  if (!erro && (okBoleto === false || okPix === false)) {
+    console.error(`[cobranca] fatura ${o.faturaId} (${nome}): anexo faltou —`, falhas.join(' | '));
+  }
+
+  // Número que não existe no WhatsApp é falha PERMANENTE: sem isto a régua
+  // tentava o mesmo cliente a cada rodada, para sempre — 20 tentativas por
+  // hora, 20 linhas de erro no livro e nenhuma chance de dar certo. Entra na
+  // lista de dispensa, com o motivo, e some da fila até alguém corrigir o
+  // cadastro e tirar de lá pelo painel.
+  const semWhats = /"exists"\s*:\s*false/.test(erroBruto);
+  if (semWhats) {
+    await sb(e, 'atend_cobranca_optout?on_conflict=contato_fone', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: {
+        contato_fone: o.fone, cliente_ixc_id: o.ixcId || null,
+        motivo: `Número sem WhatsApp (recusado em ${new Date().toISOString().slice(0, 10)}). Corrija o cadastro no IXC e remova desta lista.`,
+      },
+    }).catch(err => console.error('[cobranca] dispensa:', err.message));
+    console.error(`[cobranca] ${nome} (${o.fone}) não tem WhatsApp — retirado da régua até corrigirem o cadastro`);
+  }
+
   // fecha a reserva com o resultado real do envio
   const fecho = {
     conversa_id: c ? c.id : null, contato_fone: o.fone,
     wa_id: env ? idDaEvolution(env) : null,
-    status: erro ? 'erro' : 'enviado', erro,
+    status: erro ? (semWhats ? 'sem_whatsapp' : 'erro') : 'enviado', erro,
+    anexo_boleto: okBoleto, anexo_pix: okPix,
+    anexo_erro: falhas.length ? falhas.join(' | ').slice(0, 400) : null,
   };
   if (livro) {
     await sb(e, `atend_cobranca_envios?id=eq.${livro.id}`,
@@ -3207,7 +3261,11 @@ async function entregarCobranca(e, o) {
   }
 
   if (erro) throw new Error(erro);
-  return { conversaId: c ? c.id : null, anexos: extras.length };
+  return {
+    conversaId: c ? c.id : null, anexos: extras.length,
+    boleto: okBoleto, pix: okPix,
+    anexoErro: falhas.length ? falhas.join(' | ') : null,
+  };
 }
 
 // ============================================================================
@@ -5313,7 +5371,13 @@ export default async function handler(req, res) {
             somenteRegistrar: body.somente_registrar === true, userId: user.id,
             forcar: body.forcar === true,
           });
-          return res.status(200).json({ ok: true, conversa_id: r.conversaId, anexos: r.anexos, duplicado: r.duplicado === true });
+          return res.status(200).json({
+            ok: true, conversa_id: r.conversaId, anexos: r.anexos,
+            duplicado: r.duplicado === true,
+            // o atendente precisa saber que o texto saiu mas o boleto não —
+            // antes isto voltava como sucesso liso e ninguém ficava sabendo
+            boleto: r.boleto ?? null, pix: r.pix ?? null, anexo_erro: r.anexoErro || null,
+          });
         } catch (err) {
           return res.status(200).json({ ok: false, error: String(err.message).slice(0, 250) });
         }

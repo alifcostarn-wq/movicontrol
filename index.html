@@ -20709,7 +20709,9 @@ async function ifCobCarregar(forcar){
     anexar_boleto:e.anexar_boleto,anexar_pix:e.anexar_pix}));
   window.IF_COB.log=(l.envios||[]).map(x=>({fatId:x.fatura_id,etapaId:x.etapa_id,
     etapaNome:x.etapa_nome,cliente:x.cliente_nome,ixcId:x.cliente_ixc_id,fone:x.contato_fone,
-    canal:x.canal,quando:x.enviado_em,valor:x.valor,status:x.status,erro:x.erro}));
+    canal:x.canal,quando:x.enviado_em,valor:x.valor,status:x.status,erro:x.erro,
+    // o que de fato foi junto: sem isto "enviado" não dizia se o boleto saiu
+    boleto:x.anexo_boleto,pix:x.anexo_pix,anexoErro:x.anexo_erro}));
   window.IF_COB.carregado=true;
 }
 
@@ -21036,12 +21038,19 @@ async function ifCobEnviar(key, ixcId, fatId, etapaId, btn){
       cliente_ixc_id:String(ixcId), cliente_nome:pf.nome,
       valor:fat?.valor??null, vencimento:fat?.venc??null, canal:'whatsapp',
       anexar_boleto:etapa?.anexar_boleto===true, anexar_pix:etapa?.anexar_pix===true});
-    ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf.nome, canal:'whatsapp', quando:new Date().toISOString()});
+    ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf.nome, canal:'whatsapp',
+      quando:new Date().toISOString(), boleto:r.boleto, pix:r.pix, anexoErro:r.anexo_erro});
     btn.closest('tr').style.opacity='.35';
     if(r.duplicado){
       // outra máquina já cobrou esta etapa — a trava está no banco, não aqui
       btn.textContent='✓ Já enviado';
       showToast('Esta cobrança já havia sido enviada em outro acesso.');
+    }else if(r.boleto===false||r.pix===false){
+      // o texto saiu, o anexo não. Voltava como sucesso liso e o atendente
+      // só descobria pelo cliente reclamando que não recebeu o boleto.
+      const faltou=[r.boleto===false?'boleto':null, r.pix===false?'Pix':null].filter(Boolean).join(' e ');
+      btn.textContent='⚠ Sem '+(r.boleto===false?'boleto':'Pix');
+      showToast(`Mensagem enviada, mas o ${faltou} NÃO foi junto — ${r.anexo_erro||'o IXC não devolveu o arquivo'}.`, true);
     }else{
       btn.textContent='✓ Enviado';
       showToast('📲 Mensagem enviada para '+pf.nome.split(' ')[0]+'!');
@@ -22516,6 +22525,17 @@ function cobRenderDesempenho(){
     }).join('')}</div>`:'<div class="if-cli-sub">Sem envios registrados.</div>'}`;
 }
 
+/* Selo do que foi junto com a mensagem. `null` = a etapa nem pedia aquele
+   anexo; `false` = era para ir e NÃO foi — que é a informação que faltava
+   quando alguém dizia "o boleto não está chegando". */
+function cobSeloAnexos(x){
+  if(x.status==='erro'||x.status==='sem_whatsapp') return '<span style="color:#9aa5b1">—</span>';
+  const selo=(v,ok,nao)=> v===true?ok : v===false?nao : '';
+  const b=selo(x.boleto,'📄','<span style="color:#D00000" title="O boleto era para ir e não foi">📄✕</span>');
+  const p=selo(x.pix,'💠','<span style="color:#D00000" title="O Pix era para ir e não foi">💠✕</span>');
+  return (b+' '+p).trim() || '<span style="color:#9aa5b1">só texto</span>';
+}
+
 /* ── ABA HISTÓRICO ─────────────────────────────────────────────────────── */
 function cobRenderHistorico(){
   const log=(window.IF_COB.log||[]).slice(0,300);
@@ -22523,11 +22543,14 @@ function cobRenderHistorico(){
     <div class="if-painel-tit">🗂 Histórico de cobranças</div>
     <div class="if-cli-sub" style="margin-bottom:10px">Compartilhado entre todos os operadores — é ele que impede cobrar o mesmo cliente duas vezes.</div>
     ${log.length?`<div class="if-tabela-wrap"><table class="if-tabela">
-      <thead><tr><th>Quando</th><th>Cliente</th><th>Etapa</th><th>Canal</th><th>Status</th></tr></thead>
+      <thead><tr><th>Quando</th><th>Cliente</th><th>Etapa</th><th>Canal</th><th>Anexos</th><th>Status</th></tr></thead>
       <tbody>${log.map(x=>`<tr>
         <td>${new Date(x.quando).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
         <td>${x.cliente||'—'}</td><td>${x.etapaNome||x.etapaId}</td><td>${x.canal||'—'}</td>
-        <td>${x.status==='erro'?`<span style="color:#D00000" title="${(x.erro||'').replace(/"/g,'')}">falhou</span>`:'<span style="color:#3C9D23">enviado</span>'}</td>
+        <td title="${(x.anexoErro||'').replace(/"/g,'')}">${cobSeloAnexos(x)}</td>
+        <td>${x.status==='sem_whatsapp'?'<span style="color:#D00000" title="O número não existe no WhatsApp. Corrija o cadastro no IXC e tire o cliente da lista de dispensa.">sem WhatsApp</span>'
+          :x.status==='erro'?`<span style="color:#D00000" title="${(x.erro||'').replace(/"/g,'')}">falhou</span>`
+          :'<span style="color:#3C9D23">enviado</span>'}</td>
       </tr>`).join('')}</tbody></table></div>`
       :'<div class="if-cli-sub">Nenhuma cobrança registrada ainda.</div>'}`;
 }
