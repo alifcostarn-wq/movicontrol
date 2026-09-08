@@ -194,6 +194,13 @@ export default async function handler(req, res) {
     return Buffer.from(await doc.save());
   }
 
+  /* Cidade e UF vêm do IXC como id numérico quando a tradução ainda não
+     alcançou o cadastro. "1161" não é cidade: melhor em branco. */
+  function soNomeDeLugar(v) {
+    const s = String(v == null ? '' : v).trim();
+    return /^\d+$/.test(s) ? '' : s;
+  }
+
   async function r2SignedUrl(key, expiresIn = 3600) {
     if (!key) return null;
     const url = new URL(`${R2_ENDPOINT}/${R2_BUCKET}/${key}`);
@@ -358,7 +365,10 @@ export default async function handler(req, res) {
           cliente: {
             nome: c.nome || '', cpf: c.cnpj || '',
             endereco: [c.endereco, c.numero].filter(Boolean).join(', '),
-            bairro: c.bairro || '', cidade: c.cidade || '', uf: c.uf || '', cep: c.cep || '',
+            // id do IXC nunca sobe como cidade: o cliente está conferindo os
+            // dados que vão para a assinatura dele
+            bairro: c.bairro || '', cidade: soNomeDeLugar(c.cidade),
+            uf: soNomeDeLugar(c.uf), cep: c.cep || '',
           },
           documentos: docs.data || [],
         });

@@ -4011,6 +4011,10 @@ async function talvezSincronizarIxc(e, janelaMs) {
   if (!Array.isArray(claim) || !claim.length) return { sincronizado: false, recente: true };
 
   try {
+    // antes de gravar cadastro novo, garantir a tradução de cidade. Sem ela o
+    // cliente entra com "1161" no lugar da cidade e isso vira contrato.
+    try { await sincronizarCidadesIxc(e); }
+    catch (err) { console.error('[cidades]', err.message); }
     const r = await sincronizarNovosDoIxc(e);
     await sb(e, 'atend_sync_ixc?id=eq.1', {
       method: 'PATCH', prefer: 'return=minimal',
@@ -4056,6 +4060,102 @@ async function importarClienteDoIxc(e, ixcId) {
     }
   } catch (err) { console.error('[sync-ixc] contratos de', id, err.message); }
   return await acharClientePorIxcId(e, id);
+}
+
+
+// ============================================================================
+// CIDADES DO IXC — o número que virava contrato
+//
+// O IXC devolve cidade e UF como id ("1161", "25") e a importação gravava o
+// número cru. Isso ia parar dentro do contrato que o cliente assina:
+// "Cidade: 1161". A tradução em si mora no banco (gatilho em `clientes`), para
+// valer para os dois importadores; aqui é só quem vai buscar a tabela.
+//
+// Os nomes dos campos do IXC são lidos com tolerância de propósito: se a
+// instalação chamar a coluna de outro jeito, a rotina acha assim mesmo em vez
+// de gravar vazio.
+// ============================================================================
+const CIDADES_VALIDADE_DIAS = 30;
+
+// só serve como UF o que É uma sigla. Se o IXC devolver o id do estado, é
+// melhor não gravar nada do que trocar um número por outro
+function siglaUf(v) {
+  const s = String(v ?? '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(s) ? s : null;
+}
+
+async function baixarCidadesIxc(e) {
+  const linhas = [];
+  for (const tabela of ['cidade', 'cidades']) {
+    try {
+      for (let pagina = 1; pagina <= 20; pagina++) {
+        const r = await ixc(e, tabela, {
+          page: String(pagina), rp: '1000',
+          sortname: `${tabela}.id`, sortorder: 'asc',
+        }, 'listar');
+        const regs = r?.registros || [];
+        linhas.push(...regs);
+        if (regs.length < 1000) break;
+      }
+      if (linhas.length) return linhas;
+    } catch (err) {
+      console.error(`[cidades] ${tabela}:`, err.message);
+    }
+  }
+  return linhas;
+}
+
+async function sincronizarCidadesIxc(e, forcar) {
+  if (!e.IXC_USER || !e.IXC_TOKEN) return { ok: false, motivo: 'IXC não configurado' };
+
+  if (!forcar) {
+    const corte = new Date(Date.now() - CIDADES_VALIDADE_DIAS * 86400000).toISOString();
+    const recente = await sbUm(e, `ixc_cidades?atualizado_em=gte.${corte}&select=ixc_id&limit=1`);
+    if (recente) return { ok: true, pulou: true };
+  }
+
+  const regs = await baixarCidadesIxc(e);
+  if (!regs.length) return { ok: false, motivo: 'o IXC não devolveu a tabela de cidades' };
+
+  const linhas = [];
+  for (const r of regs) {
+    const id = String(pick(r, 'id', 'id_cidade') ?? '').trim();
+    const nome = pick(r, 'nome', 'cidade', 'municipio', 'descricao');
+    if (!id || !nome) continue;
+    linhas.push({
+      ixc_id: id,
+      nome: String(nome).trim(),
+      uf: siglaUf(pick(r, 'uf', 'sigla_uf', 'uf_sigla', 'estado', 'sigla')),
+      atualizado_em: new Date().toISOString(),
+    });
+  }
+  if (!linhas.length) return { ok: false, motivo: 'a tabela de cidades veio sem id/nome reconhecíveis' };
+
+  for (const lote of emLotes(linhas, 500)) {
+    await sb(e, 'ixc_cidades?on_conflict=ixc_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: lote,
+    });
+  }
+
+  // com a tradução na mão, conserta o que já está gravado
+  const corrigidos = await sb(e, 'rpc/corrigir_cidades_ixc', { method: 'POST', body: {} });
+  return { ok: true, cidades: linhas.length, com_uf: linhas.filter(l => l.uf).length,
+           cadastros_corrigidos: Number(corrigidos) || 0 };
+}
+
+/* Quais ids de cidade ainda aparecem em cadastro sem tradução. É o que diz se
+   a tabela do IXC cobriu tudo — e, se não cobriu, exatamente o que falta. */
+async function cidadesSemTraducao(e) {
+  const linhas = await sb(e, 'clientes?select=cidade&cidade=not.is.null&limit=5000');
+  const ids = [...new Set((linhas || [])
+    .map(c => String(c.cidade || ''))
+    .filter(v => /^\d+$/.test(v)))];
+  if (!ids.length) return [];
+  const achados = await sb(e, `ixc_cidades?ixc_id=in.(${ids.join(',')})&select=ixc_id`);
+  const tem = new Set((achados || []).map(c => String(c.ixc_id)));
+  return ids.filter(id => !tem.has(id));
 }
 
 const VARRER_CADA_MS = 2 * 60 * 1000;
@@ -6301,6 +6401,21 @@ export default async function handler(req, res) {
           boleto: okBoleto, pix: okPix,
           anexo_erro: falhas.length ? falhas.join(' | ') : null,
         });
+      }
+
+      /* Traduz cidade e UF do IXC e conserta o que já está gravado.
+
+         Existe como ação própria porque é o tipo de coisa que precisa ser
+         conferida com o olho depois de rodar: devolve quantos cadastros
+         mudaram e QUAIS ids ficaram sem tradução, em vez de só "pronto". */
+      case 'clientes.corrigir_cidades': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Só administrador.' });
+        let r;
+        try { r = await sincronizarCidadesIxc(e, true); }
+        catch (err) { return res.status(200).json({ ok: false, error: err.message }); }
+        let faltando = [];
+        try { faltando = await cidadesSemTraducao(e); } catch { /* segue */ }
+        return res.status(200).json({ ok: !!r.ok, ...r, sem_traducao: faltando });
       }
 
       case 'clientes.buscar': {

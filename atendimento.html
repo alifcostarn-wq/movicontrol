@@ -3890,6 +3890,16 @@ function asnEquipHtml(){
 }
 function asnVal(id, def){ const el=document.getElementById(id); return (el&&el.value)||def||''; }
 
+/* Cidade e estado num contrato têm que ser nome, nunca id.
+
+   O IXC devolve "1161" e "25"; a tradução mora no banco e cobre o que a
+   tabela de cidades conhece. Se algum id escapar, é melhor o campo sair em
+   branco para o atendente preencher do que sair "Cidade: 1161" num documento
+   que o cliente assina com selfie e hash. */
+function soNomeDeLugar(v){
+  const s = String(v==null?'':v).trim();
+  return /^\d+$/.test(s) ? '' : s;
+}
 function asnDadosCliente(){
   const c = ASN.cliente || {};
   const conv = ASN.c;
@@ -3898,7 +3908,7 @@ function asnDadosCliente(){
     nome: c.nome || conv.clienteVinculado.nome || conv.nome || '',
     cpf: c.cnpj || conv.clienteVinculado.cpf || '', rg: c.ie || '',
     endereco: c.endereco||'', numero: c.numero||'', bairro: c.bairro||'',
-    cidade: c.cidade||'', estado: c.uf||'RN', cep: c.cep||c.cep_full||'',
+    cidade: soNomeDeLugar(c.cidade), estado: soNomeDeLugar(c.uf) || 'RN', cep: c.cep||c.cep_full||'',
     telefone: c.whatsapp || c.tel1 || conv.fone || '',
     plano: asnVal('asnPlano', conv.cliente.plano||''),
     contrato_numero: asnVal('asnNContrato', c.ixc_id||''),
