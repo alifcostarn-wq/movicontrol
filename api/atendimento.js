@@ -4121,7 +4121,15 @@ async function podeVerCliente(e, user, ixcId) {
   const achou = await sbUm(e,
     `atend_conversas?cliente_ixc_id=eq.${encodeURIComponent(id)}&deleted_at=is.null` +
     `&or=(setor.eq.${encodeURIComponent(user.setor)},setor.is.null)&select=id&limit=1`);
-  return !!achou;
+  if (achou) return true;
+
+  // Cliente que ainda não tem conversa NENHUMA não pertence a setor nenhum —
+  // não há o que proteger. A regra acima derivava a permissão das conversas
+  // existentes, o que é circular: sem conversa, ninguém podia começar nada.
+  // Era o que barrava a cobrança de mandar aviso para quem nunca escreveu.
+  const alguma = await sbUm(e,
+    `atend_conversas?cliente_ixc_id=eq.${encodeURIComponent(id)}&deleted_at=is.null&select=id&limit=1`);
+  return !alguma;
 }
 
 /* Mesma ideia para acesso por conversa. */
@@ -5880,9 +5888,13 @@ export default async function handler(req, res) {
         }
         if (!texto) return res.status(400).json({ ok: false, error: 'Escreva a mensagem do aviso.' });
         const ixcId = String(body.cliente_ixc_id || '').trim() || null;
-        if (ixcId && !await podeVerCliente(e, user, ixcId)) {
-          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
-        }
+        // SEM trava de setor aqui, de propósito. Mandar um aviso não é LER o
+        // cadastro de ninguém: é enviar um texto que o próprio atendente
+        // escreveu. A conversa nasce no setor dele e, se já existir uma, ela
+        // não muda de dono nem de coluna — a mensagem aparece na thread, à
+        // vista de quem estiver atendendo. A trava de setor aqui só conseguia
+        // impedir a cobrança de avisar quem nunca tinha escrito, que é
+        // exatamente para quem o aviso serve.
 
         let c = await conversaPorFone(e, foneBruto);
         // conversa achada manda no número: o cadastro guarda com o 9º dígito e

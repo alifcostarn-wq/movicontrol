@@ -8111,11 +8111,14 @@ async function abrirAvisoRapido(pre){
           anexar_boleto: !!body.querySelector('#avBol')?.checked,
           anexar_pix: !!body.querySelector('#avPix')?.checked }:{}),
       });
-      if(r.ok===false) throw new Error(r.error||'falha no envio');
       fechar();
       await recarregarConversas();
+      // abre a conversa: "mandei e não vi em lugar nenhum" é o que fazia
+      // parecer que o aviso não tinha saído. A conversa fica em Resolvidos,
+      // que é a aba do ✓ — sem abrir, ela some da vista de propósito.
+      if(r.conversa_id){ try{ openModal(r.conversa_id); }catch{} }
       if(r.anexo_erro) toast('Aviso enviado, mas o anexo NÃO foi: '+r.anexo_erro, true);
-      else toast('📣 Aviso enviado para '+(avPrimeiroNome(c.nome)||fone)+' — conversa encerrada.');
+      else toast('📣 Aviso enviado para '+(avPrimeiroNome(c.nome)||fone)+' — a conversa fica em Resolvidos (✓).');
     }catch(err){ btn.disabled=false; btn.textContent='Enviar aviso'; toast('Falha: '+err.message); }
   };
 
