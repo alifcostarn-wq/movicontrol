@@ -5834,6 +5834,128 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, linhas: linhas || [] });
       }
 
+      // ===== AVISO AVULSO =====
+      // Cobrança manual, aviso de agendamento, recado pontual: o atendente
+      // manda UMA mensagem e pronto. Antes disso só existia "Novo atendimento",
+      // que abre a conversa em "Em atendimento", assumida, no quadro da equipe
+      // — e ao finalizar ainda pedia nota. Para quem manda vinte avisos por dia
+      // isso enchia o painel de atendimentos que nunca existiram.
+      //
+      // A regra é a mesma da confirmação de pagamento e da régua de cobrança:
+      // a conversa nasce (ou continua) em REPOUSO. Nada de coluna, nada de bot,
+      // nada de pesquisa. Se o cliente responder, o webhook reabre em "Novos"
+      // com o bot ativo — é aí que o atendimento de verdade começa.
+      case 'aviso.enviar': {
+        const foneBruto = normalizarFone(body.fone);
+        const texto = String(body.texto || '').trim();
+        if (!foneBruto || foneBruto.length < 12) {
+          return res.status(400).json({ ok: false, error: 'Telefone inválido. Use DDD + número.' });
+        }
+        if (!texto) return res.status(400).json({ ok: false, error: 'Escreva a mensagem do aviso.' });
+        const ixcId = String(body.cliente_ixc_id || '').trim() || null;
+        if (ixcId && !await podeVerCliente(e, user, ixcId)) {
+          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
+        }
+
+        let c = await conversaPorFone(e, foneBruto);
+        // conversa achada manda no número: o cadastro guarda com o 9º dígito e
+        // o WhatsApp entrega sem ele — mandar pelo número da conversa é o que
+        // evita abrir um bate-papo paralelo ao que o cliente já usa
+        const fone = (c && c.contato_fone) || foneBruto;
+        if (!c) {
+          const nova = await sb(e, 'atend_conversas', {
+            method: 'POST', headers: { Prefer: 'return=representation' },
+            body: {
+              contato_fone: fone, contato_nome: String(body.nome || '').trim() || fone,
+              coluna: 'resolvidos', bot_ativo: true,
+              setor: user.setor || null, cliente_ixc_id: ixcId, created_by: user.id,
+            },
+          });
+          c = Array.isArray(nova) ? nova[0] : nova;
+        }
+
+        // anexos opcionais da fatura — mesma máquina da régua de cobrança
+        const faturaId = String(body.fatura_id || '').trim();
+        const querBoleto = body.anexar_boleto === true && /^\d+$/.test(faturaId);
+        const querPix = body.anexar_pix === true && /^\d+$/.test(faturaId);
+        let okBoleto = querBoleto ? false : null, okPix = querPix ? false : null;
+        const falhas = [];
+
+        let env = null;
+        try { env = await waEnviar(e, fone, texto); }
+        catch (err) {
+          return res.status(200).json({ ok: false, error: String(err.message).slice(0, 250) });
+        }
+        await sb(e, 'atend_mensagens', {
+          method: 'POST', prefer: 'return=minimal',
+          body: { conversa_id: c.id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
+        });
+
+        if (querBoleto || querPix) {
+          let pdf = null, pix = null;
+          if (querBoleto) {
+            try {
+              const bl = await ixc(e, 'get_boleto', {
+                boletos: faturaId, juros: 'N', multa: 'N',
+                atualiza_boleto: 'N', tipo_boleto: 'arquivo', base64: 'S',
+              }, 'listar');
+              pdf = acharBase64(bl);
+              if (!pdf) falhas.push('o IXC não devolveu o PDF desta fatura');
+            } catch (err) { falhas.push('IXC (boleto): ' + String(err.message).slice(0, 80)); }
+          }
+          if (querPix) {
+            try {
+              const g = await ixc(e, 'get_pix', { id_areceber: faturaId }, 'listar');
+              pix = acharPix(g);
+              if (!pix) falhas.push('o IXC não devolveu o Pix desta fatura');
+            } catch (err) { falhas.push('IXC (pix): ' + String(err.message).slice(0, 80)); }
+          }
+          const pausa = () => new Promise(r => setTimeout(r, 700));
+          if (pdf) {
+            try {
+              await pausa();
+              const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+              const r1 = await waEnviarMidia(e, fone, {
+                base64: pdf, tipo: 'document', mimetype: 'application/pdf',
+                nomeArquivo: `fatura-${faturaId}.pdf`, legenda: leg,
+              });
+              await sb(e, 'atend_mensagens', {
+                method: 'POST', prefer: 'return=minimal',
+                body: { conversa_id: c.id, direcao: 'out', conteudo: leg, autor_id: user.id, tipo: 'documento', wa_id: idDaEvolution(r1), status: 'enviado' },
+              });
+              okBoleto = true;
+            } catch (err) { falhas.push('o WhatsApp recusou o PDF'); console.error('[aviso] pdf:', err.message); }
+          }
+          if (pix) {
+            try {
+              await pausa();
+              const r2 = await waEnviar(e, fone, pix);
+              await sb(e, 'atend_mensagens', {
+                method: 'POST', prefer: 'return=minimal',
+                body: { conversa_id: c.id, direcao: 'out', conteudo: pix, autor_id: user.id, wa_id: idDaEvolution(r2), status: 'enviado' },
+              });
+              okPix = true;
+            } catch (err) { falhas.push('o WhatsApp recusou o Pix'); console.error('[aviso] pix:', err.message); }
+          }
+        }
+
+        // SÓ o resumo da lista. Coluna e bot_ativo ficam como estavam: aviso
+        // não abre atendimento, e conversa em andamento com outro atendente
+        // continua com ele.
+        const patch = {
+          ultima_msg: 'Você: ' + texto.slice(0, 180),
+          ultima_msg_em: new Date().toISOString(), updated_by: user.id,
+        };
+        if (!c.cliente_ixc_id && ixcId) patch.cliente_ixc_id = ixcId;
+        await sb(e, `atend_conversas?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+
+        return res.status(200).json({
+          ok: true, conversa_id: c.id, contato_fone: fone,
+          boleto: okBoleto, pix: okPix,
+          anexo_erro: falhas.length ? falhas.join(' | ') : null,
+        });
+      }
+
       case 'clientes.buscar': {
         const termo = String(body.termo || '').trim();
         if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
