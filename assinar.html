@@ -114,6 +114,14 @@ input.campo:focus{outline:none;border-color:var(--azul)}
   border-radius:50%;animation:g .8s linear infinite;margin:0 auto 14px;
 }
 @keyframes g{to{transform:rotate(360deg)}}
+/* saída para o navegador do sistema, quando a página abriu dentro de
+   outro app. Discreta: só aparece para quem precisa dela. */
+.saida{
+  margin-top:16px;font-size:12px;color:var(--tinta-media);line-height:1.6;
+  background:#FFF7E6;border:1px solid #F5DFA8;border-radius:11px;padding:11px 13px;text-align:left;
+}
+.saida a{color:var(--azul);font-weight:700;text-decoration:underline;cursor:pointer}
+.saida.ok{background:var(--azul-luz);border-color:#DCDEF7;color:var(--azul-esc)}
 .rodape-legal{
   font-size:10.5px;color:var(--tinta-fraca);text-align:center;
   padding:16px 20px 26px;line-height:1.6;
@@ -259,6 +267,73 @@ function conferirDados(){
   };
 }
 
+/* Navegador de dentro de outro app (o do WhatsApp, do Instagram, do
+   Facebook). Para LER o contrato ele serve bem; o problema é a selfie.
+   Vários WebViews não repassam a permissão de câmera para o
+   <input capture>, e aí o botão simplesmente não faz nada — o cliente
+   fica preso no último passo sem entender por quê.
+
+   Quem cai aqui recebe a saída ANTES de descobrir isso sozinho. */
+function emWebView(){
+  var ua = navigator.userAgent || '';
+  if(/; wv\)/.test(ua)) return true;                       // WebView do Android
+  if(/FBAN|FBAV|FB_IAB|Instagram|Line\//.test(ua)) return true;
+  // No iOS o navegador do WhatsApp é o Safari embutido e funciona. Um
+  // WKWebView cru é que não traz "Safari/" no fim da assinatura.
+  if(/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua)) return true;
+  return false;
+}
+
+/* No Android, intent:// é o caminho oficial de um WebView devolver a
+   página para o navegador do sistema. No iOS não existe equivalente:
+   o melhor que dá para fazer é copiar o endereço.
+
+   A decisão fica separada da navegação de propósito — assim dá para
+   conferir o endereço gerado sem precisar sair da página. */
+function enderecoExterno(url, ua){
+  if(!/Android/.test(ua || '')) return null;
+  return 'intent://' + String(url).replace(/^https?:\/\//, '') +
+    '#Intent;scheme=https;action=android.intent.action.VIEW;end';
+}
+
+function abrirNoNavegador(ev){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  var url = location.href;
+  var fora = enderecoExterno(url, navigator.userAgent || '');
+  if(fora){ location.href = fora; return; }
+  copiarEndereco(url);
+}
+
+function copiarEndereco(url){
+  var aviso = function(txt){
+    var el = document.getElementById('saida');
+    if(el){ el.className = 'saida ok'; el.innerHTML = txt; }
+  };
+  var pronto = function(){ aviso('✅ Link copiado. Abra o navegador do celular (Chrome, Safari) e cole na barra de endereço.'); };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(pronto, function(){ copiaVelha(url, pronto, aviso); });
+      return;
+    }
+  }catch(e){}
+  copiaVelha(url, pronto, aviso);
+}
+
+// alguns WebViews não têm navigator.clipboard: sobra o campo escondido
+function copiaVelha(url, pronto, aviso){
+  try{
+    var campo = document.createElement('input');
+    campo.value = url;
+    campo.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(campo);
+    campo.select(); campo.setSelectionRange(0, 99999);
+    var deu = document.execCommand('copy');
+    document.body.removeChild(campo);
+    if(deu){ pronto(); return; }
+  }catch(e){}
+  aviso('Toque no menu deste app (⋮ ou ···) e escolha <b>Abrir no navegador</b>.');
+}
+
 /* Passo 3 — selfie com o documento */
 function pedirSelfie(){
   tela(
@@ -272,9 +347,16 @@ function pedirSelfie(){
         '<img id="previa" style="display:none" alt="Sua selfie"></div>' +
       '<input type="file" id="arquivo" accept="image/*" capture="user" style="display:none">' +
       '<button class="btn fantasma" id="btFoto">📷 Abrir a câmera</button>' +
+      (emWebView()
+        ? '<div class="saida" id="saida">A câmera não abriu ao tocar no botão? ' +
+          'Este é o navegador de dentro do app, e ele às vezes bloqueia a câmera. ' +
+          '<a id="btFora">Abrir esta página no navegador do celular</a></div>'
+        : '') +
     '</div></div>' +
     '<div class="rodape"><button class="btn" id="btOk" disabled>Assinar documentos</button></div>'
   );
+  var fora = document.getElementById('btFora');
+  if(fora) fora.onclick = abrirNoNavegador;
   document.getElementById('btVoltar').onclick = conferirDados;
   document.getElementById('btFoto').onclick = function(){ document.getElementById('arquivo').click(); };
   document.getElementById('arquivo').onchange = fotoEscolhida;
