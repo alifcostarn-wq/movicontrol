@@ -7856,15 +7856,72 @@ $('#btnBuscaMob').onclick=()=>{
 };
 $('#btnFiltros').onclick=()=>{ const fb=$('#filterbar'); fb.style.display=fb.style.display==='none'?'flex':'none'; };
 $('#sectorSel').onchange=e=>{ meuSetor=e.target.value; renderAll(); };
+/* Novo atendimento.
+   Eram quatro prompt() em fila, e o setor era um deles: texto livre com
+   "Suporte, Financeiro ou Vendas" escrito na pergunta. Digitar errado criava
+   um setor que não existe e a conversa sumia do quadro de todo mundo; e quem
+   só apertava OK ficava com o padrão, não com o próprio setor. Agora é uma
+   lista, e o padrão é o setor de quem está abrindo. */
+function novoAtendimentoDialogo(){
+  return new Promise(resolve=>{
+    // admin não tem setor próprio: cai no que está escolhido na barra lateral,
+    // que é o setor em que ele está trabalhando naquele momento
+    const padrao = USUARIO.setor
+      || (meuSetor && meuSetor !== 'todos' ? meuSetor : null)
+      || SETORES[0].id;
+    const ov=document.createElement('div');
+    ov.className='tr-overlay';
+    ov.innerHTML=`<div class="pn-modal" style="width:min(480px,100%);">
+      <div class="pn-head"><h3>Novo atendimento</h3><button class="pn-x" id="naX">✕</button></div>
+      <div class="pn-body">
+        <div class="flow-field"><label for="naNome">Nome do contato</label>
+          <input id="naNome" placeholder="Como o cliente aparece no painel" autocomplete="off"></div>
+        <div class="flow-field"><label for="naFone">Telefone (com DDD)</label>
+          <input id="naFone" inputmode="tel" placeholder="84 99999-0000" autocomplete="off"></div>
+        <div class="flow-field"><label for="naSetor">Setor</label>
+          <select id="naSetor">${SETORES.map(x=>`<option value="${esc(x.id)}" ${x.id===padrao?'selected':''}>${esc(x.id)}</option>`).join('')}</select>
+          <div class="fz-desc" id="naSetorNota"></div></div>
+        <div class="flow-field" style="margin-bottom:4px"><label for="naMsg">Primeira mensagem <span style="font-weight:600;color:var(--text-low)">(opcional)</span></label>
+          <textarea id="naMsg" style="min-height:76px" placeholder="Em branco, só abre o card sem mandar nada."></textarea></div>
+      </div>
+      <div class="fz-foot">
+        <button class="fbtn" id="naCancel">Cancelar</button>
+        <button class="fbtn solid" id="naOk">Abrir atendimento</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+
+    const sel=ov.querySelector('#naSetor'), nota=ov.querySelector('#naSetorNota');
+    const pintarNota=()=>{
+      nota.textContent = USUARIO.setor
+        ? (sel.value===USUARIO.setor ? 'Seu setor.' : 'Atenção: fora do seu setor, a conversa vai para a equipe do '+sel.value+'.')
+        : 'A conversa entra no quadro do setor '+sel.value+'.';
+    };
+    sel.onchange=pintarNota; pintarNota();
+
+    const fechar=v=>{ ov.remove(); document.removeEventListener('keydown',tecla); resolve(v); };
+    const tecla=ev=>{ if(ev.key==='Escape') fechar(null); };
+    document.addEventListener('keydown',tecla);
+    ov.querySelector('#naX').onclick=()=>fechar(null);
+    ov.querySelector('#naCancel').onclick=()=>fechar(null);
+    ov.onclick=ev=>{ if(ev.target===ov) fechar(null); };
+    ov.querySelector('#naOk').onclick=()=>{
+      const nome=ov.querySelector('#naNome').value.trim();
+      const fone=ov.querySelector('#naFone').value.trim();
+      if(!nome){ toast('Informe o nome do contato.'); ov.querySelector('#naNome').focus(); return; }
+      if(fone.replace(/\D/g,'').length<10){ toast('Telefone incompleto — use DDD + número.'); ov.querySelector('#naFone').focus(); return; }
+      fechar({ nome, fone, setor:sel.value, texto:ov.querySelector('#naMsg').value.trim() });
+    };
+    setTimeout(()=>ov.querySelector('#naNome').focus(),40);
+  });
+}
+
 $('#btnNovo').onclick=async()=>{
-  const nome=prompt('Nome do contato:'); if(!nome)return;
-  const fone=prompt('Telefone (com DDD):')||'';
-  if(!fone.replace(/\D/g,'')){ toast('Informe o telefone.'); return; }
-  const setor=prompt('Setor (Suporte, Financeiro ou Vendas):', USUARIO.setor||'Vendas')||'Vendas';
-  const texto=prompt('Primeira mensagem (deixe em branco para só abrir o card):','')||'';
+  const d=await novoAtendimentoDialogo();
+  if(!d) return;
   try{
-    const j=await chamar('conversas.criar',{ nome, fone, setor, texto });
-    if(j.reaproveitada) toast('Já existia uma conversa aberta com esse número.');
+    const j=await chamar('conversas.criar', d);
+    if(j.reaproveitada) toast('Já existia uma conversa com esse número — reaberta no setor '+d.setor+'.');
     await recarregarConversas();
     openModal(j.conversa.id);
   }catch(err){ toast('Falha: '+err.message); }

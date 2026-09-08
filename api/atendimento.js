@@ -4577,15 +4577,42 @@ export default async function handler(req, res) {
         const texto = String(body.texto || '').trim();
         if (!fone || fone.length < 12) return res.status(400).json({ ok: false, error: 'Telefone inválido. Use DDD + número.' });
 
+        // O setor é DIGITADO pelo painel: validar aqui é o que impede um
+        // "suporte" minúsculo ou um "Suport" de criar um setor fantasma, com a
+        // conversa sumindo do quadro de todo mundo.
+        const setoresOk = ((await sb(e, 'atend_setores?ativo=is.true&select=nome')) || []).map(x => x.nome);
+        const pedido = String(body.setor || '').trim();
+        const setorEscolhido = setoresOk.find(x => x.toLowerCase() === pedido.toLowerCase()) || null;
+        if (pedido && !setorEscolhido) {
+          return res.status(400).json({ ok: false, error: `Setor "${pedido}" não existe. Use: ${setoresOk.join(', ')}.` });
+        }
+        // quem abre a conversa manda no setor; o do usuário é só o padrão
+        const setorFinal = setorEscolhido || user.setor || setoresOk[0] || 'Vendas';
+
         // já existe conversa com esse número (mesmo resolvida)? reaproveita — nunca duplica
         const existente = await conversaPorFone(e, fone);
         if (existente) {
+          // O SETOR ESCOLHIDO VENCE o que estava lá. Antes o setor antigo tinha
+          // prioridade, e como quase todo número já tem conversa do bot — que
+          // encaminha a maioria para Suporte — abrir um atendimento pelo painel
+          // caía em Suporte não importa o que o atendente escolhesse.
+          const patch = { setor: setorEscolhido || existente.setor || setorFinal };
           if (existente.coluna === 'resolvidos') {
-            await sb(e, `atend_conversas?id=eq.${existente.id}`, {
-              method: 'PATCH', prefer: 'return=minimal',
-              body: { coluna: 'atendimento', bot_ativo: false, atendente_id: user.id, setor: existente.setor || body.setor || user.setor || 'Vendas' },
-            });
+            patch.coluna = 'atendimento';
+            patch.bot_ativo = false;
+            patch.atendente_id = user.id;
+            patch.assumido_em = new Date().toISOString();
+            patch.assumido_por = user.id;
+            // reabrir é atividade: sem zerar o relógio, a varredura de
+            // inatividade acha uma conversa "parada" desde o mês passado
+            patch.ultima_msg_em = new Date().toISOString();
+            patch.aguardando_desde = null;
+            patch.aviso_inatividade_em = null;
           }
+          await sb(e, `atend_conversas?id=eq.${existente.id}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: patch,
+          });
+          Object.assign(existente, patch);   // o painel precisa ver o setor NOVO
           if (texto) {
             const env = await waEnviar(e, fone, texto);
             await sb(e, 'atend_mensagens', {
@@ -4606,7 +4633,7 @@ export default async function handler(req, res) {
             contato_fone: fone,
             contato_nome: String(body.nome || '').trim() || fone,
             coluna: 'atendimento',
-            setor: body.setor || user.setor || 'Vendas',
+            setor: setorFinal,
             atendente_id: user.id,
             bot_ativo: false,             // iniciado por humano: o bot não interfere
             // já nasce assumida: quem abriu é o responsável, sem tempo de fila
