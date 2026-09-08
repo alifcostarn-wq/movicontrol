@@ -1152,8 +1152,11 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   font-family:inherit;font-size:13px;background:var(--card);color:var(--text);}
 .hr-fer input[type=text]{flex:1;min-width:130px;border:1px solid var(--line);border-radius:8px;
   padding:5px 9px;font-family:inherit;font-size:13px;background:var(--card);color:var(--text);}
-.hr-previa{white-space:pre-wrap;font-size:12.5px;line-height:1.6;background:var(--bg);
+.hr-previa{font-size:12.5px;line-height:1.6;background:var(--bg);
   border:1px dashed var(--line);border-radius:10px;padding:11px 13px;margin-top:8px;color:var(--text-mid);}
+.hr-prev-tit{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-low);margin-bottom:3px;}
+.hr-prev-txt{white-space:pre-wrap;}
 @media (max-width:860px){
   .hr-nome{width:100%;padding-top:0;}
   .hr-faixa input[type=time]{flex:1;min-width:0;}
@@ -4232,14 +4235,23 @@ function hrRender(el){
     </div>
 
     <div class="cp-box">
-      <div class="cp-lab">💬 Mensagem enviada ao cliente</div>
-      <textarea class="cp-txt" id="hrTexto" style="min-height:120px" placeholder="Deixe em branco para usar o texto padrão.">${esc(g('texto',''))}</textarea>
+      <div class="cp-lab">💬 Fora do expediente <span style="text-transform:none;font-weight:600">(volta só outro dia)</span></div>
+      <textarea class="cp-txt" id="hrTexto" style="min-height:110px" placeholder="Deixe em branco para usar o texto padrão.">${esc(g('texto',''))}</textarea>
       <div class="tp-nota">
         Marcadores: <b>{volta}</b> (“amanhã às 08:00”), <b>{horarios}</b> (a grade resumida),
         <b>{primeiro_nome}</b>, <b>{feriado}</b>.
       </div>
-      <div class="cp-lab" style="margin-top:12px">Mensagem só para feriados <span style="text-transform:none;font-weight:600">(opcional)</span></div>
-      <textarea class="cp-txt" id="hrTextoFer" style="min-height:80px" placeholder="Em branco usa a mensagem acima.">${esc(g('texto_feriado',''))}</textarea>
+
+      <div class="cp-lab" style="margin-top:14px">☕ No intervalo <span style="text-transform:none;font-weight:600">(volta hoje mesmo)</span></div>
+      <textarea class="cp-txt" id="hrTextoInt" style="min-height:90px" placeholder="Deixe em branco para usar o texto padrão do intervalo.">${esc(g('texto_intervalo',''))}</textarea>
+      <div class="tp-nota">
+        Quem escreve no meio do almoço de uma terça não precisa da grade da semana inteira —
+        precisa de <b>uma</b> informação: a que horas a equipe volta. Por isso o marcador
+        <b>{hora_volta}</b>, que sai só como “14:00”. Os outros continuam valendo.
+      </div>
+
+      <div class="cp-lab" style="margin-top:14px">📅 Em feriado <span style="text-transform:none;font-weight:600">(opcional)</span></div>
+      <textarea class="cp-txt" id="hrTextoFer" style="min-height:80px" placeholder="Em branco usa a mensagem de fora do expediente.">${esc(g('texto_feriado',''))}</textarea>
       <div class="cp-lab" style="margin-top:12px">Linha de urgência <span style="text-transform:none;font-weight:600">(opcional, entra no fim da mensagem)</span></div>
       <input type="text" id="hrEmerg" placeholder="Ex.: Emergências: (84) 90000-0000" value="${esc(g('emergencia',''))}"
         style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;background:var(--card);color:var(--text);">
@@ -4306,7 +4318,7 @@ function hrRender(el){
     hrCfg.feriados.push({data:'',nome:''}); hrSync(); hrRender(el);
   };
 
-  ['hrTexto','hrTextoFer','hrEmerg'].forEach(id=>{ const c=$('#'+id); if(c) c.oninput=hrPrevia; });
+  ['hrTexto','hrTextoInt','hrTextoFer','hrEmerg'].forEach(id=>{ const c=$('#'+id); if(c) c.oninput=hrPrevia; });
   $('#hrFuso').onchange=hrPrevia;
   hrPrevia();
 
@@ -4330,6 +4342,7 @@ function hrSync(){
   hrCfg.fuso=$('#hrFuso').value;
   hrCfg.texto=$('#hrTexto').value;
   hrCfg.texto_feriado=$('#hrTextoFer').value;
+  hrCfg.texto_intervalo=$('#hrTextoInt').value;
   hrCfg.emergencia=$('#hrEmerg').value;
   const d=parseInt($('#hrRepetir').value,10);
   hrCfg.repetir_horas=Number.isFinite(d)&&d>=0?Math.min(168,d):12;
@@ -4347,6 +4360,7 @@ function hrLer(){
     feriados:(hrCfg.feriados||[]).filter(f=>f&&f.data),
     texto:String(hrCfg.texto||'').trim(),
     texto_feriado:String(hrCfg.texto_feriado||'').trim(),
+    texto_intervalo:String(hrCfg.texto_intervalo||'').trim(),
     emergencia:String(hrCfg.emergencia||'').trim(),
     repetir_horas:hrCfg.repetir_horas??12,
   };
@@ -4377,19 +4391,32 @@ function hrResumo(dias){
 function hrPrevia(){
   const alvo=$('#hrPrevia'); if(!alvo) return;
   const cfg=hrLer();
-  const padrao='⚠️ Só um detalhe: neste momento estamos fora do horário de atendimento.\n\n'
+  const PADRAO_FORA='⚠️ Só um detalhe: neste momento estamos fora do horário de atendimento.\n\n'
     +'🕐 *Nosso horário:* {horarios}\n\n'
     +'Seu atendimento já está na fila e será respondido {volta}. Não precisa mandar de novo. 💚';
+  const PADRAO_INT='⚠️ Estamos em intervalo neste momento — voltamos às {hora_volta}.\n\n'
+    +'Seu atendimento já está na fila e será respondido assim que retornarmos. '
+    +'Não precisa mandar de novo. 💚';
   // {volta} de verdade é calculado no servidor, no fuso configurado. Aqui, na
   // prévia, usa-se o último valor que ele devolveu; antes disso, um exemplo.
-  const primeira=(((cfg.dias||{})['1']||[])[0]||{}).de||'08:00';
+  const seg=((cfg.dias||{})['1']||[]);
+  const primeira=(seg[0]||{}).de||'08:00';
+  // hora de retorno do intervalo = início da SEGUNDA faixa do dia útil
+  const horaVolta=(seg[1]||{}).de||'14:00';
   const volta=(hrSit&&hrSit.volta)||('amanhã às '+primeira);
-  const txt=(cfg.texto||padrao)
-    .replace(/{volta}/g,volta)
+  const monta=(modelo,vt,hv)=>modelo
+    .replace(/{volta}/g,vt).replace(/{hora_volta}/g,hv)
     .replace(/{horarios}/g,hrResumo(cfg.dias))
     .replace(/{primeiro_nome}/g,'João').replace(/{nome}/g,'João')
     .replace(/{feriado}/g,'feriado');
-  alvo.textContent=txt+(cfg.emergencia?'\n\n'+cfg.emergencia:'');
+  const rodape=cfg.emergencia?'\n\n'+cfg.emergencia:'';
+  // duas prévias porque são duas mensagens diferentes, e a do intervalo é
+  // justamente a que não deve trazer a grade da semana
+  alvo.innerHTML=
+    `<div class="hr-prev-tit">Fora do expediente</div>`
+    +`<div class="hr-prev-txt">${esc(monta(cfg.texto||PADRAO_FORA,volta,horaVolta)+rodape)}</div>`
+    +`<div class="hr-prev-tit" style="margin-top:10px">☕ No intervalo</div>`
+    +`<div class="hr-prev-txt">${esc(monta(cfg.texto_intervalo||cfg.texto||PADRAO_INT,'hoje às '+horaVolta,horaVolta)+rodape)}</div>`;
 }
 
 function hrPintarAgora(sit){

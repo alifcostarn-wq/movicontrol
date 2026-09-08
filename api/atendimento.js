@@ -1015,6 +1015,15 @@ const TEXTO_FORA_HORARIO =
   '🕐 *Nosso horário:* {horarios}\n\n' +
   'Seu atendimento já está na fila e será respondido {volta}. Não precisa mandar de novo. 💚';
 
+// INTERVALO é outra conversa. Quem escreve no meio do almoço de uma terça não
+// precisa da grade da semana inteira — precisa de UMA informação: a que horas
+// a equipe volta. Despejar "Seg a Sex 08:00–12:00, 14:00–18:00 · Sáb ..." aí é
+// mandar o cliente procurar, no meio de seis números, o único que interessa.
+const TEXTO_INTERVALO =
+  '⚠️ Estamos em intervalo neste momento — voltamos às {hora_volta}.\n\n' +
+  'Seu atendimento já está na fila e será respondido assim que retornarmos. ' +
+  'Não precisa mandar de novo. 💚';
+
 function hmParaMin(hm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm ?? '').trim());
   if (!m) return null;
@@ -1123,20 +1132,38 @@ function horarioSituacao(cfg, agora = new Date()) {
     : proxima.dias < 7   ? `${DIAS_NOME[proxima.semana]} às ${proxima.hm}`
     : `${proxima.iso.slice(8, 10)}/${proxima.iso.slice(5, 7)} às ${proxima.hm}`;
 
+  // Fechado agora e reabrindo HOJE = intervalo (almoço). É o caso em que a
+  // grade da semana não interessa: o cliente só quer saber a que horas volta.
+  const intervalo = !aberto && !!proxima && proxima.dias === 0;
+
   return {
-    ligado: true, aberto, feriado: feriadoHoje || null,
-    proxima, volta: rotulo, horarios: resumoHorarios(conf),
+    ligado: true, aberto, feriado: feriadoHoje || null, intervalo,
+    proxima, volta: rotulo,
+    horaVolta: proxima ? proxima.hm : null,
+    horarios: resumoHorarios(conf),
   };
 }
 
+/* Três mensagens diferentes, porque são três situações diferentes:
+   feriado (o dia todo fechado, por um motivo com nome), intervalo (volta hoje
+   mesmo, daqui a pouco) e fora do expediente (volta outro dia). Cada uma cai
+   no texto próprio quando ele existe, senão no padrão dela. */
 function textoForaHorario(cfg, sit, nome) {
-  const padrao = (sit.feriado && String(cfg.texto_feriado || '').trim())
-    || String(cfg.texto || '').trim() || TEXTO_FORA_HORARIO;
+  const proprio = sit.feriado ? cfg.texto_feriado
+    : sit.intervalo ? cfg.texto_intervalo
+    : cfg.texto;
+  const padraoDoCaso = sit.intervalo && !sit.feriado ? TEXTO_INTERVALO : TEXTO_FORA_HORARIO;
+  // texto do caso > texto geral > padrão do caso. O texto geral ainda vale
+  // para quem escreveu um só e não quer três.
+  const padrao = String(proprio || '').trim()
+    || (sit.feriado ? String(cfg.texto || '').trim() : '')
+    || padraoDoCaso;
   const extra = String(cfg.emergencia || '').trim();
   return padrao
     .replace(/{nome}/g, nome || 'tudo bem')
     .replace(/{primeiro_nome}/g, String(nome || '').split(' ')[0] || 'tudo bem')
     .replace(/{volta}/g, sit.volta)
+    .replace(/{hora_volta}/g, sit.horaVolta || 'em breve')
     .replace(/{horarios}/g, sit.horarios)
     .replace(/{feriado}/g, (sit.feriado && (sit.feriado.nome || 'feriado')) || 'feriado')
     + (extra ? '\n\n' + extra : '');
@@ -5669,7 +5696,7 @@ export default async function handler(req, res) {
         const dados = (c && c.dados) || {};
         return res.status(200).json({
           ok: true, config: dados,
-          padrao: { texto: TEXTO_FORA_HORARIO, fuso: FUSO_PADRAO },
+          padrao: { texto: TEXTO_FORA_HORARIO, texto_intervalo: TEXTO_INTERVALO, fuso: FUSO_PADRAO },
           agora: horarioSituacao(dados, new Date()),
         });
       }
