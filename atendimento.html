@@ -1760,6 +1760,12 @@ body.flow-full .flow-field textarea{min-height:200px;}
 /* "ele recebeu?" é a pergunta que o atendente faz depois de mandar o link.
    O rastro fica embaixo dos botões, na largura toda, em vez de virar mais
    um botão que ninguém precisa apertar. */
+/* de onde veio o resultado. O nome do cadastro raramente é o nome que
+   aparece na conversa — sem dizer a origem, o acerto parece engano. */
+.cli-origem{
+  font-size:11px;color:var(--green-deep);background:var(--green-soft);
+  border-radius:8px;padding:7px 10px;margin-bottom:7px;line-height:1.45;
+}
 .asn-link-st{flex-basis:100%;font-size:10.5px;color:var(--text-low);line-height:1.5;padding-top:2px;}
 .asn-link-st b{color:var(--green-deep);}
 .asn-vazio{font-size:11.5px;color:var(--text-low);padding:4px 0 8px;line-height:1.5;}
@@ -2613,8 +2619,8 @@ const api = {
   async devolverBot(c){
     await chamar('conversas.devolver_bot', { conversa_id:c.id });
   },
-  async buscarClientes(termo){
-    const j = await chamar('clientes.buscar', { termo });
+  async buscarClientes(termo, fone){
+    const j = await chamar('clientes.buscar', { termo, ...(fone?{fone}:{}) });
     // `sincronizou` só vem quando a busca local não achou nada e o servidor
     // foi conferir com o IXC: é o que permite dizer ao atendente se o vazio
     // é "não existe" ou "existe e acabou de ser copiado"
@@ -3336,7 +3342,7 @@ function abrirBuscaCliente(c, aoVincular){
       <button class="btn primary" id="cliBuscar">Buscar</button>
     </div>
     <div class="cli-lista" id="cliLista">
-      <div class="cli-vazio">Digite o nome do cliente, o CPF ou o telefone para localizar o cadastro.</div>
+      <div class="cli-vazio">Procurando pelo telefone desta conversa…</div>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -3347,46 +3353,74 @@ function abrirBuscaCliente(c, aoVincular){
   const lista=ov.querySelector('#cliLista');
   inp.focus();
 
+  // Pintar os resultados é o mesmo trabalho vindo da busca por telefone ou
+  // da digitada — só muda o que se diz quando não vem nada.
+  const pintar=(res, vazio, cabecalho)=>{
+    if(!res.length){ lista.innerHTML=vazio; return; }
+    lista.innerHTML=(cabecalho||'')+res.map(cl=>`
+      <div class="cli-item" data-ixc="${esc(cl.ixc_id)}">
+        <div class="cc-av" style="background:${avColor(Number(cl.ixc_id)||1)}">${ini(cl.nome||'?')}</div>
+        <div class="ci-info">
+          <div class="ci-nome">${esc(cl.nome||'—')}</div>
+          <div class="ci-end">${esc(cl.endereco||'sem endereço')}${cl.cnpj?' · '+esc(cl.cnpj):''}</div>
+        </div>
+        <span class="ci-tag ${cl.ativo?'on':''}">${cl.ativo?'ATIVO':'INATIVO'}</span>
+      </div>`).join('');
+    lista.querySelectorAll('[data-ixc]').forEach(el=>el.onclick=async()=>{
+      const nome=el.querySelector('.ci-nome').textContent;
+      if(!confirm(`Vincular o número ${c.fone} ao cadastro de ${nome}?\n\nA partir de agora o bot não vai mais pedir CPF nesse número.`)) return;
+      lista.innerHTML='<div class="cli-vazio">Vinculando…</div>';
+      try{ await aoVincular(el.dataset.ixc); ov.remove(); }
+      catch(err){ toast('Falha: '+err.message); porFone(); }
+    });
+  };
+
+  // por que o vazio ficou vazio — a diferença entre "não existe" e
+  // "existe e a cópia do IXC ainda não tinha alcançado"
+  const notaDoVazio=(res)=>{
+    const sy = res.sincronizou;
+    if(sy && sy.sincronizado) return 'Conferimos com o IXC agora e ele também não tem esse nome.';
+    if(sy && sy.recente)      return 'Conferimos com o IXC há instantes e ele também não tem esse nome.';
+    if(sy && sy.erro)         return 'Não consegui conferir com o IXC: '+esc(sy.erro);
+    return 'A busca é por nome, CPF/CNPJ ou telefone.';
+  };
+
+  /* Primeiro tiro: o TELEFONE da conversa.
+
+     O nome que aparece no painel é o do perfil do WhatsApp — "NP LANCHE",
+     "Neidinha🎀", "Mnv🥷🤠" — e quase nunca é o nome do cadastro. Pedir para
+     a atendente digitar um nome é pedir que ela adivinhe qual. O número não
+     precisa de adivinhação: é o mesmo dos dois lados. */
+  const porFone=async()=>{
+    if(!c.fone){ lista.innerHTML='<div class="cli-vazio">Digite o nome do cliente, o CPF ou o telefone para localizar o cadastro.</div>'; return; }
+    lista.innerHTML='<div class="cli-vazio">Procurando pelo telefone desta conversa…</div>';
+    try{
+      const res=await api.buscarClientes('', c.fone);
+      // dizer DE ONDE veio o resultado. A conversa se chama "NP LANCHE" e o
+      // cadastro é de Paula Thatiane: sem essa linha, a atendente vê um nome
+      // que não reconhece e não sabe se pode confiar.
+      pintar(res, '<div class="cli-vazio">Nenhum cadastro com este telefone.'
+        + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'
+        + 'O nome que aparece aqui é o do perfil do WhatsApp e costuma ser apelido ou nome do negócio — '
+        + 'procure pelo <b>CPF/CNPJ</b> ou pelo nome do titular.<br>' + notaDoVazio(res) + '</div></div>',
+        '<div class="cli-origem">📞 Encontrado pelo <b>telefone desta conversa</b> ('
+        + esc(c.fone) + ')</div>');
+    }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
+  };
+
   const buscar=async()=>{
     const termo=inp.value.trim();
-    if(termo.length<2){ lista.innerHTML='<div class="cli-vazio">Digite ao menos 2 caracteres.</div>'; return; }
+    if(termo.length<2){ porFone(); return; }
     lista.innerHTML='<div class="cli-vazio">Buscando…</div>';
     try{
       const res=await api.buscarClientes(termo);
-      if(!res.length){
-        // dizer o que foi feito: quem acabou de ativar um contrato no IXC
-        // precisa saber que já procuramos lá, senão vai procurar erro onde
-        // não tem
-        const sy = res.sincronizou;
-        const nota = sy && sy.sincronizado
-          ? 'Conferimos com o IXC agora e ele também não tem esse nome.'
-          : (sy && sy.recente
-              ? 'Conferimos com o IXC há instantes e ele também não tem esse nome.'
-              : (sy && sy.erro
-                  ? 'Não consegui conferir com o IXC: '+esc(sy.erro)
-                  : 'A busca é por nome, CPF/CNPJ ou telefone.'));
-        lista.innerHTML='<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado'
-          + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'+nota+'</div></div>';
-        return;
-      }
-      lista.innerHTML=res.map(cl=>`
-        <div class="cli-item" data-ixc="${esc(cl.ixc_id)}">
-          <div class="cc-av" style="background:${avColor(Number(cl.ixc_id)||1)}">${ini(cl.nome||'?')}</div>
-          <div class="ci-info">
-            <div class="ci-nome">${esc(cl.nome||'—')}</div>
-            <div class="ci-end">${esc(cl.endereco||'sem endereço')}${cl.cnpj?' · '+esc(cl.cnpj):''}</div>
-          </div>
-          <span class="ci-tag ${cl.ativo?'on':''}">${cl.ativo?'ATIVO':'INATIVO'}</span>
-        </div>`).join('');
-      lista.querySelectorAll('[data-ixc]').forEach(el=>el.onclick=async()=>{
-        const nome=el.querySelector('.ci-nome').textContent;
-        if(!confirm(`Vincular o número ${c.fone} ao cadastro de ${nome}?\n\nA partir de agora o bot não vai mais pedir CPF nesse número.`)) return;
-        lista.innerHTML='<div class="cli-vazio">Vinculando…</div>';
-        try{ await aoVincular(el.dataset.ixc); ov.remove(); }
-        catch(err){ toast('Falha: '+err.message); buscar(); }
-      });
+      pintar(res, '<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado'
+        + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'
+        + notaDoVazio(res) + '</div></div>');
     }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
   };
+
+  porFone();
   ov.querySelector('#cliBuscar').onclick=buscar;
   inp.onkeydown=ev=>{ if(ev.key==='Enter') buscar(); };
 }

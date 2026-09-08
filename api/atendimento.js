@@ -6305,13 +6305,25 @@ export default async function handler(req, res) {
 
       case 'clientes.buscar': {
         const termo = String(body.termo || '').trim();
-        if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
+        if (termo.length < 2 && !body.fone) return res.status(200).json({ ok: true, clientes: [] });
+
+        // Busca pelo TELEFONE da conversa. O nome que aparece no painel é o
+        // do perfil do WhatsApp — "NP LANCHE", "Neidinha🎀", "Mnv🥷🤠" — e
+        // quase nunca é o nome do cadastro. Procurar por ele é adivinhação;
+        // o número, não: é o mesmo dos dois lados.
+        //
+        // Vão os 8 últimos dígitos de propósito. O WhatsApp entrega
+        // 558498439613 e o IXC guarda (84) 99843-9613: com o número inteiro
+        // a RPC trataria como CPF (11+ dígitos) e não acharia nada. O miolo
+        // de 8 casa com as duas formas, com e sem o nono dígito.
+        const soFone = String(body.fone || '').replace(/\D/g, '');
+        const termoBusca = soFone.length >= 8 ? soFone.slice(-8) : termo;
 
         const procurar = async () => {
           const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_buscar_clientes`, {
             method: 'POST',
             headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ p_termo: termo, p_limite: 20 }),
+            body: JSON.stringify({ p_termo: termoBusca, p_limite: 20 }),
           });
           if (!r.ok) throw new Error('Falha na busca de clientes.');
           return await r.json();
@@ -6332,7 +6344,7 @@ export default async function handler(req, res) {
             if (sincronizou.clientes || sincronizou.contratos) clientes = await procurar();
           } catch (err) { console.error('[clientes.buscar] sync:', err.message); }
         }
-        return res.status(200).json({ ok: true, clientes, sincronizou });
+        return res.status(200).json({ ok: true, clientes, sincronizou, por_fone: !!soFone });
       }
 
       case 'conversas.vincular': {
