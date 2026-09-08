@@ -886,7 +886,9 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 /* Etapas em grade compacta: antes eram 5 blocos empilhados que comiam ~230px
    do topo e deixavam só 2 conversas visíveis. Agora ocupam cerca de 80px. */
-.etapas{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:10px;border-bottom:1px solid var(--line);}
+/* Três colunas flexíveis para as etapas de TRABALHO e uma coluna do tamanho do
+   conteúdo para Resolvidos: ela não disputa espaço com quem exige ação. */
+.etapas{display:grid;grid-template-columns:repeat(3,1fr) auto;gap:5px;padding:10px;border-bottom:1px solid var(--line);}
 .etapa{
   font-size:10.5px;font-weight:700;padding:7px 4px;border-radius:9px;cursor:pointer;
   border:1px solid var(--line);background:var(--card);color:var(--text-mid);
@@ -899,6 +901,13 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .etapa .et-nome{order:2;font-size:9px;opacity:.88;}
 .etapa .et-n{order:1;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;}
 .etapa .et-n.zero{opacity:.35;}
+/* Resolvidos é arquivo, não trabalho: o número só cresce e não pede nada de
+   ninguém. Fica como um ✓ para entrar quando precisar procurar algo; a
+   contagem continua existindo, no title, para quem quiser conferir. */
+.etapa.so-icone{padding:7px 13px;justify-content:center;}
+.etapa.so-icone .et-ico{font-size:16px;line-height:1.15;opacity:.75;}
+.etapa.so-icone.on .et-ico{opacity:1;}
+.etapa.so-icone .et-nome{order:2;font-size:9px;}
 /* a fila ocupa a linha inteira: é a única etapa com relógio correndo */
 .etapa.destaque{grid-column:1/-1;flex-direction:row;justify-content:center;gap:8px;padding:8px;}
 .etapa.destaque .et-nome{order:1;font-size:11px;opacity:1;}
@@ -1909,7 +1918,9 @@ body.flow-full .flow-field textarea{min-height:200px;}
   .cc-assumir{padding:13px;font-size:13.5px;}
   .cc-av{width:38px;height:38px;font-size:13px;}
   /* etapas: alvos de dedo, não de mouse */
-  .etapas{grid-template-columns:repeat(4,1fr);gap:6px;padding:9px;}
+  .etapas{grid-template-columns:repeat(3,1fr) auto;gap:6px;padding:9px;}
+  .etapa.so-icone{padding:8px 14px;}
+  .etapa.so-icone .et-ico{font-size:18px;}
   .etapa{min-height:50px;padding:7px 3px;justify-content:center;}
   .etapa .et-nome{font-size:9.5px;}
   .etapa .et-n{font-size:16px;}
@@ -2696,6 +2707,7 @@ function mapearConversa(c){
   return {
     id:c.id, nome:c.contato_nome||c.contato_fone, fone:c.contato_fone,
     col:c.coluna, hora: c.ultima_msg_em ? new Date(c.ultima_msg_em).toTimeString().slice(0,5) : '',
+    ultimaEm: c.ultima_msg_em || null,
     unread:c.nao_lidas||0, tags:c.tags||[], notas:c.notas||'', rating:c.rating,
     atendente: c.atendente_id ? ((EQUIPE.find(p=>p.id===c.atendente_id)||{}).nome||'—') : '— Bot —',
     setor: c.setor||null, preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
@@ -3114,7 +3126,11 @@ function renderKpis(){
   const fila=c.filter(x=>x.col==='fila');
   const a=c.filter(x=>x.col==='atendimento').length;
   const g=c.filter(x=>x.col==='aguardando').length;
-  const r=c.filter(x=>x.col==='resolvidos').length;
+  // Resolvidos do DIA, não a pilha inteira. O total só cresce: não cabe numa
+  // faixa de indicadores que existe para dizer o que precisa de ação agora.
+  const hoje0=new Date(); hoje0.setHours(0,0,0,0);
+  const r=c.filter(x=>x.col==='resolvidos'
+    && x.ultimaEm && new Date(x.ultimaEm) >= hoje0).length;
   // a maior espera da fila é o número que exige ação agora
   const piorEspera=fila.reduce((m,x)=>{
     if(!x.filaDesde) return m;
@@ -3133,7 +3149,7 @@ function renderKpis(){
     <div class="kpi ${fila.length?'r':'g'}"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${fila.length}</div><div class="kpi-lbl">Aguardando atend.${fila.length?` · ${esperaLbl}`:''}</div></div></div>
     <div class="kpi b"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg></div><div><div class="kpi-num">${a}</div><div class="kpi-lbl">Em atendimento</div></div></div>
     <div class="kpi o"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="kpi-num">${g}</div><div class="kpi-lbl">Aguardando</div></div></div>
-    <div class="kpi p"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div><div><div class="kpi-num">${r}</div><div class="kpi-lbl">Resolvidos</div></div></div>
+    <div class="kpi p"><div class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div><div><div class="kpi-num">${r}</div><div class="kpi-lbl">Resolvidos hoje</div></div></div>
     <div class="kpi g"><div class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1L3.2 9.4l6.1-.9L12 3z"/></svg></div><div><div class="kpi-num">${media}</div><div class="kpi-lbl">Avaliação média${qtdAv?` · ${qtdAv}`:''}</div></div></div>`;
 }
 
@@ -3185,10 +3201,15 @@ function renderEtapas(){
     // a contagem usada aqui é a MESMA que aparece no número: se há filtro
     // ativo, pisca de acordo com o que o atendente está enxergando
     const alertaFila = id==='fila' && (cont[id]||0) > 0;
-    return `<div class="etapa ${ativa?'on':''} ${id==='fila'?'destaque':''} ${alertaFila?'alerta':''} ${PISCA_ETAPA.has(id)&&!ativa?'novo-alerta':''}" data-e="${id}"
-       ${ativa?`style="background:${cor}"`:''} title="${esc(k.nome)}">
-      <span class="et-n ${cont[id]?'':'zero'}">${cont[id]||0}</span>
-      <span class="et-nome">${curto[id]||esc(k.nome)}</span>
+    // Resolvidos entra como ✓, sem número: é arquivo, e ver a pilha crescer o
+    // dia inteiro não ajuda ninguém a atender. A contagem fica no title.
+    const soIcone = id==='resolvidos';
+    return `<div class="etapa ${ativa?'on':''} ${id==='fila'?'destaque':''} ${alertaFila?'alerta':''} ${soIcone?'so-icone':''} ${PISCA_ETAPA.has(id)&&!ativa?'novo-alerta':''}" data-e="${id}"
+       ${ativa?`style="background:${cor}"`:''} title="${esc(k.nome)}${soIcone?` — ${cont[id]||0} no total`:''}">
+      ${soIcone
+        ? `<span class="et-ico">✓</span>${ativa?'<span class="et-nome">Resolvidos</span>':''}`
+        : `<span class="et-n ${cont[id]?'':'zero'}">${cont[id]||0}</span>
+           <span class="et-nome">${curto[id]||esc(k.nome)}</span>`}
     </div>`;
   }).join('');
   el.querySelectorAll('.etapa').forEach(x=>x.onclick=()=>{
