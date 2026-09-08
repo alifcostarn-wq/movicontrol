@@ -3802,9 +3802,15 @@ async function tratarCron(e) {
   if (cfgAt.aguardar_ativo !== false) {
     const min = Math.max(1, Number(cfgAt.aguardar_min ?? 10));
     const corte = new Date(agoraMs - min * 60000).toISOString();
+    // `assumido_em` entra no filtro como TRAVA DE SEGURANÇA: quem acabou de
+    // assumir não pode ser varrido, mesmo que algum caminho futuro esqueça de
+    // zerar o ultima_msg_em. Foi assim que uma conversa parada desde ontem
+    // voltou para "Aguardando cliente" quatro segundos depois de o atendente
+    // pegá-la — o relógio media desde a última mensagem, não desde a assunção.
     const alvos = await sb(e,
       `atend_conversas?coluna=eq.atendimento&bot_ativo=is.false&deleted_at=is.null` +
-      `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=40`);
+      `&ultima_msg_em=lt.${corte}&or=(assumido_em.is.null,assumido_em.lt.${corte})` +
+      `&select=id,contato_fone&limit=40`);
     for (const c of (alvos || [])) {
       if (esperandoNota(c)) continue;
       const ult = await sbUm(e,
@@ -3824,7 +3830,8 @@ async function tratarCron(e) {
     const corte = new Date(agoraMs - min * 60000).toISOString();
     const alvos = await sb(e,
       `atend_conversas?coluna=eq.aguardando&deleted_at=is.null&aviso_inatividade_em=is.null` +
-      `&ultima_msg_em=lt.${corte}&select=id,contato_fone&limit=30`);
+      `&ultima_msg_em=lt.${corte}&or=(aguardando_desde.is.null,aguardando_desde.lt.${corte})` +
+      `&select=id,contato_fone&limit=30`);
     const txt = String(cfgAt.aviso_texto || 'Continua por aí? Se não tivermos retorno, vou encerrar este atendimento em breve. 🙂');
     for (const c of (alvos || [])) {
       if (esperandoNota(c)) continue;
@@ -5938,6 +5945,16 @@ export default async function handler(req, res) {
             assumido_em: c.assumido_em || new Date().toISOString(),
             assumido_por: c.assumido_por || user.id,
             nao_lidas: 0,
+            // ZERA O RELÓGIO DA INATIVIDADE. Assumir é atividade: a conversa
+            // acabou de sair das mãos do bot para as de uma pessoa. Sem isto,
+            // uma conversa parada desde ontem entrava em "Em atendimento"
+            // carregando o ultima_msg_em de ontem, e a varredura seguinte —
+            // que roda segundos depois — a tratava como 15 horas abandonada:
+            // devolvia para "Aguardando cliente" e disparava o "continua por
+            // aí? vou encerrar" um minuto depois de o atendente assumir.
+            ultima_msg_em: new Date().toISOString(),
+            aguardando_desde: null,
+            aviso_inatividade_em: null,
             updated_by: user.id,
           },
         });
@@ -6107,6 +6124,12 @@ export default async function handler(req, res) {
             fila_desde: new Date().toISOString(),
             assumido_em: null,
             assumido_por: null,
+            // o setor novo começa do zero: carimbo de aviso velho faria a
+            // conversa pular direto para o encerramento se ela voltasse para
+            // "Aguardando cliente" depois
+            ultima_msg_em: new Date().toISOString(),
+            aguardando_desde: null,
+            aviso_inatividade_em: null,
             updated_by: user.id,
           },
         });
