@@ -1757,6 +1757,11 @@ body.flow-full .flow-field textarea{min-height:200px;}
   padding-top:6px;border-top:1px solid var(--line);}
 .asn-cod{font-family:'JetBrains Mono',monospace;font-weight:800;color:var(--green-deep);}
 .asn-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+/* "ele recebeu?" é a pergunta que o atendente faz depois de mandar o link.
+   O rastro fica embaixo dos botões, na largura toda, em vez de virar mais
+   um botão que ninguém precisa apertar. */
+.asn-link-st{flex-basis:100%;font-size:10.5px;color:var(--text-low);line-height:1.5;padding-top:2px;}
+.asn-link-st b{color:var(--green-deep);}
 .asn-vazio{font-size:11.5px;color:var(--text-low);padding:4px 0 8px;line-height:1.5;}
 
 /* --- folha de criação do lote --- */
@@ -3591,10 +3596,15 @@ function blocoAssinatura(c){
       </div>`).join('')}
       ${l.status==='assinado' ? `<div class="asn-meta">
         Assinado em ${l.assinado_em?dataHora(l.assinado_em):'—'}${l.dados_confirmados&&l.dados_confirmados.nome?' por '+esc(l.dados_confirmados.nome):''}
+        ${l.dados_confirmados&&l.dados_confirmados.origem==='link_whatsapp'?' · pelo link do WhatsApp':''}
         ${l.codigo_verificacao?`<br>Código: <span class="asn-cod">${esc(l.codigo_verificacao)}</span>`:''}
         ${(l.geo_lat&&l.geo_lng)?` · <a href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" rel="noopener" style="color:var(--green-deep)">📍 local</a>`:''}
       </div>` : `<div class="asn-acts">
-        <button class="vinc-btn solid" data-asnavisar="${l.id}">📲 Avisar o cliente na conversa</button>
+        <button class="vinc-btn solid" data-asnlink="${l.id}">🔗 Mandar link para assinar</button>
+        <button class="vinc-btn" data-asnavisar="${l.id}">📱 Avisar pelo MoviApp</button>
+        ${l.link_ativo ? `<div class="asn-link-st">${l.link_aberto_em
+            ? `🔗 Link enviado · <b>o cliente abriu</b> em ${dataHora(l.link_aberto_em)}`
+            : `🔗 Link enviado · ainda não foi aberto`}</div>` : ''}
       </div>`}
     </div>`;
   }).join('') : '<div class="asn-vazio">Nenhum documento enviado para assinatura ainda.</div>';
@@ -3622,16 +3632,49 @@ async function carregarAssinaturas(c){
 }
 
 /* ---- envio pela própria conversa ---- */
+function asnListaDocs(lote){
+  const qtd = (lote.documentos||[]).length;
+  return `${qtd>1?'Estão':'Está'} disponível${qtd>1?'is':''} ${qtd>1?qtd+' documentos':'1 documento'} para você assinar digitalmente:\n`
+    + (lote.documentos||[]).map(d=>`• ${d.documento_nome}`).join('\n');
+}
+
 async function asnAvisarCliente(c, lote){
   const primeiro = (c.nome||'').split(' ')[0];
-  const qtd = (lote.documentos||[]).length;
   const texto = `Olá ${primeiro}! ✍️\n\n`
-    + `${qtd>1?`Estão`:`Está`} disponível${qtd>1?'is':''} ${qtd>1?qtd+' documentos':'1 documento'} para você assinar digitalmente:\n`
-    + (lote.documentos||[]).map(d=>`• ${d.documento_nome}`).join('\n')
+    + asnListaDocs(lote)
     + `\n\nAbra o *MoviApp*, entre em *Documentos* e confirme seus dados. `
     + `É rápido e vale como assinatura — não precisa imprimir nada.\n\n`
     + `Qualquer dúvida, é só responder por aqui. 💚`;
   await api.enviarMensagem(c, texto, null);
+}
+
+/* Link de assinatura pelo WhatsApp.
+
+   O MoviApp ainda não está na mão de todo cliente, e mandar alguém
+   instalar um aplicativo para assinar um contrato é onde a assinatura
+   morre. O link abre no navegador do próprio celular: clica, lê, tira a
+   selfie e pronto. O motor por trás é o mesmo do app — mesmo PDF, mesmo
+   certificado, mesmo hash.
+
+   O endereço vai numa mensagem SEPARADA e sozinho na linha: WhatsApp só
+   transforma em link clicável o que ele consegue isolar, e um link
+   grudado em texto vira palavra morta em muitos aparelhos. */
+async function asnMandarLink(c, lote){
+  const j = await asnChamar('gerar_link', { lote_id: lote.id });
+  // sem endereço não há o que mandar: um aviso "clique no link" seguido de
+  // uma mensagem vazia é pior do que não ter mandado nada
+  if(!j.url) throw new Error('O servidor não devolveu o endereço do link.');
+  const primeiro = (c.nome||'').split(' ')[0];
+  const dias = j.expira_em ? Math.max(1, Math.round((new Date(j.expira_em) - Date.now())/86400000)) : null;
+  const texto = `Olá ${primeiro}! ✍️\n\n`
+    + asnListaDocs(lote)
+    + `\n\nÉ só tocar no link abaixo — abre no seu celular mesmo, não precisa instalar nada. `
+    + `Você lê o documento, confere seus dados e tira uma selfie com o RG ou a CNH.`
+    + (dias ? `\n\n⏳ O link vale por ${dias} dia${dias>1?'s':''}.` : '')
+    + `\n\nQualquer dúvida, é só responder por aqui. 💚`;
+  await api.enviarMensagem(c, texto, null);
+  await api.enviarMensagem(c, j.url, null);
+  return j;
 }
 
 async function asnEnviarPdfNaConversa(c, doc){
@@ -3887,15 +3930,26 @@ async function asnGerar(){
       cliente_ixc_id: c.clienteVinculado.id,
       ixc_contrato_id: c.clienteVinculado.id || null, documentos,
     });
-    asnProg('✓ Pronto — o cliente já pode assinar pelo MoviApp.', 'ok');
+    asnProg('✓ Pronto — os documentos estão prontos para assinar.', 'ok');
 
     // avisa o cliente na PRÓPRIA conversa: assim o aviso fica na thread, com
-    // risquinho de entrega e de leitura, e o atendente vê se ele leu
+    // risquinho de entrega e de leitura, e o atendente vê se ele leu.
+    //
+    // Vai o LINK, não o "abra o MoviApp": o app ainda não está na mão de todo
+    // cliente, e o link funciona para os dois casos — quem tem o app também
+    // consegue abrir o endereço no navegador. Se o link falhar por algum
+    // motivo, cai no aviso antigo em vez de deixar o cliente sem notícia.
+    const resumo = { id: lote.lote_id, documentos: documentos.map(d=>({ documento_nome:d.nome })) };
     try{
-      await asnAvisarCliente(c, { documentos: documentos.map(d=>({ documento_nome:d.nome })) });
-      asnProg('✓ Cliente avisado aqui na conversa.', 'ok');
+      await asnMandarLink(c, resumo);
+      asnProg('✓ Link de assinatura enviado aqui na conversa.', 'ok');
     }catch(err){
-      asnProg('Lote criado, mas o aviso no WhatsApp falhou: '+err.message, 'err');
+      try{
+        await asnAvisarCliente(c, resumo);
+        asnProg('Link falhou ('+err.message+') — mandei o aviso do MoviApp no lugar.', 'err');
+      }catch(err2){
+        asnProg('Lote criado, mas o aviso no WhatsApp falhou: '+err2.message, 'err');
+      }
     }
 
     c.asn=null; c._asnCarregado=false;
@@ -6338,13 +6392,26 @@ function openModal(id){
   document.querySelectorAll('[data-painel]').forEach(el=>el.onclick=()=>abrirPainelAcao(c, el.dataset.painel));
   // ---- assinatura eletrônica ----
   const bAsn=$('#asnNovo'); if(bAsn) bAsn.onclick=()=>abrirAssinatura(c);
+  document.querySelectorAll('[data-asnlink]').forEach(el=>el.onclick=async()=>{
+    const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnlink);
+    if(!lote) return;
+    if(!confirm('Mandar para '+c.nome+' o link de assinatura pelo WhatsApp?\n\nO cliente assina pelo navegador do celular, sem precisar do MoviApp.')) return;
+    el.disabled=true; el.textContent='Gerando o link…';
+    try{
+      await asnMandarLink(c, lote);
+      c._asnCarregado=false;                       // o estado do link mudou
+      toast('🔗 Link de assinatura enviado na conversa');
+      openModal(c.id);
+    }
+    catch(err){ el.disabled=false; el.textContent='🔗 Mandar link para assinar'; toast('Falha: '+err.message); }
+  });
   document.querySelectorAll('[data-asnavisar]').forEach(el=>el.onclick=async()=>{
     const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnavisar);
     if(!lote) return;
     if(!confirm('Mandar para '+c.nome+' o aviso de que há documentos esperando assinatura no MoviApp?')) return;
     el.disabled=true; el.textContent='Enviando…';
     try{ await asnAvisarCliente(c, lote); toast('Cliente avisado na conversa'); openModal(c.id); }
-    catch(err){ el.disabled=false; el.textContent='📲 Avisar o cliente na conversa'; toast('Falha: '+err.message); }
+    catch(err){ el.disabled=false; el.textContent='📱 Avisar pelo MoviApp'; toast('Falha: '+err.message); }
   });
   document.querySelectorAll('[data-asnpdf]').forEach(el=>el.onclick=async()=>{
     let doc=null;

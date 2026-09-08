@@ -23295,11 +23295,53 @@ async function asnCarregarLista(){
                 <button class="btn btn-sm" style="background:#3C9D23;color:#fff;border:none;font-size:11.5px;padding:7px 12px;border-radius:8px" onclick='asnEnviarWhatsApp(${JSON.stringify(d.documento_url)}, ${JSON.stringify(d.documento_nome||"Contrato")})'>📱 WhatsApp</button>
               `).join('')}
             </div>
-          </div>` : ''}
+          </div>` : `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid #DFEEFB">
+            <button class="btn btn-sm" style="background:#3C9D23;color:#fff;border:none;font-size:11.5px;padding:8px 13px;border-radius:8px" onclick='asnMandarLinkAssinatura(${l.id})'>🔗 Mandar link para assinar</button>
+            ${l.link_ativo ? `<div style="font-size:11px;color:#004E98;margin-top:8px">${l.link_aberto_em
+                ? `Link enviado · <b>o cliente abriu</b> em ${new Date(l.link_aberto_em).toLocaleString('pt-BR')}`
+                : 'Link enviado · ainda não foi aberto'}</div>` : ''}
+          </div>`}
       </div>`).join('') : `<div style="text-align:center;color:#4DA3E8;font-size:13px;padding:14px 0">Nenhum documento enviado para este cliente ainda.</div>`}
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-primary" onclick="asnAbrirEnvio()">+ Documento</button>
     </div>`;
+}
+
+/* ── Link de assinatura por WhatsApp ──────────────────────────
+   Para o cliente que ainda não tem o MoviApp: o link abre no navegador
+   do celular dele, com o mesmo motor de assinatura do app. Chamar duas
+   vezes devolve o MESMO endereço, com a validade renovada — reenviar o
+   link não pode matar o que o cliente já tinha aberto. */
+async function asnMandarLinkAssinatura(loteId){
+  const cli = asnCli;
+  const fone = (cli.whatsapp || cli.tel1 || '').replace(/\D/g,'');
+  if(!fone || fone.length < 10){ showToast('Cliente sem WhatsApp cadastrado.', true); return; }
+  if(!confirm(`Mandar para ${cli.nome} (${fone}) o link de assinatura?\n\nEle assina pelo navegador do celular, sem precisar do MoviApp.`)) return;
+  try {
+    const j = await asnProxy('gerar_link', { lote_id: loteId });
+    if(!j.ok) throw new Error(j.error || 'Falha ao gerar o link');
+    const nomeCli = (cli.nome||'').split(' ')[0];
+    const dias = j.expira_em ? Math.max(1, Math.round((new Date(j.expira_em) - Date.now())/86400000)) : null;
+    const msg = `Olá ${nomeCli}! ✍️\n\nVocê tem documento(s) esperando sua assinatura na MoviOn Internet.\n\n`
+      + `É só tocar no link abaixo — abre no seu celular mesmo, não precisa instalar nada. `
+      + `Você lê o documento, confere seus dados e tira uma selfie com o RG ou a CNH.\n\n`
+      + `${j.url}\n`
+      + (dias ? `\n⏳ O link vale por ${dias} dia${dias>1?'s':''}.` : '');
+    const cfg = await getIXCConfig();
+    if(!cfg.proxyUrl){ showToast('Configure a integração IXC primeiro.', true); return; }
+    const r = await fetch(cfg.proxyUrl, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-target':'evotrix'},
+      body: JSON.stringify({ numero: fone, mensagem: msg })
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    showToast('🔗 Link de assinatura enviado para '+nomeCli+'!');
+    asnCarregarLista();
+  } catch(e) {
+    console.error('[assinatura-link]', e);
+    showToast('Falha no envio: '+(e.message||e), true);
+  }
 }
 
 /* ── Enviar link do contrato assinado por WhatsApp (via Evotrix) ── */

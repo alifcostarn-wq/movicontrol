@@ -16,6 +16,14 @@ import { AwsClient } from 'aws4fetch';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import crypto from 'crypto';
 
+// maxDuration: assinar é a parte cara. Para CADA documento do lote o servidor
+// baixa o original do R2, refaz o PDF com a página de certificado (pdf-lib) e
+// sobe de volta — com três documentos e uma função fria, os 10s padrão do
+// plano estouram no meio e o cliente vê "não deu para assinar" depois de ter
+// tirado a selfie. sizeLimit: a selfie e os PDFs viajam em base64, que passa
+// folgado do 1MB padrão.
+export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -39,20 +47,31 @@ export default async function handler(req, res) {
   const { action } = req.body || {};
   if (!action) return res.status(400).json({ ok: false, error: 'action obrigatória' });
 
+  // Ações do LINK PÚBLICO: o cliente recebe o endereço no WhatsApp, clica e
+  // assina no próprio navegador. Não passam por Supabase Auth de propósito —
+  // quem clica é o cliente, que na maioria dos casos ainda não tem o MoviApp.
+  // Quem autentica aqui é o token do link: 32 bytes sorteados, guardados num
+  // único lote e com prazo de validade. A checagem fica ANTES da exigência de
+  // Authorization para que a falta do cabeçalho não derrube o cliente na porta.
+  const ACOES_PUBLICAS = new Set(['link_abrir', 'link_assinar']);
+  const acaoPublica = ACOES_PUBLICAS.has(action);
+
   const authHeader = req.headers.authorization || '';
   const token = authHeader.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ ok: false, error: 'Token ausente' });
+  if (!acaoPublica && !token) return res.status(401).json({ ok: false, error: 'Token ausente' });
   const target = req.headers['x-target'] || 'admin';
 
   let userId = null;
-  try {
-    const uResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      headers: { Authorization: `Bearer ${token}`, apikey: SERVICE_KEY }
-    });
-    if (!uResp.ok) return res.status(401).json({ ok: false, error: 'Token inválido' });
-    userId = (await uResp.json()).id;
-  } catch (e) {
-    return res.status(401).json({ ok: false, error: 'Falha na validação do token' });
+  if (!acaoPublica) {
+    try {
+      const uResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: { Authorization: `Bearer ${token}`, apikey: SERVICE_KEY }
+      });
+      if (!uResp.ok) return res.status(401).json({ ok: false, error: 'Token inválido' });
+      userId = (await uResp.json()).id;
+    } catch (e) {
+      return res.status(401).json({ ok: false, error: 'Falha na validação do token' });
+    }
   }
 
   async function sb(path, opts = {}) {
@@ -95,7 +114,7 @@ export default async function handler(req, res) {
     return `MOV-${data.getFullYear()}-${bloco()}-${bloco()}`;
   }
 
-  async function gerarPdfAssinado({ originalBytes, hashOriginal, documentoNome, signer, dataAssinatura, ip, userAgent, selfieBuf, codigoVerificacao, geoTexto }) {
+  async function gerarPdfAssinado({ originalBytes, hashOriginal, documentoNome, signer, dataAssinatura, ip, userAgent, selfieBuf, codigoVerificacao, geoTexto, meio }) {
     const doc = await PDFDocument.load(originalBytes);
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -129,6 +148,9 @@ export default async function handler(req, res) {
     linha('Localização (geo):', geoTexto || 'Não informada');
     linha('Dispositivo:', (userAgent || '').slice(0, 80));
     linha('Endereço IP:', ip || '');
+    // por qual porta o cliente assinou. Quem lê o contrato meses depois
+    // precisa saber se veio do app ou de um link mandado no WhatsApp.
+    if (meio) linha('Meio de assinatura:', meio);
     y -= 8;
 
     // Código de verificação em destaque (caixa)
@@ -180,7 +202,181 @@ export default async function handler(req, res) {
     return signed.url;
   }
 
+  /* ═══════════ MOTOR DE ASSINATURA — uma porta só ═══════════
+     O MoviApp e o link do WhatsApp chamam ISTO. O que muda entre os dois é
+     como o cliente prova que é ele antes de chegar aqui (sessão do app x
+     token do link); o que acontece com o documento — selfie no R2, PDF
+     refeito com o certificado, hash do original e do assinado, carimbo de
+     IP/hora/geo — é exatamente o mesmo. Um contrato assinado não pode
+     depender de por qual porta o cliente entrou. */
+  async function assinarLote({ loteId, clienteId, dados, selfieBase64, geo, origem }) {
+    const lote = await sb(`assinatura_lotes?id=eq.${loteId}&select=id,status,codigo_verificacao`);
+    if (!lote.ok || !lote.data?.length) return { erro: 'Lote não encontrado', status: 404 };
+    if (lote.data[0].status === 'assinado') {
+      return { ja_assinado: true, codigo_verificacao: lote.data[0].codigo_verificacao };
+    }
+
+    // 1) sobe a selfie
+    const selfieKey = `assinaturas/selfies/${clienteId}/${loteId}_${Date.now()}.jpg`;
+    const selfieBuf = Buffer.from(selfieBase64, 'base64');
+    const upSelfie = await r2Upload(selfieKey, selfieBuf, 'image/jpeg');
+    if (!upSelfie.ok) return { erro: upSelfie.error, status: 500 };
+
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
+    const ua = req.headers['user-agent'] || null;
+    const agora = new Date();
+    const dataAssinaturaFmt = agora.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' }) + ' (Horário de Brasília)';
+
+    // código de verificação único e legível: MOV-AAAA-XXXX-XXXX
+    const cod = lote.data[0].codigo_verificacao || gerarCodigoVerificacao(agora);
+
+    // geolocalização (opcional, veio do navegador com consentimento)
+    const geoLat = (geo && typeof geo.lat === 'number') ? geo.lat : null;
+    const geoLng = (geo && typeof geo.lng === 'number') ? geo.lng : null;
+    const geoPrec = (geo && typeof geo.precisao === 'number') ? geo.precisao : null;
+    const geoTexto = (geoLat !== null && geoLng !== null)
+      ? `${geoLat.toFixed(6)}, ${geoLng.toFixed(6)}` + (geoPrec ? ` (±${Math.round(geoPrec)}m)` : '')
+      : 'Não informada pelo dispositivo';
+
+    // 2) para cada documento do lote: baixa o original, gera o PDF final com certificado, sobe
+    const docs = await sb(`contratos_assinatura?lote_id=eq.${loteId}&select=id,documento_nome,documento_url`);
+    for (const d of (docs.data || [])) {
+      if (!d.documento_url) continue;
+      const originalBytes = await r2Get(d.documento_url);
+      if (!originalBytes) continue;
+      const hashOriginal = crypto.createHash('sha256').update(originalBytes).digest('hex');
+
+      const finalBytes = await gerarPdfAssinado({
+        originalBytes, hashOriginal, documentoNome: d.documento_nome,
+        signer: { nome: dados.nome, cpf: dados.cpf },
+        dataAssinatura: dataAssinaturaFmt, ip, userAgent: ua, selfieBuf,
+        codigoVerificacao: cod, geoTexto,
+        meio: origem === 'link_whatsapp'
+          ? 'Link pessoal enviado por WhatsApp, aberto no navegador do cliente'
+          : 'Aplicativo MoviApp, com o cliente logado na própria conta'
+      });
+
+      // hash do PDF FINAL assinado (detecta adulteração posterior)
+      const hashAssinado = crypto.createHash('sha256').update(finalBytes).digest('hex');
+
+      const assinadoKey = `assinaturas/contratos-assinados/${clienteId}/${loteId}_${d.id}.pdf`;
+      const upFinal = await r2Upload(assinadoKey, finalBytes, 'application/pdf');
+      if (upFinal.ok) {
+        await sb(`contratos_assinatura?id=eq.${d.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ documento_assinado_url: assinadoKey, hash_original: hashOriginal, hash_assinado: hashAssinado, status: 'assinado', assinado_em: agora.toISOString() })
+        });
+      }
+    }
+
+    // 3) marca o lote como assinado. O link, se houve um, morre junto: expirar
+    //    no mesmo instante é o que impede o endereço de circular no WhatsApp
+    //    depois de assinado, abrindo o contrato para quem receber o repasse.
+    const updLote = await sb(`assinatura_lotes?id=eq.${loteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'assinado', dados_confirmados: { ...dados, origem: origem || 'moviapp' }, selfie_url: selfieKey,
+        ip, user_agent: ua, assinado_em: agora.toISOString(),
+        codigo_verificacao: cod, geo_lat: geoLat, geo_lng: geoLng, geo_precisao: geoPrec,
+        link_expira_em: agora.toISOString()
+      })
+    });
+    if (!updLote.ok) return { erro: 'Falha ao atualizar lote', status: 500 };
+
+    return { codigo_verificacao: cod };
+  }
+
+  /* Token do link: 32 bytes de aleatoriedade criptográfica em base64url. É a
+     única credencial que o cliente apresenta, então tem que ser grande demais
+     para ser adivinhado e curto o suficiente para caber numa mensagem. */
+  function gerarTokenLink() {
+    return crypto.randomBytes(32).toString('base64url');
+  }
+
+  const LINK_DIAS = Number(process.env.ASSINATURA_LINK_DIAS || 30);
+
+  function baseDoLink() {
+    if (process.env.ASSINATURA_BASE_URL) return String(process.env.ASSINATURA_BASE_URL).replace(/\/+$/, '');
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (host) return `https://${host}`;
+    return 'https://movicontrol.vercel.app';
+  }
+
   try {
+    // ══════════════ LINK PÚBLICO (WhatsApp) ══════════════
+    // Sem sessão, sem app, sem cadastro: o cliente clica no endereço que
+    // recebeu e assina. O token é a credencial — vale para UM lote, tem
+    // prazo e morre no instante em que a assinatura é registrada.
+    if (acaoPublica) {
+      const lt = String(req.body.link_token || '').trim();
+      // 43 chars é o tamanho de 32 bytes em base64url. Recusar antes de ir ao
+      // banco evita transformar a rota num varredor de tokens.
+      if (!lt || lt.length < 20 || lt.length > 80 || !/^[A-Za-z0-9_-]+$/.test(lt)) {
+        return res.status(404).json({ ok: false, error: 'Link inválido.' });
+      }
+
+      const lr = await sb(`assinatura_lotes?link_token=eq.${encodeURIComponent(lt)}&select=id,cliente_id,status,codigo_verificacao,assinado_em,link_expira_em,link_aberto_em`);
+      if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Link inválido ou já encerrado.' });
+      const lote = lr.data[0];
+
+      if (lote.status === 'assinado') {
+        return res.status(200).json({
+          ok: true, ja_assinado: true,
+          codigo_verificacao: lote.codigo_verificacao, assinado_em: lote.assinado_em
+        });
+      }
+      if (lote.link_expira_em && new Date(lote.link_expira_em) < new Date()) {
+        return res.status(410).json({ ok: false, expirado: true, error: 'Este link expirou. Peça um novo para o atendimento.' });
+      }
+
+      if (action === 'link_abrir') {
+        // primeiro clique fica registrado: é a prova de que o documento foi
+        // aberto antes de assinado, e é o que o atendente vê no painel
+        if (!lote.link_aberto_em) {
+          await sb(`assinatura_lotes?id=eq.${lote.id}`, {
+            method: 'PATCH', prefer: 'return=minimal',
+            body: JSON.stringify({ link_aberto_em: new Date().toISOString() })
+          });
+        }
+        const [cli, docs] = await Promise.all([
+          sb(`clientes?id=eq.${lote.cliente_id}&select=nome,cnpj,endereco,numero,bairro,cidade,uf,cep`),
+          sb(`contratos_assinatura?lote_id=eq.${lote.id}&select=id,documento_nome,conteudo_html_final&order=id.asc`),
+        ]);
+        const c = cli.data?.[0] || {};
+        return res.status(200).json({
+          ok: true,
+          lote: { id: lote.id, status: lote.status },
+          // só o que a tela precisa mostrar e o cliente vai confirmar — o
+          // cadastro inteiro não tem por que atravessar um link público
+          cliente: {
+            nome: c.nome || '', cpf: c.cnpj || '',
+            endereco: [c.endereco, c.numero].filter(Boolean).join(', '),
+            bairro: c.bairro || '', cidade: c.cidade || '', uf: c.uf || '', cep: c.cep || '',
+          },
+          documentos: docs.data || [],
+        });
+      }
+
+      if (action === 'link_assinar') {
+        const { dados_confirmados, selfie_base64, geo } = req.body;
+        if (!dados_confirmados || !selfie_base64) {
+          return res.status(400).json({ ok: false, error: 'Confirme seus dados e envie a selfie.' });
+        }
+        const r = await assinarLote({
+          loteId: lote.id, clienteId: lote.cliente_id, dados: dados_confirmados,
+          selfieBase64: selfie_base64, geo, origem: 'link_whatsapp'
+        });
+        if (r.erro) return res.status(r.status || 500).json({ ok: false, error: r.erro });
+        return res.status(200).json({ ok: true, ja_assinado: !!r.ja_assinado, codigo_verificacao: r.codigo_verificacao });
+      }
+
+      // Trava: uma ação pública que caia daqui seguiria para os ramos que
+      // esperam userId — e userId é null quando não houve login. Se alguém um
+      // dia acrescentar um nome a ACOES_PUBLICAS sem tratar aqui, para nesta
+      // linha em vez de entrar sem sessão onde a sessão é obrigatória.
+      return res.status(400).json({ ok: false, error: 'Ação desconhecida: ' + action });
+    }
+
     // ══════════════ TARGET: CLIENTE (MoviApp) ══════════════
     if (target === 'cliente') {
       const ca = await sb(`clientes_app?id=eq.${userId}&select=cliente_id`);
@@ -205,72 +401,17 @@ export default async function handler(req, res) {
         const { lote_id, dados_confirmados, selfie_base64, geo } = req.body;
         if (!lote_id || !dados_confirmados || !selfie_base64) return res.status(400).json({ ok: false, error: 'lote_id, dados_confirmados e selfie_base64 obrigatórios' });
 
-        const lote = await sb(`assinatura_lotes?id=eq.${lote_id}&cliente_id=eq.${clienteId}&select=id,status,codigo_verificacao`);
-        if (!lote.ok || !lote.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
-        if (lote.data[0].status === 'assinado') return res.status(200).json({ ok: true, ja_assinado: true });
+        // o lote tem que ser DESTE cliente: a sessão do app diz quem ele é
+        const meu = await sb(`assinatura_lotes?id=eq.${lote_id}&cliente_id=eq.${clienteId}&select=id`);
+        if (!meu.ok || !meu.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
 
-        // 1) sobe a selfie
-        const selfieKey = `assinaturas/selfies/${clienteId}/${lote_id}_${Date.now()}.jpg`;
-        const selfieBuf = Buffer.from(selfie_base64, 'base64');
-        const upSelfie = await r2Upload(selfieKey, selfieBuf, 'image/jpeg');
-        if (!upSelfie.ok) return res.status(500).json({ ok: false, error: upSelfie.error });
-
-        const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
-        const ua = req.headers['user-agent'] || null;
-        const agora = new Date();
-        const dataAssinaturaFmt = agora.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' }) + ' (Horário de Brasília)';
-
-        // código de verificação único e legível: MOV-AAAA-XXXX-XXXX
-        const cod = lote.data[0].codigo_verificacao || gerarCodigoVerificacao(agora);
-
-        // geolocalização (opcional, veio do navegador com consentimento)
-        const geoLat = (geo && typeof geo.lat === 'number') ? geo.lat : null;
-        const geoLng = (geo && typeof geo.lng === 'number') ? geo.lng : null;
-        const geoPrec = (geo && typeof geo.precisao === 'number') ? geo.precisao : null;
-        const geoTexto = (geoLat !== null && geoLng !== null)
-          ? `${geoLat.toFixed(6)}, ${geoLng.toFixed(6)}` + (geoPrec ? ` (±${Math.round(geoPrec)}m)` : '')
-          : 'Não informada pelo dispositivo';
-
-        // 2) para cada documento do lote: baixa o original, gera o PDF final com certificado, sobe
-        const docs = await sb(`contratos_assinatura?lote_id=eq.${lote_id}&select=id,documento_nome,documento_url`);
-        for (const d of (docs.data || [])) {
-          if (!d.documento_url) continue;
-          const originalBytes = await r2Get(d.documento_url);
-          if (!originalBytes) continue;
-          const hashOriginal = crypto.createHash('sha256').update(originalBytes).digest('hex');
-
-          const finalBytes = await gerarPdfAssinado({
-            originalBytes, hashOriginal, documentoNome: d.documento_nome,
-            signer: { nome: dados_confirmados.nome, cpf: dados_confirmados.cpf },
-            dataAssinatura: dataAssinaturaFmt, ip, userAgent: ua, selfieBuf,
-            codigoVerificacao: cod, geoTexto
-          });
-
-          // hash do PDF FINAL assinado (detecta adulteração posterior)
-          const hashAssinado = crypto.createHash('sha256').update(finalBytes).digest('hex');
-
-          const assinadoKey = `assinaturas/contratos-assinados/${clienteId}/${lote_id}_${d.id}.pdf`;
-          const upFinal = await r2Upload(assinadoKey, finalBytes, 'application/pdf');
-          if (upFinal.ok) {
-            await sb(`contratos_assinatura?id=eq.${d.id}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ documento_assinado_url: assinadoKey, hash_original: hashOriginal, hash_assinado: hashAssinado, status: 'assinado', assinado_em: agora.toISOString() })
-            });
-          }
-        }
-
-        // 3) marca o lote como assinado
-        const updLote = await sb(`assinatura_lotes?id=eq.${lote_id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            status: 'assinado', dados_confirmados, selfie_url: selfieKey,
-            ip, user_agent: ua, assinado_em: agora.toISOString(),
-            codigo_verificacao: cod, geo_lat: geoLat, geo_lng: geoLng, geo_precisao: geoPrec
-          })
+        const r = await assinarLote({
+          loteId: lote_id, clienteId, dados: dados_confirmados,
+          selfieBase64: selfie_base64, geo, origem: 'moviapp'
         });
-        if (!updLote.ok) return res.status(500).json({ ok: false, error: 'Falha ao atualizar lote' });
-
-        return res.status(200).json({ ok: true, codigo_verificacao: cod });
+        if (r.erro) return res.status(r.status || 500).json({ ok: false, error: r.erro });
+        if (r.ja_assinado) return res.status(200).json({ ok: true, ja_assinado: true, codigo_verificacao: r.codigo_verificacao });
+        return res.status(200).json({ ok: true, codigo_verificacao: r.codigo_verificacao });
       }
 
       return res.status(400).json({ ok: false, error: 'Ação inválida para cliente' });
@@ -342,9 +483,49 @@ export default async function handler(req, res) {
           const chaveParaLink = d.documento_assinado_url || d.documento_url;
           docsComLink.push({ ...d, documento_url: await r2SignedUrl(chaveParaLink), assinado_final: !!d.documento_assinado_url });
         }
-        out.push({ ...l, selfie_url: await r2SignedUrl(l.selfie_url), documentos: docsComLink });
+        // o token do link não sobe para a tela: quem precisa do endereço pede
+        // por gerar_link. O que o painel mostra é o ESTADO do link — se existe
+        // e se o cliente já abriu — que é o que responde "ele recebeu?"
+        const { link_token, ...semSegredo } = l;
+        out.push({
+          ...semSegredo, selfie_url: await r2SignedUrl(l.selfie_url), documentos: docsComLink,
+          link_ativo: !!link_token && (!l.link_expira_em || new Date(l.link_expira_em) > new Date()),
+        });
       }
       return res.status(200).json({ ok: true, lotes: out });
+    }
+
+    /* Link de assinatura para mandar no WhatsApp. Existe porque o MoviApp
+       ainda não está na mão de todo cliente: quem não tem o app precisa de um
+       caminho que funcione com o que ele já tem, que é o navegador do celular.
+       Chamar duas vezes NÃO gera dois links — devolve o mesmo, com a validade
+       renovada. Dois endereços vivos para o mesmo contrato seria o atendente
+       reenviando o link e matando o que o cliente já tinha aberto. */
+    if (action === 'gerar_link') {
+      const loteId = Number(req.body.lote_id);
+      if (!loteId) return res.status(400).json({ ok: false, error: 'lote_id obrigatório' });
+      const lr = await sb(`assinatura_lotes?id=eq.${loteId}&select=id,status,link_token,link_expira_em,link_aberto_em`);
+      if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
+      const lote = lr.data[0];
+      if (lote.status === 'assinado') return res.status(400).json({ ok: false, error: 'Este lote já foi assinado.' });
+
+      const agora = new Date();
+      const expira = new Date(agora.getTime() + LINK_DIAS * 86400000);
+      const tokenLink = lote.link_token || gerarTokenLink();
+      const patch = { link_token: tokenLink, link_expira_em: expira.toISOString(), link_enviado_em: agora.toISOString() };
+      if (!lote.link_criado_em) patch.link_criado_em = agora.toISOString();
+      const up = await sb(`assinatura_lotes?id=eq.${loteId}`, {
+        method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify(patch)
+      });
+      if (!up.ok) return res.status(500).json({ ok: false, error: 'Falha ao gerar o link' });
+
+      return res.status(200).json({
+        ok: true,
+        url: `${baseDoLink()}/assinar?t=${encodeURIComponent(tokenLink)}`,
+        expira_em: expira.toISOString(),
+        reaproveitado: !!lote.link_token,
+        aberto_em: lote.link_aberto_em || null,
+      });
     }
 
     if (action === 'upload_pdf') {
