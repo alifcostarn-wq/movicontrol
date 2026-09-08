@@ -295,6 +295,13 @@ export default async function handler(req, res) {
 
   const LINK_DIAS = Number(process.env.ASSINATURA_LINK_DIAS || 30);
 
+  /* De onde sai o endereço que o cliente vai ver.
+
+     ASSINATURA_BASE_URL manda em tudo, e é por ela que se troca o domínio
+     sem tocar em código: apontado um "assinar.movion.com.br" para o
+     projeto, o link deixa de dizer "movicontrol" para todo cliente que
+     recebe um contrato. Sem essa variável o endereço herda o host de quem
+     pediu — que é o painel do atendente, ou seja, o domínio do sistema. */
   function baseDoLink() {
     if (process.env.ASSINATURA_BASE_URL) return String(process.env.ASSINATURA_BASE_URL).replace(/\/+$/, '');
     const host = req.headers['x-forwarded-host'] || req.headers.host;
@@ -521,7 +528,11 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         ok: true,
-        url: `${baseDoLink()}/assinar?t=${encodeURIComponent(tokenLink)}`,
+        // /a/<token>: o endereço vai ser lido em voz alta, digitado errado e
+        // olhado com desconfiança por quem recebe um contrato. Quanto menos
+        // ele parecer um link de rastreio, melhor. A forma antiga
+        // (/assinar?t=…) continua funcionando para links já enviados.
+        url: `${baseDoLink()}/a/${tokenLink}`,
         expira_em: expira.toISOString(),
         reaproveitado: !!lote.link_token,
         aberto_em: lote.link_aberto_em || null,
