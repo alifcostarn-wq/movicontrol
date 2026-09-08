@@ -2615,7 +2615,12 @@ const api = {
   },
   async buscarClientes(termo){
     const j = await chamar('clientes.buscar', { termo });
-    return j.clientes||[];
+    // `sincronizou` só vem quando a busca local não achou nada e o servidor
+    // foi conferir com o IXC: é o que permite dizer ao atendente se o vazio
+    // é "não existe" ou "existe e acabou de ser copiado"
+    const lista = j.clientes || [];
+    lista.sincronizou = j.sincronizou || null;
+    return lista;
   },
   async vincular(c, ixcId){
     const j = await chamar('conversas.vincular', { conversa_id:c.id, cliente_ixc_id:ixcId });
@@ -3348,7 +3353,22 @@ function abrirBuscaCliente(c, aoVincular){
     lista.innerHTML='<div class="cli-vazio">Buscando…</div>';
     try{
       const res=await api.buscarClientes(termo);
-      if(!res.length){ lista.innerHTML='<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado</div>'; return; }
+      if(!res.length){
+        // dizer o que foi feito: quem acabou de ativar um contrato no IXC
+        // precisa saber que já procuramos lá, senão vai procurar erro onde
+        // não tem
+        const sy = res.sincronizou;
+        const nota = sy && sy.sincronizado
+          ? 'Conferimos com o IXC agora e ele também não tem esse nome.'
+          : (sy && sy.recente
+              ? 'Conferimos com o IXC há instantes e ele também não tem esse nome.'
+              : (sy && sy.erro
+                  ? 'Não consegui conferir com o IXC: '+esc(sy.erro)
+                  : 'A busca é por nome, CPF/CNPJ ou telefone.'));
+        lista.innerHTML='<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado'
+          + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'+nota+'</div></div>';
+        return;
+      }
       lista.innerHTML=res.map(cl=>`
         <div class="cli-item" data-ixc="${esc(cl.ixc_id)}">
           <div class="cc-av" style="background:${avColor(Number(cl.ixc_id)||1)}">${ini(cl.nome||'?')}</div>

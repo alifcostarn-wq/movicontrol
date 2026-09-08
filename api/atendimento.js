@@ -3757,6 +3757,307 @@ async function cobrancaAutomatica(e) {
 // gravar um carimbo lá poderia reverter, em silêncio, um ajuste que o admin
 // acabou de salvar. Alguns containers varrendo em paralelo custa algumas
 // consultas leves; reverter configuração do cliente não tem preço de volta.
+
+// ============================================================================
+// ESPELHO DO IXC — quem foi ativado agora precisa aparecer aqui
+//
+// A busca de clientes do MoviTalk lê a tabela `clientes`, que é uma CÓPIA do
+// IXC. Até hoje essa cópia só era atualizada quando alguém abria a aba de
+// clientes do MoviOne no navegador: ativar um contrato no IXC e ir procurar o
+// cliente no MoviTalk no minuto seguinte dava "não encontrado", e a atendente
+// não tinha como saber por quê.
+//
+// Aqui a cópia se atualiza sozinha. Não é a sincronização completa do
+// MoviOne (aquela relê a base inteira, corrige telefone trocado, endereço
+// alterado): esta pergunta ao IXC só o que é NOVO — cliente e contrato com id
+// acima do último que já temos — e por isso é barata o bastante para rodar de
+// carona no tráfego que o painel já faz.
+// ============================================================================
+const SYNC_IXC_CADA_MS = Number(process.env.ATEND_SYNC_IXC_MIN || 10) * 60 * 1000;
+const SYNC_IXC_BUSCA_MS = 30 * 1000;   // piso quando a busca não achou nada
+const SYNC_IXC_RP = 200;      // registros por página pedidos ao IXC
+const SYNC_IXC_PAGINAS = 5;   // teto: 1000 novos por rodada já é muita coisa
+
+function ixcNumero(v) {
+  if (v == null || v === '') return null;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
+function ixcData(v) {
+  return v && v !== '0000-00-00' ? v : null;
+}
+
+/* 'ativo' do cliente no IXC vem como S/N. Mesma tradução do MoviOne — os dois
+   escrevem na mesma coluna, não podem discordar do significado. */
+function ixcStatusCliente(ativo) {
+  if (!ativo) return 'I';
+  const v = String(ativo).toUpperCase();
+  if (v === 'S' || v === '1' || v === 'TRUE') return 'A';
+  if (v === 'N' || v === '0' || v === 'FALSE') return 'I';
+  return v;
+}
+
+/* Mesmo mapeamento campo a campo que o MoviOne usa no sync completo. Se os
+   dois divergirem, o mesmo cliente passa a ter cadastros diferentes conforme
+   quem o trouxe — por isso as duas listas andam juntas. */
+function linhaClienteDoIxc(r) {
+  const nome = r.fantasia || r.razao || '';
+  return {
+    ixc_id: String(r.id || ''),
+    origem: 'ixc',
+    ixc_status: ixcStatusCliente(r.ativo),
+    ixc_login: r.login || null,
+    nome,
+    razao: r.razao || null,
+    nome_social: r.fantasia || null,
+    cnpj: r.cnpj_cpf || null,
+    ie: r.ie || null,
+    tipo_pessoa: r.tipo_pessoa || null,
+    contato: r.contato || null,
+    tel1: r.telefone_celular || r.telefone || null,
+    tel2: r.telefone || null,
+    whatsapp: r.whatsapp || r.telefone_celular || null,
+    tel_residencial: r.fone1 || r.telefone || null,
+    tel_comercial: r.fone2 || r.telefone_comercial || null,
+    email: r.email || null,
+    website: r.url || null,
+    endereco: r.endereco || null,
+    numero: r.numero || null,
+    complemento: r.complemento || null,
+    bairro: r.bairro || null,
+    cep: r.cep || null,
+    cep_full: r.cep || null,
+    cidade: r.cidade || null,
+    uf: r.uf || null,
+    referencia: r.referencia || null,
+    data_nasc: ixcData(r.data_nascimento),
+    genero: r.sexo === 'M' ? 'Masculino' : r.sexo === 'F' ? 'Feminino' : null,
+    estado_civil: r.estado_civil || null,
+    nacionalidade: r.nacionalidade || null,
+    naturalidade: r.naturalidade || null,
+    profissao: r.profissao || null,
+    rg_emissor: r.orgao_emissor || null,
+    moradia: r.tipo_moradia || null,
+    obs: r.obs || null,
+    ativo: r.ativo === 'S',
+    // datacad NÃO vai no corpo de propósito. No PostgREST, coluna ausente do
+    // corpo fica fora do ON CONFLICT DO UPDATE — então reenviar um cliente
+    // nunca reescreve a data de cadastro dele. Linha nova o banco preenche
+    // sozinho (default current_date). Latitude e longitude ficam de fora pelo
+    // mesmo motivo: a coordenada que o técnico capturou em campo é melhor que
+    // a do IXC e não pode ser apagada por uma cópia.
+  };
+}
+
+/* A velocidade não vem em campo próprio: está escrita no nome do plano
+   ("PROMOÇÃO 500MEGA"). Mesma leitura do MoviOne. */
+function velocidadeDoPlano(nome) {
+  const m = String(nome || '').match(/(\d+)\s*(g(?:iga)?|m(?:ega|b(?:ps?)?)?)/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return m[2].toLowerCase().startsWith('g') ? n * 1000 : n;
+}
+
+function linhaContratoDoIxc(r, clienteIdLocal) {
+  const plano = r.descricao_aux_plano_venda || r.descricao_aux || r.descricao || String(r.id_vd_contrato || '');
+  return {
+    ixc_id: String(r.id || ''),
+    ixc_cliente_id: String(r.id_cliente || ''),
+    cliente_id: clienteIdLocal || null,
+    tipo: r.tipo || null,
+    plano,
+    id_plano_venda: String(r.id_vd_contrato || '') || null,
+    velocidade_mbps: velocidadeDoPlano(plano),
+    descricao: r.descricao || null,
+    status_contrato: r.status || null,
+    status_acesso: r.status_internet || r.status_acesso || null,
+    valor: ixcNumero(r.valor_servico || r.valor || r.mensalidade),
+    data_ativacao: ixcData(r.data_ativacao),
+    data_renovacao: ixcData(r.data_renovacao),
+    pago_ate: ixcData(r.pago_ate),
+  };
+}
+
+/* Consulta `in.(...)` vira URL, e URL tem tamanho máximo. Numa primeira
+   rodada grande seriam centenas de ids numa linha só — o PostgREST recusaria
+   e a cópia falharia inteira. Em lotes, não. */
+function emLotes(lista, tamanho) {
+  const saida = [];
+  for (let i = 0; i < lista.length; i += tamanho) saida.push(lista.slice(i, i + tamanho));
+  return saida;
+}
+
+async function clientesLocaisPorIxc(e, ids) {
+  const mapa = new Map();
+  for (const lote of emLotes(ids, 100)) {
+    if (!lote.length) continue;
+    const achados = await sb(e,
+      `clientes?ixc_id=in.(${lote.map(encodeURIComponent).join(',')})&select=id,ixc_id`);
+    for (const c of (achados || [])) mapa.set(String(c.ixc_id), c.id);
+  }
+  return mapa;
+}
+
+/* Pede ao IXC as linhas com id acima de um marco. É o mesmo filtro
+   (qtype/query/oper) que o MoviFiber já usa em produção. */
+async function ixcAcima(e, tabela, campoId, marco) {
+  const saida = [];
+  for (let pagina = 1; pagina <= SYNC_IXC_PAGINAS; pagina++) {
+    const resp = await ixc(e, tabela, {
+      qtype: `${tabela}.${campoId}`,
+      query: String(marco || 0),
+      oper: '>',
+      page: String(pagina),
+      rp: String(SYNC_IXC_RP),
+      sortname: `${tabela}.${campoId}`,
+      sortorder: 'asc',
+    }, 'listar');
+    const regs = resp?.registros || [];
+    saida.push(...regs);
+    if (regs.length < SYNC_IXC_RP) break;
+  }
+  return saida;
+}
+
+/* Traz do IXC o que entrou depois da última cópia.
+
+   Sobe cliente antes de contrato de propósito: o contrato guarda o id LOCAL
+   do cliente, que só existe depois do upsert. E o contrato de um cliente que
+   ainda não temos puxa esse cliente junto — é o caso de quem já estava
+   cadastrado no IXC há tempos e só agora teve o contrato ativado. */
+async function sincronizarNovosDoIxc(e) {
+  const marcos = await sb(e, 'rpc/atend_ixc_marcos', { method: 'POST', body: {} });
+  const m = (Array.isArray(marcos) ? marcos[0] : marcos) || {};
+  const marcoCli = Number(m.maior_cliente || 0);
+  const marcoCtr = Number(m.maior_contrato || 0);
+
+  const [novosCli, novosCtr] = await Promise.all([
+    ixcAcima(e, 'cliente', 'id', marcoCli),
+    ixcAcima(e, 'cliente_contrato', 'id', marcoCtr).catch(err => {
+      console.error('[sync-ixc] contratos:', err.message);
+      return [];
+    }),
+  ]);
+
+  // contrato novo de cliente que ainda não temos: busca o cadastro dele
+  const idsCli = new Set(novosCli.map(r => String(r.id)));
+  const faltando = [...new Set(novosCtr.map(r => String(r.id_cliente || '')).filter(Boolean))]
+    .filter(id => !idsCli.has(id));
+  if (faltando.length) {
+    const jaTem = await clientesLocaisPorIxc(e, faltando);
+    for (const id of faltando) {
+      if (jaTem.has(id)) continue;
+      try {
+        const r = await ixc(e, 'cliente', { qtype: 'cliente.id', query: id, oper: '=', rp: '1' }, 'listar');
+        const reg = (r?.registros || [])[0];
+        if (reg) novosCli.push(reg);
+      } catch (err) { console.error('[sync-ixc] cliente', id, err.message); }
+    }
+  }
+
+  let clientes = 0, contratos = 0;
+  if (novosCli.length) {
+    const linhas = novosCli.map(linhaClienteDoIxc).filter(l => l.ixc_id);
+    for (const lote of emLotes(linhas, 200)) {
+      await sb(e, 'clientes?on_conflict=ixc_id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: lote,
+      });
+    }
+    clientes = linhas.length;
+  }
+
+  if (novosCtr.length) {
+    // o id local do cliente só existe depois do upsert acima
+    const ids = [...new Set(novosCtr.map(r => String(r.id_cliente || '')).filter(Boolean))];
+    const mapa = await clientesLocaisPorIxc(e, ids);
+    const linhas = novosCtr
+      .map(r => linhaContratoDoIxc(r, mapa.get(String(r.id_cliente || ''))))
+      .filter(l => l.ixc_id);
+    for (const lote of emLotes(linhas, 200)) {
+      await sb(e, 'clientes_contratos?on_conflict=ixc_id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: lote,
+      });
+    }
+    contratos = linhas.length;
+  }
+
+  return { clientes, contratos, marco_cliente: marcoCli, marco_contrato: marcoCtr };
+}
+
+/* De carona no tráfego do painel, como a varredura de inatividade.
+
+   A janela é reservada com um PATCH filtrado: quem conseguir mudar a linha
+   leva a rodada, os outros seguem sem sincronizar. Sem isso, dois atendentes
+   com o painel aberto disparariam duas cópias ao mesmo tempo — e a de trás
+   pediria ao IXC a mesma faixa que a da frente ainda está gravando. */
+async function talvezSincronizarIxc(e, janelaMs) {
+  if (!e.IXC_USER || !e.IXC_TOKEN) return { sincronizado: false, motivo: 'IXC não configurado' };
+  // A busca sem resultado pede uma janela curta: ali vale conferir quase na
+  // hora. Mas não pode ser "sempre" — atendente digitando nome errado três
+  // vezes seguidas viraria três varreduras no IXC por nada.
+  const janela = Number(janelaMs) > 0 ? Number(janelaMs) : SYNC_IXC_CADA_MS;
+  const corte = new Date(Date.now() - janela).toISOString();
+  const claim = await sb(e, `atend_sync_ixc?id=eq.1&or=(ultima_em.is.null,ultima_em.lt.${corte})`, {
+    method: 'PATCH', headers: { Prefer: 'return=representation' },
+    body: { ultima_em: new Date().toISOString() },
+  });
+  // ninguém levou a janela: ou outro processo está copiando agora, ou a
+  // cópia acabou de rodar e não há o que trazer
+  if (!Array.isArray(claim) || !claim.length) return { sincronizado: false, recente: true };
+
+  try {
+    const r = await sincronizarNovosDoIxc(e);
+    await sb(e, 'atend_sync_ixc?id=eq.1', {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { ultimo_resultado: { ...r, em: new Date().toISOString() } },
+    });
+    return { sincronizado: true, ...r };
+  } catch (err) {
+    // falha de sincronização nunca pode derrubar a ação que a chamou
+    console.error('[sync-ixc]', err.message);
+    await sb(e, 'atend_sync_ixc?id=eq.1', {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { ultimo_resultado: { erro: String(err.message).slice(0, 300), em: new Date().toISOString() } },
+    }).catch(() => {});
+    return { sincronizado: false, erro: err.message };
+  }
+}
+
+/* Um cliente só, pelo id do IXC. É o atalho de quando a atendente já sabe
+   quem quer vincular e a cópia ainda não o alcançou — não vale esperar a
+   rodada geral para destravar uma conversa. */
+async function importarClienteDoIxc(e, ixcId) {
+  const id = String(ixcId || '').replace(/\D/g, '');
+  if (!id) return null;
+  const r = await ixc(e, 'cliente', { qtype: 'cliente.id', query: id, oper: '=', rp: '1' }, 'listar');
+  const reg = (r?.registros || [])[0];
+  if (!reg) return null;
+  await sb(e, 'clientes?on_conflict=ixc_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: [linhaClienteDoIxc(reg)],
+  });
+  try {
+    const ctr = await ixc(e, 'cliente_contrato',
+      { qtype: 'cliente_contrato.id_cliente', query: id, oper: '=', rp: '20' }, 'listar');
+    const regs = ctr?.registros || [];
+    if (regs.length) {
+      const local = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(id)}&select=id`);
+      await sb(e, 'clientes_contratos?on_conflict=ixc_id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: regs.map(x => linhaContratoDoIxc(x, local?.id)),
+      });
+    }
+  } catch (err) { console.error('[sync-ixc] contratos de', id, err.message); }
+  return await acharClientePorIxcId(e, id);
+}
+
 const VARRER_CADA_MS = 2 * 60 * 1000;
 let _ultimaVarredura = 0;
 
@@ -4336,8 +4637,15 @@ export default async function handler(req, res) {
       // que cobre o caso mais importante do ciclo: o atendente falou por último
       // e o cliente NÃO respondeu — não chega webhook nenhum, então sem isto o
       // primeiro estágio nunca dispararia numa conversa silenciosa.
-      case 'inatividade.varrer':
-        return res.status(200).json({ ok: true, ...(await talvezVarrer(e)) });
+      case 'inatividade.varrer': {
+        const r = await talvezVarrer(e);
+        // De carona no mesmo pulso: a cópia do IXC se atualiza sozinha
+        // enquanto alguém está atendendo. Nunca derruba a varredura.
+        let sync = null;
+        try { sync = await talvezSincronizarIxc(e); }
+        catch (err) { console.error('[sync-ixc] pulso:', err.message); }
+        return res.status(200).json({ ok: true, ...r, sync_ixc: sync });
+      }
 
       // tudo que o app precisa para abrir, numa chamada só
       case 'bootstrap': {
@@ -5998,13 +6306,33 @@ export default async function handler(req, res) {
       case 'clientes.buscar': {
         const termo = String(body.termo || '').trim();
         if (termo.length < 2) return res.status(200).json({ ok: true, clientes: [] });
-        const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_buscar_clientes`, {
-          method: 'POST',
-          headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ p_termo: termo, p_limite: 20 }),
-        });
-        if (!r.ok) return res.status(500).json({ ok: false, error: 'Falha na busca de clientes.' });
-        return res.status(200).json({ ok: true, clientes: await r.json() });
+
+        const procurar = async () => {
+          const r = await fetch(`${e.SUPA_URL}/rest/v1/rpc/atend_buscar_clientes`, {
+            method: 'POST',
+            headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p_termo: termo, p_limite: 20 }),
+          });
+          if (!r.ok) throw new Error('Falha na busca de clientes.');
+          return await r.json();
+        };
+
+        let clientes;
+        try { clientes = await procurar(); }
+        catch (err) { return res.status(500).json({ ok: false, error: err.message }); }
+
+        // Não achou? Antes de dizer "não existe", conferir com o IXC.
+        // Cliente ativado há dez minutos ainda não está na cópia, e é
+        // justamente ele que a atendente está procurando — dizer "não
+        // encontrado" aqui manda a pessoa procurar erro onde não há.
+        let sincronizou = null;
+        if (!clientes.length) {
+          try {
+            sincronizou = await talvezSincronizarIxc(e, SYNC_IXC_BUSCA_MS);
+            if (sincronizou.clientes || sincronizou.contratos) clientes = await procurar();
+          } catch (err) { console.error('[clientes.buscar] sync:', err.message); }
+        }
+        return res.status(200).json({ ok: true, clientes, sincronizou });
       }
 
       case 'conversas.vincular': {
@@ -6012,8 +6340,14 @@ export default async function handler(req, res) {
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!id || !ixcId) return res.status(400).json({ ok: false, error: 'conversa_id e cliente_ixc_id obrigatórios.' });
 
-        const dados = await acharClientePorIxcId(e, ixcId);
-        if (!dados) return res.status(404).json({ ok: false, error: 'Cliente não encontrado no cadastro.' });
+        let dados = await acharClientePorIxcId(e, ixcId);
+        // ainda não copiado do IXC: traz esse cliente agora, em vez de
+        // devolver "não encontrado" para alguém que já sabe quem quer
+        if (!dados) {
+          try { dados = await importarClienteDoIxc(e, ixcId); }
+          catch (err) { console.error('[vincular] importar', ixcId, err.message); }
+        }
+        if (!dados) return res.status(404).json({ ok: false, error: 'Cliente não encontrado no cadastro nem no IXC.' });
 
         // o mesmo número não pode ficar preso a dois cadastros
         const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=contato_fone`);
