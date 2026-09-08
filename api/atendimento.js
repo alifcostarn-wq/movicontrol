@@ -6057,13 +6057,14 @@ export default async function handler(req, res) {
           } catch (err) { console.error('[atendimento]', err.message); }
         }
 
-        // Despedida quando foi a TRAVA MENSAL que segurou a pesquisa: ela era a
-        // própria mensagem de encerramento, e sem nada no lugar o cliente
-        // ficaria sem retorno nenhum. Não vale para os outros casos: quem já
-        // deu a nota nesta conversa acabou de ser agradecido e despedido, e
-        // pesquisa:false é um pedido explícito de silêncio.
-        const despedir = travadaAte && !c.rating && body.pesquisa !== false
-          && !String(body.mensagem || '').trim();
+        // Despedida sempre que a pesquisa não sai — seja porque a trava mensal
+        // segurou, seja porque o atendente escolheu encerrar sem perguntar. A
+        // pesquisa ERA a mensagem de encerramento; sem nada no lugar o cliente
+        // ficava sem retorno nenhum, com a conversa fechada do lado de cá.
+        // Duas exceções: quem já deu a nota nesta conversa acabou de ser
+        // agradecido e despedido, e quem recebeu a mensagem própria do
+        // atendente já ouviu o que tinha para ouvir.
+        const despedir = !c.rating && !String(body.mensagem || '').trim();
         if (!pesquisaEnviada && despedir) {
           try {
             const env = await waEnviar(e, c.contato_fone, TEXTO_ENCERRAMENTO);

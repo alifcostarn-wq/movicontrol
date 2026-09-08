@@ -600,6 +600,25 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .ex-ok{font-weight:800;color:var(--green-deep);}
 
 /* ---- status do WhatsApp ---- */
+/* ---- diálogo de finalizar atendimento ---- */
+.fz-opts{display:flex;flex-direction:column;gap:8px;}
+.fz-opt{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1.5px solid var(--line);
+  border-radius:11px;cursor:pointer;background:var(--card);}
+.fz-opt:hover{border-color:var(--green);}
+.fz-opt.on{border-color:var(--green);background:var(--green-soft);}
+.fz-opt input{margin-top:3px;accent-color:var(--green);flex-shrink:0;}
+.fz-lbl{font-size:13px;font-weight:800;color:var(--text);}
+.fz-desc{font-size:11.5px;color:var(--text-mid);line-height:1.5;margin-top:3px;}
+.fz-nota{font-size:11.5px;color:var(--text-mid);line-height:1.55;background:var(--bg);
+  border:1px dashed var(--line);border-radius:9px;padding:9px 11px;}
+.fz-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line);flex-shrink:0;}
+.fz-foot .fbtn{padding:9px 16px;font-size:12.5px;}
+@media (max-width:860px){
+  .fz-foot{padding:12px 14px calc(12px + env(safe-area-inset-bottom));}
+  .fz-foot .fbtn{flex:1;justify-content:center;min-height:44px;}
+  .fz-opt{padding:13px 12px;}
+}
+
 .st-wrap{display:grid;grid-template-columns:1fr 240px;gap:18px;align-items:start;}
 .st-preview{
   border-radius:14px;padding:22px 18px;min-height:190px;display:flex;align-items:center;
@@ -2532,8 +2551,12 @@ const api = {
   async assumir(c, avisar){
     await chamar('conversas.assumir', { conversa_id:c.id, avisar_cliente: !!avisar });
   },
-  async finalizar(c, mensagem){
-    await chamar('conversas.finalizar', { conversa_id:c.id, mensagem: mensagem||null });
+  async finalizar(c, mensagem, pesquisa){
+    return await chamar('conversas.finalizar', {
+      conversa_id:c.id, mensagem: mensagem||null,
+      // só manda `false`: omitir mantém o padrão do servidor (com pesquisa)
+      ...(pesquisa === false ? { pesquisa:false } : {}),
+    });
   },
   async devolverBot(c){
     await chamar('conversas.devolver_bot', { conversa_id:c.id });
@@ -5360,6 +5383,77 @@ const ST_CORES = ['#00A859','#0F766E','#1D4ED8','#7C3AED','#B91C1C','#B45309','#
 // estoura o limite da function e o envio falharia sem explicação
 const ST_VIDEO_MAX = 2.6 * 1024 * 1024;
 
+/* Diálogo de finalização.
+   Era um prompt() que só perguntava a mensagem e avisava, em texto corrido,
+   que a pesquisa sairia "automaticamente" — sem opção de não mandar. Tem
+   atendimento em que perguntar a nota é fora de hora: cliente irritado que
+   acabou de ser desbloqueado, conversa que virou reclamação, teste da equipe.
+   Devolve { mensagem, pesquisa } ou null se cancelar. */
+function perguntarFinalizar(c){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='tr-overlay';
+    ov.innerHTML=`<div class="pn-modal" style="width:min(520px,100%);">
+      <div class="pn-head"><h3>Finalizar atendimento</h3><button class="pn-x" id="fzX">✕</button></div>
+      <div class="pn-body">
+        <div class="fz-opts">
+          <label class="fz-opt on" data-p="1">
+            <input type="radio" name="fzPesq" value="1" checked>
+            <div>
+              <div class="fz-lbl">⭐ Enviar a pesquisa de satisfação</div>
+              <div class="fz-desc">O cliente recebe a pergunta de 1 a 5 e o atendimento é encerrado com ela.</div>
+            </div>
+          </label>
+          <label class="fz-opt" data-p="0">
+            <input type="radio" name="fzPesq" value="0">
+            <div>
+              <div class="fz-lbl">🤐 Encerrar sem perguntar</div>
+              <div class="fz-desc">Sai só uma despedida curta. Use quando pedir nota seria fora de hora —
+                cliente irritado, reclamação em aberto, teste da equipe.</div>
+            </div>
+          </label>
+        </div>
+        <div class="flow-field" style="margin-top:14px;margin-bottom:6px">
+          <label for="fzMsg">Mensagem antes de encerrar <span style="font-weight:600;color:var(--text-low)">(opcional)</span></label>
+          <textarea id="fzMsg" placeholder="Em branco, o cliente recebe só o que você escolheu acima."
+            style="min-height:72px"></textarea>
+        </div>
+        <div class="fz-nota" id="fzNota"></div>
+      </div>
+      <div class="fz-foot">
+        <button class="fbtn" id="fzCancel">Cancelar</button>
+        <button class="fbtn solid" id="fzOk">Finalizar atendimento</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+
+    const opts=[...ov.querySelectorAll('.fz-opt')];
+    const nota=ov.querySelector('#fzNota');
+    const pintar=()=>{
+      const comPesquisa=ov.querySelector('input[name=fzPesq]:checked').value==='1';
+      opts.forEach(o=>o.classList.toggle('on', (o.dataset.p==='1')===comPesquisa));
+      nota.innerHTML = comPesquisa
+        ? 'A pesquisa sai <b>uma vez por cliente a cada 30 dias</b>. Se este já foi perguntado nesse período, ela não sai — e o atendimento encerra com a despedida do mesmo jeito.'
+        : 'Nenhuma nota é pedida. A conversa vai para <b>Resolvidos</b> e reabre sozinha se o cliente escrever de novo.';
+    };
+    ov.querySelectorAll('input[name=fzPesq]').forEach(r=>r.onchange=pintar);
+    opts.forEach(o=>o.onclick=()=>{ o.querySelector('input').checked=true; pintar(); });
+    pintar();
+
+    const fechar=v=>{ ov.remove(); document.removeEventListener('keydown', tecla); resolve(v); };
+    const tecla=ev=>{ if(ev.key==='Escape') fechar(null); };
+    document.addEventListener('keydown', tecla);
+    ov.querySelector('#fzX').onclick=()=>fechar(null);
+    ov.querySelector('#fzCancel').onclick=()=>fechar(null);
+    ov.onclick=ev=>{ if(ev.target===ov) fechar(null); };
+    ov.querySelector('#fzOk').onclick=()=>fechar({
+      mensagem: ov.querySelector('#fzMsg').value.trim()||null,
+      pesquisa: ov.querySelector('input[name=fzPesq]:checked').value==='1',
+    });
+    setTimeout(()=>ov.querySelector('#fzMsg').focus(),40);
+  });
+}
+
 function abrirStatusWA(){
   let cor = ST_CORES[0], enviando = false;
   let modo = 'text';            // 'text' | 'midia'
@@ -6276,17 +6370,21 @@ function openModal(id){
 
   const bFim=$('#mFinalizar');
   if(bFim) bFim.onclick=async()=>{
-    // A pesquisa de satisfação já encerra a conversa. Uma despedida separada
-    // aqui viraria duas mensagens seguidas dizendo a mesma coisa — por isso o
-    // padrão é vazio: só preencha se quiser dizer algo específico ao cliente.
-    const msg=prompt('Finalizar atendimento.\n\nA pesquisa de satisfação será enviada automaticamente.\n'
-      +'Quer mandar alguma mensagem antes dela? (deixe em branco para enviar só a pesquisa)','');
-    if(msg===null) return;
+    const esc2=await perguntarFinalizar(c);
+    if(!esc2) return;
     bFim.disabled=true;
     try{
-      await api.finalizar(c, msg.trim()||null);
+      const r=await api.finalizar(c, esc2.mensagem, esc2.pesquisa);
       c.col='resolvidos'; c.botAtivo=true;
-      closeModal(); renderAll(); toast('Atendimento finalizado');
+      closeModal(); renderAll();
+      // diz o que REALMENTE aconteceu: marcar "enviar" não garante o envio —
+      // a trava mensal pode ter segurado, e o atendente precisa saber disso
+      if(r && r.pesquisa) toast('Atendimento finalizado — pesquisa enviada ⭐');
+      else if(r && r.pesquisa_travada){
+        const q=r.pesquisa_ultima?new Date(r.pesquisa_ultima).toLocaleDateString('pt-BR'):'';
+        toast('Finalizado. A pesquisa NÃO saiu: este cliente já foi perguntado'+(q?' em '+q:' neste mês')+'.');
+      }
+      else toast('Atendimento finalizado');
     }catch(err){ bFim.disabled=false; toast('Falha: '+err.message); }
   };
 
