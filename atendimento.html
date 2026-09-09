@@ -257,13 +257,20 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 /* cadastro recolhido: a conversa ocupa a largura inteira */
 .modal.sem-ficha{grid-template-columns:1fr 0;}
 .modal.sem-ficha .m-side{display:none;}
-/* aba lateral para trazer o cadastro de volta */
+/* Botão de trazer o cadastro de volta.
+
+   Era position:absolute no canto do chat e pousava EM CIMA do último botão da
+   fila do cabeçalho — com o cadastro recolhido, ele cobria o ⋯ e as ações da
+   conversa ficavam inalcançáveis. Agora entra na fila, como os vizinhos:
+   quem divide a linha com outros botões não pode flutuar por cima deles. */
 .ficha-toggle{
-  position:absolute;top:14px;right:12px;z-index:4;width:30px;height:30px;border-radius:9px;
+  display:none;flex:none;width:32px;height:32px;border-radius:9px;
   border:1px solid var(--line);background:var(--card);color:var(--text-mid);cursor:pointer;
-  font-size:13px;display:flex;align-items:center;justify-content:center;font-family:inherit;
-  box-shadow:var(--shadow);
+  font-size:13px;align-items:center;justify-content:center;font-family:inherit;
 }
+/* quem manda em mostrar é o estado do modal, não estilo inline: inline vencia
+   a regra de tela estreita e o botão aparecia onde o cadastro nem cabe */
+.modal.sem-ficha .ficha-toggle{display:flex;}
 .ficha-toggle:hover{border-color:var(--green);color:var(--green-deep);}
 .ficha-x{
   float:right;border:none;background:transparent;cursor:pointer;font-size:17px;line-height:1;
@@ -271,7 +278,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 }
 .ficha-x:hover{color:var(--text);}
 .m-chat{position:relative;}
-@media(max-width:1020px){ .modal{grid-template-columns:1fr;} .m-side{display:none;} .ficha-toggle{display:none;} }
+@media(max-width:1020px){ .modal{grid-template-columns:1fr;} .m-side{display:none;}
+  .ficha-toggle, .modal.sem-ficha .ficha-toggle{display:none;} }
 @media(max-width:900px){
   .overlay{
     position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;
@@ -6268,7 +6276,7 @@ function openModal(id){
       ${c.botAtivo!==false ? `<button class="m-acao solid" id="mAssumir">Assumir</button>` : ''}
       <button class="m-close" id="mBuscar" title="Buscar nesta conversa (Ctrl+F)">🔍</button>
       <button class="m-close" id="mAcoes" title="Mais ações desta conversa" aria-haspopup="true">⋯</button>
-      <button class="ficha-toggle" id="fichaAbrir" title="Mostrar dados do cliente" style="display:none">‹</button>
+      <button class="ficha-toggle" id="fichaAbrir" title="Mostrar dados do cliente">‹</button>
     </div>
     <div class="busca-thread" id="buscaThread">
       <input id="btInput" placeholder="Buscar nesta conversa…">
@@ -6947,8 +6955,6 @@ let fichaRecolhida = false;
 function aplicarFicha(){
   const m=$('#modal'); if(!m) return;
   m.classList.toggle('sem-ficha', fichaRecolhida);
-  const abrir=$('#fichaAbrir');
-  if(abrir) abrir.style.display = fichaRecolhida ? 'flex' : 'none';
 }
 function alternarFicha(v){ fichaRecolhida = v; aplicarFicha(); }
 
