@@ -6806,7 +6806,17 @@ export default async function handler(req, res) {
         if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
           return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
         }
-        if (body.mensagem) {
+
+        // TERCEIRO MODO: encerrar EM SILÊNCIO. Nada sai para o cliente — nem
+        // pesquisa, nem despedida, nem a mensagem do atendente. Existe porque
+        // as duas opções anteriores sempre mandavam alguma coisa, e há
+        // conversa que não comporta mensagem nenhuma no fim: o assunto já foi
+        // resolvido por telefone, o número era engano, a conversa é interna,
+        // ou o cliente pediu para não receber mais nada. Nesses casos um
+        // "obrigado pelo contato" automático é ruído, não cortesia.
+        const silencioso = body.silencioso === true;
+
+        if (!silencioso && body.mensagem) {
           try {
             const env = await waEnviar(e, c.contato_fone, String(body.mensagem));
             await sb(e, 'atend_mensagens', {
@@ -6836,10 +6846,13 @@ export default async function handler(req, res) {
         // trava mensal: se este cliente já foi perguntado dentro da janela,
         // encerra sem repetir a pesquisa — mas ainda se despede, senão o
         // cliente ficaria sem retorno nenhum (a pesquisa era a despedida)
-        const travadaAte = await pesquisaRecente(e, c.contato_fone, await pesquisaJanelaDias(e));
+        // no modo silencioso nem se pergunta: a resposta não mudaria nada
+        const travadaAte = silencioso
+          ? null
+          : await pesquisaRecente(e, c.contato_fone, await pesquisaJanelaDias(e));
 
         let pesquisaEnviada = false;
-        if (body.pesquisa !== false && !c.rating && !travadaAte) {
+        if (!silencioso && body.pesquisa !== false && !c.rating && !travadaAte) {
           // mensagem única: já encerra e pede a nota, sem um "atendimento
           // encerrado" separado antes
           const texto = String(body.texto_pesquisa || '').trim() || TEXTO_PESQUISA;
@@ -6882,7 +6895,7 @@ export default async function handler(req, res) {
         // Duas exceções: quem já deu a nota nesta conversa acabou de ser
         // agradecido e despedido, e quem recebeu a mensagem própria do
         // atendente já ouviu o que tinha para ouvir.
-        const despedir = !c.rating && !String(body.mensagem || '').trim();
+        const despedir = !silencioso && !c.rating && !String(body.mensagem || '').trim();
         if (!pesquisaEnviada && despedir) {
           try {
             const env = await waEnviar(e, c.contato_fone, TEXTO_ENCERRAMENTO);
@@ -6898,7 +6911,7 @@ export default async function handler(req, res) {
           await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
         }
         return res.status(200).json({
-          ok: true, pesquisa: pesquisaEnviada,
+          ok: true, pesquisa: pesquisaEnviada, silencioso,
           pesquisa_travada: !pesquisaEnviada && !!travadaAte, pesquisa_ultima: travadaAte || null,
         });
       }

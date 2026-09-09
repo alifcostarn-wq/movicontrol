@@ -2736,8 +2736,9 @@ const api = {
   async assumir(c, avisar){
     await chamar('conversas.assumir', { conversa_id:c.id, avisar_cliente: !!avisar });
   },
-  async finalizar(c, mensagem, pesquisa){
+  async finalizar(c, mensagem, pesquisa, silencioso){
     return await chamar('conversas.finalizar', {
+      ...(silencioso ? { silencioso:true } : {}),
       conversa_id:c.id, mensagem: mensagem||null,
       // só manda `false`: omitir mantém o padrão do servidor (com pesquisa)
       ...(pesquisa === false ? { pesquisa:false } : {}),
@@ -5796,6 +5797,15 @@ function perguntarFinalizar(c){
                 cliente irritado, reclamação em aberto, teste da equipe.</div>
             </div>
           </label>
+          <label class="fz-opt" data-p="2">
+            <input type="radio" name="fzPesq" value="2">
+            <div>
+              <div class="fz-lbl">🔕 Encerrar em silêncio</div>
+              <div class="fz-desc">O cliente não recebe nada: nem pesquisa, nem despedida.
+                Para assunto já resolvido por telefone, número errado, conversa interna
+                ou quem pediu para não receber mais mensagens.</div>
+            </div>
+          </label>
         </div>
         <div class="flow-field" style="margin-top:14px;margin-bottom:6px">
           <label for="fzMsg">Mensagem antes de encerrar <span style="font-weight:600;color:var(--text-low)">(opcional)</span></label>
@@ -5813,12 +5823,27 @@ function perguntarFinalizar(c){
 
     const opts=[...ov.querySelectorAll('.fz-opt')];
     const nota=ov.querySelector('#fzNota');
+    const campo=ov.querySelector('#fzMsg');
+    const rotuloMsg=ov.querySelector('label[for=fzMsg]');
+    const escolhido=()=>ov.querySelector('input[name=fzPesq]:checked').value;
     const pintar=()=>{
-      const comPesquisa=ov.querySelector('input[name=fzPesq]:checked').value==='1';
-      opts.forEach(o=>o.classList.toggle('on', (o.dataset.p==='1')===comPesquisa));
-      nota.innerHTML = comPesquisa
+      const v=escolhido();
+      opts.forEach(o=>o.classList.toggle('on', o.dataset.p===v));
+      // "em silêncio" e "mensagem antes de encerrar" se contradizem: em vez de
+      // deixar o atendente marcar os dois e descobrir depois qual venceu, o
+      // campo sai de cena enquanto o silêncio estiver escolhido
+      const mudo = v==='2';
+      campo.disabled = mudo;
+      campo.style.opacity = mudo ? '.45' : '';
+      if(rotuloMsg) rotuloMsg.style.opacity = mudo ? '.45' : '';
+      campo.placeholder = mudo
+        ? 'Nada é enviado neste modo.'
+        : 'Em branco, o cliente recebe só o que você escolheu acima.';
+      nota.innerHTML = v==='1'
         ? 'A pesquisa sai <b>uma vez por cliente a cada 30 dias</b>. Se este já foi perguntado nesse período, ela não sai — e o atendimento encerra com a despedida do mesmo jeito.'
-        : 'Nenhuma nota é pedida. A conversa vai para <b>Resolvidos</b> e reabre sozinha se o cliente escrever de novo.';
+        : v==='0'
+        ? 'Nenhuma nota é pedida. A conversa vai para <b>Resolvidos</b> e reabre sozinha se o cliente escrever de novo.'
+        : '<b>Nada sai para o cliente</b> — nem pesquisa, nem despedida. Do lado dele a conversa simplesmente para. Aqui ela vai para <b>Resolvidos</b> e reabre sozinha se ele escrever de novo.';
     };
     ov.querySelectorAll('input[name=fzPesq]').forEach(r=>r.onchange=pintar);
     opts.forEach(o=>o.onclick=()=>{ o.querySelector('input').checked=true; pintar(); });
@@ -5830,10 +5855,15 @@ function perguntarFinalizar(c){
     ov.querySelector('#fzX').onclick=()=>fechar(null);
     ov.querySelector('#fzCancel').onclick=()=>fechar(null);
     ov.onclick=ev=>{ if(ev.target===ov) fechar(null); };
-    ov.querySelector('#fzOk').onclick=()=>fechar({
-      mensagem: ov.querySelector('#fzMsg').value.trim()||null,
-      pesquisa: ov.querySelector('input[name=fzPesq]:checked').value==='1',
-    });
+    ov.querySelector('#fzOk').onclick=()=>{
+      const v=escolhido();
+      fechar({
+        // no silêncio a mensagem nem é lida: o que o campo tiver não sai daqui
+        mensagem: v==='2' ? null : (campo.value.trim()||null),
+        pesquisa: v==='1',
+        silencioso: v==='2',
+      });
+    };
     setTimeout(()=>ov.querySelector('#fzMsg').focus(),40);
   });
 }
@@ -6855,12 +6885,13 @@ function openModal(id){
       if(!esc2) return;
       bFim.disabled=true;
       try{
-        const r=await api.finalizar(c, esc2.mensagem, esc2.pesquisa);
+        const r=await api.finalizar(c, esc2.mensagem, esc2.pesquisa, esc2.silencioso);
         c.col='resolvidos'; c.botAtivo=true;
         closeModal(); renderAll();
         // diz o que REALMENTE aconteceu: marcar "enviar" não garante o envio —
         // a trava mensal pode ter segurado, e o atendente precisa saber disso
-        if(r && r.pesquisa) toast('Atendimento finalizado — pesquisa enviada ⭐');
+        if(r && r.silencioso) toast('Atendimento finalizado — nada foi enviado ao cliente 🔕');
+        else if(r && r.pesquisa) toast('Atendimento finalizado — pesquisa enviada ⭐');
         else if(r && r.pesquisa_travada){
           const q=r.pesquisa_ultima?new Date(r.pesquisa_ultima).toLocaleDateString('pt-BR'):'';
           toast('Finalizado. A pesquisa NÃO saiu: este cliente já foi perguntado'+(q?' em '+q:' neste mês')+'.');
