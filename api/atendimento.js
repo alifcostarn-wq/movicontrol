@@ -6415,7 +6415,10 @@ export default async function handler(req, res) {
         catch (err) { return res.status(200).json({ ok: false, error: err.message }); }
         let faltando = [];
         try { faltando = await cidadesSemTraducao(e); } catch { /* segue */ }
-        return res.status(200).json({ ok: !!r.ok, ...r, sem_traducao: faltando });
+        // `motivo` vira `error` porque é por ele que o painel mostra a falha:
+        // sem isso a tela dizia só "Erro 200" e escondia o que aconteceu
+        if (!r.ok) return res.status(200).json({ ok: false, error: r.motivo || 'falha ao traduzir cidades' });
+        return res.status(200).json({ ok: true, ...r, sem_traducao: faltando });
       }
 
       case 'clientes.buscar': {

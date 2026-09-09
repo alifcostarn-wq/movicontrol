@@ -1766,6 +1766,15 @@ body.flow-full .flow-field textarea{min-height:200px;}
   font-size:11px;color:var(--green-deep);background:var(--green-soft);
   border-radius:8px;padding:7px 10px;margin-bottom:7px;line-height:1.45;
 }
+/* --- cadastro do IXC --- */
+.cix-box{border:1px solid var(--line);border-radius:12px;padding:15px 17px;margin-top:12px;background:var(--card);}
+.cix-t{font-weight:800;font-size:13.5px;margin-bottom:6px;}
+.cix-d{font-size:12px;color:var(--text-mid);line-height:1.6;margin-bottom:12px;}
+.cix-ok,.cix-aviso,.cix-erro{margin-top:12px;font-size:12px;line-height:1.6;border-radius:10px;padding:11px 13px;}
+.cix-ok{background:var(--green-soft);color:var(--green-deep);}
+.cix-aviso{background:var(--orange-soft);color:#b45309;}
+.cix-erro{background:var(--red-soft);color:var(--red);}
+.cix-ids{font-family:'JetBrains Mono',monospace;font-weight:700;}
 .asn-link-st{flex-basis:100%;font-size:10.5px;color:var(--text-low);line-height:1.5;padding-top:2px;}
 .asn-link-st b{color:var(--green-deep);}
 .asn-vazio{font-size:11.5px;color:var(--text-low);padding:4px 0 8px;line-height:1.5;}
@@ -4570,6 +4579,54 @@ function hrPintarAgora(sit){
     : selo('off','🔴',`Agora estamos <b>fechados</b> — voltamos ${esc(sit.volta||'')}`);
 }
 
+/* ================= CADASTRO DO IXC =================
+   A cópia do IXC se mantém sozinha; esta tela existe para as duas coisas
+   que precisam de olho humano: ver o estado dela, e traduzir as cidades.
+
+   O IXC devolve cidade e UF como id numérico ("1161", "25"). Traduzir é uma
+   consulta à tabela de cidades do IXC, e o resultado precisa ser CONFERIDO —
+   se a instalação nomear as colunas de outro jeito, a tradução volta vazia e
+   ninguém percebe. Por isso a tela mostra quantos cadastros mudaram e QUAIS
+   ids ficaram sem tradução, em vez de só dizer "pronto". */
+async function renderCadastroIxc(el){
+  el.innerHTML = `<div class="vsub">O cadastro dos clientes é uma cópia do IXC, e ela se atualiza sozinha
+    enquanto alguém está atendendo. Aqui dá para conferir o estado dela e resolver as cidades.</div>
+    <div class="cix-box">
+      <div class="cix-t">🏙 Cidades e estados</div>
+      <div class="cix-d">O IXC entrega cidade e UF como número (<b>1161</b>, <b>25</b>) e é assim que ficam
+        gravados. Isso aparece no cadastro e <b>dentro do contrato que o cliente assina</b>.
+        Este botão busca a tabela de cidades do IXC, traduz e conserta o que já está gravado.</div>
+      <button class="btn primary" id="cixCidades">Traduzir cidades do IXC</button>
+      <div id="cixSaida"></div>
+    </div>`;
+
+  const saida = el.querySelector('#cixSaida');
+  el.querySelector('#cixCidades').onclick = async (ev)=>{
+    const b = ev.currentTarget;
+    b.disabled = true; b.textContent = 'Consultando o IXC…';
+    saida.innerHTML = '';
+    try{
+      const r = await chamar('clientes.corrigir_cidades', {}, 90000);
+      const faltando = r.sem_traducao || [];
+      if(faltando.length){
+        saida.innerHTML = `<div class="cix-aviso"><b>Traduzi ${r.cidades} cidade(s) e corrigi ${r.cadastros_corrigidos} cadastro(s).</b><br>
+          Mas estes id(s) continuam sem tradução, e os cadastros deles seguem com o número:
+          <span class="cix-ids">${faltando.map(esc).join(', ')}</span><br><br>
+          Enquanto isso, o contrato desses clientes sai com a cidade <b>em branco</b> — nunca com o número.</div>`;
+      } else {
+        saida.innerHTML = `<div class="cix-ok"><b>Pronto.</b> ${r.cidades} cidade(s) traduzida(s) e
+          ${r.cadastros_corrigidos} cadastro(s) corrigido(s). Nenhum id ficou para trás.</div>`;
+      }
+    }catch(err){
+      // o servidor devolve o motivo em `error`, e é ele que interessa aqui:
+      // "o IXC não devolveu a tabela de cidades" diz onde procurar
+      saida.innerHTML = `<div class="cix-erro"><b>Não deu para traduzir.</b><br>${esc(err.message)}<br><br>
+        Não é caso perdido — a tradução pode ser gravada à mão. Chame o suporte com esta mensagem.</div>`;
+    }
+    b.disabled = false; b.textContent = 'Traduzir cidades do IXC';
+  };
+}
+
 async function renderHorarios(el){
   el.innerHTML='<div class="pn-load">Carregando…</div>';
   let sit=null;
@@ -6817,6 +6874,7 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='horarios'?'on':''}" data-tab="horarios">🕐 Horário de funcionamento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='cadastro'?'on':''}" data-tab="cadastro">🗂 Cadastro do IXC</div>`:''}
       </div>`;
     // o editor de fluxo precisa da largura toda: fica FORA da moldura
     // No editor do bot o cabeçalho encolhe: o título ocupava ~45px que fazem
@@ -6842,7 +6900,9 @@ function renderAux(){
     else if(configTab==='equipe' && USUARIO&&USUARIO.admin){ renderEquipe(body); }
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);
-    } else {
+    }
+    else if(configTab==='cadastro' && USUARIO&&USUARIO.admin){ renderCadastroIxc(body); }
+    else {
       body.innerHTML=`<div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>
         ${state.rules.map((r,i)=>`<div class="rule-line"><span class="rule-kw">"${esc(r.kw)}"</span><span class="rule-arrow">→</span><span class="rule-desc">${esc(r.acao)}</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
         <div class="add-row"><input id="rKw" placeholder="Palavra-chave..." style="flex:0 0 160px;"><input id="rAc" placeholder="Ação/resposta automática..."><button class="btn primary" id="addR">Adicionar</button></div>
