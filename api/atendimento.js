@@ -2031,8 +2031,32 @@ const CONECTORES = {
 // ============================================================================
 // IA (fallback) — Groq
 // ============================================================================
+// Marca que o modelo escreve quando não resolve sozinho. Existe porque a
+// promessa em prosa não movia nada: a IA dizia "vou te encaminhar para um
+// atendente", o nó só mandava o texto, e a conversa continuava com o bot, em
+// "Novos", sem entrar na fila de ninguém. Meia hora depois o encerramento por
+// inatividade se despedia com "como não tivemos retorno" — de um retorno que
+// era NOSSO. Quatro clientes que pediram uma pessoa (um perguntando o valor da
+// fatura, outro pedindo o endereço da loja) foram descartados assim, em
+// silêncio. A marca é tirada do texto antes do envio: o cliente nunca a vê.
+const MARCA_ATENDENTE = '[ATENDENTE]';
+
+// Rede de segurança para quando o modelo prometer o atendente sem a marca —
+// ele não obedece à instrução toda vez, e as três respostas de emergência
+// abaixo (sem chave, resposta vazia, erro de rede) prometem exatamente isso.
+// Uma promessa detectada aqui vale o mesmo que a marca: encaminha de verdade.
+function pedeAtendente(t) {
+  const s = String(t || '');
+  return /\bencaminh\w*[^.!?\n]{0,60}\b(atendente|humano|especialista|equipe|setor|colaborador|respons[aá]vel)\b/i.test(s)
+      || /\b(transferir|transfiro|passar|repassar|repasso|encaminho)\b[^.!?\n]{0,60}\b(atendente|humano|equipe|setor)\b/i.test(s)
+      || /\bfalar com (um |uma )?(atendente|humano|pessoa|especialista|consultor)\b/i.test(s);
+}
+
+/* Devolve { texto, encaminhar }. `encaminhar` é o que faz o nó de IA botar a
+   conversa na fila — sem ele a IA vira um beco sem saída. */
 async function responderIA(e, no, conversa, texto) {
-  if (!e.GROQ) return 'Não entendi. Vou te encaminhar para um atendente. 👤';
+  const socorro = t => ({ texto: t, encaminhar: true });
+  if (!e.GROQ) return socorro('Não entendi. Vou te encaminhar para um atendente. 👤');
   try {
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -2041,15 +2065,20 @@ async function responderIA(e, no, conversa, texto) {
         model: 'llama-3.3-70b-versatile',
         max_tokens: 300,
         messages: [
-          { role: 'system', content: `Você é o assistente da MoviOn, provedor de internet em Mossoró/RN. Responda em português do Brasil, no máximo 3 frases, de forma cordial. ${no.texto || ''} Se não souber, diga que vai encaminhar para um atendente humano.` },
+          { role: 'system', content: `Você é o assistente da MoviOn, provedor de internet em Mossoró/RN. Responda em português do Brasil, no máximo 3 frases, de forma cordial. ${no.texto || ''} Se não souber responder, ou se o cliente pedir para falar com uma pessoa, diga que vai encaminhar para um atendente humano e escreva ${MARCA_ATENDENTE} no fim da mensagem.` },
           { role: 'user', content: String(texto || '').slice(0, 500) },
         ],
       }),
     });
     const d = await r.json();
-    return d?.choices?.[0]?.message?.content?.trim() || 'Vou te encaminhar para um atendente. 👤';
+    const bruto = d?.choices?.[0]?.message?.content?.trim() || '';
+    if (!bruto) return socorro('Vou te encaminhar para um atendente. 👤');
+    const marcado = bruto.includes(MARCA_ATENDENTE);
+    const limpo = bruto.split(MARCA_ATENDENTE).join(' ').replace(/[ \t]+/g, ' ').trim();
+    if (!limpo) return socorro('Vou te encaminhar para um atendente. 👤');
+    return { texto: limpo, encaminhar: marcado || pedeAtendente(limpo) };
   } catch {
-    return 'Vou te encaminhar para um atendente. 👤';
+    return socorro('Vou te encaminhar para um atendente. 👤');
   }
 }
 
@@ -2329,10 +2358,25 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
         break;
 
       case 'ia': {
-        const t = await responderIA(e, no, conversa, texto);
-        out.enviar.push({ texto: t, node: no.id });
-        out.logs.push({ node_id: no.id, node_tipo: 'ia', entrada: texto });
+        const r = await responderIA(e, no, conversa, texto);
+        out.enviar.push({ texto: r.texto, node: no.id });
+        out.logs.push({
+          node_id: no.id, node_tipo: 'ia', entrada: texto,
+          resultado: r.encaminhar ? 'encaminhado' : 'respondido',
+        });
         out.limparSessao = true;
+        // A IA desistiu: encaminha DE VERDADE, com o mesmo patch do nó "setor".
+        // Dizer que vai encaminhar e deixar a conversa com o bot é pior que não
+        // dizer nada — o cliente espera uma pessoa que nunca foi avisada.
+        if (r.encaminhar) {
+          out.patch.setor = vars.setor_intencao || no.setor || conversa.setor || null;
+          out.patch.coluna = 'fila';
+          out.patch.bot_ativo = false;
+          out.patch.atendente_id = null;
+          out.patch.fila_desde = new Date().toISOString();
+          out.patch.assumido_em = null;
+          out.patch.assumido_por = null;
+        }
         return out;
       }
 
@@ -4383,20 +4427,71 @@ async function tratarCron(e) {
   // ---- encerra conversas paradas com o BOT em espera ----
   // Só mexe em conversa onde o bot está no comando: se um humano assumiu,
   // ele decide quando encerrar, não o relógio.
+  //
+  // "Como não tivemos retorno" é uma cobrança: diz ao cliente que a bola estava
+  // com ele. Por muito tempo esta varredura mandou isso para qualquer conversa
+  // parada, sem olhar de quem era a bola — 19 das 32 despedidas do histórico
+  // foram indevidas. Duas travas resolvem, e são as mesmas do estágio 1 do
+  // ciclo humano, que já acertava:
+  //   • cliente falou por último → a bola é NOSSA. Vai para a fila, não para a
+  //     despedida. Eram os nove casos em que alguém mandou um documento ou uma
+  //     foto que o bot não soube ler e foi encerrado como se tivesse sumido.
+  //   • ninguém perguntou nada (sem sessão aberta) → encerra calado. Eram os
+  //     seis casos do recibo de pagamento: o cliente pagava, recebia o "muito
+  //     obrigado", e meia hora depois levava um "não tivemos retorno" de uma
+  //     pergunta que nunca foi feita.
   const minutos = Number(cfgAt.bot_inatividade_min ?? process.env.ATEND_INATIVIDADE_MIN ?? 30);
   const limite = new Date(Date.now() - minutos * 60000).toISOString();
   const paradas = await sb(e,
     `atend_conversas?bot_ativo=is.true&coluna=in.(novos,atendimento)&deleted_at=is.null` +
     `&ultima_msg_em=lt.${limite}&select=id,contato_fone&limit=40`);
-  let encerradas = 0;
+  let encerradas = 0, enfileiradas = 0, encerradasMudas = 0;
+
+  // Sessão aberta é a única prova de que o bot ficou esperando uma resposta.
+  // A da pesquisa não conta: ela tem relógio próprio no bloco mais abaixo.
+  const comSessao = new Set();
+  try {
+    const abertas = await sb(e, 'atend_sessoes?select=contato_fone,aguardando&limit=200');
+    for (const sx of (abertas || [])) {
+      if (sx.aguardando === 'rating_humano') continue;
+      if (sx.contato_fone) comSessao.add(String(sx.contato_fone));
+    }
+  } catch (err) { console.error('[inatividade bot] sessões:', err.message); }
 
   for (const c of (paradas || [])) {
+    if (esperandoNota(c)) continue;
+    const ult = await sbUm(e,
+      `atend_mensagens?conversa_id=eq.${c.id}&select=direcao&order=created_at.desc&limit=1`);
+
+    // A última palavra foi do cliente: quem está devendo resposta somos nós.
+    // Encerrar aqui seria mandar embora quem está esperando. Vai para a fila,
+    // onde uma pessoa enxerga o que o bot não soube responder.
+    if (ult && ult.direcao === 'in') {
+      const meu = await sb(e, `atend_conversas?id=eq.${c.id}&coluna=in.(novos,atendimento)&bot_ativo=is.true`, {
+        method: 'PATCH', prefer: 'return=representation',
+        body: {
+          coluna: 'fila', bot_ativo: false, atendente_id: null,
+          fila_desde: new Date().toISOString(), assumido_em: null, assumido_por: null,
+        },
+      }).catch(err => { console.error('[inatividade bot] fila:', err.message); return null; });
+      if (!meu || !meu.length) continue;
+      await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
+        { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {});
+      enfileiradas++;
+      continue;
+    }
+
     // tirar da coluna é a reivindicação: só quem conseguir manda a despedida
     const meu = await sb(e, `atend_conversas?id=eq.${c.id}&coluna=in.(novos,atendimento)`, {
       method: 'PATCH', prefer: 'return=representation',
       body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
     });
     if (!meu || !meu.length) continue;
+
+    // Nada estava pendente: arquiva sem dizer nada. Silêncio é melhor que uma
+    // despedida que não corresponde a conversa nenhuma.
+    if (!comSessao.has(String(c.contato_fone))) { encerradasMudas++; continue; }
+
     const despedida = 'Como não tivemos retorno, vou encerrar este atendimento por aqui. 👋\n' +
       'Se precisar, é só mandar outra mensagem que começamos de novo. A MoviOn agradece! 💚';
     try { await waEnviar(e, c.contato_fone, despedida); } catch (err) { console.error('[atendimento]', err.message); }
@@ -4404,7 +4499,8 @@ async function tratarCron(e) {
       method: 'POST', prefer: 'return=minimal',
       body: { conversa_id: c.id, direcao: 'bot', conteudo: despedida },
     });
-    await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+    await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
+      { method: 'DELETE', prefer: 'return=minimal' });
     encerradas++;
   }
 
@@ -4473,6 +4569,7 @@ async function tratarCron(e) {
   catch (err) { console.error('[pagamento confirmado]', err.message); pagamento = { erro: err.message }; }
 
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
+           bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
            cobranca: auto, campanhas, pagamento, interno };
