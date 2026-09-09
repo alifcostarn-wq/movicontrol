@@ -339,12 +339,6 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .mb .bt{display:block;font-size:9.5px;font-weight:800;color:var(--green-deep);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;}
 .mb .tm{display:block;font-size:9.5px;color:var(--text-low);text-align:right;margin-top:4px;}
 .m-sys{align-self:center;font-size:10.5px;font-weight:600;color:var(--text-mid);background:#eef2f6;padding:4px 12px;border-radius:12px;}
-.m-quick{display:flex;gap:7px;padding:10px 16px 0;flex-wrap:wrap;flex-shrink:0;}
-.mq{
-  font-size:11px;font-weight:700;color:var(--green-deep);background:var(--green-soft);
-  border:1px solid #bfe9d4;padding:5px 11px;border-radius:14px;cursor:pointer;
-}
-.mq:hover{background:#d3f2e2;}
 .m-composer{display:flex;gap:9px;padding:12px 16px 16px;align-items:center;flex-shrink:0;}
 .m-composer textarea{
   flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 14px;
@@ -633,6 +627,14 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 .av-fats .cob-check{display:flex;align-items:center;gap:7px;font-size:12px;margin-top:5px;cursor:pointer;}
 .av-atalhos{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px;}
+/* a pílula de atalho usava .mq, que era da faixa acima do compositor. Aquela
+   faixa saiu; esta continua, então ganhou estilo próprio em vez de herdar de
+   um vizinho que não existe mais. */
+.av-at{
+  font-size:11px;font-weight:700;color:var(--green-deep);background:var(--green-soft);
+  border:1px solid #bfe9d4;padding:5px 11px;border-radius:14px;cursor:pointer;
+}
+.av-at:hover{background:#d3f2e2;}
 
 /* ---- diálogo de finalizar atendimento ---- */
 .fz-opts{display:flex;flex-direction:column;gap:8px;}
@@ -1770,6 +1772,22 @@ body.flow-full .flow-field textarea{min-height:200px;}
   font-size:11px;color:var(--green-deep);background:var(--green-soft);
   border-radius:8px;padding:7px 10px;margin-bottom:7px;line-height:1.45;
 }
+/* --- respostas prontas, saindo do leque do "+" --- */
+.atl-pop{
+  position:absolute;bottom:calc(100% + 6px);left:12px;z-index:70;
+  width:min(320px,calc(100% - 24px));max-height:280px;overflow-y:auto;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 12px 34px rgba(16,32,25,.18);padding:6px;
+}
+.atl-item{
+  display:block;width:100%;text-align:left;background:none;border:none;
+  border-radius:9px;padding:8px 10px;cursor:pointer;font-family:inherit;color:var(--text);
+}
+.atl-item:hover{background:var(--bg);}
+.atl-item b{display:block;font-size:12.5px;font-weight:700;}
+.atl-item small{display:block;font-size:11px;color:var(--text-low);margin-top:2px;line-height:1.4;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.atl-vazio{font-size:12px;color:var(--text-low);padding:12px 10px;line-height:1.6;text-align:center;}
 /* --- estado e ações no cabeçalho da conversa --- */
 .m-estado{
   display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap;
@@ -2015,8 +2033,6 @@ body.flow-full .flow-field textarea{min-height:200px;}
   .bot-bar{flex-wrap:wrap;padding:9px 12px;gap:7px;}
   .bot-bar .bb-acts{margin-left:0;flex:1 0 100%;flex-wrap:wrap;gap:7px;}
   .bb-btn{flex:1 1 auto;min-height:40px;padding:9px 12px;font-size:12.5px;}
-  .m-quick{gap:6px;overflow-x:auto;flex-wrap:nowrap;padding:10px 12px 4px;}
-  .m-quick::-webkit-scrollbar{display:none;}
   .mq{flex-shrink:0;padding:9px 13px;font-size:12px;}
   .mb{max-width:84%;font-size:14px;}
   .mb-reply{opacity:.85;padding:9px 12px;font-size:11px;}
@@ -6145,7 +6161,11 @@ function abrirMenuAcoes(c, ancora){
   const fechar = ()=>{ pop.remove(); document.removeEventListener('click', fora, true); document.removeEventListener('keydown', tecla); };
   const fora = ev=>{ if(pop.contains(ev.target) || ev.target===ancora) return; fechar(); };
   const tecla = ev=>{ if(ev.key==='Escape') fechar(); };
-  setTimeout(()=>{ document.addEventListener('click', fora, true); document.addEventListener('keydown', tecla); },0);
+  // Esc escuta JÁ: adiar um tique deixava o menu surdo no instante em que ele
+  // aparece. O clique é que precisa do adiamento — sem ele, o próprio clique
+  // que abriu o menu chegaria aqui e o fecharia na hora.
+  document.addEventListener('keydown', tecla);
+  setTimeout(()=>document.addEventListener('click', fora, true), 0);
   pop.querySelectorAll('.mac-item').forEach(b=>b.addEventListener('click', ()=>setTimeout(fechar,0)));
   return pop;
 }
@@ -6286,7 +6306,6 @@ function openModal(id){
       }).join(''); })()}
     </div>
     <div id="mReplyBar"></div>
-    <div class="m-quick">${state.atalhos.map((a,i)=>`<span class="mq" data-i="${i}">⚡ ${esc(a.t)}</span>`).join('')}<span class="mq" id="mAgendar" style="background:var(--blue-soft);color:#1d4ed8;border-color:#bcd4fb;">🕒 Agendar mensagem</span></div>
     <div class="m-composer">
       <!-- os três recursos saem de baixo de um botão só: lado a lado eles
            empurravam o campo de texto, que é onde o atendente passa o tempo -->
@@ -6298,6 +6317,11 @@ function openModal(id){
           <button class="emo-btn leq" id="mAudio" type="button" title="Gravar áudio">🎤</button>
           <button class="emo-btn leq" id="mAnexo" type="button" title="Enviar arquivo">📎</button>
           <button class="emo-btn leq" id="mEmoji" type="button" title="Emojis">😊</button>
+          <!-- as respostas prontas ficavam numa faixa fixa de 35px acima do
+               campo. Aqui elas custam um clique a mais e devolvem a altura
+               para as mensagens, que é onde o atendente passa o tempo lendo -->
+          <button class="emo-btn leq" id="mAtalhos" type="button" title="Respostas rápidas">⚡</button>
+          <button class="emo-btn leq" id="mAgendar" type="button" title="Agendar mensagem">🕒</button>
         </div>
       </div>
       <input type="file" id="mArquivo" style="display:none" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip">
@@ -6540,12 +6564,39 @@ function openModal(id){
   const bSemSetor=$('#mSemSetor');
   if(bSemSetor) bSemSetor.onclick=()=>abrirTransferencia(c);
   // quick replies (só os que têm data-i; o botão "Agendar" tem handler próprio abaixo)
-  document.querySelectorAll('.mq[data-i]').forEach(el=>el.onclick=()=>{
-    const t=$('#mInput'); t.value=state.atalhos[+el.dataset.i].m;
+  /* Respostas prontas.
+
+     Antes ficavam numa faixa fixa de 35px acima do campo de texto. Agora
+     saem do leque do "+", e o painel some assim que uma é escolhida: quem
+     abriu quer colar uma frase e escrever, não ficar com uma lista em cima
+     do campo. */
+  const colarAtalho = i => {
+    const t=$('#mInput'); t.value=state.atalhos[i].m;
     c.rascunho=t.value; c._digitando=true;
     t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,132)+'px';
     t.focus(); t.setSelectionRange(t.value.length,t.value.length); c._cursor=t.value.length;
-  });
+  };
+  const bAtalhos=$('#mAtalhos');
+  if(bAtalhos) bAtalhos.onclick=ev=>{
+    ev.stopPropagation();
+    const jaAberto = document.querySelector('.atl-pop');
+    document.querySelectorAll('.atl-pop').forEach(x=>x.remove());
+    if(jaAberto) return;
+    const pop=document.createElement('div');
+    pop.className='atl-pop';
+    pop.innerHTML = state.atalhos.length
+      ? state.atalhos.map((a,i)=>`<button class="atl-item" data-i="${i}"><b>⚡ ${esc(a.t)}</b><small>${esc((a.m||'').slice(0,90))}</small></button>`).join('')
+      : `<div class="atl-vazio">Nenhuma resposta pronta ainda.<br>Cadastre em <b>Configurações › Atalhos</b>.</div>`;
+    // ancora no compositor: o leque fecha ao ser usado e levaria o painel junto
+    (bAtalhos.closest('.m-composer') || bAtalhos.parentElement).appendChild(pop);
+    const fechar=()=>{ pop.remove(); document.removeEventListener('click',fora,true); document.removeEventListener('keydown',tecla); };
+    const fora=e2=>{ if(pop.contains(e2.target)||e2.target===bAtalhos) return; fechar(); };
+    const tecla=e2=>{ if(e2.key==='Escape') fechar(); };
+    document.addEventListener('keydown', tecla);
+    setTimeout(()=>document.addEventListener('click',fora,true), 0);
+    // colar também limpa os ouvintes: antes o painel sumia mas eles ficavam
+    pop.querySelectorAll('.atl-item').forEach(el=>el.onclick=()=>{ colarAtalho(+el.dataset.i); fechar(); });
+  };
   // send
   const send=async ()=>{
     const v=$('#mInput').value.trim();
@@ -8301,7 +8352,7 @@ async function abrirAvisoRapido(pre){
       <div class="flow-field" style="margin-bottom:6px">
         <label for="avTexto">Mensagem</label>
         ${(state.atalhos||[]).length?`<div class="av-atalhos">${state.atalhos.map((a,i)=>
-          `<span class="mq" data-at="${i}">⚡ ${esc(a.t)}</span>`).join('')}</div>`:''}
+          `<span class="av-at" data-at="${i}">⚡ ${esc(a.t)}</span>`).join('')}</div>`:''}
         <textarea id="avTexto" style="min-height:110px"
           placeholder="Olá {primeiro_nome}! Passando para lembrar da sua fatura…"></textarea>
         <div class="fz-desc" id="avDica">Marcadores: <b>{primeiro_nome}</b>${AV.fatura?', <b>{valor}</b>, <b>{vencimento}</b>':''}.</div>
