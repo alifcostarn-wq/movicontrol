@@ -284,7 +284,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .m-head{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--line);flex-shrink:0;}
 .m-head .cc-av{width:40px;height:40px;font-size:13px;}
 .m-hinfo{flex:1;min-width:0;}
-.m-hname{font-size:15px;font-weight:800;}
+/* o nome trunca em vez de empurrar: com o estado e as ações na mesma linha,
+   um nome comprido quebrava o cabeçalho em duas — e a altura que a barra
+   devolveu voltava toda para cá */
+.m-hname{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.m-head{flex-wrap:nowrap;}
 .m-hsub{font-size:11.5px;color:var(--text-mid);margin-top:1px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;}
 /* conversa sem setor é um problema a resolver, não um estado a informar */
@@ -1766,6 +1770,37 @@ body.flow-full .flow-field textarea{min-height:200px;}
   font-size:11px;color:var(--green-deep);background:var(--green-soft);
   border-radius:8px;padding:7px 10px;margin-bottom:7px;line-height:1.45;
 }
+/* --- estado e ações no cabeçalho da conversa --- */
+.m-estado{
+  display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap;
+  font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;margin-right:5px;
+  background:var(--blue-soft);color:#1d4ed8;border:1px solid #bcd4fb;vertical-align:1px;
+}
+.m-estado.humano{background:var(--green-soft);color:var(--green-deep);border-color:#b7e2c8;}
+.me-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
+.m-acao{
+  flex:none;white-space:nowrap;border-radius:9px;padding:7px 13px;cursor:pointer;
+  font-size:12px;font-weight:700;font-family:inherit;border:1px solid var(--line);
+  background:var(--card);color:var(--text);
+}
+.m-acao.solid{background:var(--green);color:#fff;border-color:var(--green);}
+.m-acao.fim{background:var(--card);color:var(--green-deep);border-color:#b7e2c8;}
+.m-acao:hover{filter:brightness(.97);}
+/* o menu ancora no cabeçalho, que é position:relative por causa dele */
+.m-head{position:relative;}
+.mac-pop{
+  position:absolute;top:calc(100% - 4px);right:14px;z-index:60;min-width:212px;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 10px 30px rgba(16,32,25,.16);padding:6px;
+}
+.mac-item{
+  display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;
+  background:none;border:none;border-radius:9px;padding:9px 10px;cursor:pointer;
+  font-size:12.5px;font-family:inherit;color:var(--text);line-height:1.35;
+}
+.mac-item:hover{background:var(--bg);}
+.mac-item small{display:block;font-size:10.5px;color:var(--text-low);font-weight:400;margin-top:2px;}
+.mac-item.fim{color:var(--green-deep);font-weight:700;}
 /* --- cadastro do IXC --- */
 .cix-box{border:1px solid var(--line);border-radius:12px;padding:15px 17px;margin-top:12px;background:var(--card);}
 .cix-t{font-weight:800;font-size:13.5px;margin-bottom:6px;}
@@ -6073,6 +6108,48 @@ function restaurarMidiaTocando(vivo){
   novo.parentNode.replaceChild(vivo.el, novo);
 }
 
+/* Menu de ações da conversa.
+
+   As quatro ações que ficavam numa faixa fixa saem daqui. Elas não competem
+   entre si: transferir, devolver, aguardar e finalizar são decisões de fim de
+   atendimento, tomadas uma vez. Ocupar 69px de altura o tempo todo para
+   deixá-las à mão custava mais do que economizava.
+
+   O que NÃO entrou no menu: a ação principal do momento (Assumir, com o bot
+   ligado; Finalizar, depois de assumido) e o estado. Essas duas o atendente
+   usa e consulta o tempo inteiro — esconder seria trocar espaço por cliques.
+
+   Os botões guardam os MESMOS ids de antes, então toda a fiação que já
+   existia continua valendo: o menu é uma casa nova para os mesmos botões. */
+function abrirMenuAcoes(c, ancora){
+  document.querySelectorAll('.mac-pop').forEach(p=>p.remove());
+  const itens = [];
+  itens.push(`<button class="mac-item" id="mTransferir">🔄 <span>Transferir de setor</span></button>`);
+  // Assumir NÃO entra aqui: ele está no cabeçalho quando o bot está ligado.
+  // Dois botões com o mesmo id fariam o segundo nunca receber o clique.
+  if(c.botAtivo===false){
+    itens.push(`<button class="mac-item" id="mDevolver">🤖 <span>Devolver ao bot</span></button>`);
+    if(c.col!=='aguardando' && c.col!=='resolvidos')
+      itens.push(`<button class="mac-item" id="mAguardar">⏳ <span>Aguardar cliente<small>marca que a bola está com ele</small></span></button>`);
+  }
+  if(c.col!=='resolvidos')
+    itens.push(`<button class="mac-item fim" id="mFinalizar">✅ <span>Finalizar atendimento</span></button>`);
+
+  const pop = document.createElement('div');
+  pop.className = 'mac-pop';
+  pop.innerHTML = itens.join('');
+  ancora.parentElement.appendChild(pop);
+
+  // fecha ao clicar fora ou com Esc — menu que só fecha no próprio botão
+  // vira armadilha quando o atendente sai para escrever
+  const fechar = ()=>{ pop.remove(); document.removeEventListener('click', fora, true); document.removeEventListener('keydown', tecla); };
+  const fora = ev=>{ if(pop.contains(ev.target) || ev.target===ancora) return; fechar(); };
+  const tecla = ev=>{ if(ev.key==='Escape') fechar(); };
+  setTimeout(()=>{ document.addEventListener('click', fora, true); document.addEventListener('keydown', tecla); },0);
+  pop.querySelectorAll('.mac-item').forEach(b=>b.addEventListener('click', ()=>setTimeout(fechar,0)));
+  return pop;
+}
+
 function openModal(id){
   // openModal também é o "repintar": só reinicia o relógio dos vistos quando a
   // conversa de fato muda, senão cada render adiaria a conferência para sempre
@@ -6152,26 +6229,26 @@ function openModal(id){
       ${avatarHTML(c)}
       <div class="m-hinfo">
         <div class="m-hname">${esc(c.nome)}<span class="rename-ico" id="mRename" title="Renomear contato">✎</span></div>
-        <div class="m-hsub">${c.setor
+        <div class="m-hsub">
+          <!-- o estado do bot vive nesta linha, junto do setor e do número:
+               é tudo "situação desta conversa". Em cima ele disputava lugar
+               com o nome, e o nome saía truncado -->
+          <span class="m-estado ${c.botAtivo===false?'humano':''}" title="${c.botAtivo===false?'Você assumiu esta conversa — o bot está calado':'O bot está respondendo neste número'}">
+            <span class="me-dot"></span>${c.botAtivo===false ? 'Você' : 'Bot'}
+          </span>${c.setor
           ? `<span class="sec-badge" style="background:${corSetor(c.setor)}22;color:${corSetor(c.setor)}"><span class="sec-dot" style="background:${corSetor(c.setor)}"></span>${esc(c.setor)}</span>`
           : `<button class="sem-setor" id="mSemSetor" title="Definir o setor agora">⚠ Sem setor — definir</button>`
         } · ${esc(c.fone)}${cl.lead?' · lead':''}</div>
       </div>
+      <!-- A faixa que existia aqui embaixo custava 69px de altura fixa — 18%
+           do que sobra para as mensagens num notebook — para deixar à mão
+           quatro botões que quase nunca são usados ao mesmo tempo. Foram para
+           o menu ⋯. Fica só "Assumir", que com o bot ligado é a porta para
+           qualquer outra coisa: sem assumir, o atendente não fala. -->
+      ${c.botAtivo!==false ? `<button class="m-acao solid" id="mAssumir">Assumir</button>` : ''}
       <button class="m-close" id="mBuscar" title="Buscar nesta conversa (Ctrl+F)">🔍</button>
+      <button class="m-close" id="mAcoes" title="Mais ações desta conversa" aria-haspopup="true">⋯</button>
       <button class="ficha-toggle" id="fichaAbrir" title="Mostrar dados do cliente" style="display:none">‹</button>
-    </div>
-    <div class="bot-bar ${c.botAtivo===false?'humano':''}">
-      <span class="bb-dot"></span>
-      <span class="bb-txt">${c.botAtivo===false ? '👤 Você está no comando' : '🤖 Bot atendendo'}</span>
-      <div class="bb-acts">
-        <button class="bb-btn transf" id="mTransferir">🔄 Transferir setor</button>
-        ${c.botAtivo===false
-          ? `<button class="bb-btn" id="mDevolver">Devolver ao bot</button>`
-          : `<button class="bb-btn solid" id="mAssumir">Assumir atendimento</button>`}
-        ${(c.botAtivo===false && c.col!=='aguardando' && c.col!=='resolvidos')
-          ? `<button class="bb-btn" id="mAguardar" title="Marcar que estamos esperando o cliente responder">⏳ Aguardar cliente</button>` : ''}
-        ${c.col!=='resolvidos' ? `<button class="bb-btn fim" id="mFinalizar">Finalizar</button>` : ''}
-      </div>
     </div>
     <div class="busca-thread" id="buscaThread">
       <input id="btInput" placeholder="Buscar nesta conversa…">
@@ -6462,9 +6539,6 @@ function openModal(id){
   // transferir de setor
   const bSemSetor=$('#mSemSetor');
   if(bSemSetor) bSemSetor.onclick=()=>abrirTransferencia(c);
-  const bTransf=$('#mTransferir');
-  if(bTransf) bTransf.onclick=()=>abrirTransferencia(c);
-
   // quick replies (só os que têm data-i; o botão "Agendar" tem handler próprio abaixo)
   document.querySelectorAll('.mq[data-i]').forEach(el=>el.onclick=()=>{
     const t=$('#mInput'); t.value=state.atalhos[+el.dataset.i].m;
@@ -6617,54 +6691,76 @@ function openModal(id){
     catch(err){ c.painelErro=err.message; openModal(c.id); toast('Falha: '+err.message); }
   };
 
-  // controle do bot: assumir / devolver / finalizar
-  const bAssumir=$('#mAssumir');
-  if(bAssumir) bAssumir.onclick=async()=>{
-    const avisar=confirm('Assumir este atendimento?\n\nOK = avisa o cliente que você entrou na conversa\nCancelar = assume em silêncio');
-    bAssumir.disabled=true;
-    try{
-      await api.assumir(c, avisar);
-      c.botAtivo=false; c.atendente=USUARIO.nome;
-      if(c.col==='novos') c.col='atendimento';
-      await api.carregarMensagens(c);
-      openModal(c.id); renderAll(); toast('Atendimento assumido');
-    }catch(err){ bAssumir.disabled=false; toast('Falha: '+err.message); }
-  };
+  /* Fiação das ações da conversa.
 
-  const bAguardar=$('#mAguardar');
-  if(bAguardar) bAguardar.onclick=async()=>{
-    bAguardar.disabled=true; bAguardar.textContent='Movendo…';
-    try{
-      await chamar('conversas.aguardar',{id:c.id});
-      await recarregarConversas();
-      toast('Movido para Aguardando cliente — volta sozinho quando ele responder');
-    }catch(e){ toast('Falha: '+e.message); bAguardar.disabled=false; bAguardar.textContent='⏳ Aguardar cliente'; }
-  };
-  const bDevolver=$('#mDevolver');
-  if(bDevolver) bDevolver.onclick=async()=>{
-    if(!confirm('Devolver esta conversa para o bot? Ele volta a responder automaticamente.')) return;
-    try{ await api.devolverBot(c); c.botAtivo=true; openModal(c.id); renderAll(); toast('Bot reativado'); }
-    catch(err){ toast('Falha: '+err.message); }
-  };
+     Os botões nascem em dois lugares agora: o principal fica no cabeçalho e
+     os outros só existem quando o menu ⋯ é aberto. Por isso isto é uma
+     FUNÇÃO chamada duas vezes, em vez de código solto que roda uma vez só —
+     o handler tem que alcançar o botão que acabou de ser criado. */
+  function ligarBotoesAcao(){
+    const bTransf=$('#mTransferir');
+    if(bTransf) bTransf.onclick=()=>abrirTransferencia(c);
 
-  const bFim=$('#mFinalizar');
-  if(bFim) bFim.onclick=async()=>{
-    const esc2=await perguntarFinalizar(c);
-    if(!esc2) return;
-    bFim.disabled=true;
-    try{
-      const r=await api.finalizar(c, esc2.mensagem, esc2.pesquisa);
-      c.col='resolvidos'; c.botAtivo=true;
-      closeModal(); renderAll();
-      // diz o que REALMENTE aconteceu: marcar "enviar" não garante o envio —
-      // a trava mensal pode ter segurado, e o atendente precisa saber disso
-      if(r && r.pesquisa) toast('Atendimento finalizado — pesquisa enviada ⭐');
-      else if(r && r.pesquisa_travada){
-        const q=r.pesquisa_ultima?new Date(r.pesquisa_ultima).toLocaleDateString('pt-BR'):'';
-        toast('Finalizado. A pesquisa NÃO saiu: este cliente já foi perguntado'+(q?' em '+q:' neste mês')+'.');
-      }
-      else toast('Atendimento finalizado');
-    }catch(err){ bFim.disabled=false; toast('Falha: '+err.message); }
+    // controle do bot: assumir / devolver / finalizar
+    const bAssumir=$('#mAssumir');
+    if(bAssumir) bAssumir.onclick=async()=>{
+      const avisar=confirm('Assumir este atendimento?\n\nOK = avisa o cliente que você entrou na conversa\nCancelar = assume em silêncio');
+      bAssumir.disabled=true;
+      try{
+        await api.assumir(c, avisar);
+        c.botAtivo=false; c.atendente=USUARIO.nome;
+        if(c.col==='novos') c.col='atendimento';
+        await api.carregarMensagens(c);
+        openModal(c.id); renderAll(); toast('Atendimento assumido');
+      }catch(err){ bAssumir.disabled=false; toast('Falha: '+err.message); }
+    };
+
+    const bAguardar=$('#mAguardar');
+    if(bAguardar) bAguardar.onclick=async()=>{
+      bAguardar.disabled=true; bAguardar.textContent='Movendo…';
+      try{
+        await chamar('conversas.aguardar',{id:c.id});
+        await recarregarConversas();
+        toast('Movido para Aguardando cliente — volta sozinho quando ele responder');
+      }catch(e){ toast('Falha: '+e.message); bAguardar.disabled=false; bAguardar.textContent='⏳ Aguardar cliente'; }
+    };
+    const bDevolver=$('#mDevolver');
+    if(bDevolver) bDevolver.onclick=async()=>{
+      if(!confirm('Devolver esta conversa para o bot? Ele volta a responder automaticamente.')) return;
+      try{ await api.devolverBot(c); c.botAtivo=true; openModal(c.id); renderAll(); toast('Bot reativado'); }
+      catch(err){ toast('Falha: '+err.message); }
+    };
+
+    const bFim=$('#mFinalizar');
+    if(bFim) bFim.onclick=async()=>{
+      const esc2=await perguntarFinalizar(c);
+      if(!esc2) return;
+      bFim.disabled=true;
+      try{
+        const r=await api.finalizar(c, esc2.mensagem, esc2.pesquisa);
+        c.col='resolvidos'; c.botAtivo=true;
+        closeModal(); renderAll();
+        // diz o que REALMENTE aconteceu: marcar "enviar" não garante o envio —
+        // a trava mensal pode ter segurado, e o atendente precisa saber disso
+        if(r && r.pesquisa) toast('Atendimento finalizado — pesquisa enviada ⭐');
+        else if(r && r.pesquisa_travada){
+          const q=r.pesquisa_ultima?new Date(r.pesquisa_ultima).toLocaleDateString('pt-BR'):'';
+          toast('Finalizado. A pesquisa NÃO saiu: este cliente já foi perguntado'+(q?' em '+q:' neste mês')+'.');
+        }
+        else toast('Atendimento finalizado');
+      }catch(err){ bFim.disabled=false; toast('Falha: '+err.message); }
+    };
+  }
+  ligarBotoesAcao();
+
+  // o menu ⋯ cria os botões na hora; religar logo depois é o que faz eles
+  // funcionarem no primeiro clique, sem precisar reabrir
+  const bAcoes=$('#mAcoes');
+  if(bAcoes) bAcoes.onclick=ev=>{
+    ev.stopPropagation();
+    if(document.querySelector('.mac-pop')){ document.querySelectorAll('.mac-pop').forEach(x=>x.remove()); return; }
+    abrirMenuAcoes(c, bAcoes);
+    ligarBotoesAcao();
   };
 
   // clicar na imagem abre ampliada
