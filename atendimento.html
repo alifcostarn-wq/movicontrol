@@ -2586,22 +2586,81 @@ function _sb(){
   return sbAuth;
 }
 
+/* O token do Supabase vale uma hora. Quando a aba fica em segundo plano — outra
+   janela aberta por cima, o computador dormindo, o celular bloqueado — o
+   navegador congela os temporizadores e a renovação automática não roda. O
+   painel acorda com um token morto e TUDO passa a responder "Sessão inválida
+   ou expirada": foram 130 chamadas assim em 24 horas. Para quem estava usando,
+   o aviso rápido simplesmente parou de funcionar, sem explicação nenhuma, e a
+   única saída era descobrir sozinho que recarregar a página resolvia.
+   Agora o token é conferido antes de cada chamada e, se o servidor ainda
+   recusar, a sessão é renovada e a chamada é REFEITA uma vez. */
+let renovandoToken = null;
+
+async function tokenFresco(forcar){
+  const sb = _sb();
+  if(!sb) return TOKEN;
+  // uma renovação por vez: o painel dispara dezenas de chamadas juntas ao
+  // carregar, e vinte refreshSession() simultâneos derrubam a sessão
+  if(renovandoToken) return renovandoToken;
+  renovandoToken = (async()=>{
+    try{
+      let { data:{ session } } = await sb.auth.getSession();
+      const faltam = session && session.expires_at ? session.expires_at*1000 - Date.now() : -1;
+      if(forcar || !session || faltam < 120000){          // menos de 2 min de vida
+        const r = await sb.auth.refreshSession();
+        if(r && r.data && r.data.session) session = r.data.session;
+      }
+      if(session && session.access_token) TOKEN = session.access_token;
+      return TOKEN;
+    }catch(e){ return TOKEN; }
+    finally{ renovandoToken = null; }
+  })();
+  return renovandoToken;
+}
+
+/* Sessão que não volta nem renovada: o refresh token venceu ou foi revogado.
+   Não adianta seguir mostrando erro em cada clique — devolve para o login,
+   que é a única coisa que resolve. */
+let sessaoJaMorreu = false;
+function sessaoMorreu(){
+  if(sessaoJaMorreu) return;
+  sessaoJaMorreu = true;
+  try{
+    const sh=$('#shell'); if(sh) sh.style.display='none';
+    const cg=$('#carregando'); if(cg) cg.classList.remove('show');
+    const lg=$('#tela-login'); if(lg) lg.style.display='';
+    _lgErro('Sua sessão expirou. Entre novamente para continuar.');
+  }catch(e){}
+}
+
 /* chamada única ao proxy */
 async function chamar(acao, dados, ms){
-  const ctrl = new AbortController();
-  const t = setTimeout(()=>ctrl.abort(), ms||45000);
-  let r;
-  try{
-    r = await fetch(API, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+TOKEN },
-      body: JSON.stringify({ acao, ...(dados||{}) }),
-      signal: ctrl.signal
-    });
-  }catch(err){
-    if(err.name==='AbortError') throw new Error('O servidor demorou demais para responder. Tente de novo.');
-    throw err;
-  }finally{ clearTimeout(t); }
+  await tokenFresco(false);
+
+  const disparar = async()=>{
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), ms||45000);
+    try{
+      return await fetch(API, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+TOKEN },
+        body: JSON.stringify({ acao, ...(dados||{}) }),
+        signal: ctrl.signal
+      });
+    }catch(err){
+      if(err.name==='AbortError') throw new Error('O servidor demorou demais para responder. Tente de novo.');
+      throw err;
+    }finally{ clearTimeout(t); }
+  };
+
+  let r = await disparar();
+  if(r.status === 401){
+    // o servidor é quem sabe se o token vale: renova de verdade e refaz
+    await tokenFresco(true);
+    r = await disparar();
+    if(r.status === 401){ sessaoMorreu(); throw new Error('Sua sessão expirou. Entre novamente.'); }
+  }
   const j = await r.json().catch(()=>({ok:false,error:'Resposta inválida do servidor.'}));
   if(!j.ok) throw new Error(j.error||('Erro '+r.status));
   return j;
@@ -8489,11 +8548,15 @@ $('#btnAviso').onclick=()=>abrirAvisoRapido();
    lista, e o padrão é o setor de quem está abrindo. */
 function novoAtendimentoDialogo(){
   return new Promise(resolve=>{
-    // admin não tem setor próprio: cai no que está escolhido na barra lateral,
-    // que é o setor em que ele está trabalhando naquele momento
+    // Admin não tem setor próprio. Antes, quando também não havia setor
+    // escolhido na barra lateral, o padrão caía em SETORES[0] — que é Suporte,
+    // porque é o primeiro na ordem do cadastro. Resultado: TODO atendimento
+    // aberto pelo admin ia para o Suporte, e como o setor escolhido aqui vence
+    // o que a conversa já tinha, um cliente do Financeiro era carimbado como
+    // Suporte só por ter sido reaberto pelo painel. Sem um padrão que faça
+    // sentido, a escolha passa a ser explícita: nada vem marcado.
     const padrao = USUARIO.setor
-      || (meuSetor && meuSetor !== 'todos' ? meuSetor : null)
-      || SETORES[0].id;
+      || (meuSetor && meuSetor !== 'todos' ? meuSetor : null);
     const ov=document.createElement('div');
     ov.className='tr-overlay';
     ov.innerHTML=`<div class="pn-modal" style="width:min(480px,100%);">
@@ -8504,7 +8567,8 @@ function novoAtendimentoDialogo(){
         <div class="flow-field"><label for="naFone">Telefone (com DDD)</label>
           <input id="naFone" inputmode="tel" placeholder="84 99999-0000" autocomplete="off"></div>
         <div class="flow-field"><label for="naSetor">Setor</label>
-          <select id="naSetor">${SETORES.map(x=>`<option value="${esc(x.id)}" ${x.id===padrao?'selected':''}>${esc(x.id)}</option>`).join('')}</select>
+          <select id="naSetor">${padrao?'':'<option value="" selected>— escolha o setor —</option>'}${
+            SETORES.map(x=>`<option value="${esc(x.id)}" ${x.id===padrao?'selected':''}>${esc(x.id)}</option>`).join('')}</select>
           <div class="fz-desc" id="naSetorNota"></div></div>
         <div class="flow-field" style="margin-bottom:4px"><label for="naMsg">Primeira mensagem <span style="font-weight:600;color:var(--text-low)">(opcional)</span></label>
           <textarea id="naMsg" style="min-height:76px" placeholder="Em branco, só abre o card sem mandar nada."></textarea></div>
@@ -8518,6 +8582,10 @@ function novoAtendimentoDialogo(){
 
     const sel=ov.querySelector('#naSetor'), nota=ov.querySelector('#naSetorNota');
     const pintarNota=()=>{
+      if(!sel.value){
+        nota.textContent = 'Você não tem setor fixo: escolha para qual equipe esta conversa vai.';
+        return;
+      }
       nota.textContent = USUARIO.setor
         ? (sel.value===USUARIO.setor ? 'Seu setor.' : 'Atenção: fora do seu setor, a conversa vai para a equipe do '+sel.value+'.')
         : 'A conversa entra no quadro do setor '+sel.value+'.';
@@ -8535,6 +8603,7 @@ function novoAtendimentoDialogo(){
       const fone=ov.querySelector('#naFone').value.trim();
       if(!nome){ toast('Informe o nome do contato.'); ov.querySelector('#naNome').focus(); return; }
       if(fone.replace(/\D/g,'').length<10){ toast('Telefone incompleto — use DDD + número.'); ov.querySelector('#naFone').focus(); return; }
+      if(!sel.value){ toast('Escolha o setor desta conversa.'); sel.focus(); return; }
       fechar({ nome, fone, setor:sel.value, texto:ov.querySelector('#naMsg').value.trim() });
     };
     setTimeout(()=>ov.querySelector('#naNome').focus(),40);
@@ -8590,14 +8659,13 @@ function ligarCicloInatividade(){
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) cutucar(); });
 }
 
-/* o token do Supabase expira em 1h — renova sozinho */
-setInterval(async()=>{
-  try{
-    const sb=_sb(); if(!sb||!TOKEN) return;
-    const { data:{ session } } = await sb.auth.getSession();
-    if(session) TOKEN = session.access_token;
-  }catch(e){}
-}, 10*60*1000);
+/* Rede de segurança de fundo. A defesa de verdade está em chamar(), que
+   confere o token antes de cada chamada e refaz a que voltar 401 — este
+   temporizador é o primeiro a ser congelado quando a aba sai de foco, então
+   não dá para depender só dele. */
+setInterval(()=>{ if(TOKEN && !document.hidden) tokenFresco(false); }, 10*60*1000);
+// voltar para a aba depois de horas fora é exatamente quando o token está morto
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && TOKEN) tokenFresco(false); });
 
 /* O tempo de espera precisa andar sozinho: sem isso o número congela no valor
    de quando a tela foi montada e o atendente acha que ninguém está esperando. */

@@ -5189,8 +5189,13 @@ export default async function handler(req, res) {
         if (pedido && !setorEscolhido) {
           return res.status(400).json({ ok: false, error: `Setor "${pedido}" não existe. Use: ${setoresOk.join(', ')}.` });
         }
-        // quem abre a conversa manda no setor; o do usuário é só o padrão
-        const setorFinal = setorEscolhido || user.setor || setoresOk[0] || 'Vendas';
+        // Quem abre a conversa manda no setor; o do usuário é só o padrão.
+        // Sem nenhum dos dois a conversa nasce SEM SETOR, visível na fila geral
+        // — antes caía em setoresOk[0], que é o Suporte, e o painel do admin
+        // (que não tem setor próprio) carimbava Suporte em tudo que abria.
+        // Um card sem dono é um problema à vista; um card com o setor errado
+        // é um problema escondido na fila da equipe errada.
+        const setorFinal = setorEscolhido || user.setor || null;
 
         // já existe conversa com esse número (mesmo resolvida)? reaproveita — nunca duplica
         const existente = await conversaPorFone(e, fone);
