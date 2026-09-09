@@ -4105,6 +4105,52 @@ async function baixarCidadesIxc(e) {
   return linhas;
 }
 
+/* A tabela de estados. A de cidades guarda o ID do estado, não a sigla —
+   sem esta, o cadastro fica com "25" no lugar de "RN", e isso entra no
+   contrato do mesmo jeito que a cidade entrava. */
+async function sincronizarUfsIxc(e) {
+  const linhas = [];
+  for (const tabela of ['uf', 'estado', 'estados', 'ufs']) {
+    let regs = [];
+    try {
+      const r = await ixc(e, tabela, { page: '1', rp: '200', sortname: `${tabela}.id`, sortorder: 'asc' }, 'listar');
+      regs = r?.registros || [];
+    } catch (err) { console.error(`[ufs] ${tabela}:`, err.message); continue; }
+    for (const r of regs) {
+      const id = String(pick(r, 'id', 'id_uf', 'id_estado') ?? '').trim();
+      const sigla = siglaUf(pick(r, 'uf', 'sigla', 'sigla_uf', 'estado'));
+      if (!id || !sigla) continue;
+      linhas.push({ ixc_id: id, sigla, nome: pick(r, 'nome', 'descricao') || null,
+                    atualizado_em: new Date().toISOString() });
+    }
+    if (linhas.length) break;
+  }
+  if (!linhas.length) return { ok: false, motivo: 'o IXC não devolveu a tabela de estados' };
+
+  for (const lote of emLotes(linhas, 200)) {
+    await sb(e, 'ixc_ufs?on_conflict=ixc_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: lote,
+    });
+  }
+  const corrigidos = await sb(e, 'rpc/corrigir_ufs_ixc', { method: 'POST', body: {} });
+  return { ok: true, ufs: linhas.length, cadastros_uf_corrigidos: Number(corrigidos) || 0 };
+}
+
+/* Quais ids de estado ainda estão em cadastro sem tradução — e, junto, o
+   nome dos campos que a tabela de cidades do IXC realmente tem. Adivinhar
+   grafia duas vezes seguidas não é método: se faltar de novo, que a resposta
+   diga exatamente onde procurar. */
+async function ufsSemTraducao(e) {
+  const linhas = await sb(e, 'clientes?select=uf&uf=not.is.null&limit=5000');
+  const ids = [...new Set((linhas || []).map(c => String(c.uf || '')).filter(v => /^\d+$/.test(v)))];
+  if (!ids.length) return [];
+  const achados = await sb(e, `ixc_ufs?ixc_id=in.(${ids.join(',')})&select=ixc_id`);
+  const tem = new Set((achados || []).map(c => String(c.ixc_id)));
+  return ids.filter(id => !tem.has(id));
+}
+
 async function sincronizarCidadesIxc(e, forcar) {
   if (!e.IXC_USER || !e.IXC_TOKEN) return { ok: false, motivo: 'IXC não configurado' };
 
@@ -4122,10 +4168,15 @@ async function sincronizarCidadesIxc(e, forcar) {
     const id = String(pick(r, 'id', 'id_cidade') ?? '').trim();
     const nome = pick(r, 'nome', 'cidade', 'municipio', 'descricao');
     if (!id || !nome) continue;
+    // a sigla, se vier. Se o campo trouxer NÚMERO é o id do estado — guarda
+    // separado, porque é ele que a tabela de UFs traduz depois
+    const bruto = pick(r, 'uf', 'sigla_uf', 'uf_sigla', 'estado', 'sigla');
+    const idUf = pick(r, 'id_uf', 'uf_id', 'id_estado', 'estado_id');
     linhas.push({
       ixc_id: id,
       nome: String(nome).trim(),
-      uf: siglaUf(pick(r, 'uf', 'sigla_uf', 'uf_sigla', 'estado', 'sigla')),
+      uf: siglaUf(bruto),
+      uf_id: String(idUf ?? (/^\d+$/.test(String(bruto ?? '')) ? bruto : '') ?? '').trim() || null,
       atualizado_em: new Date().toISOString(),
     });
   }
@@ -4141,8 +4192,20 @@ async function sincronizarCidadesIxc(e, forcar) {
 
   // com a tradução na mão, conserta o que já está gravado
   const corrigidos = await sb(e, 'rpc/corrigir_cidades_ixc', { method: 'POST', body: {} });
+
+  // a cidade guarda o ID do estado, não a sigla: sem a tabela de UFs o
+  // cadastro fica com "25" onde deveria estar "RN"
+  let ufs = null;
+  try { ufs = await sincronizarUfsIxc(e); }
+  catch (err) { console.error('[ufs]', err.message); ufs = { ok: false, motivo: err.message }; }
+
   return { ok: true, cidades: linhas.length, com_uf: linhas.filter(l => l.uf).length,
-           cadastros_corrigidos: Number(corrigidos) || 0 };
+           cadastros_corrigidos: Number(corrigidos) || 0,
+           ufs: ufs?.ufs || 0, cadastros_uf_corrigidos: ufs?.cadastros_uf_corrigidos || 0,
+           uf_motivo: ufs?.ok ? null : (ufs?.motivo || null),
+           // se faltar tradução de novo, mostrar os campos que a tabela do IXC
+           // tem de verdade, em vez de pedir um terceiro chute
+           campos_cidade: Object.keys(regs[0] || {}).slice(0, 40) };
 }
 
 /* Quais ids de cidade ainda aparecem em cadastro sem tradução. É o que diz se
@@ -6413,12 +6476,13 @@ export default async function handler(req, res) {
         let r;
         try { r = await sincronizarCidadesIxc(e, true); }
         catch (err) { return res.status(200).json({ ok: false, error: err.message }); }
-        let faltando = [];
+        let faltando = [], faltandoUf = [];
         try { faltando = await cidadesSemTraducao(e); } catch { /* segue */ }
+        try { faltandoUf = await ufsSemTraducao(e); } catch { /* segue */ }
         // `motivo` vira `error` porque é por ele que o painel mostra a falha:
         // sem isso a tela dizia só "Erro 200" e escondia o que aconteceu
         if (!r.ok) return res.status(200).json({ ok: false, error: r.motivo || 'falha ao traduzir cidades' });
-        return res.status(200).json({ ok: true, ...r, sem_traducao: faltando });
+        return res.status(200).json({ ok: true, ...r, sem_traducao: faltando, sem_traducao_uf: faltandoUf });
       }
 
       case 'clientes.buscar': {

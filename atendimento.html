@@ -4608,14 +4608,24 @@ async function renderCadastroIxc(el){
     try{
       const r = await chamar('clientes.corrigir_cidades', {}, 90000);
       const faltando = r.sem_traducao || [];
-      if(faltando.length){
-        saida.innerHTML = `<div class="cix-aviso"><b>Traduzi ${r.cidades} cidade(s) e corrigi ${r.cadastros_corrigidos} cadastro(s).</b><br>
-          Mas estes id(s) continuam sem tradução, e os cadastros deles seguem com o número:
-          <span class="cix-ids">${faltando.map(esc).join(', ')}</span><br><br>
-          Enquanto isso, o contrato desses clientes sai com a cidade <b>em branco</b> — nunca com o número.</div>`;
+      const faltandoUf = r.sem_traducao_uf || [];
+      const feito = `Traduzi <b>${r.cidades}</b> cidade(s) e <b>${r.ufs||0}</b> estado(s). `
+        + `Corrigi ${r.cadastros_corrigidos} cadastro(s) na cidade e ${r.cadastros_uf_corrigidos||0} no estado.`;
+
+      if(faltando.length || faltandoUf.length){
+        // mostrar os campos que a tabela do IXC realmente tem: pedir um novo
+        // chute de grafia sem essa informação seria adivinhar de novo
+        const campos = (r.campos_cidade||[]).length
+          ? `<br><br>Campos que a tabela de cidades do IXC traz:
+             <span class="cix-ids">${(r.campos_cidade||[]).map(esc).join(', ')}</span>` : '';
+        saida.innerHTML = `<div class="cix-aviso">${feito}<br><br>`
+          + (faltando.length ? `Cidade(s) sem tradução: <span class="cix-ids">${faltando.map(esc).join(', ')}</span><br>` : '')
+          + (faltandoUf.length ? `Estado(s) sem tradução: <span class="cix-ids">${faltandoUf.map(esc).join(', ')}</span>`
+              + (r.uf_motivo ? ` — ${esc(r.uf_motivo)}` : '') + '<br>' : '')
+          + `<br>No contrato, o que ficou sem tradução sai <b>em branco</b> — nunca com o número.`
+          + campos + `</div>`;
       } else {
-        saida.innerHTML = `<div class="cix-ok"><b>Pronto.</b> ${r.cidades} cidade(s) traduzida(s) e
-          ${r.cadastros_corrigidos} cadastro(s) corrigido(s). Nenhum id ficou para trás.</div>`;
+        saida.innerHTML = `<div class="cix-ok"><b>Pronto.</b> ${feito} Nenhum id ficou para trás.</div>`;
       }
     }catch(err){
       // o servidor devolve o motivo em `error`, e é ele que interessa aqui:
