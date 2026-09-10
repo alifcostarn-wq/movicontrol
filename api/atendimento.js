@@ -629,6 +629,26 @@ async function guardarMidia(e, conversaId, waId, arq) {
   return caminho;
 }
 
+/* Guarda uma cópia do anexo que NÓS mandamos, para o painel poder mostrá-lo.
+   O que o cliente recebe sai daqui em base64 direto para a Evolution; sem esta
+   cópia não sobra nada do nosso lado, e a conversa no MoviTalk mostrava só a
+   legenda ("Boleto em PDF 📄") como se fosse uma linha de texto solta. O
+   atendente ficava sem saber se o boleto tinha ido — e do banco também não dava
+   para responder: 142 documentos enviados, nenhum com arquivo guardado, contra
+   16 de 16 recebidos do cliente, todos guardados.
+
+   NUNCA derruba o envio: a mensagem já saiu para o cliente quando esta função
+   roda. Guardar é conveniência do painel; falhar aqui vira log e nada mais. */
+async function guardarSaida(e, conversaId, waId, base64, mimetype) {
+  if (!conversaId || !base64) return null;
+  try {
+    return await guardarMidia(e, conversaId, waId || 'saida', { base64, mimetype });
+  } catch (err) {
+    console.error('[midia saida] não consegui guardar a cópia:', err.message);
+    return null;
+  }
+}
+
 // Mídia do status da empresa. Fica fora de `conversas/` porque não pertence a
 // nenhuma conversa: é uma publicação da empresa inteira e some do WhatsApp em
 // 24h, mas o histórico do painel continua precisando mostrar o que foi ao ar.
@@ -2504,6 +2524,12 @@ async function aplicarResultado(e, conversa, out) {
         env = await waEnviar(e, conversa.contato_fone, m.texto);
       }
     } catch (err) { erro = err.message; console.error('[atendimento] envio falhou:', err.message); }
+    // cópia do anexo para o painel poder mostrar o que o bot mandou — só quando
+    // o envio deu certo, para não guardar arquivo de mensagem que não saiu
+    const copia = (m.midia && !erro)
+      ? await guardarSaida(e, conversa.id, env ? idDaEvolution(env) : null,
+                           m.midia.base64, m.midia.mimetype || 'application/pdf')
+      : null;
     await sb(e, 'atend_mensagens', {
       method: 'POST', prefer: 'return=minimal',
       body: {
@@ -2512,6 +2538,7 @@ async function aplicarResultado(e, conversa, out) {
         tipo: m.midia ? (m.midia.tipo === 'image' ? 'imagem' : 'documento') : 'texto',
         wa_id: env ? idDaEvolution(env) : null,
         status: erro ? 'erro' : 'enviado',
+        midia_url: copia,
       },
     });
     if (erro) await logFluxo(e, { conversa_id: conversa.id, contato_fone: conversa.contato_fone, node_id: m.node || null, erro });
@@ -3229,18 +3256,27 @@ async function entregarCobranca(e, o) {
       }
       const pausa = () => new Promise(r => setTimeout(r, 700));
       if (pdf) {
+        const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+        let idDoc = null;
         try {
           await pausa();
-          const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
           const r1 = await waEnviarMidia(e, o.fone, {
             base64: pdf, tipo: 'document', mimetype: 'application/pdf',
             nomeArquivo: `fatura-${o.faturaId}.pdf`, legenda: leg,
           });
-          extras.push({ texto: leg, tipo: 'documento', wa: idDaEvolution(r1) });
+          idDoc = idDaEvolution(r1);
           okBoleto = true;
         } catch (err) {
           falhas.push('WhatsApp recusou o PDF: ' + String(err.message).slice(0, 90));
           console.error('[cobranca] envio pdf:', err.message);
+        }
+        // FORA do try acima de propósito: aquele catch escreve "WhatsApp
+        // recusou o PDF" no livro, e um problema de armazenamento não é uma
+        // recusa do WhatsApp. Com a cópia lá dentro, qualquer tropeço ao
+        // guardar viraria um diagnóstico errado na tela do atendente.
+        if (okBoleto) {
+          const guardado = await guardarSaida(e, c && c.id, idDoc, pdf, 'application/pdf');
+          extras.push({ texto: leg, tipo: 'documento', wa: idDoc, midia: guardado });
         }
       }
       if (pix) {
@@ -3270,7 +3306,7 @@ async function entregarCobranca(e, o) {
         method: 'POST', prefer: 'return=minimal',
         body: {
           conversa_id: c.id, direcao: 'out', conteudo: x.texto, autor_id: o.userId || null,
-          tipo: x.tipo, wa_id: x.wa, status: 'enviado',
+          tipo: x.tipo, wa_id: x.wa, status: 'enviado', midia_url: x.midia || null,
         },
       });
     }
@@ -6577,19 +6613,26 @@ export default async function handler(req, res) {
           }
           const pausa = () => new Promise(r => setTimeout(r, 700));
           if (pdf) {
+            const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+            let idDoc = null;
             try {
               await pausa();
-              const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
               const r1 = await waEnviarMidia(e, fone, {
                 base64: pdf, tipo: 'document', mimetype: 'application/pdf',
                 nomeArquivo: `fatura-${faturaId}.pdf`, legenda: leg,
               });
-              await sb(e, 'atend_mensagens', {
-                method: 'POST', prefer: 'return=minimal',
-                body: { conversa_id: c.id, direcao: 'out', conteudo: leg, autor_id: user.id, tipo: 'documento', wa_id: idDaEvolution(r1), status: 'enviado' },
-              });
+              idDoc = idDaEvolution(r1);
               okBoleto = true;
             } catch (err) { falhas.push('o WhatsApp recusou o PDF'); console.error('[aviso] pdf:', err.message); }
+            // a cópia fica fora do try: guardar é do painel, recusar é do
+            // WhatsApp, e misturar os dois dá diagnóstico errado
+            if (okBoleto) {
+              const guardado = await guardarSaida(e, c.id, idDoc, pdf, 'application/pdf');
+              await sb(e, 'atend_mensagens', {
+                method: 'POST', prefer: 'return=minimal',
+                body: { conversa_id: c.id, direcao: 'out', conteudo: leg, autor_id: user.id, tipo: 'documento', wa_id: idDoc, status: 'enviado', midia_url: guardado },
+              });
+            }
           }
           if (pix) {
             try {
