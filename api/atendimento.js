@@ -3750,8 +3750,8 @@ async function cobrancaAutomatica(e) {
     if (!fone) continue;
     if (cfg.respeitar_optout !== false && optout.has(fone)) continue;
 
-    // O cooldown NÃO é avaliado aqui — ver o comentário dentro do laço de
-    // faturas. O teto mensal continua sendo por cliente, que é o que ele mede.
+    if (Number(cfg.cooldown_dias ?? 3) > 0 && ult[chave] &&
+        (Date.now() - ult[chave]) / 864e5 < Number(cfg.cooldown_dias)) continue;
     if (Number(cfg.max_por_cliente_mes ?? 6) > 0 &&
         (noMes[chave] || 0) >= Number(cfg.max_por_cliente_mes)) continue;
 
@@ -3782,23 +3782,6 @@ async function cobrancaAutomatica(e) {
       else if (dias === 0) trilha = 'faturamento';
       else trilha = cobEmRiscoSrv(perfil, cfg) ? 'risco' : 'faturamento';
       if (!trilhasAtivas.includes(trilha)) continue;
-
-      // COOLDOWN: só para as trilhas REATIVAS. Ele existe para não martelar
-      // quem está devendo com uma cobrança atrás da outra — e não pode calar a
-      // trilha de faturamento, cujas etapas já são espaçadas de propósito: o
-      // lembrete sai em D-3 e o aviso do vencimento em D+0. Exatamente os 3
-      // dias do cooldown.
-      // A conta não fechava: o aviso do dia do vencimento só ficava liberado
-      // alguns MINUTOS depois da marca de 3 dias, e quem a régua não
-      // alcançasse naquele instante perdia o aviso para sempre — no dia
-      // seguinte a fatura passa para a trilha de recuperação, que está
-      // desligada. Foi assim que, das 30 pessoas que receberam o lembrete no
-      // dia 07/09, só 10 receberam o aviso do vencimento no dia 10: a régua
-      // parou às 11:30, meia hora depois de o cooldown liberar as 30, e não
-      // rodou mais enquanto a janela do dia estava aberta. As outras 20 não
-      // receberam nada no dia da fatura.
-      if (trilha !== 'faturamento' && Number(cfg.cooldown_dias ?? 3) > 0 && ult[chave] &&
-          (Date.now() - ult[chave]) / 864e5 < Number(cfg.cooldown_dias)) continue;
 
       const diasEf = dias - (trilha === 'recuperacao' ? cobFolgaSrv(perfil, cfg) : 0);
       const cand = regua.filter(et => (et.trilha || 'recuperacao') === trilha && diasEf >= et.dias);
