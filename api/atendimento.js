@@ -3171,9 +3171,13 @@ async function entregarCobranca(e, o) {
     canal: o.somenteRegistrar ? (o.canal || 'manual') : (o.canal || 'whatsapp'),
     valor: o.valor != null ? Number(o.valor) : null, vencimento: o.vencimento || null,
     texto: o.texto, status: 'enviado', enviado_por: o.userId || null,
-    // intenção da etapa; o resultado real é gravado no fecho, mais abaixo
-    anexo_boleto: o.anexarBoleto ? false : null,
-    anexo_pix: o.anexarPix ? false : null,
+    // DESCONHECIDO até o fecho. Antes a reserva já gravava `false` quando a
+    // etapa pedia anexo, e isso ficava indistinguível de uma falha real: uma
+    // execução interrompida deixava a linha dizendo "pediu o boleto e não
+    // conseguiu" — quando na verdade nem o texto tinha saído. Quem olhava o
+    // livro via um problema de anexo onde o problema era outro.
+    anexo_boleto: null,
+    anexo_pix: null,
   };
   let livro = null, jaTinha = false;
   try {
@@ -3659,6 +3663,54 @@ async function cobrancaAutomatica(e) {
     'clientes?ixc_id=not.is.null&select=ixc_id,nome,razao,whatsapp,tel1')) || [];
   const cadPorIxc = new Map(cadastros.map(c => [String(c.ixc_id), c]));
 
+  // ---- RESERVAS ÓRFÃS ------------------------------------------------------
+  // A linha nasce 'enviado' porque o índice único uq_cobranca_envio_ok
+  // (fatura_id, etapa_id) WHERE status='enviado' é o mutex contra envio duplo.
+  // O preço é este: se a execução morrer entre a reserva e o envio — a função
+  // tem 60 segundos e a régua pausa 8 entre clientes —, sobra uma linha
+  // dizendo "enviado" sem wa_id e sem mensagem nenhuma na conversa. E a trava
+  // então impede PARA SEMPRE que aquela fatura seja cobrada de novo: o cliente
+  // nunca recebe o lembrete nem o boleto, e o livro jura que recebeu. Três
+  // clientes ficaram exatamente assim.
+  // Uma execução dura menos de um minuto; passados 15, quem não tem wa_id não
+  // está em voo — morreu. Vira erro explícito, o que abre a trava para a
+  // próxima rodada tentar de novo.
+  // Só as automáticas: um registro manual ("já cobrei por telefone") é gravado
+  // de propósito sem wa_id e não pode ser reaberto.
+  // A ausência de wa_id sozinha não basta como prova. Se um dia a resposta da
+  // Evolution mudar de formato e idDaEvolution passar a devolver vazio, TODA
+  // linha viraria "órfã" e a régua recobraria a base inteira. A prova que vale
+  // é a conversa: envio que aconteceu deixou mensagem lá. Sem mensagem na
+  // janela do registro, não saiu nada mesmo.
+  let orfasLiberadas = 0;
+  try {
+    const corteOrfa = new Date(Date.now() - 15 * 60000).toISOString();
+    const suspeitas = await sb(e,
+      `atend_cobranca_envios?status=eq.enviado&canal=eq.automatico&wa_id=is.null` +
+      `&enviado_em=lt.${corteOrfa}&select=id,conversa_id,enviado_em&limit=50`);
+    const orfas = [];
+    for (const x of (suspeitas || [])) {
+      if (!x.conversa_id) { orfas.push(x.id); continue; }   // nem conversa houve
+      const de = new Date(new Date(x.enviado_em).getTime() - 120000).toISOString();
+      const ate = new Date(new Date(x.enviado_em).getTime() + 120000).toISOString();
+      const msgs = await sb(e,
+        `atend_mensagens?conversa_id=eq.${x.conversa_id}&direcao=eq.out` +
+        `&created_at=gte.${de}&created_at=lte.${ate}&select=id&limit=1`);
+      if (!msgs || !msgs.length) orfas.push(x.id);
+    }
+    if (orfas.length) {
+      await sb(e, `atend_cobranca_envios?id=in.(${orfas.join(',')})`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: {
+          status: 'erro',
+          erro: 'Execução interrompida antes do envio: a cobrança foi reservada e nada saiu. Liberada para nova tentativa.',
+        },
+      });
+      orfasLiberadas = orfas.length;
+      console.error(`[cobranca auto] ${orfas.length} reserva(s) órfã(s) liberada(s) para nova tentativa`);
+    }
+  } catch (err) { console.error('[cobranca auto] órfãs:', err.message); }
+
   // histórico recente: dedupe, cooldown e teto por cliente
   const desde90 = new Date(Date.now() - 90 * 864e5).toISOString();
   const envs = (await sb(e, `atend_cobranca_envios?status=eq.enviado&enviado_em=gte.${desde90}&select=fatura_id,etapa_id,cliente_ixc_id,enviado_em`)) || [];
@@ -3772,6 +3824,7 @@ async function cobrancaAutomatica(e) {
     }
   }
   return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20),
+           orfas_liberadas: orfasLiberadas,
            duplicados, clientes_na_janela: porCliente.size, retrato_dias: Math.round(idadeDias),
            retrato_velho: retratoVelho, continua: faltouTempo };
 }
