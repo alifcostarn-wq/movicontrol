@@ -42,9 +42,11 @@
 // queima o número no WhatsApp). Com o padrão de 10s da Vercel dava tempo de UM
 // envio e a função morria no meio do laço — desperdiçando a consulta de faturas
 // e correndo o risco de mandar de novo o que não chegou a ser registrado.
+import crypto from 'crypto';
 import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
+import { AwsClient } from 'aws4fetch';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -77,6 +79,13 @@ function env() {
     EVO_INST:  process.env.EVOLUTION_INSTANCE || '',
     WH_SECRET: process.env.ATEND_WEBHOOK_SECRET || '',
     GROQ:      process.env.GROQ_API_KEY || '',
+    // Cloudflare R2 — mesmas variáveis que a assinatura de contratos já usa.
+    // Sem elas o armazenamento cai no Storage do Supabase, que é o que existia
+    // antes: preferimos guardar em lugar mais caro a não guardar.
+    R2_CONTA:  process.env.R2_ACCOUNT_ID || '',
+    R2_ID:     process.env.R2_ACCESS_KEY_ID || '',
+    R2_CHAVE:  process.env.R2_SECRET_ACCESS_KEY || '',
+    R2_BUCKET: process.env.R2_BUCKET || 'movionfotos',
   };
 }
 
@@ -534,10 +543,23 @@ function comprimirPng(bytes) {
    internos num bloco comprimido. Não mexe nas imagens de dentro — para isso
    seria preciso um rasterizador — mas boleto, contrato e comprovante gerados
    por sistema costumam sair sem essa otimização e encolhem de verdade. */
+/* O que dá para comprimir num boleto sem ferramenta externa.
+   Medido num boleto só de texto: reescrever com fluxos de objeto sozinho ganha
+   0% — a biblioteca já grava assim. O que sobra de verdade é jogar fora os
+   metadados que o gerador do banco carimba (título, autor, produtor, palavras-
+   chave), o que dá ~7%. Não é muito, e prometer mais seria mentira: pdf-lib não
+   recomprime imagem embutida nem faz subconjunto de fonte, que é onde estaria o
+   ganho grande. A economia de verdade vem da deduplicação por conteúdo, logo
+   abaixo — o mesmo boleto sai no lembrete, no dia do vencimento e na 2ª via, e
+   agora ocupa espaço uma vez só. */
 async function comprimirPdf(bytes) {
   const doc = await PDFDocument.load(bytes, {
     ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false,
   });
+  try {
+    doc.setTitle(''); doc.setAuthor(''); doc.setSubject('');
+    doc.setKeywords([]); doc.setProducer(''); doc.setCreator('');
+  } catch { /* PDF que não deixa mexer nos metadados: segue sem essa parte */ }
   const saida = await doc.save({ useObjectStreams: true, addDefaultPage: false });
   return { bytes: Buffer.from(saida), mimetype: 'application/pdf' };
 }
@@ -604,6 +626,57 @@ const EXT_POR_MIME = {
   'application/vnd.ms-excel': 'xls', 'text/plain': 'txt',
 };
 
+// ---------------------------------------------------------------------------
+// ARMAZENAMENTO — Cloudflare R2, endereçado por conteúdo
+// ---------------------------------------------------------------------------
+// O R2 não cobra egresso, que é o que pesa aqui: cada anexo aberto no painel é
+// uma leitura. As credenciais são as mesmas que a assinatura de contratos já
+// usa (R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET).
+//
+// A CHAVE É O HASH DO CONTEÚDO. O mesmo boleto sai três vezes para o mesmo
+// cliente — lembrete três dias antes, aviso no dia do vencimento, 2ª via pedida
+// no bot — e antes ocuparia três vezes o espaço. Com o conteúdo virando a
+// chave, o segundo e o terceiro envio apontam para o arquivo que já está lá.
+// Vale entre clientes diferentes também, quando o documento é igual.
+//
+// O caminho gravado na mensagem leva o prefixo `r2:` para o leitor saber onde
+// procurar. Mensagem antiga, sem prefixo, continua sendo lida do Storage do
+// Supabase — nada precisa ser migrado para o painel voltar a funcionar.
+const R2_PREFIXO = 'r2:';
+
+function r2Ligado(e) { return !!(e.R2_CONTA && e.R2_ID && e.R2_CHAVE); }
+
+function r2Cliente(e) {
+  return {
+    cli: new AwsClient({ accessKeyId: e.R2_ID, secretAccessKey: e.R2_CHAVE }),
+    base: `https://${e.R2_CONTA}.r2.cloudflarestorage.com/${e.R2_BUCKET}`,
+  };
+}
+
+/* Sobe para o R2 pulando o que já está lá. O HEAD antes do PUT existe por
+   dinheiro: no R2 a escrita é operação de classe A e custa cerca de dez vezes
+   mais que a leitura. Num dia de cobrança em massa, a maioria dos boletos se
+   repete. */
+async function r2Guardar(e, chave, bytes, contentType) {
+  const { cli, base } = r2Cliente(e);
+  const url = `${base}/${chave}`;
+  try {
+    const ja = await cli.fetch(url, { method: 'HEAD' });
+    if (ja.ok) return { chave, reaproveitado: true };
+  } catch { /* não deu para conferir: segue e grava */ }
+  const r = await cli.fetch(url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: bytes });
+  if (!r.ok) throw new Error(`R2 ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  return { chave, reaproveitado: false };
+}
+
+async function r2Assinar(e, chave, segundos = 3600) {
+  const { cli, base } = r2Cliente(e);
+  const url = new URL(`${base}/${chave}`);
+  url.searchParams.set('X-Amz-Expires', String(segundos));
+  const assinado = await cli.sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } });
+  return assinado.url;
+}
+
 async function guardarMidia(e, conversaId, waId, arq) {
   // Comprime ANTES de subir. O anexo fica guardado enquanto a conversa
   // existir: o que entra aqui grande fica grande para sempre. Foto mandada
@@ -619,6 +692,17 @@ async function guardarMidia(e, conversaId, waId, arq) {
     throw new Error(`arquivo de ${emKB(otim.bytes.length)} acima do teto de ${MIDIA_TETO_MB} MB`);
   }
   const ext = EXT_POR_MIME[otim.mimetype.split(';')[0]] || 'bin';
+
+  if (r2Ligado(e)) {
+    const hash = crypto.createHash('sha256').update(otim.bytes).digest('hex');
+    // dois níveis de pasta pelo começo do hash: milhares de arquivos num
+    // prefixo só deixam qualquer listagem do bucket impraticável
+    const chave = `midia/${hash.slice(0, 2)}/${hash.slice(2, 4)}/${hash}.${ext}`;
+    const r = await r2Guardar(e, chave, otim.bytes, otim.mimetype);
+    if (r.reaproveitado) console.log(`[midia] já existia no R2, não ocupou espaço novo: ${chave}`);
+    return R2_PREFIXO + chave;
+  }
+
   const caminho = `conversas/${conversaId}/${Date.now()}-${(waId || 'sem-id').slice(-12)}.${ext}`;
   const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
     method: 'POST',
@@ -662,6 +746,14 @@ async function guardarStatusMidia(e, arq) {
   // palpite melhor do que nada.
   const mime = otim.mimetype.split(';')[0];
   const ext = EXT_POR_MIME[mime] || (mime.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin';
+
+  if (r2Ligado(e)) {
+    const hash = crypto.createHash('sha256').update(otim.bytes).digest('hex');
+    const chave = `status/${hash.slice(0, 2)}/${hash}.${ext}`;
+    await r2Guardar(e, chave, otim.bytes, otim.mimetype);
+    return R2_PREFIXO + chave;
+  }
+
   const caminho = `status/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const r = await fetch(`${e.SUPA_URL}/storage/v1/object/atendimento/${caminho}`, {
     method: 'POST',
@@ -672,8 +764,14 @@ async function guardarStatusMidia(e, arq) {
   return caminho;
 }
 
-// gera link temporário para o atendente abrir o anexo
+// Gera link temporário para o atendente abrir o anexo. O prefixo diz de onde:
+// `r2:` é Cloudflare, sem prefixo é o Storage do Supabase — que é onde estão os
+// anexos guardados antes desta mudança e que continuam abrindo normalmente.
 async function assinarMidia(e, caminho, segundos = 3600) {
+  if (String(caminho || '').startsWith(R2_PREFIXO)) {
+    if (!r2Ligado(e)) return null;
+    return await r2Assinar(e, String(caminho).slice(R2_PREFIXO.length), segundos).catch(() => null);
+  }
   const r = await fetch(`${e.SUPA_URL}/storage/v1/object/sign/atendimento/${caminho}`, {
     method: 'POST',
     headers: { apikey: e.SRV, Authorization: `Bearer ${e.SRV}`, 'Content-Type': 'application/json' },
