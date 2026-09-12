@@ -6884,9 +6884,99 @@ export default async function handler(req, res) {
           `atend_mensagens?conversa_id=eq.${id}&select=*&order=created_at.asc&limit=${Math.min(Number(body.limite) || 300, 1000)}`);
         // assina os anexos para o atendente conseguir abrir
         for (const m of (msgs || [])) {
+          // mensagem apagada não viaja com o conteúdo: ela saiu do WhatsApp do
+          // cliente e sai do painel também. O registro de que existiu fica no
+          // banco, que é onde uma auditoria vai procurar — não numa resposta
+          // de API que qualquer aba aberta consegue ler.
+          if (m.excluido_em) { m.conteudo = null; m.midia_url = null; m.tipo = 'texto'; continue; }
           if (m.midia_url) m.midia_link = await assinarMidia(e, m.midia_url).catch(() => null);
         }
         return res.status(200).json({ ok: true, mensagens: msgs });
+      }
+
+      /* Apagar no WhatsApp uma mensagem que NÓS enviamos.
+         ------------------------------------------------------------------
+         Três regras, e nenhuma delas é escolha nossa:
+
+         • Só o que saiu daqui (atendente ou bot). O WhatsApp não deixa
+           ninguém apagar para todos a mensagem do outro — a do cliente está
+           no celular dele e continua lá. Prometer o contrário seria mentir
+           para quem clica.
+         • Só dentro do prazo do WhatsApp (cerca de dois dias). Passado isso
+           ele recusa, e aí NADA é marcado como apagado: o painel não pode
+           dizer que sumiu do celular do cliente quando não sumiu.
+         • Só mensagem com id do WhatsApp. As mais antigas foram gravadas sem
+           ele e não há o que endereçar lá fora.
+
+         A linha não sai do banco: ganha a marca de quem apagou e quando.
+         Conversa de provedor é prova — em reclamação no Procon, em cobrança
+         contestada, em dúvida sobre prazo prometido. Um "apagar" que apaga
+         o registro apaga a defesa do provedor junto. */
+      case 'mensagens.excluir': {
+        if (!user.admin) {
+          return res.status(403).json({ ok: false, error: 'Apenas administradores podem apagar mensagens.' });
+        }
+        const mid = Number(body.mensagem_id);
+        if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório.' });
+
+        const m = await sbUm(e,
+          `atend_mensagens?id=eq.${mid}&select=id,conversa_id,direcao,tipo,wa_id,conteudo,excluido_em`);
+        if (!m) return res.status(404).json({ ok: false, error: 'Mensagem não encontrada.' });
+        if (m.excluido_em) return res.status(200).json({ ok: true, ja_apagada: true });
+        if (m.direcao === 'in') {
+          return res.status(400).json({ ok: false, error:
+            'O WhatsApp não permite apagar para todos a mensagem do cliente — ela fica no celular dele.' });
+        }
+        if (m.direcao === 'sys') {
+          return res.status(400).json({ ok: false, error: 'Isto é uma anotação do sistema, não uma mensagem enviada.' });
+        }
+        if (!m.wa_id) {
+          return res.status(400).json({ ok: false, error:
+            'Esta mensagem foi registrada sem o id do WhatsApp (acontece nas mais antigas), então não há como apagá-la lá.' });
+        }
+
+        const conv = await sbUm(e, `atend_conversas?id=eq.${m.conversa_id}&select=id,contato_fone,ultima_msg`);
+        if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
+          return res.status(400).json({ ok: false, error: 'Evolution API não configurada.' });
+        }
+
+        let r;
+        try {
+          r = await fetchComPrazo(`${e.EVO_URL}/chat/deleteMessageForEveryone/${e.EVO_INST}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+            body: JSON.stringify({
+              id: m.wa_id,
+              remoteJid: `${normalizarFone(conv.contato_fone)}@s.whatsapp.net`,
+              fromMe: true,
+            }),
+          }, 15000);
+        } catch (err) {
+          return res.status(502).json({ ok: false, error:
+            `Não deu para falar com o WhatsApp: ${String(err.message).slice(0, 140)}. Nada foi apagado.` });
+        }
+        if (!r.ok) {
+          const detalhe = (await r.text().catch(() => '')).slice(0, 160);
+          return res.status(502).json({ ok: false, error: r.status === 400
+            ? `O WhatsApp recusou apagar esta mensagem — quase sempre é o prazo, que é de uns dois dias. Nada foi apagado. ${detalhe}`
+            : `O WhatsApp respondeu ${r.status} e nada foi apagado. ${detalhe}` });
+        }
+
+        const agora = new Date().toISOString();
+        await sb(e, `atend_mensagens?id=eq.${mid}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { excluido_em: agora, excluido_por: user.id, excluido_por_nome: user.nome || null },
+        });
+        // a prévia na lista de conversas guarda uma cópia do texto: sem isto,
+        // a mensagem apagada continuaria legível na coluna da esquerda
+        if (conv.ultima_msg && m.conteudo
+            && String(conv.ultima_msg) === String(m.conteudo).slice(0, 200)) {
+          await sb(e, `atend_conversas?id=eq.${conv.id}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: { ultima_msg: 'Mensagem apagada' },
+          });
+        }
+        return res.status(200).json({ ok: true, excluido_em: agora, excluido_por_nome: user.nome || null });
       }
 
       // Recarrega os risquinhos direto da Evolution. O painel chama ao abrir a

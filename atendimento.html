@@ -471,6 +471,10 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 .mb:hover .mb-reply{opacity:1;}
 .mb-reply:hover{border-color:var(--green);color:var(--green-deep);background:#fff;opacity:1;}
+.mb-lixo:hover{border-color:var(--red);color:var(--red);background:#fff;}
+/* mensagem apagada: fica o lugar dela, sem o conteúdo — como no WhatsApp */
+.mb.apagada{background:#f1f5f9 !important;border:1px dashed var(--line) !important;color:var(--text-low);}
+.mb.apagada .ap-t{display:flex;align-items:center;gap:6px;font-size:12.5px;font-style:italic;}
 .mb-foot .tm{margin-top:0 !important;}
 .mb-quote{
   border-left:3px solid var(--green);background:rgba(0,0,0,.05);
@@ -1323,6 +1327,8 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
   position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);
   background:#1e293b;color:#fff;font-size:13px;font-weight:600;padding:11px 20px;border-radius:11px;
   transition:transform .25s;z-index:99;box-shadow:var(--shadow-lg);
+  /* recusa do WhatsApp vem com explicação: sem isto a frase saía da tela */
+  max-width:min(92vw,520px);line-height:1.45;text-align:center;
 }
 .toast.show{transform:translateX(-50%) translateY(0);}
 .versao-nova{
@@ -2748,6 +2754,7 @@ const api = {
       tipo: m.tipo || 'texto', link: m.midia_link || null,
       respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
       status: m.status || null,
+      excluidoEm: m.excluido_em || null, excluidoPor: m.excluido_por_nome || null,
     }));
     // Durante o await, o realtime pode ter recriado a lista de conversas e
     // trocado este objeto. Escrever só no `c` original faria a thread nova
@@ -2770,6 +2777,10 @@ const api = {
     (atual.msgs||[]).forEach(m=>{ if(mudou[m.id]) m.status = mudou[m.id]; });
     if(atual!==c) (c.msgs||[]).forEach(m=>{ if(mudou[m.id]) m.status = mudou[m.id]; });
     return Object.keys(mudou).length;
+  },
+  // apagar no WhatsApp e no painel (só admin; o servidor confere de novo)
+  async excluirMensagem(m){
+    return await chamar('mensagens.excluir', { mensagem_id:m.id });
   },
   async buscarAvatar(c){
     const j = await chamar('conversa.avatar', { conversa_id:c.id });
@@ -3008,13 +3019,22 @@ function ligarRealtime(){
       if(modalId===id && state.conversas.some(x=>x.id===id)) openModal(id);
     })
     // ACK de entrega/leitura chega como UPDATE: sem isso o risquinho ficaria
-    // congelado no estado do momento em que a thread foi carregada
+    // congelado no estado do momento em que a thread foi carregada. Apagar uma
+    // mensagem também chega por aqui — e precisa chegar, senão o painel de
+    // quem não apagou continuaria mostrando o texto que já saiu do WhatsApp.
     .on('postgres_changes', { event:'UPDATE', schema:'public', table:'atend_mensagens' }, (p)=>{
       const c = state.conversas.find(x=>x.id===p.new.conversa_id);
       if(!c || !c.msgs) return;
       const m = c.msgs.find(x=>x.id===p.new.id);
-      if(!m || m.status===p.new.status) return;
-      m.status = p.new.status;
+      if(!m) return;
+      let mudou = false;
+      if(p.new.excluido_em && !m.excluidoEm){
+        m.excluidoEm = p.new.excluido_em;
+        m.excluidoPor = p.new.excluido_por_nome || null;
+        mudou = true;
+      }
+      if(p.new.status && m.status!==p.new.status){ m.status = p.new.status; mudou = true; }
+      if(!mudou) return;
       if(modalId===c.id) openModal(c.id);
     })
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'atend_chat_interno' }, (p)=>{
@@ -6720,6 +6740,13 @@ function openModal(id){
             <span class="rc-txt">reagiu a ${alvo}</span>
             <span class="rc-h">${esc(m.h||'')}</span></div>`;
         }
+        // apagada: sobra o lugar dela na conversa, sem o conteúdo e sem a
+        // mídia. Sumir por completo deixaria um buraco no meio do diálogo
+        if(m.excluidoEm){
+          return sep + `<div class="mb ${m.t} apagada" ${m.id?`data-msgid="${m.id}"`:''}>
+            <div class="ap-t">🚫 Mensagem apagada${m.excluidoPor?' por '+esc(m.excluidoPor):''}</div>
+            <div class="mb-foot"><span class="tm">${esc(m.h||'')}</span></div></div>`;
+        }
         return sep + (m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
         :`<div class="mb ${m.t}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
@@ -6728,6 +6755,8 @@ function openModal(id){
               <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
           }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${
             m.id?`<button class="mb-reply" data-responder="${m.id}" title="Responder esta mensagem">↩ responder</button>`:''
+          }${m.id && USUARIO.admin && (m.t==='out'||m.t==='bot')
+            ? `<button class="mb-reply mb-lixo" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑 apagar</button>` : ''
           }<span class="tm">${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
       }).join(''); })()}
     </div>
@@ -7002,6 +7031,32 @@ function openModal(id){
   document.querySelectorAll('[data-responder]').forEach(el=>el.onclick=ev=>{
     ev.stopPropagation();
     iniciarResposta(c, el.dataset.responder);
+  });
+  /* apagar mensagem enviada — só admin, e só o que saiu daqui.
+     A confirmação diz as três coisas que o atendente precisa saber antes de
+     clicar: some do celular do cliente, some daqui, e fica registrado. */
+  document.querySelectorAll('[data-apagar]').forEach(el=>el.onclick=async ev=>{
+    ev.stopPropagation();
+    const m=(c.msgs||[]).find(x=>String(x.id)===el.dataset.apagar);
+    if(!m) return;
+    const trecho=(m.x||'').trim();
+    const amostra=trecho?`\n\n"${trecho.slice(0,80)}${trecho.length>80?'…':''}"\n`:'\n';
+    if(!confirm(`Apagar esta mensagem para todos?${amostra}
+Ela sai da conversa do cliente no WhatsApp e sai daqui. Fica o registro de que existiu, com o seu nome e a hora.
+
+O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
+    const rotulo=el.textContent;
+    el.disabled=true; el.textContent='apagando…';
+    try{
+      const j=await api.excluirMensagem(m);
+      m.excluidoEm=j.excluido_em||new Date().toISOString();
+      m.excluidoPor=j.excluido_por_nome||USUARIO.nome;
+      openModal(c.id); renderAll();
+      toast(j.ja_apagada?'Esta mensagem já estava apagada':'Mensagem apagada para todos');
+    }catch(err){
+      el.disabled=false; el.textContent=rotulo;
+      toast(err.message);
+    }
   });
   // clicar na citação leva até a mensagem original
   document.querySelectorAll('[data-irpara]').forEach(el=>el.onclick=ev=>{
