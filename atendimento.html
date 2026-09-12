@@ -1622,10 +1622,49 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .mb-doc .md-ico{font-size:17px;}
 .mb-audio{width:230px;max-width:100%;margin-top:4px;}
 .midia-lightbox{
-  position:fixed;inset:0;z-index:400;background:rgba(8,20,14,.88);display:flex;
-  align-items:center;justify-content:center;padding:24px;cursor:zoom-out;
+  position:fixed;inset:0;z-index:400;background:rgba(8,20,14,.96);
+  display:flex;flex-direction:column;
 }
-.midia-lightbox img{max-width:100%;max-height:100%;border-radius:12px;}
+.vis-barra{
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:12px 14px;flex-wrap:wrap;
+}
+.vis-bt{
+  width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;
+  border:0;border-radius:10px;background:rgba(255,255,255,.12);color:#fff;
+  font-family:inherit;font-size:16px;font-weight:700;line-height:1;cursor:pointer;
+  text-decoration:none;transition:background .15s;
+}
+.vis-bt:hover{background:rgba(255,255,255,.24);}
+.vis-bt[disabled]{opacity:.3;cursor:default;}
+.vis-bt[disabled]:hover{background:rgba(255,255,255,.12);}
+.vis-fechar{background:rgba(255,255,255,.2);}
+.vis-nivel{
+  min-width:58px;text-align:center;color:#fff;font-size:12.5px;font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+.vis-sep{width:1px;height:22px;background:rgba(255,255,255,.2);margin:0 4px;}
+.vis-palco{
+  flex:1;position:relative;overflow:hidden;cursor:zoom-out;touch-action:none;
+}
+.vis-palco.arrastavel{cursor:grab;}
+.vis-palco.arrastando{cursor:grabbing;}
+.vis-img{
+  position:absolute;left:50%;top:50%;max-width:none;max-height:none;
+  transform-origin:center center;border-radius:4px;user-select:none;-webkit-user-drag:none;
+}
+.vis-dica{
+  flex-shrink:0;text-align:center;color:rgba(255,255,255,.55);
+  font-size:11.5px;font-weight:600;padding:0 16px 14px;
+}
+@media (max-width:900px){
+  .vis-dica{display:none;}
+  /* no celular a barra não pode quebrar em três linhas por cima da conversa */
+  .vis-barra{gap:3px;padding:9px 6px;flex-wrap:nowrap;}
+  .vis-bt{width:34px;height:34px;font-size:15px;}
+  .vis-sep{margin:0;}
+  .vis-nivel{min-width:44px;font-size:11.5px;}
+}
 
 /* ============ LOGIN — "rede de conversas" ============ */
 #tela-login{
@@ -6236,6 +6275,198 @@ function restaurarMidiaTocando(vivo){
   novo.parentNode.replaceChild(vivo.el, novo);
 }
 
+/* ═══════════ VISUALIZADOR DE IMAGEM ════════════════════════════════════════
+   O cliente manda a foto do poste, do modem, do documento — e muitas chegam
+   deitadas (o celular grava a orientação num campo que nem sempre é
+   respeitado) ou com o número de série pequeno demais para ler na bolha.
+   Antes a imagem só abria esticada na tela e qualquer clique fechava.
+
+   Aqui ela abre num visualizador: aumentar, diminuir, girar nos dois sentidos,
+   arrastar quando estiver ampliada e voltar ao tamanho da tela. O giro é só de
+   visualização — não reescreve o arquivo que o cliente mandou.
+
+   Três detalhes que fazem diferença no uso:
+   • a rolagem amplia PELO PONTO sob o cursor, então dá para ir atrás de um
+     número no canto da foto sem perdê-lo de vista;
+   • o arrasto é travado para a imagem nunca sair inteira da tela;
+   • no celular vale pinçar com dois dedos e arrastar com um. */
+function abrirVisualizador(src){
+  document.querySelectorAll('.midia-lightbox').forEach(x=>x.remove());
+  const lb=document.createElement('div');
+  lb.className='midia-lightbox';
+  lb.innerHTML=`
+    <div class="vis-barra">
+      <button class="vis-bt" data-vis="menos" title="Diminuir (tecla −)">−</button>
+      <span class="vis-nivel">100%</span>
+      <button class="vis-bt" data-vis="mais" title="Aumentar (tecla +)">+</button>
+      <span class="vis-sep"></span>
+      <button class="vis-bt" data-vis="esq" title="Girar para a esquerda">↺</button>
+      <button class="vis-bt" data-vis="dir" title="Girar para a direita (tecla R)">↻</button>
+      <span class="vis-sep"></span>
+      <button class="vis-bt" data-vis="ajustar" title="Ajustar à tela (tecla 0)">⤢</button>
+      <a class="vis-bt" href="${esc(src)}" target="_blank" rel="noopener" title="Abrir o original em outra aba">⬈</a>
+      <button class="vis-bt vis-fechar" data-vis="fechar" title="Fechar (Esc)">✕</button>
+    </div>
+    <div class="vis-palco"><img class="vis-img" src="${esc(src)}" alt="Imagem da conversa" draggable="false"></div>
+    <div class="vis-dica">Arraste para mover · role para ampliar · duplo clique ajusta · R gira</div>`;
+  document.body.appendChild(lb);
+
+  const palco=lb.querySelector('.vis-palco');
+  const img=lb.querySelector('.vis-img');
+  /* enquanto estiver aberto, o teclado é do visualizador: sem isto, o foco
+     ficava na barra de digitação escondida atrás e o "r" de girar virava uma
+     letra no meio da mensagem. Ao fechar, o foco volta para onde estava. */
+  const focoAntes=document.activeElement;
+  palco.tabIndex=-1;
+  /* clicar numa imagem já tira o foco de onde ele estava, então "de volta para
+     onde estava" quase sempre quer dizer a barra de digitação da conversa */
+  const voltarFoco=()=>{
+    if(focoAntes && focoAntes!==document.body && focoAntes.isConnected && focoAntes.focus){ focoAntes.focus(); return; }
+    const campo=document.getElementById('mInput');
+    if(campo && rascunhoDe(modalId).digitando) campo.focus();
+  };
+  const nivel=lb.querySelector('.vis-nivel');
+  const ZOOM_MAX=8;
+  let giro=0, zoom=1, tx=0, ty=0, escala=1;
+
+  /* medidas da imagem JÁ girada: a 90° e 270° largura e altura trocam de
+     lugar, e é isso que decide o tamanho que cabe na tela */
+  const medidas=()=>{
+    const dePe = giro%180===0;
+    return { l: dePe?img.naturalWidth:img.naturalHeight, a: dePe?img.naturalHeight:img.naturalWidth };
+  };
+  /* o tamanho em que a imagem cabe inteira — nunca esticando além do original */
+  const escalaDeTela=()=>{
+    const { l, a }=medidas();
+    if(!l || !a) return 1;
+    return Math.min(palco.clientWidth/l, palco.clientHeight/a, 1);
+  };
+  const aplicar=()=>{
+    escala=escalaDeTela()*zoom;
+    const { l, a }=medidas();
+    // trava do arrasto: sobrando imagem para fora da tela, ela pode correr até
+    // a borda; cabendo inteira, fica centralizada e não há o que arrastar
+    const folgaX=Math.max(0,(l*escala-palco.clientWidth)/2);
+    const folgaY=Math.max(0,(a*escala-palco.clientHeight)/2);
+    tx=Math.max(-folgaX,Math.min(folgaX,tx));
+    ty=Math.max(-folgaY,Math.min(folgaY,ty));
+    img.style.transform=`translate(-50%,-50%) translate(${tx}px,${ty}px) scale(${escala}) rotate(${giro}deg)`;
+    nivel.textContent=Math.round(escala*100)+'%';
+    palco.classList.toggle('arrastavel', folgaX>0 || folgaY>0);
+    lb.querySelector('[data-vis="menos"]').disabled = zoom<=1;
+    lb.querySelector('[data-vis="mais"]').disabled = zoom>=ZOOM_MAX;
+  };
+
+  /* amplia mantendo parado o ponto (px,py) da tela — é o que deixa a rolagem
+     ir atrás de um detalhe em vez de fugir dele */
+  const ampliarEm=(novo, px, py)=>{
+    novo=Math.max(1,Math.min(ZOOM_MAX,novo));
+    if(novo===zoom) return;
+    const r=palco.getBoundingClientRect();
+    const dx=(px==null?r.width/2:px-r.left)-r.width/2;
+    const dy=(py==null?r.height/2:py-r.top)-r.height/2;
+    const k=novo/zoom;
+    tx=dx-k*(dx-tx);
+    ty=dy-k*(dy-ty);
+    zoom=novo;
+    aplicar();
+  };
+  const girar=q=>{ giro=(giro+q+360)%360; tx=0; ty=0; aplicar(); };
+  const ajustar=()=>{ zoom=1; tx=0; ty=0; aplicar(); };
+
+  const fechar=()=>{
+    document.removeEventListener('keydown', tecla);
+    window.removeEventListener('resize', aplicar);
+    lb.remove();
+    voltarFoco();
+  };
+  const tecla=ev=>{
+    if(ev.key==='Escape'){ fechar(); return; }
+    // o visualizador cobre a tela, mas o foco pode ter ficado na barra de
+    // digitação: aí as teclas são do atendente escrevendo, não do visualizador
+    const a=ev.target;
+    if(a && (a.tagName==='INPUT' || a.tagName==='TEXTAREA' || a.isContentEditable)) return;
+    if(ev.key==='+'||ev.key==='='){ ampliarEm(zoom*1.3); ev.preventDefault(); }
+    else if(ev.key==='-'||ev.key==='_'){ ampliarEm(zoom/1.3); ev.preventDefault(); }
+    else if(ev.key==='0'){ ajustar(); ev.preventDefault(); }
+    else if(ev.key==='r'||ev.key==='R'){ girar(ev.shiftKey?-90:90); ev.preventDefault(); }
+  };
+  document.addEventListener('keydown', tecla);
+  window.addEventListener('resize', aplicar);
+
+  lb.querySelectorAll('[data-vis]').forEach(b=>b.onclick=ev=>{
+    ev.stopPropagation();
+    const acao=b.dataset.vis;
+    if(acao==='mais') ampliarEm(zoom*1.3);
+    else if(acao==='menos') ampliarEm(zoom/1.3);
+    else if(acao==='esq') girar(-90);
+    else if(acao==='dir') girar(90);
+    else if(acao==='ajustar') ajustar();
+    else if(acao==='fechar') fechar();
+  });
+
+  palco.addEventListener('wheel', ev=>{
+    ev.preventDefault();
+    ampliarEm(zoom*(ev.deltaY<0?1.18:1/1.18), ev.clientX, ev.clientY);
+  }, { passive:false });
+
+  img.ondblclick=ev=>{ ev.stopPropagation(); if(zoom>1) ajustar(); else ampliarEm(2.5, ev.clientX, ev.clientY); };
+
+  /* arrasto com um dedo/mouse e pinça com dois */
+  const dedos=new Map();
+  let arrastou=false, pinca=null;
+  const distancia=()=>{
+    const [a,b]=[...dedos.values()];
+    return { d:Math.hypot(a.x-b.x,a.y-b.y), x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+  };
+  palco.addEventListener('pointerdown', ev=>{
+    dedos.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    arrastou=false;
+    if(dedos.size===2) pinca={ ...distancia(), zoom };
+    try{ palco.setPointerCapture(ev.pointerId); }catch{}
+    palco.classList.add('arrastando');
+  });
+  palco.addEventListener('pointermove', ev=>{
+    const antes=dedos.get(ev.pointerId);
+    if(!antes) return;
+    dedos.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(dedos.size>=2 && pinca){
+      const agora=distancia();
+      if(pinca.d>0) ampliarEm(pinca.zoom*(agora.d/pinca.d), agora.x, agora.y);
+      arrastou=true;
+      return;
+    }
+    const dx=ev.clientX-antes.x, dy=ev.clientY-antes.y;
+    if(Math.abs(dx)>1 || Math.abs(dy)>1) arrastou=true;
+    tx+=dx; ty+=dy;
+    aplicar();
+  });
+  const soltar=ev=>{
+    dedos.delete(ev.pointerId);
+    if(dedos.size<2) pinca=null;
+    if(!dedos.size) palco.classList.remove('arrastando');
+  };
+  palco.addEventListener('pointerup', soltar);
+  palco.addEventListener('pointercancel', soltar);
+
+  /* clicar no fundo fecha; clicar na imagem (ou terminar um arrasto) não.
+     Quem decide é o PONTO clicado, não o alvo do evento: o arrasto captura o
+     ponteiro no palco, e a partir daí o clique chega com o palco como alvo
+     mesmo quando o dedo estava em cima da imagem. */
+  palco.onclick=ev=>{
+    if(arrastou) return;
+    const r=img.getBoundingClientRect();
+    const dentro = ev.clientX>=r.left && ev.clientX<=r.right && ev.clientY>=r.top && ev.clientY<=r.bottom;
+    if(!dentro) fechar();
+  };
+
+  // a imagem pode ainda não ter chegado: o tamanho de tela depende dela
+  if(img.complete && img.naturalWidth) aplicar();
+  else img.onload=aplicar;
+  palco.focus({ preventScroll:true });
+  return lb;
+}
+
 /* ═══════════ A BARRA DE DIGITAÇÃO QUE NÃO É DESTRUÍDA ══════════════════════
    Mesma ideia do player de áudio: em vez de recriar a <textarea> a cada
    remonte e depois tentar repor o que estava dentro, o nó ORIGINAL é
@@ -6748,15 +6979,19 @@ function openModal(id){
     if(!rascunhoDe(id).digitando && window.innerWidth>900 && !('ontouchstart' in window)){
       guardarRascunho(id,{ digitando:true });
     }
+    // ...a não ser que o visualizador de imagem esteja aberto por cima: lá o
+    // teclado é dele, e puxar o foco para um campo escondido faria o atalho de
+    // girar virar letra na mensagem
+    const focar = ()=>{ if(!document.querySelector('.midia-lightbox')) inp.focus(); };
     // devolve o foco e o cursor exatamente onde estavam antes do re-render
     if(transplantado){
       // o mesmo nó voltou: a seleção volta inteira com ele, inclusive um
       // trecho marcado — que o rascunho, guardando um ponto só, não reporia
-      if(_campoVoltou.foco || rascunhoDe(id).digitando) inp.focus();
+      if(_campoVoltou.foco || rascunhoDe(id).digitando) focar();
       try{ inp.setSelectionRange(_campoVoltou.ini, _campoVoltou.fim); }catch{}
       guardarRascunho(id,{ texto:inp.value, cursor:inp.selectionStart });
     } else if(rascunhoDe(id).digitando){
-      inp.focus();
+      focar();
       const cur=rascunhoDe(id).cursor;
       const p=cur!=null?Math.min(cur,inp.value.length):inp.value.length;
       try{ inp.setSelectionRange(p,p); }catch{}
@@ -7036,14 +7271,8 @@ function openModal(id){
     ligarBotoesAcao();
   };
 
-  // clicar na imagem abre ampliada
-  document.querySelectorAll('[data-zoom]').forEach(el=>el.onclick=()=>{
-    const lb=document.createElement('div');
-    lb.className='midia-lightbox';
-    lb.innerHTML=`<img src="${el.dataset.zoom}" alt="Anexo ampliado">`;
-    lb.onclick=()=>lb.remove();
-    document.body.appendChild(lb);
-  });
+  // clicar na imagem abre o visualizador (zoom, giro e arrasto)
+  document.querySelectorAll('[data-zoom]').forEach(el=>el.onclick=()=>abrirVisualizador(el.dataset.zoom));
 
   // setor
   $('#mSetor').onchange=e=>{ c.setor=e.target.value; api.patchConversa(c,{setor:c.setor}); renderAll(); toast('Movido para o setor '+c.setor); };
