@@ -2913,6 +2913,72 @@ async function tratarReacao(e, { fone, waId, emoji, alvoWaId }) {
   return { ok: true, reacao: emoji };
 }
 
+/* Quanto tempo o WhatsApp permite editar uma mensagem já enviada. Não é
+   escolha nossa: passados 15 minutos ele recusa a edição, e o painel tem de
+   saber disso ANTES de deixar o atendente reescrever um texto que não vai
+   chegar a lugar nenhum. */
+const EDICAO_JANELA_MS = 15 * 60 * 1000;
+
+/* ═══════════ EDIÇÃO DE MENSAGEM VINDA DO WHATSAPP ═══════════════════════════
+   Quando alguém edita uma mensagem, o WhatsApp não manda uma mensagem nova:
+   manda um `protocolMessage` do tipo MESSAGE_EDIT apontando para a chave da
+   original, com o texto que passou a valer.
+
+   Isso vale para o cliente e para nós — editar pelo celular da empresa também
+   chega por aqui. Sem tratar, o painel ficaria mostrando o texto velho de uma
+   mensagem que já mudou no celular do cliente, e o atendente responderia a um
+   valor ou endereço que não existe mais. É um erro calado, do pior tipo.
+
+   O formato varia entre versões da Evolution (o protocolMessage às vezes vem
+   dentro de `editedMessage`), então procuramos nos dois lugares. */
+function edicaoDaMensagem(d) {
+  const msg = d?.message || {};
+  const pm = msg.protocolMessage
+          || msg.editedMessage?.message?.protocolMessage
+          || d?.protocolMessage
+          || null;
+  if (!pm) return null;
+  const tipo = String(pm.type ?? '');
+  if (tipo !== 'MESSAGE_EDIT' && tipo !== '14') return null;
+  const novo = pm.editedMessage || {};
+  const texto = String(
+    novo.conversation || novo.extendedTextMessage?.text || ''
+  ).trim();
+  const alvo = pm.key?.id || null;
+  if (!alvo || !texto) return null;
+  return { alvo, texto };
+}
+
+async function tratarEdicaoRecebida(e, ed) {
+  const m = await sbUm(e,
+    `atend_mensagens?wa_id=eq.${encodeURIComponent(ed.alvo)}` +
+    `&select=id,conversa_id,conteudo,conteudo_original,excluido_em&limit=1`);
+  if (!m) return { ok: true, ignorado: 'edição de mensagem que não temos' };
+  // mensagem apagada não volta a ter texto por causa de uma edição atrasada
+  if (m.excluido_em) return { ok: true, ignorado: 'mensagem apagada' };
+  if (String(m.conteudo || '') === ed.texto) return { ok: true, ignorado: 'edição já aplicada' };
+
+  const antes = String(m.conteudo || '');
+  await sb(e, `atend_mensagens?id=eq.${m.id}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: {
+      conteudo: ed.texto,
+      editado_em: new Date().toISOString(),
+      // só na primeira edição: guardar a versão anterior de novo apagaria o
+      // texto que foi realmente enviado lá atrás
+      ...(m.conteudo_original ? {} : { conteudo_original: antes }),
+    },
+  });
+  // a prévia da lista guarda uma cópia do texto
+  const conv = await sbUm(e, `atend_conversas?id=eq.${m.conversa_id}&select=id,ultima_msg`);
+  if (conv && String(conv.ultima_msg || '') === antes.slice(0, 200)) {
+    await sb(e, `atend_conversas?id=eq.${conv.id}`, {
+      method: 'PATCH', prefer: 'return=minimal', body: { ultima_msg: ed.texto.slice(0, 200) },
+    });
+  }
+  return { ok: true, editada: m.id };
+}
+
 // ============================================================================
 // WEBHOOK — mensagem recebida da Evolution API
 // ============================================================================
@@ -2922,6 +2988,13 @@ async function tratarWebhook(e, body) {
   // ACK do WhatsApp: entregue / lido. Chega como messages.update, que antes
   // era descartado pelo filtro abaixo — é o que alimenta os risquinhos.
   if (evento.includes('messages.update') || evento.includes('messages_update')) {
+    // a edição pode chegar como update ou como upsert, conforme a versão da
+    // Evolution: procuramos nos dois em vez de apostar numa
+    const bruto = body.data || body.message || body;
+    for (const d of (Array.isArray(bruto) ? bruto : [bruto])) {
+      const ed = edicaoDaMensagem(d);
+      if (ed) return await tratarEdicaoRecebida(e, ed);
+    }
     return await tratarAckMensagem(e, body);
   }
 
@@ -2931,6 +3004,12 @@ async function tratarWebhook(e, body) {
 
   const d = body.data || body.message || body;
   const key = d.key || {};
+
+  // edição chega antes do filtro de "mensagem própria": editar pelo celular da
+  // empresa também precisa aparecer aqui
+  const edicao = edicaoDaMensagem(d);
+  if (edicao) return await tratarEdicaoRecebida(e, edicao);
+
   if (key.fromMe) return { ok: true, ignorado: 'mensagem própria' };
 
   const fone = normalizarFone(key.remoteJid || d.from || d.number);
@@ -6888,7 +6967,9 @@ export default async function handler(req, res) {
           // cliente e sai do painel também. O registro de que existiu fica no
           // banco, que é onde uma auditoria vai procurar — não numa resposta
           // de API que qualquer aba aberta consegue ler.
-          if (m.excluido_em) { m.conteudo = null; m.midia_url = null; m.tipo = 'texto'; continue; }
+          if (m.excluido_em) {
+            m.conteudo = null; m.conteudo_original = null; m.midia_url = null; m.tipo = 'texto'; continue;
+          }
           if (m.midia_url) m.midia_link = await assinarMidia(e, m.midia_url).catch(() => null);
         }
         return res.status(200).json({ ok: true, mensagens: msgs });
@@ -6977,6 +7058,107 @@ export default async function handler(req, res) {
           });
         }
         return res.status(200).json({ ok: true, excluido_em: agora, excluido_por_nome: user.nome || null });
+      }
+
+      /* Editar no WhatsApp uma mensagem que NÓS enviamos.
+         ------------------------------------------------------------------
+         O WhatsApp aceita editar por 15 minutos depois do envio, e só texto —
+         legenda de imagem, PDF e áudio não entram. Conferimos aqui antes de
+         chamar a Evolution: recusar na hora certa é melhor do que deixar o
+         atendente reescrever a frase inteira para só então descobrir.
+
+         Como no apagar, se a Evolution recusar, NADA é gravado: o painel não
+         pode mostrar um texto que o cliente não recebeu. E o texto anterior
+         fica em `conteudo_original` — o WhatsApp não guarda versão antiga,
+         aqui guarda. */
+      case 'mensagens.editar': {
+        if (!user.admin) {
+          return res.status(403).json({ ok: false, error: 'Apenas administradores podem editar mensagens.' });
+        }
+        const mid = Number(body.mensagem_id);
+        const texto = String(body.texto || '').trim();
+        if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório.' });
+        if (!texto) return res.status(400).json({ ok: false, error: 'O texto novo não pode ficar vazio. Para tirar a mensagem, use o apagar.' });
+        if (texto.length > 4096) return res.status(400).json({ ok: false, error: 'Texto longo demais para uma mensagem do WhatsApp.' });
+
+        const m = await sbUm(e,
+          `atend_mensagens?id=eq.${mid}&select=id,conversa_id,direcao,tipo,wa_id,conteudo,conteudo_original,created_at,excluido_em`);
+        if (!m) return res.status(404).json({ ok: false, error: 'Mensagem não encontrada.' });
+        if (m.excluido_em) return res.status(400).json({ ok: false, error: 'Esta mensagem foi apagada.' });
+        if (m.direcao === 'in') {
+          return res.status(400).json({ ok: false, error: 'Só dá para editar o que saiu daqui — a mensagem do cliente é dele.' });
+        }
+        if (m.direcao === 'sys') {
+          return res.status(400).json({ ok: false, error: 'Isto é uma anotação do sistema, não uma mensagem enviada.' });
+        }
+        if (m.tipo && m.tipo !== 'texto') {
+          return res.status(400).json({ ok: false, error: 'O WhatsApp só deixa editar mensagem de texto — legenda de imagem, PDF e áudio não.' });
+        }
+        if (!m.wa_id) {
+          return res.status(400).json({ ok: false, error: 'Esta mensagem foi registrada sem o id do WhatsApp, então não há como editá-la lá.' });
+        }
+        if (String(m.conteudo || '') === texto) {
+          return res.status(200).json({ ok: true, sem_mudanca: true });
+        }
+        const idade = Date.now() - Date.parse(m.created_at);
+        if (!(idade >= 0) || idade > EDICAO_JANELA_MS) {
+          return res.status(400).json({ ok: false, error:
+            'Passou dos 15 minutos que o WhatsApp dá para editar. Nesse caso o caminho é apagar a mensagem e enviar a correta.' });
+        }
+
+        const conv = await sbUm(e, `atend_conversas?id=eq.${m.conversa_id}&select=id,contato_fone,ultima_msg`);
+        if (!conv) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
+        if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) {
+          return res.status(400).json({ ok: false, error: 'Evolution API não configurada.' });
+        }
+
+        const numero = normalizarFone(conv.contato_fone);
+        const pedido = (metodo) => fetchComPrazo(`${e.EVO_URL}/chat/updateMessage/${e.EVO_INST}`, {
+          method: metodo,
+          headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+          body: JSON.stringify({
+            number: numero,
+            text: texto,
+            key: { id: m.wa_id, remoteJid: `${numero}@s.whatsapp.net`, fromMe: true },
+          }),
+        }, 15000);
+        let r;
+        try {
+          // a rota é POST na Evolution atual, mas a documentação de versões
+          // anteriores registra PUT. Em vez de apostar na versão que está na
+          // VPS, tentamos a segunda quando a primeira diz "verbo errado".
+          r = await pedido('POST');
+          if (r.status === 405 || r.status === 404) r = await pedido('PUT');
+        } catch (err) {
+          return res.status(502).json({ ok: false, error:
+            `Não deu para falar com o WhatsApp: ${String(err.message).slice(0, 140)}. Nada foi alterado.` });
+        }
+        if (!r.ok) {
+          const detalhe = (await r.text().catch(() => '')).slice(0, 160);
+          return res.status(502).json({ ok: false, error: r.status === 404
+            ? `Esta Evolution não tem a rota de editar mensagem (respondeu 404). Nada foi alterado. ${detalhe}`
+            : `O WhatsApp não aceitou a edição (${r.status}) e nada foi alterado. ${detalhe}` });
+        }
+
+        const agora = new Date().toISOString();
+        const antes = String(m.conteudo || '');
+        await sb(e, `atend_mensagens?id=eq.${mid}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            conteudo: texto, editado_em: agora,
+            editado_por: user.id, editado_por_nome: user.nome || null,
+            ...(m.conteudo_original ? {} : { conteudo_original: antes }),
+          },
+        });
+        if (conv.ultima_msg && String(conv.ultima_msg) === antes.slice(0, 200)) {
+          await sb(e, `atend_conversas?id=eq.${conv.id}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: { ultima_msg: texto.slice(0, 200) },
+          });
+        }
+        return res.status(200).json({
+          ok: true, texto, editado_em: agora, editado_por_nome: user.nome || null,
+          conteudo_original: m.conteudo_original || antes,
+        });
       }
 
       // Recarrega os risquinhos direto da Evolution. O painel chama ao abrir a

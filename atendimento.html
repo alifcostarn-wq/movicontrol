@@ -472,6 +472,7 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .mb:hover .mb-reply{opacity:1;}
 .mb-reply:hover{border-color:var(--green);color:var(--green-deep);background:#fff;opacity:1;}
 .mb-lixo:hover{border-color:var(--red);color:var(--red);background:#fff;}
+.mb-edit{font-style:italic;cursor:help;}
 /* mensagem apagada: fica o lugar dela, sem o conteúdo — como no WhatsApp */
 .mb.apagada{background:#f1f5f9 !important;border:1px dashed var(--line) !important;color:var(--text-low);}
 .mb.apagada .ap-t{display:flex;align-items:center;gap:6px;font-size:12.5px;font-style:italic;}
@@ -2755,6 +2756,10 @@ const api = {
       respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
       status: m.status || null,
       excluidoEm: m.excluido_em || null, excluidoPor: m.excluido_por_nome || null,
+      // o horário completo: o botão de editar só existe dentro dos 15 minutos
+      criadoEm: m.created_at || null,
+      editadoEm: m.editado_em || null, editadoPor: m.editado_por_nome || null,
+      textoOriginal: m.conteudo_original || null,
     }));
     // Durante o await, o realtime pode ter recriado a lista de conversas e
     // trocado este objeto. Escrever só no `c` original faria a thread nova
@@ -2781,6 +2786,9 @@ const api = {
   // apagar no WhatsApp e no painel (só admin; o servidor confere de novo)
   async excluirMensagem(m){
     return await chamar('mensagens.excluir', { mensagem_id:m.id });
+  },
+  async editarMensagem(m, texto){
+    return await chamar('mensagens.editar', { mensagem_id:m.id, texto });
   },
   async buscarAvatar(c){
     const j = await chamar('conversa.avatar', { conversa_id:c.id });
@@ -3031,6 +3039,16 @@ function ligarRealtime(){
       if(p.new.excluido_em && !m.excluidoEm){
         m.excluidoEm = p.new.excluido_em;
         m.excluidoPor = p.new.excluido_por_nome || null;
+        mudou = true;
+      }
+      // texto corrigido — pelo cliente no celular dele, ou por outro
+      // administrador noutro painel. Numa mensagem apagada o texto não volta:
+      // ele continua no banco para auditoria, mas não é para aparecer aqui.
+      if(!m.excluidoEm && p.new.conteudo!=null && p.new.conteudo!==m.x){
+        m.textoOriginal = m.textoOriginal || p.new.conteudo_original || m.x;
+        m.x = p.new.conteudo;
+        m.editadoEm = p.new.editado_em || new Date().toISOString();
+        m.editadoPor = p.new.editado_por_nome || null;
         mudou = true;
       }
       if(p.new.status && m.status!==p.new.status){ m.status = p.new.status; mudou = true; }
@@ -6585,6 +6603,20 @@ function abrirMenuAcoes(c, ancora){
    fonte da verdade é o CAMPO VIVO: antes de qualquer remonte o que está na tela
    é salvo. Assim nenhum caractere depende de um handler ter rodado antes, nem
    de qual objeto ele atualizou. */
+/* Os 15 minutos que o WhatsApp dá para editar. O servidor confere de novo,
+   mas a tela precisa saber para NÃO oferecer o que já não é possível: pior do
+   que não ter o botão é ter um que só serve para recusar depois que a pessoa
+   reescreveu a frase. */
+const EDICAO_JANELA_MS = 15 * 60 * 1000;
+function podeEditar(m){
+  if(!m || !m.id || m.excluidoEm) return false;
+  if(m.t!=='out' && m.t!=='bot') return false;
+  if(m.tipo && m.tipo!=='texto') return false;
+  if(!m.criadoEm) return false;                 // mensagem ainda não gravada
+  const idade = Date.now() - Date.parse(m.criadoEm);
+  return idade >= 0 && idade < EDICAO_JANELA_MS;
+}
+
 const RASCUNHOS = new Map();
 
 function rascunhoDe(id){
@@ -6755,9 +6787,11 @@ function openModal(id){
               <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
           }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${
             m.id?`<button class="mb-reply" data-responder="${m.id}" title="Responder esta mensagem">↩ responder</button>`:''
+          }${USUARIO.admin && podeEditar(m)
+            ? `<button class="mb-reply" data-editar="${m.id}" title="Corrigir o texto no WhatsApp do cliente (o WhatsApp dá 15 minutos)">✏️ editar</button>` : ''
           }${m.id && USUARIO.admin && (m.t==='out'||m.t==='bot')
             ? `<button class="mb-reply mb-lixo" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑 apagar</button>` : ''
-          }<span class="tm">${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
+          }<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
       }).join(''); })()}
     </div>
     <div id="mReplyBar"></div>
@@ -7031,6 +7065,35 @@ function openModal(id){
   document.querySelectorAll('[data-responder]').forEach(el=>el.onclick=ev=>{
     ev.stopPropagation();
     iniciarResposta(c, el.dataset.responder);
+  });
+  /* editar mensagem enviada — a janela é de 15 minutos, e quem confere de
+     verdade é o servidor. O texto novo é pedido num prompt do navegador de
+     propósito: um campo desenhado dentro da conversa seria destruído no
+     primeiro remonte por mensagem nova, que é o defeito que a barra de
+     digitação teve. A caixa do navegador é imune a isso. */
+  document.querySelectorAll('[data-editar]').forEach(el=>el.onclick=async ev=>{
+    ev.stopPropagation();
+    const m=(c.msgs||[]).find(x=>String(x.id)===el.dataset.editar);
+    if(!m) return;
+    const novo=prompt('Corrigir a mensagem enviada:\n\nO cliente vê o texto novo com a marca "editada".', m.x||'');
+    if(novo===null) return;
+    if(!novo.trim()){ toast('Para tirar a mensagem, use o apagar.'); return; }
+    if(novo.trim()===(m.x||'').trim()) return;
+    const rotulo=el.textContent;
+    el.disabled=true; el.textContent='salvando…';
+    try{
+      const j=await api.editarMensagem(m, novo.trim());
+      if(!j.sem_mudanca){
+        m.textoOriginal = m.textoOriginal || m.x;
+        m.x = j.texto || novo.trim();
+        m.editadoEm = j.editado_em || new Date().toISOString();
+        m.editadoPor = j.editado_por_nome || USUARIO.nome;
+      }
+      openModal(c.id); renderAll(); toast('Mensagem corrigida no WhatsApp do cliente');
+    }catch(err){
+      el.disabled=false; el.textContent=rotulo;
+      toast(err.message);
+    }
   });
   /* apagar mensagem enviada — só admin, e só o que saiu daqui.
      A confirmação diz as três coisas que o atendente precisa saber antes de
