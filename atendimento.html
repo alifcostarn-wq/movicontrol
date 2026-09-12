@@ -2893,14 +2893,13 @@ async function recarregarConversas(){
       nova.asn = antiga.asn;
       nova._asnCarregado = antiga._asnCarregado;
       nova.asnErro = antiga.asnErro;
-      // rascunho: o atendente pode estar digitando enquanto isto roda
+      // o rascunho NÃO é copiado aqui de propósito: ele mora em RASCUNHOS,
+      // fora dos objetos de conversa, justamente porque esta troca acontecia no
+      // meio da digitação e levava embora o que tinha sido escrito depois
       nova.avatarUrl = nova.avatarUrl || antiga.avatarUrl;
       nova.avatarEm = nova.avatarEm || antiga.avatarEm;
       nova._avatarBuscando = antiga._avatarBuscando;
       nova._anexo = antiga._anexo;
-      nova.rascunho = antiga.rascunho;
-      nova._cursor = antiga._cursor;
-      nova._digitando = antiga._digitando;
     }
     return nova;
   });
@@ -6271,7 +6270,56 @@ function abrirMenuAcoes(c, ancora){
   return pop;
 }
 
+/* ═══════════ RASCUNHO DA BARRA DE DIGITAÇÃO ═══════════════════════════════
+   O modal inteiro é remontado por innerHTML a cada evento em tempo real, e isso
+   destrói a <textarea> com o que estiver dentro. O rascunho precisa viver fora
+   do DOM — até aí o desenho anterior estava certo. O erro era ONDE:
+
+   ele morava no objeto da conversa (c.rascunho). Só que recarregarConversas()
+   TROCA os objetos de state.conversas por novos, copiando o rascunho no
+   instante da troca, enquanto o `oninput` da textarea viva continua apontando
+   para o objeto ANTIGO. Tudo que o atendente digitasse entre a cópia e o
+   remonte era escrito no objeto que seria jogado fora, e o remonte restaurava
+   a versão velha: na tela, o texto voltava atrás sozinho.
+
+   E uma mensagem do cliente dispara as duas coisas de uma vez — INSERT em
+   atend_mensagens remonta o modal, e o UPDATE em atend_conversas (ultima_msg_em
+   mudou) recarrega a lista e troca os objetos. Por isso doía exatamente quando
+   o cliente escrevia.
+
+   Agora o rascunho mora num mapa por id de conversa, que nada substitui, e a
+   fonte da verdade é o CAMPO VIVO: antes de qualquer remonte o que está na tela
+   é salvo. Assim nenhum caractere depende de um handler ter rodado antes, nem
+   de qual objeto ele atualizou. */
+const RASCUNHOS = new Map();
+
+function rascunhoDe(id){
+  return RASCUNHOS.get(id) || { texto:'', cursor:null, digitando:false };
+}
+function guardarRascunho(id, dados){
+  if(id==null) return;
+  RASCUNHOS.set(id, { ...rascunhoDe(id), ...dados });
+}
+function limparRascunho(id){ RASCUNHOS.delete(id); }
+
+/* Salva o que está no campo AGORA, sob a conversa que está aberta agora.
+   Chamada no topo de openModal, antes de modalId mudar: trocar de conversa
+   guarda o rascunho da anterior no lugar certo, em vez de misturar as duas. */
+function capturarRascunhoVivo(){
+  if(modalId==null) return;
+  const inp=document.getElementById('mInput');
+  if(!inp) return;
+  guardarRascunho(modalId, {
+    texto: inp.value,
+    cursor: inp.selectionStart,
+    digitando: document.activeElement===inp || rascunhoDe(modalId).digitando,
+  });
+}
+
 function openModal(id){
+  // o campo vivo é salvo ANTES de qualquer coisa: é o único jeito de não perder
+  // o que foi digitado no intervalo entre o último evento e este remonte
+  capturarRascunhoVivo();
   // openModal também é o "repintar": só reinicia o relógio dos vistos quando a
   // conversa de fato muda, senão cada render adiaria a conferência para sempre
   const trocouConversa = modalId!==id;
@@ -6554,11 +6602,12 @@ function openModal(id){
   const inp=$('#mInput');
   if(inp){
     const cresce=()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,132)+'px'; };
-    if(c.rascunho){ inp.value=c.rascunho; cresce(); }
-    inp.oninput=()=>{ c.rascunho=inp.value; c._cursor=inp.selectionStart; cresce(); };
-    inp.onkeyup=()=>{ c._cursor=inp.selectionStart; };
-    inp.onclick=()=>{ c._cursor=inp.selectionStart; };
-    inp.onfocus=()=>{ c._digitando=true; };
+    const rasc=rascunhoDe(id);
+    if(rasc.texto){ inp.value=rasc.texto; cresce(); }
+    inp.oninput=()=>{ guardarRascunho(id,{ texto:inp.value, cursor:inp.selectionStart }); cresce(); };
+    inp.onkeyup=()=>{ guardarRascunho(id,{ cursor:inp.selectionStart }); };
+    inp.onclick=()=>{ guardarRascunho(id,{ cursor:inp.selectionStart }); };
+    inp.onfocus=()=>{ guardarRascunho(id,{ digitando:true }); };
     inp.onpaste=async ev=>{
       const it=[...(ev.clipboardData&&ev.clipboardData.items||[])].find(x=>x.type.startsWith('image/'));
       if(!it) return;                       // texto normal segue o caminho padrão
@@ -6625,7 +6674,7 @@ function openModal(id){
       // pode fechar sem tirar o painel da tela
       fecharLeque();
       abrirEmojis(bEmo, inp, pos=>{
-        c.rascunho=inp.value; c._cursor=pos; c._digitando=true; cresce();
+        guardarRascunho(id,{ texto:inp.value, cursor:pos, digitando:true }); cresce();
       });
     };
     inp.onblur=ev=>{
@@ -6634,15 +6683,18 @@ function openModal(id){
       // era preciso clicar no campo de novo a cada mensagem enviada
       const alvo=ev&&ev.relatedTarget;
       if(alvo&&alvo.closest&&alvo.closest('.m-composer')) return;
-      c._digitando=false;
+      guardarRascunho(id,{ texto:inp.value, cursor:inp.selectionStart, digitando:false });
     };
     // no computador o campo já abre pronto para digitar; no celular não, senão
     // o teclado sobe e cobre a conversa antes de o atendente ler o histórico
-    if(!c._digitando && window.innerWidth>900 && !('ontouchstart' in window)) c._digitando=true;
+    if(!rascunhoDe(id).digitando && window.innerWidth>900 && !('ontouchstart' in window)){
+      guardarRascunho(id,{ digitando:true });
+    }
     // devolve o foco e o cursor exatamente onde estavam antes do re-render
-    if(c._digitando){
+    if(rascunhoDe(id).digitando){
       inp.focus();
-      const p=c._cursor!=null?c._cursor:inp.value.length;
+      const cur=rascunhoDe(id).cursor;
+      const p=cur!=null?Math.min(cur,inp.value.length):inp.value.length;
       try{ inp.setSelectionRange(p,p); }catch{}
     }
   }
@@ -6673,9 +6725,9 @@ function openModal(id){
      do campo. */
   const colarAtalho = i => {
     const t=$('#mInput'); t.value=state.atalhos[i].m;
-    c.rascunho=t.value; c._digitando=true;
     t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,132)+'px';
-    t.focus(); t.setSelectionRange(t.value.length,t.value.length); c._cursor=t.value.length;
+    t.focus(); t.setSelectionRange(t.value.length,t.value.length);
+    guardarRascunho(c.id,{ texto:t.value, cursor:t.value.length, digitando:true });
   };
   const bAtalhos=$('#mAtalhos');
   if(bAtalhos) bAtalhos.onclick=ev=>{
@@ -6708,7 +6760,8 @@ function openModal(id){
     if(anexo){
       c._anexo=null;
       $('#mInput').value=''; $('#mInput').style.height='auto';
-      c.rascunho=''; c._cursor=null; respondendoA=null; c._digitando=true;
+      limparRascunho(c.id); guardarRascunho(c.id,{ digitando:true });
+      respondendoA=null;
       pintarBarraAnexo(c, anexo, 'enviando…');
       try{
         await api.enviarMidia(c, anexo, v);
@@ -6732,11 +6785,14 @@ function openModal(id){
     c.preview='Você: '+v;
     if(c.col==='novos'){ c.col='atendimento'; }
     c.atendente=USUARIO.nome; c.botAtivo=false;
+    // limpa o campo E o rascunho ANTES de qualquer remonte. Se a ordem se
+    // inverter, o remonte restaura o texto que acabou de ser enviado e sobram
+    // letras no campo — era a outra metade da queixa.
     $('#mInput').value='';
     $('#mInput').style.height='auto';
-    c.rascunho=''; c._cursor=null;
+    limparRascunho(c.id);
+    guardarRascunho(c.id,{ digitando:true });   // cursor segue no campo
     respondendoA=null;
-    c._digitando=true;          // mantém o cursor no campo para a próxima mensagem
     openModal(c.id); renderAll();
     api.enviarMensagem(c,v,citada?citada.id:null).catch(err=>toast('Falha ao enviar: '+err.message));
   };
