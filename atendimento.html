@@ -1325,6 +1325,18 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
   transition:transform .25s;z-index:99;box-shadow:var(--shadow-lg);
 }
 .toast.show{transform:translateX(-50%) translateY(0);}
+.versao-nova{
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);
+  display:flex;align-items:center;gap:12px;
+  background:#0f172a;color:#fff;font-size:13px;font-weight:600;
+  padding:9px 10px 9px 18px;border-radius:11px;
+  transition:transform .25s;z-index:100;box-shadow:var(--shadow-lg);
+}
+.versao-nova.show{transform:translateX(-50%) translateY(0);}
+.versao-nova button{
+  background:var(--green);color:#fff;border:0;border-radius:8px;padding:7px 14px;
+  font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+}
 ::-webkit-scrollbar{width:8px;height:8px;}
 ::-webkit-scrollbar-thumb{background:#d3dae2;border-radius:4px;}
 
@@ -6224,6 +6236,37 @@ function restaurarMidiaTocando(vivo){
   novo.parentNode.replaceChild(vivo.el, novo);
 }
 
+/* ═══════════ A BARRA DE DIGITAÇÃO QUE NÃO É DESTRUÍDA ══════════════════════
+   Mesma ideia do player de áudio: em vez de recriar a <textarea> a cada
+   remonte e depois tentar repor o que estava dentro, o nó ORIGINAL é
+   transplantado para a árvore nova. Texto, altura, seleção e composição do
+   teclado vão junto porque é o MESMO elemento. (O histórico do Ctrl+Z não
+   sobrevive: o Chromium o descarta quando o campo sai do documento, e nenhum
+   transplante traz isso de volta.)
+
+   Guardar e repor (o rascunho) é uma cópia, e toda cópia tem um instante:
+   basta um caminho que escreva no campo sem passar pelo handler — colar,
+   corretor do celular, ditado, teclado de emoji do sistema, uma extensão —
+   para a cópia ficar velha e o remonte repor a versão de antes. Transplantar
+   não tem instante: não existe segunda via para chegar atrasada, nem para
+   voltar depois que o campo foi limpo.
+
+   O rascunho em RASCUNHOS continua, para o que o transplante não cobre:
+   trocar de conversa (aí o campo tem mesmo de mudar de conteúdo) e fechar e
+   reabrir o modal. */
+function preservarComposer(){
+  const el=document.getElementById('mInput');
+  if(!el) return null;
+  return { el, foco: document.activeElement===el, ini: el.selectionStart, fim: el.selectionEnd };
+}
+function restaurarComposer(vivo){
+  if(!vivo) return null;
+  const novo=document.getElementById('mInput');
+  if(!novo || !novo.parentNode) return null;
+  novo.parentNode.replaceChild(vivo.el, novo);
+  return vivo;
+}
+
 /* Menu de ações da conversa.
 
    As quatro ações que ficavam numa faixa fixa saem daqui. Elas não competem
@@ -6386,6 +6429,9 @@ function openModal(id){
 
   // pega o player vivo ANTES de trocar o HTML — depois disso o nó antigo já foi
   const _midiaViva = preservarMidiaTocando();
+  // e o campo de texto vivo — só quando a conversa é a mesma: trocar de
+  // conversa é o único caso em que o conteúdo do campo deve mesmo mudar
+  const _campoVivo = trocouConversa ? null : preservarComposer();
 
   $('#modal').innerHTML=`
   <div class="m-abas only-mobile">
@@ -6593,6 +6639,9 @@ function openModal(id){
   // devolve o player que já estava tocando para a árvore nova, no lugar do
   // elemento recém-criado: o áudio do cliente não para quando chega mensagem
   restaurarMidiaTocando(_midiaViva);
+  // devolve o MESMO campo de texto para a árvore nova, com o que o atendente
+  // estava escrevendo dentro dele
+  const _campoVoltou = restaurarComposer(_campoVivo);
   $('#mThread').scrollTop=99999;
   pintarBarraResposta(c);
 
@@ -6602,8 +6651,15 @@ function openModal(id){
   const inp=$('#mInput');
   if(inp){
     const cresce=()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,132)+'px'; };
-    const rasc=rascunhoDe(id);
-    if(rasc.texto){ inp.value=rasc.texto; cresce(); }
+    // com o campo transplantado não há nada a repor: o que está escrito já
+    // está lá, no mesmo elemento. Só uma tela nova — outra conversa, ou o
+    // modal reaberto — precisa do rascunho.
+    const transplantado = !!_campoVoltou && inp===_campoVoltou.el;
+    if(transplantado) cresce();
+    else {
+      const rasc=rascunhoDe(id);
+      if(rasc.texto){ inp.value=rasc.texto; cresce(); }
+    }
     inp.oninput=()=>{ guardarRascunho(id,{ texto:inp.value, cursor:inp.selectionStart }); cresce(); };
     inp.onkeyup=()=>{ guardarRascunho(id,{ cursor:inp.selectionStart }); };
     inp.onclick=()=>{ guardarRascunho(id,{ cursor:inp.selectionStart }); };
@@ -6678,6 +6734,8 @@ function openModal(id){
       });
     };
     inp.onblur=ev=>{
+      // campo que saiu da tela num remonte não é o atendente largando o campo
+      if(!inp.isConnected) return;
       // clicar em enviar/emoji/anexo tira o foco do campo, mas o atendente
       // continua escrevendo ali — sem esta checagem o cursor não voltava e
       // era preciso clicar no campo de novo a cada mensagem enviada
@@ -6691,7 +6749,13 @@ function openModal(id){
       guardarRascunho(id,{ digitando:true });
     }
     // devolve o foco e o cursor exatamente onde estavam antes do re-render
-    if(rascunhoDe(id).digitando){
+    if(transplantado){
+      // o mesmo nó voltou: a seleção volta inteira com ele, inclusive um
+      // trecho marcado — que o rascunho, guardando um ponto só, não reporia
+      if(_campoVoltou.foco || rascunhoDe(id).digitando) inp.focus();
+      try{ inp.setSelectionRange(_campoVoltou.ini, _campoVoltou.fim); }catch{}
+      guardarRascunho(id,{ texto:inp.value, cursor:inp.selectionStart });
+    } else if(rascunhoDe(id).digitando){
       inp.focus();
       const cur=rascunhoDe(id).cursor;
       const p=cur!=null?Math.min(cur,inp.value.length):inp.value.length;
@@ -7136,6 +7200,9 @@ function ligarVistos(){
 }
 
 function closeModal(){
+  // fechar é a última chance de guardar o que estava escrito: depois daqui
+  // modalId é null e o campo some sem dono
+  capturarRascunhoVivo();
   // gravação aberta não pode sobreviver à troca de conversa: o áudio iria
   // para o cliente errado
   if(GRAV.rec || GRAV.blob) gravCancelar();
@@ -8928,6 +8995,66 @@ function abrirAjusteSom(){
   };
   pintarNotif();
 }
+/* ═══════════ VERSÃO NOVA NO SERVIDOR ════════════════════════════════════════
+   O painel fica aberto o dia inteiro na mesma aba. Quando uma correção sobe,
+   quem já está com a aba aberta continua rodando o código de antes — e o
+   defeito "corrigido" reaparece num print, sem que ninguém tenha errado. Foi
+   exatamente o que aconteceu com a barra de digitação: a correção subiu às
+   9h58 e o print das letras sobrando é das 10h07, da aba que já estava aberta.
+
+   Então o painel confere sozinho, de vez em quando, se o arquivo que ele
+   carregou ainda é o que o servidor entrega. A conferência é uma requisição
+   HEAD comparando o ETag — não baixa a página de novo.
+
+   Ele OFERECE o recarregar, nunca recarrega por conta própria: recarregar
+   sozinho jogaria fora o que o atendente está escrevendo. E o rascunho vai
+   junto na recarga, para que aceitar o convite não custe uma frase. */
+const VERSAO = { assinatura:null, avisado:false };
+
+async function assinaturaDoServidor(){
+  try{
+    const r = await fetch(location.pathname, { method:'HEAD', cache:'no-store' });
+    if(!r.ok) return null;
+    return r.headers.get('etag') || r.headers.get('last-modified') || null;
+  }catch{ return null; }
+}
+
+function mostrarAvisoVersao(){
+  if(VERSAO.avisado) return;
+  VERSAO.avisado = true;
+  const el = document.createElement('div');
+  el.className = 'versao-nova';
+  el.innerHTML = '<span>✨ Tem uma versão nova do MoviTalk</span><button type="button">Atualizar</button>';
+  el.querySelector('button').onclick = ()=>{
+    try{ sessionStorage.setItem('mt_rascunhos', JSON.stringify([...RASCUNHOS])); }catch{}
+    location.reload();
+  };
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+}
+
+/* o que estava escrito antes do recarregar volta para o campo */
+(function recuperarRascunhos(){
+  try{
+    const bruto = sessionStorage.getItem('mt_rascunhos');
+    sessionStorage.removeItem('mt_rascunhos');
+    if(!bruto) return;
+    for(const [id, r] of JSON.parse(bruto)) RASCUNHOS.set(id, r);
+  }catch{}
+})();
+
+(async function vigiarVersao(){
+  VERSAO.assinatura = await assinaturaDoServidor();
+  if(!VERSAO.assinatura) return;          // sem ETag não há o que comparar
+  const conferir = async ()=>{
+    if(VERSAO.avisado || document.hidden) return;
+    const agora = await assinaturaDoServidor();
+    if(agora && agora !== VERSAO.assinatura) mostrarAvisoVersao();
+  };
+  setInterval(conferir, 10*60*1000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) conferir(); });
+})();
+
 /* o render inicial acontece depois do login, em entrar() */
 </script>
 </body>
