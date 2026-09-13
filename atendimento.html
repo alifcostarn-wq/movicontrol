@@ -1315,6 +1315,10 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
 /* ============ AUX VIEWS ============ */
 .viewbox{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;max-width:760px;}
 .viewbox h2{font-size:17px;font-weight:800;margin-bottom:4px;}
+/* Configurações é a tela com mais coisa lado a lado: dez abas no topo e, em
+   Contratos, uma lista com nome, documentos e estado. Nos 760px das outras
+   telas as abas gastavam três linhas antes de o conteúdo começar. */
+@media (min-width:901px){ .viewbox.cfg-larga{max-width:1040px;} }
 .viewbox .vsub{font-size:12.5px;color:var(--text-mid);margin-bottom:18px;}
 .rule-line{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;}
 .rule-kw{font-size:12px;font-weight:800;background:var(--green-soft);color:var(--green-deep);padding:4px 10px;border-radius:7px;}
@@ -1593,13 +1597,27 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .wa-actions{display:flex;gap:9px;justify-content:center;}
 
 /* ============ ABAS DE CONFIGURAÇÕES ============ */
-.cfg-tabs{display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--line);padding-bottom:0;}
-.cfg-tab{
-  font-size:12.5px;font-weight:700;color:var(--text-low);padding:9px 4px 11px;cursor:pointer;
-  border-bottom:2.5px solid transparent;margin-bottom:-1px;
+/* Eram rótulos sublinhados numa linha só. Com dez abas isso não cabia mais em
+   1366px: o flex espremia cada uma até a palavra quebrar no meio ("Auto-
+   responder" em duas linhas, "Fluxo do Bot" em três) e a última ainda saía
+   pela direita da moldura.
+
+   Viraram pastilhas que quebram para a linha de baixo. Duas razões para
+   quebrar em vez de deslizar de lado como no celular: no computador não há
+   gesto de arrastar a fita, então o que sai da tela vira o que ninguém acha;
+   e a aba ativa precisa estar sempre visível — com a fita, ela podia estar
+   fora do quadro justamente enquanto a pessoa usa aquela tela. */
+.cfg-tabs{
+  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;
+  border-bottom:1px solid var(--line);padding-bottom:11px;
 }
-.cfg-tab.on{color:var(--green-deep);border-bottom-color:var(--green);}
-.cfg-tab:hover:not(.on){color:var(--text);}
+.cfg-tab{
+  font-size:12.5px;font-weight:700;color:var(--text-mid);cursor:pointer;
+  padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;
+  white-space:nowrap;transition:background .14s,color .14s,border-color .14s;
+}
+.cfg-tab.on{background:var(--green);border-color:var(--green);color:#fff;}
+.cfg-tab:hover:not(.on){border-color:var(--green);color:var(--green-deep);}
 
 /* ============ CONTROLE DO BOT + ANEXOS ============ */
 .bot-bar{
@@ -1923,7 +1941,9 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .ctr-sub{font-size:10.5px;color:var(--text-low);margin-top:2px;line-height:1.6;}
 .ctr-docs{display:flex;flex-direction:column;gap:4px;margin-top:7px;}
 .ctr-doc{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-mid);}
-.ctr-doc .cd-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* o nome não estica: o "ver" fica colado nele, e não perdido na outra ponta
+   da linha — o botão pertence àquele documento, não à largura da tela */
+.ctr-doc .cd-n{flex:0 1 auto;min-width:0;max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .ctr-ver{
   border:1px solid var(--line);background:#fff;color:var(--text-mid);font-family:inherit;
   font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;
@@ -2224,11 +2244,11 @@ body.flow-full .flow-field textarea{min-height:200px;}
   /* abas de Configurações: uma fita que desliza, em vez de sete rótulos
      empilhados em coluna quebrando palavra no meio */
   .cfg-tabs{
-    flex-wrap:nowrap;overflow-x:auto;gap:14px;margin:0 -13px 16px;padding:0 13px;
+    flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0 -13px 16px;padding:0 13px 11px;
     -webkit-overflow-scrolling:touch;scrollbar-width:none;
   }
   .cfg-tabs::-webkit-scrollbar{display:none;}
-  .cfg-tab{flex:0 0 auto;white-space:nowrap;padding:11px 2px 13px;font-size:13px;}
+  .cfg-tab{flex:0 0 auto;white-space:nowrap;padding:9px 13px;font-size:13px;}
   /* linhas de lista: em vez de espremer nome + descrição + status na mesma
      faixa, a descrição desce para a linha de baixo */
   .rule-line{flex-wrap:wrap;gap:8px;padding:12px 13px;}
@@ -7798,7 +7818,16 @@ function renderAux(){
     // falta no desenho, e as abas sozinhas já dizem onde a pessoa está.
     a.innerHTML = configTab==='fluxo'
       ? `<div class="viewbox flow-topo"><div class="cfg-mini">Configurações ›</div>${abas}</div><div id="cfgBody"></div>`
-      : `<div class="viewbox"><h2>Configurações</h2>${abas}<div id="cfgBody"></div></div>`;
+      : `<div class="viewbox cfg-larga"><h2>Configurações</h2>${abas}<div id="cfgBody"></div></div>`;
+    /* no celular as abas viram uma fita que desliza — e a fita abria sempre no
+       começo, com a aba em uso fora do quadro. Quem entrava em "Contratos"
+       via "Auto-responder" aceso em lugar nenhum. Aqui ela é trazida para o
+       meio; mexer em scrollLeft (em vez de scrollIntoView) garante que só a
+       fita se move, nunca a página. */
+    const fita = a.querySelector('.cfg-tabs'), ativa = a.querySelector('.cfg-tab.on');
+    if(fita && ativa && fita.scrollWidth > fita.clientWidth + 1){
+      fita.scrollLeft = Math.max(0, ativa.offsetLeft - (fita.clientWidth - ativa.offsetWidth)/2);
+    }
     a.querySelectorAll('.cfg-tab').forEach(el=>el.onclick=()=>{
       if(configTab==='integracoes' && el.dataset.tab!=='integracoes') pararPollWA();
       // a tela cheia é do editor do bot: sair da aba precisa devolver o painel
