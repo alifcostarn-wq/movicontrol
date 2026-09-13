@@ -1945,6 +1945,28 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .asn-link-st b{color:var(--green-deep);}
 .asn-vazio{font-size:11.5px;color:var(--text-low);padding:4px 0 8px;line-height:1.5;}
 
+/* ---- contrato esperando assinatura: selo ao lado do nome ----
+   Pisca porque é o único aviso do painel que depende de alguém COBRAR: o
+   contrato não se assina sozinho e não gera mensagem nova na conversa, então
+   sem chamar o olho ele envelhece calado. A animação para quando o sistema
+   respeita "movimento reduzido" — enjoo não é aviso. */
+.asn-selo{
+  display:inline-flex;align-items:center;gap:4px;flex-shrink:0;
+  font-size:9.5px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;
+  padding:3px 7px;border-radius:6px;white-space:nowrap;cursor:help;
+  background:var(--orange-soft);color:#92400e;border:1px solid #fcd9a4;
+  animation:asnPisca 1.6s ease-in-out infinite;
+}
+@keyframes asnPisca{
+  0%,100%{background:var(--orange-soft);border-color:#fcd9a4;}
+  50%{background:#fcd34d;border-color:#f59e0b;}
+}
+.asn-selo.grande{font-size:10.5px;padding:4px 9px;}
+/* no card da lista de atendimento o nome já disputa cada pixel: ali o selo é
+   só o ícone, com a explicação no title */
+.asn-selo.so-ico{font-size:11px;padding:2px 5px;line-height:1.2;}
+@media (prefers-reduced-motion:reduce){ .asn-selo{animation:none;} }
+
 /* ---- tela Agendamentos ---- */
 .ag-linha{
   display:grid;grid-template-columns:38px minmax(0,1fr) 150px auto;
@@ -3113,6 +3135,7 @@ function mapearConversa(c){
     unread:c.nao_lidas||0, tags:c.tags||[], notas:c.notas||'', rating:c.rating,
     atendente: c.atendente_id ? ((EQUIPE.find(p=>p.id===c.atendente_id)||{}).nome||'—') : '— Bot —',
     setor: c.setor||null, preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
+    asnPendente: !!c.asn_pendente,
     filaDesde: c.fila_desde||null, assumidoEm: c.assumido_em||null,
     avatarUrl: c.avatar_url||null, avatarEm: c.avatar_em||null,
     cliente:{
@@ -3533,6 +3556,13 @@ function avatarHTML(c, extra){
   return `<div class="cc-av" style="background:${avColor(c.id)}${extra?';'+extra:''}">${ini(c.nome)}${foto}</div>`;
 }
 function avColor(id){ return AV_COLORS[id % AV_COLORS.length]; }
+/* o selo de contrato esperando assinatura — mesmo texto em toda a tela */
+function seloAssinatura(c, forma){
+  if(!c || !c.asnPendente) return '';
+  const dica = 'Contrato com link de assinatura enviado e ainda NÃO assinado. Abra a conversa para reenviar o link ou cobrar.';
+  if(forma==='ico') return `<span class="asn-selo so-ico" title="${dica}">✍️</span>`;
+  return `<span class="asn-selo ${forma==='grande'?'grande':''}" title="${dica}">✍️ assinar</span>`;
+}
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function emRisco(c){ return c.cliente.bloqueado || c.cliente.atraso>0 || c.cliente.recorrente; }
@@ -3721,6 +3751,7 @@ function cardHTML(c,col){
     <div class="cc-top">
       ${avatarHTML(c)}
       <div class="cc-name">${esc(c.nome)}</div>
+      ${seloAssinatura(c,'ico')}
       <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor — fila geral')}"></span>
       <div class="cc-time">${esc(c.hora)}</div>
     </div>
@@ -6941,6 +6972,7 @@ function openModal(id){
           : `<button class="sem-setor" id="mSemSetor" title="Definir o setor agora">⚠ Sem setor — definir</button>`
         } · ${esc(c.fone)}${cl.lead?' · lead':''}</div>
       </div>
+      ${seloAssinatura(c,'grande')}
       <!-- A faixa que existia aqui embaixo custava 69px de altura fixa — 18%
            do que sobra para as mensagens num notebook — para deixar à mão
            quatro botões que quase nunca são usados ao mesmo tempo. Foram para
@@ -7984,6 +8016,7 @@ function renderConversasTela(a){
       <div class="cv-meio">
         <div class="cv-nome">
           <span style="overflow:hidden;text-overflow:ellipsis">${esc(c.nome)}</span>
+          ${seloAssinatura(c)}
           <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor')}"></span>
         </div>
         <div class="cv-prev">${esc(c.preview) || '<i>sem mensagens</i>'}</div>

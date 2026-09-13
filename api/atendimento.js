@@ -2979,6 +2979,39 @@ async function tratarEdicaoRecebida(e, ed) {
   return { ok: true, editada: m.id };
 }
 
+/* ═══════════ CONTRATO ESPERANDO ASSINATURA ══════════════════════════════════
+   Quando o link de assinatura é gerado e o cliente não assina, o contrato fica
+   parado sem que ninguém veja: a assinatura só aparecia DENTRO da conversa, e
+   só depois de abri-la. Quem cobra é o atendente — e ele precisa saber disso
+   ao bater o olho na lista, não depois de abrir uma por uma.
+
+   Uma consulta para a lista inteira, não uma por conversa. O link expirado
+   entra também: continua sendo um contrato não assinado, e é ainda mais
+   urgente, porque agora precisa ser reenviado.
+
+   Falha aqui não derruba a lista de conversas: sem a marca o painel volta a
+   ser o que era, com a lista inteira; sem a lista não há atendimento. */
+async function marcarAssinaturaPendente(e, conversas) {
+  const comCliente = (conversas || []).filter(c => c && c.cliente_ixc_id);
+  if (!comCliente.length) return conversas;
+  let lotes = [];
+  try {
+    lotes = await sb(e,
+      'assinatura_lotes?status=neq.assinado&link_token=not.is.null' +
+      '&select=id,clientes(ixc_id)&limit=500');
+  } catch (err) {
+    console.error('[atendimento] assinaturas pendentes:', err.message);
+    return conversas;
+  }
+  const esperando = new Set(
+    (lotes || []).map(l => String(l.clientes?.ixc_id ?? '')).filter(Boolean));
+  if (!esperando.size) return conversas;
+  for (const c of comCliente) {
+    if (esperando.has(String(c.cliente_ixc_id))) c.asn_pendente = true;
+  }
+  return conversas;
+}
+
 // ============================================================================
 // WEBHOOK — mensagem recebida da Evolution API
 // ============================================================================
@@ -5184,6 +5217,7 @@ export default async function handler(req, res) {
           sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1'),
           sb(e, `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}&order=ultima_msg_em.desc.nullslast&limit=300`),
         ]);
+        await marcarAssinaturaPendente(e, conversas);
         // média de satisfação vem do HISTÓRICO: conversas.rating guarda só a nota
         // do atendimento atual e é zerada a cada reabertura, então sozinho ele
         // subestimaria a média (contaria só quem nunca voltou a falar conosco)
@@ -5427,6 +5461,7 @@ export default async function handler(req, res) {
         const lista = await sb(e,
           `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}${col}` +
           `&order=ultima_msg_em.desc.nullslast&limit=${Math.min(Number(body.limite) || 200, 500)}`);
+        await marcarAssinaturaPendente(e, lista);
         return res.status(200).json({ ok: true, conversas: lista });
       }
 
