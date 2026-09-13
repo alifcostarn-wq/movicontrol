@@ -5198,7 +5198,11 @@ export default async function handler(req, res) {
         } catch (err) { console.error('[atendimento] avaliacoes:', err.message); }
 
         const agendamentos = await sb(e,
-          `atend_agendamentos?select=id,conversa_id,texto,quando,enviado_em&enviado_em=is.null&order=quando&limit=200`);
+          // `erro` vem junto: quando o envio falha, o cron grava o motivo aqui e
+          // tenta de novo na próxima passada. Sem esse campo na tela, um
+          // agendamento que falha todo dia fica idêntico a um que só não chegou
+          // a hora — e ninguém descobre até o cliente cobrar.
+          `atend_agendamentos?select=id,conversa_id,texto,quando,enviado_em,erro&enviado_em=is.null&order=quando&limit=200`);
         // estado do WhatsApp junto do bootstrap: descobrir que a conexão caiu
         // só ao tentar enviar significa perder a mensagem e o tempo do cliente
         let wa = 'desconhecido';
