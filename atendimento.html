@@ -987,31 +987,55 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 
 /* ---- campanhas: notificação em massa ---- */
-.cp-wrap{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
-@media(max-width:900px){.cp-wrap{grid-template-columns:1fr;}}
-.cp-box{border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:12px;background:var(--card);}
+/* Três partes: o que vai ser escrito, para quem, e quanto custa mandar.
+   Numa tela larga elas ficam lado a lado — a lista de bairros deixa de ser
+   uma caixinha de 190px com rolagem própria, e o texto da mensagem ganha
+   altura de texto de verdade. Abaixo de 1180px o de-para volta a duas
+   colunas (escrever + bairros à esquerda, o custo à direita) e, no celular,
+   a uma só. */
+.cp-wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start;}
+.cp-wrap > .cp-a{grid-column:1;grid-row:1;}
+.cp-wrap > .cp-b2{grid-column:1;grid-row:2;}
+.cp-wrap > .cp-c{grid-column:2;grid-row:1 / span 2;}
+@media(min-width:1180px){
+  .cp-wrap{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 340px;gap:20px;}
+  .cp-wrap > .cp-a{grid-column:1;grid-row:1;}
+  .cp-wrap > .cp-b2{grid-column:2;grid-row:1;}
+  .cp-wrap > .cp-c{grid-column:3;grid-row:1;}
+}
+@media(max-width:900px){
+  .cp-wrap{grid-template-columns:1fr;}
+  .cp-wrap > .cp-a,.cp-wrap > .cp-b2,.cp-wrap > .cp-c{grid-column:1;grid-row:auto;}
+}
+.cp-box{border:1px solid var(--line);border-radius:11px;padding:15px;margin-bottom:14px;background:var(--card);}
 .cp-lab{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text-low);margin-bottom:8px;}
-.cp-txt{width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+.cp-txt{width:100%;min-height:150px;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
   font-family:inherit;font-size:13.5px;line-height:1.55;resize:vertical;outline:none;}
 .cp-txt:focus{border-color:var(--green);}
 .cp-nome{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;outline:none;}
 .cp-nome:focus{border-color:var(--green);}
-.cp-bairros{display:flex;flex-wrap:wrap;gap:6px;max-height:190px;overflow-y:auto;padding:2px;}
+.cp-bairros{display:flex;flex-wrap:wrap;gap:7px;max-height:300px;overflow-y:auto;padding:2px;}
 .cp-b{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:16px;cursor:pointer;
   border:1px solid var(--line);background:var(--card);color:var(--text-mid);}
 .cp-b:hover{border-color:var(--green);}
 .cp-b.on{background:var(--green);border-color:var(--green);color:#fff;}
 .cp-b small{opacity:.75;margin-left:4px;}
-.cp-previa{background:var(--green-soft);border:1px solid #bfe9d4;border-radius:11px;padding:13px;text-align:center;}
-.cp-previa .n{font-size:30px;font-weight:800;color:var(--green-deep);line-height:1;}
+/* com três colunas sobra altura: o texto da mensagem vira texto de verdade e
+   a lista de bairros para de ser uma caixinha com rolagem dentro da tela */
+@media(min-width:1180px){
+  .cp-txt{min-height:230px;}
+  .cp-bairros{max-height:440px;}
+}
+.cp-previa{background:var(--green-soft);border:1px solid #bfe9d4;border-radius:11px;padding:18px 13px;text-align:center;}
+.cp-previa .n{font-size:36px;font-weight:800;color:var(--green-deep);line-height:1;}
 .cp-previa .l{font-size:11.5px;color:var(--text-mid);margin-top:3px;}
 .cp-previa .t{font-size:11px;color:var(--text-mid);margin-top:7px;}
 .cp-campo{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-size:12.5px;}
 .cp-campo input{width:76px;text-align:right;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-family:inherit;}
 .cp-campo input[type=time]{width:96px;text-align:left;}
 .cp-nota{font-size:11px;color:var(--text-mid);line-height:1.55;margin-top:8px;}
-.cp-aviso{background:var(--orange-soft);border:1px solid #fcd9a4;border-radius:9px;padding:10px 12px;
-  font-size:11.5px;line-height:1.6;color:#92400e;margin-bottom:12px;}
+.cp-aviso{background:var(--orange-soft);border:1px solid #fcd9a4;border-radius:9px;padding:12px 14px;
+  font-size:11.5px;line-height:1.6;color:#92400e;margin-bottom:16px;}
 .cp-item{border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:8px;background:#fbfcfd;}
 .cp-item .ci-top{display:flex;align-items:center;gap:9px;margin-bottom:6px;}
 .cp-item .ci-nome{font-weight:700;font-size:13px;flex:1;}
@@ -1315,10 +1339,15 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
 /* ============ AUX VIEWS ============ */
 .viewbox{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;max-width:760px;}
 .viewbox h2{font-size:17px;font-weight:800;margin-bottom:4px;}
-/* Configurações é a tela com mais coisa lado a lado: dez abas no topo e, em
-   Contratos, uma lista com nome, documentos e estado. Nos 760px das outras
-   telas as abas gastavam três linhas antes de o conteúdo começar. */
-@media (min-width:901px){ .viewbox.cfg-larga{max-width:1040px;} }
+/* Os 760px servem para tela de formulário curto (Etiquetas, Atalhos). Duas
+   telas pedem mais: Configurações, com dez abas no topo, e Notificações, que
+   é um formulário de três partes que se olham — texto, bairros e o custo do
+   disparo. Esticadas até o fim da área útil, elas param de empilhar em coluna
+   estreita com meia tela vazia ao lado. */
+@media (min-width:901px){
+  .viewbox.cfg-larga{max-width:1040px;}
+  .viewbox.cheia{max-width:1500px;padding:26px;}
+}
 .viewbox .vsub{font-size:12.5px;color:var(--text-mid);margin-bottom:18px;}
 .rule-line{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;}
 .rule-kw{font-size:12px;font-weight:800;background:var(--green-soft);color:var(--green-deep);padding:4px 10px;border-radius:7px;}
@@ -2264,6 +2293,10 @@ body.flow-full .flow-field textarea{min-height:200px;}
   .viewbox input[type=number],.viewbox input[type=password],.viewbox select,.viewbox textarea{
     font-size:16px;min-height:44px;
   }
+  /* o 44px acima é alvo de dedo para campo de uma linha; na caixa da mensagem
+     ele cortava o próprio texto de exemplo em três linhas. Quem escreve um
+     aviso para 296 clientes precisa ver o que escreveu. */
+  .viewbox textarea.cp-txt{min-height:140px;}
   .toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));transform:translateY(90px);text-align:center;}
   .toast.show{transform:translateY(0);}
 
@@ -5681,7 +5714,7 @@ async function relExportar(){
 let NT = { aba:'nova', bairros:[], sel:new Set(), previa:null, prazo:60, carregado:false };
 
 async function renderNotificacoes(a){
-  a.innerHTML = `<div class="viewbox">
+  a.innerHTML = `<div class="viewbox cheia">
     <h2>Notificações</h2>
     <div class="vsub">Avisos enviados aos clientes pelo WhatsApp da empresa.</div>
     <div class="cfg-tabs" id="ntTabs">
@@ -5721,7 +5754,7 @@ async function ntFormulario(){
       ex-cliente marca como spam, e denúncia derruba o número que atende todo mundo.
     </div>
     <div class="cp-wrap">
-      <div>
+      <div class="cp-a">
         <div class="cp-box">
           <div class="cp-lab">Nome da notificação (uso interno)</div>
           <input class="cp-nome" id="ntNome" placeholder="Ex: Aviso de manutenção — MAISA">
@@ -5734,6 +5767,8 @@ async function ntFormulario(){
             evita que centenas de mensagens saiam idênticas, o que chama atenção do antispam.
           </div>
         </div>
+      </div>
+      <div class="cp-b2">
         <div class="cp-box">
           <div class="cp-lab">Bairros — ${NT.bairros.length} com clientes ativos</div>
           <div class="cp-bairros" id="ntBairros">
@@ -5743,7 +5778,7 @@ async function ntFormulario(){
           <div class="cp-nota">Nenhum selecionado = toda a base ativa (${totalBase} clientes).</div>
         </div>
       </div>
-      <div>
+      <div class="cp-c">
         <div class="cp-previa" id="ntPrevia"><div class="n">—</div><div class="l">destinatários</div></div>
         <div class="cp-box" style="margin-top:12px">
           <div class="cp-lab">Em quanto tempo precisa chegar?</div>
