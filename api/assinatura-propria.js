@@ -87,7 +87,11 @@ export default async function handler(req, res) {
     });
     const txt = await r.text();
     let data = null; try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = txt; }
-    return { ok: r.ok, status: r.status, data };
+    // com Prefer: count=exact o PostgREST devolve "0-24/378" no Content-Range.
+    // Sem ler isso, um contador de rodapé mediria só a página que voltou.
+    const faixa = r.headers.get('content-range') || '';
+    const total = faixa.includes('/') ? Number(faixa.split('/')[1]) : null;
+    return { ok: r.ok, status: r.status, data, total: Number.isFinite(total) ? total : null };
   }
 
   // Upload direto (PUT) via aws4fetch - assina e envia numa chamada só
@@ -484,6 +488,66 @@ export default async function handler(req, res) {
         ok: true, cliente: cli.data?.[0] || null,
         modelos: mods.data || [], equipamentos,
       });
+    }
+
+    /* Todos os contratos, de todos os clientes — o controle que o MoviTalk
+       não tinha. Até aqui só dava para ver assinatura DENTRO da conversa de um
+       cliente: para saber quantos contratos ficaram pendentes, ou achar o
+       assinado de alguém sem abrir a conversa dele, não havia caminho.
+
+       Uma consulta só, com cliente e documentos embutidos: a versão por lote
+       (uma consulta para cada) custava caro numa lista que cresce, e é o tipo
+       de coisa que só dói quando já tem volume demais para consertar com
+       calma. */
+    if (action === 'listar_assinados') {
+      if (!ehGestor) return res.status(403).json({ ok: false, error: 'Acesso restrito a administradores' });
+      const b = req.body || {};
+      const limite = Math.min(Math.max(Number(b.limite) || 200, 1), 500);
+      const status = String(b.status || 'assinado');
+      const busca = String(b.busca || '').trim();
+
+      // !inner para poder filtrar pelo nome do cliente; sem busca ele não muda
+      // nada, e lote órfão (cliente apagado) não é caso que exista aqui
+      let url = 'assinatura_lotes?select=' + encodeURIComponent(
+        'id,cliente_id,status,criado_em,assinado_em,codigo_verificacao,selfie_url,' +
+        'dados_confirmados,geo_lat,geo_lng,link_expira_em,link_aberto_em,link_enviado_em,ixc_contrato_id,' +
+        'clientes!inner(nome,cnpj,ixc_id),' +
+        'contratos_assinatura(id,documento_nome,documento_url,documento_assinado_url,status)'
+      ) + `&order=criado_em.desc&limit=${limite}`;
+      if (status === 'assinado' || status === 'pendente') url += `&status=eq.${status}`;
+      if (busca) url += `&clientes.nome=ilike.*${encodeURIComponent(busca)}*`;
+
+      const r = await sb(url);
+      if (!r.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar os contratos' });
+
+      const lotes = [];
+      for (const l of (r.data || [])) {
+        const docs = [];
+        for (const d of (l.contratos_assinatura || [])) {
+          const chave = d.documento_assinado_url || d.documento_url;
+          docs.push({
+            id: d.id, documento_nome: d.documento_nome, status: d.status,
+            assinado_final: !!d.documento_assinado_url,
+            documento_url: await r2SignedUrl(chave),
+          });
+        }
+        const { contratos_assinatura, clientes, ...resto } = l;
+        lotes.push({
+          ...resto,
+          cliente_nome: clientes?.nome || null,
+          cliente_cnpj: clientes?.cnpj || null,
+          cliente_ixc_id: clientes?.ixc_id || null,
+          selfie_url: await r2SignedUrl(l.selfie_url),
+          documentos: docs,
+        });
+      }
+      // os contadores vêm do banco, não da página devolvida: com limite de 200
+      // o rodapé mentiria justamente quando a lista ficasse grande
+      const [ca, cp] = await Promise.all([
+        sb('assinatura_lotes?select=id&status=eq.assinado&limit=1', { headers: { Prefer: 'count=exact' } }),
+        sb('assinatura_lotes?select=id&status=eq.pendente&limit=1', { headers: { Prefer: 'count=exact' } }),
+      ]);
+      return res.status(200).json({ ok: true, lotes, total_assinados: ca.total, total_pendentes: cp.total });
     }
 
     if (action === 'listar_lotes') {

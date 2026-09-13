@@ -1898,6 +1898,47 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .asn-link-st b{color:var(--green-deep);}
 .asn-vazio{font-size:11.5px;color:var(--text-low);padding:4px 0 8px;line-height:1.5;}
 
+/* ---- Configurações › Contratos ---- */
+.ctr-topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 14px;}
+.ctr-filtros{display:flex;gap:5px;}
+.ctr-fil{
+  border:1px solid var(--line);background:#fff;color:var(--text-mid);
+  font-family:inherit;font-size:11.5px;font-weight:800;padding:7px 13px;
+  border-radius:9px;cursor:pointer;white-space:nowrap;
+}
+.ctr-fil.on{background:var(--green);border-color:var(--green);color:#fff;}
+.ctr-busca{
+  flex:1;min-width:170px;border:1px solid var(--line);border-radius:9px;
+  padding:8px 12px;font-family:inherit;font-size:12.5px;outline:none;
+}
+.ctr-busca:focus{border-color:var(--green);}
+.ctr-cont{font-size:11px;font-weight:700;color:var(--text-low);white-space:nowrap;}
+.ctr-linha{
+  display:flex;align-items:flex-start;gap:12px;padding:12px 13px;
+  border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:#fff;
+}
+.ctr-linha.pend{border-color:#fcd9a4;background:var(--orange-soft);}
+.ctr-quem{flex:1;min-width:0;}
+.ctr-nome{font-size:13px;font-weight:800;color:var(--text);}
+.ctr-sub{font-size:10.5px;color:var(--text-low);margin-top:2px;line-height:1.6;}
+.ctr-docs{display:flex;flex-direction:column;gap:4px;margin-top:7px;}
+.ctr-doc{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-mid);}
+.ctr-doc .cd-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ctr-ver{
+  border:1px solid var(--line);background:#fff;color:var(--text-mid);font-family:inherit;
+  font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;
+}
+.ctr-ver:hover{border-color:var(--green);color:var(--green-deep);}
+.ctr-lado{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;}
+/* visor do PDF */
+.ctr-visor{position:fixed;inset:0;z-index:400;background:rgba(8,20,14,.96);display:flex;flex-direction:column;}
+.ctr-visor-topo{
+  flex-shrink:0;display:flex;align-items:center;gap:10px;padding:11px 14px;color:#fff;
+}
+.ctr-visor-t{flex:1;min-width:0;font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ctr-visor iframe{flex:1;width:100%;border:0;background:#fff;}
+@media (max-width:900px){ .ctr-linha{flex-direction:column;} .ctr-lado{align-items:flex-start;width:100%;} }
+
 /* --- folha de criação do lote --- */
 .asn-doc-check{
   display:flex;align-items:center;gap:11px;padding:12px 13px;border:1.5px solid var(--line);
@@ -3875,6 +3916,7 @@ function blocoAssinatura(c){
         ${(l.geo_lat&&l.geo_lng)?` · <a href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" rel="noopener" style="color:var(--green-deep)">📍 local</a>`:''}
       </div>` : `<div class="asn-acts">
         <button class="vinc-btn solid" data-asnlink="${l.id}">🔗 Mandar link para assinar</button>
+        <button class="vinc-btn" data-asnsolink="${l.id}" title="Manda só o endereço, sem a mensagem de explicação">🔗 Só o link, sem texto</button>
         <button class="vinc-btn" data-asnavisar="${l.id}">📱 Avisar pelo MoviApp</button>
         ${l.link_ativo ? `<div class="asn-link-st">${l.link_aberto_em
             ? `🔗 Link enviado · <b>o cliente abriu</b> em ${dataHora(l.link_aberto_em)}`
@@ -3933,11 +3975,17 @@ async function asnAvisarCliente(c, lote){
    O endereço vai numa mensagem SEPARADA e sozinho na linha: WhatsApp só
    transforma em link clicável o que ele consegue isolar, e um link
    grudado em texto vira palavra morta em muitos aparelhos. */
-async function asnMandarLink(c, lote){
+/* `soLink` manda o endereço e nada mais.
+   A mensagem completa é a certa na primeira vez: o cliente precisa entender o
+   que é aquilo antes de tocar num link. Mas quando ele JÁ sabe — ligou
+   perguntando, ou o atendente acabou de explicar por escrito — repetir o texto
+   inteiro atrapalha: o link fica no meio de um parágrafo que ele já leu. */
+async function asnMandarLink(c, lote, soLink){
   const j = await asnChamar('gerar_link', { lote_id: lote.id });
   // sem endereço não há o que mandar: um aviso "clique no link" seguido de
   // uma mensagem vazia é pior do que não ter mandado nada
   if(!j.url) throw new Error('O servidor não devolveu o endereço do link.');
+  if(soLink){ await api.enviarMensagem(c, j.url, null); return j; }
   const primeiro = (c.nome||'').split(' ')[0];
   const dias = j.expira_em ? Math.max(1, Math.round((new Date(j.expira_em) - Date.now())/86400000)) : null;
   const texto = `Olá ${primeiro}! ✍️\n\n`
@@ -7235,6 +7283,19 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     }
     catch(err){ el.disabled=false; el.textContent='🔗 Mandar link para assinar'; toast('Falha: '+err.message); }
   });
+  document.querySelectorAll('[data-asnsolink]').forEach(el=>el.onclick=async()=>{
+    const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnsolink);
+    if(!lote) return;
+    if(!confirm('Mandar para '+c.nome+' SOMENTE o link de assinatura?\n\nVai só o endereço, sem a mensagem de explicação. Use quando o cliente já sabe do que se trata.')) return;
+    el.disabled=true; el.textContent='Gerando o link…';
+    try{
+      await asnMandarLink(c, lote, true);
+      c._asnCarregado=false;
+      toast('🔗 Link enviado, sem texto');
+      openModal(c.id);
+    }
+    catch(err){ el.disabled=false; el.textContent='🔗 Só o link, sem texto'; toast('Falha: '+err.message); }
+  });
   document.querySelectorAll('[data-asnavisar]').forEach(el=>el.onclick=async()=>{
     const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnavisar);
     if(!lote) return;
@@ -7580,6 +7641,134 @@ function renderAtalhos(a, emb){
     a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const at=state.atalhos[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'atalhos',remover:at.id}).then(()=>{ state.atalhos=state.atalhos.filter(x=>x!==at); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
 }
 
+/* ═══════════ CONFIGURAÇÕES › CONTRATOS ASSINADOS ══════════════════════════
+   Até aqui a assinatura só existia DENTRO da conversa: para saber quais
+   contratos ficaram pendentes, ou achar o contrato assinado de alguém, era
+   preciso abrir a conversa do cliente — e saber de antemão quem procurar.
+   Um contrato pendente que ninguém cobra simplesmente não aparecia em lugar
+   nenhum.
+
+   Aqui eles ficam todos, com o PDF assinado aberto na própria tela: o
+   certificado de assinatura é o que vale numa contestação, e mandar o
+   atendente procurar num bucket não é resposta. */
+const CTR = { filtro:'assinado', busca:'', lotes:[], totais:{}, carregando:false, erro:null };
+
+async function ctrCarregar(){
+  CTR.carregando = true; CTR.erro = null;
+  try{
+    const j = await asnChamar('listar_assinados', { status: CTR.filtro, busca: CTR.busca });
+    CTR.lotes = j.lotes || [];
+    CTR.totais = { assinados: j.total_assinados, pendentes: j.total_pendentes };
+  }catch(err){ CTR.erro = err.message; CTR.lotes = []; }
+  CTR.carregando = false;
+}
+
+async function renderContratos(el){
+  el.innerHTML = '<div class="pn-load">Carregando contratos…</div>';
+  await ctrCarregar();
+  ctrPintar(el);
+}
+
+function ctrPintar(el){
+  const t = CTR.totais || {};
+  const lista = CTR.erro
+    ? `<div class="ms-erro">Não consegui ler os contratos.<br><b>${esc(CTR.erro)}</b></div>`
+    : (CTR.lotes.length ? CTR.lotes.map(l=>{
+        const pend = l.status !== 'assinado';
+        const docs = l.documentos || [];
+        const quem = (l.dados_confirmados && l.dados_confirmados.nome) || l.cliente_nome || 'Cliente';
+        return `<div class="ctr-linha ${pend?'pend':''}">
+          <div class="ctr-quem">
+            <div class="ctr-nome">${esc(l.cliente_nome || quem)}</div>
+            <div class="ctr-sub">
+              ${l.cliente_cnpj?esc(l.cliente_cnpj)+' · ':''}${l.cliente_ixc_id?'IXC #'+esc(String(l.cliente_ixc_id))+' · ':''}enviado em ${dataCurta(l.criado_em)}
+              ${l.assinado_em?`<br>✅ Assinado em ${dataHora(l.assinado_em)}${(l.dados_confirmados&&l.dados_confirmados.nome)?' por '+esc(l.dados_confirmados.nome):''}`:''}
+              ${l.codigo_verificacao?`<br>Código: <span class="asn-cod">${esc(l.codigo_verificacao)}</span>`:''}
+              ${pend?`<br>${l.link_aberto_em?`🔗 O cliente abriu o link em ${dataHora(l.link_aberto_em)}, mas não assinou`:(l.link_enviado_em?`🔗 Link enviado em ${dataHora(l.link_enviado_em)} · ainda não foi aberto`:'Link ainda não enviado')}`:''}
+            </div>
+            <div class="ctr-docs">
+              ${docs.length?docs.map(d=>`<div class="ctr-doc">
+                <span>${d.assinado_final?'✅':'📄'}</span>
+                <span class="cd-n">${esc(d.documento_nome||'documento')}</span>
+                ${d.documento_url?`<button class="ctr-ver" data-ctrver="${d.id}">👁 ver</button>`:'<span class="ctr-cont">sem arquivo</span>'}
+              </div>`).join(''):'<div class="ctr-cont">sem documentos</div>'}
+            </div>
+          </div>
+          <div class="ctr-lado">
+            <span class="asn-st ${esc(l.status)}">${esc(l.status)}</span>
+            ${l.selfie_url?`<button class="ctr-ver" data-ctrselfie="${l.id}">🤳 selfie</button>`:''}
+            ${(l.geo_lat&&l.geo_lng)?`<a class="ctr-ver" href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" rel="noopener">📍 local</a>`:''}
+          </div>
+        </div>`;
+      }).join('')
+      : `<div class="asn-vazio">${CTR.busca?'Nenhum contrato para esta busca.':(CTR.filtro==='pendente'?'Nenhum contrato pendente — todos os enviados foram assinados.':'Nenhum contrato assinado ainda.')}</div>`);
+
+  el.innerHTML = `
+    <div class="vsub">Todos os documentos enviados para assinatura, de todos os clientes. O contrato assinado abre aqui na tela, com o certificado de assinatura no fim do PDF.</div>
+    <div class="ctr-topo">
+      <div class="ctr-filtros">
+        <button class="ctr-fil ${CTR.filtro==='assinado'?'on':''}" data-ctrfil="assinado">✅ Assinados${t.assinados!=null?' ('+t.assinados+')':''}</button>
+        <button class="ctr-fil ${CTR.filtro==='pendente'?'on':''}" data-ctrfil="pendente">⏳ Pendentes${t.pendentes!=null?' ('+t.pendentes+')':''}</button>
+        <button class="ctr-fil ${CTR.filtro==='todos'?'on':''}" data-ctrfil="todos">Todos</button>
+      </div>
+      <input class="ctr-busca" id="ctrBusca" placeholder="Buscar pelo nome do cliente…" value="${esc(CTR.busca)}">
+      <span class="ctr-cont">${CTR.lotes.length} na tela</span>
+    </div>
+    ${CTR.carregando?'<div class="pn-load">Carregando…</div>':lista}`;
+
+  el.querySelectorAll('[data-ctrfil]').forEach(b=>b.onclick=async()=>{
+    CTR.filtro = b.dataset.ctrfil;
+    el.innerHTML = '<div class="pn-load">Carregando contratos…</div>';
+    await ctrCarregar(); ctrPintar(el);
+  });
+  const busca = el.querySelector('#ctrBusca');
+  if(busca){
+    // busca no servidor, mas só depois que a pessoa para de digitar: uma
+    // consulta por tecla seria uma fila de requisições chegando fora de ordem
+    let timer = null;
+    busca.oninput = ()=>{
+      clearTimeout(timer);
+      timer = setTimeout(async()=>{
+        CTR.busca = busca.value.trim();
+        await ctrCarregar(); ctrPintar(el);
+        const b2 = el.querySelector('#ctrBusca');
+        if(b2){ b2.focus(); b2.setSelectionRange(b2.value.length, b2.value.length); }
+      }, 400);
+    };
+  }
+  el.querySelectorAll('[data-ctrver]').forEach(b=>b.onclick=()=>{
+    let doc = null;
+    for(const l of CTR.lotes) for(const d of (l.documentos||[]))
+      if(String(d.id)===b.dataset.ctrver) doc = d;
+    if(doc) ctrAbrirVisor(doc.documento_url, doc.documento_nome || 'Contrato');
+  });
+  el.querySelectorAll('[data-ctrselfie]').forEach(b=>b.onclick=()=>{
+    const l = CTR.lotes.find(x=>String(x.id)===b.dataset.ctrselfie);
+    if(l && l.selfie_url) abrirVisualizador(l.selfie_url);
+  });
+}
+
+/* O PDF assinado aberto na própria tela. O navegador já sabe desenhar PDF:
+   o que falta é a moldura, o nome do documento e uma saída clara. */
+function ctrAbrirVisor(url, nome){
+  document.querySelectorAll('.ctr-visor').forEach(x=>x.remove());
+  const v = document.createElement('div');
+  v.className = 'ctr-visor';
+  v.innerHTML = `
+    <div class="ctr-visor-topo">
+      <span class="ctr-visor-t">📄 ${esc(nome)}</span>
+      <a class="vis-bt" href="${esc(url)}" target="_blank" rel="noopener" title="Abrir em outra aba">⬈</a>
+      <button class="vis-bt vis-fechar" title="Fechar (Esc)">✕</button>
+    </div>
+    <iframe src="${esc(url)}" title="${esc(nome)}"></iframe>`;
+  const fechar = ()=>{ document.removeEventListener('keydown', tecla); v.remove(); };
+  const tecla = ev=>{ if(ev.key==='Escape') fechar(); };
+  document.addEventListener('keydown', tecla);
+  v.querySelector('.vis-fechar').onclick = fechar;
+  document.body.appendChild(v);
+  return v;
+}
+
 function renderAux(){
   const a=$('#auxview'); const b=$('#board'); const fb=$('#filterbar'); const k=$('#kpis');
   // ligar/desligar por CLASSE, não por style inline: o estilo inline vencia a
@@ -7601,6 +7790,7 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='horarios'?'on':''}" data-tab="horarios">🕐 Horário de funcionamento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='contratos'?'on':''}" data-tab="contratos">✍️ Contratos assinados</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='cadastro'?'on':''}" data-tab="cadastro">🗂 Cadastro do IXC</div>`:''}
       </div>`;
     // o editor de fluxo precisa da largura toda: fica FORA da moldura
@@ -7628,6 +7818,7 @@ function renderAux(){
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);
     }
+    else if(configTab==='contratos' && USUARIO&&USUARIO.admin){ renderContratos(body); }
     else if(configTab==='cadastro' && USUARIO&&USUARIO.admin){ renderCadastroIxc(body); }
     else {
       body.innerHTML=`<div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>
