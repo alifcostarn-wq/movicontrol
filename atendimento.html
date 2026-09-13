@@ -1945,6 +1945,68 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .asn-link-st b{color:var(--green-deep);}
 .asn-vazio{font-size:11.5px;color:var(--text-low);padding:4px 0 8px;line-height:1.5;}
 
+/* ---- tela Conversas: um catálogo, não uma fila ---- */
+.cv-topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 14px;}
+.cv-busca{
+  flex:1;min-width:190px;border:1px solid var(--line);border-radius:9px;
+  padding:9px 13px;font-family:inherit;font-size:13px;outline:none;
+}
+.cv-busca:focus{border-color:var(--green);}
+.cv-fils{display:flex;gap:5px;flex-wrap:wrap;}
+.cv-fil{
+  border:1px solid var(--line);background:#fff;color:var(--text-mid);font-family:inherit;
+  font-size:11.5px;font-weight:800;padding:7px 12px;border-radius:9px;cursor:pointer;white-space:nowrap;
+}
+.cv-fil:hover{border-color:var(--green);color:var(--green-deep);}
+.cv-fil.on{background:var(--green);border-color:var(--green);color:#fff;}
+.cv-fil .n{opacity:.65;margin-left:5px;font-variant-numeric:tabular-nums;}
+.cv-dia{
+  font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-low);margin:16px 0 7px;
+}
+.cv-dia:first-child{margin-top:4px;}
+.cv-linha{
+  display:grid;grid-template-columns:38px minmax(0,1fr) auto auto auto;
+  align-items:center;gap:12px;padding:11px 14px;cursor:pointer;background:#fff;
+  border:1px solid var(--line);border-radius:11px;margin-bottom:7px;
+  transition:border-color .12s,box-shadow .12s;
+}
+.cv-linha:hover{border-color:var(--green);box-shadow:var(--shadow);}
+.cv-linha.naolida{border-left:3px solid var(--green);}
+.cv-meio{min-width:0;}
+.cv-nome{
+  font-size:13.5px;font-weight:800;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:flex;align-items:center;gap:7px;
+}
+.cv-prev{
+  font-size:12px;color:var(--text-mid);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* larguras fixas nas três colunas da direita: cada linha é um grid próprio,
+   então sem isto o horário de uma ficava alguns pixels fora do horário da
+   outra — a lista parecia desalinhada mesmo estando certa */
+.cv-flags{display:flex;gap:4px;flex-shrink:0;width:104px;justify-content:flex-end;}
+.cv-att{font-size:11px;color:var(--text-low);font-weight:700;white-space:nowrap;
+  width:124px;text-align:right;overflow:hidden;text-overflow:ellipsis;}
+.cv-quando{font-size:11px;color:var(--text-low);white-space:nowrap;font-variant-numeric:tabular-nums;
+  width:72px;text-align:right;}
+.cv-dir{display:flex;align-items:center;gap:7px;flex-shrink:0;width:196px;justify-content:flex-end;}
+.cv-dir .cc-status{white-space:nowrap;flex-shrink:0;}
+.cv-unread{
+  background:var(--green);color:#fff;font-size:10px;font-weight:800;
+  min-width:19px;height:19px;border-radius:10px;display:inline-flex;
+  align-items:center;justify-content:center;padding:0 5px;
+}
+.cv-vazio{font-size:12.5px;color:var(--text-low);padding:22px 4px;text-align:center;line-height:1.6;}
+@media (max-width:900px){
+  .cv-linha{grid-template-columns:34px minmax(0,1fr) auto;gap:10px;padding:10px 11px;}
+  .cv-att{display:none;}
+  .cv-flags{width:auto;grid-column:2 / span 2;justify-content:flex-start;}
+  .cv-quando{width:auto;font-size:10.5px;}
+  .cv-dir{grid-column:2 / span 2;width:auto;justify-content:flex-start;margin-top:2px;}
+}
+
 /* ---- Configurações › Contratos ---- */
 .ctr-topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 14px;}
 .ctr-filtros{display:flex;gap:5px;}
@@ -7696,6 +7758,122 @@ function renderAtalhos(a, emb){
     a.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const at=state.atalhos[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'atalhos',remover:at.id}).then(()=>{ state.atalhos=state.atalhos.filter(x=>x!==at); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
 }
 
+/* ═══════════ TELA CONVERSAS ═══════════════════════════════════════════════
+   Esta tela é o catálogo, não a fila. A fila é o Atendimento, com etapas e
+   cards; aqui a pergunta é outra — "onde foi parar a conversa da dona Maria?".
+
+   Ela usava a linha de lista das telas de cadastro: nome dentro de uma
+   pastilha cinza, prévia esticada e o status na ponta. Sem busca, sem filtro
+   e, pior, SEM HORÁRIO — dizia "mais recentes primeiro" e não mostrava de
+   quando era nenhuma, então não havia como conferir a ordem nem achar a de
+   ontem à tarde.
+
+   Agora: busca por nome, telefone ou pelo texto da última mensagem; filtro
+   por etapa com a contagem de cada uma; e cada linha com quem atende, quando
+   foi a última mensagem e as marcas que mudam a conduta (bloqueado, atrasado,
+   não lidas). Separadores de dia dão a régua do tempo sem ocupar coluna. */
+const CV = { busca:'', filtro:'todas' };
+
+function cvQuando(iso){
+  if(!iso) return '';
+  const d = new Date(iso), hoje = new Date();
+  const hora = d.toTimeString().slice(0,5);
+  const soDia = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const dif = Math.round((soDia(hoje) - soDia(d)) / 86400000);
+  if(dif === 0) return hora;
+  if(dif === 1) return 'ontem ' + hora;
+  if(dif < 7) return d.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','') + ' ' + hora;
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + ' ' + hora;
+}
+function cvDia(iso){
+  if(!iso) return 'Sem data';
+  const d = new Date(iso), hoje = new Date();
+  const soDia = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const dif = Math.round((soDia(hoje) - soDia(d)) / 86400000);
+  if(dif === 0) return 'Hoje';
+  if(dif === 1) return 'Ontem';
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:
+    d.getFullYear()===hoje.getFullYear()?undefined:'numeric'});
+}
+
+function renderConversasTela(a){
+  const todas = state.conversas.filter(passa);
+  const termo = CV.busca.trim().toLowerCase();
+  // só procura por telefone quando o que foi digitado TEM dígito: senão
+  // "damiana" vira '' e o includes('') casa com todo mundo — a busca por nome
+  // devolvia a lista inteira
+  const digitos = termo.replace(/\D/g,'');
+  const lista = todas
+    .filter(c => CV.filtro==='todas' || c.col===CV.filtro)
+    .filter(c => !termo
+      || (c.nome||'').toLowerCase().includes(termo)
+      || (!!digitos && (c.fone||'').includes(digitos))
+      || (c.preview||'').toLowerCase().includes(termo))
+    .sort((x,y) => new Date(y.ultimaEm||0) - new Date(x.ultimaEm||0));
+
+  const cont = {};
+  todas.forEach(c=>{ cont[c.col]=(cont[c.col]||0)+1; });
+  const filtros = [['todas','Todas',todas.length],['fila','Na fila',cont.fila||0],
+    ['novos','No bot',cont.novos||0],['atendimento','Em atendimento',cont.atendimento||0],
+    ['aguardando','Aguard. cliente',cont.aguardando||0],['resolvidos','Resolvidos',cont.resolvidos||0]];
+
+  let ultimoDia = null;
+  const linhas = lista.map(c=>{
+    const [cls,lbl] = statusBadge(c.col);
+    let sep = '';
+    const dia = cvDia(c.ultimaEm);
+    if(dia !== ultimoDia){ sep = `<div class="cv-dia">${esc(dia)}</div>`; ultimoDia = dia; }
+    const flags = [];
+    if(c.cliente.bloqueado) flags.push('<span class="cc-tag risk">BLOQUEADO</span>');
+    else if(c.cliente.atraso>0) flags.push(`<span class="cc-tag risk">ATRASADO ${c.cliente.atraso}D</span>`);
+    if(c.cliente.lead) flags.push('<span class="cc-tag">lead</span>');
+    return sep + `<div class="cv-linha ${c.unread?'naolida':''}" data-id="${c.id}">
+      ${avatarHTML(c, 'width:38px;height:38px;font-size:12px')}
+      <div class="cv-meio">
+        <div class="cv-nome">
+          <span style="overflow:hidden;text-overflow:ellipsis">${esc(c.nome)}</span>
+          <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor')}"></span>
+        </div>
+        <div class="cv-prev">${esc(c.preview) || '<i>sem mensagens</i>'}</div>
+      </div>
+      <div class="cv-flags">${flags.join('')}</div>
+      <div class="cv-att">${esc(c.atendente)}</div>
+      <div class="cv-dir">
+        <span class="cv-quando">${esc(cvQuando(c.ultimaEm))}</span>
+        <span class="cc-status ${cls}">${lbl}</span>
+        ${c.unread?`<span class="cv-unread">${c.unread}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  a.innerHTML = `<div class="viewbox cheia">
+    <h2>Conversas</h2>
+    <div class="vsub">Todas as conversas, mais recentes primeiro. Clique para abrir o atendimento.</div>
+    <div class="cv-topo">
+      <input class="cv-busca" id="cvBusca" placeholder="Buscar por nome, telefone ou pelo texto da última mensagem…" value="${esc(CV.busca)}">
+      <div class="cv-fils">
+        ${filtros.map(([id,rot,n])=>`<button class="cv-fil ${CV.filtro===id?'on':''}" data-cvf="${id}">${rot}<span class="n">${n}</span></button>`).join('')}
+      </div>
+    </div>
+    ${linhas || `<div class="cv-vazio">${termo?'Nenhuma conversa para esta busca.':'Nenhuma conversa nesta etapa.'}</div>`}
+  </div>`;
+
+  a.querySelectorAll('[data-cvf]').forEach(b=>b.onclick=()=>{ CV.filtro=b.dataset.cvf; renderConversasTela(a); });
+  a.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>openModal(+el.dataset.id));
+  const busca = a.querySelector('#cvBusca');
+  if(busca){
+    // filtra em memória, então não precisa esperar a digitação parar; o que
+    // precisa é o cursor voltar para onde estava depois do repinte
+    busca.oninput = ()=>{
+      const pos = busca.selectionStart;
+      CV.busca = busca.value;
+      renderConversasTela(a);
+      const b2 = a.querySelector('#cvBusca');
+      if(b2){ b2.focus(); try{ b2.setSelectionRange(pos,pos); }catch{} }
+    };
+  }
+}
+
 /* ═══════════ CONFIGURAÇÕES › CONTRATOS ASSINADOS ══════════════════════════
    Até aqui a assinatura só existia DENTRO da conversa: para saber quais
    contratos ficaram pendentes, ou achar o contrato assinado de alguém, era
@@ -7893,15 +8071,7 @@ function renderAux(){
       body.querySelectorAll('.rule-del').forEach(el=>el.onclick=()=>{ const rg=state.rules[+el.dataset.i]; chamar('catalogo.salvar',{tipo:'regras',remover:rg.id}).then(()=>{ state.rules=state.rules.filter(x=>x!==rg); renderAux(); }).catch(err=>toast('Falha: '+err.message)); });
     }
   }
-  else if(view==='conversas'){
-    a.innerHTML=`<div class="viewbox" style="max-width:900px;"><h2>Conversas</h2><div class="vsub">Todas as conversas, mais recentes primeiro.</div>
-      ${state.conversas.map(c=>`<div class="rule-line" style="cursor:pointer;" data-id="${c.id}">
-        <div class="cc-av" style="background:${avColor(c.id)};width:30px;height:30px;font-size:11px;">${ini(c.nome)}</div>
-        <span class="rule-kw" style="background:#eef2f6;color:var(--text);">${esc(c.nome)}</span>
-        <span class="rule-desc">${esc(c.preview)}</span>
-        <span class="cc-status ${statusBadge(c.col)[0]}">${statusBadge(c.col)[1]}</span></div>`).join('')}</div>`;
-    a.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>openModal(+el.dataset.id));
-  }
+  else if(view==='conversas'){ renderConversasTela(a); }
   else if(view==='contatos'){
     a.innerHTML=`<div class="viewbox" style="max-width:900px;"><h2>Contatos</h2><div class="vsub">Números vinculados ao cadastro de clientes do MoviOn.</div>
       ${state.conversas.map(c=>`<div class="rule-line"><div class="cc-av" style="background:${avColor(c.id)};width:30px;height:30px;font-size:11px;">${ini(c.nome)}</div><span class="rule-kw" style="background:#eef2f6;color:var(--text);">${esc(c.nome)}</span><span class="rule-desc">${esc(c.fone)} · ${esc(c.cliente.plano)} · ${esc(c.cliente.contrato)}</span></div>`).join('')}</div>`;
