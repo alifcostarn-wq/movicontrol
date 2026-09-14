@@ -7820,8 +7820,41 @@ export default async function handler(req, res) {
             conteudo: `${user.nome || 'Atendente'} transferiu de ${c.setor || '—'} para ${destino}`,
           },
         });
+
+        /* Recado para quem receber.
+
+           O que quem transfere sabe — "já mandou reiniciar o roteador", "o
+           cliente é o irmão do titular", "prometi retorno até as 16h" — ia por
+           fora: no grupo do WhatsApp, no corredor, ou não ia. Quem pegava a
+           conversa começava do zero e perguntava de novo o que o cliente já
+           tinha respondido.
+
+           Fica na própria conversa, que é onde o próximo atendente vai estar,
+           como mensagem de sistema: ela nunca sai para o WhatsApp — é conversa
+           entre a equipe, e o cliente não pode receber isso por engano. */
+        const recado = String(body.recado || '').trim().slice(0, 1000);
+        let recadoGravado = null;
+        if (recado) {
+          recadoGravado = true;
+          try {
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: {
+                conversa_id: id, direcao: 'sys', autor_id: user.id,
+                autor_nome: user.nome || null, origem: 'recado', conteudo: recado,
+              },
+            });
+          } catch (err) {
+            // a transferência já aconteceu; perder o recado em silêncio é que
+            // não pode — quem transferiu precisa saber para repassar de outro
+            // jeito
+            recadoGravado = false;
+            console.error('[transferir] recado:', err.message);
+          }
+        }
+
         await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
-        return res.status(200).json({ ok: true, setor: destino });
+        return res.status(200).json({ ok: true, setor: destino, recado_gravado: recadoGravado });
       }
 
       case 'mensagens.enviar': {

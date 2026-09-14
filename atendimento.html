@@ -354,6 +354,16 @@ mark.achou.atual{background:var(--orange);color:#fff;}
    risquinho novo, de 18px */
 .mb .tm{display:block;font-size:11px;color:var(--text-low);text-align:right;margin-top:4px;}
 .m-sys{align-self:center;font-size:10.5px;font-weight:600;color:var(--text-mid);background:#eef2f6;padding:4px 12px;border-radius:12px;}
+/* o recado deixado por quem transferiu: fica no meio da conversa, com cara de
+   bilhete preso na porta — é para ser lido, não para se misturar aos avisos */
+.m-recado{
+  align-self:center;max-width:min(78%,520px);background:#fff8e1;border:1px solid #f3d98b;
+  border-left:4px solid #f0b429;border-radius:10px;padding:9px 13px;margin:2px 0;
+}
+.m-recado .rec-t{font-size:10px;font-weight:800;color:#8a6100;text-transform:uppercase;
+  letter-spacing:.03em;margin-bottom:4px;}
+.m-recado .rec-x{font-size:13px;line-height:1.5;color:var(--text);white-space:normal;}
+.m-recado .rec-h{font-size:10px;color:#a07a2a;margin-top:5px;}
 .m-composer{display:flex;gap:9px;padding:12px 16px 16px;align-items:center;flex-shrink:0;}
 .m-composer textarea{
   flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 14px;
@@ -557,6 +567,15 @@ mark.achou.atual{background:var(--orange);color:#fff;}
   padding:10px 12px;background:#f7f9fb;border-radius:9px;margin-bottom:14px;cursor:pointer;
 }
 .tr-avisar input{width:16px;height:16px;accent-color:var(--green);cursor:pointer;}
+.tr-rec-lb{display:block;font-size:11.5px;font-weight:800;color:var(--text);margin-bottom:5px;}
+.tr-rec-lb span{font-weight:600;color:var(--text-low);text-transform:none;}
+.tr-rec{
+  width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font-family:inherit;font-size:13px;line-height:1.45;resize:vertical;outline:none;
+  min-height:62px;max-height:180px;background:var(--card);color:var(--text);
+}
+.tr-rec:focus{border-color:var(--green);}
+.tr-rec-nota{font-size:11px;color:var(--text-low);margin:6px 2px 14px;line-height:1.45;}
 .tr-acts{display:flex;gap:8px;justify-content:flex-end;}
 
 /* ---- chamados / O.S. do MoviOn ---- */
@@ -3048,8 +3067,12 @@ const api = {
       nome:arq.name||'arquivo', legenda:legenda||'',
     }, 60000);   // upload é lento: prazo maior que o padrão
   },
-  async transferirSetor(c, setor, avisar){
-    await chamar('conversas.transferir', { conversa_id:c.id, setor, avisar_cliente: !!avisar });
+  async transferirSetor(c, setor, avisar, recado){
+    return await chamar('conversas.transferir', {
+      conversa_id:c.id, setor, avisar_cliente: !!avisar,
+      // o que quem transfere sabe e o próximo não tem como adivinhar
+      recado: String(recado||'').trim() || null,
+    });
   },
   async carregarMensagens(c){
     const id = c.id;
@@ -4923,6 +4946,12 @@ function abrirTransferencia(c){
     </div>
     <label class="tr-avisar"><input type="checkbox" id="trAvisar" checked>
       Avisar o cliente no WhatsApp sobre a transferência</label>
+    <!-- o que quem transfere sabe ia por fora: no grupo, no corredor, ou não
+         ia. Aqui fica na conversa, onde o próximo atendente vai estar -->
+    <label class="tr-rec-lb" for="trRecado">Recado para quem vai atender <span>opcional</span></label>
+    <textarea class="tr-rec" id="trRecado" rows="3" maxlength="1000"
+      placeholder="Ex.: já pedi para reiniciar o roteador e não resolveu. Prometi retorno até as 16h."></textarea>
+    <div class="tr-rec-nota">🔒 Fica na conversa, só a equipe vê. Não é enviado ao cliente.</div>
     <div class="tr-acts"><button class="vinc-btn" id="trCancelar">Cancelar</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -4934,15 +4963,20 @@ function abrirTransferencia(c){
     btn.onclick=async()=>{
       const destino=btn.dataset.setor;
       const avisar=ov.querySelector('#trAvisar').checked;
+      const recado=(ov.querySelector('#trRecado').value||'').trim();
       ov.querySelectorAll('.tr-op').forEach(b=>b.disabled=true);
       btn.textContent='Transferindo…';
       try{
-        await api.transferirSetor(c, destino, avisar);
+        const r = await api.transferirSetor(c, destino, avisar, recado);
         ov.remove();
         await recarregarConversas();
         const at=state.conversas.find(x=>x.id===c.id);
         if(at){ at._msgsCarregadas=false; openModal(at.id); }
-        toast('Transferido para '+destino);
+        // a transferência pode ter dado certo e o recado não: quem escreveu
+        // precisa saber, para repassar de outro jeito
+        if(recado && r && r.recado_gravado === false) toast('Transferido, mas o recado NÃO foi salvo. Repasse por outro caminho.');
+        else if(recado) toast('Transferido para '+destino+' · recado anexado');
+        else toast('Transferido para '+destino);
       }catch(err){
         ov.remove();
         toast('Falha: '+err.message);
@@ -7369,6 +7403,14 @@ function openModal(id){
           return sep + `<div class="mb ${m.t} apagada" ${m.id?`data-msgid="${m.id}"`:''}>
             <div class="ap-t">🚫 Mensagem apagada${m.excluidoPor?' por '+esc(m.excluidoPor):''}</div>
             <div class="mb-foot"><span class="tm">${esc(m.h||'')}</span></div></div>`;
+        }
+        // recado da transferência: não é aviso de sistema, é alguém falando
+        // com quem vai pegar a conversa. Pílula cinza de 10px ninguém lê.
+        if(m.t==='sys' && m.origem==='recado'){
+          return sep + `<div class="m-recado">
+            <div class="rec-t">📌 Recado da transferência${m.autorNome?' · '+esc(m.autorNome):''}</div>
+            <div class="rec-x">${fmtWA(esc(m.x)).replace(/\n/g,'<br>')}</div>
+            <div class="rec-h">🔒 só a equipe vê${m.h?' · '+esc(m.h):''}</div></div>`;
         }
         return sep + (m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
