@@ -1642,6 +1642,7 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .vinc-none{font-size:12px;color:var(--text-low);margin-bottom:10px;}
 .vinc-nome{font-size:13.5px;font-weight:800;color:var(--text);line-height:1.35;}
 .vinc-sub{font-size:11px;color:var(--text-low);margin-top:3px;}
+.vinc-apelido{font-size:11px;color:var(--text-mid);margin-top:2px;font-style:italic;}
 .vinc-acts{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
 .vinc-btn{
   font-family:inherit;font-size:11px;font-weight:700;padding:7px 12px;border-radius:8px;cursor:pointer;
@@ -3238,6 +3239,9 @@ function mapearConversa(c){
     msgs: [], sups: snap.sups||[],
     clienteVinculado: c.cliente_ixc_id ? {
       id: c.cliente_ixc_id, nome: snap.nome || c.contato_nome,
+      // o IXC chama de "Nome Social"; é o apelido pelo qual o atendente
+      // reconhece a pessoa, e só aparece quando difere da razão social
+      apelido: snap.nome_social || null,
       cpf: snap.cpf || null, plano: snap.plano || null,
     } : null,
     sugestao: (!c.cliente_ixc_id && c.cliente_sugerido_id) ? {
@@ -7390,6 +7394,7 @@ function openModal(id){
       ${c.clienteVinculado ? `
         <div class="vinc-box">
           <div class="vinc-nome">${esc(c.clienteVinculado.nome||c.nome)}</div>
+          ${c.clienteVinculado.apelido?`<div class="vinc-apelido" title="Nome Social do cadastro no IXC">conhecido como ${esc(c.clienteVinculado.apelido)}</div>`:''}
           <div class="vinc-sub">${c.clienteVinculado.cpf?esc(c.clienteVinculado.cpf):''}${c.clienteVinculado.plano?' · '+esc(c.clienteVinculado.plano):''}</div>
           <div class="vinc-acts">
             <button class="vinc-btn" id="mTrocarCli">Trocar cadastro</button>

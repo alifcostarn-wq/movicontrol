@@ -782,9 +782,28 @@ async function assinarMidia(e, caminho, segundos = 3600) {
   return d?.signedURL ? `${e.SUPA_URL}/storage/v1${d.signedURL}` : null;
 }
 
+/* Nome do cliente para mostrar na tela e para falar com ele.
+
+   O IXC guarda dois: `razao` ("Razão social/nome") e `fantasia`, que na ficha
+   de pessoa física aparece como "Nome Social" — e o sync grava o SEGUNDO em
+   `clientes.nome`, para bater campo a campo com o MoviOne. Só que ali entra de
+   tudo: apelido ("EMILIA" no lugar de MARIA EMILIA DO NASCIMENTO SANTANA),
+   sigla ("AMASR"), o nome de outra pessoa, e em boa parte dos cadastros o
+   número do protocolo colado no fim — "FULANO DE TAL (G1021518)". Era esse
+   texto que saía nas mensagens e ia parar nos contratos.
+
+   Quem vale é a razão social. A coluna `nome` fica como ela está, porque é
+   compartilhada com o MoviOne; o que muda é o que o MoviTalk LÊ dela. */
+function nomeCliente(c) {
+  if (!c) return null;
+  const razao = String(c.razao || '').trim();
+  if (razao) return razao;
+  return String(c.nome || c.nome_social || '').trim() || null;
+}
+
 // Busca o cadastro pelo id do IXC — usado quando o atendente vincula manualmente
 async function acharClientePorIxcId(e, ixcId) {
-  const cli = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=ixc_id,nome,razao,cnpj,ativo,ixc_status&limit=1`);
+  const cli = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=ixc_id,nome,razao,nome_social,cnpj,ativo,ixc_status&limit=1`);
   if (!cli) return null;
   let contrato = null;
   try {
@@ -1653,7 +1672,7 @@ const COLS_FONE_CLIENTE = ['whatsapp', 'telefone_celular', 'celular', 'fone', 't
 async function clientePorIxcIdLeve(e, ixcId, nomeFallback) {
   const c = await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=id,ixc_id,razao,nome&limit=1`)
     .catch(() => null);
-  if (c) return { id: c.id, ixc_id: String(c.ixc_id), nome: c.nome || c.razao || null };
+  if (c) return { id: c.id, ixc_id: String(c.ixc_id), nome: nomeCliente(c) };
   // o cadastro pode não estar espelhado no Supabase; o ixc_id ainda serve para casar
   return { id: null, ixc_id: String(ixcId), nome: nomeFallback || null };
 }
@@ -1683,7 +1702,7 @@ async function clientePorFone(e, fone) {
       } catch { linhas = null; break; }           // coluna inexistente nesta base
       for (const c of (linhas || [])) {
         if (confere(c[col])) {
-          return { id: c.id, ixc_id: c.ixc_id == null ? null : String(c.ixc_id), nome: c.nome || c.razao || null };
+          return { id: c.id, ixc_id: c.ixc_id == null ? null : String(c.ixc_id), nome: nomeCliente(c) };
         }
       }
     }
@@ -1869,7 +1888,7 @@ const CONECTORES = {
       return { resultado: 'nao_encontrado', anexoTexto: 'Não localizei nenhum cadastro com esse CPF. Vou te encaminhar para um atendente conferir. 👤' };
     }
     const { cliente, contrato } = achado;
-    const primeiro = String(cliente.nome || cliente.razao || '').trim().split(/\s+/)[0];
+    const primeiro = String(nomeCliente(cliente) || '').split(/\s+/)[0];
     return {
       resultado: 'ok',
       variaveis: {
@@ -1879,7 +1898,7 @@ const CONECTORES = {
       },
       // NÃO grava cliente_ixc_id: vínculo é ato manual do atendente.
       // Grava só a sugestão, para o painel oferecer "vincular com um clique".
-      patchConversa: { cliente_sugerido_id: String(cliente.ixc_id), cliente_sugerido_nome: cliente.nome || cliente.razao || null },
+      patchConversa: { cliente_sugerido_id: String(cliente.ixc_id), cliente_sugerido_nome: nomeCliente(cliente) },
       anexoTexto: `Tudo certo, ${primeiro}! ✅`,
     };
   },
@@ -3820,7 +3839,7 @@ async function aniversariantesDeHoje(e, fuso) {
     .filter(c => c.ixc_id && String(c.data_nasc || '').slice(5, 10) === mmdd)
     .map(c => ({
       ixc_id: String(c.ixc_id),
-      nome: c.nome || c.razao || null,
+      nome: nomeCliente(c),
       fone: normalizarFone(pick(c, 'whatsapp', 'tel1') || ''),
       data_nasc: c.data_nasc,
     }));
@@ -4150,7 +4169,7 @@ async function cobrancaAutomatica(e) {
         (noMes[chave] || 0) >= Number(cfg.max_por_cliente_mes)) continue;
 
     // nome para a mensagem: perfil, senão cadastro do MoviOne, senão o do IXC
-    const nomeCli = (p && p.nome) || (cad && (cad.nome || cad.razao))
+    const nomeCli = (p && p.nome) || nomeCliente(cad)
       || (abertas[0] && abertas[0].razao) || 'cliente';
     // o resto da máquina de decisão continua esperando um "perfil"; sem
     // retrato, entra um vazio — que é lido como "sem risco conhecido"
@@ -7165,11 +7184,15 @@ export default async function handler(req, res) {
             cliente_ixc_id: ixcId,
             cliente_sugerido_id: null,
             cliente_sugerido_nome: null,
-            contato_nome: cli.nome || cli.razao,
+            contato_nome: nomeCliente(cli),
             vinculado_em: new Date().toISOString(),
             vinculado_por: user.id,
             cliente_snapshot: {
-              id: cli.ixc_id, nome: cli.nome || cli.razao, cpf: cli.cnpj, ativo: cli.ativo,
+              id: cli.ixc_id, nome: nomeCliente(cli), cpf: cli.cnpj, ativo: cli.ativo,
+              // o apelido segue junto: é por ele que o atendente reconhece a
+              // pessoa no WhatsApp, mesmo com a razão social no lugar certo
+              nome_social: (cli.nome_social || cli.nome || '') !== nomeCliente(cli)
+                ? (cli.nome_social || cli.nome || null) : null,
               plano: ctr?.plano || null, velocidade: ctr?.velocidade_mbps || null,
               contrato: ctr?.status_contrato || null, acesso: ctr?.status_acesso || null,
               valor: ctr?.valor || null, desde: ctr?.data_ativacao || null, pago_ate: ctr?.pago_ate || null,

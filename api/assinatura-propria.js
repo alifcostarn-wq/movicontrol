@@ -200,7 +200,20 @@ export default async function handler(req, res) {
 
   /* Cidade e UF vêm do IXC como id numérico quando a tradução ainda não
      alcançou o cadastro. "1161" não é cidade: melhor em branco. */
-  function soNomeDeLugar(v) {
+  /* O nome que vai para o contrato é a RAZÃO SOCIAL do IXC.
+
+   O sync grava em `clientes.nome` o campo "fantasia" do IXC, que na ficha de
+   pessoa física é o "Nome Social": apelido, sigla, às vezes o número do
+   protocolo colado no fim. Num contrato assinado isso não serve — quem assina
+   é ALEXSANDRO DA SILVA OLIVEIRA, não LEKINHO. */
+function nomeCliente(c) {
+  if (!c) return null;
+  const razao = String(c.razao || '').trim();
+  if (razao) return razao;
+  return String(c.nome || '').trim() || null;
+}
+
+function soNomeDeLugar(v) {
     const s = String(v == null ? '' : v).trim();
     return /^\d+$/.test(s) ? '' : s;
   }
@@ -357,7 +370,7 @@ export default async function handler(req, res) {
           });
         }
         const [cli, docs] = await Promise.all([
-          sb(`clientes?id=eq.${lote.cliente_id}&select=nome,cnpj,endereco,numero,bairro,cidade,uf,cep`),
+          sb(`clientes?id=eq.${lote.cliente_id}&select=nome,razao,cnpj,endereco,numero,bairro,cidade,uf,cep`),
           sb(`contratos_assinatura?lote_id=eq.${lote.id}&select=id,documento_nome,conteudo_html_final&order=id.asc`),
         ]);
         const c = cli.data?.[0] || {};
@@ -367,7 +380,7 @@ export default async function handler(req, res) {
           // só o que a tela precisa mostrar e o cliente vai confirmar — o
           // cadastro inteiro não tem por que atravessar um link público
           cliente: {
-            nome: c.nome || '', cpf: c.cnpj || '',
+            nome: nomeCliente(c) || '', cpf: c.cnpj || '',
             endereco: [c.endereco, c.numero].filter(Boolean).join(', '),
             // id do IXC nunca sobe como cidade: o cliente está conferindo os
             // dados que vão para a assinatura dele
@@ -462,10 +475,10 @@ export default async function handler(req, res) {
       if (b.cliente_id) return { id: Number(b.cliente_id) };
       const ixc = String(b.cliente_ixc_id ?? '').trim();
       if (!ixc) return { erro: 'cliente_id ou cliente_ixc_id obrigatório' };
-      const r = await sb(`clientes?ixc_id=eq.${encodeURIComponent(ixc)}&select=id,nome&limit=1`);
+      const r = await sb(`clientes?ixc_id=eq.${encodeURIComponent(ixc)}&select=id,nome,razao&limit=1`);
       if (!r.ok) return { erro: 'Falha ao consultar o cadastro' };
       if (!r.data?.length) return { erro: `Cliente do IXC #${ixc} ainda não foi importado para o MoviOne` };
-      return { id: r.data[0].id, nome: r.data[0].nome };
+      return { id: r.data[0].id, nome: nomeCliente(r.data[0]) };
     }
 
     // Uma chamada só devolve tudo que a tela de assinatura precisa. São três
@@ -475,7 +488,7 @@ export default async function handler(req, res) {
       const alvo = await resolverClienteId(req.body || {});
       if (alvo.erro) return res.status(400).json({ ok: false, error: alvo.erro });
       const [cli, mods, equips] = await Promise.all([
-        sb(`clientes?id=eq.${alvo.id}&select=id,nome,cnpj,ie,endereco,numero,bairro,cidade,uf,cep,cep_full,whatsapp,tel1,ixc_id`),
+        sb(`clientes?id=eq.${alvo.id}&select=id,nome,razao,cnpj,ie,endereco,numero,bairro,cidade,uf,cep,cep_full,whatsapp,tel1,ixc_id`),
         sb('modelos_documento?ativo=eq.true&assinavel=eq.true&select=id,nome,categoria,conteudo_html&order=ordem.asc'),
         sb(`campo_comodato?cliente_id=eq.${alvo.id}&status=eq.ativo&select=id,serial,mac,modelo,status,campo_estoque(nome,categoria)`),
       ]);
@@ -484,8 +497,16 @@ export default async function handler(req, res) {
         nome: e.campo_estoque?.nome || '',
         modelo: e.modelo || '', serial: e.serial || '', mac: e.mac || '',
       }));
+      /* `nome` sai daqui já resolvido para a razão social: é ele que vai
+         para o contrato e para a tela que o cliente confere. O nome social
+         segue junto, à parte, para quem quiser mostrar "conhecido como". */
+      const cliente = cli.data?.[0] || null;
+      if (cliente) {
+        cliente.nome_social = cliente.nome || null;
+        cliente.nome = nomeCliente(cliente) || '';
+      }
       return res.status(200).json({
-        ok: true, cliente: cli.data?.[0] || null,
+        ok: true, cliente,
         modelos: mods.data || [], equipamentos,
       });
     }
@@ -511,11 +532,12 @@ export default async function handler(req, res) {
       let url = 'assinatura_lotes?select=' + encodeURIComponent(
         'id,cliente_id,status,criado_em,assinado_em,codigo_verificacao,selfie_url,' +
         'dados_confirmados,geo_lat,geo_lng,link_expira_em,link_aberto_em,link_enviado_em,ixc_contrato_id,' +
-        'clientes!inner(nome,cnpj,ixc_id),' +
+        'clientes!inner(nome,razao,cnpj,ixc_id),' +
         'contratos_assinatura(id,documento_nome,documento_url,documento_assinado_url,status)'
       ) + `&order=criado_em.desc&limit=${limite}`;
       if (status === 'assinado' || status === 'pendente') url += `&status=eq.${status}`;
-      if (busca) url += `&clientes.nome=ilike.*${encodeURIComponent(busca)}*`;
+      // procura pelos dois: quem digita o apelido também tem de achar
+      if (busca) url += `&clientes.or=${encodeURIComponent(`(nome.ilike.*${busca}*,razao.ilike.*${busca}*)`)}`;
 
       const r = await sb(url);
       if (!r.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar os contratos' });
@@ -534,7 +556,7 @@ export default async function handler(req, res) {
         const { contratos_assinatura, clientes, ...resto } = l;
         lotes.push({
           ...resto,
-          cliente_nome: clientes?.nome || null,
+          cliente_nome: nomeCliente(clientes),
           cliente_cnpj: clientes?.cnpj || null,
           cliente_ixc_id: clientes?.ixc_id || null,
           selfie_url: await r2SignedUrl(l.selfie_url),
