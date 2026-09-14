@@ -475,7 +475,23 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 }
 .mb:hover .mb-reply{opacity:1;}
 .mb-reply:hover{border-color:var(--green);color:var(--green-deep);background:#fff;opacity:1;}
-.mb-lixo:hover{border-color:var(--red);color:var(--red);background:#fff;}
+/* responder · editar · apagar num bloco só, colados, em vez de três pastilhas
+   espalhadas pelo rodapé da bolha */
+.mb-acoes{
+  display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:7px;
+  overflow:hidden;background:rgba(255,255,255,.8);opacity:.45;transition:opacity .12s;
+}
+.mb:hover .mb-acoes{opacity:1;}
+.mb-acoes button{
+  font-family:inherit;font-size:11px;line-height:1;padding:0;cursor:pointer;
+  width:26px;height:21px;display:flex;align-items:center;justify-content:center;
+  border:0;border-right:1px solid var(--line);background:transparent;color:var(--text-mid);
+  transition:background .12s;
+}
+.mb-acoes button:last-child{border-right:0;}
+.mb-acoes button:hover{background:var(--green-soft);}
+.mb-acoes button.x:hover{background:var(--red-soft);}
+.mb-acoes button[disabled]{opacity:.5;cursor:default;background:transparent;}
 .mb-edit{font-style:italic;cursor:help;}
 /* mensagem apagada: fica o lugar dela, sem o conteúdo — como no WhatsApp */
 .mb.apagada{background:#f1f5f9 !important;border:1px dashed var(--line) !important;color:var(--text-low);}
@@ -7150,13 +7166,19 @@ function openModal(id){
             m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
               <div class="qa">${m.quoteDirecao==='in'?esc(c.nome):'Você'}</div>
               <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
-          }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${
-            m.id?`<button class="mb-reply" data-responder="${m.id}" title="Responder esta mensagem">↩ responder</button>`:''
-          }${USUARIO.admin && podeEditar(m)
-            ? `<button class="mb-reply" data-editar="${m.id}" title="Corrigir o texto no WhatsApp do cliente (o WhatsApp dá 15 minutos)">✏️ editar</button>` : ''
-          }${m.id && USUARIO.admin && (m.t==='out'||m.t==='bot')
-            ? `<button class="mb-reply mb-lixo" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑 apagar</button>` : ''
-          }<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
+          }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${(()=>{
+            /* Os três eram pastilhas separadas com rótulo: numa bolha larga
+               viravam uma faixa de 230px atravessando o rodapé. Agora são um
+               bloco só, de ícones, com a explicação no title — o que a bolha
+               precisa mostrar é a mensagem, não a barra de ferramentas. */
+            const acoes=[];
+            if(m.id) acoes.push(`<button data-responder="${m.id}" title="Responder esta mensagem">↩</button>`);
+            if(USUARIO.admin && podeEditar(m))
+              acoes.push(`<button data-editar="${m.id}" title="Editar: corrigir o texto no WhatsApp do cliente (o WhatsApp dá 15 minutos)">✏️</button>`);
+            if(m.id && USUARIO.admin && (m.t==='out'||m.t==='bot'))
+              acoes.push(`<button class="x" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑</button>`);
+            return acoes.length?`<div class="mb-acoes">${acoes.join('')}</div>`:'';
+          })()}<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
       }).join(''); })()}
     </div>
     <div id="mReplyBar"></div>
@@ -7445,7 +7467,7 @@ function openModal(id){
     if(!novo.trim()){ toast('Para tirar a mensagem, use o apagar.'); return; }
     if(novo.trim()===(m.x||'').trim()) return;
     const rotulo=el.textContent;
-    el.disabled=true; el.textContent='salvando…';
+    el.disabled=true; el.textContent='⏳';
     try{
       const j=await api.editarMensagem(m, novo.trim());
       if(!j.sem_mudanca){
@@ -7474,7 +7496,7 @@ Ela sai da conversa do cliente no WhatsApp e sai daqui. Fica o registro de que e
 
 O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     const rotulo=el.textContent;
-    el.disabled=true; el.textContent='apagando…';
+    el.disabled=true; el.textContent='⏳';
     try{
       const j=await api.excluirMensagem(m);
       m.excluidoEm=j.excluido_em||new Date().toISOString();
