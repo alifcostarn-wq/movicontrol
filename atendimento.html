@@ -885,6 +885,41 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .emo-i:hover{background:var(--green-soft);}
 .m-composer{position:relative;}
 
+/* ---- formatação do WhatsApp ---- */
+.emo-btn#mFormato{font-size:14px;font-weight:800;letter-spacing:-.02em;}
+.fmt-pop{
+  position:absolute;bottom:calc(100% + 8px);left:0;width:min(320px,90vw);
+  background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-lg);
+  z-index:40;overflow:hidden;padding:8px;
+}
+.fmt-lista{display:flex;flex-direction:column;gap:3px;}
+.fmt-item{
+  display:flex;align-items:center;gap:9px;width:100%;border:none;background:transparent;cursor:pointer;
+  font-family:inherit;font-size:12.5px;color:var(--text);padding:7px 8px;border-radius:8px;text-align:left;
+}
+.fmt-item:hover{background:var(--green-soft);}
+.fmt-item .fi-ex{flex:1;}
+.fmt-item .fi-mk{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-low);}
+.fmt-item .fi-at{font-size:9.5px;color:var(--text-low);font-weight:700;white-space:nowrap;}
+.fmt-pv-t{font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text-low);margin:8px 4px 4px;}
+.fmt-pv{
+  font-size:12.5px;line-height:1.5;color:var(--text);background:#d8f6e6;border-radius:10px;
+  padding:8px 10px;max-height:110px;overflow-y:auto;word-break:break-word;
+}
+.fmt-pv i.vazio{color:var(--text-low);}
+/* no celular não há Ctrl: o atalho escrito ali só rouba largura do rótulo */
+@media(max-width:900px){ .fmt-item .fi-at{display:none;} }
+/* monoespaçado dentro da bolha e da prévia */
+.mb code.mb-mono,.fmt-pv code.mb-mono{
+  font-family:'JetBrains Mono',monospace;font-size:.92em;background:rgba(0,0,0,.06);
+  border-radius:5px;padding:1px 4px;
+  /* um Pix copia-e-cola é uma linha só, sem espaço nenhum: sem quebrar em
+     qualquer ponto ele passava por fora da bolha */
+  display:inline-block;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;
+  vertical-align:top;
+}
+
 /* ---- saídas do conector no editor de fluxo ---- */
 .conn-saidas{border:1px solid var(--line);border-radius:10px;padding:11px;margin:12px 0;background:#fbfcfd;}
 .conn-saidas .cs-tit{font-size:11px;font-weight:800;color:var(--text);margin-bottom:3px;}
@@ -3427,7 +3462,7 @@ function avisoFlutuante(conv){
   const el=document.createElement('div');
   el.className='aviso-msg';
   el.innerHTML=`<div class="am-av" style="background:${avColor(conv.id)}">${ini(conv.nome)}</div>
-    <div class="am-txt"><b>${esc(conv.nome)}</b><span>${esc(String(conv.preview||'').slice(0,54))}</span></div>
+    <div class="am-txt"><b>${esc(conv.nome)}</b><span>${esc(semFormato(conv.preview).slice(0,54))}</span></div>
     <button class="am-x" title="Dispensar">✕</button>`;
   el.onclick=ev=>{ if(ev.target.closest('.am-x')){ el.remove(); return; }
     etapaAtual=conv.col; renderEtapas(); renderListaConv(); openModal(conv.id); el.remove(); };
@@ -3445,7 +3480,7 @@ function notificarSistema(conv){
   if(!document.hidden) return;              // já está olhando a tela
   try{
     const n=new Notification(`💬 ${conv.nome}`, {
-      body: String(conv.preview||'Nova mensagem').slice(0,90),
+      body: (semFormato(conv.preview)||'Nova mensagem').slice(0,90),
       icon: '/favicon.ico',
       tag: 'movitalk-'+conv.id,             // substitui a anterior do mesmo cliente
       silent: true,                         // o som já é tocado pelo sistema
@@ -3611,6 +3646,78 @@ function seloAssinatura(c, forma){
 }
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* ═══════════ FORMATAÇÃO DO WHATSAPP (negrito, itálico, tachado, mono) ══════
+
+   O WhatsApp formata pelos sinais no meio do texto: *negrito*, _itálico_,
+   ~tachado~ e ```mono```. Quem escrevia isso aqui via os asteriscos crus na
+   própria bolha e não tinha como saber se tinha acertado a marcação — o
+   cliente via em negrito, o atendente via `*assim*`.
+
+   fmtWA recebe o texto JÁ escapado e devolve HTML. A ordem importa: escapar,
+   formatar, e só então trocar a quebra de linha por <br>.
+
+   Duas coisas ficam de fora da formatação, como no próprio WhatsApp: o que
+   está dentro de ``` e os links. O link é o motivo real da guarda — um
+   endereço com dois sublinhados (t=abc_def_gh) viraria itálico e o texto do
+   link chegaria torto na tela. */
+const FMT_MARCAS = [
+  { m:'*',   tag:'b',    nome:'Negrito',       atalho:'Ctrl+B' },
+  { m:'_',   tag:'i',    nome:'Itálico',       atalho:'Ctrl+I' },
+  { m:'~',   tag:'s',    nome:'Tachado',       atalho:'Ctrl+Shift+X' },
+  { m:'```', tag:'code', nome:'Monoespaçado',  atalho:'Ctrl+Shift+M' },
+];
+function fmtRegex(marca){
+  // a marca abre colada em algo que não é espaço e fecha colada em algo que
+  // não é espaço: "2 * 3 = 6" e "nome_do_arquivo" não são formatação
+  const e = marca.replace(/[*~`]/g,'\\$&');
+  return new RegExp(`(^|[^\\w${e}])${e}(?![\\s${e}])((?:[^${e}\\n]|\\n(?!\\n))*?[^\\s${e}])${e}(?![\\w${e}])`,'g');
+}
+function fmtWA(t){
+  if(!t) return '';
+  const guarda=[];
+  const guardar = s => { guarda.push(s); return ''+(guarda.length-1)+''; };
+  let s = String(t).replace(//g,'');
+  // ``` primeiro: dentro dele nada mais é marcação
+  s = s.replace(/```([\s\S]+?)```/g, (_,x)=>guardar('<code class="mb-mono">'+x+'</code>'));
+  s = s.replace(/`([^`\n]+)`/g, (_,x)=>guardar('<code class="mb-mono">'+x+'</code>'));
+  s = s.replace(/(https?:\/\/|www\.)[^\s<]+/gi, m=>guardar(m));
+  for(const f of FMT_MARCAS){
+    if(f.m==='```') continue;
+    s = s.replace(fmtRegex(f.m), (_,a,x)=>`${a}<${f.tag}>${x}</${f.tag}>`);
+  }
+  return s.replace(/(\d+)/g, (_,i)=>guarda[+i]);
+}
+/* Onde só cabe uma linha — prévia da lista, citação, aviso do celular — os
+   sinais viram sujeira: some com eles e deixa o texto. */
+function semFormato(s){
+  if(!s) return '';
+  let t=String(s).replace(/```([\s\S]+?)```/g,'$1').replace(/`([^`\n]+)`/g,'$1');
+  for(const f of FMT_MARCAS){
+    if(f.m==='```') continue;
+    t=t.replace(fmtRegex(f.m), (_,a,x)=>a+x);
+  }
+  return t;
+}
+/* Põe (ou tira) a marca no campo de texto. Sem seleção, marca a palavra sob o
+   cursor: deixar dois asteriscos vazios para o atendente digitar no meio é
+   pior do que não ter o botão. */
+function aplicarFormato(t, marca){
+  if(!t) return;
+  const v=t.value; let a=t.selectionStart, b=t.selectionEnd;
+  if(a===b){ while(a>0 && /\S/.test(v[a-1])) a--; while(b<v.length && /\S/.test(v[b])) b++; }
+  const n=marca.length;
+  const sel=v.slice(a,b);
+  let novo, ini, fim;
+  if(sel.length>2*n && sel.startsWith(marca) && sel.endsWith(marca)){   // desmarca: marca dentro da seleção
+    const dentro=sel.slice(n,-n);
+    novo=v.slice(0,a)+dentro+v.slice(b); ini=a; fim=a+dentro.length;
+  } else if(a>=n && v.slice(a-n,a)===marca && v.slice(b,b+n)===marca){  // desmarca: marca fora da seleção
+    novo=v.slice(0,a-n)+sel+v.slice(b+n); ini=a-n; fim=a-n+sel.length;
+  } else {
+    novo=v.slice(0,a)+marca+sel+marca+v.slice(b); ini=a+n; fim=b+n;
+  }
+  t.value=novo; t.focus(); try{ t.setSelectionRange(ini,fim); }catch{}
+}
 function emRisco(c){ return c.cliente.bloqueado || c.cliente.atraso>0 || c.cliente.recorrente; }
 function buildTimeline(c){
   const steps=[{txt:'Cliente iniciou conversa',h:c.msgs[0]?c.msgs[0].h:c.hora}];
@@ -3801,7 +3908,7 @@ function cardHTML(c,col){
       <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor — fila geral')}"></span>
       <div class="cc-time">${esc(c.hora)}</div>
     </div>
-    <div class="cc-msg">${esc(c.preview)}</div>
+    <div class="cc-msg">${esc(semFormato(c.preview))}</div>
     ${(flags.length||tags)?`<div class="cc-tags">${flags.join('')}${tags}</div>`:''}
     ${col==='fila'?`
       <div class="cc-espera ${esperaClasse(c)}">
@@ -7147,7 +7254,7 @@ function openModal(id){
         // reação não é mensagem: é um selo preso ao que ela responde. Bolha
         // cheia daria a entender que o cliente escreveu um emoji sozinho.
         if(m.tipo==='reacao'){
-          const alvo = m.quoteTexto ? `<b>${esc(m.quoteTexto.slice(0,60))}</b>` : 'sua mensagem';
+          const alvo = m.quoteTexto ? `<b>${esc(semFormato(m.quoteTexto).slice(0,60))}</b>` : 'sua mensagem';
           return sep + `<div class="mb-reac ${m.t==='in'?'in':'out'}" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
             <span class="rc-emo">${esc(m.x)}</span>
             <span class="rc-txt">reagiu a ${alvo}</span>
@@ -7165,8 +7272,8 @@ function openModal(id){
         :`<div class="mb ${m.t}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
             m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
               <div class="qa">${m.quoteDirecao==='in'?esc(c.nome):'Você'}</div>
-              <div class="qt">${esc(m.quoteTexto).replace(/\n/g,' ')}</div></div>`:''
-          }${esc(m.x).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${(()=>{
+              <div class="qt">${esc(semFormato(m.quoteTexto)).replace(/\n/g,' ')}</div></div>`:''
+          }${fmtWA(esc(m.x)).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${(()=>{
             /* Os três eram pastilhas separadas com rótulo: numa bolha larga
                viravam uma faixa de 230px atravessando o rodapé. Agora são um
                bloco só, de ícones, com a explicação no title — o que a bolha
@@ -7193,6 +7300,9 @@ function openModal(id){
           <button class="emo-btn leq" id="mAudio" type="button" title="Gravar áudio">🎤</button>
           <button class="emo-btn leq" id="mAnexo" type="button" title="Enviar arquivo">📎</button>
           <button class="emo-btn leq" id="mEmoji" type="button" title="Emojis">😊</button>
+          <!-- o WhatsApp formata pelos sinais no texto; aqui eles saem de um
+               botão, com a prévia do que o cliente vai ver -->
+          <button class="emo-btn leq" id="mFormato" type="button" title="Negrito, itálico, tachado e monoespaçado">Aa</button>
           <!-- as respostas prontas ficavam numa faixa fixa de 35px acima do
                campo. Aqui elas custam um clique a mais e devolvem a altura
                para as mensagens, que é onde o atendente passa o tempo lendo -->
@@ -7330,6 +7440,9 @@ function openModal(id){
   // Sem isto, o texto que o atendente está escrevendo é destruído junto —
   // por isso o rascunho vive na conversa, não no DOM.
   const inp=$('#mInput');
+  // o atalho de teclado é ligado mais abaixo, junto com o Enter que envia;
+  // daqui ele não alcançaria o campo
+  let fmtMarcar=null;
   if(inp){
     const cresce=()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,132)+'px'; };
     // com o campo transplantado não há nada a repor: o que está escrito já
@@ -7412,6 +7525,57 @@ function openModal(id){
       fecharLeque();
       abrirEmojis(bEmo, inp, pos=>{
         guardarRascunho(id,{ texto:inp.value, cursor:pos, digitando:true }); cresce();
+      });
+    };
+    /* Negrito, itálico, tachado e monoespaçado.
+
+       O WhatsApp formata pelos sinais no meio do texto. Digitá-los na mão é
+       onde se erra — e o campo mostra o sinal, nunca o efeito, então o erro
+       só aparece depois de enviado. Aqui o botão põe a marca na palavra ou no
+       trecho selecionado, e a prévia mostra o que o cliente vai ver. */
+    const fmtPrevia = ()=>{
+      const pv=document.querySelector('.fmt-pv');
+      if(pv) pv.innerHTML = inp.value.trim()
+        ? fmtWA(esc(inp.value)).replace(/\n/g,'<br>')
+        : '<i class="vazio">Escreva no campo para ver como fica.</i>';
+    };
+    fmtMarcar = mk => {
+      aplicarFormato(inp, mk);
+      guardarRascunho(id,{ texto:inp.value, cursor:inp.selectionStart, digitando:true });
+      cresce(); fmtPrevia();
+    };
+    const bFmt=$('#mFormato');
+    if(bFmt) bFmt.onclick=ev=>{
+      ev.stopPropagation();
+      fecharLeque();
+      const jaAberto=document.querySelector('.fmt-pop');
+      document.querySelectorAll('.fmt-pop').forEach(x=>x.remove());
+      if(jaAberto) return;
+      const pop=document.createElement('div');
+      pop.className='fmt-pop';
+      pop.innerHTML=`
+        <div class="fmt-lista">${FMT_MARCAS.map((f,i)=>`
+          <button class="fmt-item" data-fmt="${i}">
+            <span class="fi-ex">${fmtWA(esc(f.m+f.nome+f.m))}</span>
+            <span class="fi-mk">${esc(f.m)}texto${esc(f.m)}</span>
+            <span class="fi-at">${esc(f.atalho)}</span>
+          </button>`).join('')}</div>
+        <div class="fmt-pv-t">Como o cliente vai ver</div>
+        <div class="fmt-pv"></div>`;
+      // ancora no compositor, como o painel de emoji: o leque fecha ao ser
+      // usado e levaria o painel junto
+      (bFmt.closest('.m-composer') || bFmt.parentElement).appendChild(pop);
+      fmtPrevia();
+      const fechar=()=>{ pop.remove(); document.removeEventListener('click',fora,true); document.removeEventListener('keydown',tecla); };
+      const fora=e2=>{ if(pop.contains(e2.target)||e2.target===bFmt) return; fechar(); };
+      const tecla=e2=>{ if(e2.key==='Escape') fechar(); };
+      document.addEventListener('keydown', tecla);
+      setTimeout(()=>document.addEventListener('click',fora,true), 0);
+      // mousedown em vez de click: o clique tira o foco do campo e leva a
+      // seleção junto — sem isso a marca cairia no lugar errado
+      pop.querySelectorAll('.fmt-item').forEach(el=>{
+        el.onmousedown=e2=>e2.preventDefault();
+        el.onclick=e2=>{ e2.stopPropagation(); fmtMarcar(FMT_MARCAS[+el.dataset.fmt].m); };
       });
     };
     inp.onblur=ev=>{
@@ -7604,6 +7768,16 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
   // Enter envia; Shift+Enter (ou Ctrl/Cmd+Enter) quebra linha
   $('#mInput').onkeydown=e=>{
     if(e.key==='Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey){ e.preventDefault(); send(); }
+    // formatação pelos mesmos atalhos do WhatsApp Web: quem já usa lá não
+    // precisa aprender outros aqui
+    if((e.ctrlKey||e.metaKey) && fmtMarcar){
+      const k=(e.key||'').toLowerCase();
+      const mk = (k==='b'&&!e.shiftKey) ? '*'
+               : (k==='i'&&!e.shiftKey) ? '_'
+               : (k==='x'&&e.shiftKey)  ? '~'
+               : (k==='m'&&e.shiftKey)  ? '```' : null;
+      if(mk){ e.preventDefault(); fmtMarcar(mk); }
+    }
   };
   // ações rápidas
   document.querySelectorAll('[data-painel]').forEach(el=>el.onclick=()=>abrirPainelAcao(c, el.dataset.painel));
@@ -8183,7 +8357,7 @@ function renderConversasTela(a){
           ${seloAssinatura(c)}
           <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor')}"></span>
         </div>
-        <div class="cv-prev">${esc(c.preview) || '<i>sem mensagens</i>'}</div>
+        <div class="cv-prev">${esc(semFormato(c.preview)) || '<i>sem mensagens</i>'}</div>
       </div>
       <div class="cv-flags">${flags.join('')}</div>
       <div class="cv-att">${esc(c.atendente)}</div>
