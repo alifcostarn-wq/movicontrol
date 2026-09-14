@@ -2233,6 +2233,7 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .asn-prog.ok{background:var(--green-soft);color:var(--green-deep);font-weight:700;}
 .asn-prog.err{background:var(--red-soft);color:var(--red);font-weight:700;}
 .asn-rodape{display:flex;gap:9px;justify-content:space-between;margin-top:16px;}
+.asn-saidas{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end;}
 
 /* --- página do PDF (fora da tela): copiada do MoviControl sem alterar uma
        linha, para o documento sair exatamente igual nos dois sistemas --- */
@@ -4533,7 +4534,16 @@ function asnPasso2(){
     <div id="asnProg" style="margin-top:14px"></div>
     <div class="asn-rodape">
       <button class="vinc-btn" id="asnVoltar">← Voltar</button>
-      <button class="vinc-btn solid" id="asnGerar">📄 Gerar e enviar para o MoviApp</button>
+      <!-- gerar e avisar o cliente são duas decisões, e nem sempre são a mesma.
+           O contrato pode ser preparado antes da visita, na frente do cliente
+           no balcão, ou para conferir o texto — e aí mandar o link na hora é
+           errado. Quem só gera manda depois, pelo botão da ficha. -->
+      <div class="asn-saidas">
+        <button class="vinc-btn" id="asnSoGerar"
+          title="Cria os documentos e deixa prontos para assinar. NÃO manda nada ao cliente agora — o link fica esperando na ficha.">📄 Só gerar</button>
+        <button class="vinc-btn solid" id="asnGerar"
+          title="Cria os documentos e já manda o link de assinatura na conversa do cliente">📄 Gerar e enviar o link</button>
+      </div>
     </div>`;
 
   ASN.ov.querySelectorAll('.asn-radio-row button').forEach(b=>b.onclick=()=>{
@@ -4542,7 +4552,8 @@ function asnPasso2(){
     ASN.rev[b.parentElement.dataset.campo] = b.dataset.v;
   });
   $('#asnVoltar').onclick=asnPasso1;
-  $('#asnGerar').onclick=asnGerar;
+  $('#asnGerar').onclick=()=>asnGerar(true);
+  $('#asnSoGerar').onclick=()=>asnGerar(false);
 }
 
 /* ---- montagem do documento (idêntica à do MoviControl) ---- */
@@ -4644,9 +4655,16 @@ function asnProg(msg, cls){
   box.scrollTop=box.scrollHeight;
 }
 
-async function asnGerar(){
-  const btn=$('#asnGerar');
-  btn.disabled=true; btn.style.opacity=.6;
+/* Gera os documentos. `enviar` decide se o cliente é avisado agora.
+
+   Gerar e avisar são duas decisões. O contrato pode ser preparado antes da
+   visita, com o cliente no balcão, ou só para conferir o texto — nesses casos
+   mandar o link na hora atrapalha. Quem só gera manda depois, pelo botão
+   "Mandar link para assinar" que já existe na ficha do cliente. */
+async function asnGerar(enviar = true){
+  const btns=[$('#asnGerar'), $('#asnSoGerar')].filter(Boolean);
+  // os dois saem de cena: dois cliques gerariam dois lotes do mesmo contrato
+  btns.forEach(b=>{ b.disabled=true; b.style.opacity=.6; });
   $('#asnProg').innerHTML='';
   const c = ASN.c;
   try{
@@ -4675,6 +4693,13 @@ async function asnGerar(){
     });
     asnProg('✓ Pronto — os documentos estão prontos para assinar.', 'ok');
 
+    if(!enviar){
+      asnProg('Nada foi enviado ao cliente. Quando quiser, use "🔗 Mandar link para assinar" na ficha.', 'ok');
+      c.asn=null; c._asnCarregado=false;
+      setTimeout(()=>{ ASN.ov.remove(); openModal(c.id); toast('Documentos gerados — esperando você mandar 📄'); }, 1400);
+      return;
+    }
+
     // avisa o cliente na PRÓPRIA conversa: assim o aviso fica na thread, com
     // risquinho de entrega e de leitura, e o atendente vê se ele leu.
     //
@@ -4699,7 +4724,7 @@ async function asnGerar(){
     setTimeout(()=>{ ASN.ov.remove(); openModal(c.id); toast('Documentos enviados para assinatura 🎉'); }, 1200);
   }catch(err){
     asnProg('✗ '+err.message, 'err');
-    btn.disabled=false; btn.style.opacity=1;
+    btns.forEach(b=>{ b.disabled=false; b.style.opacity=1; });
   }
 }
 
