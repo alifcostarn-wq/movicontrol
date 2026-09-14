@@ -1064,6 +1064,28 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .nt-tit{font-size:13.5px;font-weight:700;}
 .nt-desc{font-size:12px;color:var(--text-mid);line-height:1.5;margin-top:3px;}
 .nt-nota{font-size:11px;color:var(--text-low);line-height:1.5;margin-top:6px;font-style:italic;}
+/* ---- aniversário: a primeira automática de verdade desta aba ---- */
+.aniv-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.aniv-tit{font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:8px;}
+.aniv-estado{font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:7px;text-transform:uppercase;letter-spacing:.03em;}
+.aniv-estado.on{background:var(--green-soft);color:var(--green-deep);}
+.aniv-estado.off{background:#eef2f6;color:var(--text-low);}
+.aniv-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start;}
+@media(max-width:900px){ .aniv-grid{grid-template-columns:1fr;} }
+.aniv-hoje{border:1px solid #bfe9d4;background:var(--green-soft);border-radius:11px;padding:13px;}
+.aniv-hoje .n{font-size:30px;font-weight:800;color:var(--green-deep);line-height:1;}
+.aniv-hoje .l{font-size:11.5px;color:var(--text-mid);margin-top:3px;}
+.aniv-nomes{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+.aniv-nome{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text);background:#fff;
+  border:1px solid #cbeedd;border-radius:8px;padding:5px 9px;}
+.aniv-nome .st{margin-left:auto;font-size:9.5px;font-weight:800;text-transform:uppercase;color:var(--text-low);}
+.aniv-nome .st.ok{color:var(--green-deep);}
+.aniv-nome .st.err{color:var(--red);}
+.aniv-hist{margin-top:14px;}
+.aniv-hlinha{display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--text-mid);
+  padding:7px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:5px;background:#fff;}
+.aniv-hlinha .nm{font-weight:700;color:var(--text);}
+.aniv-hlinha .qd{margin-left:auto;color:var(--text-low);font-size:10.5px;white-space:nowrap;}
 
 
 /* ---- relatórios ---- */
@@ -6039,10 +6061,91 @@ async function ntHistorico(){
 }
 
 /* ---- aba: automáticas (próxima etapa) ---- */
-function ntAutomaticas(){
-  document.getElementById('ntCorpo').innerHTML=`
-    <div class="cp-aviso" style="background:var(--blue-soft);border-color:#bcd4fb;color:#1d4ed8">
-      Espaço reservado para as notificações que o sistema envia sozinho, sem alguém clicar.
+/* ---- automática de verdade: parabéns de aniversário ----
+   Hoje quem manda é o IXC, por SMS: custa por mensagem, cai numa caixa que
+   ninguém abre e não deixa o cliente responder. Pelo WhatsApp chega onde ele
+   já fala com a empresa — e o "obrigado!" dele vira atendimento. */
+const ANIV = { cfg:null, hoje:[], ultimos:[], padrao:{}, carregando:false };
+
+async function anivCarregar(){
+  const j = await chamar('aniversario.obter', {});
+  ANIV.cfg = j.config || {}; ANIV.hoje = j.hoje || []; ANIV.ultimos = j.ultimos || []; ANIV.padrao = j.padrao || {};
+}
+
+function anivBloco(){
+  const c = ANIV.cfg || {}, ligado = c.ativo === true;
+  const jaForam = ANIV.hoje.filter(x => x.envio && x.envio.status === 'enviado').length;
+  const semFone = ANIV.hoje.filter(x => !x.fone).length;
+  return `
+    <div class="cp-box">
+      <div class="aniv-topo">
+        <div class="aniv-tit">🎂 Parabéns de aniversário</div>
+        <span class="aniv-estado ${ligado?'on':'off'}">${ligado?'Ligado':'Desligado'}</span>
+        <span class="cp-nota" style="margin:0">Hoje o IXC manda por SMS. Aqui vai pelo WhatsApp, onde o cliente pode responder.</span>
+      </div>
+      <div class="aniv-grid">
+        <div>
+          <div class="cp-lab">Mensagem</div>
+          <textarea class="cp-txt" id="anivTexto" placeholder="${esc(ANIV.padrao.texto||'')}">${esc(c.texto||'')}</textarea>
+          <div class="cp-nota">
+            Use <b>%nomecliente%</b> para o primeiro nome. Em branco, vale o texto padrão:
+            <i>${esc(ANIV.padrao.texto||'')}</i>
+          </div>
+          <div class="cp-campo" style="margin-top:12px">
+            <span>A que horas enviar</span>
+            <input type="time" id="anivHora" value="${esc(c.hora||ANIV.padrao.hora||'09:00')}">
+          </div>
+          <div class="cp-nota" style="margin-top:0">
+            Horário de Mossoró. O envio acontece na primeira varredura depois da hora marcada.
+          </div>
+          <div class="cp-campo" style="margin-top:12px">
+            <span><b>Enviar automaticamente</b></span>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer">
+              <input type="checkbox" id="anivAtivo" ${ligado?'checked':''}> ligado
+            </label>
+          </div>
+          <button class="btn primary" id="anivSalvar" style="margin-top:10px;font-weight:800;padding:10px 18px;">Salvar</button>
+          <div class="cp-nota">
+            Só clientes com contrato <b>ativo</b> recebem, e quem está na lista de <b>não perturbe</b> fica de fora.
+            Cada cliente recebe uma vez por ano — o ciclo roda a cada poucos minutos e a trava é por cliente e ano.
+          </div>
+        </div>
+        <div>
+          <div class="aniv-hoje">
+            <div class="n">${ANIV.hoje.length}</div>
+            <div class="l">aniversariante${ANIV.hoje.length===1?'':'s'} hoje${jaForam?` · ${jaForam} já recebeu${jaForam>1?'ram':''}`:''}</div>
+            ${ANIV.hoje.length?`<div class="aniv-nomes">${ANIV.hoje.map(x=>{
+              const st = x.envio ? x.envio.status : null;
+              const rot = st==='enviado' ? 'enviado' : st==='erro' ? 'erro' : st==='sem_telefone' ? 'sem telefone'
+                : !x.fone ? 'sem telefone' : 'aguardando';
+              const cls = st==='enviado' ? 'ok' : (st==='erro'||!x.fone) ? 'err' : '';
+              return `<div class="aniv-nome" title="${esc((x.envio&&x.envio.erro)||'')}">🎂 ${esc(x.nome||'—')}<span class="st ${cls}">${rot}</span></div>`;
+            }).join('')}</div>`:'<div class="cp-nota" style="margin-top:8px">Ninguém faz aniversário hoje.</div>'}
+            ${semFone?`<div class="cp-nota" style="margin-top:8px">${semFone} sem telefone no cadastro — esse não tem como enviar.</div>`:''}
+          </div>
+          ${ANIV.ultimos.length?`<div class="aniv-hist">
+            <div class="cp-lab">Últimos envios</div>
+            ${ANIV.ultimos.slice(0,8).map(u=>`<div class="aniv-hlinha" title="${esc(u.erro||'')}">
+              <span>${u.status==='enviado'?'✅':u.status==='erro'?'⚠️':'•'}</span>
+              <span class="nm">${esc(u.nome||u.fone||'—')}</span>
+              <span class="qd">${esc(dataCurta(u.enviado_em||u.criado_em))}</span>
+            </div>`).join('')}
+          </div>`:''}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function ntAutomaticas(){
+  const el = document.getElementById('ntCorpo');
+  el.innerHTML = '<div class="pn-load">Carregando…</div>';
+  try{ await anivCarregar(); }
+  catch(err){ ANIV.cfg = ANIV.cfg || {}; ANIV.erro = err.message; }
+
+  el.innerHTML=`
+    ${ANIV.erro?`<div class="ms-erro">Não consegui ler a configuração de aniversário.<br><b>${esc(ANIV.erro)}</b></div>`:anivBloco()}
+    <div class="cp-aviso" style="background:var(--blue-soft);border-color:#bcd4fb;color:#1d4ed8;margin-top:16px">
+      Abaixo, o que ainda vai ser trazido para cá.
     </div>
     <div class="nt-futuro">
       ${[['📅','Lembrete de vencimento','Aviso alguns dias antes da fatura vencer, para quem espera o boleto chegar.','A régua de cobrança do MoviOn já faz isso — falta trazer para cá.'],
@@ -6059,6 +6162,25 @@ function ntAutomaticas(){
       Todas usarão a mesma fila, o mesmo controle de ritmo e a mesma lista de não perturbe
       do envio manual — o que já está construído aqui.
     </div>`;
+
+  const bt = document.getElementById('anivSalvar');
+  if(bt) bt.onclick = async ()=>{
+    const cfg = {
+      ativo: document.getElementById('anivAtivo').checked,
+      texto: document.getElementById('anivTexto').value.trim(),
+      hora: document.getElementById('anivHora').value || '09:00',
+    };
+    bt.disabled = true; bt.textContent = 'Salvando…';
+    try{
+      await chamar('aniversario.salvar', { config: cfg });
+      ANIV.cfg = cfg;
+      toast(cfg.ativo ? '🎂 Parabéns automáticos ligados' : 'Parabéns automáticos desligados');
+      ntAutomaticas();
+    }catch(err){
+      bt.disabled = false; bt.textContent = 'Salvar';
+      toast('Falha ao salvar: '+err.message);
+    }
+  };
 }
 
 /* ---- aba: não perturbe ---- */

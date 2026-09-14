@@ -3778,6 +3778,154 @@ async function avisarPagamentosConfirmados(e) {
   return { pagamento: 'ok', enviados, sem_telefone: semTelefone, falhas, ja_avisadas: jaAvisadas };
 }
 
+/* ═══════════ PARABÉNS DE ANIVERSÁRIO ════════════════════════════════════════
+   Hoje quem manda é o IXC, por SMS. SMS custa por mensagem, chega numa caixa
+   que ninguém abre e não deixa o cliente responder — um "obrigado!" dele morre
+   no vazio. Pelo WhatsApp a mensagem chega no mesmo lugar onde ele já fala com
+   a empresa, e a resposta cai no atendimento.
+
+   O volume é pequeno e previsível: na base de vocês são 284 clientes ativos
+   com data de nascimento, média de 1,4 aniversariante por dia e no máximo 5.
+   Por isso o envio é direto no ciclo, sem fila nem controle de ritmo — o
+   motivo de existir a fila (centenas de mensagens iguais saindo juntas) não
+   se aplica aqui.
+
+   Três travas:
+   • Só cliente ATIVO. Ex-cliente que recebe "feliz aniversário" da empresa que
+     ele cancelou marca como spam, e denúncia derruba o número do atendimento.
+   • A lista de não perturbe do envio manual vale aqui também.
+   • Uma linha por cliente por ano, criada ANTES de enviar. O ciclo roda a cada
+     3 minutos enquanto alguém tem o painel aberto: sem a trava, o
+     aniversariante receberia a mesma mensagem dezenas de vezes no mesmo dia. */
+const ANIV_TEXTO_PADRAO =
+  '🎉 Feliz aniversário, %nomecliente%! Toda a equipe da MoviOn deseja um dia muito especial para você. '
+  + 'Obrigado por estar com a gente! 💚';
+
+function aniversarioTexto(tpl, nome) {
+  const primeiro = String(nome || '').trim().split(/\s+/)[0] || 'cliente';
+  return String(tpl || ANIV_TEXTO_PADRAO)
+    .replace(/%nomecliente%/gi, primeiro)
+    .replace(/\{nome\}/gi, primeiro);
+}
+
+/* Quem faz aniversário HOJE no fuso do provedor. A data vem do cadastro como
+   'AAAA-MM-DD'; comparar só o mês e o dia é o que faz a regra valer todo ano. */
+async function aniversariantesDeHoje(e, fuso) {
+  const hoje = partesNoFuso(new Date(), fuso);
+  const mmdd = `${String(hoje.mes).padStart(2, '0')}-${String(hoje.dia).padStart(2, '0')}`;
+  const base = await sb(e,
+    'clientes?ativo=is.true&data_nasc=not.is.null' +
+    '&select=ixc_id,nome,razao,whatsapp,tel1,data_nasc&limit=3000');
+  const lista = (base || [])
+    .filter(c => c.ixc_id && String(c.data_nasc || '').slice(5, 10) === mmdd)
+    .map(c => ({
+      ixc_id: String(c.ixc_id),
+      nome: c.nome || c.razao || null,
+      fone: normalizarFone(pick(c, 'whatsapp', 'tel1') || ''),
+      data_nasc: c.data_nasc,
+    }));
+  return { hoje, mmdd, lista };
+}
+
+async function enviarParabens(e) {
+  const cfgRow = await sbUm(e, 'atend_aniversario_config?id=eq.1&select=dados').catch(() => null);
+  const cfg = (cfgRow && cfgRow.dados) || {};
+  if (cfg.ativo !== true) return { aniversario: 'desligado' };
+
+  const { hoje, lista } = await aniversariantesDeHoje(e, cfg.fuso);
+  if (!lista.length) return { aniversario: 'ninguém faz aniversário hoje' };
+
+  // a hora é do fuso do provedor, não do servidor: em UTC, "09:00" sairia às
+  // 6 da manhã na casa do cliente
+  const [hc, mc] = String(cfg.hora || '09:00').split(':').map(Number);
+  const alvo = (Number.isFinite(hc) ? hc : 9) * 60 + (Number.isFinite(mc) ? mc : 0);
+  if (hoje.minutos < alvo) {
+    return { aniversario: 'antes da hora', hora: cfg.hora || '09:00', aniversariantes: lista.length };
+  }
+
+  let optout = [];
+  try { optout = await sb(e, 'atend_campanha_optout?select=fone&limit=2000'); } catch {}
+  const naoPerturbe = new Set((optout || []).map(x => normalizarFone(x.fone || '')).filter(Boolean));
+
+  const tpl = String(cfg.texto || ANIV_TEXTO_PADRAO);
+  let enviados = 0, falhas = 0, semTelefone = 0, jaEnviados = 0, dispensados = 0;
+
+  for (const cli of lista) {
+    if (cli.fone && naoPerturbe.has(cli.fone)) { dispensados++; continue; }
+
+    // REIVINDICA ANTES DE ENVIAR: unique(cliente_ixc_id, ano) é o mutex
+    let claim;
+    try {
+      claim = await sb(e, 'atend_aniversario_envios', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: {
+          cliente_ixc_id: cli.ixc_id, ano: hoje.ano, nome: cli.nome,
+          fone: cli.fone || null, status: 'enviando', tentativas: 1,
+        },
+      });
+      claim = Array.isArray(claim) ? claim[0] : claim;
+    } catch {
+      jaEnviados++;                 // 409: outra execução já cuidou deste
+      continue;
+    }
+
+    if (!cli.fone) {
+      semTelefone++;
+      await sb(e, `atend_aniversario_envios?id=eq.${claim.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { status: 'sem_telefone' },
+      }).catch(() => {});
+      continue;
+    }
+
+    const texto = aniversarioTexto(tpl, cli.nome);
+
+    // mesma escolha do aviso de pagamento: a conversa nasce em "Resolvidos".
+    // Parabéns não é atendimento aberto — no quadro da equipe ele viraria um
+    // card para alguém assumir e finalizar, e o aniversariante receberia três
+    // mensagens em vez de uma.
+    let c = await conversaPorFone(e, cli.fone, 'id,contato_fone');
+    const foneEnvio = (c && c.contato_fone) || cli.fone;
+    if (!c) {
+      const nova = await sb(e, 'atend_conversas', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: {
+          contato_fone: cli.fone, contato_nome: cli.nome || cli.fone, coluna: 'resolvidos',
+          bot_ativo: true, cliente_ixc_id: cli.ixc_id,
+        },
+      }).catch(() => null);
+      c = Array.isArray(nova) ? nova[0] : nova;
+    }
+
+    let env = null, erro = null;
+    try { env = await waEnviar(e, foneEnvio, texto); }
+    catch (err) { erro = String(err.message).slice(0, 250); falhas++; }
+
+    if (!erro && c) {
+      await sb(e, 'atend_mensagens', {
+        method: 'POST', prefer: 'return=minimal',
+        body: { conversa_id: c.id, direcao: 'bot', conteudo: texto, wa_id: idDaEvolution(env), status: 'enviado' },
+      }).catch(() => {});
+      await sb(e, `atend_conversas?id=eq.${c.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { ultima_msg: texto.slice(0, 200), ultima_msg_em: new Date().toISOString() },
+      }).catch(() => {});
+    }
+    if (!erro) enviados++;
+
+    await sb(e, `atend_aniversario_envios?id=eq.${claim.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: {
+        status: erro ? 'erro' : 'enviado', erro, conversa_id: c ? c.id : null,
+        fone: foneEnvio, enviado_em: erro ? null : new Date().toISOString(),
+      },
+    }).catch(err => console.error('[aniversario] registro:', err.message));
+  }
+
+  return { aniversario: 'ok', aniversariantes: lista.length, enviados, falhas,
+           sem_telefone: semTelefone, ja_enviados: jaEnviados, dispensados };
+}
+
 function cobDiasEntre(a, b) {
   const d1 = parseDataIXC(a), d2 = parseDataIXC(b);
   if (!d1 || !d2) return null;
@@ -4867,11 +5015,17 @@ async function tratarCron(e) {
   try { pagamento = await avisarPagamentosConfirmados(e); }
   catch (err) { console.error('[pagamento confirmado]', err.message); pagamento = { erro: err.message }; }
 
+  // parabéns de aniversário: o mesmo que o IXC manda por SMS hoje, pelo canal
+  // em que o cliente pode responder
+  let aniversario = null;
+  try { aniversario = await enviarParabens(e); }
+  catch (err) { console.error('[aniversario]', err.message); aniversario = { erro: err.message }; }
+
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
            bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
-           cobranca: auto, campanhas, pagamento, interno };
+           cobranca: auto, campanhas, pagamento, interno, aniversario };
 }
 
 // ============================================================================
@@ -6551,6 +6705,51 @@ export default async function handler(req, res) {
             coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
             nao_lidas: 0, updated_by: user.id,
           },
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // ===== PARABÉNS DE ANIVERSÁRIO =====
+      case 'aniversario.obter': {
+        const c = await sbUm(e, 'atend_aniversario_config?id=eq.1&select=dados').catch(() => null);
+        const cfg = (c && c.dados) || {};
+        const { hoje, lista } = await aniversariantesDeHoje(e, cfg.fuso).catch(() => ({ hoje: null, lista: [] }));
+        // quem já recebeu hoje, para a tela não prometer um envio que já saiu
+        let jaHoje = [];
+        if (hoje) {
+          jaHoje = await sb(e,
+            `atend_aniversario_envios?ano=eq.${hoje.ano}&select=cliente_ixc_id,status,erro,enviado_em&limit=500`
+          ).catch(() => []);
+        }
+        const porCliente = new Map((jaHoje || []).map(x => [String(x.cliente_ixc_id), x]));
+        const ultimos = await sb(e,
+          'atend_aniversario_envios?select=id,nome,fone,status,erro,enviado_em,criado_em' +
+          '&order=criado_em.desc&limit=40').catch(() => []);
+        return res.status(200).json({
+          ok: true,
+          config: cfg,
+          padrao: { texto: ANIV_TEXTO_PADRAO, hora: '09:00' },
+          hoje: lista.map(x => ({
+            nome: x.nome, fone: x.fone || null, ixc_id: x.ixc_id,
+            envio: porCliente.get(x.ixc_id) || null,
+          })),
+          ultimos: ultimos || [],
+        });
+      }
+
+      case 'aniversario.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const d = body.config && typeof body.config === 'object' ? body.config : null;
+        if (!d) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        if (d.ativo === true && !String(d.texto || '').trim()) {
+          return res.status(400).json({ ok: false, error: 'Escreva a mensagem antes de ligar o envio.' });
+        }
+        if (d.hora && !/^\d{2}:\d{2}$/.test(String(d.hora))) {
+          return res.status(400).json({ ok: false, error: 'Hora inválida. Use HH:MM.' });
+        }
+        await sb(e, 'atend_aniversario_config?id=eq.1', {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { dados: d, updated_at: new Date().toISOString(), updated_by: user.id },
         });
         return res.status(200).json({ ok: true });
       }
