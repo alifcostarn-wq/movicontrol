@@ -291,6 +291,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 .m-chat{display:flex;flex-direction:column;border-right:1px solid var(--line);min-width:0;min-height:0;}
 .m-head{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--line);flex-shrink:0;}
 .m-head .cc-av{width:40px;height:40px;font-size:13px;}
+/* a foto do perfil amplia no clique — no cabeçalho, onde o clique é dela e
+   não da linha da lista */
+.m-head .cc-av.com-foto{cursor:zoom-in;}
+.m-head .cc-av.com-foto:hover{box-shadow:0 0 0 2px var(--green);}
 .m-hinfo{flex:1;min-width:0;}
 /* o nome trunca em vez de empurrar: com o estado e as ações na mesma linha,
    um nome comprido quebrava o cabeçalho em duas — e a altura que a barra
@@ -3573,9 +3577,13 @@ const $=s=>document.querySelector(s);
 function ini(n){ return n.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase(); }
 // iniciais + foto do WhatsApp por cima (quando existir)
 function avatarHTML(c, extra){
-  const foto = c && c.avatarUrl
+  const temFoto = !!(c && c.avatarUrl);
+  const foto = temFoto
     ? `<img src="${esc(c.avatarUrl)}" alt="" loading="lazy" onerror="this.remove()">` : '';
-  return `<div class="cc-av" style="background:${avColor(c.id)}${extra?';'+extra:''}">${ini(c.nome)}${foto}</div>`;
+  // `com-foto` é o que diz "dá para ampliar": nas listas o clique é da linha
+  // inteira e abre a conversa, então só no cabeçalho ela vira mão de lupa
+  return `<div class="cc-av ${temFoto?'com-foto':''}" style="background:${avColor(c.id)}${extra?';'+extra:''}"${
+    temFoto?' title="Ver a foto do perfil"':''}>${ini(c.nome)}${foto}</div>`;
 }
 function avColor(id){ return AV_COLORS[id % AV_COLORS.length]; }
 /* o selo de contrato esperando assinatura — mesmo texto em toda a tela */
@@ -7776,6 +7784,18 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
   // quem é a pessoa do outro lado
   const hNome=$('#modal').querySelector('.m-hname');
   if(hNome){ hNome.title='Ver cadastro do cliente'; hNome.onclick=abrirCadastroCliente; }
+  /* clicar na foto do perfil abre ela ampliada, no mesmo visualizador das
+     imagens da conversa — com zoom, giro e arrasto.
+     A imagem é lida do <img> vivo, não de uma cópia da URL: o link da foto
+     vem assinado e expira, e nesse caso o onerror já tirou o <img> da tela.
+     Sem ler do elemento, o clique abriria um visualizador com um quadrado
+     quebrado dentro. */
+  const hFoto=$('#modal').querySelector('.m-head .cc-av.com-foto');
+  if(hFoto) hFoto.onclick=ev=>{
+    ev.stopPropagation();
+    const img=hFoto.querySelector('img');
+    if(img && img.src) abrirVisualizador(img.src);
+  };
   // agendar mensagem
   $('#mAgendar').onclick=()=>{
     const texto=prompt('Mensagem a agendar:'); if(!texto||!texto.trim())return;
