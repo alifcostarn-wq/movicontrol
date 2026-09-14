@@ -5322,6 +5322,107 @@ async function processarCampanhas(e) {
   return { ok: true, campanhas: resumo.length, detalhe: resumo };
 }
 
+/* ═══════════ MOVITEC → MOVITALK ═══════════════════════════════════════════
+
+   O aviso que o técnico manda ("estou a caminho", "cheguei", "concluído")
+   passa a sair pelo WhatsApp DA EMPRESA — o mesmo número em que o cliente já
+   fala com o atendimento — e entra na conversa dele, no painel.
+
+   Antes ia por outro gateway, com outro número. Três consequências:
+
+   • A mensagem terminava em "responda esta mensagem", e a resposta caía num
+     número que ninguém lê. O cliente falava sozinho.
+   • O atendente não via que o técnico já tinha avisado: ligava para dizer a
+     mesma coisa, ou não sabia responder quando o cliente perguntava do
+     técnico na conversa aberta.
+   • E desde 3 de setembro de 2026 NADA chegava: o canal de lá sumiu
+     ("Nenhum canal encontrado"), 17 tentativas seguidas, todas perdidas em
+     silêncio — o técnico via "enviado" na tela e o cliente não recebia nada.
+
+   Quem chama é o app dos técnicos, com o login do PRÓPRIO técnico. Não entra
+   pelo autenticar() do painel: técnico não tem (nem deve ter) acesso ao
+   Centro de Atendimento — o crachá dele é a linha em campo_tecnicos. */
+async function tecnicoDoToken(e, req) {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) { const err = new Error('Token ausente.'); err.status = 401; throw err; }
+
+  let userId = null;
+  try {
+    const r = await fetch(`${e.SUPA_URL}/auth/v1/user`, {
+      headers: { apikey: e.SRV, Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error('sessão inválida');
+    userId = (await r.json()).id;
+  } catch {
+    const err = new Error('Sessão inválida ou expirada.'); err.status = 401; throw err;
+  }
+
+  const t = await sbUm(e, `campo_tecnicos?user_id=eq.${userId}&select=id,nome,status&limit=1`);
+  if (!t) { const err = new Error('Este canal é do aplicativo dos técnicos.'); err.status = 403; throw err; }
+  if (t.status && t.status !== 'ativo') {
+    const err = new Error('Técnico inativo.'); err.status = 403; throw err;
+  }
+  return { id: t.id, nome: t.nome || 'Técnico', user_id: userId };
+}
+
+/* Manda o aviso e deixa o rastro na conversa.
+
+   A conversa nova nasce em "Resolvidos", como o aviso de pagamento e o
+   parabéns: avisar que o técnico está a caminho não é atendimento aberto, e
+   um card novo no quadro faria alguém assumir e finalizar uma conversa que
+   não começou. Se o cliente responder, o caminho normal da mensagem recebida
+   traz a conversa para a fila — aí sim há alguém para atender. */
+async function avisoDoTecnico(e, tec, body) {
+  const texto = String(body.texto || '').trim();
+  const fone = normalizarFone(body.fone || '');
+  if (!texto) { const err = new Error('Mensagem vazia.'); err.status = 400; throw err; }
+  if (fone.length < 12) { const err = new Error('Telefone inválido (precisa do DDD).'); err.status = 400; throw err; }
+
+  // o id do IXC vem da OS; nem toda OS tem um que case com o cadastro espelhado
+  const ixcId = String(body.cliente_ixc_id || '').trim();
+  const cad = ixcId
+    ? await sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(ixcId)}&select=ixc_id,nome,razao&limit=1`).catch(() => null)
+    : null;
+
+  let c = await conversaPorFone(e, fone, 'id,contato_fone');
+  // o número que o cliente usa de verdade ganha do número do cadastro: é por
+  // ele que as mensagens comprovadamente chegam
+  const foneEnvio = (c && c.contato_fone) || fone;
+  if (!c) {
+    const nova = await sb(e, 'atend_conversas', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: {
+        contato_fone: fone,
+        contato_nome: nomeCliente(cad) || String(body.cliente_nome || '').trim() || fone,
+        coluna: 'resolvidos', bot_ativo: true,
+        cliente_ixc_id: cad ? String(cad.ixc_id) : null,
+      },
+    }).catch(err => { console.error('[movitec] conversa:', err.message); return null; });
+    c = Array.isArray(nova) ? nova[0] : nova;
+  }
+
+  // O envio é o que importa: se o WhatsApp recusar, o erro sobe e o técnico vê
+  // na tela dele. Gravar o rastro é o que pode falhar sem estragar o aviso.
+  const env = await waEnviar(e, foneEnvio, texto);
+  const waId = idDaEvolution(env);
+
+  if (c) {
+    await sb(e, 'atend_mensagens', {
+      method: 'POST', prefer: 'return=minimal',
+      body: {
+        conversa_id: c.id, direcao: 'out', conteudo: texto, wa_id: waId, status: 'enviado',
+        autor_id: tec.user_id, autor_nome: tec.nome, origem: 'movitec',
+      },
+    }).catch(err => console.error('[movitec] mensagem:', err.message));
+    await sb(e, `atend_conversas?id=eq.${c.id}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { ultima_msg: texto.slice(0, 200), ultima_msg_em: new Date().toISOString() },
+    }).catch(() => {});
+  }
+
+  return { ok: true, conversa_id: c ? c.id : null, wa_id: waId, fone: foneEnvio, tecnico: tec.nome };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -5355,6 +5456,14 @@ export default async function handler(req, res) {
         return res.status(401).json({ ok: false, error: 'Secret inválido.' });
       }
       return res.status(200).json(await tratarCron(e));   // agendador externo: sempre roda
+    }
+
+    /* MoviTec: o aviso do técnico ao cliente. Autenticado, mas por outro
+       crachá — quem manda é técnico, não atendente, e nenhum dos dois deve
+       herdar o acesso do outro. */
+    if (acao === 'os.notificar') {
+      const tec = await tecnicoDoToken(e, req);
+      return res.status(200).json(await avisoDoTecnico(e, tec, body));
     }
 
     // ---- daqui pra baixo exige usuário logado ---------------------------

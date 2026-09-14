@@ -7,13 +7,11 @@
 // administrativo, e vice-versa (isolamento por blast radius).
 //
 // Branches usados pelo campo.html (e SOMENTE estes):
-//   • x-target: evotrix     → notificação WhatsApp ao cliente
 //   • x-target: r2-upload    → upload de foto da OS no Cloudflare R2
 //   • x-ixc-method: PUT      → limpar MAC do login (ixcsoft: 'editar')
 //   • (default) GET/listar   → diagnóstico IXC (radusuarios etc.)
 //
 // Env vars (compartilhadas com o projeto Vercel — já existem):
-//   EVOTRIX_API_KEY
 //   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
 //   R2_BUCKET_NAME, R2_ENDPOINT
 // ════════════════════════════════════════════════════════════════
@@ -26,49 +24,15 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // ============================================================
-  // EVOTRIX - envio de WhatsApp (texto livre, sem template)
-  // Acionado pelo header x-target: evotrix
-  // A chave fica SOMENTE no servidor (variavel de ambiente EVOTRIX_API_KEY)
+  // EVOTRIX — REMOVIDO
+  //
+  // O aviso do técnico ao cliente agora sai pelo WhatsApp da empresa, via
+  // /api/atendimento (acao: 'os.notificar'), e entra na conversa do cliente
+  // no MoviTalk. Esta rota deixou de ser usada — e não podia continuar de pé:
+  // ela mandava WhatsApp para qualquer número, com qualquer texto, SEM PEDIR
+  // LOGIN. Quem descobrisse a URL gastava o gateway da empresa em nome dela.
+  // A rota nova exige a sessão do próprio técnico.
   // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'evotrix') {
-    const apiKey = process.env.EVOTRIX_API_KEY || '';
-    if (!apiKey) {
-      return res.status(500).json({ error: 'EVOTRIX_API_KEY nao configurada no servidor (Vercel > Settings > Environment Variables).' });
-    }
-    const b = req.body || {};
-    const payload = {
-      channel:   b.channel   || '',
-      recipient: b.recipient || '',
-      body:      typeof b.body === 'string' ? b.body : '',
-      campaign:  b.campaign  || 'os_notificacao',
-    };
-    if (!payload.channel || !payload.recipient || !payload.body) {
-      return res.status(400).json({ error: 'Faltam campos: channel, recipient ou body.' });
-    }
-    // Endpoint e autenticacao confirmados em producao (Bearer)
-    const evoUrl = 'https://api.evotrix.com.br/v1/services/whatsapp/notifications/text';
-    try {
-      const r = await fetch(evoUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const text = await r.text();
-      let data; try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
-      console.log(`[evotrix] ${r.status} ${text.slice(0, 160)}`);
-      if (r.status >= 200 && r.status < 300) {
-        return res.status(200).json({ ok: true, evotrix: data });
-      }
-      return res.status(r.status).json({ ok: false, evotrix: data });
-    } catch (e) {
-      console.log(`[evotrix] ERRO ${e.message}`);
-      return res.status(502).json({ error: 'Falha ao enviar pela Evotrix.', detail: e.message });
-    }
-  }
 
   // ============================================================
   // R2 UPLOAD - recebe foto do técnico e salva no Cloudflare R2

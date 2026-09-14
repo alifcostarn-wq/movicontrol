@@ -1959,6 +1959,44 @@ function _telBR(raw){
   return t;
 }
 
+/* Envio ao cliente — agora pelo MoviTalk.
+
+   A mensagem sai pelo WhatsApp DA EMPRESA, o mesmo número em que o cliente já
+   fala com o atendimento, e entra na conversa dele lá. Três coisas mudam para
+   melhor: o cliente recebe de um número que ele reconhece; quando ele responde
+   ("estou em casa", "só depois das 14h"), a resposta chega em alguém; e o
+   atendente vê, na conversa, que o técnico já avisou.
+
+   O gateway antigo mandava de outro número, e desde 3 de setembro tinha
+   parado de mandar: todas as tentativas voltavam "Nenhum canal encontrado",
+   o técnico via "enviado" e o cliente não recebia nada.
+
+   Devolve { ok, erro } — quem chama decide o que fazer com a falha. */
+async function _enviarWaCliente(os, texto){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session) return { ok:false, erro:'Sessão expirada — entre de novo.' };
+  try{
+    const resp = await fetch('/api/atendimento', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({
+        acao:'os.notificar',
+        fone: (os && os.telefone) || '',
+        texto,
+        os_id: os ? os.id : null,
+        os_numero: os ? (os.numero || os.id) : null,
+        cliente_ixc_id: os ? (os.cliente_id || null) : null,
+        cliente_nome: os ? (os.cliente || null) : null,
+      }),
+    });
+    const d = await resp.json().catch(()=>({}));
+    if(!resp.ok || d.ok === false) return { ok:false, erro: d.error || ('HTTP '+resp.status) };
+    return { ok:true, conversa_id: d.conversa_id || null };
+  }catch(err){
+    return { ok:false, erro: String(err.message||err) };
+  }
+}
+
 function enviarWaOS(etapa){
   const os = _aberta; if(!os){ toast('Abra uma OS primeiro'); return; }
   const cfg = _waTemplates(os)[etapa]; if(!cfg) return;
@@ -1986,22 +2024,10 @@ async function confirmarEnvioWa(){
   const btn = $('sms-enviar-btn'); const orig = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled = true; btn.innerHTML = '⏳ Enviando...'; }
   try {
-    const resp = await fetch(_proxyUrl, {
-      method:'POST',
-      headers: { 'Content-Type':'application/json', 'x-target':'evotrix' },
-      body: JSON.stringify({
-        channel: '67127520ecb37a364cc5e36d',
-        recipient: recipient,
-        body: msg,
-        campaign: 'os_notificacao'
-      })
-    });
-    const txt = await resp.text();
-    let data; try{ data = JSON.parse(txt); }catch{ data = { raw: txt.slice(0,200) }; }
-    if(!resp.ok || data.ok === false){
-      const m = (data.evotrix && (data.evotrix.message || data.evotrix.error)) || data.error || ('HTTP '+resp.status);
-      throw new Error(m);
-    }
+    // o número conferido no modal vale mais que o da OS: é o que o técnico
+    // acabou de confirmar com o cliente na porta
+    const r = await _enviarWaCliente({ ...(_aberta||{}), id:osId, telefone:recipient }, msg);
+    if(!r.ok) throw new Error(r.erro);
     try {
       await sb.rpc('registrar_sms_os', {
         p_os_id:osId, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
@@ -2035,13 +2061,9 @@ async function _autoWaStatus(os, etapa){
   const recipient = _telBR(telDigits);
   const cliId = parseInt(os.cliente_id)||null;
   try {
-    const resp = await fetch(_proxyUrl, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-target':'evotrix' },
-      body: JSON.stringify({ channel:'67127520ecb37a364cc5e36d', recipient, body:cfg.msg, campaign:'os_notificacao' })
-    });
-    const txt = await resp.text(); let data; try{ data = JSON.parse(txt); }catch{ data = {}; }
-    const ok = resp.ok && data.ok !== false;
+    const r = await _enviarWaCliente(os, cfg.msg);
+    const ok = r.ok;
+    const data = ok ? {} : { error: r.erro };
     try {
       await sb.rpc('registrar_sms_os', {
         p_os_id:os.id, p_cliente_id:cliId, p_tecnico_id:(_tec&&_tec.id)||null,
@@ -2072,14 +2094,9 @@ async function _avisarReagendamento(os, motivoCod, motivoTexto, dataISO){
   const cliId = parseInt(os.cliente_id)||null;
   let ok=false, erro=null;
   try{
-    const resp = await fetch(_proxyUrl, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-target':'evotrix' },
-      body: JSON.stringify({ channel:'67127520ecb37a364cc5e36d', recipient, body:msg, campaign:'os_notificacao' })
-    });
-    const txt = await resp.text(); let d; try{ d=JSON.parse(txt); }catch{ d={}; }
-    ok = resp.ok && d.ok !== false;
-    if(!ok) erro = (d.evotrix && (d.evotrix.message||d.evotrix.error)) || ('HTTP '+resp.status);
+    const r = await _enviarWaCliente(os, msg);
+    ok = r.ok;
+    if(!ok) erro = r.erro;
   }catch(e){ erro = String(e.message||e); }
 
   try{
