@@ -33,13 +33,13 @@
 //   • Não apaga nada. Contrato que sumiu do IXC continua aqui; quem decide
 //     excluir cadastro é gente, não uma cópia.
 //   • Não reescreve a data de cadastro, a coordenada capturada em campo, nem
-//     SSID/senha do Wi-Fi/observação editados à mão. Ver `lib/ixc-mapa.mjs`.
+//     SSID/senha do Wi-Fi/observação editados à mão. Ver `lib/ixc-mapa.js`.
 // ============================================================================
 
 import {
   emLotes, linhaClienteDoIxc, coordDoIxc, linhaContratoDoIxc,
   linhaLoginDoIxc, extrairWifi, agregarStatusCliente,
-} from '../lib/ixc-mapa.mjs';
+} from '../lib/ixc-mapa.js';
 
 export const config = { maxDuration: 60 };
 

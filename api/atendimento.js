@@ -47,7 +47,7 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
-import { emLotes, linhaClienteDoIxc, linhaContratoDoIxc } from '../lib/ixc-mapa.mjs';
+import { emLotes, linhaClienteDoIxc, linhaContratoDoIxc } from '../lib/ixc-mapa.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -4290,7 +4290,7 @@ const SYNC_IXC_RP = 200;      // registros por página pedidos ao IXC
 const SYNC_IXC_PAGINAS = 5;   // teto: 1000 novos por rodada já é muita coisa
 
 /* As funções que traduzem um registro do IXC para as tabelas daqui moram em
-   `lib/ixc-mapa.mjs`, importadas no topo deste arquivo. Elas viviam aqui, em
+   `lib/ixc-mapa.js`, importadas no topo deste arquivo. Elas viviam aqui, em
    cópia própria, e a cópia completa do MoviOne tinha a dela: o mesmo cliente
    ficava com cadastro diferente conforme quem o trouxe. Agora a lista é uma
    só — e a sincronização automática do servidor usa exatamente a mesma. */

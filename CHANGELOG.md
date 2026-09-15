@@ -55,7 +55,7 @@ uma cópia completa por hora (ajustável em `IXC_SYNC_CADA_MIN`).
 
 ### O que melhorou
 
-- **`lib/ixc-mapa.mjs` (novo):** a tradução "registro do IXC → tabela daqui"
+- **`lib/ixc-mapa.js` (novo):** a tradução "registro do IXC → tabela daqui"
   passou a existir em um lugar só. Antes havia duas listas de campos — a do
   `api/atendimento.js` e a do `index.html` —, e o mesmo cliente ficava com
   cadastro diferente conforme quem o trouxesse. O `api/atendimento.js` agora
@@ -86,7 +86,7 @@ uma cópia completa por hora (ajustável em `IXC_SYNC_CADA_MIN`).
 | Arquivo | Mudança |
 | --- | --- |
 | `api/ixc-sync.js` | novo — a sincronização completa no servidor |
-| `lib/ixc-mapa.mjs` | novo — tradução IXC → MoviControl, fonte única |
+| `lib/ixc-mapa.js` | novo — tradução IXC → MoviControl, fonte única |
 | `api/atendimento.js` | usa a tradução compartilhada; cutuca a cópia completa |
 | `api/cron.js` | cutuca a cópia completa na primeira passada |
 | `index.html` | sincronização automática de qualquer página; modal com o status |
