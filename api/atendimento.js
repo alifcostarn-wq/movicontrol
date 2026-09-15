@@ -3035,7 +3035,98 @@ async function marcarAssinaturaPendente(e, conversas) {
 // ============================================================================
 // WEBHOOK — mensagem recebida da Evolution API
 // ============================================================================
+/* ═══════════ UMA RESPOSTA DE CADA VEZ, POR NÚMERO ═════════════════════════
+
+   O cliente manda "Oi" e, meio segundo depois, "Bom dia". Cada mensagem chega
+   num webhook próprio e a Vercel executa os dois EM PARALELO. Os dois leem
+   "este número não tem sessão", os dois rodam o fluxo desde o início, e o
+   cliente recebe a saudação e o menu DUAS VEZES — com ids diferentes no
+   WhatsApp, porque são dois envios mesmo, não um eco.
+
+   Aconteceu hoje às 10:35 na conversa 260: "Oi" às 13:35:51.885 e "Bomdia" às
+   13:35:52.427; saudação às 13:35:54.6 e 13:35:55.1; menu às 13:35:56.0 e
+   13:35:56.6.
+
+   A trava é a mesma ideia do resto do sistema: reivindicar antes de agir. A
+   chave primária é o telefone — quem consegue inserir a linha está respondendo
+   aquele número, quem não consegue espera a vez.
+
+   Se a espera estourar, segue SEM a trava: responder duas vezes é ruim, não
+   responder é pior. */
+const BOT_TRAVA_MS = 45000;          // acima disso, a trava é de invocação morta
+const BOT_TRAVA_ESPERA_MS = 12000;   // quanto a segunda mensagem espera a vez
+const BOT_TRAVA_PAUSA_MS = 350;
+
+async function travarBot(e, fone) {
+  const ate = Date.now() + BOT_TRAVA_ESPERA_MS;
+  for (let tentativa = 0; tentativa < 40; tentativa++) {
+    try {
+      await sb(e, 'atend_bot_trava', {
+        method: 'POST', prefer: 'return=minimal', body: { contato_fone: fone },
+      });
+      return true;
+    } catch {
+      // 409: outra invocação está respondendo este número agora
+      const dono = await sbUm(e,
+        `atend_bot_trava?contato_fone=eq.${encodeURIComponent(fone)}&select=criado_em`).catch(() => null);
+      if (!dono) continue;                       // acabou de soltar: tenta de novo
+      // dono que morreu no meio (timeout, deploy) não pode prender o número
+      // para sempre: passado o prazo, a trava é roubada
+      if (Date.now() - new Date(dono.criado_em).getTime() > BOT_TRAVA_MS) {
+        await sb(e, `atend_bot_trava?contato_fone=eq.${encodeURIComponent(fone)}`,
+          { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {});
+        continue;
+      }
+      if (Date.now() > ate) return false;
+      await new Promise(r => setTimeout(r, BOT_TRAVA_PAUSA_MS));
+    }
+  }
+  return false;
+}
+
+async function destravarBot(e, fone) {
+  await sb(e, `atend_bot_trava?contato_fone=eq.${encodeURIComponent(fone)}`,
+    { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {});
+}
+
+/* A segunda mensagem da rajada já foi respondida?
+
+   Com a trava, ela só chega aqui DEPOIS que a primeira terminou. Se o bot já
+   falou alguma coisa depois que ela chegou, ela fazia parte da mesma rajada e
+   já foi atendida — repetir o menu (ou responder "não entendi essa opção" a um
+   "bom dia") é pior do que ficar quieto.
+
+   O corte é o instante em que a mensagem ENTROU, não o relógio de agora: o que
+   o cliente escrever depois de ver o menu é sempre processado. */
+async function jaRespondidoDepois(e, conversaId, quando) {
+  if (!quando) return false;
+  const r = await sb(e,
+    `atend_mensagens?conversa_id=eq.${conversaId}&direcao=in.(bot,out)` +
+    `&created_at=gt.${encodeURIComponent(quando)}&select=id&limit=1`).catch(() => null);
+  return Array.isArray(r) && r.length > 0;
+}
+
+/* Porta de entrada do webhook: pega a trava do número e passa adiante.
+
+   ACK de entrega/leitura e edição não disputam nada — não respondem ao
+   cliente — então passam direto: travar ali só somaria espera. */
 async function tratarWebhook(e, body) {
+  const evento = String(body.event || body.type || '').toLowerCase();
+  const ehMensagemNova = !evento || evento.includes('messages.upsert') || evento.includes('messages_upsert');
+  const d = body.data || body.message || body;
+  const fone = normalizarFone((d.key && d.key.remoteJid) || d.from || d.number || '');
+
+  if (!fone || !ehMensagemNova) return await tratarWebhookInterno(e, body);
+
+  const travou = await travarBot(e, fone);
+  try {
+    return await tratarWebhookInterno(e, body);
+  } finally {
+    if (travou) await destravarBot(e, fone);
+  }
+}
+
+async function tratarWebhookInterno(e, body) {
   const evento = String(body.event || body.type || '').toLowerCase();
 
   // ACK do WhatsApp: entregue / lido. Chega como messages.update, que antes
@@ -3184,13 +3275,16 @@ async function tratarWebhook(e, body) {
 
   // grava a mensagem recebida
   const rotulo = { imagem: '📷 Imagem', audio: '🎤 Áudio', video: '🎬 Vídeo', documento: '📎 Documento', localizacao: '📍 Localização' }[tipo] || '';
-  await sb(e, 'atend_mensagens', {
-    method: 'POST', prefer: 'return=minimal',
+  // guarda o instante em que ela ENTROU (relógio do banco, o mesmo que carimba
+  // as respostas): é o corte que separa a rajada do que veio depois do menu
+  const gravada = await sb(e, 'atend_mensagens', {
+    method: 'POST',
     body: {
       conversa_id: conversa.id, direcao: 'in',
       conteudo: texto || rotulo, tipo, wa_id: waId, midia_url: caminhoMidia,
     },
   });
+  const chegouEm = (Array.isArray(gravada) ? gravada[0] : gravada)?.created_at || null;
   await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
     method: 'PATCH', prefer: 'return=minimal',
     body: {
@@ -3199,6 +3293,17 @@ async function tratarWebhook(e, body) {
       nao_lidas: (conversa.nao_lidas || 0) + 1,
     },
   });
+
+  /* Rajada: "Oi" e "Bom dia" com meio segundo entre um e outro.
+
+     A trava fez esta segunda mensagem esperar a primeira terminar. Se o bot já
+     respondeu alguma coisa depois que ela chegou, ela é parte da mesma rajada
+     e já foi atendida: ela fica registrada na conversa, mas não roda o fluxo
+     outra vez. O que o cliente escrever DEPOIS de ver o menu tem carimbo mais
+     novo e segue o caminho normal. */
+  if (await jaRespondidoDepois(e, conversa.id, chegouEm)) {
+    return { ok: true, conversa_id: conversa.id, ignorado: 'rajada — já respondida' };
+  }
 
   const sessao = await sbUm(e, `atend_sessoes?contato_fone=eq.${fone}&select=*&limit=1`);
   let sessaoValida = sessao && new Date(sessao.expira_em) > new Date() ? sessao : null;
