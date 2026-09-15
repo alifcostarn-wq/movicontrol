@@ -47,6 +47,7 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
+import { emLotes, linhaClienteDoIxc, linhaContratoDoIxc } from '../lib/ixc-mapa.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -4393,115 +4394,11 @@ const SYNC_IXC_BUSCA_MS = 30 * 1000;   // piso quando a busca não achou nada
 const SYNC_IXC_RP = 200;      // registros por página pedidos ao IXC
 const SYNC_IXC_PAGINAS = 5;   // teto: 1000 novos por rodada já é muita coisa
 
-function ixcNumero(v) {
-  if (v == null || v === '') return null;
-  const n = Number(String(v).replace(',', '.'));
-  return Number.isFinite(n) && n !== 0 ? n : null;
-}
-
-function ixcData(v) {
-  return v && v !== '0000-00-00' ? v : null;
-}
-
-/* 'ativo' do cliente no IXC vem como S/N. Mesma tradução do MoviOne — os dois
-   escrevem na mesma coluna, não podem discordar do significado. */
-function ixcStatusCliente(ativo) {
-  if (!ativo) return 'I';
-  const v = String(ativo).toUpperCase();
-  if (v === 'S' || v === '1' || v === 'TRUE') return 'A';
-  if (v === 'N' || v === '0' || v === 'FALSE') return 'I';
-  return v;
-}
-
-/* Mesmo mapeamento campo a campo que o MoviOne usa no sync completo. Se os
-   dois divergirem, o mesmo cliente passa a ter cadastros diferentes conforme
-   quem o trouxe — por isso as duas listas andam juntas. */
-function linhaClienteDoIxc(r) {
-  const nome = r.fantasia || r.razao || '';
-  return {
-    ixc_id: String(r.id || ''),
-    origem: 'ixc',
-    ixc_status: ixcStatusCliente(r.ativo),
-    ixc_login: r.login || null,
-    nome,
-    razao: r.razao || null,
-    nome_social: r.fantasia || null,
-    cnpj: r.cnpj_cpf || null,
-    ie: r.ie || null,
-    tipo_pessoa: r.tipo_pessoa || null,
-    contato: r.contato || null,
-    tel1: r.telefone_celular || r.telefone || null,
-    tel2: r.telefone || null,
-    whatsapp: r.whatsapp || r.telefone_celular || null,
-    tel_residencial: r.fone1 || r.telefone || null,
-    tel_comercial: r.fone2 || r.telefone_comercial || null,
-    email: r.email || null,
-    website: r.url || null,
-    endereco: r.endereco || null,
-    numero: r.numero || null,
-    complemento: r.complemento || null,
-    bairro: r.bairro || null,
-    cep: r.cep || null,
-    cep_full: r.cep || null,
-    cidade: r.cidade || null,
-    uf: r.uf || null,
-    referencia: r.referencia || null,
-    data_nasc: ixcData(r.data_nascimento),
-    genero: r.sexo === 'M' ? 'Masculino' : r.sexo === 'F' ? 'Feminino' : null,
-    estado_civil: r.estado_civil || null,
-    nacionalidade: r.nacionalidade || null,
-    naturalidade: r.naturalidade || null,
-    profissao: r.profissao || null,
-    rg_emissor: r.orgao_emissor || null,
-    moradia: r.tipo_moradia || null,
-    obs: r.obs || null,
-    ativo: r.ativo === 'S',
-    // datacad NÃO vai no corpo de propósito. No PostgREST, coluna ausente do
-    // corpo fica fora do ON CONFLICT DO UPDATE — então reenviar um cliente
-    // nunca reescreve a data de cadastro dele. Linha nova o banco preenche
-    // sozinho (default current_date). Latitude e longitude ficam de fora pelo
-    // mesmo motivo: a coordenada que o técnico capturou em campo é melhor que
-    // a do IXC e não pode ser apagada por uma cópia.
-  };
-}
-
-/* A velocidade não vem em campo próprio: está escrita no nome do plano
-   ("PROMOÇÃO 500MEGA"). Mesma leitura do MoviOne. */
-function velocidadeDoPlano(nome) {
-  const m = String(nome || '').match(/(\d+)\s*(g(?:iga)?|m(?:ega|b(?:ps?)?)?)/i);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return m[2].toLowerCase().startsWith('g') ? n * 1000 : n;
-}
-
-function linhaContratoDoIxc(r, clienteIdLocal) {
-  const plano = r.descricao_aux_plano_venda || r.descricao_aux || r.descricao || String(r.id_vd_contrato || '');
-  return {
-    ixc_id: String(r.id || ''),
-    ixc_cliente_id: String(r.id_cliente || ''),
-    cliente_id: clienteIdLocal || null,
-    tipo: r.tipo || null,
-    plano,
-    id_plano_venda: String(r.id_vd_contrato || '') || null,
-    velocidade_mbps: velocidadeDoPlano(plano),
-    descricao: r.descricao || null,
-    status_contrato: r.status || null,
-    status_acesso: r.status_internet || r.status_acesso || null,
-    valor: ixcNumero(r.valor_servico || r.valor || r.mensalidade),
-    data_ativacao: ixcData(r.data_ativacao),
-    data_renovacao: ixcData(r.data_renovacao),
-    pago_ate: ixcData(r.pago_ate),
-  };
-}
-
-/* Consulta `in.(...)` vira URL, e URL tem tamanho máximo. Numa primeira
-   rodada grande seriam centenas de ids numa linha só — o PostgREST recusaria
-   e a cópia falharia inteira. Em lotes, não. */
-function emLotes(lista, tamanho) {
-  const saida = [];
-  for (let i = 0; i < lista.length; i += tamanho) saida.push(lista.slice(i, i + tamanho));
-  return saida;
-}
+/* As funções que traduzem um registro do IXC para as tabelas daqui moram em
+   `lib/ixc-mapa.js`, importadas no topo deste arquivo. Elas viviam aqui, em
+   cópia própria, e a cópia completa do MoviOne tinha a dela: o mesmo cliente
+   ficava com cadastro diferente conforme quem o trouxe. Agora a lista é uma
+   só — e a sincronização automática do servidor usa exatamente a mesma. */
 
 async function clientesLocaisPorIxc(e, ids) {
   const mapa = new Map();
@@ -4602,6 +4499,58 @@ async function sincronizarNovosDoIxc(e) {
   }
 
   return { clientes, contratos, marco_cliente: marcoCli, marco_contrato: marcoCtr };
+}
+
+// ============================================================================
+// CUTUCADA PARA A CÓPIA COMPLETA (/api/ixc-sync)
+// ----------------------------------------------------------------------------
+// O que está logo abaixo (`talvezSincronizarIxc`) traz só o que é NOVO: cliente
+// e contrato com id acima do último que já temos. É barato e resolve o caso do
+// cliente ativado há dez minutos. Mas não vê MUDANÇA: telefone corrigido,
+// endereço alterado, contrato cancelado ontem — nada disso muda de id, então
+// nada disso chega por aqui.
+//
+// Quem vê mudança é a cópia completa, e ela vivia presa ao navegador: só rodava
+// quando alguém abria a aba de clientes do MoviOne. Aqui ela pega carona no
+// tráfego que o servidor já recebe de verdade — cada mensagem de WhatsApp que
+// entra, cada pulso do painel de atendimento — e assim anda sozinha o dia todo,
+// com ou sem alguém olhando para uma tela.
+//
+// A cutucada é só um toque de campainha: quem decide se a rodada acontece é o
+// /api/ixc-sync, pela trava dele. Por isso o intervalo aqui é curto — errar
+// para mais custaria atraso, errar para menos não custa nada.
+const CUTUCAR_SYNC_CADA_MS = Number(process.env.ATEND_SYNC_FULL_CUTUCAR_MIN || 10) * 60 * 1000;
+let _ultimaCutucadaSync = 0;
+
+/* Mora na memória do container, não no banco: o banco já tem a trava de
+   verdade e uma escrita por mensagem recebida seria caro para um simples
+   "vê se está na hora". Vários containers cutucando em paralelo custa algumas
+   requisições que a trava recusa em seguida. */
+async function cutucarSyncCompleto(e, req) {
+  const agora = Date.now();
+  if (agora - _ultimaCutucadaSync < CUTUCAR_SYNC_CADA_MS) return false;
+  _ultimaCutucadaSync = agora;
+
+  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
+  if (!host) return false;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+
+  const disparo = fetch(`${proto}://${host}/api/ixc-sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : {}),
+      ...(e.WH_SECRET ? { 'x-atend-secret': e.WH_SECRET } : {}),
+    },
+    body: '{}',
+  }).catch(() => null);
+
+  // Sem esperar um instante, a função pode congelar antes de a requisição sair
+  // e a cutucada nunca chega. Não se espera o TRABALHO do outro lado — só que
+  // ele comece. Como isto só acontece uma vez a cada dez minutos por container,
+  // o custo no tempo de resposta é irrelevante.
+  await Promise.race([disparo, new Promise(ok => setTimeout(ok, 1200))]);
+  return true;
 }
 
 /* De carona no tráfego do painel, como a varredura de inatividade.
@@ -5552,6 +5501,8 @@ export default async function handler(req, res) {
       // carona no tráfego real: cada mensagem que chega também faz o ciclo de
       // inatividade andar. Nunca deixa a entrada de mensagem quebrar por isso.
       try { await talvezVarrer(e); } catch (err) { console.error('[inatividade]', err.message); }
+      // e a cópia completa do IXC anda junto, sem depender de aba aberta
+      try { await cutucarSyncCompleto(e, req); } catch (err) { console.error('[ixc-sync] cutucada:', err.message); }
       return res.status(200).json(r);
     }
 
@@ -5560,7 +5511,9 @@ export default async function handler(req, res) {
       if (e.WH_SECRET && segredo !== e.WH_SECRET) {
         return res.status(401).json({ ok: false, error: 'Secret inválido.' });
       }
-      return res.status(200).json(await tratarCron(e));   // agendador externo: sempre roda
+      const rCron = await tratarCron(e);   // agendador externo: sempre roda
+      try { await cutucarSyncCompleto(e, req); } catch (err) { console.error('[ixc-sync] cutucada:', err.message); }
+      return res.status(200).json(rCron);
     }
 
     /* MoviTec: o aviso do técnico ao cliente. Autenticado, mas por outro
@@ -5590,7 +5543,11 @@ export default async function handler(req, res) {
         let sync = null;
         try { sync = await talvezSincronizarIxc(e); }
         catch (err) { console.error('[sync-ixc] pulso:', err.message); }
-        return res.status(200).json({ ok: true, ...r, sync_ixc: sync });
+        // o incremental acima vê o que é novo; a cópia completa vê o que MUDOU
+        let syncCompleto = false;
+        try { syncCompleto = await cutucarSyncCompleto(e, req); }
+        catch (err) { console.error('[ixc-sync] cutucada:', err.message); }
+        return res.status(200).json({ ok: true, ...r, sync_ixc: sync, sync_ixc_completo: syncCompleto });
       }
 
       // tudo que o app precisa para abrir, numa chamada só
