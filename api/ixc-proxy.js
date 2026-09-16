@@ -90,8 +90,6 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
-  // EVOTRIX - envio de WhatsApp via template (CLOUD API)
-  // ============================================================
   // GROQ - analises de IA (Llama 3.3 70B)
   // Acionado pelo header x-target: groq
   // A chave fica SOMENTE no servidor (variavel de ambiente GROQ_API_KEY)
@@ -132,51 +130,20 @@ export default async function handler(req, res) {
     }
   }
 
-  // Acionado pelo header x-target: evotrix
-  // A chave fica SOMENTE no servidor (variavel de ambiente EVOTRIX_API_KEY)
   // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'evotrix') {
-    const apiKey = process.env.EVOTRIX_API_KEY || '';
-    if (!apiKey) {
-      return res.status(500).json({ error: 'EVOTRIX_API_KEY nao configurada no servidor (Vercel > Settings > Environment Variables).' });
-    }
-    const b = req.body || {};
-    // Retrocompatibilidade: aceita tanto {channel,recipient,body} quanto o formato
-    // legado {numero,mensagem} usado pelo MoviControl (credenciais + regua de cobranca).
-    // O canal padrao vem da env EVOTRIX_CHANNEL (fallback: canal principal MoviOn).
-    const payload = {
-      channel:   b.channel   || process.env.EVOTRIX_CHANNEL || '67127520ecb37a364cc5e36d',
-      recipient: b.recipient || String(b.numero || '').replace(/\D/g, ''),
-      body:      typeof b.body === 'string' && b.body ? b.body : (typeof b.mensagem === 'string' ? b.mensagem : ''),
-      campaign:  b.campaign  || 'os_notificacao',
-    };
-    if (!payload.channel || !payload.recipient || !payload.body) {
-      return res.status(400).json({ error: 'Faltam campos: channel, recipient ou body (ou numero/mensagem).' });
-    }
-    // Endpoint e autenticacao confirmados em producao (Bearer)
-    const evoUrl = 'https://api.evotrix.com.br/v1/services/whatsapp/notifications/text';
-    try {
-      const r = await fetch(evoUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const text = await r.text();
-      let data; try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
-      console.log(`[evotrix] ${r.status} ${text.slice(0, 160)}`);
-      if (r.status >= 200 && r.status < 300) {
-        return res.status(200).json({ ok: true, evotrix: data });
-      }
-      return res.status(r.status).json({ ok: false, evotrix: data });
-    } catch (e) {
-      console.log(`[evotrix] ERRO ${e.message}`);
-      return res.status(502).json({ error: 'Falha ao enviar pela Evotrix.', detail: e.message });
-    }
-  }
+  // EVOTRIX — REMOVIDO
+  // ============================================================
+  // Esta ponte mandava WhatsApp em nome da empresa SEM PEDIR LOGIN: quem
+  // descobrisse a URL do proxy mandava mensagem para qualquer número. E o
+  // canal está fora desde 03/09 — as credenciais do MoviApp e os links de
+  // assinatura saíam daqui e não chegavam em ninguém, com o painel dizendo
+  // que tinham sido enviados.
+  //
+  // Todo WhatsApp ao cliente passa pelo MoviTalk (/api/atendimento, ação
+  // aviso.enviar): exige a sessão de quem está mandando, sai pelo número com
+  // que o cliente já conversa e a mensagem entra na thread dele — a resposta
+  // chega para o atendimento com o histórico ao lado.
+  // ============================================================
 
   const ixcUrl    = req.headers['x-ixc-url'];
   const ixcToken  = req.headers['x-ixc-token'];

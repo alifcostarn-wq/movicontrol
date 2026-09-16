@@ -3733,8 +3733,8 @@ async function entregarCobranca(e, o) {
 // ----------------------------------------------------------------------------
 // Hoje o IXC manda essa confirmação por SMS, através de um gateway cadastrado
 // lá como tipo "Gammu" cujo campo Usuário guarda
-// 67127520ecb37a364cc5e36d — o MESMO id de canal já craveado como
-// EVOTRIX_CHANNEL em api/ixc-proxy.js. Ou seja: o IXC acha que fala com um
+// 67127520ecb37a364cc5e36d — o mesmo id de canal da Evotrix que o proxy usava
+// antes de todo o envio passar para cá. Ou seja: o IXC acha que fala com um
 // gateway de modem SMS, mas por trás disso algo converte para a Evotrix.
 // Decifrar o protocolo que o IXC fala com esse tipo de gateway é arriscado —
 // não é HTTP simples e documentado, e o mesmo gateway provavelmente atende

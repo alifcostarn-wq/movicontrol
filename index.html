@@ -4114,7 +4114,7 @@ textarea.cp-form-input{resize:vertical}
         </div>
         <div>
           <div class="ts-card">
-            <div class="ts-card-title"><span>📲 RESUMO MENSAL NO WHATSAPP <span style="font-weight:600;color:var(--text3);letter-spacing:0">· via Evotrix, escrito pelo Gerente IA</span></span></div>
+            <div class="ts-card-title"><span>📲 RESUMO MENSAL NO WHATSAPP <span style="font-weight:600;color:var(--text3);letter-spacing:0">· escrito pelo Gerente IA</span></span></div>
             <div id="gov-wpp"></div>
           </div>
           <div class="ts-card">
@@ -8858,7 +8858,7 @@ async function renderGovernanca(){
     <div class="gov-cfg-row">
       Para: <input id="gov-wpp-tel" value="${tels}" placeholder="84999999999, 84988888888" style="flex:1;min-width:180px" onchange="govSalvarCfgWpp()">
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px">O disparo é feito pelo Evotrix com o texto escrito pelo Gerente IA. Requer o agendamento no servidor (cron) apontando para o proxy.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">Aqui só fica a configuração: o disparo ainda não existe no servidor. Quando existir, sai pelo WhatsApp do MoviTalk como todo o resto.</div>
     <div class="wpp-prev">
       <div class="wpp-msg">📊 *Fechamento mensal — MoviOn*
 
@@ -12531,19 +12531,13 @@ async function liberarMoviApp(idx){
     if(wa){
       const nomeFormatado = (cli.nome||'').split(' ')[0];
       const msg = `Olá ${nomeFormatado}! Seu acesso ao *MoviApp* foi liberado. 📱\n\n*Login:* ${cpf}\n*Senha:* ${senha}\n\nAcesse: https://moviapp.vercel.app\n\nEm caso de dúvidas, entre em contato conosco. 😊`;
-      /* O envio não pode mais falhar em silêncio: o painel dizia "credenciais
-         enviadas" mesmo quando não saía nada, e o atendente ia embora achando
-         que o cliente tinha recebido a senha. */
+      /* Sai pelo MoviTalk e entra na conversa do cliente. E não falha mais em
+         silêncio: o painel dizia "credenciais enviadas" mesmo quando não saía
+         nada, e o atendente ia embora achando que o cliente tinha a senha. */
       try {
-        const rw = await fetch(cfg.proxyUrl, {
-          method:'POST',
-          headers:{'Content-Type':'application/json','x-target':'evotrix'},
-          body: JSON.stringify({ numero: wa, mensagem: msg }),
-        });
-        const jw = await rw.json().catch(()=>({}));
-        waOk = rw.ok && jw.ok !== false;
-        if(!waOk) console.warn('WhatsApp não enviado:', rw.status, jw);
-      } catch(e){ waOk = false; console.warn('WhatsApp erro:', e); }
+        await mtAvisar(wa, msg, { nome: cli.nome||'', cliente_ixc_id: cli.ixcId||null });
+        waOk = true;
+      } catch(e){ waOk = false; console.warn('WhatsApp não enviado:', e.message||e); }
     }
 
     // 3) Mostra sucesso
@@ -20659,8 +20653,8 @@ function ifDrillCSV(){
 
 // ════════════════════════════════════════════════════════════════
 //  RÉGUA DE COBRANÇA — etapas configuráveis + painel de ações
-//  Envio usa a ponte Evotrix JÁ EXISTENTE do proxy (x-target: evotrix).
-//  Config e histórico ficam no navegador (localStorage) — nada muda no banco.
+//  Envio, régua e histórico vivem no MoviTalk (ver INTEGRAÇÃO MOVITALK abaixo).
+//  O texto antigo dizia localStorage + Evotrix; as duas coisas já saíram.
 // ════════════════════════════════════════════════════════════════
 const IF_REGUA_PADRAO=[
   {id:'lembrete', dias:-3, nome:'Lembrete amigável', cor:'#004E98', tpl:'Olá {primeiro_nome}! 👋 Passando para lembrar que sua fatura de {valor} vence em {vencimento}. Se já agendou o pagamento, desconsidere. Qualquer dúvida estamos à disposição! — MoviOn Internet'},
@@ -20693,6 +20687,30 @@ async function ifCobAPI(acao,dados){
     body:JSON.stringify({acao,...(dados||{})})});
   const j=await r.json().catch(()=>({ok:false,error:'Resposta inválida do MoviTalk.'}));
   if(!j.ok&&j.error) throw new Error(j.error);
+  return j;
+}
+
+/* ═══════════ TODO WHATSAPP AO CLIENTE SAI PELO MOVITALK ═════════════════════
+
+   Era pela Evotrix, por uma ponte no proxy (x-target: evotrix). Três problemas,
+   nessa ordem:
+
+   1. O canal está fora desde 03/09 — o mesmo que derrubou o aviso do técnico.
+      As credenciais do MoviApp e os links de assinatura simplesmente não
+      chegavam, e o painel dizia que tinham sido enviados.
+   2. A ponte não pedia login nenhum. Quem descobrisse a URL mandava WhatsApp
+      em nome da empresa.
+   3. O que saía por lá não existia em lugar nenhum: o cliente respondia ao
+      link do contrato e o atendimento não sabia do que ele estava falando.
+
+   Pelo MoviTalk a mensagem sai pelo mesmo número com que o cliente já conversa,
+   entra na thread dele e a resposta chega com o histórico ao lado. Se não tiver
+   conversa ainda, nasce uma em "Resolvidos" — recibo, não atendimento aberto. */
+async function mtAvisar(fone, texto, extras){
+  const numero = String(fone||'').replace(/\D/g,'');
+  if(numero.length < 10) throw new Error('Cliente sem WhatsApp válido no cadastro.');
+  const j = await ifCobAPI('aviso.enviar', { fone:numero, texto, ...(extras||{}) });
+  if(!j.ok) throw new Error(j.error || 'O MoviTalk não conseguiu enviar a mensagem.');
   return j;
 }
 // Carrega régua + histórico do banco. Na 1ª vez sobe o que já existe no
@@ -23340,14 +23358,7 @@ async function asnMandarLinkAssinatura(loteId){
       + `Você lê o documento, confere seus dados e tira uma selfie com o RG ou a CNH.\n\n`
       + `${j.url}\n`
       + (dias ? `\n⏳ O link vale por ${dias} dia${dias>1?'s':''}.` : '');
-    const cfg = await getIXCConfig();
-    if(!cfg.proxyUrl){ showToast('Configure a integração IXC primeiro.', true); return; }
-    const r = await fetch(cfg.proxyUrl, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-target':'evotrix'},
-      body: JSON.stringify({ numero: fone, mensagem: msg })
-    });
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    await mtAvisar(fone, msg, { nome: cli.nome||'', cliente_ixc_id: cli.ixcId||null });
     showToast('🔗 Link de assinatura enviado para '+nomeCli+'!');
     asnCarregarLista();
   } catch(e) {
@@ -23356,7 +23367,7 @@ async function asnMandarLinkAssinatura(loteId){
   }
 }
 
-/* ── Enviar link do contrato assinado por WhatsApp (via Evotrix) ── */
+/* ── Enviar link do contrato assinado por WhatsApp (pelo MoviTalk) ── */
 async function asnEnviarWhatsApp(url, nomeDoc){
   const cli = asnCli;
   const fone = (cli.whatsapp || cli.tel1 || '').replace(/\D/g,'');
@@ -23365,14 +23376,7 @@ async function asnEnviarWhatsApp(url, nomeDoc){
   const msg = `Olá ${nomeCli}! 📄\n\nSegue o seu *${nomeDoc}* assinado junto à MoviOn Internet.\n\nAcesse o documento pelo link abaixo (válido por tempo limitado):\n${url}\n\nGuarde uma cópia para seus registros. Qualquer dúvida, estamos à disposição! 😊`;
   if(!confirm(`Enviar o contrato assinado por WhatsApp para ${cli.nome} (${fone})?`)) return;
   try {
-    const cfg = await getIXCConfig();
-    if(!cfg.proxyUrl){ showToast('Configure a integração IXC primeiro.', true); return; }
-    const r = await fetch(cfg.proxyUrl, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-target':'evotrix'},
-      body: JSON.stringify({ numero: fone, mensagem: msg })
-    });
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    await mtAvisar(fone, msg, { nome: cli.nome||'', cliente_ixc_id: cli.ixcId||null });
     showToast('📲 Contrato enviado por WhatsApp para '+nomeCli+'!');
   } catch(e) {
     console.error('[assinatura-whatsapp]', e);
