@@ -904,6 +904,21 @@ function parseDataIXC(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// O mesmo vale para dinheiro: ora número, ora '69.90', ora '1.234,56'.
+function numeroIXC(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  let s = String(v ?? '').trim().replace(/[^\d,.-]/g, '');
+  if (!s) return 0;
+  // com vírgula, o ponto é separador de milhar: '1.234,56' → 1234.56
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+
+// dinheiro em ponto flutuante mente na terceira casa: 69.9 + 4.42 dá
+// 74.32000000000001, e isso vira mensagem para o cliente
+const arredondarMoeda = v => Math.round(Number(v) * 100) / 100;
+
 function ehHoje(d) {
   if (!d) return false;
   const h = new Date();
@@ -984,7 +999,7 @@ async function financeiroAoVivo(e, ixcId) {
   const pagas = todas
     .filter(f => String(f.status || '').toUpperCase() === 'R')
     .map(f => ({
-      valor: Number(pick(f, 'valor_recebido', 'pagamento_valor', 'valor_baixado') ?? f.valor ?? 0),
+      valor: valorPagoIXC(f),
       data: fmtDataBR(parseDataIXC(pick(f, 'pagamento_data', 'baixa_data', 'credito_data',
                                           'data_recebimento', 'data_pagamento', 'data_vencimento'))),
     }))
@@ -3732,12 +3747,58 @@ async function entregarCobranca(e, o) {
 // reapontar o tipo de notificação que hoje usa o gateway Gammu) é manual, no
 // próprio cadastro de SMS do IXC — não dá pra fazer daqui.
 // ============================================================================
-function pagTexto(tpl, nome, valor, vencimento) {
+/* QUANTO O CLIENTE REALMENTE PAGOU
+
+   `valor`, no fn_areceber, é o valor de FACE do título: o que foi emitido.
+   Quem paga depois do vencimento paga mais — o banco aplica os juros e a multa
+   registrados nas instruções do boleto — e o retorno bancário devolve esse
+   valor maior para o IXC, em outro campo.
+
+   Mandar o valor de face para quem pagou em atraso é dizer ao cliente um
+   número que não bate com o comprovante dele. Das 129 confirmações já enviadas
+   por aqui, 26 eram de faturas pagas em atraso (média de 5,7 dias, máximo de
+   23) — todas anunciando o valor da fatura, não o valor pago.
+
+   A cadeia de nomes é a mesma que o extrato do cliente e o painel financeiro
+   já usam nesta instalação. Só entram campos que dizem VALOR no nome: `juros`
+   e `multa` sozinhos, no IXC, são os percentuais da carteira de cobrança, não
+   reais — somá-los daria um número inventado. Sem nenhuma informação de
+   recebimento, volta o valor de face: o comportamento de hoje, nunca pior. */
+function valorPagoIXC(f) {
+  const face = numeroIXC(f?.valor);
+  const recebido = numeroIXC(pick(f || {}, 'valor_recebido', 'valor_pago', 'pagamento_valor', 'valor_baixado'));
+  if (recebido > 0) return recebido;
+  const acrescimos = numeroIXC(pick(f || {}, 'valor_juros', 'juros_valor'))
+                   + numeroIXC(pick(f || {}, 'valor_multa', 'multa_valor'));
+  const desconto = numeroIXC(pick(f || {}, 'valor_desconto', 'desconto_valor'));
+  if (acrescimos || desconto) return Math.max(0, arredondarMoeda(face + acrescimos - desconto));
+  return face;
+}
+
+// os campos de dinheiro de um título, para o log de diagnóstico
+function camposDeValorIXC(f) {
+  return Object.keys(f || {})
+    .filter(k => /valor|juros|multa|desconto|acresc/i.test(k))
+    .reduce((o, k) => { o[k] = f[k]; return o; }, {});
+}
+
+/* {valor} é o que o cliente pagou. {valor_original} é o que a fatura dizia, e
+   {detalhe} abre a conta — " (R$ 69,90 + R$ 4,42 de juros e multa)" — só
+   quando pagou mais. Quem pagou em dia recebe a mesma frase de sempre. */
+function pagTexto(tpl, { nome, valor, valorOriginal, vencimento }) {
   const venc = vencimento ? String(vencimento).slice(0, 10).split('-').reverse().join('/') : '—';
+  const pago = numeroIXC(valor);
+  const face = valorOriginal == null ? pago : numeroIXC(valorOriginal);
+  const acrescimo = arredondarMoeda(pago - face);
+  const detalhe = acrescimo > 0
+    ? ` (${fmtMoeda(face)} + ${fmtMoeda(acrescimo)} de juros e multa)` : '';
   return String(tpl)
     .replace(/{nome}/g, nome || 'cliente')
     .replace(/{primeiro_nome}/g, (nome || 'cliente').split(' ')[0])
-    .replace(/{valor}/g, 'R$ ' + Number(valor || 0).toFixed(2).replace('.', ','))
+    .replace(/{valor}/g, fmtMoeda(pago))
+    .replace(/{valor_original}/g, fmtMoeda(face))
+    .replace(/{acrescimos}/g, fmtMoeda(Math.max(0, acrescimo)))
+    .replace(/{detalhe}/g, detalhe)
     .replace(/{vencimento}/g, venc);
 }
 
@@ -3778,7 +3839,8 @@ async function avisarPagamentosConfirmados(e) {
   if (!jaTemLedger) {
     const linhas = regs.map(f => ({
       fatura_id: String(f.id), cliente_ixc_id: f.id_cliente ? String(f.id_cliente) : null,
-      valor: f.valor != null ? Number(f.valor) : null,
+      valor: f.valor != null ? valorPagoIXC(f) : null,
+      valor_original: f.valor != null ? numeroIXC(f.valor) : null,
       data_pagamento: dataBaixaIXC(f) ? dataBaixaIXC(f).toISOString().slice(0, 10) : null,
       status: 'backfill',
     }));
@@ -3797,13 +3859,19 @@ async function avisarPagamentosConfirmados(e) {
   if (!candidatos.length) return { pagamento: 'sem pagamentos recentes' };
 
   const tpl = String(cfg.texto ||
-    'Recebemos a confirmação do seu pagamento de {valor}, referente à fatura de {vencimento}. Muito obrigado! 💚 — MoviOn');
+    'Recebemos a confirmação do seu pagamento de {valor}{detalhe}, referente à fatura de {vencimento}. Muito obrigado! 💚 — MoviOn');
 
   let enviados = 0, semTelefone = 0, falhas = 0, jaAvisadas = 0;
+  let emAtraso = 0, semAcrescimo = 0;
   for (const f of candidatos) {
     const faturaId = String(f.id);
     const ixcId = f.id_cliente ? String(f.id_cliente) : null;
-    const valor = f.valor != null ? Number(f.valor) : null;
+    // o que o cliente pagou — com juros e multa, quando pagou em atraso. O
+    // valor de face vai junto: é o que o livro guarda e o que o {detalhe} da
+    // mensagem usa para abrir a conta.
+    const valorOriginal = f.valor != null ? numeroIXC(f.valor) : null;
+    const pago = valorPagoIXC(f);
+    const valor = pago > 0 ? pago : valorOriginal;
     const dt = dataBaixaIXC(f);
     const dataPagamento = dt ? dt.toISOString().slice(0, 10) : null;
 
@@ -3816,12 +3884,31 @@ async function avisarPagamentosConfirmados(e) {
     try {
       claim = await sb(e, 'atend_pagamento_avisos', {
         method: 'POST', headers: { Prefer: 'return=representation' },
-        body: { fatura_id: faturaId, cliente_ixc_id: ixcId, valor, data_pagamento: dataPagamento },
+        body: {
+          fatura_id: faturaId, cliente_ixc_id: ixcId,
+          valor, valor_original: valorOriginal, data_pagamento: dataPagamento,
+        },
       });
       claim = Array.isArray(claim) ? claim[0] : claim;
     } catch {
       jaAvisadas++;               // 409 de unique: outra execução já pegou esta fatura
       continue;
+    }
+
+    // Fatura paga em atraso que chegou aqui sem acréscimo nenhum: ou o
+    // provedor perdoou os juros, ou o campo do valor recebido tem outro nome
+    // nesta instalação do IXC. Uma amostra por ciclo no log tira a dúvida sem
+    // depender de alguém abrir o diagnóstico no painel.
+    const venc = parseDataIXC(f.data_vencimento);
+    if (venc && dt && diasCorridos(venc, dt) > 0) {
+      emAtraso++;
+      if (!(valor > (valorOriginal || 0))) {
+        semAcrescimo++;
+        if (semAcrescimo === 1) {
+          console.log('[pagamento confirmado] fatura', faturaId,
+            'paga em atraso sem acréscimo — campos de valor:', JSON.stringify(camposDeValorIXC(f)));
+        }
+      }
     }
 
     let cli = null;
@@ -3841,7 +3928,7 @@ async function avisarPagamentosConfirmados(e) {
       continue;
     }
 
-    const texto = pagTexto(tpl, nome, valor, f.data_vencimento);
+    const texto = pagTexto(tpl, { nome, valor, valorOriginal, vencimento: f.data_vencimento });
 
     // Acha ou cria a conversa. Nasce em "Resolvidos" DE PROPÓSITO: isto é um
     // recibo, não um atendimento aberto. Quando nascia em "Aguardando cliente",
@@ -3899,7 +3986,8 @@ async function avisarPagamentosConfirmados(e) {
     }).catch(err => console.error('[pagamento confirmado] ledger:', err.message));
   }
 
-  return { pagamento: 'ok', enviados, sem_telefone: semTelefone, falhas, ja_avisadas: jaAvisadas };
+  return { pagamento: 'ok', enviados, sem_telefone: semTelefone, falhas, ja_avisadas: jaAvisadas,
+           em_atraso: emAtraso, sem_acrescimo: semAcrescimo };
 }
 
 /* ═══════════ PARABÉNS DE ANIVERSÁRIO ════════════════════════════════════════
@@ -6219,7 +6307,7 @@ export default async function handler(req, res) {
               vencimento: fmtDataBR(venc),
               pagamento: fmtDataBR(pag),
               valor: Number(f.valor || 0),
-              valor_pago: Number(pick(f, 'valor_recebido', 'pagamento_valor', 'valor_baixado') ?? f.valor ?? 0),
+              valor_pago: valorPagoIXC(f),
               // atraso real: só conta se pagou depois do vencimento
               atraso: (venc && pag) ? Math.max(0, diasCorridos(venc, pag)) : null,
               forma: pick(f, 'tipo_recebimento', 'forma_recebimento'),
