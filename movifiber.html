@@ -2561,7 +2561,7 @@ function salvarCat(){store.set(CAT_KEY,JSON.stringify(CAT))}
 let projAtual=null, mapa=null, miniMapa=null, modo='navegar';
 /* padrão: a rede aparece de cara (caixas + cabos). Postes e drop ficam fora
    porque poluem em zoom baixo. O estado é lembrado por projeto. */
-const CAMADAS_PADRAO={satelite:true,luzfibra:true,pop:true,cto:true,ceo:true,reserva:false,backbone:true,distribuicao:true,drop:false,area:true,cliente:true,poste:false,clienteone:false};
+const CAMADAS_PADRAO={satelite:true,luzfibra:true,pop:true,cto:true,ceo:true,reserva:false,backbone:true,distribuicao:true,drop:false,area:true,cliente:true,poste:false,clienteone:false,nomes:true};
 let camadasVisiveis={...CAMADAS_PADRAO};
 let layerRefs={}, caboTemp=null, areaTemp=null;
 /* Tecnologias PON: TX típico da OLT e faixa de sensibilidade da ONU */
@@ -3813,30 +3813,39 @@ function renderTudo(){
   // elementos
   projAtual.elementos.forEach(e=>{
     if(!camadasVisiveis[e.tipo])return;
-    const lbl=e.tipo==='poste'?'':`<div class="lbl">${e.nome}</div>`;
-    let ic;
-    if(e.tipo==='poste'&&e.poste&&e.poste.fixacao){
-      // poste com o PIN PADRÃO + etiqueta pequena escrita (passagem/ancoragem/derivação)
-      const fx=e.poste.fixacao;
-      const anc=fx.includes('ancoragem');
-      const txt={passagem:'passagem',ancoragem:'ancoragem',derivacao:'derivação','passagem-ancoragem':'pass+anc'}[fx]||fx;
-      const cor=anc?'#FF8A3C':'#8B90A0';
-      const tag=`<div style="position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:1px;background:rgba(17,19,24,.85);border:1px solid #2C3040;border-radius:4px;padding:0 4px;font-size:7.5px;color:${cor};white-space:nowrap;line-height:1.5">${txt}${e.poste.suporte?' · '+e.poste.suporte:''}</div>`;
-      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}" style="position:relative"><div class="pin pin-poste">${ICONS.poste||''}</div>${tag}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
-    }else{
-      const corInline=(e.tipo==='cto'&&e.cor)?` style="background:${e.cor}"`:'';
-      ic=L.divIcon({className:'',html:`<div class="mk st-${e.status}"><div class="pin pin-${e.tipo}"${corInline}>${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
-    }
+    const ic=iconeElemento(e);
     const mk=L.marker([e.lat,e.lng],{icon:ic,draggable:modo==='navegar'&&e.status!=='certificado'});
     mk.on('dragend',ev=>{const p=ev.target.getLatLng();e.lat=p.lat;e.lng=p.lng;salvar();renderTudo()});
     mk.bindPopup(popupElemento(e));
-    if(e.tipo==='cto'||e.tipo==='ceo')hoverAbrePopup(mk);
+    // o clique agora é do nome, então o balão abre ao passar o mouse — antes só
+    // CTO e CEO faziam isso, e POP/reserva/poste dependiam do clique
+    hoverAbrePopup(mk);
     layerRefs[e.id]=mk.addTo(mapa);
   });
   attProgresso();renderListaElementos();atualizarPendBadge();attOneBadge();renderClientesTopbar();
   const vz=document.getElementById('vazio-mapa');
   if(vz)vz.style.display=(projAtual.elementos.length||projAtual.cabos.length)?'none':'block';
 }
+/* O desenho de um elemento no mapa. Saiu de dentro do renderTudo para o clique
+   no nome conseguir repintar um marcador só. O onclick vai no `.mk` inteiro —
+   ícone e nome — porque "clicar em cima da caixa" é o gesto natural. */
+function iconeElemento(e){
+  const mostra=nomeVisivel(e.id);
+  const clique=` onclick="alternarNome('${e.id}',event)" title="Clique para mostrar/esconder o nome"`;
+  if(e.tipo==='poste'&&e.poste&&e.poste.fixacao){
+    // poste com o PIN PADRÃO + etiqueta pequena escrita (passagem/ancoragem/derivação)
+    const fx=e.poste.fixacao;
+    const anc=fx.includes('ancoragem');
+    const txt={passagem:'passagem',ancoragem:'ancoragem',derivacao:'derivação','passagem-ancoragem':'pass+anc'}[fx]||fx;
+    const cor=anc?'#FF8A3C':'#8B90A0';
+    const tag=mostra?`<div style="position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:1px;background:rgba(17,19,24,.85);border:1px solid #2C3040;border-radius:4px;padding:0 4px;font-size:7.5px;color:${cor};white-space:nowrap;line-height:1.5">${txt}${e.poste.suporte?' · '+e.poste.suporte:''}</div>`:'';
+    return L.divIcon({className:'',html:`<div class="mk st-${e.status}" style="position:relative"${clique}><div class="pin pin-poste">${ICONS.poste||''}</div>${tag}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
+  }
+  const corInline=(e.tipo==='cto'&&e.cor)?` style="background:${e.cor}"`:'';
+  const lbl=mostra?`<div class="lbl">${e.nome}</div>`:'';
+  return L.divIcon({className:'',html:`<div class="mk st-${e.status}"${clique}><div class="pin pin-${e.tipo}"${corInline}>${ICONS[e.tipo]||''}</div>${lbl}</div>`,iconSize:[26,40],iconAnchor:[13,13]});
+}
+
 function popupElemento(e){
   let ocup='';
   if(e.tipo==='cto'&&e.splitter){
@@ -3907,6 +3916,7 @@ function renderCamadas(){
     {sub:'Cabos'},{k:'backbone',l:'Backbone'},{k:'distribuicao',l:'Distribuição'},{k:'drop',l:'Drop'},
     {sub:'Clientes'},{k:'clienteone',l:'Clientes (MoviOne)',fn:toggleCamadaClientes},
     {sub:'Outros'},{k:'reserva',l:'Reservas Técnicas'},{k:'area',l:'Áreas'},
+    {k:'nomes',l:'🏷️ Nomes das caixas'},
     {k:'luzfibra',l:'✨ Luz de tráfego'}
   ];
   document.getElementById('cam-body').innerHTML=defs.map(d=>{
@@ -3989,8 +3999,46 @@ function _chaveCamadas(){
   return 'movifiber_cam_'+id;
 }
 function salvarCamadas(){try{if(projAtual)store.set(_chaveCamadas(),JSON.stringify(camadasVisiveis))}catch(e){}}
+
+/* ═══════════ NOME DA CAIXA: APARECE E SOME NO CLIQUE ════════════════════════
+
+   Num bairro adensado, o nome de cada CTO, CEO e reserva vira uma parede de
+   texto por cima do traçado — e é justamente o traçado que se está olhando.
+   Esconder tudo também não serve: sem nome nenhum, achar a "CTO-14" no meio de
+   quarenta caixas iguais vira caça ao tesouro.
+
+   Então cada caixa liga e desliga o próprio nome com um clique em cima dela, e
+   a chave "Nomes das caixas" nas camadas decide como o mapa NASCE. O conjunto
+   guardado aqui é só de EXCEÇÕES à chave global — quem foi clicado contra a
+   regra. É por isso que virar a chave limpa a lista: o que era exceção a
+   "mostrar todos" não faz sentido nenhum como exceção a "esconder todos".
+
+   A escolha fica gravada por projeto: quem escondeu a poluição de um bairro
+   não quer reencontrá-la amanhã. */
+let nomesExcecao=new Set();
+function _chaveNomes(){return _chaveCamadas()+':nomes'}
+function salvarNomes(){try{if(projAtual)store.set(_chaveNomes(),JSON.stringify([...nomesExcecao]))}catch(e){}}
+function restaurarNomes(){
+  nomesExcecao=new Set();
+  try{const raw=projAtual?store.get(_chaveNomes()):null;if(raw)nomesExcecao=new Set(JSON.parse(raw))}catch(e){}
+}
+function nomeVisivel(id){
+  const padrao=camadasVisiveis.nomes!==false;
+  return nomesExcecao.has(id)?!padrao:padrao;
+}
+/* Repinta SÓ o marcador clicado. Um renderTudo() aqui redesenharia o mapa
+   inteiro a cada clique — em projeto grande, o nome demoraria a responder. */
+function alternarNome(id,ev){
+  if(ev){ev.stopPropagation();ev.preventDefault()}
+  if(nomesExcecao.has(id))nomesExcecao.delete(id);else nomesExcecao.add(id);
+  salvarNomes();
+  const e=(projAtual&&projAtual.elementos||[]).find(x=>x.id===id);
+  const mk=layerRefs[id];
+  if(e&&mk&&mk.setIcon)mk.setIcon(iconeElemento(e));else renderTudo();
+}
 function restaurarCamadas(){
   camadasVisiveis={...CAMADAS_PADRAO};
+  restaurarNomes();
   try{
     const raw=projAtual?store.get(_chaveCamadas()):null;
     if(raw)Object.assign(camadasVisiveis,JSON.parse(raw));
@@ -4000,6 +4048,9 @@ function restaurarCamadas(){
 }
 function toggleCamada(k){
   camadasVisiveis[k]=!camadasVisiveis[k];
+  // virar a chave geral zera as exceções: o que era exceção a "mostrar todos"
+  // não quer dizer nada como exceção a "esconder todos"
+  if(k==='nomes'){nomesExcecao.clear();salvarNomes()}
   salvarCamadas();
   if(k==='satelite')toggleSatelite();
   else if(k==='luzfibra')redesenharSetasELuz();   // só a luz muda, não repinta tudo
