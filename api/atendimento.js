@@ -3782,23 +3782,15 @@ function camposDeValorIXC(f) {
     .reduce((o, k) => { o[k] = f[k]; return o; }, {});
 }
 
-/* {valor} é o que o cliente pagou. {valor_original} é o que a fatura dizia, e
-   {detalhe} abre a conta — " (R$ 69,90 + R$ 4,42 de juros e multa)" — só
-   quando pagou mais. Quem pagou em dia recebe a mesma frase de sempre. */
-function pagTexto(tpl, { nome, valor, valorOriginal, vencimento }) {
+/* {valor} é o TOTAL que o cliente pagou — já com juros e multa, quando pagou
+   em atraso. A mensagem não abre a conta: quem quiser a composição vê na
+   fatura. O valor de face fica só no livro, para conferência interna. */
+function pagTexto(tpl, { nome, valor, vencimento }) {
   const venc = vencimento ? String(vencimento).slice(0, 10).split('-').reverse().join('/') : '—';
-  const pago = numeroIXC(valor);
-  const face = valorOriginal == null ? pago : numeroIXC(valorOriginal);
-  const acrescimo = arredondarMoeda(pago - face);
-  const detalhe = acrescimo > 0
-    ? ` (${fmtMoeda(face)} + ${fmtMoeda(acrescimo)} de juros e multa)` : '';
   return String(tpl)
     .replace(/{nome}/g, nome || 'cliente')
     .replace(/{primeiro_nome}/g, (nome || 'cliente').split(' ')[0])
-    .replace(/{valor}/g, fmtMoeda(pago))
-    .replace(/{valor_original}/g, fmtMoeda(face))
-    .replace(/{acrescimos}/g, fmtMoeda(Math.max(0, acrescimo)))
-    .replace(/{detalhe}/g, detalhe)
+    .replace(/{valor}/g, fmtMoeda(numeroIXC(valor)))
     .replace(/{vencimento}/g, venc);
 }
 
@@ -3859,7 +3851,7 @@ async function avisarPagamentosConfirmados(e) {
   if (!candidatos.length) return { pagamento: 'sem pagamentos recentes' };
 
   const tpl = String(cfg.texto ||
-    'Recebemos a confirmação do seu pagamento de {valor}{detalhe}, referente à fatura de {vencimento}. Muito obrigado! 💚 — MoviOn');
+    'Recebemos a confirmação do seu pagamento de {valor}, referente à fatura de {vencimento}. Muito obrigado! 💚 — MoviOn');
 
   let enviados = 0, semTelefone = 0, falhas = 0, jaAvisadas = 0;
   let emAtraso = 0, semAcrescimo = 0;
@@ -3867,8 +3859,8 @@ async function avisarPagamentosConfirmados(e) {
     const faturaId = String(f.id);
     const ixcId = f.id_cliente ? String(f.id_cliente) : null;
     // o que o cliente pagou — com juros e multa, quando pagou em atraso. O
-    // valor de face vai junto: é o que o livro guarda e o que o {detalhe} da
-    // mensagem usa para abrir a conta.
+    // valor de face vai junto só para o livro: é ele que deixa conferir depois
+    // quanto de acréscimo entrou em cada fatura.
     const valorOriginal = f.valor != null ? numeroIXC(f.valor) : null;
     const pago = valorPagoIXC(f);
     const valor = pago > 0 ? pago : valorOriginal;
@@ -3928,7 +3920,7 @@ async function avisarPagamentosConfirmados(e) {
       continue;
     }
 
-    const texto = pagTexto(tpl, { nome, valor, valorOriginal, vencimento: f.data_vencimento });
+    const texto = pagTexto(tpl, { nome, valor, vencimento: f.data_vencimento });
 
     // Acha ou cria a conversa. Nasce em "Resolvidos" DE PROPÓSITO: isto é um
     // recibo, não um atendimento aberto. Quando nascia em "Aguardando cliente",
