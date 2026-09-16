@@ -3345,10 +3345,39 @@ async function carregarTudo(){
   await recarregarChat();
 }
 
-/* --- tempo real: mensagem nova aparece sem F5 --- */
+/* ═══════════ TEMPO REAL — E A REDE DEBAIXO DELE ═════════════════════════════
+
+   A mensagem do cliente entra no banco no mesmo segundo. Quem atrasava era a
+   tela: o tempo real do Supabase (postgres_changes) é a ÚNICA fonte de coisa
+   nova aqui, e ele não tem repetição — o que acontece enquanto o socket está
+   caído não chega depois que ele volta.
+
+   E ele cai. Nos registros do projeto, de 4 a 10 conexões novas por hora em
+   horário comercial, do mesmo IP: numa sexta às 11h34 o cliente mandou "Bom
+   dia", a linha entrou no banco às 11:34:21 e a conversa aberta na tela do
+   atendente continuava sem ela quatro minutos depois — enquanto o socket
+   reconectava sete vezes entre 11:32 e 11:39.
+
+   Então o tempo real ganhou duas coisas: aviso de queda (para reabrir o canal
+   e RESSINCRONIZAR no retorno, já que o que passou não volta sozinho) e uma
+   rede embaixo — uma conferência de 15 em 15 segundos que pergunta ao banco se
+   existe algo mais novo do que a tela mostra. São duas leituras minúsculas,
+   direto no Supabase, sem passar pela Vercel. */
+let _canalAtend = null, _religarTimer = null, _religarTentativas = 0;
+
 function ligarRealtime(){
   const sb = _sb(); if(!sb) return;
-  sb.channel('atend')
+  clearTimeout(_religarTimer);
+  /* troca de canal: o antigo sai antes, senão o supabase-js recusa o segundo
+     "atend" e ficaríamos escutando um socket morto achando que está tudo bem.
+     A referência é solta ANTES do removeChannel: ele dispara CLOSED no canal
+     velho, e com _canalAtend ainda apontando para ele o aviso passaria pela
+     guarda lá embaixo e agendaria mais uma religada — um canal atrás do outro,
+     o mesmo laço que este arquivo veio consertar. */
+  if(_canalAtend){ const velho = _canalAtend; _canalAtend = null; try{ sb.removeChannel(velho); }catch(e){} }
+  const canal = sb.channel('atend');
+  _canalAtend = canal;
+  canal
     .on('postgres_changes', { event:'*', schema:'public', table:'atend_conversas' }, async ()=>{
       try{ await recarregarConversas(); }catch(e){}
     })
@@ -3403,7 +3432,76 @@ function ligarRealtime(){
       }
       recarregarChat().catch(()=>{});
     })
-    .subscribe();
+    .subscribe((estado)=>{
+      // callback de canal velho (o removeChannel acima dispara CLOSED nele):
+      // deixar passar religaria em laço
+      if(_canalAtend !== canal) return;
+      if(estado === 'SUBSCRIBED'){
+        _religarTentativas = 0;
+        // voltou: o buraco da queda é preenchido aqui, não pelo próprio socket
+        ressincronizar();
+        return;
+      }
+      if(estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED'){
+        // espera crescente até 30s: rede caída não melhora com insistência
+        const espera = Math.min(30000, 1000 * Math.pow(2, _religarTentativas++));
+        clearTimeout(_religarTimer);
+        _religarTimer = setTimeout(ligarRealtime, espera);
+      }
+    });
+}
+
+/* A rede de segurança. Duas perguntas curtas ao banco:
+
+   1. "Qual a mensagem mais recente de TODAS as conversas?" — uma linha só,
+      pelo índice de ultima_msg_em. Mais nova do que a marca que temos na
+      memória significa conversa nova ou mensagem nova em alguma conversa:
+      recarrega a lista. A marca também guarda o que já foi visto, para uma
+      diferença de escopo entre o painel e a RLS não virar recarga eterna.
+
+   2. "Qual o id da última mensagem da conversa aberta?" — outra linha só. É a
+      thread que o atendente está lendo agora; comparar id com o maior que está
+      na tela pega qualquer mensagem perdida, inclusive as que não mexem no
+      resumo da conversa (recado de transferência, reação, aviso do sistema). */
+const RESSINC_MS = 15000;
+let _ressincando = false, _marcaVista = '';
+
+async function ressincronizar(){
+  if(_ressincando || document.hidden || !TOKEN) return;
+  const sb = _sb(); if(!sb) return;
+  _ressincando = true;
+  try{
+    const { data: topo, error } = await sb.from('atend_conversas')
+      .select('ultima_msg_em').order('ultima_msg_em', { ascending:false, nullsFirst:false }).limit(1);
+    if(error) return;
+    const maisNova = (topo && topo[0] && topo[0].ultima_msg_em) ? String(topo[0].ultima_msg_em) : '';
+    const naTela = state.conversas.reduce((m,c)=> (c.ultimaEm||'') > m ? String(c.ultimaEm) : m, '');
+    if(maisNova && maisNova > naTela && maisNova !== _marcaVista){
+      _marcaVista = maisNova;
+      await recarregarConversas();
+    }
+
+    if(!modalId) return;
+    const c = state.conversas.find(x=>x.id===modalId);
+    if(!c) return;
+    const { data: ult } = await sb.from('atend_mensagens')
+      .select('id').eq('conversa_id', modalId).order('id', { ascending:false }).limit(1);
+    const noBanco = (ult && ult[0] && ult[0].id) || 0;
+    const naThread = (c.msgs||[]).reduce((m,x)=> Math.max(m, x.id||0), 0);
+    if(noBanco > naThread){
+      await api.carregarMensagens(c);
+      if(modalId === c.id) openModal(c.id);
+    }
+  }catch(e){ /* rede fora: daqui a 15s tenta de novo */ }
+  finally{ _ressincando = false; }
+}
+
+function ligarRedeDeSeguranca(){
+  setInterval(ressincronizar, RESSINC_MS);
+  // voltar para a aba é o momento mais provável de ter buraco: o navegador
+  // congela o socket em segundo plano
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) ressincronizar(); });
+  window.addEventListener('online', ressincronizar);
 }
 
 /* ═══════════ ALERTA SONORO ══════════════════════════════════════════════════
@@ -3681,6 +3779,7 @@ async function entrar(session){
     }
     renderAll();
     ligarRealtime();
+    ligarRedeDeSeguranca();
     // em segundo plano: se o WhatsApp não estiver mandando os vistos, o aviso
     // com o conserto aparece no cabeçalho. Não bloqueia a entrada no painel.
     checarConfigVistos().catch(()=>{});
