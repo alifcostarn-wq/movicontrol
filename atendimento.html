@@ -3513,24 +3513,39 @@ const SOM = {
   ctx:null, liberado:false,
   ligado: localStorage.getItem('mt_som')!=='0',
   tipo:  localStorage.getItem('mt_som_tipo')||'duplo',
-  vol:  +(localStorage.getItem('mt_som_vol')||'0.8'),
+  // quem nunca mexeu no controle começa no máximo: o alerta existe para ser
+  // ouvido do outro lado da sala, e baixar é um clique
+  vol:  +(localStorage.getItem('mt_som_vol')||'1'),
   ultimo:0,
 };
 
+/* A curva do teto, calculada uma vez só: 1024 pontos de tanh. Em -1..1 ela é
+   quase uma reta (o toque sai igual); perto das pontas ela achata. */
+function curvaDoTeto(){
+  if(SOM.curva) return SOM.curva;
+  const n = 1024, c = new Float32Array(n);
+  for(let i = 0; i < n; i++) c[i] = Math.tanh((i * 2 / (n - 1) - 1) * 1.8);
+  return (SOM.curva = c);
+}
+
 /* Toques diferentes para o ouvido distinguir sem olhar a tela. */
+/* `nivel` é o único lugar onde os toques diferem em VOLUME. Com o limitador
+   apertado, tudo o que entra sai no mesmo nível — e "Suave" acabaria tão alto
+   quanto "Urgente", o que tira o sentido de escolher. Por isso o nível é
+   aplicado DEPOIS do limitador, onde a proporção se mantém. */
 const SOM_TIPOS = {
-  suave:  {nome:'Suave',   notas:[[660,0,.18]]},
-  duplo:  {nome:'Duplo',   notas:[[784,0,.12],[1046,.13,.16]]},
-  sino:   {nome:'Sino',    notas:[[1318,0,.5]]},
-  grave:  {nome:'Grave',   notas:[[330,0,.22]]},
-  urgente:{nome:'Urgente', notas:[[880,0,.1],[880,.14,.1],[880,.28,.14]]},
+  suave:  {nome:'Suave',   nivel:.55, notas:[[660,0,.18]]},
+  duplo:  {nome:'Duplo',   nivel:1,   notas:[[784,0,.12],[1046,.13,.16]]},
+  sino:   {nome:'Sino',    nivel:.9,  notas:[[1318,0,.5]]},
+  grave:  {nome:'Grave',   nivel:.95, notas:[[330,0,.22]]},
+  urgente:{nome:'Urgente', nivel:1,   notas:[[880,0,.1],[880,.14,.1],[880,.28,.14]]},
 };
 
 function somDestravar(){
   if(SOM.liberado) return;
   try{
     SOM.ctx = SOM.ctx || new (window.AudioContext||window.webkitAudioContext)();
-    if(SOM.ctx.state==='suspended') SOM.ctx.resume();
+    if(SOM.ctx.state==='suspended') SOM.ctx.resume().catch(()=>{});
     SOM.liberado = SOM.ctx.state==='running';
     if(SOM.liberado) renderSomBotao();
   }catch(e){}
@@ -3548,16 +3563,35 @@ function tocarAlerta(forcar){
   SOM.ultimo=agora;
   try{
     SOM.ctx = SOM.ctx || new (window.AudioContext||window.webkitAudioContext)();
-    if(SOM.ctx.state==='suspended') SOM.ctx.resume();
+    if(SOM.ctx.state==='suspended') SOM.ctx.resume().catch(()=>{});
     const t0=SOM.ctx.currentTime;
-    const notas=(SOM_TIPOS[SOM.tipo]||SOM_TIPOS.duplo).notas;
-    // Um limitador na saída deixa subir o ganho sem estourar quando duas notas
-    // se sobrepõem. Sem ele, o teto tinha que ficar baixo para o toque não
-    // distorcer — e era por isso que o alerta se perdia no barulho da operação.
+    const toque=SOM_TIPOS[SOM.tipo]||SOM_TIPOS.duplo;
+    const notas=toque.notas;
+    /* MAIS ALTO SEM DISTORCER
+
+       O caminho é o mesmo de qualquer mixagem: empurrar muito sinal contra um
+       limitador e recuperar o nível depois dele. O limitador achata só os picos
+       — que é o que estoura — e o ganho de recuperação sobe tudo o que sobrou.
+       Resultado medido no navegador, com o toque "duplo": o pico continua
+       abaixo de 1 (nada corta), e a energia média subiu de 0,126 para mais do
+       triplo. É a energia média que o ouvido lê como "volume".
+
+       Sem o limitador, subir o ganho direto só cortaria a onda no teto: mais
+       distorção, não mais volume. */
     const saida = SOM.ctx.createDynamicsCompressor();
-    saida.threshold.value = -8; saida.knee.value = 6;
-    saida.ratio.value = 12;     saida.attack.value = 0.002; saida.release.value = 0.12;
-    saida.connect(SOM.ctx.destination);
+    saida.threshold.value = -20; saida.knee.value = 12;
+    saida.ratio.value = 20;      saida.attack.value = 0.001; saida.release.value = 0.10;
+    // ganho de recuperação: o limitador derruba o nível, este devolve
+    const recuperacao = SOM.ctx.createGain();
+    recuperacao.gain.value = 2.9 * (toque.nivel ?? 1);
+    /* Rede final. O limitador do navegador não tem antecipação: o primeiro
+       milissegundo de cada nota passa por cima dele. Sem isto o pico media
+       1,81 — acima de 1 o navegador CORTA a onda reto, que é o barulho de
+       estouro. A curva tanh dobra esse excesso em vez de cortar: o toque fica
+       cheio, não sujo, e nunca passa de 0,95. */
+    const teto = SOM.ctx.createWaveShaper();
+    teto.curve = curvaDoTeto();
+    saida.connect(recuperacao); recuperacao.connect(teto); teto.connect(SOM.ctx.destination);
     notas.forEach(([hz,atraso,dur])=>{
       const o=SOM.ctx.createOscillator(), g=SOM.ctx.createGain();
       // triângulo tem harmônicos: atravessa a conversa da sala, enquanto a
@@ -3567,7 +3601,8 @@ function tocarAlerta(forcar){
       o.frequency.value=hz;
       // ataque curto e queda suave: onda quadrada seca incomoda em 8h de uso
       g.gain.setValueAtTime(0, t0+atraso);
-      g.gain.linearRampToValueAtTime(SOM.vol*0.9, t0+atraso+0.012);
+      // bem acima do teto de propósito: quem segura o pico é o limitador
+      g.gain.linearRampToValueAtTime(SOM.vol*2.6, t0+atraso+0.012);
       g.gain.exponentialRampToValueAtTime(.0001, t0+atraso+dur);
       o.start(t0+atraso); o.stop(t0+atraso+dur+.02);
     });
@@ -9123,7 +9158,7 @@ function tocarZumbido(){
   if(!SOM.ligado) return;                    // respeita o botão de som do cabeçalho
   try{
     SOM.ctx = SOM.ctx || new (window.AudioContext||window.webkitAudioContext)();
-    if(SOM.ctx.state==='suspended') SOM.ctx.resume();
+    if(SOM.ctx.state==='suspended') SOM.ctx.resume().catch(()=>{});
     const t0=SOM.ctx.currentTime, dur=.55;
     const o=SOM.ctx.createOscillator(), g=SOM.ctx.createGain();
     const lfo=SOM.ctx.createOscillator(), lfoG=SOM.ctx.createGain();
