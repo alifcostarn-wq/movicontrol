@@ -12406,7 +12406,8 @@ async function abrirLiberarMoviApp(idx){
     .select('id').eq('cliente_id', cli.id).maybeSingle();
 
   const cpf = (cli.cnpj||'').replace(/\D/g,'').slice(0,11);
-  const senhaInicial = cpf.slice(-4)||'0000';
+  // 6 dígitos, não 4: é o mínimo que o Supabase Auth aceita numa senha
+  const senhaInicial = cpf.slice(-6)||'000000';
   const wa = cli.whatsapp||cli.tel1||'';
 
   const modalHtml = `
@@ -12433,7 +12434,8 @@ async function abrirLiberarMoviApp(idx){
           <input type="tel" id="mva-wa" class="cp-form-input" value="${wa}" placeholder="(00) 00000-0000">
         </div>
         <div style="background:var(--bg2);padding:10px 12px;border-radius:6px;font-size:12px;color:var(--text3);margin-bottom:4px">
-          🔑 Senha inicial: últimos 4 dígitos do CPF (<strong id="mva-senha-prev">${senhaInicial}</strong>)
+          🔑 Senha inicial: últimos 6 dígitos do CPF (<strong id="mva-senha-prev">${senhaInicial}</strong>)
+          ${jaExiste ? '<br><span style="color:var(--warn)">↻ Reenviar redefine a senha do cliente para esta.</span>' : ''}
         </div>
       </div>
       <div class="modal-footer">
@@ -12454,7 +12456,7 @@ async function abrirLiberarMoviApp(idx){
   if(cpfInput) cpfInput.addEventListener('input', ()=>{
     const v = cpfInput.value.replace(/\D/g,'');
     const el = document.getElementById('mva-senha-prev');
-    if(el) el.textContent = v.slice(-4)||'0000';
+    if(el) el.textContent = v.slice(-6)||'000000';
   });
 }
 
@@ -12498,8 +12500,6 @@ async function liberarMoviApp(idx){
   // Proxy do MoviApp é separado — /api/moviapp (não /api/ixc-proxy)
   const moviappProxy = cfg.proxyUrl.replace(/\/api\/ixc-proxy\s*$/, '/api/moviapp');
 
-  const senha = cpf.slice(-4);
-
   try {
     const { data: sessData } = await sbClient.auth.getSession();
     const adminToken = sessData?.session?.access_token || '';
@@ -12523,18 +12523,27 @@ async function liberarMoviApp(idx){
     if(!j.ok && r.status !== 409){
       throw new Error(j.error || 'Erro ao criar acesso.');
     }
+    // quem manda na senha é o servidor: ele é que criou (ou redefiniu) o login
+    const senha = j.senha_inicial || cpf.slice(-6);
 
     // 2) Notifica via WhatsApp se tiver número
+    let waOk = null;
     if(wa){
       const nomeFormatado = (cli.nome||'').split(' ')[0];
       const msg = `Olá ${nomeFormatado}! Seu acesso ao *MoviApp* foi liberado. 📱\n\n*Login:* ${cpf}\n*Senha:* ${senha}\n\nAcesse: https://moviapp.vercel.app\n\nEm caso de dúvidas, entre em contato conosco. 😊`;
+      /* O envio não pode mais falhar em silêncio: o painel dizia "credenciais
+         enviadas" mesmo quando não saía nada, e o atendente ia embora achando
+         que o cliente tinha recebido a senha. */
       try {
-        await fetch(cfg.proxyUrl, {
+        const rw = await fetch(cfg.proxyUrl, {
           method:'POST',
           headers:{'Content-Type':'application/json','x-target':'evotrix'},
           body: JSON.stringify({ numero: wa, mensagem: msg }),
         });
-      } catch(e){ console.warn('WhatsApp erro:', e); }
+        const jw = await rw.json().catch(()=>({}));
+        waOk = rw.ok && jw.ok !== false;
+        if(!waOk) console.warn('WhatsApp não enviado:', rw.status, jw);
+      } catch(e){ waOk = false; console.warn('WhatsApp erro:', e); }
     }
 
     // 3) Mostra sucesso
@@ -12547,7 +12556,10 @@ async function liberarMoviApp(idx){
           <div><b>Cliente:</b> ${cli.nome||'—'}</div>
           <div><b>Login:</b> ${cpf}</div>
           <div><b>Senha:</b> ${senha}</div>
-          ${wa?`<div style="color:var(--success);font-size:12px;margin-top:6px">📲 Credenciais enviadas por WhatsApp</div>`:''}
+          ${j.redefinida?`<div style="color:var(--warn);font-size:12px;margin-top:6px">↻ Este CPF já tinha acesso — a senha foi redefinida para a de cima.</div>`:''}
+          ${!wa?'':(waOk
+            ?`<div style="color:var(--success);font-size:12px;margin-top:6px">📲 Credenciais enviadas por WhatsApp</div>`
+            :`<div style="color:var(--danger);font-size:12px;margin-top:6px">⚠ Não consegui enviar por WhatsApp — passe o login e a senha acima para o cliente.</div>`)}
         </div>
       </div>`;
     if(btn){ btn.textContent='Fechar'; btn.disabled=false; btn.onclick=()=>fecharModal('modal-moviapp'); }

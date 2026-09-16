@@ -89,7 +89,13 @@ export default async function handler(req, res) {
       }
 
       const email = `${cpf}@moviapp.local`;
-      const senha = cpf.slice(-4);
+      /* A senha inicial eram os 4 ultimos digitos do CPF. O Supabase Auth exige
+         no minimo 6 caracteres, e a criacao passou a ser recusada com
+         "Password should be at least 6 characters" — nenhum cliente novo
+         conseguia ser liberado (as 22 contas existentes sao anteriores a isso).
+         Seis ultimos digitos mantem a mesma ideia — algo que o cliente sabe de
+         cor — dentro do que o Auth aceita. */
+      const senha = cpf.slice(-6);
 
       // Cria o user no Supabase Auth (server-side, não afeta sessão do admin)
       let userId = null;
@@ -101,8 +107,31 @@ export default async function handler(req, res) {
         const tu = await ru.text();
         let du; try { du = JSON.parse(tu); } catch { du = {}; }
         if (!ru.ok) {
-          if (/already|exist|registered|duplicate/i.test(du.msg || du.message || ''))
+          /* Ja existe: o botao do painel vira "Reenviar acesso" e manda as
+             credenciais para o cliente. Se a senha nao for redefinida aqui, essa
+             mensagem promete uma senha que talvez nao seja mais a dele — e o
+             atendente so descobre pelo cliente reclamando que nao entra. */
+          if (/already|exist|registered|duplicate/i.test(du.msg || du.message || '')) {
+            try {
+              const rj = await fetch(`${SUPA_URL}/rest/v1/clientes_app?cpf=eq.${encodeURIComponent(cpf)}&select=id`, { headers: srvH });
+              const dj = await rj.json();
+              const idAntigo = Array.isArray(dj) && dj[0] ? dj[0].id : null;
+              if (idAntigo) {
+                const rr = await fetch(`${SUPA_URL}/auth/v1/admin/users/${idAntigo}`, {
+                  method: 'PUT', headers: srvH, body: JSON.stringify({ password: senha }),
+                });
+                if (rr.ok) {
+                  return res.status(200).json({
+                    ok: true, user_id: idAntigo, cpf, senha_inicial: senha, redefinida: true,
+                    mensagem: `Este CPF ja tinha acesso. A senha foi redefinida para ${senha}.`,
+                  });
+                }
+                const te = await rr.text();
+                return res.status(rr.status).json({ error: 'CPF ja tem acesso e a senha nao pode ser redefinida: ' + te.slice(0, 200) });
+              }
+            } catch (e) { /* cai no 409 de sempre */ }
             return res.status(409).json({ error: 'Este CPF ja possui acesso ao MoviApp.' });
+          }
           return res.status(ru.status).json({ error: 'Falha ao criar login: ' + (du.msg || du.message || tu.slice(0, 200)) });
         }
         userId = du.id || (du.user && du.user.id);
@@ -124,7 +153,7 @@ export default async function handler(req, res) {
         }
         return res.status(200).json({
           ok: true, user_id: userId, cpf, senha_inicial: senha,
-          mensagem: `Acesso criado. Senha inicial: ${senha} (ultimos 4 digitos do CPF).`
+          mensagem: `Acesso criado. Senha inicial: ${senha} (ultimos 6 digitos do CPF).`
         });
       } catch (e) { return res.status(502).json({ error: 'Erro ao vincular cliente: ' + e.message }); }
     }
