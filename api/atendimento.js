@@ -3882,8 +3882,20 @@ async function avisarPagamentosConfirmados(e) {
         },
       });
       claim = Array.isArray(claim) ? claim[0] : claim;
-    } catch {
-      jaAvisadas++;               // 409 de unique: outra execução já pegou esta fatura
+    } catch (err) {
+      /* 409 (unique violado) é a reivindicação perdida: outra execução pegou
+         esta fatura primeiro. É assim que o mutex funciona, e contar como
+         "já avisada" está certo.
+
+         Qualquer OUTRO erro aqui — coluna que não existe, RLS, rede fora —
+         significa que o cliente não vai ser avisado. Engolir isso no mesmo
+         balde esconderia a falha para sempre, sem uma linha no log: foi
+         exatamente assim que o aviso do técnico ficou três semanas morto. */
+      const msg = String(err.message || '');
+      if (/\b409\b|23505|duplicate key/i.test(msg)) { jaAvisadas++; continue; }
+      falhas++;
+      console.error('[pagamento confirmado] não consegui reivindicar a fatura',
+        faturaId, '—', msg.slice(0, 200));
       continue;
     }
 
