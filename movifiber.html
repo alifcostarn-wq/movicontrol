@@ -897,6 +897,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 .ins-msg{width:100%;min-height:150px;resize:vertical;font-family:inherit;font-size:12.5px;line-height:1.65;
   background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:11px 12px;outline:none}
 .ins-msg:focus{border-color:var(--accent)}
+.ins-dica{font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:6px}
 .ins-vars{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
 .ins-vars button{font-family:'DM Mono',monospace;font-size:10.5px;padding:3px 8px;border:1px dashed var(--border);
   border-radius:6px;color:var(--text-dim)}
@@ -9810,7 +9811,7 @@ async function abrirIncidente(pre){
   _insForm=Object.assign({
     id:null,titulo:'',tipo:'queda',escopo:'projeto',
     projeto_id:padraoProj,area_id:'',area_nome:'',poligonoLivre:null,caixas:[],
-    mensagem:'',gatilho:'reclamacao',encerrar:false,previsao:''
+    mensagem:'',gatilho:'qualquer',encerrar:false,previsao:''
   },pre||{});
   if(!_insForm.mensagem)_insForm.mensagem=INS_MODELOS[_insForm.tipo]||INS_MODELOS.queda;
   _insPrev=null;_insBuscaCx='';
@@ -9990,11 +9991,12 @@ function renderIncForm(){
    +'<div class="linha2">'
      +'<div class="campo"><label>Previsão de normalização</label>'
       +'<input type="datetime-local" value="'+_esc(f.previsao||'')+'" oninput="incSet(\'previsao\',this.value)"></div>'
-     +'<div class="campo"><label>Quando o bot responde</label>'
+     +'<div class="campo"><label>O que o MoviTalk faz com quem escrever</label>'
       +'<select onchange="incSet(\'gatilho\',this.value)">'
-        +'<option value="reclamacao" '+(f.gatilho==='reclamacao'?'selected':'')+'>Só quando reclamar da conexão</option>'
-        +'<option value="qualquer" '+(f.gatilho==='qualquer'?'selected':'')+'>Em qualquer mensagem</option>'
-      +'</select></div>'
+        +'<option value="qualquer" '+(f.gatilho==='qualquer'?'selected':'')+'>Trava a conversa no aviso até normalizar</option>'
+        +'<option value="reclamacao" '+(f.gatilho==='reclamacao'?'selected':'')+'>Só responde quem reclamar da conexão</option>'
+      +'</select>'
+      +'<div class="ins-dica">Travado, o cliente da área recebe o aviso e mais nada — sem menu, sem fila, sem aviso de intervalo.</div></div>'
    +'</div>'
    +'<div class="campo"><label>Mensagem que o MoviTalk envia</label>'
     +'<textarea id="inc-f-msg" class="ins-msg" oninput="incSet(\'mensagem\',this.value)">'+_esc(f.mensagem)+'</textarea>'

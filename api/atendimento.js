@@ -1628,7 +1628,8 @@ async function montarPainelCliente(e, ixcId) {
 //      segue no fluxo normal, sem receber aviso que nao e dele.
 // ============================================================================
 const INC_CACHE_MS   = 60000;   // incidentes mudam pouco; 1 min evita 1 query por mensagem
-const INC_REAVISO_H  = 6;       // se o cliente insistir depois disso, avisa de novo
+const INC_REAVISO_H  = 6;       // depois disso o aviso completo sai de novo
+const INC_LEMBRETE_MIN = 10;    // dentro da janela, um lembrete curto no máximo a cada 10 min
 let _incCache = { em: 0, dados: [] };
 
 async function incidentesAtivos(e) {
@@ -1778,9 +1779,9 @@ function textoDoIncidente(inc, cliente) {
 /* Ja avisamos esta pessoa sobre este incidente ha pouco tempo?
    Sem isto, quem manda tres mensagens seguidas ("oi", "sem internet", "alo")
    recebe o mesmo aviso tres vezes. */
-async function jaAvisou(e, incidenteId, fone) {
+async function jaAvisou(e, incidenteId, fone, horas = INC_REAVISO_H) {
   try {
-    const desde = new Date(Date.now() - INC_REAVISO_H * 3600e3).toISOString();
+    const desde = new Date(Date.now() - horas * 3600e3).toISOString();
     const r = await sbUm(e,
       `movifiber_incidente_avisos?incidente_id=eq.${encodeURIComponent(incidenteId)}`
       + `&contato_fone=eq.${encodeURIComponent(fone)}&enviado_em=gte.${desde}&select=id&limit=1`);
@@ -1892,6 +1893,23 @@ async function incidentePorId(e, id) {
   return await sbUm(e, `movifiber_incidentes?id=eq.${encodeURIComponent(String(id))}&select=*`).catch(() => null);
 }
 
+/* O lembrete de quem já recebeu o aviso completo. Repetir o texto inteiro a
+   cada "bom dia" seria maçante; sumir com ele é pior — foi o que jogava o
+   cliente no menu de novo, no meio de uma queda. */
+function lembreteDoIncidente(inc) {
+  const estado = {
+    queda: 'segue fora do ar', lentidao: 'segue instável',
+    manutencao: 'segue em manutenção', rompimento: 'segue com a fibra rompida',
+  }[inc.tipo] || 'segue em manutenção';
+  const previsao = inc.previsao ? fmtDataHoraLocal(inc.previsao) : 'sem previsão fechada ainda';
+  return `⚠️ A região *${inc.area_nome || inc.projeto_nome || 'em que você está'}* ${estado} — `
+    + `é o mesmo problema que já te avisamos.\n\n`
+    + `⏱️ Previsão de normalização: *${previsao}*\n`
+    + `📄 Protocolo: *${inc.protocolo || ''}*\n\n`
+    + `Assim que o serviço voltar, sua conexão normaliza sozinha. `
+    + `Não precisa abrir chamado nem reiniciar os equipamentos. 💚`;
+}
+
 /* Responde o aviso de instabilidade, se for o caso.
    Devolve null quando nao ha nada a fazer (o fluxo normal segue). */
 async function avisarInstabilidade(e, { conversa, fone, texto }) {
@@ -1910,10 +1928,38 @@ async function avisarInstabilidade(e, { conversa, fone, texto }) {
   const inc = incidenteDoCliente(incidentes, cliente);
   if (!inc) return null;
   if (inc.gatilho !== 'qualquer' && !queixa) return null;
-  if (await jaAvisou(e, inc.id, fone)) return null;
 
-  const corpo = textoDoIncidente(inc, cliente);
-  if (!corpo.trim()) return null;
+  /* ENQUANTO A REGIÃO ESTÁ FORA, A CONVERSA FICA TRAVADA NO AVISO
+
+     O que acontecia: a cliente recebeu o aviso às 11:32 e escreveu "Boa tarde"
+     às 13:43. Dentro da janela de 6 horas o aviso era PULADO — e, sem ele, a
+     mensagem seguia para o fluxo normal: menu, "vou te encaminhar para um
+     atendente" e "estamos em intervalo, voltamos às 14:00". Ela respondeu
+     "Meu Deus". Três respostas automáticas para quem já sabia que a região
+     estava fora, e nenhuma delas falando do problema dela.
+
+     Agora, enquanto o incidente estiver ATIVO, qualquer mensagem de quem está
+     na área para por aqui: o cliente recebe o aviso (completo na primeira vez,
+     um lembrete curto depois) e o bot não roda mais nada — sem menu, sem fila,
+     sem horário de intervalo. Quem destrava é a normalização da instabilidade,
+     no MoviFiber.
+
+     Duas exceções, e só duas:
+     • conversa com atendente humano: quem está falando é gente, e o bot não
+       interrompe — nem com lembrete;
+     • rajada: no máximo um lembrete a cada 10 minutos. Cliente que manda cinco
+       mensagens seguidas não leva cinco vezes o mesmo texto. */
+  const comHumano = conversa.bot_ativo === false;
+  const recebeuCompleto = await jaAvisou(e, inc.id, fone);
+
+  let corpo = null;
+  if (!recebeuCompleto) corpo = textoDoIncidente(inc, cliente);
+  else if (!comHumano && !(await jaAvisou(e, inc.id, fone, INC_LEMBRETE_MIN / 60))) {
+    corpo = lembreteDoIncidente(inc);
+  }
+  // nada a dizer agora (humano atendendo, ou lembrete recente): ainda assim a
+  // conversa continua travada — é isso que impede o menu de aparecer
+  if (!corpo || !corpo.trim()) return { incidente: inc, encerrou: false, travou: !comHumano };
 
   let envio = null;
   try {
@@ -1950,7 +1996,6 @@ async function avisarInstabilidade(e, { conversa, fone, texto }) {
   // "encerrar" só vale para conversa que ainda está com o bot. Se um atendente
   // assumiu, tirar o card dele e devolver ao bot no meio do atendimento seria
   // pior que o problema: o aviso sai, a conversa continua onde está.
-  const comHumano = conversa.bot_ativo === false;
   if (inc.encerrar && !comHumano) {
     // aviso resolve sozinho: nao ocupa atendente com uma queda ja conhecida
     patch.coluna = 'aguardando';
@@ -1966,7 +2011,7 @@ async function avisarInstabilidade(e, { conversa, fone, texto }) {
     node_tipo: 'instabilidade', resultado: inc.protocolo || inc.id, entrada: texto,
   });
 
-  return { incidente: inc, encerrou: !!inc.encerrar && !comHumano };
+  return { incidente: inc, encerrou: !!inc.encerrar && !comHumano, travou: !comHumano };
 }
 
 /* Instabilidade ativa de um cliente, para o painel do atendente. */
@@ -3443,10 +3488,13 @@ async function tratarWebhookInterno(e, body) {
   if (!(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
     try {
       const aviso = await avisarInstabilidade(e, { conversa, fone, texto });
-      if (aviso && aviso.encerrou) {
+      // `travou`: a região está fora e quem escreveu está nela. O bot para
+      // aqui — nada de menu, fila ou aviso de intervalo por cima de uma queda.
+      if (aviso && (aviso.encerrou || aviso.travou)) {
         return {
           ok: true, conversa_id: conversa.id,
           instabilidade: aviso.incidente.protocolo || aviso.incidente.id,
+          travado: !!aviso.travou,
         };
       }
     } catch (err) {
