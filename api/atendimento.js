@@ -3766,12 +3766,36 @@ async function entregarCobranca(e, o) {
    recebimento, volta o valor de face: o comportamento de hoje, nunca pior. */
 function valorPagoIXC(f) {
   const face = numeroIXC(f?.valor);
-  const recebido = numeroIXC(pick(f || {}, 'valor_recebido', 'valor_pago', 'pagamento_valor', 'valor_baixado'));
-  if (recebido > 0) return recebido;
+
+  /* `pagamento_valor` é o que entrou. Confirmado no IXC de vocês, fatura
+     10088184 (ANTONIA ALICE, vencida em 15/09 e paga em 17/09):
+
+        valor 89,90 · valor_juros 0,30 · valor_multas 1,80
+        valor_recebido 89,90 · pagamento_valor 92,00
+
+     Repare no `valor_recebido`: apesar do nome, ele repete o valor de FACE —
+     é o quanto foi BAIXADO do título, a coluna "Valor baixado" da tela do
+     IXC. Quem carrega o dinheiro que o cliente pagou é `pagamento_valor`, a
+     coluna "Valor recebido" da mesma tela. Os nomes estão trocados em relação
+     ao que a tela mostra, e foi isso que fez a primeira versão desta função
+     anunciar 89,90 para quem tinha pagado 92,00. */
+  const pago = numeroIXC(pick(f || {}, 'pagamento_valor', 'valor_pago', 'valor_baixado'));
+  if (pago > 0) return pago;
+
+  /* Sem esse campo, a conta fecha pelos acréscimos — e fecha exata:
+     89,90 + 0,30 + 1,80 = 92,00. `valor_multas` é PLURAL nesta instalação.
+     Só entram campos com VALOR no nome: `juros` e `multa` sozinhos, no IXC,
+     são os percentuais da carteira de cobrança. */
   const acrescimos = numeroIXC(pick(f || {}, 'valor_juros', 'juros_valor'))
-                   + numeroIXC(pick(f || {}, 'valor_multa', 'multa_valor'));
+                   + numeroIXC(pick(f || {}, 'valor_multas', 'valor_multa', 'multa_valor'));
   const desconto = numeroIXC(pick(f || {}, 'valor_desconto', 'desconto_valor'));
   if (acrescimos || desconto) return Math.max(0, arredondarMoeda(face + acrescimos - desconto));
+
+  // último recurso antes do valor de face: instalação onde `valor_recebido`
+  // signifique mesmo o recebido
+  const recebido = numeroIXC(pick(f || {}, 'valor_recebido'));
+  if (recebido > 0) return recebido;
+
   return face;
 }
 

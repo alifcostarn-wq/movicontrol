@@ -14267,6 +14267,29 @@ function _fmtDataIXC(v){
 }
 function _numIXC(v){ const n=parseFloat(String(v??'').replace(',','.')); return isNaN(n)?0:n; }
 
+/* QUANTO O CLIENTE REALMENTE PAGOU
+
+   Os nomes dos campos do IXC não batem com os rótulos da tela dele:
+   `valor_recebido` é o que foi BAIXADO do título (a coluna "Valor baixado") e
+   repete o valor de face; quem carrega o dinheiro é `pagamento_valor` (a
+   coluna "Valor recebido"). Confirmado na fatura 10088184, vencida em 15/09 e
+   paga em 17/09: valor 89,90 · valor_juros 0,30 · valor_multas 1,80 ·
+   valor_recebido 89,90 · pagamento_valor 92,00.
+
+   Ler o campo errado fazia o MoviOne mostrar "Recebido 89,90" enquanto a tela
+   do IXC, ao lado, mostrava 92,00 — e subcontava no relatório os juros e as
+   multas efetivamente recebidos. Mesma regra do MoviTalk (valorPagoIXC). */
+function _pagoIXC(r){
+  const pago=_numIXC(r.pagamento_valor)||_numIXC(r.valor_pago);
+  if(pago>0)return pago;
+  const face=_numIXC(r.valor);
+  const acres=_numIXC(r.valor_juros)+(_numIXC(r.valor_multas)||_numIXC(r.valor_multa));
+  const desc=_numIXC(r.valor_desconto);
+  if(acres||desc)return Math.round((face+acres-desc)*100)/100;
+  const rec=_numIXC(r.valor_recebido);
+  return rec>0?rec:face;
+}
+
 // Status do título no fn_areceber (fallback mostra o código cru)
 function _statusFaturaIXC(r){
   const hj = hoje();
@@ -14333,7 +14356,7 @@ function _renderFaturasIXC(regsAll){
   let abertoV=0, abertoQ=0, vencV=0, vencQ=0, recV=0, recQ=0;
   regs.forEach(r=>{
     const st=_statusFaturaIXC(r);
-    if(st.k==='recebida'){ recV+=_numIXC(r.valor_recebido)||_numIXC(r.valor); recQ++; }
+    if(st.k==='recebida'){ recV+=_pagoIXC(r); recQ++; }
     else if(st.k==='vencida'){ vencV+=_numIXC(r.valor); vencQ++; abertoV+=_numIXC(r.valor); abertoQ++; }
     else if(st.k==='aberta'||st.k==='parcial'){ abertoV+=_numIXC(r.valor); abertoQ++; }
   });
@@ -14378,7 +14401,7 @@ function _renderFaturasIXC(regsAll){
           <td><span class="cli-status-pill" style="background:${st.bg};color:${st.cor}">${st.txt}</span></td>
           <td class="td-mono">${_fmtDataIXC(r.pagamento_data)}</td>
           <td class="td-mono">${_fmtDataIXC(r.credito_data)}</td>
-          <td class="td-mono ${_numIXC(r.valor_recebido)?'td-green':''}">${_numIXC(r.valor_recebido)?brl(_numIXC(r.valor_recebido),true):'—'}</td>
+          <td class="td-mono ${_pagoIXC(r)&&_statusFaturaIXC(r).k==='recebida'?'td-green':''}">${_statusFaturaIXC(r).k==='recebida'?brl(_pagoIXC(r),true):'—'}</td>
           <td style="text-align:center;white-space:nowrap">${_fatIxcAcoes(r,st)}</td>
         </tr>`;}).join('')}</tbody>
     </table>
@@ -14560,7 +14583,7 @@ function exportarFaturasIxcCSV(){
   if(!cache||!cache.registros.length){showToast('Sem dados para exportar.',true);return;}
   const regs=_ixcFinAnoSel==='todos'?cache.registros:cache.registros.filter(r=>String(r.data_vencimento||'').startsWith(_ixcFinAnoSel));
   const h='Documento;Cliente;Emissao;Vencimento;Valor;Status;Data Pagamento;Data Credito;Valor Recebido';
-  const linhas=regs.map(r=>[r.id||'',(cli.nome||'').replace(/;/g,' '),String(r.data_emissao||'').slice(0,10),String(r.data_vencimento||'').slice(0,10),_numIXC(r.valor).toFixed(2).replace('.',','),_statusFaturaIXC(r).txt,String(r.pagamento_data||'').slice(0,10),String(r.credito_data||'').slice(0,10),_numIXC(r.valor_recebido).toFixed(2).replace('.',',')].join(';'));
+  const linhas=regs.map(r=>[r.id||'',(cli.nome||'').replace(/;/g,' '),String(r.data_emissao||'').slice(0,10),String(r.data_vencimento||'').slice(0,10),_numIXC(r.valor).toFixed(2).replace('.',','),_statusFaturaIXC(r).txt,String(r.pagamento_data||'').slice(0,10),String(r.credito_data||'').slice(0,10),_pagoIXC(r).toFixed(2).replace('.',',')].join(';'));
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...linhas].join('\n')],{type:'text/csv'}));
   a.download='faturas_ixc_'+(cli.ixcId||'cliente')+'.csv';a.click();
@@ -19888,7 +19911,7 @@ function ifNormFatura(r){
   const pgto=String(r.pagamento_data||'').slice(0,10);
   const pgtoOk = pgto && pgto!=='0000-00-00';
   const st=String(r.status||'').toUpperCase();
-  const valor=_numIXC(r.valor), recebido=_numIXC(r.valor_recebido);
+  const valor=_numIXC(r.valor), recebido=_pagoIXC(r);
   const f={
     id:String(r.id||''), idCliente:String(r.id_cliente||''),
     venc, emissao:String(r.data_emissao||'').slice(0,10),
