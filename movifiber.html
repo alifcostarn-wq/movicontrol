@@ -3305,7 +3305,8 @@ function setModo(m){
   if(['cabo','area','regua'].includes(m))mapa.doubleClickZoom.disable();else mapa.doubleClickZoom.enable();
 }
 function cliqueMapa(e){
-  if(modo==='navegar')return;
+  // clicar fora é o jeito natural de largar o que está selecionado
+  if(modo==='navegar'){if(editCabo)concluirTracado();return}
   let ll=[e.latlng.lat,e.latlng.lng];
   if(['pop','cto','ceo','reserva','poste'].includes(modo)){
     const nseq=_seqNext(modo);
@@ -8699,8 +8700,19 @@ function relinkPontas(){
   });
   if(removidas)toast('Cabo retirado da caixa · '+removidas+' fusão(ões) removidas');
 }
+/* SAIR DA SELEÇÃO DO CABO
+
+   Clicar no cabo entra na edição do traçado. O caminho de volta existia — o
+   botão "✓ Concluir" e o Esc — mas o botão é escrito na barra de dicas, e essa
+   barra fica ESCONDIDA no modo Navegar ("em Navegar não há o que instruir").
+   Resultado: o cabo ficava marcado, com as alças amarelas e laranjas, e não
+   havia nada na tela dizendo como largar aquilo.
+
+   Agora são três saídas, e todas óbvias: clicar no mesmo cabo de novo, clicar
+   em qualquer lugar do mapa, ou Esc. E a barra aparece enquanto se edita,
+   mesmo no Navegar, porque aí existe sim o que instruir. */
 function editarTracado(id,silencioso){
-  if(editCabo&&editCabo.id===id)return;
+  if(editCabo&&editCabo.id===id){concluirTracado();return}
   const alvo=projAtual.cabos.find(c=>c.id===id);
   if(alvo&&alvo.status==='certificado'){
     toast('Cabo certificado: mude o status (Implantado/Projeto) para poder editar o traçado',true);
@@ -8724,7 +8736,11 @@ function editarTracado(id,silencioso){
     });
     return mk;
   });
-  document.getElementById('hint').innerHTML='<b>Editando traçado:</b> 🟧 pontas (revinculam ao soltar) · 🟡 vértices · <button class="btn sm" style="margin-left:8px" onclick="concluirTracado()">✓ Concluir</button>';
+  const h=document.getElementById('hint');
+  h.innerHTML='<b>Editando traçado:</b> 🟧 pontas (revinculam ao soltar) · 🟡 vértices · '
+    +'<span style="color:var(--text-dim)">clique no cabo de novo, no mapa, ou <b>Esc</b> para sair</span>'
+    +'<button class="btn sm" style="margin-left:8px" onclick="concluirTracado()">✓ Concluir</button>';
+  h.style.display='';   // no Navegar a barra nasce escondida — aqui ela precisa aparecer
 }
 function concluirTracado(semRender){
   if(!editCabo)return;
