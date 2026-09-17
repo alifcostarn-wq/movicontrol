@@ -491,6 +491,8 @@ body.com-inspetor #camadas{right:366px}
 .mini-tipos .mt-b:hover{color:var(--text)}
 .mini-tipos .mt-b.ativo{background:var(--accent);border-color:var(--accent);color:#08120C;font-weight:600}
 .info-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--text-dim);margin-bottom:12px}
+.ins-disparo{background:rgba(212,160,39,.12);border:1px solid rgba(212,160,39,.35);color:#E8C88A;
+  border-radius:8px;padding:6px 9px;font-size:11.5px;margin-top:8px}
 .info-box b{color:var(--text)}
 
 /* ============ MODO CAMPO ============ */
@@ -9621,6 +9623,8 @@ function renderInstab(){
     const avisados=_insAvisos[i.id]||0;
     const acoes=ativo
       ? '<button class="btn ghost sm" onclick="editarIncidente(\''+i.id+'\')">✏️ Editar</button>'
+        +'<button class="btn ghost sm" style="border-color:var(--warn);color:var(--warn)" '
+          +'onclick="abrirAvisoRegiao(\''+i.id+'\')" title="Mandar o aviso para todos os clientes da região agora">📣 Avisar a região</button>'
         +'<button class="btn sm" onclick="resolverIncidente(\''+i.id+'\')">✅ Normalizado</button>'
       : '<button class="btn ghost sm" onclick="reabrirIncidente(\''+i.id+'\')">↺ Reabrir</button>'
         +'<button class="btn ghost sm" style="color:var(--danger)" onclick="excluirIncidente(\''+i.id+'\')">🗑️</button>';
@@ -9639,10 +9643,104 @@ function renderInstab(){
         +'<div class="ins-num"><span class="v">'+(i.afetados||0)+'</span><span class="l">clientes na área</span></div>'
         +'<div class="ins-num"><span class="v">'+avisados+'</span><span class="l">já avisados</span></div>'
       +'</div>'
+      +(i.aviso_em?'<div class="ins-disparo">📣 aviso disparado para <b>'+(i.aviso_total||0)
+        +'</b> cliente(s) em '+_insQuando(i.aviso_em)+'</div>':'')
       +'<div class="ins-msg-prev">'+_esc((i.mensagem||'').slice(0,220))+'</div>'
       +'<div class="ins-acoes">'+acoes+'</div>'
     +'</div>';
   }).join('')+'</div>';
+}
+
+/* ═══════════ AVISAR A REGIÃO (MoviFiber ➜ fila do MoviTalk) ═════════════════
+
+   O aviso de instabilidade nasceu como RESPOSTA: o cliente reclamava e o bot
+   devolvia protocolo e previsão. Aqui é o contrário — o operador avisa a
+   região inteira ANTES de o telefone tocar, que é o que evita a ligação.
+
+   A tela mostra a conta antes de qualquer envio: quantos recebem, quantos não
+   têm telefone, quantos já foram avisados pelo bot e quantos pediram para não
+   receber. Quem dispara precisa ver o texto exato que vai sair — é mensagem
+   em nome da empresa, para centenas de pessoas, e não tem como voltar atrás. */
+const MT_API='/api/atendimento';
+async function mtCall(acao,dados){
+  const tk=await _tokenAtual();
+  if(!tk)throw new Error('sessão expirada — entre novamente');
+  const r=await fetch(MT_API,{method:'POST',
+    headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk},
+    body:JSON.stringify(Object.assign({acao},dados||{}))});
+  const d=await r.json().catch(()=>({ok:false,error:'resposta inválida do MoviTalk'}));
+  if(!d.ok)throw Object.assign(new Error(d.error||('HTTP '+r.status)),{dados:d});
+  return d;
+}
+let _avRegiao=null;
+async function abrirAvisoRegiao(id){
+  _avRegiao={id,prazo:60,previa:null};
+  abrirModalGenerico('📣 Avisar a região','<div class="vazio">Conferindo quem vai receber…</div>');
+  try{
+    _avRegiao.previa=await mtCall('instabilidade.avisar_previa',{incidente_id:id,prazo_min:60});
+    renderAvisoRegiao();
+  }catch(e){
+    document.getElementById('mdg-body').innerHTML=
+      '<div class="info-box" style="border-color:var(--danger);color:var(--danger)">'+_esc(e.message)+'</div>';
+  }
+}
+function avRegiaoPrazo(min){
+  if(!_avRegiao)return;
+  _avRegiao.prazo=min;
+  const alvo=document.getElementById('mdg-body');
+  if(alvo)alvo.innerHTML='<div class="vazio">Recalculando o ritmo…</div>';
+  mtCall('instabilidade.avisar_previa',{incidente_id:_avRegiao.id,prazo_min:min})
+    .then(d=>{_avRegiao.previa=d;renderAvisoRegiao()})
+    .catch(e=>toast(e.message,true));
+}
+function renderAvisoRegiao(){
+  const p=_avRegiao&&_avRegiao.previa; if(!p)return;
+  const risco={baixo:['#3CB371','ritmo tranquilo'],medio:['#E0913C','ritmo apertado'],alto:['#E05445','ritmo arriscado para o número']}[p.risco]||['#3CB371',''];
+  const btn=(m,t)=>'<button class="btn sm '+(_avRegiao.prazo===m?'':'ghost')+'" onclick="avRegiaoPrazo('+m+')">'+t+'</button>';
+  document.getElementById('mdg-titulo').textContent='📣 Avisar a região · '+(p.incidente.protocolo||'');
+  document.getElementById('mdg-body').innerHTML=
+    (p.incidente.aviso_em
+      ? '<div class="info-box" style="border-color:var(--warn);color:var(--warn)">⚠️ Esta região já foi avisada em '
+        +_insQuando(p.incidente.aviso_em)+' ('+(p.incidente.aviso_total||0)+' clientes). Disparar de novo manda a mesma mensagem outra vez.</div>'
+      : '')
+    +'<div class="ins-nums" style="margin-bottom:10px">'
+      +'<div class="ins-num"><span class="v">'+p.vao_receber+'</span><span class="l">vão receber</span></div>'
+      +'<div class="ins-num"><span class="v">'+p.na_area+'</span><span class="l">na área</span></div>'
+      +'<div class="ins-num"><span class="v">'+p.sem_telefone+'</span><span class="l">sem telefone</span></div>'
+      +'<div class="ins-num"><span class="v">'+p.ja_avisados+'</span><span class="l">já avisados</span></div>'
+      +'<div class="ins-num"><span class="v">'+p.nao_perturbe+'</span><span class="l">não perturbe</span></div>'
+    +'</div>'
+    +'<div class="dr-sec">Em quanto tempo todos devem receber</div>'
+    +'<div style="display:flex;gap:6px;margin:6px 0 10px">'+btn(30,'30 min')+btn(60,'1 hora')+btn(120,'2 horas')+'</div>'
+    +'<div class="info-box" style="font-size:12px">⏱️ Uma mensagem a cada <b>'+p.intervalo+'s</b> · termina em ~<b>'
+      +p.minutos+' min</b> · <span style="color:'+risco[0]+'">'+risco[1]+'</span>'
+      +(p.cabe?'':'<br><b style="color:var(--danger)">Não cabe no prazo escolhido</b> — no ritmo mínimo seguro, os últimos ficam de fora. Escolha um prazo maior.')
+    +'</div>'
+    +'<div class="dr-sec">O que cada cliente vai receber</div>'
+    +'<div class="ins-msg-prev" style="white-space:pre-wrap;max-height:180px;overflow:auto">'+_esc(p.texto)+'</div>'
+    +'<div class="info-box" style="font-size:11.5px;margin-top:10px">O nome de cada um entra no lugar de <b>{primeiro_nome}</b>. '
+      +'O envio anda pela fila do MoviTalk, com pausa entre as mensagens — mandar tudo de uma vez derruba o número do atendimento. '
+      +'Cada mensagem entra na conversa do cliente, então a resposta dele chega com contexto.</div>';
+  const foot=document.querySelector('#md-generico .md-foot');
+  foot.innerHTML='<button class="btn ghost" onclick="fecharModal(\'md-generico\')">Cancelar</button>'
+    +'<button class="btn" id="av-disparar" style="background:var(--warn);color:#0B0D11"'
+      +(p.vao_receber?'':' disabled')+' onclick="dispararAvisoRegiao(false)">📣 Disparar para '+p.vao_receber+' cliente(s)</button>';
+}
+async function dispararAvisoRegiao(forcar){
+  if(!_avRegiao)return;
+  const b=document.getElementById('av-disparar');
+  if(b){b.disabled=true;b.textContent='⏳ Enfileirando…'}
+  try{
+    const d=await mtCall('instabilidade.avisar',{incidente_id:_avRegiao.id,prazo_min:_avRegiao.prazo,forcar:!!forcar});
+    fecharModal('md-generico');
+    toast('📣 Aviso enfileirado para '+d.total+' cliente(s) · ~'+d.minutos+' min');
+    recarregarInstab();
+  }catch(e){
+    if(e.dados&&e.dados.ja_avisado){
+      if(confirm(e.message+'\n\nDisparar mesmo assim?'))return dispararAvisoRegiao(true);
+    }else toast(e.message,true);
+    if(b){b.disabled=false;b.textContent='📣 Disparar'}
+  }
 }
 
 /* ---- formulário ---- */

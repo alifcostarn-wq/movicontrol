@@ -1788,6 +1788,76 @@ async function jaAvisou(e, incidenteId, fone) {
   } catch { return false; }
 }
 
+/* ═══════════ AVISO EM MASSA DE UMA INSTABILIDADE ═══════════════════════════
+
+   Até aqui o aviso de queda era só RESPOSTA: o cliente reclamava e o bot
+   devolvia o protocolo e a previsão. Era de propósito — uma marcação errada
+   não vira centenas de mensagens indevidas.
+
+   Mas quem opera rede sabe que a ligação evitada vale mais: avisar a região
+   ANTES de o telefone tocar é metade do suporte de uma queda. Então o disparo
+   existe, MANUAL e com freios:
+
+   • só administrador dispara;
+   • só instabilidade ATIVA, e uma vez por instabilidade (repetir exige forçar);
+   • o operador vê antes quantos vão receber, quantos têm telefone e quantos
+     já foram avisados pelo bot;
+   • quem já recebeu pelo bot não recebe de novo, e quem pediu para não receber
+     campanha continua de fora;
+   • o envio anda pela fila de campanhas — ritmo, prazo, freio automático se a
+     falha passar de 15% — porque mandar 300 mensagens de uma vez derruba o
+     número do atendimento, e aí ninguém mais é avisado de nada.
+
+   Cada mensagem entra na conversa do cliente e no livro de avisos: quando ele
+   responder "continua fora", o atendente vê o que foi dito, e o bot não repete
+   o mesmo aviso. */
+async function alvosDoIncidente(e, inc) {
+  const ids = (Array.isArray(inc.clientes_ids) ? inc.clientes_ids : [])
+    .map(x => String(x ?? '').trim()).filter(x => /^\d+$/.test(x));
+  const fora = { semFone: 0, jaAvisados: 0, optout: 0 };
+  if (!ids.length) return { alvos: [], ...fora, naArea: 0 };
+
+  // em lotes: um IN com mil ids estoura o tamanho da URL
+  const linhas = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200).join(',');
+    const r = await sb(e, `clientes?id=in.(${lote})&select=id,nome,razao,tel1,tel2,ixc_id,bairro`).catch(() => []);
+    linhas.push(...(r || []));
+  }
+
+  const naoPerturbe = new Set(((await sb(e, 'atend_campanha_optout?select=fone&limit=5000').catch(() => [])) || [])
+    .map(x => normalizarFone(x.fone)).filter(Boolean));
+  const jaAvisado = new Set(((await sb(e,
+    `movifiber_incidente_avisos?incidente_id=eq.${encodeURIComponent(inc.id)}&select=contato_fone&limit=5000`)
+    .catch(() => [])) || []).map(x => normalizarFone(x.contato_fone)).filter(Boolean));
+
+  const porFone = new Map();
+  for (const c of linhas) {
+    const fone = normalizarFone(pick(c, 'tel1', 'tel2') || '');
+    if (!fone || fone.length < 12) { fora.semFone++; continue; }
+    if (jaAvisado.has(fone)) { fora.jaAvisados++; continue; }
+    if (naoPerturbe.has(fone)) { fora.optout++; continue; }
+    if (porFone.has(fone)) continue;      // dois cadastros, um telefone
+    porFone.set(fone, {
+      cliente_ixc_id: c.ixc_id ? String(c.ixc_id) : null,
+      nome: nomeCliente(c) || '', fone, bairro: c.bairro || null,
+    });
+  }
+  return { alvos: [...porFone.values()], ...fora, naArea: linhas.length };
+}
+
+/* O texto que vai para todo mundo. O nome de cada um entra na hora do envio,
+   pelo campVariar da campanha — por isso o {primeiro_nome} entra aqui no lugar
+   do nome, em vez de montar 300 textos diferentes. */
+function textoDoDisparo(inc) {
+  return textoDoIncidente(inc, { nome: '{primeiro_nome}' });
+}
+
+async function incidentePorId(e, id) {
+  if (!id) return null;
+  return await sbUm(e, `movifiber_incidentes?id=eq.${encodeURIComponent(String(id))}&select=*`).catch(() => null);
+}
+
 /* Responde o aviso de instabilidade, se for o caso.
    Devolve null quando nao ha nada a fazer (o fluxo normal segue). */
 async function avisarInstabilidade(e, { conversa, fone, texto }) {
@@ -5511,9 +5581,47 @@ async function processarCampanhas(e) {
         } else {
           env = await waEnviar(e, a.fone, texto);
         }
+        /* Campanha de instabilidade deixa rastro: a mensagem entra na conversa
+           do cliente — ele vai responder "continua fora" e o atendente precisa
+           ver o que foi dito — e o livro de avisos evita o bot repetir o mesmo
+           aviso para quem já recebeu. Campanha comum segue sem isso. */
+        let convId = null;
+        if (c.incidente_id) {
+          try {
+            let conv = await conversaPorFone(e, a.fone, 'id,contato_fone');
+            if (!conv) {
+              const nv = await sb(e, 'atend_conversas', {
+                method: 'POST', headers: { Prefer: 'return=representation' },
+                body: {
+                  contato_fone: a.fone, contato_nome: a.nome || a.fone, coluna: 'resolvidos',
+                  setor: 'Suporte', bot_ativo: true, cliente_ixc_id: a.cliente_ixc_id || null,
+                },
+              });
+              conv = Array.isArray(nv) ? nv[0] : nv;
+            }
+            convId = conv ? conv.id : null;
+            if (convId) {
+              await sb(e, 'atend_mensagens', {
+                method: 'POST', prefer: 'return=minimal',
+                body: { conversa_id: convId, direcao: 'bot', conteudo: texto, wa_id: idDaEvolution(env), status: 'enviado' },
+              });
+              await sb(e, `atend_conversas?id=eq.${convId}`, {
+                method: 'PATCH', prefer: 'return=minimal',
+                body: { ultima_msg: 'Aviso de instabilidade enviado', ultima_msg_em: new Date().toISOString() },
+              });
+            }
+            await sb(e, 'movifiber_incidente_avisos', {
+              method: 'POST', prefer: 'return=minimal',
+              body: {
+                incidente_id: c.incidente_id, conversa_id: convId,
+                contato_fone: a.fone, cliente_ixc_id: a.cliente_ixc_id || null,
+              },
+            });
+          } catch (err) { console.error('[campanha/instabilidade]', err.message); }
+        }
         await sb(e, `atend_campanha_alvos?id=eq.${a.id}`, {
           method: 'PATCH', prefer: 'return=minimal',
-          body: { status: 'enviado', wa_id: idDaEvolution(env), enviado_em: new Date().toISOString() },
+          body: { status: 'enviado', wa_id: idDaEvolution(env), conversa_id: convId, enviado_em: new Date().toISOString() },
         });
         ok++;
       } catch (err) {
@@ -6411,6 +6519,93 @@ export default async function handler(req, res) {
             regiao: i.area_nome || i.projeto_nome || null, previsao: i.previsao || null,
             desde: i.criado_em || null, afetados: i.afetados || 0,
           })),
+        });
+      }
+
+      /* Quem vai receber o aviso da região, ANTES de disparar. */
+      case 'instabilidade.avisar_previa': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const inc = await incidentePorId(e, body.incidente_id);
+        if (!inc) return res.status(404).json({ ok: false, error: 'Instabilidade não encontrada.' });
+        const r = await alvosDoIncidente(e, inc);
+        const prazoMin = Math.max(5, Number(body.prazo_min) || 60);
+        const total = r.alvos.length;
+        // mesma conta da prévia de campanha: o operador escolhe o PRAZO e o
+        // sistema diz se o ritmo necessário é seguro para o número
+        const ivNecessario = total ? Math.floor((prazoMin * 60) / total) : 0;
+        const iv = Math.max(6, ivNecessario);
+        return res.status(200).json({
+          ok: true,
+          incidente: {
+            id: inc.id, protocolo: inc.protocolo, titulo: inc.titulo, status: inc.status,
+            regiao: inc.area_nome || inc.projeto_nome || null,
+            aviso_em: inc.aviso_em || null, aviso_total: inc.aviso_total || 0,
+          },
+          na_area: inc.afetados || r.naArea, vao_receber: total,
+          sem_telefone: r.semFone, ja_avisados: r.jaAvisados, nao_perturbe: r.optout,
+          intervalo: iv, cabe: ivNecessario >= 6,
+          minutos: Math.ceil(total * iv / 60),
+          risco: ivNecessario >= 20 ? 'baixo' : ivNecessario >= 12 ? 'medio' : 'alto',
+          texto: textoDoDisparo(inc),
+          amostra: r.alvos.slice(0, 8).map(a => ({ nome: a.nome, bairro: a.bairro })),
+        });
+      }
+
+      /* Dispara. Não envia nada aqui: enfileira na campanha e volta. */
+      case 'instabilidade.avisar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const inc = await incidentePorId(e, body.incidente_id);
+        if (!inc) return res.status(404).json({ ok: false, error: 'Instabilidade não encontrada.' });
+        if (inc.status !== 'ativo') {
+          return res.status(400).json({ ok: false, error: 'Esta instabilidade já foi normalizada — não faz sentido avisar agora.' });
+        }
+        if (inc.aviso_campanha_id && body.forcar !== true) {
+          return res.status(409).json({
+            ok: false, ja_avisado: true,
+            error: `Esta região já foi avisada em ${fmtDataHoraLocal(inc.aviso_em)} (${inc.aviso_total || 0} clientes). Confirme de novo para avisar mesmo assim.`,
+          });
+        }
+        const r = await alvosDoIncidente(e, inc);
+        if (!r.alvos.length) {
+          return res.status(400).json({ ok: false, error:
+            `Ninguém para avisar: ${r.naArea} cliente(s) na área, ${r.semFone} sem telefone, ${r.jaAvisados} já avisados, ${r.optout} em não perturbe.` });
+        }
+
+        const prazoMin = Math.max(5, Number(body.prazo_min) || 60);
+        const intervalo = Math.max(6, Math.floor((prazoMin * 60) / r.alvos.length));
+        const nova = await sb(e, 'atend_campanhas', {
+          method: 'POST', headers: { Prefer: 'return=representation' },
+          body: {
+            nome: `🔴 ${inc.titulo || 'Instabilidade'}${inc.protocolo ? ' · ' + inc.protocolo : ''}`,
+            texto: textoDoDisparo(inc),
+            incidente_id: inc.id,
+            filtros: { instabilidade: inc.protocolo || inc.id, regiao: inc.area_nome || inc.projeto_nome || null },
+            total: r.alvos.length, intervalo_seg: intervalo,
+            expira_em: new Date(Date.now() + prazoMin * 60000).toISOString(),
+            limite_dia: 5000,
+            // queda não espera horário comercial: quem está sem internet às 6h
+            // da manhã precisa saber às 6h da manhã
+            janela_ini: '00:00', janela_fim: '23:59', dias_semana: [0, 1, 2, 3, 4, 5, 6],
+            status: 'enfileirada', criado_por: user.id,
+          },
+        });
+        const camp = Array.isArray(nova) ? nova[0] : nova;
+
+        for (let i = 0; i < r.alvos.length; i += 400) {
+          await sb(e, 'atend_campanha_alvos', {
+            method: 'POST', prefer: 'return=minimal',
+            body: r.alvos.slice(i, i + 400).map(a => ({ campanha_id: camp.id, ...a })),
+          });
+        }
+        await sb(e, `movifiber_incidentes?id=eq.${encodeURIComponent(inc.id)}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { aviso_em: new Date().toISOString(), aviso_campanha_id: camp.id, aviso_total: r.alvos.length },
+        }).catch(err => console.error('[instabilidade] marcar aviso:', err.message));
+
+        return res.status(200).json({
+          ok: true, campanha_id: camp.id, total: r.alvos.length,
+          sem_telefone: r.semFone, ja_avisados: r.jaAvisados, nao_perturbe: r.optout,
+          minutos: Math.ceil(r.alvos.length * intervalo / 60),
         });
       }
 
