@@ -3274,7 +3274,7 @@ async function garantirMapa(centro,zoom){
   if(!mapa){
     mapa=L.map('mapa',{zoomControl:false}).setView(centro,zoom);
     L.control.zoom({position:'bottomright'}).addTo(mapa);
-    mapa._ruas=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'OSM'});
+    mapa._ruas=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22,maxNativeZoom:19,attribution:'OSM'});
     aplicarTiles();
     mapa.on('click',cliqueMapa);
     mapa.on('dblclick',finalizarDesenho);
@@ -7541,20 +7541,79 @@ function abrirOrcamento(){
 
 
 
-/* ================= TILES / MAPA BASE ================= */
+/* ================= TILES / MAPA BASE =================
+
+   Duas coisas que o Google serve e o MoviFiber não estava pedindo. Medi as
+   duas em cima da FTTH-MAISA, em Apodi, comparando a energia de detalhe fino
+   de cada tile (o que sobra depois de tirar as manchas grandes: telhado,
+   meio-fio, poste — o que interessa para marcar caixa):
+
+   • &scale=2 — o MESMO pedaço de chão com o dobro de pixels, e são pixels de
+     verdade, não ampliação: no zoom 20 o tile de 512 tem 16x mais detalhe
+     fino que o tile de 256 esticado para o mesmo tamanho. Sem pedir isso, um
+     celular 3x — o celular de todo técnico em campo — desenha uma imagem de
+     256 px num espaço de 768: borrão onde o Google tem telhado.
+
+   • zoom 22 alimentado pelo nível 21. O Google devolve tile no 22, mas é
+     ampliação dele mesmo: 32 de detalhe contra 93 do tile 21 em scale=2.
+     Então o mapa vai até 22 e quem amplia é o Leaflet, a partir do 21 —
+     quase 3x mais nítido e um pedido de rede a menos.
+
+   O scale=4 existe e funciona até o zoom 20, mas devolve 404 do 21 para
+   cima — justamente onde se marca CTO. Fica de fora: tile que não vem é
+   pior que tile menor.
+
+   O endpoint kh/khms (a base do Google Earth) devolve EXATAMENTE os mesmos
+   bytes que o /vt para esta região — conferido tile a tile, mesmo MD5. Não
+   há imagem mais nova escondida ali, então não vale a versão fixa no código
+   (v=1014 hoje, 404 daqui a alguns meses).
+
+   Esri fica como segunda opinião: quando a foto do Google de uma rua está
+   velha, a do Esri costuma ser de outra data. Nativa até o 19, ampliada daí
+   para cima — antes ela travava o mapa inteiro no zoom 19. */
+const TILE_ESCALA={ v:2 };     // cai para 1 sozinho se o servidor recusar
+function urlGoogle(lyrs,escala){
+  return 'https://{s}.google.com/vt/lyrs='+lyrs+'&hl=pt-BR&x={x}&y={y}&z={z}'
+       + (escala>1 ? '&scale='+escala : '');
+}
+const opGoogle=()=>({maxZoom:22,maxNativeZoom:21,subdomains:['mt0','mt1','mt2','mt3'],attribution:'Google'});
 const TILES={
-  'google-h':{url:'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',op:{maxZoom:21,subdomains:['mt0','mt1','mt2','mt3'],attribution:'Google'}},
-  'google-s':{url:'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',op:{maxZoom:21,subdomains:['mt0','mt1','mt2','mt3'],attribution:'Google'}},
-  'esri':{url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',op:{maxZoom:19,attribution:'Esri World Imagery'}}
+  'google-h':{lyrs:'y',url:urlGoogle('y',TILE_ESCALA.v),op:opGoogle()},
+  'google-s':{lyrs:'s',url:urlGoogle('s',TILE_ESCALA.v),op:opGoogle()},
+  'esri':{url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          op:{maxZoom:22,maxNativeZoom:19,attribution:'Esri World Imagery'}}
 };
 function aplicarTiles(){
   const t=TILES[cfg().tiles]||TILES['google-h'];
   if(mapa._sat)mapa.removeLayer(mapa._sat);
   mapa._sat=L.tileLayer(t.url,t.op);
+  if(t.lyrs)mapa._sat.on('tileerror',conferirEscala);
   if(camadasVisiveis.satelite){
     if(mapa.hasLayer(mapa._ruas))mapa.removeLayer(mapa._ruas);
     mapa._sat.addTo(mapa);
   }
+}
+
+/* Tile que não veio pode ser o 4G do técnico ou o servidor recusando o scale.
+   Cair para a imagem simples no primeiro erro puniria quem está numa sombra
+   de sinal, então a diferença é medida: pede o MESMO tile sem o scale. Se o
+   simples vier e o com scale não, é o servidor — aí sim desce a qualidade. */
+let _conferindoEscala=false;
+function conferirEscala(e){
+  if(_conferindoEscala||TILE_ESCALA.v===1)return;
+  const src=(e&&e.tile&&e.tile.src)||'';
+  if(!/[?&]scale=/.test(src))return;
+  _conferindoEscala=true;
+  const img=new Image();
+  img.onload=()=>{
+    TILE_ESCALA.v=1;
+    // MINI_TILES.satelite aponta para o MESMO objeto: muda junto, sem cópia
+    ['google-h','google-s'].forEach(k=>{TILES[k].url=urlGoogle(TILES[k].lyrs,1)});
+    aplicarTiles();
+    toast('Satélite em alta definição indisponível — usando a imagem padrão');
+  };
+  img.onerror=()=>{_conferindoEscala=false};   // era a rede: tenta de novo depois
+  img.src=src.replace(/&scale=\d+/,'');
 }
 
 /* ================= SNAP EM CAIXAS (por pixels de tela) ================= */
