@@ -482,6 +482,14 @@ body.com-inspetor #camadas{right:366px}
 .campo label{display:block;font-size:11px;letter-spacing:1px;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase}
 .linha2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 #mini-mapa{height:190px;border-radius:12px;border:1px solid var(--border);margin-top:6px}
+/* Escolher entre rua e satélite na hora de marcar o centro do projeto. Quem
+   conhece a área reconhece o bairro pelo telhado, não pelo nome da rua. */
+#mini-wrap{position:relative}
+.mini-tipos{position:absolute;top:14px;right:8px;z-index:700;display:flex;gap:4px}
+.mini-tipos .mt-b{background:rgba(13,15,20,.82);border:1px solid var(--border);color:var(--text-dim);
+  border-radius:8px;padding:5px 9px;font-size:11px;line-height:1;backdrop-filter:blur(3px)}
+.mini-tipos .mt-b:hover{color:var(--text)}
+.mini-tipos .mt-b.ativo{background:var(--accent);border-color:var(--accent);color:#08120C;font-weight:600}
 .info-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--text-dim);margin-bottom:12px}
 .info-box b{color:var(--text)}
 
@@ -1190,7 +1198,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
       <div class="campo">
         <label>Localização inicial</label>
         <input id="np-local" placeholder="Pesquise cidade ou endereço..." onkeydown="if(event.key==='Enter')geocodificar()">
-        <div id="mini-mapa"></div>
+        <div id="mini-wrap">
+          <div id="mini-mapa"></div>
+          <div class="mini-tipos">
+            <button type="button" class="mt-b ativo" data-t="ruas" onclick="miniTipo('ruas')">🗺️ Mapa</button>
+            <button type="button" class="mt-b" data-t="satelite" onclick="miniTipo('satelite')">🛰️ Satélite</button>
+          </div>
+        </div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:6px">Arraste o mapa ou clique para definir o centro do projeto. <span class="mono" id="np-coords"></span></div>
       </div>
     </div>
@@ -3158,13 +3172,40 @@ function abrirModalNovoProjeto(){
   setTimeout(()=>{
     if(!miniMapa){
       miniMapa=L.map('mini-mapa',{zoomControl:true}).setView([-5.19,-37.34],12);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(miniMapa);
       miniMapa._pin=L.marker([-5.19,-37.34],{draggable:true}).addTo(miniMapa);
       miniMapa.on('click',e=>{miniMapa._pin.setLatLng(e.latlng);attCoords()});
       miniMapa._pin.on('dragend',attCoords);
     }
+    miniTipo(_miniTipoGuardado());
     miniMapa.invalidateSize();attCoords();
   },150);
+}
+/* MAPA OU SATÉLITE NA HORA DE MARCAR O CENTRO
+
+   O mapa de ruas serve para achar a cidade; o satélite serve para reconhecer o
+   lugar. Quem vai projetar um FTTH sabe onde é o bairro pelo telhado e pela
+   quadra, não pelo nome da rua — e o mapa do projeto já abre em satélite
+   (google-h, com os nomes por cima). A escolha aqui usa as MESMAS fontes de
+   telha do mapa grande, para o que se vê ao marcar ser o que se vê depois.
+
+   Fica guardada: quem escolheu satélite uma vez não quer voltar para as ruas a
+   cada projeto novo. */
+const MINI_TILES={
+  ruas:{url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',op:{maxZoom:19,attribution:'OpenStreetMap'}},
+  satelite:null,   // preenchido na 1ª chamada: TILES é declarado mais abaixo no arquivo
+};
+function _miniTipoGuardado(){
+  try{return store.get('movifiber_mini_tipo')==='satelite'?'satelite':'ruas'}catch(e){return 'ruas'}
+}
+function miniTipo(t){
+  if(!MINI_TILES.satelite)MINI_TILES.satelite=TILES['google-h'];
+  const tipo=MINI_TILES[t]?t:'ruas';
+  try{store.set('movifiber_mini_tipo',tipo)}catch(e){}
+  document.querySelectorAll('.mini-tipos .mt-b').forEach(b=>b.classList.toggle('ativo',b.dataset.t===tipo));
+  if(!miniMapa)return;
+  if(miniMapa._camada)miniMapa.removeLayer(miniMapa._camada);
+  const c=MINI_TILES[tipo];
+  miniMapa._camada=L.tileLayer(c.url,c.op).addTo(miniMapa);
 }
 function attCoords(){const c=miniMapa._pin.getLatLng();document.getElementById('np-coords').textContent=c.lat.toFixed(5)+', '+c.lng.toFixed(5)}
 async function geocodificar(){
