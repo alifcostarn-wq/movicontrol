@@ -1814,16 +1814,49 @@ async function jaAvisou(e, incidenteId, fone) {
 async function alvosDoIncidente(e, inc) {
   const ids = (Array.isArray(inc.clientes_ids) ? inc.clientes_ids : [])
     .map(x => String(x ?? '').trim()).filter(x => /^\d+$/.test(x));
-  const fora = { semFone: 0, jaAvisados: 0, optout: 0 };
+  const fora = { semFone: 0, jaAvisados: 0, optout: 0, semContrato: 0 };
   if (!ids.length) return { alvos: [], ...fora, naArea: 0 };
 
   // em lotes: um IN com mil ids estoura o tamanho da URL
   const linhas = [];
   for (let i = 0; i < ids.length; i += 200) {
     const lote = ids.slice(i, i + 200).join(',');
-    const r = await sb(e, `clientes?id=in.(${lote})&select=id,nome,razao,tel1,tel2,ixc_id,bairro`).catch(() => []);
+    const r = await sb(e, `clientes?id=in.(${lote})&select=id,nome,razao,tel1,tel2,ixc_id,bairro,ativo`).catch(() => []);
     linhas.push(...(r || []));
   }
+
+  /* SÓ QUEM TEM CONTRATO ATIVO
+
+     A área do incidente é geográfica: o polígono e o vínculo com a caixa
+     continuam valendo para quem cancelou e nunca foi retirado do mapa. No
+     primeiro disparo real, 13 dos 22 clientes da área estavam cancelados — e
+     o primeiro a receber "sua região está fora do ar" tinha cancelado o
+     contrato. Mensagem em nome da empresa para ex-cliente é constrangedor e
+     não tem como voltar atrás.
+
+     Duas provas, medidas na base: `clientes.ativo` (a mesma regra que as
+     campanhas comuns já usam) e, quando existem linhas de contrato, pelo
+     menos uma com status 'A'. Nenhuma das duas sozinha resolve — 11 clientes
+     ativos não têm linha de contrato nenhuma (falha de sincronismo) e 5
+     marcados como ativos não têm contrato ativo. Juntas, as duas cobrem os
+     dois buracos. */
+  const ixcIds = linhas.map(c => String(c.ixc_id || '').trim()).filter(Boolean);
+  const contratos = new Map();
+  for (let i = 0; i < ixcIds.length; i += 200) {
+    const lote = ixcIds.slice(i, i + 200).map(x => `"${x}"`).join(',');
+    const r = await sb(e,
+      `clientes_contratos?ixc_cliente_id=in.(${lote})&select=ixc_cliente_id,status_contrato`).catch(() => []);
+    for (const k of (r || [])) {
+      const cli = String(k.ixc_cliente_id);
+      contratos.set(cli, (contratos.get(cli) || false) || String(k.status_contrato || '').toUpperCase() === 'A');
+    }
+  }
+  const temContratoAtivo = c => {
+    if (c.ativo !== true) return false;
+    const cli = String(c.ixc_id || '').trim();
+    if (!cli || !contratos.has(cli)) return true;   // sem linha de contrato: manda o cadastro
+    return contratos.get(cli) === true;
+  };
 
   const naoPerturbe = new Set(((await sb(e, 'atend_campanha_optout?select=fone&limit=5000').catch(() => [])) || [])
     .map(x => normalizarFone(x.fone)).filter(Boolean));
@@ -1833,6 +1866,7 @@ async function alvosDoIncidente(e, inc) {
 
   const porFone = new Map();
   for (const c of linhas) {
+    if (!temContratoAtivo(c)) { fora.semContrato++; continue; }
     const fone = normalizarFone(pick(c, 'tel1', 'tel2') || '');
     if (!fone || fone.length < 12) { fora.semFone++; continue; }
     if (jaAvisado.has(fone)) { fora.jaAvisados++; continue; }
@@ -6542,6 +6576,7 @@ export default async function handler(req, res) {
             aviso_em: inc.aviso_em || null, aviso_total: inc.aviso_total || 0,
           },
           na_area: inc.afetados || r.naArea, vao_receber: total,
+          sem_contrato: r.semContrato,
           sem_telefone: r.semFone, ja_avisados: r.jaAvisados, nao_perturbe: r.optout,
           intervalo: iv, cabe: ivNecessario >= 6,
           minutos: Math.ceil(total * iv / 60),
@@ -6568,7 +6603,8 @@ export default async function handler(req, res) {
         const r = await alvosDoIncidente(e, inc);
         if (!r.alvos.length) {
           return res.status(400).json({ ok: false, error:
-            `Ninguém para avisar: ${r.naArea} cliente(s) na área, ${r.semFone} sem telefone, ${r.jaAvisados} já avisados, ${r.optout} em não perturbe.` });
+            `Ninguém para avisar: ${r.naArea} cliente(s) na área, ${r.semContrato} sem contrato ativo, `
+            + `${r.semFone} sem telefone, ${r.jaAvisados} já avisados, ${r.optout} em não perturbe.` });
         }
 
         const prazoMin = Math.max(5, Number(body.prazo_min) || 60);
@@ -6604,8 +6640,56 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
           ok: true, campanha_id: camp.id, total: r.alvos.length,
+          sem_contrato: r.semContrato,
           sem_telefone: r.semFone, ja_avisados: r.jaAvisados, nao_perturbe: r.optout,
           minutos: Math.ceil(r.alvos.length * intervalo / 60),
+        });
+      }
+
+      /* Situação do disparo e o botão de parar.
+
+         Um aviso em massa é a única coisa no sistema que continua acontecendo
+         depois que a pessoa fecha a tela. Quem disparou precisa conseguir
+         parar — e ver quanto já saiu — do mesmo lugar onde disparou. */
+      case 'instabilidade.aviso': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const inc = await incidentePorId(e, body.incidente_id);
+        if (!inc) return res.status(404).json({ ok: false, error: 'Instabilidade não encontrada.' });
+        if (!inc.aviso_campanha_id) return res.status(200).json({ ok: true, disparo: null });
+
+        const mudanca = { pausar: 'pausada', retomar: 'enfileirada', cancelar: 'cancelada' }[String(body.acao || '')];
+        if (mudanca) {
+          const patch = { status: mudanca, erro: null };
+          if (mudanca === 'cancelada') patch.concluido_em = new Date().toISOString();
+          await sb(e, `atend_campanhas?id=eq.${inc.aviso_campanha_id}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: patch,
+          });
+          // cancelar não deixa ninguém pendurado na fila esperando a vez
+          if (mudanca === 'cancelada') {
+            // 'pulado' é o que a tabela aceita para "não vai receber"
+            await sb(e, `atend_campanha_alvos?campanha_id=eq.${inc.aviso_campanha_id}&status=eq.pendente`, {
+              method: 'PATCH', prefer: 'return=minimal',
+              body: { status: 'pulado', motivo: 'disparo cancelado pelo operador' },
+            }).catch(() => {});
+          }
+        }
+
+        const camp = await sbUm(e, `atend_campanhas?id=eq.${inc.aviso_campanha_id}&select=*`).catch(() => null);
+        if (!camp) return res.status(200).json({ ok: true, disparo: null });
+        const alvos = await sb(e,
+          `atend_campanha_alvos?campanha_id=eq.${inc.aviso_campanha_id}&select=status&limit=5000`).catch(() => []);
+        const conta = {};
+        for (const a of (alvos || [])) conta[a.status] = (conta[a.status] || 0) + 1;
+        return res.status(200).json({
+          ok: true,
+          disparo: {
+            campanha_id: camp.id, status: camp.status, nome: camp.nome,
+            total: camp.total || (alvos || []).length,
+            enviados: conta.enviado || 0, falhas: conta.erro || 0,
+            pendentes: conta.pendente || 0, cancelados: conta.pulado || 0,
+            expirados: conta.expirado || 0,
+            criado_em: camp.criado_em, expira_em: camp.expira_em, erro: camp.erro || null,
+          },
         });
       }
 

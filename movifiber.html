@@ -9643,8 +9643,9 @@ function renderInstab(){
         +'<div class="ins-num"><span class="v">'+(i.afetados||0)+'</span><span class="l">clientes na área</span></div>'
         +'<div class="ins-num"><span class="v">'+avisados+'</span><span class="l">já avisados</span></div>'
       +'</div>'
-      +(i.aviso_em?'<div class="ins-disparo">📣 aviso disparado para <b>'+(i.aviso_total||0)
-        +'</b> cliente(s) em '+_insQuando(i.aviso_em)+'</div>':'')
+      +(i.aviso_em?'<div class="ins-disparo" id="disp-'+i.id+'">📣 aviso disparado para <b>'+(i.aviso_total||0)
+        +'</b> cliente(s) em '+_insQuando(i.aviso_em)
+        +' · <button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="verDisparo(\''+i.id+'\')">acompanhar</button></div>':'')
       +'<div class="ins-msg-prev">'+_esc((i.mensagem||'').slice(0,220))+'</div>'
       +'<div class="ins-acoes">'+acoes+'</div>'
     +'</div>';
@@ -9671,6 +9672,44 @@ async function mtCall(acao,dados){
   const d=await r.json().catch(()=>({ok:false,error:'resposta inválida do MoviTalk'}));
   if(!d.ok)throw Object.assign(new Error(d.error||('HTTP '+r.status)),{dados:d});
   return d;
+}
+/* ACOMPANHAR E PARAR O DISPARO
+
+   Um aviso em massa é a única coisa aqui que continua acontecendo depois que a
+   pessoa fecha a tela. Quem disparou tem que conseguir ver quanto já saiu e
+   parar — do mesmo lugar onde disparou. */
+async function verDisparo(id,acao){
+  const cx=document.getElementById('disp-'+id);
+  if(cx&&acao)cx.innerHTML='⏳ um instante…';
+  try{
+    const d=await mtCall('instabilidade.aviso',{incidente_id:id,acao:acao||null});
+    if(!d.disparo){if(cx)cx.textContent='Nenhum disparo para esta instabilidade.';return}
+    const s=d.disparo;
+    const rot={enfileirada:['⏳','na fila'],enviando:['📤','enviando'],pausada:['⏸️','pausado'],
+               cancelada:['✖️','cancelado'],concluida:['✅','concluído'],expirada:['⌛','prazo vencido']}[s.status]||['•',s.status];
+    const btn=[];
+    if(s.status==='enfileirada'||s.status==='enviando')
+      btn.push('<button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="verDisparo(\''+id+'\',\'pausar\')">⏸️ Pausar</button>');
+    if(s.status==='pausada')
+      btn.push('<button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="verDisparo(\''+id+'\',\'retomar\')">▶️ Retomar</button>');
+    if(['enfileirada','enviando','pausada'].includes(s.status))
+      btn.push('<button class="btn ghost sm" style="padding:2px 8px;font-size:11px;color:var(--danger)" onclick="cancelarDisparo(\''+id+'\')">✖️ Cancelar</button>');
+    btn.push('<button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="verDisparo(\''+id+'\')">↻</button>');
+    if(cx)cx.innerHTML='📣 '+rot[0]+' <b>'+rot[1]+'</b> · '+s.enviados+' de '+s.total+' enviados'
+      +(s.pendentes?' · '+s.pendentes+' na fila':'')
+      +(s.falhas?' · '+s.falhas+' falha(s)':'')
+      +(s.cancelados?' · '+s.cancelados+' fora da fila':'')
+      +'<div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">'+btn.join('')+'</div>'
+      +(s.erro?'<div style="margin-top:5px;color:var(--danger);font-size:11px">'+_esc(s.erro)+'</div>':'');
+    if(acao)toast(acao==='pausar'?'⏸️ Envio pausado':acao==='retomar'?'▶️ Envio retomado':'✖️ Envio cancelado');
+  }catch(e){
+    if(cx)cx.innerHTML='<span style="color:var(--danger)">'+_esc(e.message)+'</span>';
+    else toast(e.message,true);
+  }
+}
+function cancelarDisparo(id){
+  if(!confirm('Cancelar o disparo?\n\nQuem já recebeu continua recebido; quem está na fila não recebe mais.'))return;
+  verDisparo(id,'cancelar');
 }
 let _avRegiao=null;
 async function abrirAvisoRegiao(id){
@@ -9706,6 +9745,7 @@ function renderAvisoRegiao(){
     +'<div class="ins-nums" style="margin-bottom:10px">'
       +'<div class="ins-num"><span class="v">'+p.vao_receber+'</span><span class="l">vão receber</span></div>'
       +'<div class="ins-num"><span class="v">'+p.na_area+'</span><span class="l">na área</span></div>'
+      +'<div class="ins-num"><span class="v">'+(p.sem_contrato||0)+'</span><span class="l">sem contrato ativo</span></div>'
       +'<div class="ins-num"><span class="v">'+p.sem_telefone+'</span><span class="l">sem telefone</span></div>'
       +'<div class="ins-num"><span class="v">'+p.ja_avisados+'</span><span class="l">já avisados</span></div>'
       +'<div class="ins-num"><span class="v">'+p.nao_perturbe+'</span><span class="l">não perturbe</span></div>'
@@ -9718,7 +9758,8 @@ function renderAvisoRegiao(){
     +'</div>'
     +'<div class="dr-sec">O que cada cliente vai receber</div>'
     +'<div class="ins-msg-prev" style="white-space:pre-wrap;max-height:180px;overflow:auto">'+_esc(p.texto)+'</div>'
-    +'<div class="info-box" style="font-size:11.5px;margin-top:10px">O nome de cada um entra no lugar de <b>{primeiro_nome}</b>. '
+    +'<div class="info-box" style="font-size:11.5px;margin-top:10px">Só entra quem tem <b>contrato ativo</b> — a área do mapa inclui quem cancelou e nunca foi retirado dela. '
+      +'O nome de cada um entra no lugar de <b>{primeiro_nome}</b>. '
       +'O envio anda pela fila do MoviTalk, com pausa entre as mensagens — mandar tudo de uma vez derruba o número do atendimento. '
       +'Cada mensagem entra na conversa do cliente, então a resposta dele chega com contexto.</div>';
   const foot=document.querySelector('#md-generico .md-foot');
@@ -9734,7 +9775,9 @@ async function dispararAvisoRegiao(forcar){
     const d=await mtCall('instabilidade.avisar',{incidente_id:_avRegiao.id,prazo_min:_avRegiao.prazo,forcar:!!forcar});
     fecharModal('md-generico');
     toast('📣 Aviso enfileirado para '+d.total+' cliente(s) · ~'+d.minutos+' min');
-    recarregarInstab();
+    const id=_avRegiao.id;
+    await recarregarInstab();
+    verDisparo(id);   // já deixa o acompanhamento (e o Pausar) à vista
   }catch(e){
     if(e.dados&&e.dados.ja_avisado){
       if(confirm(e.message+'\n\nDisparar mesmo assim?'))return dispararAvisoRegiao(true);
