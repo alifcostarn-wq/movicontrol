@@ -335,6 +335,20 @@ input:focus,select:focus{border-color:var(--accent)}
 .tool:hover{background:var(--surface2);color:var(--text)}
 .tool.ativo{background:var(--accent);color:#08120C;font-weight:600}
 
+/* BARRA MINIMIZADA
+
+   Onze botões atravessando o topo cobrem justamente a parte do mapa que está
+   sendo olhada — e, depois que o projeto está desenhado, o trabalho é quase
+   todo em Navegar. Minimizada, a barra guarda só o modo em que se está (para
+   ninguém clicar no mapa achando que está navegando e sair criando poste) e o
+   botão de abrir. */
+#toolbar{transition:padding .12s}
+#toolbar.min .tool{display:none}
+#toolbar.min .tool[data-modo].ativo{display:flex}
+#toolbar.min .tool-sep{display:none}
+#tool-min{min-width:44px;color:var(--text-dim)}
+#toolbar.min #tool-min{display:flex}
+
 /* Toast */
 #toast{position:absolute;top:130px;left:50%;transform:translateX(-50%);z-index:950;background:var(--accent-dark);border:1px solid var(--accent);color:#CFF5DF;padding:9px 18px;border-radius:10px;font-size:13px;display:none;align-items:center;gap:8px}
 #toast.warn{background:#3A2E0C;border-color:var(--warn);color:#F5E6BF}
@@ -1076,9 +1090,11 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <button class="tool" data-modo="reserva" onclick="setModo('reserva')"><span class="ic">➰</span>Reserva</button>
     <button class="tool" data-modo="area" onclick="setModo('area')"><span class="ic">⬠</span>Área</button>
     <button class="tool" data-modo="regua" onclick="setModo('regua')"><span class="ic">📏</span>Régua</button>
-    <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
+    <div class="tool-sep" style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
     <button class="tool" id="tool-clientes" onclick="toggleCamadaClientes()"><span class="ic">👥</span>Clientes</button>
     <button class="tool" id="tool-camadas" onclick="togglePainelCamadas()" title="Mostrar/ocultar camadas do mapa"><span class="ic">🗺️</span>Camadas</button>
+    <div class="tool-sep" style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
+    <button class="tool" id="tool-min" onclick="toggleToolbar()" title="Minimizar a barra de ferramentas"><span class="ic">▴</span><span class="tool-lb">Ocultar</span></button>
   </div>
 
   <div id="ins-desenho">
@@ -3980,6 +3996,27 @@ function restaurarSecoes(){
     el.classList.toggle('aberta',aberto);
   });
 }
+/* Minimizar a barra de ferramentas. Fica junto do toggle das camadas porque é
+   a mesma ideia: o mapa é o trabalho, o resto é moldura. */
+function toggleToolbar(forcar){
+  const tb=document.getElementById('toolbar');if(!tb)return;
+  const min=(forcar===undefined)?!tb.classList.contains('min'):!!forcar;
+  tb.classList.toggle('min',min);
+  const bt=document.getElementById('tool-min');
+  if(bt){
+    const ic=bt.querySelector('.ic'), lb=bt.querySelector('.tool-lb');
+    if(ic)ic.textContent=min?'▾':'▴';
+    if(lb)lb.textContent=min?'Abrir':'Ocultar';
+    bt.title=min?'Mostrar a barra de ferramentas':'Minimizar a barra de ferramentas';
+  }
+  try{store.set('movifiber_toolbar_min',min?'1':'0')}catch(e){}
+}
+function restaurarToolbar(){
+  let min=false;
+  try{min=store.get('movifiber_toolbar_min')==='1'}catch(e){}
+  toggleToolbar(min);
+}
+
 function togglePainelCamadas(forcar){
   const box=document.getElementById('camadas');if(!box)return;
   const abrir=(forcar===undefined)?!box.classList.contains('aberto'):!!forcar;
@@ -9191,6 +9228,7 @@ document.querySelectorAll('#toolbar .tool').forEach(t=>{
   const k=t.dataset.modo;
   if(ICONS[k])t.querySelector('.ic').innerHTML=ICONS[k];
 });
+restaurarToolbar();   // quem deixou a barra recolhida ontem não quer ela de volta hoje
 document.querySelectorAll('[data-i]').forEach(el=>{if(ICONS[el.dataset.i])el.innerHTML=ICONS[el.dataset.i]});
 /* ================= LOGIN (usuários do MoviOne) ================= */
 const MF_SB_URL='https://mgtetsmcswdtvsgewcen.supabase.co';
