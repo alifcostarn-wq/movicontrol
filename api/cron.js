@@ -20,6 +20,11 @@
 //      este endpoint chama a si mesmo para continuar de onde parou. Uma
 //      cutucada percorre a base inteira em vez de seis clientes.
 //
+// Pelo mesmo motivo — "não depender de ninguém ter uma tela aberta" — a passada
+// também cutuca /api/ixc-sync, a cópia completa do IXC, que até então só rodava
+// dentro do navegador de quem abrisse a aba de clientes do MoviOne. Quem decide
+// se a cópia vai acontecer é a trava de lá; aqui só se toca a campainha.
+//
 // Por que não um serviço externo de ping: funciona, mas depende de uma conta
 // de terceiro que ninguém lembra de renovar, e some sem avisar. Isto mora no
 // mesmo deploy do resto.
@@ -70,6 +75,29 @@ export default async function handler(req, res) {
   const base = baseDoSite(req);
   const elo = Math.max(0, Number(req.query?.elo || 0));
 
+  // Só no primeiro elo: os seguintes são continuação da régua de cobrança e
+  // tocar a campainha de novo a cada um não adiantaria nada (a trava recusaria).
+  let sync_ixc = false;
+  if (elo === 0) {
+    try {
+      const disparo = fetch(`${base}/api/ixc-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : {}),
+          ...(segredo ? { 'x-atend-secret': segredo } : {}),
+        },
+        body: '{}',
+      }).catch(() => null);
+      // como no encadeamento abaixo: espera a requisição SAIR, não o trabalho
+      // do outro lado terminar — a cópia completa tem o orçamento dela
+      await Promise.race([disparo, new Promise(ok => setTimeout(ok, 1500))]);
+      sync_ixc = true;
+    } catch (err) {
+      console.error('[cron] cutucada ixc-sync:', err.message);
+    }
+  }
+
   let r = null, erro = null;
   try {
     const resp = await fetch(`${base}/api/atendimento`, {
@@ -110,7 +138,7 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({
-    ok: !erro, elo, proximo_elo: proximo, erro,
+    ok: !erro, elo, proximo_elo: proximo, erro, sync_ixc_cutucado: sync_ixc,
     cobranca: r && r.cobranca ? r.cobranca : null,
     resumo: r ? {
       enviados: r.enviados, encerradas_por_inatividade: r.encerradas_por_inatividade,
