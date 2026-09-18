@@ -7695,8 +7695,19 @@ export default async function handler(req, res) {
         const envios = await sb(e,
           'atend_financeiro_envios?select=dia,destino,status,erro,manual,vencidas,vencidas_valor,enviado_em,criado_em'
           + '&order=criado_em.desc&limit=20').catch(() => []);
+        // Na primeira abertura não há para quem mandar. O número existe: está
+        // no resumo mensal da Governança, ligado desde julho e que nenhuma
+        // rotina envia. Vai como SUGESTÃO — aparece no campo, mas só passa a
+        // valer quando o dono conferir e salvar.
+        let sugestao = [];
+        if (!cfg.destinatarios.length) {
+          const w = await sbUm(e, 'sf_config_whatsapp_mensal?select=destinatarios&limit=1').catch(() => null);
+          sugestao = ((w && w.destinatarios) || [])
+            .map(x => normalizarFone(typeof x === 'string' ? x : (x && x.telefone) || ''))
+            .filter(f => f && f.length >= 12);
+        }
         return res.status(200).json({
-          ok: true, config: cfg, hoje: agora.iso,
+          ok: true, config: cfg, hoje: agora.iso, sugestao,
           previa: finTexto(dados, { hojeISO: agora.iso, semana: agora.semana, dias, maxItens: cfg.max_itens }),
           resumo: {
             vencidas: dados.vencidas.length, vencidas_valor: dados.total.vencidas,

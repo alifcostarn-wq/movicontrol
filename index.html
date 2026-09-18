@@ -20777,7 +20777,11 @@ function finPreviaHTML(txt){
 function finRender(j){
   const c = _finCfg || {};
   const r = j.resumo || {};
-  const tels = (c.destinatarios||[]).map(x => typeof x === 'string' ? x : (x&&x.telefone)||'').filter(Boolean);
+  const salvos = (c.destinatarios||[]).map(x => typeof x === 'string' ? x : (x&&x.telefone)||'').filter(Boolean);
+  // nunca configurado: o servidor sugere o número do resumo mensal, que já é
+  // do dono. Fica no campo e só passa a valer quando ele salvar.
+  const sugerido = !salvos.length && (j.sugestao||[]).length;
+  const tels = salvos.length ? salvos : (j.sugestao||[]);
   const dias = [['Dom',0],['Seg',1],['Ter',2],['Qua',3],['Qui',4],['Sex',5],['Sáb',6]];
   const on = new Set(Array.isArray(c.dias_semana)?c.dias_semana:[0,1,2,3,4,5,6]);
 
@@ -20816,6 +20820,8 @@ function finRender(j){
       <input id="fin-tel" value="${ctxEsc(tels.join(', '))}" placeholder="84999999999, 84988888888"
         style="flex:1;min-width:220px">
     </div>
+    ${sugerido ? '<div class="fin-aviso">Este número veio do resumo mensal da Governança — confira e clique em '
+      + '<b>Salvar</b> para o lembrete passar a usá-lo.</div>' : ''}
 
     <div class="fin-linha">
       <div class="gov-switch ${c.avisar_sem_contas?'on':''}" id="fin-sw-vazio" onclick="this.classList.toggle('on')"></div>
