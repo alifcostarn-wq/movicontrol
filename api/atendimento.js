@@ -4339,7 +4339,7 @@ async function enviarParabens(e) {
 // no mesmo minuto não mandam o resumo duas vezes.
 // ============================================================================
 const FIN_DIAS_PADRAO  = 7;    // janela à frente
-const FIN_MAX_ITENS    = 8;    // linhas por bloco antes do "+N outras"
+const FIN_MAX_ITENS    = 3;    // quantas vencidas são nomeadas, além das faixas
 
 function finCfgPadrao() {
   return {
@@ -4382,6 +4382,7 @@ function finDescricao(l) {
   let t = String(l.historico || '').trim();
   if (!t) t = String(l.plano || '').replace(/^[\d.]+\s*/, '').trim();
   t = t.replace(/\s*\(recorr[êe]ncia\s*(\d+\/\d+)\)\s*/i, ' $1')
+       .replace(/\s*\[ESTORNADO[^\]]*\]\s*/i, ' (estornado)')
        .replace(/\s+/g, ' ').trim();
   if (l.parcial) t += ' (parcial)';
   return t || 'Sem descrição';
@@ -4425,62 +4426,117 @@ async function contasAPagar(e, { hojeISO, dias }) {
 }
 
 const FIN_DIA_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const FIN_SEMANA_CURTA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/* As mesmas faixas de atraso do "Aging — A Pagar" do MoviOne. São as mesmas
+   de propósito: quem lê a mensagem às 8 da manhã e abre a tela às 9 tem de
+   ver a mesma divisão, com os mesmos números. */
+const FIN_FAIXAS = [
+  { rotulo: '1 a 15 dias',  min: 1,  max: 15 },
+  { rotulo: '16 a 30 dias', min: 16, max: 30 },
+  { rotulo: '31 a 60 dias', min: 31, max: 60 },
+  { rotulo: 'mais de 60 dias', min: 61, max: 999999 },
+];
+
+/* Abaixo disto a lista inteira cabe e vale mais que qualquer resumo: com
+   três títulos vencidos, dividir em faixas seria três faixas de um. */
+const FIN_DETALHAR_ATE = 4;
 
 /* O texto.
 
-   A ordem dentro de cada bloco não é detalhe. Com 21 vencidas e espaço para 8
-   linhas, quem fica de fora importa: por data, as oito do topo eram R$ 4,21 de
-   ferramentas e R$ 30 de energia, enquanto o pró-labore de R$ 2.885,45 sumia
-   no "+13 outras". Vencida é lista de dívida, não agenda — ordena por valor,
-   e o "(60d)" do lado mantém a idade à vista.
+   A primeira versão listava título a título: 21 vencidas viravam 8 linhas
+   longas mais "+13 outras", e o resultado era uma parede de texto que ninguém
+   lê no celular às 8 da manhã. O problema não era o tamanho da fonte, era a
+   falta de divisão.
 
-   Hoje e os próximos dias são agenda: ali a data manda, e o valor só desempata.
+   Agora cada bloco é dividido pelo que a pergunta pede:
+
+   • VENCIDO responde "qual o tamanho do estrago e o que é mais urgente" —
+     então vai por faixa de atraso (as mesmas do aging da tela) e só as
+     maiores são nomeadas. Três linhas de faixa dizem mais sobre 21 títulos
+     que oito linhas de título;
+   • O QUE VEM responde "o que tenho de pagar esta semana" — é agenda, então
+     vai por dia, um dia por linha, com o dia da semana na frente. Dia com um
+     título só ganha o nome dele de graça;
+   • lista curta não é resumida: até quatro títulos, cada um aparece inteiro.
+
    A ordenação é feita aqui, não confiada ao `order=` da consulta: o texto que
    o dono lê não pode depender de o banco ter devolvido na ordem certa. */
 function finTexto(dados, { hojeISO, semana, dias, maxItens }) {
   const porValor = (a, b) => b.valor - a.valor || (a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
   const porData  = (a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0) || b.valor - a.valor;
-  const max = Math.max(1, Number(maxItens) || FIN_MAX_ITENS);
-  const linha = (x, comAtraso) =>
-    `• ${finDiaMes(x.data)}${comAtraso ? ` _(${x.atraso}d)_` : ''} · *${finDinheiro(x.valor)}* — ${x.descricao}`;
-
-  const bloco = (lista, comAtraso) => {
-    const mostra = lista.slice(0, max).map(x => linha(x, comAtraso));
-    const resto = lista.slice(max);
-    if (resto.length) {
-      mostra.push(`_+${resto.length} ${resto.length === 1 ? 'outra' : 'outras'}, `
-        + `${finDinheiro(resto.reduce((s, x) => s + x.valor, 0))}_`);
-    }
-    return mostra.join('\n');
-  };
-
-  const partes = [`💰 *Contas a pagar — ${FIN_DIA_SEMANA[semana]}, ${finDiaMes(hojeISO)}*`];
+  const quantos = n => `${n} ${n === 1 ? 'título' : 'títulos'}`;
+  const nomeada = x => `${finDinheiro(x.valor)} · ${x.descricao}`;
 
   const venc = [...dados.vencidas].sort(porValor);
-  const hoje = [...dados.hoje].sort(porData);
+  const hoje = [...dados.hoje].sort(porValor);
   const prox = [...dados.proximas].sort(porData);
-  if (venc.length) {
-    partes.push(`\n🔴 *Vencidas* — ${venc.length} ${venc.length === 1 ? 'título' : 'títulos'} · `
-      + `*${finDinheiro(dados.total.vencidas)}*\n${bloco(venc, true)}`);
-  }
-  if (hoje.length) {
-    partes.push(`\n🟠 *Vence hoje* — ${hoje.length} ${hoje.length === 1 ? 'título' : 'títulos'} · `
-      + `*${finDinheiro(dados.total.hoje)}*\n${bloco(hoje, false)}`);
-  }
-  if (prox.length) {
-    partes.push(`\n🗓️ *Próximos ${dias} dias* — ${prox.length} `
-      + `${prox.length === 1 ? 'título' : 'títulos'} · `
-      + `*${finDinheiro(dados.total.proximas)}*\n${bloco(prox, false)}`);
-  }
+  const cabecalho = `💰 *Contas a pagar* · ${FIN_SEMANA_CURTA[semana]} ${finDiaMes(hojeISO)}`;
 
   if (!venc.length && !hoje.length && !prox.length) {
-    partes.push(`\n✅ Nenhuma conta vencida e nada a vencer nos próximos ${dias} dias.`);
-    return partes.join('\n');
+    return `${cabecalho}
+
+✅ Nada vencido e nada a vencer nos próximos ${dias} dias.`;
+  }
+
+  const partes = [cabecalho];
+
+  if (venc.length) {
+    const linhas = [`
+🔴 *Vencidas* — *${finDinheiro(dados.total.vencidas)}* _(${quantos(venc.length)})_`];
+    if (venc.length <= FIN_DETALHAR_ATE) {
+      linhas.push(...venc.map(x => `• ${nomeada(x)} _(${x.atraso}d)_`));
+    } else {
+      // o tamanho do estrago, por faixa
+      for (const f of FIN_FAIXAS) {
+        const naFaixa = venc.filter(x => x.atraso >= f.min && x.atraso <= f.max);
+        if (!naFaixa.length) continue;
+        linhas.push(`• ${f.rotulo} — ${finDinheiro(naFaixa.reduce((s, x) => s + x.valor, 0))}`
+          + ` _(${naFaixa.length})_`);
+      }
+      // e o que é mais urgente, pelo nome
+      const n = Number(maxItens);
+      const top = Number.isFinite(n) && n >= 0 ? Math.floor(n) : FIN_MAX_ITENS;
+      if (top) {
+        linhas.push(`_maiores_`, ...venc.slice(0, top).map(x => `▸ ${nomeada(x)} _(${x.atraso}d)_`));
+      }
+    }
+    partes.push(linhas.join('\n'));
+  }
+
+  if (hoje.length) {
+    const linhas = [`
+🟠 *Vence hoje* — *${finDinheiro(dados.total.hoje)}* _(${quantos(hoje.length)})_`];
+    linhas.push(...hoje.slice(0, FIN_DETALHAR_ATE).map(x => `• ${nomeada(x)}`));
+    const resto = hoje.slice(FIN_DETALHAR_ATE);
+    if (resto.length) linhas.push(`_e mais ${quantos(resto.length)}_`);
+    partes.push(linhas.join('\n'));
+  }
+
+  if (prox.length) {
+    const linhas = [`
+🗓️ *Próximos ${dias} dias* — *${finDinheiro(dados.total.proximas)}*`
+      + ` _(${quantos(prox.length)})_`];
+    // agenda: um dia por linha. Dia com um título só leva o nome dele.
+    const porDia = new Map();
+    for (const x of prox) {
+      if (!porDia.has(x.data)) porDia.set(x.data, []);
+      porDia.get(x.data).push(x);
+    }
+    for (const [data, itens] of porDia) {
+      const soma = itens.reduce((s, x) => s + x.valor, 0);
+      const dia = new Date(Date.parse(data + 'T00:00:00Z')).getUTCDay();
+      linhas.push(`• ${FIN_SEMANA_CURTA[dia]} ${finDiaMes(data)} — ${finDinheiro(soma)}`
+        + (itens.length === 1 ? ` · ${itens[0].descricao}` : ` _(${itens.length})_`));
+    }
+    partes.push(linhas.join('\n'));
   }
 
   const total = dados.total.vencidas + dados.total.hoje + dados.total.proximas;
-  partes.push(`\n━━━━━━━━━━━━━━━\n*Total comprometido: ${finDinheiro(total)}*`);
-  if (venc.length) partes.push('\n_Detalhe título a título no MoviOne → Contas a Pagar._');
+  partes.push(`
+*Total: ${finDinheiro(total)}*`
+    + `
+_Detalhe no MoviOne › Contas a Pagar._`);
   return partes.join('\n');
 }
 
@@ -7739,7 +7795,9 @@ export default async function handler(req, res) {
         const limpo = Object.assign(finCfgPadrao(), d, {
           destinatarios: [...new Set(fones)],
           dias: Math.min(90, Math.max(0, Number(d.dias) || FIN_DIAS_PADRAO)),
-          max_itens: Math.min(30, Math.max(1, Number(d.max_itens) || FIN_MAX_ITENS)),
+          // 0 é uma escolha válida: só as faixas, sem nomear título nenhum
+          max_itens: Number.isFinite(Number(d.max_itens))
+            ? Math.min(10, Math.max(0, Math.floor(Number(d.max_itens)))) : FIN_MAX_ITENS,
         });
         await sb(e, 'atend_financeiro_config?id=eq.1', {
           method: 'PATCH', prefer: 'return=minimal',
