@@ -4318,6 +4318,253 @@ async function enviarParabens(e) {
            sem_telefone: semTelefone, ja_enviados: jaEnviados, dispensados };
 }
 
+// ============================================================================
+// LEMBRETE DE CONTAS A PAGAR — o financeiro no WhatsApp do dono
+// ----------------------------------------------------------------------------
+// O MoviOne já mostra tudo: A Pagar, Atrasados, aging, o título por título.
+// Só que mostrar exige alguém abrir a tela — e conta esquecida não avisa. Hoje
+// há 21 títulos vencidos na base, o mais velho de 20/07. Nenhum deles tem
+// defeito de cadastro: passaram porque ninguém olhou no dia certo.
+//
+// Então a informação vai atrás de quem decide, uma vez por dia, no WhatsApp.
+//
+// Por que aqui e não no MoviOne: no navegador, o aviso só sairia se alguém
+// tivesse a tela aberta às 8 da manhã — que é justamente a hipótese que falha.
+// Aqui roda no mesmo cron da régua de cobrança, que a Vercel bate sozinha.
+//
+// A tabela lida é `lancamentos`, a mesma que o MoviOne grava: o número da
+// mensagem e o número da tela são o mesmo número, sem cópia e sem cache.
+//
+// Uma trava só, e é a que importa: unique(dia, destino). Duas passadas do cron
+// no mesmo minuto não mandam o resumo duas vezes.
+// ============================================================================
+const FIN_DIAS_PADRAO  = 7;    // janela à frente
+const FIN_MAX_ITENS    = 8;    // linhas por bloco antes do "+N outras"
+
+function finCfgPadrao() {
+  return {
+    ativo: false, hora: '08:00', fuso: FUSO_PADRAO,
+    dias: FIN_DIAS_PADRAO, max_itens: FIN_MAX_ITENS,
+    dias_semana: [0, 1, 2, 3, 4, 5, 6],
+    destinatarios: [], avisar_sem_contas: false,
+  };
+}
+
+async function finCfg(e) {
+  const row = await sbUm(e, 'atend_financeiro_config?id=eq.1&select=dados').catch(() => null);
+  return Object.assign(finCfgPadrao(), (row && row.dados) || {});
+}
+
+/* fmtMoeda não separa milhar: "R$ 7092,98" num resumo financeiro faz o dono
+   ler 709 mil por um instante. Aqui o ponto entra. */
+function finDinheiro(v) {
+  const n = Math.abs(Number(v) || 0);
+  const [i, d] = n.toFixed(2).split('.');
+  return 'R$ ' + i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d;
+}
+
+function finDiaMes(iso) {
+  const p = String(iso || '').slice(0, 10).split('-');
+  return p.length === 3 ? `${p[2]}/${p[1]}` : String(iso || '');
+}
+
+function finDiasEntre(isoA, isoB) {
+  const a = Date.parse(String(isoA).slice(0, 10) + 'T00:00:00Z');
+  const b = Date.parse(String(isoB).slice(0, 10) + 'T00:00:00Z');
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round((b - a) / 86400000);
+}
+
+/* O histórico vem com a marca da recorrência colada: "SISTEMA IXC (recorrência
+   3/6)". Num resumo de oito linhas isso come metade do espaço e não diz nada
+   que "3/6" no fim já não diga. */
+function finDescricao(l) {
+  let t = String(l.historico || '').trim();
+  if (!t) t = String(l.plano || '').replace(/^[\d.]+\s*/, '').trim();
+  t = t.replace(/\s*\(recorr[êe]ncia\s*(\d+\/\d+)\)\s*/i, ' $1')
+       .replace(/\s+/g, ' ').trim();
+  if (l.parcial) t += ' (parcial)';
+  return t || 'Sem descrição';
+}
+
+/* Os títulos em aberto, separados como quem paga precisa ver: o que já passou,
+   o que vence hoje e o que vence na janela.
+
+   O mesmo recorte da tela: status "A Pagar", fora os deletados e cancelados.
+   Estornado NÃO sai — estorno devolve o título para aberto, e ele é dívida de
+   novo; o MoviOne conta, aqui conta igual. Valor é `a_pagar`, que num título
+   parcial já é o saldo restante. */
+async function contasAPagar(e, { hojeISO, dias }) {
+  const limite = new Date(Date.parse(hojeISO + 'T00:00:00Z') + (dias || 0) * 86400000)
+    .toISOString().slice(0, 10);
+  const linhas = await sb(e,
+    'lancamentos?status=eq.' + encodeURIComponent('A Pagar')
+    + `&data=lte.${limite}`
+    + '&select=id,data,historico,plano,conta,a_pagar,parcial,valor_total_titulo,deletado,cancelado'
+    + '&order=data.asc&limit=1000') || [];
+
+  const item = l => ({
+    id: l.id, data: String(l.data || '').slice(0, 10),
+    valor: Number(l.a_pagar) || 0, descricao: finDescricao(l),
+    conta: l.conta || '', parcial: !!l.parcial,
+  });
+  const abertos = linhas
+    .filter(l => !l.deletado && !l.cancelado && l.data && (Number(l.a_pagar) || 0) > 0)
+    .map(item);
+
+  const vencidas = abertos.filter(x => x.data < hojeISO)
+    .map(x => ({ ...x, atraso: finDiasEntre(x.data, hojeISO) }));
+  const hoje     = abertos.filter(x => x.data === hojeISO);
+  const proximas = abertos.filter(x => x.data > hojeISO);
+  const soma = a => a.reduce((s, x) => s + x.valor, 0);
+
+  return {
+    vencidas, hoje, proximas, limite,
+    total: { vencidas: soma(vencidas), hoje: soma(hoje), proximas: soma(proximas) },
+  };
+}
+
+const FIN_DIA_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+/* O texto.
+
+   A ordem dentro de cada bloco não é detalhe. Com 21 vencidas e espaço para 8
+   linhas, quem fica de fora importa: por data, as oito do topo eram R$ 4,21 de
+   ferramentas e R$ 30 de energia, enquanto o pró-labore de R$ 2.885,45 sumia
+   no "+13 outras". Vencida é lista de dívida, não agenda — ordena por valor,
+   e o "(60d)" do lado mantém a idade à vista.
+
+   Hoje e os próximos dias são agenda: ali a data manda, e o valor só desempata.
+   A ordenação é feita aqui, não confiada ao `order=` da consulta: o texto que
+   o dono lê não pode depender de o banco ter devolvido na ordem certa. */
+function finTexto(dados, { hojeISO, semana, dias, maxItens }) {
+  const porValor = (a, b) => b.valor - a.valor || (a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
+  const porData  = (a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0) || b.valor - a.valor;
+  const max = Math.max(1, Number(maxItens) || FIN_MAX_ITENS);
+  const linha = (x, comAtraso) =>
+    `• ${finDiaMes(x.data)}${comAtraso ? ` _(${x.atraso}d)_` : ''} · *${finDinheiro(x.valor)}* — ${x.descricao}`;
+
+  const bloco = (lista, comAtraso) => {
+    const mostra = lista.slice(0, max).map(x => linha(x, comAtraso));
+    const resto = lista.slice(max);
+    if (resto.length) {
+      mostra.push(`_+${resto.length} ${resto.length === 1 ? 'outra' : 'outras'}, `
+        + `${finDinheiro(resto.reduce((s, x) => s + x.valor, 0))}_`);
+    }
+    return mostra.join('\n');
+  };
+
+  const partes = [`💰 *Contas a pagar — ${FIN_DIA_SEMANA[semana]}, ${finDiaMes(hojeISO)}*`];
+
+  const venc = [...dados.vencidas].sort(porValor);
+  const hoje = [...dados.hoje].sort(porData);
+  const prox = [...dados.proximas].sort(porData);
+  if (venc.length) {
+    partes.push(`\n🔴 *Vencidas* — ${venc.length} ${venc.length === 1 ? 'título' : 'títulos'} · `
+      + `*${finDinheiro(dados.total.vencidas)}*\n${bloco(venc, true)}`);
+  }
+  if (hoje.length) {
+    partes.push(`\n🟠 *Vence hoje* — ${hoje.length} ${hoje.length === 1 ? 'título' : 'títulos'} · `
+      + `*${finDinheiro(dados.total.hoje)}*\n${bloco(hoje, false)}`);
+  }
+  if (prox.length) {
+    partes.push(`\n🗓️ *Próximos ${dias} dias* — ${prox.length} `
+      + `${prox.length === 1 ? 'título' : 'títulos'} · `
+      + `*${finDinheiro(dados.total.proximas)}*\n${bloco(prox, false)}`);
+  }
+
+  if (!venc.length && !hoje.length && !prox.length) {
+    partes.push(`\n✅ Nenhuma conta vencida e nada a vencer nos próximos ${dias} dias.`);
+    return partes.join('\n');
+  }
+
+  const total = dados.total.vencidas + dados.total.hoje + dados.total.proximas;
+  partes.push(`\n━━━━━━━━━━━━━━━\n*Total comprometido: ${finDinheiro(total)}*`);
+  if (venc.length) partes.push('\n_Detalhe título a título no MoviOne → Contas a Pagar._');
+  return partes.join('\n');
+}
+
+/* A rotina diária. Chamada pelo cron; também pelo botão "Enviar agora" da
+   tela, aí com `forcar` — o operador que aperta o botão quer a mensagem agora,
+   mesmo que a do dia já tenha saído. */
+async function avisarContasAPagar(e, { forcar = false } = {}) {
+  const cfg = await finCfg(e);
+  if (!forcar && cfg.ativo !== true) return { contas: 'desligado' };
+
+  const destinos = [...new Set((Array.isArray(cfg.destinatarios) ? cfg.destinatarios : [])
+    .map(d => normalizarFone(typeof d === 'string' ? d : (d && d.telefone) || ''))
+    .filter(f => f && f.length >= 12))];
+  if (!destinos.length) return { contas: 'sem destinatário' };
+
+  const agora = partesNoFuso(new Date(), cfg.fuso);
+
+  if (!forcar) {
+    const diasOk = Array.isArray(cfg.dias_semana) && cfg.dias_semana.length
+      ? cfg.dias_semana : [0, 1, 2, 3, 4, 5, 6];
+    if (!diasOk.includes(agora.semana)) return { contas: 'hoje não é dia de enviar' };
+
+    // a hora é do fuso do provedor: em UTC, "08:00" sairia às 5 da manhã
+    const [hc, mc] = String(cfg.hora || '08:00').split(':').map(Number);
+    const alvo = (Number.isFinite(hc) ? hc : 8) * 60 + (Number.isFinite(mc) ? mc : 0);
+    if (agora.minutos < alvo) return { contas: 'antes da hora', hora: cfg.hora || '08:00' };
+  }
+
+  const dias = Math.max(0, Number(cfg.dias) || FIN_DIAS_PADRAO);
+  const dados = await contasAPagar(e, { hojeISO: agora.iso, dias });
+  const nada = !dados.vencidas.length && !dados.hoje.length && !dados.proximas.length;
+  // silêncio quando não há nada é de propósito: aviso diário que não traz
+  // notícia vira aviso que ninguém abre — e aí o dia que importa passa batido
+  if (nada && !forcar && cfg.avisar_sem_contas !== true) return { contas: 'nada a avisar' };
+
+  const texto = finTexto(dados, {
+    hojeISO: agora.iso, semana: agora.semana, dias, maxItens: cfg.max_itens,
+  });
+
+  let enviados = 0, falhas = 0, jaEnviados = 0;
+  for (const fone of destinos) {
+    // REIVINDICA ANTES DE ENVIAR: unique(dia, destino) é o mutex
+    let claim = null;
+    try {
+      claim = await sbUm(e, 'atend_financeiro_envios', {
+        method: 'POST', prefer: 'return=representation',
+        body: {
+          dia: agora.iso, destino: fone, status: 'enviando', manual: !!forcar,
+          vencidas: dados.vencidas.length, vencidas_valor: dados.total.vencidas,
+          vence_hoje: dados.hoje.length, hoje_valor: dados.total.hoje,
+          proximas: dados.proximas.length, proximas_valor: dados.total.proximas,
+        },
+      });
+    } catch (err) {
+      if (/\b409\b|23505|duplicate key/i.test(err.message || '')) { jaEnviados++; continue; }
+      console.error('[contas a pagar] claim:', err.message);
+      falhas++; continue;
+    }
+    if (!claim) { falhas++; continue; }
+
+    try {
+      const envio = await waEnviar(e, fone, texto);
+      enviados++;
+      await sb(e, `atend_financeiro_envios?id=eq.${claim.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { status: 'enviado', enviado_em: new Date().toISOString(), wa_id: idDaEvolution(envio) },
+      }).catch(() => {});
+    } catch (err) {
+      falhas++;
+      console.error('[contas a pagar] envio:', err.message);
+      await sb(e, `atend_financeiro_envios?id=eq.${claim.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { status: 'erro', erro: String(err.message || '').slice(0, 300) },
+      }).catch(() => {});
+    }
+  }
+
+  return {
+    contas: 'ok', enviados, falhas, ja_enviados: jaEnviados,
+    vencidas: dados.vencidas.length, vencidas_valor: dados.total.vencidas,
+    vence_hoje: dados.hoje.length, proximas: dados.proximas.length,
+  };
+}
+
 function cobDiasEntre(a, b) {
   const d1 = parseDataIXC(a), d2 = parseDataIXC(b);
   if (!d1 || !d2) return null;
@@ -5413,11 +5660,16 @@ async function tratarCron(e) {
   try { aniversario = await enviarParabens(e); }
   catch (err) { console.error('[aniversario]', err.message); aniversario = { erro: err.message }; }
 
+  // contas a pagar: o financeiro do dia no WhatsApp de quem paga as contas
+  let contas = null;
+  try { contas = await avisarContasAPagar(e); }
+  catch (err) { console.error('[contas a pagar]', err.message); contas = { erro: err.message }; }
+
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
            bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
-           cobranca: auto, campanhas, pagamento, interno, aniversario };
+           cobranca: auto, campanhas, pagamento, interno, aniversario, contas };
 }
 
 // ============================================================================
@@ -7428,6 +7680,70 @@ export default async function handler(req, res) {
           body: { dados: d, updated_at: new Date().toISOString(), updated_by: user.id },
         });
         return res.status(200).json({ ok: true });
+      }
+
+
+      // ===== LEMBRETE DE CONTAS A PAGAR =====
+      // Só administrador: a lista de contas a pagar da empresa não é assunto
+      // de quem está no atendimento.
+      case 'financeiro.obter': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const cfg = await finCfg(e);
+        const agora = partesNoFuso(new Date(), cfg.fuso);
+        const dias = Math.max(0, Number(cfg.dias) || FIN_DIAS_PADRAO);
+        const dados = await contasAPagar(e, { hojeISO: agora.iso, dias });
+        const envios = await sb(e,
+          'atend_financeiro_envios?select=dia,destino,status,erro,manual,vencidas,vencidas_valor,enviado_em,criado_em'
+          + '&order=criado_em.desc&limit=20').catch(() => []);
+        return res.status(200).json({
+          ok: true, config: cfg, hoje: agora.iso,
+          previa: finTexto(dados, { hojeISO: agora.iso, semana: agora.semana, dias, maxItens: cfg.max_itens }),
+          resumo: {
+            vencidas: dados.vencidas.length, vencidas_valor: dados.total.vencidas,
+            vence_hoje: dados.hoje.length, hoje_valor: dados.total.hoje,
+            proximas: dados.proximas.length, proximas_valor: dados.total.proximas,
+            ate: dados.limite,
+          },
+          envios: envios || [],
+        });
+      }
+
+      case 'financeiro.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const d = body.config && typeof body.config === 'object' ? body.config : null;
+        if (!d) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        if (d.hora && !/^\d{2}:\d{2}$/.test(String(d.hora))) {
+          return res.status(400).json({ ok: false, error: 'Hora inválida. Use HH:MM.' });
+        }
+        const fones = (Array.isArray(d.destinatarios) ? d.destinatarios : [])
+          .map(x => normalizarFone(typeof x === 'string' ? x : (x && x.telefone) || ''))
+          .filter(Boolean);
+        // ligar sem para quem enviar é o jeito silencioso de não enviar nada
+        if (d.ativo === true && !fones.length) {
+          return res.status(400).json({ ok: false, error: 'Informe ao menos um WhatsApp antes de ligar o lembrete.' });
+        }
+        const curto = fones.find(f => f.length < 12);
+        if (curto) return res.status(400).json({ ok: false, error: `Número incompleto: ${curto}. Use DDD + número.` });
+
+        const limpo = Object.assign(finCfgPadrao(), d, {
+          destinatarios: [...new Set(fones)],
+          dias: Math.min(90, Math.max(0, Number(d.dias) || FIN_DIAS_PADRAO)),
+          max_itens: Math.min(30, Math.max(1, Number(d.max_itens) || FIN_MAX_ITENS)),
+        });
+        await sb(e, 'atend_financeiro_config?id=eq.1', {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { dados: limpo, updated_at: new Date().toISOString(), updated_by: user.id },
+        });
+        return res.status(200).json({ ok: true, config: limpo });
+      }
+
+      case 'financeiro.enviar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const r = await avisarContasAPagar(e, { forcar: true });
+        if (r.contas === 'sem destinatário') {
+          return res.status(400).json({ ok: false, error: 'Nenhum WhatsApp configurado.' });
+        }
+        return res.status(200).json({ ok: true, ...r });
       }
 
       // ===== PARÂMETROS DO ATENDIMENTO =====

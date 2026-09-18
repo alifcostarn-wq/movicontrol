@@ -788,6 +788,23 @@ body.dark-mode .pr-esc-card.alvo{background:rgba(5,150,105,.16)}
 .gov-nota-item .tit{font-weight:700;font-size:12px;color:var(--text)}
 .gov-nota-item .txt{color:var(--text2);margin-top:3px;line-height:1.45}
 .gov-nota-item .meta{font-size:10.5px;color:var(--text3);margin-top:4px}
+.fin-carregando{padding:28px 0;text-align:center;color:var(--text3);font-size:12.5px}
+.fin-linha{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.fin-linha label{font-size:12px;color:var(--text2)}
+.fin-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.fin-kpi{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.fin-kpi .l{font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3)}
+.fin-kpi .v{font-family:'DM Mono',monospace;font-size:17px;font-weight:700;margin-top:3px}
+.fin-kpi.venc .v{color:var(--danger)}
+.fin-kpi.hoje .v{color:#D4A027}
+.fin-previa{background:#0B141A;border:1px solid var(--border);border-radius:12px;padding:14px 16px;
+  font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:#E9EDEF;max-height:330px;overflow-y:auto}
+.fin-previa b{color:#fff}
+.fin-previa i{color:#8696A0;font-style:normal;font-size:11.5px}
+.fin-hist{font-size:11.5px;color:var(--text3);line-height:1.8;margin-top:10px}
+.fin-hist b{color:var(--text2)}
+.fin-aviso{background:rgba(212,160,39,.1);border-left:3px solid #D4A027;border-radius:0 8px 8px 0;
+  padding:9px 13px;font-size:12px;color:var(--text2);margin-bottom:14px}
 .gov-switch{position:relative;width:42px;height:23px;background:var(--surface3);border-radius:23px;cursor:pointer;transition:background .2s;border:1.5px solid var(--border);flex-shrink:0}
 .gov-switch.on{background:#3C9D23;border-color:#22223B}
 .gov-switch::after{content:'';position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
@@ -3207,6 +3224,24 @@ textarea.cp-form-input{resize:vertical}
     </div>
 
     <!-- Modal: Finalizar OS -->
+    <!-- ===== LEMBRETE DE CONTAS A PAGAR NO WHATSAPP ===== -->
+    <div class="modal-overlay" id="modal-fin-lembrete" onclick="if(event.target===this)fecharModal('modal-fin-lembrete')">
+      <div class="modal" style="max-width:720px;width:95vw">
+        <div class="modal-header">
+          <span class="modal-title">🔔 Lembrete de contas a pagar no WhatsApp</span>
+          <button class="modal-close" onclick="fecharModal('modal-fin-lembrete')">✕</button>
+        </div>
+        <div class="modal-body" id="fin-corpo">
+          <div class="fin-carregando">Carregando…</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="fecharModal('modal-fin-lembrete')">Fechar</button>
+          <button class="btn" id="fin-btn-enviar" onclick="finEnviarAgora()">📤 Enviar agora</button>
+          <button class="btn btn-primary" id="fin-btn-salvar" onclick="finSalvar()">Salvar</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="modal-finalizar-os" onclick="if(event.target===this)fecharModal('modal-finalizar-os')">
       <div class="modal" style="max-width:580px">
         <div class="modal-header">
@@ -4142,6 +4177,7 @@ textarea.cp-form-input{resize:vertical}
           </button>
         </div>
         <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn" id="btn-fin-lembrete" onclick="finAbrir()" title="Lembrete de contas a pagar no WhatsApp">🔔 Lembrete</button>
           <button class="btn" onclick="ctxExportarCSV()">↓ CSV</button>
           <button class="btn btn-primary" onclick="abrirModalLancamento(_ctActiveTab)">+ Lançamento</button>
         </div>
@@ -20697,6 +20733,166 @@ const IF_REGUA_PADRAO=[
    ──────────────────────────────────────────────────────────────────────── */
 const MOVITALK_API='/api/atendimento';
 window.IF_COB=window.IF_COB||{regua:null,log:null,carregado:false};
+
+
+/* ═══════════ LEMBRETE DE CONTAS A PAGAR NO WHATSAPP ═══════════════════════
+
+   A tela de Contas a Pagar já mostra tudo — mas mostrar exige alguém abrir a
+   tela, e conta esquecida não avisa. Aqui se configura o resumo que o MoviTalk
+   manda todo dia para o WhatsApp de quem paga as contas.
+
+   A configuração e o envio moram no MoviTalk, não aqui: no navegador o aviso
+   só sairia se alguém tivesse esta aba aberta às 8 da manhã, que é justamente
+   a hipótese que falha. Esta tela só conversa com a API.
+
+   A prévia é gerada pelo servidor, com os mesmos números que ele vai mandar —
+   não uma imitação feita aqui, que poderia divergir sem ninguém notar. */
+let _finCfg = null, _finEnviando = false;
+
+function finAbrir(){
+  document.getElementById('fin-corpo').innerHTML = '<div class="fin-carregando">Carregando…</div>';
+  abrirModal('modal-fin-lembrete');
+  finCarregar();
+}
+
+async function finCarregar(){
+  try{
+    const j = await ifCobAPI('financeiro.obter', {});
+    _finCfg = j.config || {};
+    finRender(j);
+  }catch(e){
+    document.getElementById('fin-corpo').innerHTML =
+      `<div class="fin-aviso">Não foi possível falar com o MoviTalk: ${ctxEsc(e.message)}</div>`;
+  }
+}
+
+/* O WhatsApp marca negrito com *asterisco* e itálico com _sublinhado_. A prévia
+   mostra isso como o dono vai ver no celular, não como o texto cru. */
+function finPreviaHTML(txt){
+  return ctxEsc(String(txt||''))
+    .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
+    .replace(/_([^_\n]+)_/g, '<i>$1</i>');
+}
+
+function finRender(j){
+  const c = _finCfg || {};
+  const r = j.resumo || {};
+  const tels = (c.destinatarios||[]).map(x => typeof x === 'string' ? x : (x&&x.telefone)||'').filter(Boolean);
+  const dias = [['Dom',0],['Seg',1],['Ter',2],['Qua',3],['Qui',4],['Sex',5],['Sáb',6]];
+  const on = new Set(Array.isArray(c.dias_semana)?c.dias_semana:[0,1,2,3,4,5,6]);
+
+  const ultimos = (j.envios||[]).slice(0,5).map(x=>{
+    const q = x.status==='enviado' ? '✅' : x.status==='erro' ? '❌' : '⏳';
+    const dt = (x.enviado_em||x.criado_em||'').slice(0,16).replace('T',' ');
+    return `${q} <b>${fmtData(x.dia)}</b> → ${ctxEsc(x.destino)}${x.manual?' (manual)':''}`
+         + `${x.status==='erro'?' — '+ctxEsc(x.erro||''):''} <span style="opacity:.6">${dt}</span>`;
+  }).join('<br>');
+
+  document.getElementById('fin-corpo').innerHTML = `
+    <div class="fin-linha">
+      <div class="gov-switch ${c.ativo?'on':''}" id="fin-sw" onclick="this.classList.toggle('on')"></div>
+      <label style="font-size:13px;font-weight:600;color:var(--text)">Enviar todo dia automaticamente</label>
+    </div>
+
+    <div class="fin-linha">
+      <label>Às</label>
+      <input type="time" id="fin-hora" value="${ctxEsc(c.hora||'08:00')}" style="width:110px">
+      <label style="margin-left:6px">olhando</label>
+      <input type="number" id="fin-dias" min="0" max="90" value="${Number(c.dias)||7}" style="width:70px">
+      <label>dias à frente</label>
+      <label style="margin-left:6px">· até</label>
+      <input type="number" id="fin-max" min="1" max="30" value="${Number(c.max_itens)||8}" style="width:66px">
+      <label>títulos por bloco</label>
+    </div>
+
+    <div class="fin-linha">
+      <label>Dias da semana:</label>
+      ${dias.map(([n,i])=>`<button class="periodo-btn ${on.has(i)?'act':''}" data-dia="${i}"
+        onclick="this.classList.toggle('act')">${n}</button>`).join('')}
+    </div>
+
+    <div class="fin-linha">
+      <label>WhatsApp de quem recebe:</label>
+      <input id="fin-tel" value="${ctxEsc(tels.join(', '))}" placeholder="84999999999, 84988888888"
+        style="flex:1;min-width:220px">
+    </div>
+
+    <div class="fin-linha">
+      <div class="gov-switch ${c.avisar_sem_contas?'on':''}" id="fin-sw-vazio" onclick="this.classList.toggle('on')"></div>
+      <label>Avisar também nos dias em que não há nada a pagar</label>
+    </div>
+
+    <div class="fin-kpis">
+      <div class="fin-kpi venc"><div class="l">Vencidas</div><div class="v">${brl(r.vencidas_valor||0,true)}</div>
+        <div class="l" style="letter-spacing:0;text-transform:none;margin-top:2px">${r.vencidas||0} títulos</div></div>
+      <div class="fin-kpi hoje"><div class="l">Vence hoje</div><div class="v">${brl(r.hoje_valor||0,true)}</div>
+        <div class="l" style="letter-spacing:0;text-transform:none;margin-top:2px">${r.vence_hoje||0} títulos</div></div>
+      <div class="fin-kpi"><div class="l">Até ${fmtData(r.ate)}</div><div class="v">${brl(r.proximas_valor||0,true)}</div>
+        <div class="l" style="letter-spacing:0;text-transform:none;margin-top:2px">${r.proximas||0} títulos</div></div>
+    </div>
+
+    <div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);margin-bottom:7px">
+      Como chega no WhatsApp</div>
+    <div class="fin-previa">${finPreviaHTML(j.previa)}</div>
+    ${ultimos ? `<div class="fin-hist"><b>Últimos envios</b><br>${ultimos}</div>` : ''}
+  `;
+}
+
+function finColetar(){
+  const dias = [...document.querySelectorAll('#fin-corpo [data-dia].act')].map(b=>Number(b.dataset.dia));
+  return Object.assign({}, _finCfg||{}, {
+    ativo: document.getElementById('fin-sw').classList.contains('on'),
+    avisar_sem_contas: document.getElementById('fin-sw-vazio').classList.contains('on'),
+    hora: document.getElementById('fin-hora').value||'08:00',
+    dias: Number(document.getElementById('fin-dias').value)||0,
+    max_itens: Number(document.getElementById('fin-max').value)||8,
+    dias_semana: dias,
+    // separa só por vírgula, ponto e vírgula ou linha: o espaço é parte de
+    // como se escreve um telefone ("84 99999-0000"), não separador de dois
+    destinatarios: (document.getElementById('fin-tel').value||'')
+      .split(/[,;\n]+/).map(t=>t.replace(/\D/g,'')).filter(Boolean),
+  });
+}
+
+async function finSalvar(){
+  const cfg = finColetar();
+  if(cfg.ativo && !cfg.dias_semana.length){
+    showToast('Marque ao menos um dia da semana.',true); return;
+  }
+  const b = document.getElementById('fin-btn-salvar');
+  b.disabled = true;
+  try{
+    const j = await ifCobAPI('financeiro.salvar', { config: cfg });
+    _finCfg = j.config || cfg;
+    showToast(cfg.ativo ? 'Lembrete ligado ✓' : 'Lembrete salvo (desligado)');
+    registrarAuditoria('salvar','Financeiro','atend_financeiro_config','1',
+      cfg.ativo?'Lembrete de contas a pagar ligado':'Lembrete de contas a pagar desligado');
+    await finCarregar();
+  }catch(e){ showToast(e.message, true); }
+  finally{ b.disabled = false; }
+}
+
+/* "Enviar agora" manda mesmo com o lembrete desligado e fora da hora — quem
+   aperta o botão está olhando a prévia e quer aquilo no celular. */
+async function finEnviarAgora(){
+  if(_finEnviando) return;
+  const tels = (document.getElementById('fin-tel')?.value||'').replace(/\D/g,'');
+  if(!tels){ showToast('Informe o WhatsApp antes de enviar.',true); return; }
+  if(!confirm('Enviar o resumo de contas a pagar agora para: '
+      + document.getElementById('fin-tel').value + '?')) return;
+  _finEnviando = true;
+  const b = document.getElementById('fin-btn-enviar');
+  b.disabled = true; b.textContent = 'Enviando…';
+  try{
+    // salva antes: manda para o número que está na tela, não para o de ontem
+    await ifCobAPI('financeiro.salvar', { config: finColetar() });
+    const j = await ifCobAPI('financeiro.enviar', {});
+    showToast(j.enviados ? `Enviado para ${j.enviados} número(s) ✓`
+                         : `Nada enviado — ${j.falhas||0} falha(s)`, !j.enviados);
+    await finCarregar();
+  }catch(e){ showToast(e.message, true); }
+  finally{ _finEnviando = false; b.disabled = false; b.textContent = '📤 Enviar agora'; }
+}
 
 async function ifCobToken(){
   const {data}=await sbClient.auth.getSession();
