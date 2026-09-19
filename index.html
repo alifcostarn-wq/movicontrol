@@ -801,6 +801,8 @@ body.dark-mode .pr-esc-card.alvo{background:rgba(5,150,105,.16)}
   font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:#E9EDEF;max-height:330px;overflow-y:auto}
 .fin-previa b{color:#fff}
 .fin-previa i{color:#8696A0;font-style:normal;font-size:11.5px}
+.fin-sep{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--text3);
+  border-top:1px solid var(--border);padding-top:13px;margin:18px 0 12px}
 .fin-hist{font-size:11.5px;color:var(--text3);line-height:1.8;margin-top:10px}
 .fin-hist b{color:var(--text2)}
 .fin-aviso{background:rgba(212,160,39,.1);border-left:3px solid #D4A027;border-radius:0 8px 8px 0;
@@ -20785,6 +20787,18 @@ function finRender(j){
   const dias = [['Dom',0],['Seg',1],['Ter',2],['Qua',3],['Qui',4],['Sex',5],['Sáb',6]];
   const on = new Set(Array.isArray(c.dias_semana)?c.dias_semana:[0,1,2,3,4,5,6]);
 
+  const EV_IC = { pago:'✅', cancelado:'🚫', estornado:'↩️' };
+  const EV_NOME = { pago:'Baixa', cancelado:'Cancelamento', estornado:'Estorno' };
+  const movs = (j.movimentos||[]).slice(0,6);
+  const movsHTML = movs.length ? `<div class="fin-hist"><b>Últimos movimentos</b><br>` + movs.map(m=>{
+    const q = m.status==='enviado' ? '' : m.status==='pulado' ? ' <span style="opacity:.6">(não avisado)</span>'
+            : m.status==='pendente' ? ' <span style="opacity:.6">(na fila)</span>' : '';
+    const dt = String(m.ocorrido_em||'').slice(5,16).replace('T',' ');
+    return `${EV_IC[m.evento]||'•'} ${EV_NOME[m.evento]||m.evento}${m.parcial?' parcial':''} `
+         + `<b>${brl(m.valor||0,true)}</b> · ${ctxEsc(m.descricao||'')}`
+         + `<span style="opacity:.6"> ${dt}</span>${q}`;
+  }).join('<br>') + '</div>' : '';
+
   const ultimos = (j.envios||[]).slice(0,5).map(x=>{
     const q = x.status==='enviado' ? '✅' : x.status==='erro' ? '❌' : '⏳';
     const dt = (x.enviado_em||x.criado_em||'').slice(0,16).replace('T',' ');
@@ -20828,6 +20842,17 @@ function finRender(j){
       <label>Avisar também nos dias em que não há nada a pagar</label>
     </div>
 
+    <div class="fin-sep">Movimento na hora</div>
+    <div class="fin-linha">
+      <div class="gov-switch ${c.eventos_ativo?'on':''}" id="fin-sw-ev" onclick="this.classList.toggle('on')"></div>
+      <label style="font-size:13px;font-weight:600;color:var(--text)">Avisar a cada baixa, cancelamento ou estorno</label>
+    </div>
+    <div class="fin-aviso" style="background:rgba(60,157,35,.09);border-left-color:#3C9D23">
+      Vale para contas a <b>pagar</b>. Sai pelo mesmo caminho do lembrete diário, em até
+      3 minutos — e vários movimentos seguidos viram uma mensagem só.
+    </div>
+    ${movsHTML}
+
     <div class="fin-kpis">
       <div class="fin-kpi venc"><div class="l">Vencidas</div><div class="v">${brl(r.vencidas_valor||0,true)}</div>
         <div class="l" style="letter-spacing:0;text-transform:none;margin-top:2px">${r.vencidas||0} títulos</div></div>
@@ -20849,6 +20874,7 @@ function finColetar(){
   return Object.assign({}, _finCfg||{}, {
     ativo: document.getElementById('fin-sw').classList.contains('on'),
     avisar_sem_contas: document.getElementById('fin-sw-vazio').classList.contains('on'),
+    eventos_ativo: document.getElementById('fin-sw-ev').classList.contains('on'),
     hora: document.getElementById('fin-hora').value||'08:00',
     dias: Number(document.getElementById('fin-dias').value)||0,
     max_itens: Math.max(0, Number(document.getElementById('fin-max').value)||0),

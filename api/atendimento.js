@@ -4347,6 +4347,7 @@ function finCfgPadrao() {
     dias: FIN_DIAS_PADRAO, max_itens: FIN_MAX_ITENS,
     dias_semana: [0, 1, 2, 3, 4, 5, 6],
     destinatarios: [], avisar_sem_contas: false,
+    eventos_ativo: false,      // baixa / cancelamento / estorno, na hora
   };
 }
 
@@ -4381,7 +4382,7 @@ function finDiasEntre(isoA, isoB) {
 function finDescricao(l) {
   let t = String(l.historico || '').trim();
   if (!t) t = String(l.plano || '').replace(/^[\d.]+\s*/, '').trim();
-  t = t.replace(/\s*\(recorr[êe]ncia\s*(\d+\/\d+)\)\s*/i, ' $1')
+  t = t.replace(/\s*\(recorr[êe]ncia\s*(\d+\/\d+)\)\s*/i, ' $1 ')
        .replace(/\s*\[ESTORNADO[^\]]*\]\s*/i, ' (estornado)')
        .replace(/\s+/g, ' ').trim();
   if (l.parcial) t += ' (parcial)';
@@ -4538,6 +4539,181 @@ function finTexto(dados, { hojeISO, semana, dias, maxItens }) {
     + `
 _Detalhe no MoviOne › Contas a Pagar._`);
   return partes.join('\n');
+}
+
+/* ═══════════ MOVIMENTO DE CONTA A PAGAR, NA HORA ═════════════════════════
+
+   O lembrete diário responde "o que devo hoje". Este responde outra coisa:
+   "o que mexeram no meu financeiro agora". Baixa, cancelamento e estorno são
+   as três operações que tiram ou devolvem dinheiro sem o dono estar junto.
+
+   Quem enfileira NÃO é este código, e sim um gatilho na tabela lancamentos
+   (atend_fin_evento). A razão é que o MoviOne muda um título por vários
+   caminhos — baixa total, baixa parcial que cria uma linha nova apontando
+   para o pai, estorno que ainda ajusta o saldo do pai — e qualquer caminho
+   esquecido aqui seria um movimento que ninguém vê. No banco existe um lugar
+   só por onde todos passam.
+
+   O gatilho engole os próprios erros de propósito: um aviso que não deu para
+   enfileirar não pode derrubar o pagamento de ninguém. */
+const FIN_EV_LOTE = 25;   // por passada; o resto fica para a próxima
+
+const FIN_EV_ROTULO = {
+  pago:      { icone: '✅', titulo: 'Baixa',       verbo: 'baixado' },
+  cancelado: { icone: '🚫', titulo: 'Cancelamento', verbo: 'cancelado' },
+  estornado: { icone: '↩️', titulo: 'Estorno',     verbo: 'estornado' },
+};
+
+/* O histórico guarda HTML de verdade: o cancelamento grava
+   `[CANCELADO 25/08/2026 — era <span class="val-monetario">R$ 100,00</span>]`.
+   No WhatsApp isso sairia com as tags à mostra. */
+function finSemHtml(t) {
+  return String(t || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/* A baixa parcial escreve a conta inteira no histórico:
+   "COMBUSTIVEL (recorrência 3/6) — Baixa parcial R$ 30,00 de R$ 160,00 (X)".
+   O valor já vai no cabeçalho da linha; aqui fica só a identidade do título. */
+function finDescricaoEvento(ev) {
+  let t = finSemHtml(ev.descricao);
+  t = t.replace(/\s*\[(CANCELADO|ESTORNADO)[^\]]*\]\s*/gi, ' ')
+       .replace(/\s*—\s*Baixa parcial[^(]*/i, ' ')
+       .replace(/\s*\(recorr[êe]ncia\s*(\d+\/\d+)\)\s*/i, ' $1 ')
+       .replace(/\s+/g, ' ').trim();
+  return t || 'Sem descrição';
+}
+
+/* Quem fez. Cancelamento e estorno gravam o e-mail na própria linha; a baixa
+   não grava ninguém, mas a auditoria do MoviOne grava — é de lá que sai. */
+async function finAutores(e, eventos) {
+  const emails = new Set(eventos.map(x => x.autor_email).filter(Boolean));
+  const semAutor = eventos.filter(x => !x.autor_email && x.lancamento_id);
+
+  if (semAutor.length) {
+    const ids = [...new Set(semAutor.map(x => String(x.lancamento_id)))];
+    const desde = new Date(Math.min(...semAutor.map(x => Date.parse(x.ocorrido_em) || Date.now())) - 300e3);
+    const aud = await sb(e,
+      'auditoria?registro_tabela=eq.lancamentos'
+      + `&registro_id=in.(${ids.map(encodeURIComponent).join(',')})`
+      + `&created_at=gte.${desde.toISOString()}`
+      + '&select=registro_id,usuario_nome,usuario_email,acao,created_at&order=created_at.desc&limit=200')
+      .catch(() => []);
+    const porId = new Map();
+    for (const a of aud || []) if (!porId.has(String(a.registro_id))) porId.set(String(a.registro_id), a);
+    for (const ev of semAutor) {
+      const a = porId.get(String(ev.lancamento_id));
+      if (a) { ev._autorNome = a.usuario_nome || null; ev.autor_email = a.usuario_email || null; }
+      if (ev.autor_email) emails.add(ev.autor_email);
+    }
+  }
+
+  if (emails.size) {
+    const perfis = await sb(e,
+      `perfis?email=in.(${[...emails].map(encodeURIComponent).join(',')})&select=email,nome&limit=50`)
+      .catch(() => []);
+    const porEmail = new Map((perfis || []).map(p => [String(p.email || '').toLowerCase(), p.nome]));
+    for (const ev of eventos) {
+      if (ev._autorNome) continue;
+      const n = porEmail.get(String(ev.autor_email || '').toLowerCase());
+      // sem cadastro, o começo do e-mail já diz quem é melhor que nada
+      ev._autorNome = n || (ev.autor_email ? String(ev.autor_email).split('@')[0] : null);
+    }
+  }
+  return eventos;
+}
+
+function finHoraCurta(iso, fuso) {
+  const p = partesNoFuso(new Date(iso || Date.now()), fuso);
+  return `${String(Math.floor(p.minutos / 60)).padStart(2, '0')}:${String(p.minutos % 60).padStart(2, '0')}`;
+}
+
+/* Um movimento só: cabe detalhe. Vários: cabe uma linha cada. */
+function finTextoEventos(eventos, { fuso }) {
+  const nomes = [...new Set(eventos.map(x => x._autorNome).filter(Boolean))];
+
+  if (eventos.length === 1) {
+    const ev = eventos[0];
+    const r = FIN_EV_ROTULO[ev.evento] || FIN_EV_ROTULO.pago;
+    const linhas = [
+      `${r.icone} *${r.titulo}${ev.parcial ? ' parcial' : ''} · ${finDinheiro(ev.valor)}*`,
+      finDescricaoEvento(ev),
+    ];
+    const pe = [];
+    if (ev.conta) pe.push(`🏦 ${ev.conta}`);
+    if (ev.vencimento) pe.push(`🗓️ venc. ${finDiaMes(ev.vencimento)}`);
+    if (pe.length) linhas.push(pe.join(' · '));
+    linhas.push(`👤 ${nomes[0] || 'sistema'} · ${finHoraCurta(ev.ocorrido_em, fuso)}`);
+    return linhas.join('\n');
+  }
+
+  const linhas = [`📌 *Contas a pagar · ${eventos.length} movimentos*`];
+  for (const ev of eventos) {
+    const r = FIN_EV_ROTULO[ev.evento] || FIN_EV_ROTULO.pago;
+    linhas.push(`${r.icone} ${r.titulo}${ev.parcial ? ' parcial' : ''} *${finDinheiro(ev.valor)}*`
+      + ` · ${finDescricaoEvento(ev)}`
+      + (ev.conta ? ` _(${ev.conta})_` : ''));
+  }
+  linhas.push(`_${nomes.length ? nomes.join(', ') : 'sistema'} · `
+    + `${finHoraCurta(eventos[eventos.length - 1].ocorrido_em, fuso)}_`);
+  return linhas.join('\n');
+}
+
+/* Esvazia a fila. Roda no mesmo cron do resto: com o painel aberto isso é a
+   cada 3 minutos, o que na prática é "na hora". */
+async function avisarMovimentosContas(e) {
+  const pendentes = await sb(e,
+    'atend_financeiro_eventos?status=eq.pendente&select=*'
+    + `&order=ocorrido_em.asc&limit=${FIN_EV_LOTE}`).catch(() => []);
+  if (!pendentes || !pendentes.length) return { movimentos: 'nada na fila' };
+
+  const cfg = await finCfg(e);
+  const destinos = [...new Set((Array.isArray(cfg.destinatarios) ? cfg.destinatarios : [])
+    .map(d => normalizarFone(typeof d === 'string' ? d : (d && d.telefone) || ''))
+    .filter(f => f && f.length >= 12))];
+
+  const descartar = async (motivo) => {
+    const ids = pendentes.map(x => x.id).join(',');
+    await sb(e, `atend_financeiro_eventos?id=in.(${ids})`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { status: 'pulado', erro: motivo, enviado_em: new Date().toISOString() },
+    }).catch(err => console.error('[movimentos] descarte:', err.message));
+  };
+  // desligado não acumula: senão, ligar um mês depois despejaria o mês inteiro
+  if (cfg.eventos_ativo !== true) { await descartar('aviso de movimento desligado'); return { movimentos: 'desligado', descartados: pendentes.length }; }
+  if (!destinos.length)           { await descartar('sem destinatário'); return { movimentos: 'sem destinatário', descartados: pendentes.length }; }
+
+  await finAutores(e, pendentes);
+  const texto = finTextoEventos(pendentes, { fuso: cfg.fuso });
+  const ids = pendentes.map(x => x.id).join(',');
+
+  // MARCA ANTES DE ENVIAR: duas passadas do cron ao mesmo tempo pegariam a
+  // mesma fila e o dono receberia o movimento duas vezes
+  let reservados = [];
+  try {
+    reservados = await sb(e, `atend_financeiro_eventos?id=in.(${ids})&status=eq.pendente`, {
+      method: 'PATCH', prefer: 'return=representation', body: { status: 'enviando' },
+    });
+  } catch (err) {
+    console.error('[movimentos] reserva:', err.message);
+    return { movimentos: 'erro', erro: err.message };
+  }
+  if (!reservados || !reservados.length) return { movimentos: 'outra passada já pegou' };
+
+  let enviados = 0, falhas = 0, waId = null, erro = null;
+  for (const fone of destinos) {
+    try { const env = await waEnviar(e, fone, texto); enviados++; waId = waId || idDaEvolution(env); }
+    catch (err) { falhas++; erro = err.message; console.error('[movimentos] envio:', err.message); }
+  }
+
+  await sb(e, `atend_financeiro_eventos?id=in.(${reservados.map(x => x.id).join(',')})`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: enviados
+      ? { status: 'enviado', enviado_em: new Date().toISOString(), wa_id: waId }
+      // ninguém recebeu: volta para a fila e a próxima passada tenta de novo
+      : { status: 'pendente', erro: String(erro || '').slice(0, 300) },
+  }).catch(err => console.error('[movimentos] baixa:', err.message));
+
+  return { movimentos: enviados ? 'ok' : 'falhou', eventos: reservados.length, enviados, falhas };
 }
 
 /* A rotina diária. Chamada pelo cron; também pelo botão "Enviar agora" da
@@ -5721,11 +5897,16 @@ async function tratarCron(e) {
   try { contas = await avisarContasAPagar(e); }
   catch (err) { console.error('[contas a pagar]', err.message); contas = { erro: err.message }; }
 
+  // e os movimentos: baixa, cancelamento e estorno, assim que acontecem
+  let movimentos = null;
+  try { movimentos = await avisarMovimentosContas(e); }
+  catch (err) { console.error('[movimentos]', err.message); movimentos = { erro: err.message }; }
+
   return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
            bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
-           cobranca: auto, campanhas, pagamento, interno, aniversario, contas };
+           cobranca: auto, campanhas, pagamento, interno, aniversario, contas, movimentos };
 }
 
 // ============================================================================
@@ -7762,8 +7943,12 @@ export default async function handler(req, res) {
             .map(x => normalizarFone(typeof x === 'string' ? x : (x && x.telefone) || ''))
             .filter(f => f && f.length >= 12);
         }
+        const movimentos = await sb(e,
+          'atend_financeiro_eventos?select=id,evento,parcial,descricao,valor,conta,autor_email,'
+          + 'ocorrido_em,status,erro&order=ocorrido_em.desc&limit=8').catch(() => []);
         return res.status(200).json({
           ok: true, config: cfg, hoje: agora.iso, sugestao,
+          movimentos: (movimentos || []).map(m => ({ ...m, descricao: finDescricaoEvento(m) })),
           previa: finTexto(dados, { hojeISO: agora.iso, semana: agora.semana, dias, maxItens: cfg.max_itens }),
           resumo: {
             vencidas: dados.vencidas.length, vencidas_valor: dados.total.vencidas,
@@ -7792,7 +7977,11 @@ export default async function handler(req, res) {
         const curto = fones.find(f => f.length < 12);
         if (curto) return res.status(400).json({ ok: false, error: `Número incompleto: ${curto}. Use DDD + número.` });
 
+        if (d.eventos_ativo === true && !fones.length) {
+          return res.status(400).json({ ok: false, error: 'Informe ao menos um WhatsApp antes de ligar o aviso de movimento.' });
+        }
         const limpo = Object.assign(finCfgPadrao(), d, {
+          eventos_ativo: d.eventos_ativo === true,
           destinatarios: [...new Set(fones)],
           dias: Math.min(90, Math.max(0, Number(d.dias) || FIN_DIAS_PADRAO)),
           // 0 é uma escolha válida: só as faixas, sem nomear título nenhum
