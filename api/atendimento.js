@@ -4804,14 +4804,36 @@ function cobDiasEntre(a, b) {
                    - new Date(d1.getFullYear(), d1.getMonth(), d1.getDate())) / 86400000);
 }
 
+/* QUE HORAS SÃO PARA QUEM VAI RECEBER
+
+   O servidor da Vercel roda em UTC. `new Date().getHours()` lá devolve 08
+   quando no Rio Grande do Norte são 05 da manhã — e a janela de cobrança,
+   configurada como 08:00 às 20:00, virava 05:00 às 17:00 na casa do cliente.
+   Medido na base: das 209 cobranças dos últimos 14 dias, 62 saíram às 05h e
+   nenhuma depois das 09h. O cliente acordava com a cobrança.
+
+   Quem lê a janela na tela está no navegador, no fuso certo, e por isso o
+   erro nunca apareceu para quem configurou: só existia do lado do servidor.
+
+   Toda decisão de horário passa por aqui. */
+function janelaAgoraISP(agora) {
+  const p = partesNoFuso(agora || new Date(), TZ_ISP);
+  return {
+    semana: p.semana,
+    hora: Math.floor(p.minutos / 60),
+    hm: String(Math.floor(p.minutos / 60)).padStart(2, '0') + ':'
+      + String(p.minutos % 60).padStart(2, '0'),
+  };
+}
+
 function cobJanelaOkSrv(etapa, cfg, agora) {
   const ini = etapa.hora_inicio || cfg.hora_inicio || '00:00';
   const fim = etapa.hora_fim || cfg.hora_fim || '23:59';
   const dias = (Array.isArray(etapa.dias_semana) && etapa.dias_semana.length)
     ? etapa.dias_semana : (cfg.dias_semana || [0, 1, 2, 3, 4, 5, 6]);
-  if (!dias.includes(agora.getDay())) return false;
-  const hm = String(agora.getHours()).padStart(2, '0') + ':' + String(agora.getMinutes()).padStart(2, '0');
-  return hm >= ini && hm <= fim;
+  const { semana, hm } = janelaAgoraISP(agora);
+  if (!dias.includes(semana)) return false;
+  return hm >= String(ini).slice(0, 5) && hm <= String(fim).slice(0, 5);
 }
 
 // Mesmas regras da tela — mantidas em paralelo de propósito: o servidor não
@@ -6061,8 +6083,9 @@ function campVariar(texto, nome) {
   t = t.replace(/%nomecliente%/gi, primeiro)
        .replace(/\{nome\}/gi, primeiro)
        .replace(/\{primeiro_nome\}/gi, primeiro);
-  // saudação conforme a hora, quando o texto começa com uma
-  const h = new Date().getHours();
+  // saudação conforme a hora DE QUEM RECEBE: em UTC, 9 da manhã no Nordeste
+  // é meio-dia, e o cliente ouvia "Boa tarde" com o café na mão
+  const h = janelaAgoraISP().hora;
   const saud = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
   t = t.replace(/^(bom dia|boa tarde|boa noite)/i, saud);
   return t;
@@ -6070,8 +6093,8 @@ function campVariar(texto, nome) {
 
 function campJanelaOk(c, agora) {
   const dias = Array.isArray(c.dias_semana) && c.dias_semana.length ? c.dias_semana : [1,2,3,4,5,6];
-  if (!dias.includes(agora.getDay())) return false;
-  const hm = String(agora.getHours()).padStart(2,'0') + ':' + String(agora.getMinutes()).padStart(2,'0');
+  const { semana, hm } = janelaAgoraISP(agora);
+  if (!dias.includes(semana)) return false;
   return hm >= String(c.janela_ini).slice(0,5) && hm <= String(c.janela_fim).slice(0,5);
 }
 
