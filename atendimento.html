@@ -205,7 +205,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
    e as iniciais reaparecem sozinhas — sem buraco no layout */
 .cc-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
 .cc-name{font-size:13.5px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.cc-time{font-size:11px;color:var(--text-low);font-weight:600;flex-shrink:0;}
+.cc-time{font-size:11px;color:var(--text-low);font-weight:600;flex-shrink:0;
+  white-space:nowrap;font-variant-numeric:tabular-nums;}
 .cc-msg{font-size:12.5px;color:var(--text-mid);line-height:1.45;margin-bottom:9px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 .cc-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;}
@@ -4142,7 +4143,7 @@ function cardHTML(c,col){
       <div class="cc-name">${esc(c.nome)}</div>
       ${seloAssinatura(c,'ico')}
       <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor — fila geral')}"></span>
-      <div class="cc-time">${esc(c.hora)}</div>
+      <div class="cc-time">${esc(cvQuando(c.ultimaEm) || c.hora)}</div>
     </div>
     <div class="cc-msg">${esc(semFormato(c.preview))}</div>
     ${(flags.length||tags)?`<div class="cc-tags">${flags.join('')}${tags}</div>`:''}
@@ -8301,7 +8302,10 @@ function rotuloDia(iso){
   const dif = Math.round((hoje - dt)/86400000);
   if(dif===0) return 'Hoje';
   if(dif===1) return 'Ontem';
-  if(dif<7) return dt.toLocaleDateString('pt-BR',{weekday:'long'});
+  // "sexta-feira" sozinho não diz QUAL sexta: dentro da thread há espaço
+  // para os dois, e a data tira a dúvida de quem rolou muito para cima
+  if(dif<7) return dt.toLocaleDateString('pt-BR',{weekday:'long'})
+    + ', ' + dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
   return dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
 }
 
@@ -8579,6 +8583,15 @@ function agGrupoFuturo(iso){
    não lidas). Separadores de dia dão a régua do tempo sem ocupar coluna. */
 const CV = { busca:'', filtro:'todas' };
 
+/* QUANDO FOI A ÚLTIMA MENSAGEM
+
+   Só a hora ("14:32") é a informação certa para hoje e a errada para ontem:
+   no cartão do Kanban, uma conversa de três dias atrás com "14:32" do lado
+   parece recém-chegada, e o atendente responde como se fosse.
+
+   Então a hora sozinha vale só HOJE. Ontem leva a palavra, e daí para trás
+   leva a data — não o nome do dia. "sex 14:32" não diz QUAL sexta-feira, e
+   era esse o problema em primeiro lugar. Ano diferente ganha o ano. */
 function cvQuando(iso){
   if(!iso) return '';
   const d = new Date(iso), hoje = new Date();
@@ -8587,8 +8600,10 @@ function cvQuando(iso){
   const dif = Math.round((soDia(hoje) - soDia(d)) / 86400000);
   if(dif === 0) return hora;
   if(dif === 1) return 'ontem ' + hora;
-  if(dif < 7) return d.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','') + ' ' + hora;
-  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + ' ' + hora;
+  const data = d.toLocaleDateString('pt-BR', d.getFullYear() === hoje.getFullYear()
+    ? { day:'2-digit', month:'2-digit' }
+    : { day:'2-digit', month:'2-digit', year:'2-digit' });
+  return data + ' ' + hora;
 }
 function cvDia(iso){
   if(!iso) return 'Sem data';
