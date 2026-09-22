@@ -7929,17 +7929,34 @@ export default async function handler(req, res) {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const d = body.config && typeof body.config === 'object' ? body.config : null;
         if (!d) return res.status(400).json({ ok: false, error: 'config inválida.' });
-        if (d.ativo === true && !String(d.texto || '').trim()) {
-          return res.status(400).json({ ok: false, error: 'Escreva a mensagem antes de ligar o envio.' });
-        }
         if (d.hora && !/^\d{2}:\d{2}$/.test(String(d.hora))) {
           return res.status(400).json({ ok: false, error: 'Hora inválida. Use HH:MM.' });
         }
+        /* TEXTO EM BRANCO NÃO É ERRO — É O PADRÃO
+
+           A tela diz, com essas palavras: "Em branco, vale o texto padrão".
+           O envio faz exatamente isso (`cfg.texto || ANIV_TEXTO_PADRAO`).
+           Só esta guarda discordava, e recusava o salvamento com "Escreva a
+           mensagem antes de ligar o envio".
+
+           O resultado estava na base: atend_aniversario_config com `{}` e
+           atend_aniversario_envios VAZIA. Quem seguiu a instrução da tela,
+           marcou "ligado" e clicou em Salvar levou um erro, e o recurso
+           nunca chegou a funcionar.
+
+           Em vez de recusar, grava o padrão — assim a tela passa a mostrar o
+           texto que vai sair de verdade, em vez de um campo vazio que o
+           operador não sabe o que significa. */
+        const cfgAniv = Object.assign({}, d, {
+          texto: String(d.texto || '').trim() || ANIV_TEXTO_PADRAO,
+          hora: String(d.hora || '09:00').slice(0, 5),
+          ativo: d.ativo === true,
+        });
         await sb(e, 'atend_aniversario_config?id=eq.1', {
           method: 'PATCH', prefer: 'return=minimal',
-          body: { dados: d, updated_at: new Date().toISOString(), updated_by: user.id },
+          body: { dados: cfgAniv, updated_at: new Date().toISOString(), updated_by: user.id },
         });
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true, config: cfgAniv });
       }
 
 

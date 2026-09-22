@@ -6575,9 +6575,11 @@ async function ntAutomaticas(){
     };
     bt.disabled = true; bt.textContent = 'Salvando…';
     try{
-      await chamar('aniversario.salvar', { config: cfg });
-      ANIV.cfg = cfg;
-      toast(cfg.ativo ? '🎂 Parabéns automáticos ligados' : 'Parabéns automáticos desligados');
+      // o servidor devolve a configuração como ficou gravada: com o texto em
+      // branco ele grava o padrão, e a tela passa a mostrar o que vai sair
+      const j = await chamar('aniversario.salvar', { config: cfg });
+      ANIV.cfg = j.config || cfg;
+      toast(ANIV.cfg.ativo ? '🎂 Parabéns automáticos ligados' : 'Parabéns automáticos desligados');
       ntAutomaticas();
     }catch(err){
       bt.disabled = false; bt.textContent = 'Salvar';
