@@ -16135,6 +16135,8 @@ async function entrarNoSistema(user){
   carregarCampo();
   // Inicia sincronização em tempo real entre usuários (sem refresh)
   iniciarRealtime();
+  // Mantém a cópia do IXC em dia a partir de qualquer página — não só da aba Clientes
+  iniciarSyncServidor();
   // Inicia monitor de inatividade
   iniciarMonitorInatividade();
 }
@@ -16143,6 +16145,7 @@ async function fazerLogout(semConfirm){
   if(!semConfirm && !confirm('Deseja sair do sistema?'))return;
   try{ if(_rtChannel){ sbClient.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){}
   pararMonitorInatividade();
+  pararSyncServidor();
   await sbClient.auth.signOut();
   sessionStorage.removeItem('movi_lastActivity');
   location.reload();
@@ -18493,6 +18496,27 @@ async function getIXCConfig(){
 
 function setIXCConfig(cfg){ localStorage.setItem(IXC_CFG_KEY, JSON.stringify(cfg)); }
 
+/* Resumo legível da última cópia AUTOMÁTICA (a que roda no servidor). O
+   /api/ixc-sync grava o resultado em app_config['ixc_sync_ultimo']; ler a linha
+   direto é mais barato que criar um endpoint só para mostrar uma data — e
+   funciona mesmo se o servidor estiver fora do ar na hora de abrir o modal. */
+async function _resumoSyncAutomatico(){
+  if(!sbClient) return 'indisponível';
+  try{
+    const { data } = await sbClient.from('app_config').select('valor').eq('chave','ixc_sync_ultimo').maybeSingle();
+    if(!data || !data.valor) return 'ainda não rodou';
+    const u = JSON.parse(data.valor);
+    const quando = u.em ? new Date(u.em).toLocaleString('pt-BR') : '—';
+    if(u.erro) return `${quando} — falhou: ${String(u.erro).slice(0,120)}`;
+    const seg = u.duracao_ms ? Math.round(u.duracao_ms/1000)+'s' : '—';
+    const parcial = u.completa === false ? ' (parcial, continua na próxima)' : '';
+    return `${quando} — ${u.clientes||0} clientes, ${u.contratos||0} contratos, ${u.logins||0} logins em ${seg}${parcial}`;
+  }catch(e){
+    console.warn('[ixc-sync] resumo:', e);
+    return 'indisponível';
+  }
+}
+
 function setCliStatusFiltro(s){
   window._cliStatusFiltro = s;
   paginaAtual['clientes'] = 1;
@@ -18518,6 +18542,10 @@ async function abrirModalIXC(){
   const cfg = await getIXCConfig();
   const lastSync = localStorage.getItem(IXC_LAST_SYNC_KEY);
   const lastSyncTxt = lastSync ? new Date(parseInt(lastSync)).toLocaleString('pt-BR') : 'Nunca';
+  // A automática é a que roda no servidor (/api/ixc-sync). Ela deixa o registro
+  // da última passada no app_config; ler daqui evita inventar um endpoint só
+  // para mostrar uma data.
+  const autoTxt = await _resumoSyncAutomatico();
   const html = `
     <div class="modal-overlay" id="modal-ixc" style="display:flex">
       <div class="modal" style="max-width:600px">
@@ -18560,7 +18588,9 @@ async function abrirModalIXC(){
             <div style="font-size:11px;color:var(--text3);margin-top:4px">Quantidade máxima de clientes a buscar por sync</div>
           </div>
           <div style="background:var(--bg2);padding:10px 12px;border-radius:6px;font-size:12px;color:var(--text2);margin-top:8px">
-            <strong>Última sincronização:</strong> ${lastSyncTxt}
+            <div><strong>Última sincronização nesta aba:</strong> ${lastSyncTxt}</div>
+            <div style="margin-top:5px"><strong>Automática (servidor):</strong> ${autoTxt}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">A automática roda sozinha no servidor, sem precisar abrir a aba Clientes.</div>
           </div>
         </div>
         <div class="modal-footer">
@@ -19106,13 +19136,72 @@ async function syncIXC(silent){
   }
 }
 
-// Auto-sync ao abrir aba Clientes — sempre, silencioso (em segundo plano)
+// ============================================================
+// SINCRONIZAÇÃO AUTOMÁTICA — quem copia o IXC é o servidor
+// ============================================================
+// A função syncIXC() acima roda a cópia inteira DENTRO desta aba: ela varre o
+// IXC página por página e grava tudo no Supabase daqui. Isso funcionava, mas
+// prendia a atualização da base a um gesto humano — abrir a aba Clientes. Sem
+// esse gesto, a base do MoviControl era a de ontem: telefone trocado, endereço
+// corrigido, contrato cancelado, nada disso chegava. E quem abrisse a aba e
+// fechasse no meio levava a sincronização junto.
+//
+// Agora quem faz a cópia é /api/ixc-sync, no servidor, acionado pelo cron da
+// Vercel e pelo tráfego real do sistema — sem navegador nenhum envolvido. Daqui
+// a gente só TOCA A CAMPAINHA: um POST minúsculo dizendo "se estiver na hora,
+// vai". Quem decide se a rodada acontece é a trava de lá, então tocar demais
+// não custa nada.
+//
+// Não é preciso re-renderizar depois: o Realtime já observa `clientes`,
+// `clientes_contratos` e `clientes_logins` e recarrega a tela sozinho quando as
+// linhas mudam — inclusive quando quem mudou foi o servidor.
+const SYNC_SERVIDOR_URL = '/api/ixc-sync';
+const SYNC_SERVIDOR_CADA_MS = 15 * 60 * 1000;
+let _syncServidorTimer = null;
+
+async function cutucarSyncServidor(forcar){
+  try{
+    const { data } = await sbClient.auth.getSession();
+    const token = data && data.session && data.session.access_token;
+    if(!token) return null;                      // ninguém logado: nada a pedir
+    const r = await fetch(SYNC_SERVIDOR_URL + (forcar ? '?forcar=1' : ''), {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+      body: '{}',
+    });
+    if(!r.ok) return null;                       // 401/404: o servidor não atende
+    return await r.json();
+  }catch(e){
+    console.warn('[ixc-sync] cutucada falhou:', e);
+    return null;
+  }
+}
+
+/* Começa no login e segue enquanto a aba viver, em QUALQUER página do sistema.
+   O intervalo é curto de propósito: a chamada é um toque de campainha, e é o
+   servidor que decide (e registra) se a cópia vale a pena agora. */
+function iniciarSyncServidor(){
+  clearInterval(_syncServidorTimer);
+  cutucarSyncServidor();
+  _syncServidorTimer = setInterval(cutucarSyncServidor, SYNC_SERVIDOR_CADA_MS);
+}
+
+function pararSyncServidor(){
+  clearInterval(_syncServidorTimer);
+  _syncServidorTimer = null;
+}
+
+// Ao abrir a aba Clientes: pede ao servidor e pronto. A cópia local só entra se
+// o servidor não puder atender (IXC não configurado lá, endpoint fora do ar) —
+// aí o comportamento antigo continua valendo e ninguém fica sem sincronizar.
 async function autoSyncIXC(){
   const cfg = await getIXCConfig();
-  if(!cfg.proxyUrl || !cfg.ixcToken || cfg.autoSync===false) return;
-  if(window._syncIXCRodando) return; // já tem uma sincronização em andamento
-  // Pequeno delay para não bloquear a renderização da aba
-  setTimeout(() => syncIXC(true), 400);
+  if(cfg.autoSync===false) return;
+  const r = await cutucarSyncServidor();
+  if(r && r.ok) return;                          // servidor assumiu
+  if(!cfg.proxyUrl || !cfg.ixcToken) return;
+  if(window._syncIXCRodando) return;             // já tem uma cópia em andamento
+  setTimeout(() => syncIXC(true), 400);          // não bloqueia a renderização
 }
 
 
