@@ -5726,7 +5726,9 @@ function eqPintar(el){
     <div class="eq-secao">
       <h3>Quem atende</h3>
       <div class="rel-tab-wrap"><table class="rel-tab eq-tab">
-        <thead><tr><th>Pessoa</th><th>Setor</th><th>Enxerga</th><th>Admin do atendimento</th></tr></thead>
+        <thead><tr><th>Pessoa</th><th>Setor</th><th>Enxerga</th><th>Admin do atendimento</th>
+          <th title="Corrigir o texto de uma mensagem já enviada (o WhatsApp dá 15 minutos)">Pode editar</th>
+          <th title="Apagar para todos uma mensagem enviada daqui">Pode apagar</th></tr></thead>
         <tbody>${EQ.pessoas.map(p=>`
           <tr>
             <td><b>${esc(p.nome||p.email)}</b><div class="if-cli-sub">${esc(p.email||'')}</div></td>
@@ -5744,11 +5746,23 @@ function eqPintar(el){
             <td><label class="cob-check" style="margin:0">
               <input type="checkbox" data-admin="${p.id}" ${p.atend_admin?'checked':''}> admin
             </label></td>
+            ${['editar','apagar'].map(acao=>{
+              const campo = 'atend_pode_'+acao;
+              // admin sempre pode: a caixa aparece marcada e travada, para não
+              // parecer que desmarcá-la tiraria o poder de um administrador
+              return `<td><label class="cob-check" style="margin:0" title="${p.atend_admin?'Administrador sempre pode':''}">
+                <input type="checkbox" data-pode="${acao}" data-pid="${p.id}"
+                  ${(p.atend_admin||p[campo])?'checked':''} ${p.atend_admin?'disabled':''}> ${acao}
+              </label></td>`;
+            }).join('')}
           </tr>`).join('')}</tbody>
       </table></div>
       <div class="rel-nota">
         Admin do atendimento vê tudo e configura a equipe — é independente do perfil do MoviOn.
-        Quem é operador do financeiro não vira admin daqui automaticamente.
+        Quem é operador do financeiro não vira admin daqui automaticamente.<br>
+        <b>Editar</b> e <b>apagar</b> valem para mensagens que saíram daqui — a do cliente é dele.
+        O administrador sempre pode; os demais, só com a caixa marcada. Toda edição guarda o
+        texto anterior e todo apagado guarda quem apagou.
       </div>
     </div>`;
 
@@ -5766,6 +5780,16 @@ function eqPintar(el){
     try{
       await chamar('equipe.salvar',{id:ck.dataset.admin, admin:ck.checked});
       toast(ck.checked?'Agora é admin do atendimento':'Deixou de ser admin');
+      renderEquipe(el);
+    }catch(e){ toast('Falha: '+e.message); ck.checked=!ck.checked; ck.disabled=false; }
+  });
+
+  el.querySelectorAll('[data-pode]').forEach(ck=>ck.onchange=async()=>{
+    const acao = ck.dataset.pode;          // 'editar' | 'apagar'
+    ck.disabled = true;
+    try{
+      await chamar('equipe.salvar',{ id:ck.dataset.pid, ['pode_'+acao]:ck.checked });
+      toast(ck.checked ? `Liberado: pode ${acao} mensagens` : `Não pode mais ${acao} mensagens`);
       renderEquipe(el);
     }catch(e){ toast('Falha: '+e.message); ck.checked=!ck.checked; ck.disabled=false; }
   });
@@ -7565,9 +7589,9 @@ function openModal(id){
                precisa mostrar é a mensagem, não a barra de ferramentas. */
             const acoes=[];
             if(m.id) acoes.push(`<button data-responder="${m.id}" title="Responder esta mensagem">↩</button>`);
-            if(USUARIO.admin && podeEditar(m))
+            if((USUARIO.admin || USUARIO.podeEditar) && podeEditar(m))
               acoes.push(`<button data-editar="${m.id}" title="Editar: corrigir o texto no WhatsApp do cliente (o WhatsApp dá 15 minutos)">✏️</button>`);
-            if(m.id && USUARIO.admin && (m.t==='out'||m.t==='bot'))
+            if(m.id && (USUARIO.admin || USUARIO.podeApagar) && (m.t==='out'||m.t==='bot'))
               acoes.push(`<button class="x" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑</button>`);
             return acoes.length?`<div class="mb-acoes">${acoes.join('')}</div>`:'';
           })()}<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);

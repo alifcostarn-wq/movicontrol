@@ -6006,7 +6006,7 @@ async function autenticar(e, req) {
     const err = new Error('Sessão inválida ou expirada.'); err.status = 401; throw err;
   }
 
-  const p = await sbUm(e, `perfis?id=eq.${userId}&select=id,nome,email,perfil,atendimento,atend_setor,atend_admin`);
+  const p = await sbUm(e, `perfis?id=eq.${userId}&select=id,nome,email,perfil,atendimento,atend_setor,atend_admin,atend_pode_editar,atend_pode_apagar`);
   if (!p) { const err = new Error('Perfil não encontrado.'); err.status = 403; throw err; }
   if (!p.atendimento) { const err = new Error('Seu usuário não tem acesso ao Centro de Atendimento.'); err.status = 403; throw err; }
 
@@ -6020,6 +6020,11 @@ async function autenticar(e, req) {
     // isso como admin do atendimento anulava o filtro de setor: quem fosse
     // operador via todas as conversas, mesmo com setor definido.
     admin: !!p.atend_admin || p.perfil === 'admin',
+    // Editar e apagar mensagem enviada: o admin sempre pode; os demais só com
+    // a permissão liberada na tela Equipe e setores. Nasce desligado — era o
+    // comportamento de antes (só admin), e liberar é decisão por pessoa.
+    podeEditar: !!p.atend_admin || p.perfil === 'admin' || !!p.atend_pode_editar,
+    podeApagar: !!p.atend_admin || p.perfil === 'admin' || !!p.atend_pode_apagar,
   };
 }
 
@@ -8140,7 +8145,8 @@ export default async function handler(req, res) {
       case 'equipe.listar': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const pessoas = await sb(e,
-          'perfis?atendimento=is.true&select=id,nome,email,perfil,atend_setor,atend_admin&order=nome.asc');
+          'perfis?atendimento=is.true&select=id,nome,email,perfil,atend_setor,atend_admin,'
+          + 'atend_pode_editar,atend_pode_apagar&order=nome.asc');
         const setores = await sb(e, 'atend_setores?select=*&order=nome.asc');
         // quantas conversas abertas cada setor tem: ajuda a decidir a lotação
         const carga = await sb(e,
@@ -8159,6 +8165,8 @@ export default async function handler(req, res) {
         if ('setor' in body) patch.atend_setor = body.setor || null;   // null = vê todos
         if ('admin' in body) patch.atend_admin = !!body.admin;
         if ('atendimento' in body) patch.atendimento = !!body.atendimento;
+        if ('pode_editar' in body) patch.atend_pode_editar = !!body.pode_editar;
+        if ('pode_apagar' in body) patch.atend_pode_apagar = !!body.pode_apagar;
         if (!Object.keys(patch).length) return res.status(400).json({ ok: false, error: 'Nada a alterar.' });
 
         // Não deixa o último admin se rebaixar: sem admin ninguém consegue
@@ -8526,8 +8534,9 @@ export default async function handler(req, res) {
          contestada, em dúvida sobre prazo prometido. Um "apagar" que apaga
          o registro apaga a defesa do provedor junto. */
       case 'mensagens.excluir': {
-        if (!user.admin) {
-          return res.status(403).json({ ok: false, error: 'Apenas administradores podem apagar mensagens.' });
+        if (!(user.admin || user.podeApagar)) {
+          return res.status(403).json({ ok: false, error:
+            'Seu usuário não tem permissão para apagar mensagens. Um administrador pode liberar em Configurações › Equipe e setores.' });
         }
         const mid = Number(body.mensagem_id);
         if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório.' });
@@ -8604,8 +8613,9 @@ export default async function handler(req, res) {
          fica em `conteudo_original` — o WhatsApp não guarda versão antiga,
          aqui guarda. */
       case 'mensagens.editar': {
-        if (!user.admin) {
-          return res.status(403).json({ ok: false, error: 'Apenas administradores podem editar mensagens.' });
+        if (!(user.admin || user.podeEditar)) {
+          return res.status(403).json({ ok: false, error:
+            'Seu usuário não tem permissão para editar mensagens. Um administrador pode liberar em Configurações › Equipe e setores.' });
         }
         const mid = Number(body.mensagem_id);
         const texto = String(body.texto || '').trim();
