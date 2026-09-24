@@ -369,6 +369,48 @@ function acharPix(obj, prof = 0) {
   return null;
 }
 
+// O código Pix carrega o endereço do banco dentro dele
+// (…br.gov.bcb.pix…qrcodes.sulcredi.coop.br/…) e o WhatsApp pinta esse trecho
+// de azul, como se fosse site. O cliente tocava, não abria nada e respondia
+// "o link não está abrindo". Não dá para esconder o trecho: qualquer caractere
+// a mais no código é copiado junto e o banco recusa. Então a explicação vai
+// numa mensagem própria, logo ANTES do código, e o código continua sozinho.
+const PIX_ORIENTACAO = [
+  '💠 *Como pagar com Pix copia e cola*',
+  '',
+  'O código logo abaixo *não é um link*. Se um pedaço dele aparecer em azul, não toque: ele não abre página nenhuma.',
+  '',
+  '1️⃣ Toque e segure o código e escolha *Copiar*',
+  '2️⃣ No app do seu banco, abra *Pix* › *Pix Copia e Cola*',
+  '3️⃣ Cole o código e confirme o pagamento',
+  '',
+  '✅ A baixa é automática após o pagamento.',
+].join('\n');
+
+// Para o bot: as duas mensagens na ordem certa.
+function mensagensDoPix(pix) {
+  return [{ texto: PIX_ORIENTACAO }, { texto: pix }];
+}
+
+// Para quem manda direto pela Evolution (régua, aviso, painel). A orientação
+// falhar não segura o código: sem ela o cliente ainda paga; sem o código, não.
+// Devolve o que saiu, com os ids, para o chamador gravar na conversa.
+async function waEnviarPix(e, fone, pix, pausa) {
+  const saidas = [];
+  try {
+    const r = await waEnviar(e, fone, PIX_ORIENTACAO);
+    saidas.push({ texto: PIX_ORIENTACAO, wa: idDaEvolution(r) });
+    if (pausa) await pausa();
+  } catch (err) { console.error('[pix] orientação:', err.message); }
+  try {
+    const r = await waEnviar(e, fone, pix);
+    saidas.push({ texto: pix, wa: idDaEvolution(r) });
+    return { ok: true, saidas };
+  } catch (err) {
+    return { ok: false, saidas, erro: err };
+  }
+}
+
 // ============================================================================
 // MÍDIA — baixa da Evolution e guarda no Storage do Supabase
 // O webhook vem com base64:false, então o arquivo precisa ser buscado à parte.
@@ -2171,14 +2213,11 @@ const CONECTORES = {
       }
     } catch (err) { console.error('[atendimento] boleto pdf:', err.message); }
 
-    // 3) Pix copia e cola — sozinho na mensagem, para copiar de uma vez
+    // 3) Pix copia e cola — orientação e, sozinho na mensagem seguinte, o código
     try {
       const g = await ixc(e, 'get_pix', { id_areceber: String(f.id) }, 'listar');
       const pix = acharPix(g);
-      if (pix) {
-        mensagens.push({ texto: 'Pix copia e cola 💠 (baixa automática após o pagamento)' });
-        mensagens.push({ texto: pix });
-      }
+      if (pix) mensagens.push(...mensagensDoPix(pix));
     } catch (err) { console.error('[atendimento] pix:', err.message); }
 
     // 4) código de barras — também isolado
@@ -2214,8 +2253,8 @@ const CONECTORES = {
     const pix = acharPix(g);
     if (!pix) return { resultado: 'erro', anexoTexto: 'Não consegui gerar o Pix agora. Vou te encaminhar para o Financeiro.' };
     // o código vai SOZINHO: colado ao texto do nó, o cliente copiava a frase
-    // junto e o app do banco recusava
-    return { resultado: 'ok', variaveis: { pix }, mensagens: [{ texto: pix }] };
+    // junto e o app do banco recusava. A orientação vem na mensagem de antes.
+    return { resultado: 'ok', variaveis: { pix }, mensagens: mensagensDoPix(pix) };
   },
 
   // Abre o chamado no MÓDULO DE CAMPO (campo_chamados), não no su_ticket do
@@ -3757,7 +3796,7 @@ async function entregarCobranca(e, o) {
       }
       const pausa = () => new Promise(r => setTimeout(r, 700));
       if (pdf) {
-        const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+        const leg = 'Boleto em PDF 📄';
         let idDoc = null;
         try {
           await pausa();
@@ -3781,14 +3820,13 @@ async function entregarCobranca(e, o) {
         }
       }
       if (pix) {
-        try {
-          await pausa();
-          const r2 = await waEnviar(e, o.fone, pix);
-          extras.push({ texto: pix, tipo: 'texto', wa: idDaEvolution(r2) });
-          okPix = true;
-        } catch (err) {
-          falhas.push('WhatsApp recusou o Pix: ' + String(err.message).slice(0, 90));
-          console.error('[cobranca] envio pix:', err.message);
+        await pausa();
+        const r2 = await waEnviarPix(e, o.fone, pix, pausa);
+        for (const s of r2.saidas) extras.push({ texto: s.texto, tipo: 'texto', wa: s.wa });
+        if (r2.ok) okPix = true;
+        else {
+          falhas.push('WhatsApp recusou o Pix: ' + String(r2.erro.message).slice(0, 90));
+          console.error('[cobranca] envio pix:', r2.erro.message);
         }
       }
     }
@@ -6920,12 +6958,17 @@ export default async function handler(req, res) {
               await registrar('💠 QR Code do Pix enviado', 'imagem');
             } catch (err) { console.error('[atendimento] qr pix:', err.message); }
           }
-          const texto = 'Pix copia e cola 💠\nA baixa é automática após o pagamento.\n\n' + pix;
-          const env = await waEnviar(e, c.contato_fone, texto);
-          await sb(e, 'atend_mensagens', {
-            method: 'POST', prefer: 'return=minimal',
-            body: { conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
-          });
+          // O código ia colado ao título ("Pix copia e cola 💠…" + código):
+          // quem segurava a mensagem e copiava levava o título junto e o banco
+          // recusava. Agora vai sozinho, com a orientação na mensagem de antes.
+          const r = await waEnviarPix(e, c.contato_fone, pix, () => new Promise(ok => setTimeout(ok, 700)));
+          for (const s of r.saidas) {
+            await sb(e, 'atend_mensagens', {
+              method: 'POST', prefer: 'return=minimal',
+              body: { conversa_id: id, direcao: 'out', conteudo: s.texto, autor_id: user.id, wa_id: s.wa, status: 'enviado' },
+            });
+          }
+          if (!r.ok) throw r.erro;
         }
 
         if (tipo === 'barras') {
@@ -8326,7 +8369,7 @@ export default async function handler(req, res) {
           }
           const pausa = () => new Promise(r => setTimeout(r, 700));
           if (pdf) {
-            const leg = pix ? 'Boleto em PDF 📄 — logo abaixo o Pix copia e cola 👇' : 'Boleto em PDF 📄';
+            const leg = 'Boleto em PDF 📄';
             let idDoc = null;
             try {
               await pausa();
@@ -8348,15 +8391,16 @@ export default async function handler(req, res) {
             }
           }
           if (pix) {
-            try {
-              await pausa();
-              const r2 = await waEnviar(e, fone, pix);
+            await pausa();
+            const r2 = await waEnviarPix(e, fone, pix, pausa);
+            for (const s of r2.saidas) {
               await sb(e, 'atend_mensagens', {
                 method: 'POST', prefer: 'return=minimal',
-                body: { conversa_id: c.id, direcao: 'out', conteudo: pix, autor_id: user.id, wa_id: idDaEvolution(r2), status: 'enviado' },
+                body: { conversa_id: c.id, direcao: 'out', conteudo: s.texto, autor_id: user.id, wa_id: s.wa, status: 'enviado' },
               });
-              okPix = true;
-            } catch (err) { falhas.push('o WhatsApp recusou o Pix'); console.error('[aviso] pix:', err.message); }
+            }
+            if (r2.ok) okPix = true;
+            else { falhas.push('o WhatsApp recusou o Pix'); console.error('[aviso] pix:', r2.erro.message); }
           }
         }
 
