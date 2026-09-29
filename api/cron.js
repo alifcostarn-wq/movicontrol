@@ -56,7 +56,10 @@ function podeDisparar(req) {
   const interno = process.env.ATEND_WEBHOOK_SECRET || '';
   if (interno && req.headers['x-atend-secret'] === interno) return true;
 
-  // a Vercel identifica as próprias execuções agendadas
+  // a Vercel identifica as próprias execuções agendadas. ATENÇÃO: isto é só
+  // um cabeçalho, e qualquer um o imita — defina CRON_SECRET na Vercel para
+  // o modo estrito acima. Enquanto não houver, a resposta sai sem dado de
+  // cliente e quem dispara só adianta o que a régua já faria.
   const ua = String(req.headers['user-agent'] || '').toLowerCase();
   return ua.includes('vercel-cron') || !!req.headers['x-vercel-cron-schedule'];
 }
@@ -109,9 +112,18 @@ export default async function handler(req, res) {
     await Promise.race([disparo, new Promise(ok => setTimeout(ok, 1500))]);
   }
 
+  // Só números na resposta. Sem CRON_SECRET, quem chama aqui se identifica só
+  // pelo User-Agent — e isso qualquer um imita. A régua tem as próprias travas
+  // (janela de horário, teto, cooldown), mas o `detalhe` trazia NOME de
+  // cliente cobrado: não pode sair para quem não provou quem é.
+  const cob = r && r.cobranca ? r.cobranca : null;
   return res.status(200).json({
     ok: !erro, elo, proximo_elo: proximo, erro,
-    cobranca: r && r.cobranca ? r.cobranca : null,
+    cobranca: cob ? {
+      auto: cob.auto, enviados: cob.enviados, duplicados: cob.duplicados,
+      clientes_na_janela: cob.clientes_na_janela, continua: cob.continua,
+      cobradas_pelo_saldo: Array.isArray(cob.cobradas_pelo_saldo) ? cob.cobradas_pelo_saldo.length : 0,
+    } : null,
     resumo: r ? {
       enviados: r.enviados, encerradas_por_inatividade: r.encerradas_por_inatividade,
       bot_parado: r.bot_parado, sync_ixc: r.sync_ixc,

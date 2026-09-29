@@ -3871,7 +3871,7 @@ function avatarHTML(c, extra){
   // `com-foto` é o que diz "dá para ampliar": nas listas o clique é da linha
   // inteira e abre a conversa, então só no cabeçalho ela vira mão de lupa
   return `<div class="cc-av ${temFoto?'com-foto':''}" style="background:${avColor(c.id)}${extra?';'+extra:''}"${
-    temFoto?' title="Ver a foto do perfil"':''}>${ini(c.nome)}${foto}</div>`;
+    temFoto?' title="Ver a foto do perfil"':''}>${esc(ini(c.nome))}${foto}</div>`;
 }
 function avColor(id){ return AV_COLORS[id % AV_COLORS.length]; }
 /* o selo de contrato esperando assinatura — mesmo texto em toda a tela */
@@ -3882,7 +3882,9 @@ function seloAssinatura(c, forma){
   return `<span class="asn-selo ${forma==='grande'?'grande':''}" title="${dica}">✍️ assinar</span>`;
 }
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
-function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+// aspas simples também: um atributo escrito com ' não pode ser fechado por um
+// nome de contato; e número (0 inclusive) vira texto em vez de quebrar
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 /* ═══════════ FORMATAÇÃO DO WHATSAPP (negrito, itálico, tachado, mono) ══════
 
    O WhatsApp formata pelos sinais no meio do texto: *negrito*, _itálico_,

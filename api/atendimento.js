@@ -6434,6 +6434,33 @@ async function avisoDoTecnico(e, tec, body) {
   return { ok: true, conversa_id: c ? c.id : null, wa_id: waId, fone: foneEnvio, tecnico: tec.nome };
 }
 
+/* O webhook e o cron são as duas portas sem login: quem passa por elas injeta
+   mensagem "do cliente" no painel ou dispara a régua de cobrança. A checagem
+   era `if (segredo configurado && diferente)` — sem a variável na Vercel, a
+   porta ficava ABERTA para qualquer um. Agora, sem segredo, fica fechada: um
+   webhook parado aparece na hora; um aberto, só depois do estrago.
+   A comparação é de tempo constante, para o segredo não vazar pela demora. */
+function segredoConfere(e, req, body) {
+  if (!e.WH_SECRET) {
+    console.error('[seguranca] ATEND_WEBHOOK_SECRET não configurada: webhook e cron recusados');
+    return false;
+  }
+  const veio = Buffer.from(String(req.headers['x-atend-secret'] || (body && body.secret) || ''));
+  const certo = Buffer.from(String(e.WH_SECRET));
+  return veio.length === certo.length && crypto.timingSafeEqual(veio, certo);
+}
+
+/* Carrega a conversa e confere se o usuário pode mexer nela (setor). Várias
+   ações recebiam só o número da conversa e confiavam no painel, que esconde
+   as de outro setor — mas quem chama a API direto escolhe o número que quiser. */
+async function conversaDoUsuario(e, user, id, select = 'id,setor,contato_fone') {
+  const cols = select.split(',').includes('setor') ? select : select + ',setor';
+  const c = await sbUm(e, `atend_conversas?id=eq.${Number(id)}&select=${cols}`);
+  if (!c) return { erro: 404, msg: 'Conversa não encontrada.' };
+  if (!(await podeVerConversa(user, c))) return { erro: 403, msg: 'Conversa de outro setor.' };
+  return { c };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -6450,8 +6477,7 @@ export default async function handler(req, res) {
   try {
     // ---- rotas sem login de usuário -------------------------------------
     if (acao === 'webhook') {
-      const segredo = req.headers['x-atend-secret'] || body.secret || '';
-      if (e.WH_SECRET && segredo !== e.WH_SECRET) {
+      if (!segredoConfere(e, req, body)) {
         return res.status(401).json({ ok: false, error: 'Secret do webhook inválido.' });
       }
       const r = await tratarWebhook(e, body);
@@ -6462,8 +6488,7 @@ export default async function handler(req, res) {
     }
 
     if (acao === 'cron') {
-      const segredo = req.headers['x-atend-secret'] || body.secret || '';
-      if (e.WH_SECRET && segredo !== e.WH_SECRET) {
+      if (!segredoConfere(e, req, body)) {
         return res.status(401).json({ ok: false, error: 'Secret inválido.' });
       }
       return res.status(200).json(await tratarCron(e));   // agendador externo: sempre roda
@@ -6545,6 +6570,10 @@ export default async function handler(req, res) {
           return res.status(400).json({ ok: false, error: 'conversa_id, texto e quando são obrigatórios.' });
         }
         if (isNaN(Date.parse(quando))) return res.status(400).json({ ok: false, error: 'Data/hora inválida.' });
+        // agendar é mandar mensagem ao cliente mais tarde: mesma regra de setor
+        // de mandar agora
+        const acesso = await conversaDoUsuario(e, user, conversa_id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
         const r = await sbUm(e, 'atend_agendamentos', {
           method: 'POST',
           body: { conversa_id, texto, quando: new Date(quando).toISOString(), created_by: user.id },
@@ -6555,6 +6584,10 @@ export default async function handler(req, res) {
       case 'agendamentos.cancelar': {
         const id = Number(body.id);
         if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        const ag = await sbUm(e, `atend_agendamentos?id=eq.${id}&select=conversa_id`);
+        if (!ag) return res.status(404).json({ ok: false, error: 'Agendamento não encontrado.' });
+        const acesso = await conversaDoUsuario(e, user, ag.conversa_id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
         await sb(e, `atend_agendamentos?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal' });
         return res.status(200).json({ ok: true });
       }
@@ -6591,7 +6624,7 @@ export default async function handler(req, res) {
         if (!body.canal && !body.dm_para) return res.status(400).json({ ok: false, error: 'informe canal ou dm_para' });
         const destino = body.canal
           ? `canal=eq.${encodeURIComponent(body.canal)}`
-          : `dm_para=eq.${body.dm_para}`;
+          : `dm_para=eq.${encodeURIComponent(String(body.dm_para))}`;
         const ultimo = await sbUm(e,
           `atend_chat_interno?autor_id=eq.${user.id}&tipo=eq.zumbido&${destino}` +
           `&select=created_at&order=created_at.desc&limit=1`);
@@ -6750,7 +6783,7 @@ export default async function handler(req, res) {
       }
 
       case 'conversas.listar': {
-        const col = body.coluna ? `&coluna=eq.${body.coluna}` : '';
+        const col = body.coluna ? `&coluna=eq.${encodeURIComponent(String(body.coluna))}` : '';
         const lista = await sb(e,
           `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}${col}` +
           `&order=ultima_msg_em.desc.nullslast&limit=${Math.min(Number(body.limite) || 200, 500)}`);
@@ -7896,6 +7929,8 @@ export default async function handler(req, res) {
       }
 
       case 'campanha.detalhe': {
+        // devolve até mil telefones de clientes; campanha é coisa de admin
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const id = Number(body.id);
         const c = await sbUm(e, `atend_campanhas?id=eq.${id}&select=*`);
         const alvos = await sb(e, `atend_campanha_alvos?campanha_id=eq.${id}&select=*&order=id.asc&limit=1000`);
@@ -8247,7 +8282,10 @@ export default async function handler(req, res) {
       case 'equipe.salvar': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const alvo = String(body.id || '').trim();
-        if (!alvo) return res.status(400).json({ ok: false, error: 'id obrigatório.' });
+        // vai direto no filtro do PATCH: só um uuid de verdade entra
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(alvo)) {
+          return res.status(400).json({ ok: false, error: 'id obrigatório.' });
+        }
 
         const patch = {};
         if ('setor' in body) patch.atend_setor = body.setor || null;   // null = vê todos
@@ -8533,6 +8571,8 @@ export default async function handler(req, res) {
         const id = Number(body.conversa_id);
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!id || !ixcId) return res.status(400).json({ ok: false, error: 'conversa_id e cliente_ixc_id obrigatórios.' });
+        const acesso = await conversaDoUsuario(e, user, id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
 
         let dados = await acharClientePorIxcId(e, ixcId);
         // ainda não copiado do IXC: traz esse cliente agora, em vez de
@@ -8576,7 +8616,9 @@ export default async function handler(req, res) {
       case 'conversas.desvincular': {
         const id = Number(body.conversa_id);
         if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório.' });
-        const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=contato_fone`);
+        const acesso = await conversaDoUsuario(e, user, id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        const c = acesso.c;
         await sb(e, `atend_conversas?id=eq.${id}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body: { cliente_ixc_id: null, cliente_snapshot: null, vinculado_em: null, vinculado_por: null, updated_by: user.id },
@@ -8588,6 +8630,10 @@ export default async function handler(req, res) {
       case 'mensagens.listar': {
         const id = Number(body.conversa_id);
         if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório' });
+        // o painel só lista conversas do setor, mas a API recebia qualquer
+        // número: bastava trocar o id para ler histórico e anexos de outro setor
+        const acesso = await conversaDoUsuario(e, user, id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
         const msgs = await sb(e,
           `atend_mensagens?conversa_id=eq.${id}&select=*&order=created_at.asc&limit=${Math.min(Number(body.limite) || 300, 1000)}`);
         // assina os anexos para o atendente conseguir abrir
