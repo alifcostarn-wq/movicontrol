@@ -1025,7 +1025,7 @@ async function financeiroAoVivo(e, ixcId) {
       id: f.id,
       documento: pick(f, 'documento', 'numero_documento'),
       valor: Number(f.valor || 0),
-      valor_aberto: Number(pick(f, 'valor_aberto') ?? f.valor ?? 0),
+      valor_aberto: valorEmAbertoIXC(f),
       vencimento: fmtDataBR(venc),
       atraso,
       vencida: atraso > 0,
@@ -2143,7 +2143,7 @@ const CONECTORES = {
     const rotulo = (x, i) => {
       const v = parseDataIXC(x.data_vencimento);
       const at = v ? Math.max(0, diasCorridos(v, hoje)) : 0;
-      return `${i + 1}️⃣ ${fmtMoeda(x.valor)} — vence ${fmtDataBR(v) || x.data_vencimento}`
+      return `${i + 1}️⃣ ${fmtMoeda(valorEmAbertoIXC(x))} — vence ${fmtDataBR(v) || x.data_vencimento}`
            + (at > 0 ? ` (${at}d em atraso)` : '');
     };
 
@@ -2188,9 +2188,14 @@ const CONECTORES = {
     const atraso = venc ? Math.max(0, diasCorridos(venc, hoje)) : 0;
     const mensagens = [];
 
-    // 1) resumo — situa o cliente antes dos códigos
+    // 1) resumo — situa o cliente antes dos códigos. Título com baixa ou
+    // cancelamento parcial mostra o que FALTA pagar, e diz de onde veio
+    const aberto = valorEmAbertoIXC(f);
+    const face = numeroIXC(f.valor);
     const resumo = [
-      `Fatura de ${fmtMoeda(f.valor)}`,
+      aberto < face
+        ? `Valor em aberto: ${fmtMoeda(aberto)} (fatura original de ${fmtMoeda(face)})`
+        : `Fatura de ${fmtMoeda(face)}`,
       `Vencimento: ${fmtDataBR(venc) || f.data_vencimento}${atraso > 0 ? ` (${atraso} dia${atraso > 1 ? 's' : ''} em atraso)` : ''}`,
       abertas.length > 1 ? `(você tem ${abertas.length} faturas em aberto)` : '',
       f.gateway_link ? `\nPagar pelo site:\n${f.gateway_link}` : '',
@@ -2230,7 +2235,7 @@ const CONECTORES = {
     return {
       resultado: 'ok',
       variaveis: {
-        fatura_id: f.id, fatura_valor: fmtMoeda(f.valor),
+        fatura_id: f.id, fatura_valor: fmtMoeda(aberto),
         fatura_venc: fmtDataBR(venc) || f.data_vencimento,
         faturas_abertas: abertas.length,
         faturas_opcoes: null,   // zera: nova 2ª via nesta sessão pergunta de novo
@@ -3989,6 +3994,33 @@ function valorPagoIXC(f) {
   return face;
 }
 
+/* QUANTO AINDA FALTA PAGAR NESTE TÍTULO
+
+   `valor` no fn_areceber é o valor de FACE e não muda quando o título recebe
+   uma baixa parcial ou um cancelamento parcial: o IXC marca o título como
+   'P' (parcial) e guarda o que sobrou em `valor_aberto`. A régua anunciava o
+   face — a ANDREA RICHELLE recebeu "sua fatura de R$ 300,00 vence HOJE"
+   (fatura 10088549, 28/09) devendo só a parte proporcional.
+
+   Ordem: `valor_aberto`, quando o IXC informa um número entre zero e o face;
+   senão o face menos o que foi cancelado e, no título parcial, o que já foi
+   baixado; senão o face — o comportamento de antes, nunca pior.
+   `valor_aberto` zerado num título que continua aberto é lido como "não
+   informado", não como "nada a pagar": se o campo não vier preenchido, a
+   régua inteira não pode emudecer por causa disso. */
+function valorEmAbertoIXC(f) {
+  const face = numeroIXC(f?.valor);
+  const aberto = numeroIXC(pick(f || {}, 'valor_aberto'));
+  if (aberto > 0 && aberto <= face) return arredondarMoeda(aberto);
+  const cancelado = numeroIXC(pick(f || {}, 'valor_cancelado'));
+  // no título parcial, `valor_recebido` é o que já foi BAIXADO (ver valorPagoIXC)
+  const parcial = String(f?.status || '').toUpperCase() === 'P';
+  const baixado = parcial ? numeroIXC(pick(f || {}, 'valor_recebido', 'valor_baixado')) : 0;
+  const resto = arredondarMoeda(face - cancelado - baixado);
+  if (resto > 0 && resto < face) return resto;
+  return face;
+}
+
 // os campos de dinheiro de um título, para o log de diagnóstico
 function camposDeValorIXC(f) {
   return Object.keys(f || {})
@@ -5051,6 +5083,7 @@ async function cobrancaAutomatica(e) {
   });
 
   const enviados = [];
+  const parciais = [];       // cobradas pelo saldo, não pelo face — para conferir
   let duplicados = 0;
   const pausa = ms => new Promise(r => setTimeout(r, ms));
   const intervalo = Math.max(1, Number(cfg.intervalo_segundos ?? 8)) * 1000;
@@ -5097,7 +5130,7 @@ async function cobrancaAutomatica(e) {
       if (perfil.grupo === 'negativado') trilha = 'negativacao';
       else if (dias > 0) {
         const vencTot = abertas.filter(x => (cobDiasEntre(x.data_vencimento, hojeISO) || 0) > 0)
-          .reduce((acc, x) => acc + Number(x.valor || 0), 0);
+          .reduce((acc, x) => acc + valorEmAbertoIXC(x), 0);
         const nCob = envs.filter(x => String(x.cliente_ixc_id) === chave).length;
         const eleg = dias >= Number(cfg.neg_dias_min ?? 60)
           && vencTot >= Number(cfg.neg_valor_min ?? 50)
@@ -5114,8 +5147,13 @@ async function cobrancaAutomatica(e) {
       const etapa = cand[cand.length - 1];
 
       if (feitas.has(f.id + '|' + etapa.etapa_id)) continue;
-      if (Number(f.valor) < Number(etapa.valor_min ?? cfg.valor_minimo ?? 0)) continue;
-      if (etapa.valor_max != null && Number(f.valor) > Number(etapa.valor_max)) continue;
+      // O que se cobra é o que FALTA pagar, não o valor de face: título com
+      // baixa ou cancelamento parcial anunciava o total ao cliente. Os
+      // filtros de valor da etapa também olham o saldo.
+      const aberto = valorEmAbertoIXC(f);
+      if (!(aberto > 0)) continue;
+      if (aberto < Number(etapa.valor_min ?? cfg.valor_minimo ?? 0)) continue;
+      if (etapa.valor_max != null && aberto > Number(etapa.valor_max)) continue;
       // filtro por grupo/score só faz sentido com retrato; sem ele, a etapa
       // que exige grupo ou faixa de risco simplesmente não se aplica
       if (Array.isArray(etapa.grupos) && etapa.grupos.length && !etapa.grupos.includes(perfil.grupo)) continue;
@@ -5123,11 +5161,17 @@ async function cobrancaAutomatica(e) {
       if (etapa.risco_max != null && (perfil.score ?? 0) > Number(etapa.risco_max)) continue;
       if (!cobJanelaOkSrv(etapa, cfg, agora)) continue;
 
-      const texto = cobTexto(etapa.tpl, perfil, f, dias);
+      const face = numeroIXC(f.valor);
+      if (aberto < face) {
+        parciais.push({ fatura: String(f.id), cliente: nomeCli, face, aberto });
+        console.log(`[cobranca auto] fatura ${f.id} (${nomeCli}): face ${fmtMoeda(face)}, em aberto ${fmtMoeda(aberto)} — cobrando o em aberto`,
+          JSON.stringify(camposDeValorIXC(f)));
+      }
+      const texto = cobTexto(etapa.tpl, perfil, { ...f, valor: aberto }, dias);
       try {
         const rc = await entregarCobranca(e, {
           fone, texto, faturaId: String(f.id), etapaId: etapa.etapa_id, etapaNome: etapa.nome,
-          ixcId: chave, nome: nomeCli, valor: Number(f.valor), vencimento: f.data_vencimento,
+          ixcId: chave, nome: nomeCli, valor: aberto, vencimento: f.data_vencimento,
           anexarBoleto: etapa.anexar_boleto === true, anexarPix: etapa.anexar_pix === true,
           canal: 'automatico', userId: null,
         });
@@ -5149,6 +5193,7 @@ async function cobrancaAutomatica(e) {
     }
   }
   return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20),
+           cobradas_pelo_saldo: parciais.slice(0, 20),
            orfas_liberadas: orfasLiberadas,
            duplicados, clientes_na_janela: porCliente.size, retrato_dias: Math.round(idadeDias),
            retrato_velho: retratoVelho, continua: faltouTempo };
@@ -6896,7 +6941,7 @@ export default async function handler(req, res) {
             return {
               id: f.id,
               documento: pick(f, 'documento', 'numero_documento'),
-              valor: Number(pick(f, 'valor_aberto') ?? f.valor ?? 0),
+              valor: valorEmAbertoIXC(f),
               vencimento: fmtDataBR(venc),
               atraso, vencida: atraso > 0,
               tem_linha: !!pick(f, 'linha_digitavel'),

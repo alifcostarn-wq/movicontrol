@@ -2347,6 +2347,8 @@ textarea.cp-form-input{resize:vertical}
 .fatixc-table{margin:0}
 .fatixc-table thead th{position:sticky;top:0;background:var(--surface);z-index:1;box-shadow:inset 0 -1px 0 var(--border)}
 .fatixc-foot{font-size:10.5px;color:var(--text3);margin-top:8px;text-align:right}
+.fatixc-saldo{font-size:10px;font-weight:600;color:#004E98;white-space:nowrap;margin-top:1px}
+body.dark-mode .fatixc-saldo{color:#7FB8F0}
 .fatixc-sec-title{font-size:12.5px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:8px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 .fatixc-sec-sub{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
 .wifi-ixc-badge{display:inline-block;padding:0 5px;border-radius:7px;background:rgba(55,138,221,0.18);color:#004E98;font-size:8.5px;font-weight:700;vertical-align:middle}
@@ -14328,6 +14330,22 @@ function _pagoIXC(r){
   return rec>0?rec:face;
 }
 
+/* QUANTO AINDA FALTA PAGAR NO TÍTULO
+   `valor` é o valor de FACE e não muda com baixa ou cancelamento parcial: o
+   IXC marca o título como 'P' (parcial) e guarda o saldo em `valor_aberto`.
+   A cobrança anunciava o face para quem devia só uma parte. Mesma regra do
+   MoviTalk (valorEmAbertoIXC): `valor_aberto` entre zero e o face; senão o
+   face menos cancelado e, no parcial, menos o já baixado; senão o face. */
+function _abertoIXC(r){
+  const face=_numIXC(r.valor);
+  const ab=_numIXC(r.valor_aberto);
+  if(ab>0&&ab<=face) return Math.round(ab*100)/100;
+  const canc=_numIXC(r.valor_cancelado);
+  const baix=String(r.status||'').toUpperCase()==='P'?(_numIXC(r.valor_recebido)||_numIXC(r.valor_baixado)):0;
+  const resto=Math.round((face-canc-baix)*100)/100;
+  return (resto>0&&resto<face)?resto:face;
+}
+
 // Status do título no fn_areceber (fallback mostra o código cru)
 function _statusFaturaIXC(r){
   const hj = hoje();
@@ -14395,8 +14413,8 @@ function _renderFaturasIXC(regsAll){
   regs.forEach(r=>{
     const st=_statusFaturaIXC(r);
     if(st.k==='recebida'){ recV+=_pagoIXC(r); recQ++; }
-    else if(st.k==='vencida'){ vencV+=_numIXC(r.valor); vencQ++; abertoV+=_numIXC(r.valor); abertoQ++; }
-    else if(st.k==='aberta'||st.k==='parcial'){ abertoV+=_numIXC(r.valor); abertoQ++; }
+    else if(st.k==='vencida'){ vencV+=_abertoIXC(r); vencQ++; abertoV+=_abertoIXC(r); abertoQ++; }
+    else if(st.k==='aberta'||st.k==='parcial'){ abertoV+=_abertoIXC(r); abertoQ++; }
   });
   const pagas = regs.filter(r=>_statusFaturaIXC(r).k==='recebida');
   const adimpl = (recQ+vencQ)>0 ? Math.round(recQ/(recQ+vencQ)*100) : null;
@@ -14435,7 +14453,7 @@ function _renderFaturasIXC(regsAll){
           <td class="td-mono td-muted">#${r.id||'—'}</td>
           <td class="td-mono">${_fmtDataIXC(r.data_emissao)}</td>
           <td class="td-mono">${_fmtDataIXC(r.data_vencimento)}</td>
-          <td class="td-mono">${brl(_numIXC(r.valor),true)}</td>
+          <td class="td-mono">${brl(_numIXC(r.valor),true)}${(!['recebida','cancelada','agrupada'].includes(st.k)&&_abertoIXC(r)<_numIXC(r.valor))?`<div class="fatixc-saldo" title="O que falta pagar: é este o valor que a cobrança e o bot anunciam">em aberto ${brl(_abertoIXC(r),true)}</div>`:''}</td>
           <td><span class="cli-status-pill" style="background:${st.bg};color:${st.cor}">${st.txt}</span></td>
           <td class="td-mono">${_fmtDataIXC(r.pagamento_data)}</td>
           <td class="td-mono">${_fmtDataIXC(r.credito_data)}</td>
@@ -19965,6 +19983,10 @@ function ifNormFatura(r){
     const dv = venc ? ifDiasEntre(venc, hoje()) : 0;               // dias desde o vencimento
     f.tipo = dv>0 ? 'vencida' : 'aberta';
     f.diasVencida = Math.max(0,dv);
+    // em aberto vale o SALDO: é o que a fila de cobrança mostra, soma e
+    // anuncia no {valor}. O face fica guardado para quem precisar dele.
+    f.valorFace = valor;
+    f.valor = _abertoIXC(r);
   } else f.tipo='outro';
   return f;
 }
