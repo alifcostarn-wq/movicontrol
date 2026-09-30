@@ -6434,6 +6434,129 @@ async function avisoDoTecnico(e, tec, body) {
   return { ok: true, conversa_id: c ? c.id : null, wa_id: waId, fone: foneEnvio, tecnico: tec.nome };
 }
 
+// ============================================================================
+// STATUS DO WHATSAPP — publicação e confirmação
+// ============================================================================
+/* A Evolution publica o status em LOTES DE 10 contatos: o primeiro lote sai
+   sozinho, os outros todos em paralelo, e ela só responde quando o último
+   termina. Com "todos os contatos" isso passa fácil de meio minuto. O painel
+   desistia aos 25s e gravava "falhou: Tempo esgotado" — com o status no ar
+   desde o primeiro lote. Os seis status de imagem publicados até 29/09 ficaram
+   exatamente assim: todos no ar, todos marcados como falha, nenhum com o id do
+   WhatsApp (e sem o id, "excluir" não apagava nada no celular de ninguém).
+
+   Agora o status nasce "publicando" e só vira falha se a Evolution disser que
+   falhou. A confirmação vem do que chegar primeiro:
+   - a resposta da Evolution, quando sai dentro do prazo da função;
+   - o aviso que ela manda ao webhook: um messages.upsert a cada lote enviado
+     (o primeiro chega em segundos) e um send.message no fim. Esses chegam
+     mesmo quando a entrega leva minutos. */
+const STATUS_PRAZO_MS = 55000;           // a função tem 60s na Vercel
+const STATUS_ESPERA_PAINEL_MS = 8000;    // o painel espera isto; o resto segue sozinho
+const STATUS_SEM_CONFIRMACAO_MIN = 15;   // publicando há mais que isto: sem confirmação
+
+/* Mantém a função viva depois de responder ao painel — é exatamente o que o
+   waitUntil do @vercel/functions faz, sem trazer a dependência. Fora da Vercel
+   (teste, local) não há contexto: devolve false e quem chama espera. */
+function emSegundoPlano(promessa) {
+  try {
+    const ctx = globalThis[Symbol.for('@vercel/request-context')]?.get?.();
+    if (ctx && typeof ctx.waitUntil === 'function') { ctx.waitUntil(promessa); return true; }
+  } catch { /* sem contexto da Vercel */ }
+  return false;
+}
+
+// O pedido nem chegou à Evolution (fora do ar, endereço errado): falha de
+// verdade. Qualquer outra queda no meio do caminho é ambígua — ela pode ter
+// recebido e estar publicando —, então quem decide é a confirmação.
+function evoNaoRecebeu(err) {
+  const cod = String(err?.cause?.code || err?.code || '');
+  return /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|UND_ERR_CONNECT_TIMEOUT)$/.test(cod)
+    || /certificate|self.signed/i.test(String(err?.cause?.message || err?.message || ''));
+}
+
+async function publicarStatusNaEvolution(e, statusId, payload, prazoMs) {
+  let situacao = 'publicando', erro = null, waId = null;
+  try {
+    const r = await fetchComPrazo(`${e.EVO_URL}/message/sendStatus/${e.EVO_INST}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+      body: JSON.stringify(payload),
+    }, prazoMs);
+    const txt = await r.text();
+    if (!r.ok) {
+      situacao = 'erro';
+      erro = `Evolution ${r.status}: ${txt.slice(0, 250)}`;
+    } else {
+      situacao = 'no_ar';
+      try { waId = idDaEvolution(JSON.parse(txt)); } catch { /* o webhook traz o id */ }
+    }
+  } catch (err) {
+    // prazo estourado NÃO é falha: a Evolution recebeu e segue lote a lote
+    if (!/^Tempo esgotado/.test(String(err.message)) && evoNaoRecebeu(err)) {
+      situacao = 'erro';
+      erro = String(err.message).slice(0, 250);
+    }
+  }
+
+  if (statusId && situacao !== 'publicando') {
+    const patch = situacao === 'no_ar'
+      ? { situacao, confirmado_em: new Date().toISOString(), erro: null, ...(waId ? { wa_id: waId } : {}) }
+      : { situacao, erro };
+    // só mexe em quem ainda espera: o webhook pode ter confirmado primeiro
+    await sb(e, `atend_status?id=eq.${statusId}&situacao=in.(publicando,sem_confirmacao)`, {
+      method: 'PATCH', prefer: 'return=minimal', body: patch,
+    }).catch(err => console.error('[status] gravar resultado:', err.message));
+  }
+  return { situacao, erro, wa_id: waId };
+}
+
+// O webhook trouxe algo do status@broadcast? (o da empresa ou o de contatos)
+function statusDoWebhook(body) {
+  const bruto = body && (body.data || body.message || body);
+  const d = Array.isArray(bruto) ? bruto[0] : bruto;
+  const key = (d && d.key) || {};
+  if (key.remoteJid !== 'status@broadcast') return null;
+  return { fromMe: !!key.fromMe, waId: key.id || null, msg: (d && d.message) || {} };
+}
+
+async function confirmarStatusPublicado(e, st) {
+  // status de contato não é conversa com ninguém: nada a fazer aqui
+  if (!st.fromMe || !st.waId) return { ok: true, ignorado: 'status de contato' };
+
+  // O mesmo id chega uma vez por lote e mais uma no fim. Depois do primeiro,
+  // cada aviso custa uma leitura e mais nada.
+  const ja = await sbUm(e, `atend_status?wa_id=eq.${encodeURIComponent(st.waId)}&select=id,situacao`);
+  if (ja) {
+    if (ja.situacao !== 'no_ar') {
+      await sb(e, `atend_status?id=eq.${ja.id}`, {
+        method: 'PATCH', prefer: 'return=minimal',
+        body: { situacao: 'no_ar', confirmado_em: new Date().toISOString(), erro: null },
+      });
+    }
+    return { ok: true, status_confirmado: ja.id };
+  }
+
+  // Primeiro aviso deste status: é o mais antigo esperando, do mesmo tipo,
+  // publicado há pouco. Status postado direto no celular não acha ninguém
+  // esperando — e fica de fora, como deve.
+  const m = st.msg;
+  const tipo = m.imageMessage ? 'image' : m.videoMessage ? 'video' : 'text';
+  const desde = new Date(Date.now() - 2 * 3600e3).toISOString();
+  const alvo = await sbUm(e,
+    `atend_status?wa_id=is.null&excluido_em=is.null&tipo=eq.${tipo}` +
+    `&situacao=in.(publicando,sem_confirmacao)&publicado_em=gte.${desde}` +
+    `&select=id&order=publicado_em.asc&limit=1`);
+  if (!alvo) return { ok: true, ignorado: 'status sem publicação pendente' };
+
+  // wa_id=is.null na condição: dois avisos simultâneos não gravam duas vezes
+  await sb(e, `atend_status?id=eq.${alvo.id}&wa_id=is.null`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { situacao: 'no_ar', wa_id: st.waId, confirmado_em: new Date().toISOString(), erro: null },
+  });
+  return { ok: true, status_confirmado: alvo.id };
+}
+
 /* O webhook e o cron são as duas portas sem login: quem passa por elas injeta
    mensagem "do cliente" no painel ou dispara a régua de cobrança. A checagem
    era `if (segredo configurado && diferente)` — sem a variável na Vercel, a
@@ -6462,6 +6585,7 @@ async function conversaDoUsuario(e, user, id, select = 'id,setor,contato_fone') 
 }
 
 export default async function handler(req, res) {
+  const inicioReq = Date.now();   // o prazo da Vercel conta daqui
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-atend-secret');
@@ -6480,6 +6604,10 @@ export default async function handler(req, res) {
       if (!segredoConfere(e, req, body)) {
         return res.status(401).json({ ok: false, error: 'Secret do webhook inválido.' });
       }
+      // status (da empresa ou de contatos) não é conversa: não passa pelo bot
+      // nem pega carona na varredura — chegam dezenas por publicação
+      const st = statusDoWebhook(body);
+      if (st) return res.status(200).json(await confirmarStatusPublicado(e, st));
       const r = await tratarWebhook(e, body);
       // carona no tráfego real: cada mensagem que chega também faz o ciclo de
       // inatividade andar. Nunca deixa a entrada de mensagem quebrar por isso.
@@ -7380,6 +7508,13 @@ export default async function handler(req, res) {
       }
 
       case 'status.listar': {
+        // "publicando" há tempo demais sem nenhum aviso da Evolution: foi
+        // entregue a ela, mas ninguém confirmou. Não é falha — é "confira no
+        // celular". Um aviso atrasado ainda promove para "no ar".
+        const corte = new Date(Date.now() - STATUS_SEM_CONFIRMACAO_MIN * 60000).toISOString();
+        await sb(e, `atend_status?situacao=eq.publicando&publicado_em=lt.${corte}`, {
+          method: 'PATCH', prefer: 'return=minimal', body: { situacao: 'sem_confirmacao' },
+        }).catch(err => console.error('[status] sem confirmação:', err.message));
         const itens = await sb(e, 'atend_status?excluido_em=is.null&select=*&order=publicado_em.desc&limit=30');
         // status de imagem/vídeo guarda o CAMINHO no storage (o link assinado
         // expira em horas, o histórico vive para sempre). Assina na hora de
@@ -7462,34 +7597,36 @@ export default async function handler(req, res) {
           });
         }
 
-        let erro = null, waId = null;
-        try {
-          const r = await fetchComPrazo(`${e.EVO_URL}/message/sendStatus/${e.EVO_INST}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
-            body: JSON.stringify(payload),
-          }, 25000);
-          const txt = await r.text();
-          if (!r.ok) erro = `Evolution ${r.status}: ${txt.slice(0, 250)}`;
-          else { try { waId = idDaEvolution(JSON.parse(txt)); } catch { /* sem id: não dá para excluir depois */ } }
-        } catch (err) {
-          erro = String(err.message).slice(0, 250);
-        }
-
-        // registra mesmo em caso de falha: a tentativa faz parte do histórico
-        await sb(e, 'atend_status', {
-          method: 'POST', prefer: 'return=minimal',
+        // Nasce "publicando" ANTES de chamar a Evolution: é o registro que o
+        // webhook vai confirmar, mesmo que a entrega termine só daqui a minutos.
+        const reg = await sbUm(e, 'atend_status', {
+          method: 'POST',
           body: {
             tipo, conteudo, legenda: legenda || null,
             cor_fundo: payload.backgroundColor || null, fonte: payload.font ?? null,
             destino: paraTodos ? 'todos' : 'lista',
             destinatarios: paraTodos ? null : lista,
-            publicado_por: user.id, erro, wa_id: waId,
+            publicado_por: user.id, situacao: 'publicando',
           },
         });
+        const statusId = reg && reg.id;
 
-        if (erro) return res.status(200).json({ ok: false, error: erro });
-        return res.status(200).json({ ok: true });
+        // Espera a Evolution até perto do limite da função — em segundo plano,
+        // depois de já ter respondido ao painel. Sem o segundo plano (fora da
+        // Vercel), espera aqui mesmo, como antes.
+        const prazo = Math.max(5000, STATUS_PRAZO_MS - (Date.now() - inicioReq));
+        const publicacao = publicarStatusNaEvolution(e, statusId, payload, prazo);
+        const segue = emSegundoPlano(publicacao);
+        // O painel espera só o bastante para uma recusa rápida aparecer na
+        // hora (instância desconectada, arquivo que o WhatsApp não aceita).
+        const res1 = await Promise.race([
+          publicacao,
+          new Promise(ok => setTimeout(() => ok(null), segue ? STATUS_ESPERA_PAINEL_MS : prazo + 1000)),
+        ]);
+        if (res1 && res1.situacao === 'erro') {
+          return res.status(200).json({ ok: false, error: res1.erro, status_id: statusId });
+        }
+        return res.status(200).json({ ok: true, status_id: statusId, situacao: res1 ? res1.situacao : 'publicando' });
       }
 
       case 'status.excluir': {

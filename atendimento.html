@@ -731,6 +731,17 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .st-hist{margin-top:22px;}
 .st-item{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:8px;background:#fbfcfd;}
 .st-item.falhou{border-color:#fecaca;background:#fff6f6;}
+.st-item.publicando{border-color:#fcd9a4;background:#fffaf2;}
+/* situação da publicação: o que o WhatsApp confirmou, não o que o painel esperou */
+.sh-sit{
+  display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:6px;
+  margin-top:6px;line-height:1.35;
+}
+.sh-sit.no_ar{background:var(--green-soft);color:var(--green-deep);}
+.sh-sit.publicando{background:var(--orange-soft);color:#92400e;}
+.sh-sit.sem_confirmacao,.sh-sit.expirou{background:#eef1f4;color:var(--text-mid);}
+.sh-sit.erro{background:var(--red-soft);color:var(--red);}
+.sh-sit .sh-nota{font-weight:600;}
 .st-item .sh-t{font-size:12.5px;line-height:1.45;white-space:pre-wrap;}
 .st-item .sh-m{font-size:10.5px;color:var(--text-low);margin-top:5px;}
 .st-aviso{
@@ -6747,6 +6758,21 @@ function perguntarFinalizar(c){
   });
 }
 
+/* O que a lista diz de cada status. Vale o que o WhatsApp confirmou, não o
+   quanto o painel esperou: a Evolution entrega em lotes de 10 contatos e só
+   responde no fim, então "demorou" não quer dizer "falhou". O status fica
+   24h no ar e depois some sozinho — a lista diz até quando. */
+function situacaoStatus(x){
+  const fim = new Date(x.publicado_em).getTime() + 24*3600*1000;
+  const quando = new Date(fim).toLocaleString('pt-BR',{ day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const sit = x.situacao || (x.erro ? 'erro' : 'no_ar');
+  if(sit==='erro') return { cls:'erro', rotulo:'❌ falhou', nota:String(x.erro||'').slice(0,90) };
+  if(sit==='publicando') return { cls:'publicando', rotulo:'⏳ publicando', nota:'o WhatsApp está entregando para os contatos' };
+  if(Date.now() > fim) return { cls:'expirou', rotulo:'⌛ expirou', nota:'o status fica 24h no ar' };
+  if(sit==='no_ar') return { cls:'no_ar', rotulo:'✅ no ar', nota:`até ${quando}` };
+  return { cls:'sem_confirmacao', rotulo:'📤 enviado', nota:'o WhatsApp não confirmou a entrega — confira no celular' };
+}
+
 function abrirStatusWA(){
   let cor = ST_CORES[0], enviando = false;
   let modo = 'text';            // 'text' | 'midia'
@@ -6900,9 +6926,15 @@ function abrirStatusWA(){
   });
 
   const hist=ov.querySelector('#stHist');
+  // enquanto houver status "publicando", a lista se atualiza sozinha: é por
+  // ela que o operador vê o WhatsApp confirmar
+  let vigia=null;
+  const pararVigia=()=>{ if(vigia){ clearTimeout(vigia); vigia=null; } };
   const carregarHist=()=>chamar('status.listar',{})
     .then(j=>{
       const st=j.status||[];
+      pararVigia();
+      if(document.body.contains(ov) && st.some(x=>x.situacao==='publicando')) vigia=setTimeout(carregarHist, 5000);
       hist.innerHTML = st.length ? st.map(x=>{
         const midia = x.tipo && x.tipo!=='text';
         const rotuloTipo = x.tipo==='image' ? 'IMAGEM' : x.tipo==='video' ? 'VÍDEO' : '';
@@ -6913,15 +6945,16 @@ function abrirStatusWA(){
               ? `<img class="sh-thumb" src="${esc(x.midia_link)}" alt="">`
               : `<video class="sh-thumb" src="${esc(x.midia_link)}" muted playsinline></video>`)
           : '';
+        const sit = situacaoStatus(x);
         return `
-        <div class="st-item ${x.erro?'falhou':''}">
+        <div class="st-item ${sit.cls==='erro'?'falhou':sit.cls==='publicando'?'publicando':''}">
           <div style="display:flex;align-items:flex-start;gap:9px;">
             ${thumb}
             <div style="flex:1;min-width:0;">
               <div class="sh-t">${rotuloTipo?`<span class="sh-tipo">${rotuloTipo}</span>`:''}${esc(corpo.slice(0,200))}</div>
               <div class="sh-m">${esc(new Date(x.publicado_em).toLocaleString('pt-BR'))}
-                · ${x.destino==='todos'?'todos os contatos':'lista'}
-                ${x.erro?`· <b style="color:var(--red)">falhou: ${esc(x.erro.slice(0,80))}</b>`:''}</div>
+                · ${x.destino==='todos'?'todos os contatos':'lista'}</div>
+              <div class="sh-sit ${sit.cls}">${sit.rotulo}${sit.nota?` <span class="sh-nota">· ${esc(sit.nota)}</span>`:''}</div>
             </div>
             <button class="fin-copy" data-delst="${x.id}" title="Excluir status">🗑 excluir</button>
           </div>
@@ -6939,6 +6972,10 @@ function abrirStatusWA(){
     })
     .catch(()=>{ hist.innerHTML='<div style="font-size:12px;color:var(--text-low)">Não consegui carregar o histórico.</div>'; });
   carregarHist();
+  // fechou a janela: para de perguntar
+  const fecharOriginal=fechar;
+  ov.querySelector('#stX').onclick=()=>{ pararVigia(); fecharOriginal(); };
+  ov.onclick=e=>{ if(e.target===ov){ pararVigia(); fecharOriginal(); } };
 
   const btn=ov.querySelector('#stEnviar');
   btn.onclick=async()=>{
@@ -6961,8 +6998,13 @@ function abrirStatusWA(){
         dados.base64 = await lerArquivo(arquivo);
         dados.mimetype = arquivo.type || (ehVideo()?'video/mp4':'image/jpeg');
       }
-      await chamar('status.publicar', dados, 90000);
-      toast('Status publicado');
+      // O servidor responde assim que a Evolution aceita o pedido; a entrega
+      // para todos os contatos continua lá e a confirmação chega pela lista.
+      btn.textContent='Publicando…';
+      const r = await chamar('status.publicar', dados, 90000);
+      toast(r && r.situacao==='no_ar'
+        ? 'Status no ar ✅'
+        : 'Status enviado ✅ O WhatsApp está entregando para os contatos — a confirmação aparece na lista.');
       if(modo==='text'){ txt.value=''; }
       else { soltarPreview(); arquivo=null; file.value=''; leg.value=''; mostrarArquivo(); }
       pintar();
