@@ -7,7 +7,7 @@
 // fica atrás de um proxy com token — ver infra/acs/LEIA-ME.md.
 //
 // Arquivo com "_" na frente: a Vercel não o publica como função. É biblioteca
-// de api/atendimento.js.
+// de api/roteadores.js (o módulo Roteadores do MoviOne).
 //
 // Os equipamentos falam dois "dialetos":
 //   TR-098  InternetGatewayDevice.*  — a maioria das ONUs (Huawei, ZTE, FiberHome)

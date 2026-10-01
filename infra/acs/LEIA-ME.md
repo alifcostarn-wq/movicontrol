@@ -1,15 +1,15 @@
 # ACS (TR-069) do MoviControl
 
 O ACS é o servidor que os roteadores e ONUs dos clientes procuram a cada 5
-minutos. Com ele, o MoviTalk mostra no painel do cliente se o equipamento
-está online, o sinal da fibra, as redes Wi-Fi e os aparelhos conectados. Ele
-também troca a senha do Wi-Fi, reinicia o equipamento e faz ping, teste de
-velocidade e traceroute, tudo sem ir à casa do cliente.
+minutos. Com ele, o módulo **Roteadores** do MoviOne mostra se o equipamento
+de cada cliente está online, o sinal da fibra, as redes Wi-Fi e os aparelhos
+conectados. Ele também troca a senha do Wi-Fi, reinicia o equipamento e faz
+ping, teste de velocidade e traceroute, tudo sem ir à casa do cliente.
 
 Usamos o **GenieACS 1.2.16** (código aberto), instalado num servidor do POP.
 
 ```
- Roteador/ONU do cliente ──(TR-069, porta 7547)──▶  ACS no POP  ◀──(HTTPS + token)── MoviTalk (Vercel)
+ Roteador/ONU do cliente ──(TR-069, porta 7547)──▶  ACS no POP  ◀──(HTTPS + token)── MoviOne (Vercel)
           ▲                                           │
           └────────(pedido de conexão, porta 7547)────┘
 ```
@@ -18,7 +18,7 @@ Usamos o **GenieACS 1.2.16** (código aberto), instalado num servidor do POP.
   quando o ACS "cutuca" a porta dele (pedido de conexão). Por isso o ACS fica
   **dentro da rede**: ele precisa alcançar o IP de WAN dos equipamentos,
   inclusive o IP do CGNAT.
-* O MoviTalk fala com o ACS só pela API dele, em HTTPS e com token. Essa API
+* O MoviOne fala com o ACS só pela API dele, em HTTPS e com token. Essa API
   só deixa **ler** equipamentos e **criar tarefas** (senha, reinício,
   diagnóstico). O que mexe em todos os equipamentos de uma vez (provisions e
   presets) só se faz de dentro do servidor.
@@ -69,11 +69,15 @@ No projeto **movicontrol**, em Settings → Environment Variables (Production):
 | `ACS_TESTE_DOWNLOAD_URL` | `http://<IP interno do servidor>:8080/100MB.bin` |
 | `ACS_PING_HOST` (opcional) | destino do ping e do traceroute (padrão `8.8.8.8`) |
 
-Faça um novo deploy depois de salvar. Sem `ACS_NBI_URL`, o card "Equipamento"
-avisa que o ACS não está configurado e o resto do MoviTalk segue normal.
+Faça um novo deploy depois de salvar. Sem `ACS_NBI_URL`, o módulo avisa que o
+ACS não está configurado e o resto do MoviOne segue normal.
 
-No MoviTalk, em **Equipe**, marque "Roteador" para quem pode trocar senha,
-reiniciar e testar. O administrador sempre pode.
+No MoviOne, em **Sistema › Usuários**, marque "Roteadores" para quem pode usar
+o módulo (o administrador sempre pode). Visualizador liberado só consulta;
+operador consulta e age (senha do Wi-Fi, reiniciar, testes).
+
+O módulo fica em **Infraestrutura › Roteadores** (monitoramento de toda a base)
+e na ficha do cliente, aba **Equipamento**.
 
 ## 4. Apontar os equipamentos para o ACS
 
@@ -101,12 +105,13 @@ página web dela (menu "Gerência"/"TR-069"/"ACS").
 A ONU em bridge geralmente não tem IP próprio. Se tiver gerência TR-069 pela
 OLT, pode entrar também, como equipamento separado.
 
-### Como o MoviTalk acha o equipamento de cada cliente
+### Como o MoviOne acha o equipamento de cada cliente
 
 Pelo **login PPPoE**: o ACS lê o login gravado no equipamento e o compara com
-o login do cliente no IXC. Não precisa cadastrar nada. Quando o login não
-está no equipamento (ONU em bridge, roteador em DHCP), o atendente vincula
-pelo número de série no próprio card "Equipamento".
+o login do cliente no IXC (os logins que o MoviOne já sincroniza). Não
+precisa cadastrar nada. Quando o login não está no equipamento (ONU em
+bridge, roteador em DHCP), vincule pelo número de série na aba
+**Equipamento** da ficha do cliente.
 
 ## 5. Como conferir
 
