@@ -1,0 +1,60 @@
+# HTTPS na frente da API do GenieACS (NBI), que escuta só em 127.0.0.1:7557.
+# Só passa quem manda "Authorization: Bearer <ACS_NBI_TOKEN>", e só o que o
+# MoviControl usa: ler equipamentos e falhas, criar tarefas (senha, reiniciar,
+# diagnóstico) e cancelar uma tarefa que o equipamento recusou. Gravar
+# provisions/presets — que mexem em TODOS os roteadores — fica de fora: isso
+# só se faz de dentro do servidor (carregar-config.sh).
+#
+# O instalar.sh troca {$ACS_DOMINIO} pelo domínio e passa o token pelo
+# ambiente do serviço (systemd), para ele não ficar escrito neste arquivo.
+
+{$ACS_DOMINIO} {
+	encode gzip
+
+	@token header Authorization "Bearer {$ACS_NBI_TOKEN}"
+	@leitura {
+		method GET
+		path /devices /devices/ /faults /faults/
+	}
+	@tarefa {
+		method POST
+		path_regexp ^/devices/[^/]+/tasks$
+	}
+	# cancelar uma tarefa que o equipamento recusou (apagar a falha dela
+	# apaga a tarefa junto); só falha de tarefa, nada mais
+	@cancelar {
+		method DELETE
+		path_regexp ^/faults/[^/]+:task_[0-9a-f]+$
+	}
+
+	handle @token {
+		handle @leitura {
+			reverse_proxy 127.0.0.1:7557
+		}
+		handle @tarefa {
+			reverse_proxy 127.0.0.1:7557
+		}
+		handle @cancelar {
+			reverse_proxy 127.0.0.1:7557
+		}
+		respond 403
+	}
+	handle {
+		respond 401
+	}
+
+	log {
+		output file /var/log/caddy/acs.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}
+
+# Arquivo do teste de velocidade (TR-143). Quem baixa é o próprio roteador do
+# cliente, por HTTP simples (muitos não fazem HTTPS nesse teste). Fica numa
+# porta à parte, que o firewall só abre para as redes dos clientes.
+:8080 {
+	root * /var/lib/movicontrol-teste
+	file_server
+}

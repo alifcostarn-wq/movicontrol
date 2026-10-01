@@ -450,6 +450,39 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .con-cell .cl{font-size:9px;font-weight:700;color:var(--text-low);text-transform:uppercase;letter-spacing:.03em;}
 .con-cell .cv{font-size:12px;font-weight:800;margin-top:2px;word-break:break-all;}
 .con-cell.wide{grid-column:1 / -1;}
+/* --- equipamento do cliente (TR-069) --- */
+.rot-sinal{font-weight:800;}
+.rot-sinal.bom{color:var(--green-deep);} .rot-sinal.aten{color:#b45309;} .rot-sinal.ruim{color:var(--red);}
+.rot-sub{font-size:10px;font-weight:600;color:var(--text-low);}
+.rot-wifi{display:flex;flex-direction:column;gap:5px;margin-top:8px;}
+.rot-rede{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 9px;}
+.rot-rede.off{opacity:.55;}
+.rot-banda{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:var(--blue-soft);color:var(--blue);}
+.rot-ssid{font-size:12px;font-weight:800;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rot-ap{margin-top:8px;font-size:11px;}
+.rot-ap summary{cursor:pointer;font-weight:700;color:var(--text-mid);}
+.rot-ap-i{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--line);}
+.rot-ap-i.off{opacity:.45;}
+.rot-ap .mono,.rot-achado .mono,.rot-salto .mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;}
+.rot-meta{font-size:10px;color:var(--text-low);margin-top:8px;word-break:break-all;}
+.rot-acts{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+.rot-acts .vinc-btn{flex:1 1 auto;}
+.rot-hist{font-size:10px;color:var(--text-low);margin-top:8px;line-height:1.6;}
+.rot-ok{font-size:12.5px;line-height:1.5;}
+.rot-pre{font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#f7f9fb;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-top:6px;white-space:pre-wrap;}
+.rot-testes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0;}
+.rot-testes .vinc-btn{line-height:1.3;padding:9px 6px;}
+.rot-testes .vinc-btn span{font-size:9.5px;font-weight:600;opacity:.85;}
+.rot-res{display:flex;gap:14px;align-items:center;font-size:12px;line-height:1.5;background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:12px;}
+.rot-big{font-size:24px;font-weight:800;white-space:nowrap;}
+.rot-big.bom{color:var(--green-deep);} .rot-big.aten{color:#b45309;}
+.rot-salto{display:grid;grid-template-columns:22px 1fr auto;gap:8px;padding:3px 0;border-bottom:1px dashed var(--line);}
+.rot-achado{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;}
+.rot-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+.rot-kpis>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;}
+.rot-kpis b{display:block;font-size:22px;}
+.rot-kpis span{font-size:11px;color:var(--text-mid);font-weight:600;}
+@media (max-width:520px){ .rot-testes{grid-template-columns:1fr;} }
 .con-cell .cv.mono{font-family:'JetBrains Mono',monospace;font-size:11.5px;}
 .quedas-0{color:var(--green-deep);}
 .quedas-med{color:#b45309;}
@@ -3310,6 +3343,9 @@ async function recarregarConversas(){
       nova.asn = antiga.asn;
       nova._asnCarregado = antiga._asnCarregado;
       nova.asnErro = antiga.asnErro;
+      // equipamento no ACS: mesma lógica — não refaz a busca a cada recarga
+      nova.rot = antiga.rot; nova.rotErro = antiga.rotErro;
+      nova._rotCarregado = antiga._rotCarregado; nova.rotCliente = antiga.rotCliente;
       // o rascunho NÃO é copiado aqui de propósito: ele mora em RASCUNHOS,
       // fora dos objetos de conversa, justamente porque esta troca acontecia no
       // meio da digitação e levava embora o que tinha sido escrito depois
@@ -4439,6 +4475,346 @@ function blocoChamados(c){
 `;
 }
 
+
+/* ================= EQUIPAMENTO DO CLIENTE (TR-069) =================
+   O roteador/ONU do cliente, visto pelo ACS do POP: se está online, o sinal
+   da fibra, as redes Wi-Fi e quem está conectado. Quem tem permissão troca a
+   senha do Wi-Fi, reinicia e testa a conexão sem ir à casa do cliente.
+   O estado fica na conversa (c.rot): o modal é remontado a cada mensagem e o
+   card não pode piscar nem perder o que já leu. */
+async function carregarRoteador(c){
+  const id=c.clienteVinculado&&c.clienteVinculado.id;
+  if(!id) return null;
+  const j=await chamar('roteador.status',{cliente_ixc_id:id},50000);
+  c.rot=j; c.rotErro=null; c.rotCliente=id;
+  return j;
+}
+
+function rotTempo(seg){
+  if(seg==null||!isFinite(seg)) return '—';
+  const d=Math.floor(seg/86400), h=Math.floor(seg%86400/3600), m=Math.floor(seg%3600/60);
+  return d?`${d}d ${h}h`:h?`${h}h ${m}min`:`${m} min`;
+}
+function rotHa(iso){
+  if(!iso) return 'nunca';
+  const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);
+  return s<90?'agora há pouco':'há '+rotTempo(s);
+}
+const ROT_SINAL={bom:['bom','Bom'],atencao:['aten','Atenção'],ruim:['ruim','Ruim'],forte_demais:['aten','Forte demais']};
+const ROT_ACAO={wifi:'Wi-Fi alterado',reiniciar:'Reiniciado',diagnostico:'Teste',vincular:'Vinculado',desvincular:'Desvinculado'};
+const ROT_TESTE={ping:'Ping',velocidade:'Velocidade',rota:'Rota (traceroute)'};
+
+function blocoEquipamento(c){
+  if(c.rotErro) return `<div class="ms-erro">Não consegui falar com o ACS.<br><b>${esc(c.rotErro)}</b></div>
+    <button class="vinc-btn" data-rot="recarregar" style="width:100%;margin-top:7px;">🔄 Tentar de novo</button>`;
+  const r=c.rot;
+  if(!r) return '<div class="ms-load">Procurando o equipamento no ACS…</div>';
+  if(!r.configurado) return `<div class="ms-load">O servidor ACS (TR-069) ainda não está ligado ao MoviTalk.${
+    USUARIO&&USUARIO.admin?' Veja infra/acs/LEIA-ME.md.':''}</div>`;
+  const eqs=r.equipamentos||[];
+  let h='';
+  if(!eqs.length){
+    h+=`<div class="ms-load">Nenhum equipamento deste cliente apareceu no ACS${
+      r.logins&&r.logins.length?` com o login <b>${r.logins.map(esc).join(', ')}</b>`:''}.
+      ${r.erroIxc?`<br>Não consegui ler o login no IXC: ${esc(r.erroIxc)}`:''}
+      <br>Se o roteador já aponta para o ACS, ele aparece em até 5 minutos.</div>`;
+  }
+  h+=eqs.map(q=>{
+    const s=q.sinal||{}, sc=ROT_SINAL[s.situacao];
+    const ativos=(q.aparelhos||[]).filter(a=>a.ativo);
+    const cx=q.conexao||{};
+    return `<div class="con-card rot-card">
+      <div class="con-head">
+        <span class="con-dot ${q.online?'on':'off'}"></span>
+        <span class="con-login" title="${esc(q.id)}">${esc([q.fabricante&&q.fabricante.split(' ')[0],q.modelo].filter(Boolean).join(' ')||q.id)}</span>
+        <span class="con-st ${q.online?'on':'off'}">${q.online?'ONLINE':'OFFLINE'}</span>
+      </div>
+      <div class="con-grid">
+        <div class="con-cell"><div class="cl">Sinal da fibra</div>
+          <div class="cv">${s.rxDbm!=null?`<span class="rot-sinal ${sc?sc[0]:''}">${String(s.rxDbm).replace('.',',')} dBm</span>${sc?` <span class="rot-sub">${sc[1]}</span>`:''}`:'<span class="rot-sub">não informa</span>'}</div></div>
+        <div class="con-cell"><div class="cl">${q.online?'Ligado há':'Último contato'}</div>
+          <div class="cv" style="font-size:11px">${q.online?esc(rotTempo(q.ligadoHaSeg)):esc(rotHa(q.ultimoContato))}</div></div>
+        ${cx.login?`<div class="con-cell"><div class="cl">PPPoE</div><div class="cv mono">${esc(cx.login)}</div></div>
+        <div class="con-cell"><div class="cl">Conexão</div><div class="cv" style="font-size:11px">${esc(cx.estado||'—')}${cx.ip?`<br><span class="mono">${esc(cx.ip)}</span>`:''}</div></div>`:''}
+        ${cx.ultimoErro&&!/ERROR_NONE/i.test(cx.ultimoErro)?`<div class="con-cell wide"><div class="cl">Último erro do PPPoE</div><div class="cv mono" style="font-size:10.5px">${esc(cx.ultimoErro)}</div></div>`:''}
+      </div>
+      ${(q.wifi||[]).length?`<div class="rot-wifi">${q.wifi.map(w=>`
+        <div class="rot-rede ${w.ativa?'':'off'}">
+          <span class="rot-banda">${esc(w.banda)}</span>
+          <span class="rot-ssid">${esc(w.ssid||'(sem nome)')}</span>
+          <span class="rot-sub">${w.ativa?`canal ${esc(String(w.canal??'—'))}${w.aparelhos!=null?` · ${w.aparelhos} conectado${w.aparelhos==1?'':'s'}`:''}`:'desligada'}</span>
+        </div>`).join('')}</div>`:''}
+      ${(q.aparelhos||[]).length?`<details class="rot-ap"><summary>${ativos.length} aparelho${ativos.length===1?'':'s'} conectado${ativos.length===1?'':'s'}</summary>
+        ${q.aparelhos.map(a=>`<div class="rot-ap-i ${a.ativo?'':'off'}">
+          <span>${a.via==='wifi'?'📶':a.via==='cabo'?'🔌':'•'} ${esc(a.nome||a.mac||'?')}</span>
+          <span class="mono">${esc(a.ip||'')}</span></div>`).join('')}
+      </details>`:''}
+      <div class="rot-meta">${esc(q.serial||'')}${q.firmware?` · fw ${esc(q.firmware)}`:''}${q.origem&&q.origem.vinculado?' · vinculado à mão':''}
+        · contato ${esc(rotHa(q.ultimoContato))}</div>
+      <div class="rot-acts">
+        <button class="vinc-btn" data-rot="atualizar" data-dev="${esc(q.id)}" title="Pede ao equipamento os dados de agora">🔄 Atualizar</button>
+        ${r.podeAgir?`
+        <button class="vinc-btn solid" data-rot="wifi" data-dev="${esc(q.id)}" ${(q.wifi||[]).some(w=>w.podeTrocarSenha)?'':'disabled title="Ainda não sei onde este modelo guarda a senha — clique em Atualizar"'}>🔑 Senha do Wi-Fi</button>
+        <button class="vinc-btn" data-rot="teste" data-dev="${esc(q.id)}">🩺 Testar conexão</button>
+        <button class="vinc-btn desf" data-rot="reiniciar" data-dev="${esc(q.id)}">⏻ Reiniciar</button>
+        ${q.origem&&q.origem.vinculado?`<button class="vinc-btn desf" data-rot="desvincular" data-dev="${esc(q.id)}">Desvincular</button>`:''}`:''}
+      </div>
+    </div>`;
+  }).join('');
+  if(r.podeAgir) h+=`<button class="vinc-btn" data-rot="buscar" style="width:100%;margin-top:4px;">🔎 Vincular outro equipamento (serial)</button>`;
+  const hist=r.historico||[];
+  if(hist.length) h+=`<div class="rot-hist">${hist.map(x=>`<div>${esc(dataHora(x.criado_em))} · ${esc(x.user_nome||'—')} · ${
+    esc(ROT_ACAO[x.acao]||x.acao)}${x.acao==='diagnostico'&&x.detalhe?' de '+esc(ROT_TESTE[x.detalhe.tipo]||x.detalhe.tipo):''}${
+    x.acao==='wifi'&&x.detalhe?` (${[x.detalhe.senha?'senha':null,x.detalhe.ssid?'nome':null].filter(Boolean).join(' e ')})`:''}${
+    x.resultado==='na_fila'?' · na fila':x.resultado==='erro'?' · <span style="color:var(--red)">falhou</span>':''}</div>`).join('')}</div>`;
+  return h;
+}
+
+function rotModal(titulo){
+  const ov=document.createElement('div');
+  ov.className='tr-overlay';
+  ov.innerHTML=`<div class="pn-modal" style="max-width:440px">
+    <div class="pn-head"><h3>${titulo}</h3><button class="pn-x">✕</button></div>
+    <div class="pn-body"></div></div>`;
+  document.body.appendChild(ov);
+  const fechar=()=>ov.remove();
+  ov.onclick=ev=>{ if(ev.target===ov) fechar(); };
+  ov.querySelector('.pn-x').onclick=fechar;
+  return { ov, body:ov.querySelector('.pn-body'), fechar };
+}
+
+function rotRecarregar(c){
+  return carregarRoteador(c)
+    .catch(err=>{ c.rotErro=err.message; })
+    .finally(()=>{ if(modalId===c.id) openModal(c.id); });
+}
+
+function rotResultadoAplicado(j, feito){
+  return j.aplicado ? `✅ ${feito}`
+    : '⏳ O equipamento não atendeu agora (desligado ou atrás de outro roteador). O pedido ficou na fila e é aplicado no próximo contato, em até 5 minutos.';
+}
+
+function rotSenhaAleatoria(){
+  // sem 0/O, 1/l/I: o cliente vai digitar isso no celular
+  const a='abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const v=new Uint32Array(10); crypto.getRandomValues(v);
+  return Array.from(v,x=>a[x%a.length]).join('');
+}
+
+function rotAbrirWifi(c, dev){
+  const q=(c.rot.equipamentos||[]).find(x=>x.id===dev); if(!q) return;
+  const redes=(q.wifi||[]).filter(w=>w.ativa);
+  const bandas=[...new Set(redes.map(w=>w.banda))];
+  const m=rotModal('🔑 Wi-Fi do cliente');
+  m.body.innerHTML=`
+    <div class="cp-lab">Nova senha <span style="text-transform:none;font-weight:600">(8 a 63 caracteres, sem acento)</span></div>
+    <div style="display:flex;gap:6px"><input class="cp-nome" id="rwSenha" autocomplete="off" spellcheck="false" style="flex:1;font-family:'JetBrains Mono',monospace">
+      <button class="vinc-btn" id="rwGerar" type="button">🎲 Gerar</button></div>
+    <div class="cp-lab" style="margin-top:12px">Novo nome da rede <span style="text-transform:none;font-weight:600">(opcional — em branco mantém ${esc(redes.map(w=>w.ssid).filter(Boolean).join(' / ')||'o atual')})</span></div>
+    <input class="cp-nome" id="rwSsid" maxlength="32" autocomplete="off">
+    ${bandas.length>1?`<div class="cp-lab" style="margin-top:12px">Redes</div>
+      ${bandas.map(b=>`<label class="cob-check" style="margin-right:12px"><input type="checkbox" data-banda="${esc(b)}" checked> ${esc(b)}</label>`).join('')}
+      <div class="cp-nota">Com nome novo, a rede de 5 GHz ganha "_5G" no fim.</div>`:''}
+    <div class="cp-nota" style="margin-top:10px">O cliente cai do Wi-Fi e precisa entrar de novo com a senha nova. O MoviTalk não guarda a senha — o registro diz só que ela foi trocada.</div>
+    <div id="rwMsg" style="margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+      <button class="vinc-btn" id="rwCancelar">Cancelar</button>
+      <button class="vinc-btn solid" id="rwAplicar">Aplicar no equipamento</button></div>`;
+  const $m=s=>m.body.querySelector(s);
+  $m('#rwGerar').onclick=()=>{ $m('#rwSenha').value=rotSenhaAleatoria(); };
+  $m('#rwCancelar').onclick=m.fechar;
+  $m('#rwAplicar').onclick=async()=>{
+    const senha=$m('#rwSenha').value, ssid=$m('#rwSsid').value.trim();
+    if(!senha&&!ssid){ toast('Digite a nova senha ou o novo nome'); return; }
+    if(senha&&!/^[\x20-\x7e]{8,63}$/.test(senha)){ toast('A senha precisa de 8 a 63 caracteres, sem acento'); return; }
+    const marc=[...m.body.querySelectorAll('[data-banda]')].filter(x=>x.checked).map(x=>x.dataset.banda);
+    if(bandas.length>1&&!marc.length){ toast('Marque ao menos uma rede'); return; }
+    const b=$m('#rwAplicar'); b.disabled=true; b.textContent='Aplicando…';
+    try{
+      const j=await chamar('roteador.wifi',{cliente_ixc_id:c.clienteVinculado.id, device_id:dev,
+        ...(senha?{senha}:{}), ...(ssid?{ssid}:{}), ...(bandas.length>1?{bandas:marc}:{})},58000);
+      const txt=['Wi-Fi do cliente','','Rede: '+(ssid||redes.map(w=>w.ssid).filter(Boolean)[0]||''),...(senha?['Senha: '+senha]:[])].join('\n');
+      m.body.innerHTML=`<div class="rot-ok">${rotResultadoAplicado(j,'Pronto! O equipamento já está com '+(senha&&ssid?'a senha e o nome novos':senha?'a senha nova':'o nome novo')+'.')}</div>
+        ${senha?`<div class="cp-nota" style="margin-top:10px">Quer mandar os dados para o cliente nesta conversa?</div>
+        <pre class="rot-pre">${esc(txt)}</pre>`:''}
+        <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button class="vinc-btn" id="rwFechar">Fechar</button>
+          ${senha?'<button class="vinc-btn solid" id="rwEnviar">📲 Enviar ao cliente</button>':''}</div>`;
+      $m('#rwFechar').onclick=m.fechar;
+      const be=$m('#rwEnviar');
+      if(be) be.onclick=async()=>{ be.disabled=true;
+        try{ await api.enviarMensagem(c, txt); toast('Enviado ao cliente'); m.fechar(); }
+        catch(err){ toast('Falha: '+err.message); be.disabled=false; } };
+      rotRecarregar(c);
+    }catch(err){
+      $m('#rwMsg').innerHTML=`<div class="ms-erro">${esc(err.message)}</div>`;
+      b.disabled=false; b.textContent='Aplicar no equipamento';
+    }
+  };
+}
+
+function rotAbrirTeste(c, dev){
+  const m=rotModal('🩺 Testar a conexão do cliente');
+  const pintarEscolha=()=>{
+    m.body.innerHTML=`<div class="cp-nota">O teste roda <b>no próprio equipamento do cliente</b>: mede a conexão dele até a nossa rede, sem depender do celular ou do computador da casa.</div>
+      <div class="rot-testes">
+        <button class="vinc-btn solid" data-t="ping">📡 Ping<br><span>resposta e perda de pacotes</span></button>
+        <button class="vinc-btn solid" data-t="velocidade">⚡ Velocidade<br><span>download do nosso servidor</span></button>
+        <button class="vinc-btn solid" data-t="rota">🧭 Rota<br><span>por onde o tráfego passa</span></button>
+      </div><div id="rtRes"></div>`;
+    m.body.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>rodar(b.dataset.t));
+  };
+  const rodar=async tipo=>{
+    m.body.querySelectorAll('[data-t]').forEach(b=>b.disabled=true);
+    const res=m.body.querySelector('#rtRes');
+    res.innerHTML=`<div class="pn-load">Pedindo ao equipamento o teste de ${esc(ROT_TESTE[tipo].toLowerCase())}…</div>`;
+    try{
+      const j=await chamar('roteador.diagnostico',{cliente_ixc_id:c.clienteVinculado.id, device_id:dev, tipo},58000);
+      if(!j.aplicado){ res.innerHTML=`<div class="ms-erro">${rotResultadoAplicado(j,'')}</div>`; return; }
+      res.innerHTML='<div class="pn-load">Testando… (a velocidade leva até 30 segundos)</div>';
+      const fim=Date.now()+(tipo==='velocidade'?75000:45000);
+      while(Date.now()<fim && document.body.contains(m.ov)){
+        await new Promise(ok=>setTimeout(ok,2500));
+        const k=await chamar('roteador.diagnostico_resultado',{cliente_ixc_id:c.clienteVinculado.id, device_id:dev, tipo, desde:j.desde});
+        const x=k.resultado;
+        if(!x||!x.pronto) continue;
+        res.innerHTML=rotHtmlResultado(tipo,x);
+        m.body.querySelectorAll('[data-t]').forEach(b=>b.disabled=false);
+        return;
+      }
+      if(document.body.contains(m.ov)) res.innerHTML='<div class="ms-erro">O equipamento não devolveu o resultado a tempo. Tente de novo em instantes.</div>';
+    }catch(err){ res.innerHTML=`<div class="ms-erro">${esc(err.message)}</div>`; }
+    m.body.querySelectorAll('[data-t]').forEach(b=>b.disabled=false);
+  };
+  pintarEscolha();
+}
+
+function rotHtmlResultado(tipo,x){
+  if(!x.ok) return `<div class="ms-erro">❌ O teste falhou: ${esc(x.erro||x.estado||'sem resposta')}</div>`;
+  if(tipo==='ping'){
+    const perda=x.enviados?Math.round((1-x.respondidos/x.enviados)*100):0;
+    return `<div class="rot-res"><div class="rot-big ${perda?'aten':'bom'}">${x.mediaMs} ms</div>
+      <div>${x.respondidos} de ${x.enviados} respostas${perda?` · <b>${perda}% de perda</b>`:' · sem perda'}<br>mín ${x.minMs} ms · máx ${x.maxMs} ms</div></div>`;
+  }
+  if(tipo==='velocidade') return `<div class="rot-res"><div class="rot-big">${String(x.mbps).replace('.',',')} Mbps</div>
+    <div>${(x.bytes/1e6).toFixed(0)} MB em ${String(x.segundos).replace('.',',')} s<br><span class="rot-sub">Medido no equipamento: é o que a fibra entrega até a casa, antes do Wi-Fi.</span></div></div>`;
+  return `<div class="rot-res" style="display:block">${(x.saltos||[]).map((s,i)=>`<div class="rot-salto"><span>${i+1}</span><span class="mono">${esc(s.ip||'*')}</span><span>${s.ms!=null?s.ms+' ms':'—'}</span></div>`).join('')}</div>`;
+}
+
+function rotAbrirBusca(c){
+  const m=rotModal('🔎 Vincular equipamento');
+  m.body.innerHTML=`<div class="cp-nota">Use quando o equipamento não tem o login PPPoE do cliente (ONU em bridge, roteador em DHCP). Digite o número de série (ou parte do login).</div>
+    <div style="display:flex;gap:6px;margin-top:10px"><input class="cp-nome" id="rbTermo" style="flex:1" placeholder="Ex.: ZTEG12345678">
+    <button class="vinc-btn solid" id="rbIr">Buscar</button></div><div id="rbRes" style="margin-top:10px"></div>`;
+  const ir=async()=>{
+    const termo=m.body.querySelector('#rbTermo').value.trim();
+    const res=m.body.querySelector('#rbRes');
+    res.innerHTML='<div class="pn-load">Buscando no ACS…</div>';
+    try{
+      const j=await chamar('roteador.buscar',{cliente_ixc_id:c.clienteVinculado.id, termo});
+      if(!j.achados.length){ res.innerHTML='<div class="pn-load">Nada encontrado.</div>'; return; }
+      res.innerHTML=j.achados.map(a=>`<div class="rot-achado">
+        <div><b>${esc([a.fabricante&&a.fabricante.split(' ')[0],a.modelo].filter(Boolean).join(' '))}</b> · <span class="mono">${esc(a.serial||'')}</span>
+          <div class="rot-sub">${a.login?'PPPoE '+esc(a.login)+' · ':''}${a.online?'online':'offline'} · contato ${esc(rotHa(a.ultimoContato))}</div></div>
+        <button class="vinc-btn solid" data-vinc="${esc(a.id)}">Vincular</button></div>`).join('');
+      res.querySelectorAll('[data-vinc]').forEach(b=>b.onclick=async()=>{
+        b.disabled=true;
+        try{ await chamar('roteador.vincular',{cliente_ixc_id:c.clienteVinculado.id, device_id:b.dataset.vinc});
+          toast('Equipamento vinculado'); m.fechar(); rotRecarregar(c); }
+        catch(err){ toast('Falha: '+err.message); b.disabled=false; }
+      });
+    }catch(err){ res.innerHTML=`<div class="ms-erro">${esc(err.message)}</div>`; }
+  };
+  m.body.querySelector('#rbIr').onclick=ir;
+  m.body.querySelector('#rbTermo').onkeydown=ev=>{ if(ev.key==='Enter') ir(); };
+}
+
+function ligarEquipamento(c){
+  document.querySelectorAll('[data-rot]').forEach(b=>b.onclick=async()=>{
+    const qual=b.dataset.rot, dev=b.dataset.dev, ixcId=c.clienteVinculado&&c.clienteVinculado.id;
+    if(qual==='recarregar'){ c.rotErro=null; c.rot=null; openModal(c.id); rotRecarregar(c); return; }
+    if(qual==='wifi') return rotAbrirWifi(c,dev);
+    if(qual==='teste') return rotAbrirTeste(c,dev);
+    if(qual==='buscar') return rotAbrirBusca(c);
+    if(qual==='reiniciar'){
+      if(!confirm('Reiniciar o equipamento do cliente?\n\nA internet e o Wi-Fi da casa caem por 1 a 3 minutos.')) return;
+      b.disabled=true; b.textContent='Reiniciando…';
+      try{ const j=await chamar('roteador.reiniciar',{cliente_ixc_id:ixcId, device_id:dev},58000);
+        toast(j.aplicado?'Equipamento reiniciando — volta em 1 a 3 minutos':'Desligado agora: reinicia no próximo contato'); }
+      catch(err){ toast('Falha: '+err.message); }
+      rotRecarregar(c); return;
+    }
+    if(qual==='desvincular'){
+      if(!confirm('Desvincular este equipamento do cliente?')) return;
+      try{ await chamar('roteador.vincular',{cliente_ixc_id:ixcId, device_id:dev, remover:true}); toast('Desvinculado'); }
+      catch(err){ toast('Falha: '+err.message); }
+      rotRecarregar(c); return;
+    }
+    if(qual==='atualizar'){
+      b.disabled=true; b.textContent='Consultando…';
+      try{
+        const j=await chamar('roteador.atualizar',{cliente_ixc_id:ixcId, device_id:dev},58000);
+        if(!j.aplicado) toast('O equipamento não atendeu agora — mostrando o último contato');
+        if(j.equipamento&&c.rot){
+          c.rot.equipamentos=(c.rot.equipamentos||[]).map(x=>x.id===dev?{...j.equipamento,origem:x.origem}:x);
+        }
+        // a provision pede Wi-Fi e aparelhos na mesma conversa: relê tudo
+        await carregarRoteador(c).catch(()=>{});
+      }catch(err){ toast('Falha: '+err.message); }
+      if(modalId===c.id) openModal(c.id);
+    }
+  });
+}
+
+/* Monitoramento: a base inteira de equipamentos, para achar quem caiu ou
+   está com sinal ruim antes que o cliente ligue. */
+async function renderRoteadores(el){
+  el.innerHTML='<div class="pn-load">Lendo os equipamentos no ACS…</div>';
+  let j;
+  try{ j=await chamar('roteador.lista',{},50000); }
+  catch(err){ el.innerHTML=`<div class="ms-erro">${esc(err.message)}</div>`; return; }
+  if(!j.configurado){ el.innerHTML='<div class="cp-aviso">O servidor ACS (TR-069) ainda não está ligado ao MoviTalk. O passo a passo está em <b>infra/acs/LEIA-ME.md</b>.</div>'; return; }
+  const eqs=j.equipamentos||[];
+  let filtro='problema', termo='';
+  const ruim=q=>q.sinal&&(q.sinal.situacao==='ruim'||q.sinal.situacao==='forte_demais');
+  const aten=q=>q.sinal&&q.sinal.situacao==='atencao';
+  const on=eqs.filter(q=>q.online).length;
+  const pintar=()=>{
+    let lista=eqs.filter(q=>filtro==='todos'||(filtro==='offline'?!q.online:filtro==='sinal'?(ruim(q)||aten(q)):(!q.online||ruim(q))));
+    if(termo){ const t=termo.toLowerCase(); lista=lista.filter(q=>[q.login,q.serial,q.modelo].some(v=>v&&String(v).toLowerCase().includes(t))); }
+    lista.sort((a,b)=>(a.online-b.online)||((a.sinal&&a.sinal.rxDbm||0)-(b.sinal&&b.sinal.rxDbm||0)));
+    el.querySelector('#rmLista').innerHTML=lista.length?`<div class="rel-tab-wrap"><table class="rel-tab">
+      <thead><tr><th>Login PPPoE</th><th>Equipamento</th><th>Situação</th><th>Sinal</th><th>Ligado há</th></tr></thead>
+      <tbody>${lista.slice(0,500).map(q=>{ const sc=ROT_SINAL[q.sinal&&q.sinal.situacao];
+        return `<tr><td class="mono">${esc(q.login||'—')}</td>
+        <td>${esc([q.fabricante&&q.fabricante.split(' ')[0],q.modelo].filter(Boolean).join(' '))}<div class="if-cli-sub">${esc(q.serial||'')}</div></td>
+        <td>${q.online?'<span class="eq-tag ok">online</span>':`<span class="eq-tag alerta">offline</span><div class="if-cli-sub">${esc(rotHa(q.ultimoContato))}</div>`}</td>
+        <td>${q.sinal&&q.sinal.rxDbm!=null?`<span class="rot-sinal ${sc?sc[0]:''}">${String(q.sinal.rxDbm).replace('.',',')}</span>`:'—'}</td>
+        <td>${q.online?esc(rotTempo(q.ligadoHaSeg)):'—'}</td></tr>`; }).join('')}</tbody></table></div>
+      ${lista.length>500?`<div class="rel-nota">Mostrando 500 de ${lista.length}. Use a busca.</div>`:''}`
+      :'<div class="pn-load">Nenhum equipamento neste filtro. 👍</div>';
+    el.querySelectorAll('[data-rf]').forEach(b=>b.classList.toggle('on',b.dataset.rf===filtro));
+  };
+  el.innerHTML=`<div class="rot-kpis">
+      <div><b>${eqs.length}</b><span>equipamentos</span></div>
+      <div><b style="color:var(--green-deep)">${on}</b><span>online</span></div>
+      <div><b style="color:var(--red)">${eqs.length-on}</b><span>offline</span></div>
+      <div><b style="color:var(--red)">${eqs.filter(ruim).length}</b><span>sinal ruim</span></div>
+      <div><b style="color:#b45309">${eqs.filter(aten).length}</b><span>sinal em atenção</span></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">
+      <div class="cfg-tab" data-rf="problema">⚠ Com problema</div><div class="cfg-tab" data-rf="offline">Offline</div>
+      <div class="cfg-tab" data-rf="sinal">Sinal</div><div class="cfg-tab" data-rf="todos">Todos</div>
+      <input class="cp-nome" id="rmBusca" placeholder="Login, serial ou modelo" style="flex:1;min-width:160px">
+      <button class="vinc-btn" id="rmAtualizar">🔄</button>
+    </div>
+    <div id="rmLista"></div>
+    <div class="rel-nota">Offline = sem contato há mais de ~11 minutos (o equipamento fala com o ACS a cada 5). Sinal: até -25 dBm bom, -25 a -27 atenção, abaixo de -27 ruim. Lido ${esc(dataHora(j.lido_em))}.</div>`;
+  el.querySelectorAll('[data-rf]').forEach(b=>b.onclick=()=>{ filtro=b.dataset.rf; pintar(); });
+  let deb; el.querySelector('#rmBusca').oninput=ev=>{ clearTimeout(deb); deb=setTimeout(()=>{ termo=ev.target.value.trim(); pintar(); },200); };
+  el.querySelector('#rmAtualizar').onclick=()=>renderRoteadores(el);
+  pintar();
+}
 
 /* ================= ASSINATURA ELETRÔNICA =================
    Mesmo módulo que já roda no MoviApp/MoviOne. O motor não foi copiado:
@@ -5741,7 +6117,8 @@ function eqPintar(el){
       <div class="rel-tab-wrap"><table class="rel-tab eq-tab">
         <thead><tr><th>Pessoa</th><th>Setor</th><th>Enxerga</th><th>Admin do atendimento</th>
           <th title="Corrigir o texto de uma mensagem já enviada (o WhatsApp dá 15 minutos)">Pode editar</th>
-          <th title="Apagar para todos uma mensagem enviada daqui">Pode apagar</th></tr></thead>
+          <th title="Apagar para todos uma mensagem enviada daqui">Pode apagar</th>
+          <th title="Trocar senha do Wi-Fi, reiniciar e testar o equipamento do cliente">Roteador</th></tr></thead>
         <tbody>${EQ.pessoas.map(p=>`
           <tr>
             <td><b>${esc(p.nome||p.email)}</b><div class="if-cli-sub">${esc(p.email||'')}</div></td>
@@ -5759,7 +6136,7 @@ function eqPintar(el){
             <td><label class="cob-check" style="margin:0">
               <input type="checkbox" data-admin="${p.id}" ${p.atend_admin?'checked':''}> admin
             </label></td>
-            ${['editar','apagar'].map(acao=>{
+            ${['editar','apagar','roteador'].map(acao=>{
               const campo = 'atend_pode_'+acao;
               // admin sempre pode: a caixa aparece marcada e travada, para não
               // parecer que desmarcá-la tiraria o poder de um administrador
@@ -5775,7 +6152,9 @@ function eqPintar(el){
         Quem é operador do financeiro não vira admin daqui automaticamente.<br>
         <b>Editar</b> e <b>apagar</b> valem para mensagens que saíram daqui — a do cliente é dele.
         O administrador sempre pode; os demais, só com a caixa marcada. Toda edição guarda o
-        texto anterior e todo apagado guarda quem apagou.
+        texto anterior e todo apagado guarda quem apagou.<br>
+        <b>Roteador</b> libera trocar a senha do Wi-Fi, reiniciar e testar o equipamento do cliente
+        pelo ACS (TR-069). Ver o equipamento é de todos; toda ação fica registrada.
       </div>
     </div>`;
 
@@ -5802,7 +6181,9 @@ function eqPintar(el){
     ck.disabled = true;
     try{
       await chamar('equipe.salvar',{ id:ck.dataset.pid, ['pode_'+acao]:ck.checked });
-      toast(ck.checked ? `Liberado: pode ${acao} mensagens` : `Não pode mais ${acao} mensagens`);
+      toast(acao==='roteador'
+        ? (ck.checked ? 'Liberado: pode mexer no equipamento do cliente' : 'Não pode mais mexer no equipamento do cliente')
+        : (ck.checked ? `Liberado: pode ${acao} mensagens` : `Não pode mais ${acao} mensagens`));
       renderEquipe(el);
     }catch(e){ toast('Falha: '+e.message); ck.checked=!ck.checked; ck.disabled=false; }
   });
@@ -7516,6 +7897,15 @@ function openModal(id){
       .then(()=>{ if(modalId===id) openModal(id); })
       .catch(err=>{ c._painelCarregado=false; c.painelErro=err.message; if(modalId===id) openModal(id); });
   }
+  // equipamento no ACS: consulta própria, não segura a abertura da conversa
+  // (trocou o cadastro vinculado: o equipamento de antes não é deste cliente)
+  if(c.clienteVinculado && c.rotCliente && c.rotCliente!==c.clienteVinculado.id){ c.rot=null; c.rotErro=null; c._rotCarregado=false; }
+  if(c.clienteVinculado && !c._rotCarregado){
+    c._rotCarregado=true;
+    carregarRoteador(c)
+      .then(()=>{ if(modalId===id) openModal(id); })
+      .catch(err=>{ c._rotCarregado=false; c.rotErro=err.message; if(modalId===id) openModal(id); });
+  }
   // lotes de assinatura: cada documento vira um link assinado no R2, então
   // isso é uma consulta lenta que não pode segurar a abertura da conversa
   if(c.clienteVinculado && !c._asnCarregado){
@@ -7707,6 +8097,10 @@ function openModal(id){
     <div class="ms-sec">
       <h3>Conexão do cliente <span class="ms-tag live">PPPoE</span></h3>
       ${blocoConexao(c)}
+    </div>
+    <div class="ms-sec">
+      <h3>📶 Equipamento <span class="ms-tag live">TR-069</span></h3>
+      ${blocoEquipamento(c)}
     </div>
     <div class="ms-sec">
       <h3>Ações rápidas</h3>
@@ -8135,6 +8529,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
   };
   // ações rápidas
   document.querySelectorAll('[data-painel]').forEach(el=>el.onclick=()=>abrirPainelAcao(c, el.dataset.painel));
+  ligarEquipamento(c);
   // ---- assinatura eletrônica ----
   const bAsn=$('#asnNovo'); if(bAsn) bAsn.onclick=()=>abrirAssinatura(c);
   document.querySelectorAll('[data-asnlink]').forEach(el=>el.onclick=async()=>{
@@ -8913,6 +9308,7 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='tempos'?'on':''}" data-tab="tempos">⏱ Tempos do atendimento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='horarios'?'on':''}" data-tab="horarios">🕐 Horário de funcionamento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
+        ${USUARIO&&USUARIO.podeRoteador?`<div class="cfg-tab ${configTab==='roteadores'?'on':''}" data-tab="roteadores">📶 Roteadores</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='contratos'?'on':''}" data-tab="contratos">✍️ Contratos assinados</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='cadastro'?'on':''}" data-tab="cadastro">🗂 Cadastro do IXC</div>`:''}
@@ -8948,6 +9344,7 @@ function renderAux(){
     else if(configTab==='tempos' && USUARIO&&USUARIO.admin){ renderTempos(body); }
     else if(configTab==='horarios' && USUARIO&&USUARIO.admin){ renderHorarios(body); }
     else if(configTab==='equipe' && USUARIO&&USUARIO.admin){ renderEquipe(body); }
+    else if(configTab==='roteadores' && USUARIO&&USUARIO.podeRoteador){ renderRoteadores(body); }
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
       renderIntegracoes(body);
     }

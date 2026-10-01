@@ -47,6 +47,7 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
+import * as ACS from './_acs.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -6089,7 +6090,7 @@ async function autenticar(e, req) {
     const err = new Error('Sessão inválida ou expirada.'); err.status = 401; throw err;
   }
 
-  const p = await sbUm(e, `perfis?id=eq.${userId}&select=id,nome,email,perfil,atendimento,atend_setor,atend_admin,atend_pode_editar,atend_pode_apagar`);
+  const p = await sbUm(e, `perfis?id=eq.${userId}&select=id,nome,email,perfil,atendimento,atend_setor,atend_admin,atend_pode_editar,atend_pode_apagar,atend_pode_roteador`);
   if (!p) { const err = new Error('Perfil não encontrado.'); err.status = 403; throw err; }
   if (!p.atendimento) { const err = new Error('Seu usuário não tem acesso ao Centro de Atendimento.'); err.status = 403; throw err; }
 
@@ -6108,6 +6109,8 @@ async function autenticar(e, req) {
     // comportamento de antes (só admin), e liberar é decisão por pessoa.
     podeEditar: !!p.atend_admin || p.perfil === 'admin' || !!p.atend_pode_editar,
     podeApagar: !!p.atend_admin || p.perfil === 'admin' || !!p.atend_pode_apagar,
+    // trocar senha do Wi-Fi, reiniciar e testar o equipamento do cliente (ACS)
+    podeRoteador: !!p.atend_admin || p.perfil === 'admin' || !!p.atend_pode_roteador,
   };
 }
 
@@ -6142,6 +6145,70 @@ async function podeVerConversa(user, c) {
   if (!c) return false;
   if (user.admin || !user.setor) return true;
   return !c.setor || c.setor === user.setor;
+}
+
+// ============================================================================
+// EQUIPAMENTO DO CLIENTE (TR-069) — o MoviTalk falando com o ACS do POP
+// ----------------------------------------------------------------------------
+// O equipamento é achado pelo login PPPoE do IXC (o mesmo gravado no roteador
+// ou na ONU) ou por um vínculo manual feito no painel. Toda ação confere que o
+// equipamento é MESMO deste cliente: sem isso, bastaria trocar o id no pedido
+// para mudar a senha do Wi-Fi de outra casa.
+// ============================================================================
+const _loginsCache = new Map();   // ixcId -> { t, logins } (a consulta do resultado do teste repete)
+async function loginsPppoe(e, ixcId) {
+  const id = String(ixcId);
+  const c = _loginsCache.get(id);
+  if (c && Date.now() - c.t < 120000) return c.logins;
+  const d = await ixc(e, 'radusuarios', {
+    qtype: 'radusuarios.id_cliente', query: id, oper: '=', rp: '20',
+  });
+  const logins = [...new Set((d.registros || [])
+    .map(r => String(pick(r, 'login', 'usuario', 'username') || '').trim().toLowerCase())
+    .filter(Boolean))];
+  _loginsCache.set(id, { t: Date.now(), logins });
+  if (_loginsCache.size > 500) _loginsCache.delete(_loginsCache.keys().next().value);
+  return logins;
+}
+
+async function equipamentosDoCliente(e, cfg, ixcId) {
+  let erroIxc = null;
+  const [logins, vinc] = await Promise.all([
+    loginsPppoe(e, ixcId).catch(err => { erroIxc = String(err.message || err).slice(0, 160); return []; }),
+    sb(e, `roteador_vinculos?cliente_ixc_id=eq.${encodeURIComponent(ixcId)}&select=device_id`).catch(() => []),
+  ]);
+  const docs = new Map(), origem = {};
+  const porLogin = await Promise.all(logins.map(l => ACS.acharPorLogin(cfg, l).then(ds => [l, ds])));
+  for (const [l, ds] of porLogin) for (const d of ds) { docs.set(d._id, d); origem[d._id] = { por: 'login', login: l }; }
+  for (const v of (vinc || [])) {
+    if (docs.has(v.device_id)) { origem[v.device_id].vinculado = true; continue; }
+    const d = await ACS.acharPorId(cfg, v.device_id);
+    if (d) { docs.set(d._id, d); origem[d._id] = { por: 'vinculo', vinculado: true }; }
+  }
+  return { logins, docs: [...docs.values()], origem, erroIxc };
+}
+
+/* O equipamento, só se for deste cliente; null se não for (ou não existir). */
+async function dispositivoDoCliente(e, cfg, ixcId, deviceId) {
+  const id = String(deviceId || '').trim();
+  if (!id) return null;
+  const doc = await ACS.acharPorId(cfg, id);
+  if (!doc) return null;
+  const vinc = await sbUm(e, `roteador_vinculos?cliente_ixc_id=eq.${encodeURIComponent(ixcId)}`
+    + `&device_id=eq.${encodeURIComponent(id)}&select=id`).catch(() => null);
+  if (vinc) return doc;
+  const login = ACS._val(ACS.achatar(doc), 'VirtualParameters.pppoe_login');
+  if (login && (await loginsPppoe(e, ixcId)).includes(String(login).toLowerCase())) return doc;
+  return null;
+}
+
+function registrarAcaoRoteador(e, user, ixcId, deviceId, acao, detalhe, resultado, erro) {
+  // registro é complemento: falhar aqui não pode desfazer a ação que já foi
+  return sb(e, 'roteador_acoes', { method: 'POST', prefer: 'return=minimal', body: {
+    user_id: user.id, user_nome: user.nome || user.email || null,
+    cliente_ixc_id: ixcId ? String(ixcId) : null, device_id: String(deviceId),
+    acao, detalhe: detalhe || null, resultado: resultado || null, erro: erro ? String(erro).slice(0, 300) : null,
+  } }).catch(() => {});
 }
 
 function filtroSetor(user) {
@@ -7038,6 +7105,144 @@ export default async function handler(req, res) {
         }
         const painel = await montarPainelCliente(e, ixcId);
         return res.status(200).json({ ok: true, ...painel });
+      }
+
+      // ===== Equipamento do cliente (TR-069 / ACS) =====
+      case 'roteador.status':
+      case 'roteador.buscar':
+      case 'roteador.vincular':
+      case 'roteador.atualizar':
+      case 'roteador.wifi':
+      case 'roteador.reiniciar':
+      case 'roteador.diagnostico':
+      case 'roteador.diagnostico_resultado': {
+        const cfg = ACS.acsConfig();
+        if (!ACS.acsLigado(cfg)) {
+          return res.status(200).json({ ok: true, configurado: false });
+        }
+        const ixcId = String(body.cliente_ixc_id || '').trim();
+        if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });
+        if (!await podeVerCliente(e, user, ixcId)) {
+          return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
+        }
+        // olhar e mandar o equipamento "conversar" é de todos; mexer nele, não
+        const mexe = ['roteador.buscar', 'roteador.vincular', 'roteador.wifi',
+          'roteador.reiniciar', 'roteador.diagnostico'].includes(acao);
+        if (mexe && !user.podeRoteador) {
+          return res.status(403).json({ ok: false, error: 'Seu usuário não tem permissão para mexer no equipamento do cliente.' });
+        }
+        try {
+          if (acao === 'roteador.status') {
+            const eq = await equipamentosDoCliente(e, cfg, ixcId);
+            const historico = await sb(e, `roteador_acoes?cliente_ixc_id=eq.${encodeURIComponent(ixcId)}`
+              + '&select=criado_em,user_nome,acao,detalhe,resultado,erro&order=criado_em.desc&limit=6').catch(() => []);
+            return res.status(200).json({
+              ok: true, configurado: true, podeAgir: !!user.podeRoteador,
+              logins: eq.logins, erroIxc: eq.erroIxc,
+              equipamentos: eq.docs.map(d => ({ ...ACS.resumir(d), origem: eq.origem[d._id] })),
+              historico: historico || [],
+            });
+          }
+
+          if (acao === 'roteador.buscar') {
+            const termo = String(body.termo || '').trim();
+            if (termo.length < 4) return res.status(400).json({ ok: false, error: 'Digite ao menos 4 caracteres do serial ou do login.' });
+            const [a, b] = await Promise.all([ACS.acharPorSerial(cfg, termo), ACS.acharPorLogin(cfg, termo)]);
+            const vistos = new Map();
+            [...a, ...b].forEach(d => vistos.set(d._id, d));
+            return res.status(200).json({ ok: true, achados: [...vistos.values()].slice(0, 10).map(d => {
+              const r = ACS.resumir(d);
+              return { id: r.id, fabricante: r.fabricante, modelo: r.modelo, serial: r.serial,
+                login: r.conexao.login, online: r.online, ultimoContato: r.ultimoContato };
+            }) });
+          }
+
+          const deviceId = String(body.device_id || '').trim();
+          if (!deviceId) return res.status(400).json({ ok: false, error: 'device_id obrigatório.' });
+
+          if (acao === 'roteador.vincular') {
+            if (body.remover) {
+              await sb(e, `roteador_vinculos?cliente_ixc_id=eq.${encodeURIComponent(ixcId)}&device_id=eq.${encodeURIComponent(deviceId)}`,
+                { method: 'DELETE', prefer: 'return=minimal' });
+              registrarAcaoRoteador(e, user, ixcId, deviceId, 'desvincular');
+              return res.status(200).json({ ok: true });
+            }
+            if (!await ACS.acharPorId(cfg, deviceId)) return res.status(404).json({ ok: false, error: 'Equipamento não encontrado no ACS.' });
+            await sb(e, 'roteador_vinculos?on_conflict=cliente_ixc_id,device_id', {
+              method: 'POST', prefer: 'resolution=ignore-duplicates,return=minimal',
+              body: { cliente_ixc_id: ixcId, device_id: deviceId, criado_por: user.id },
+            });
+            await registrarAcaoRoteador(e, user, ixcId, deviceId, 'vincular');
+            return res.status(200).json({ ok: true });
+          }
+
+          const doc = await dispositivoDoCliente(e, cfg, ixcId, deviceId);
+          if (!doc) return res.status(404).json({ ok: false, error: 'Este equipamento não é deste cliente (ou saiu do ACS).' });
+          const md = ACS.resumir(doc).modeloDados;
+
+          if (acao === 'roteador.atualizar') {
+            const r = await ACS.atualizar(cfg, deviceId, md === 'TR-181' ? 'Device' : 'InternetGatewayDevice');
+            const novo = r.aplicado ? await ACS.acharPorId(cfg, deviceId) : doc;
+            return res.status(200).json({ ok: true, aplicado: r.aplicado, naFila: r.naFila,
+              equipamento: novo ? ACS.resumir(novo) : null });
+          }
+
+          if (acao === 'roteador.wifi') {
+            const senha = body.senha == null ? '' : String(body.senha);
+            const ssid = body.ssid == null ? '' : String(body.ssid).trim();
+            let plano;
+            try { plano = ACS.planoWifi(doc, { senha, ssid, bandas: body.bandas }); }
+            catch (err) { return res.status(400).json({ ok: false, error: err.message }); }
+            const detalhe = { redes: plano.redes, senha: !!senha, ssid: ssid || null };   // a senha em si, nunca
+            let r;
+            try { r = await ACS.aplicarWifi(cfg, deviceId, plano, doc); }
+            catch (err) { await registrarAcaoRoteador(e, user, ixcId, deviceId, 'wifi', detalhe, 'erro', err.message); throw err; }
+            await registrarAcaoRoteador(e, user, ixcId, deviceId, 'wifi', detalhe, r.aplicado ? 'aplicado' : 'na_fila');
+            return res.status(200).json({ ok: true, aplicado: r.aplicado, naFila: r.naFila, redes: plano.redes });
+          }
+
+          if (acao === 'roteador.reiniciar') {
+            let r;
+            try { r = await ACS.reiniciar(cfg, deviceId); }
+            catch (err) { await registrarAcaoRoteador(e, user, ixcId, deviceId, 'reiniciar', null, 'erro', err.message); throw err; }
+            await registrarAcaoRoteador(e, user, ixcId, deviceId, 'reiniciar', null, r.aplicado ? 'aplicado' : 'na_fila');
+            return res.status(200).json({ ok: true, aplicado: r.aplicado, naFila: r.naFila });
+          }
+
+          const tipo = String(body.tipo || '');
+          if (!ACS.TIPOS_DIAGNOSTICO.includes(tipo)) return res.status(400).json({ ok: false, error: 'Tipo de teste inválido.' });
+
+          if (acao === 'roteador.diagnostico') {
+            let plano;
+            try { plano = ACS.planoDiagnostico(doc, tipo, cfg); }
+            catch (err) { return res.status(400).json({ ok: false, error: err.message }); }
+            const desde = Date.now();
+            let r;
+            try { r = await ACS.iniciarDiagnostico(cfg, deviceId, plano, doc); }
+            catch (err) { await registrarAcaoRoteador(e, user, ixcId, deviceId, 'diagnostico', { tipo }, 'erro', err.message); throw err; }
+            await registrarAcaoRoteador(e, user, ixcId, deviceId, 'diagnostico', { tipo }, r.aplicado ? 'aplicado' : 'na_fila');
+            return res.status(200).json({ ok: true, desde, aplicado: r.aplicado, naFila: r.naFila });
+          }
+
+          // roteador.diagnostico_resultado
+          const desde = Number(body.desde) || 0;
+          return res.status(200).json({ ok: true, resultado: ACS.lerDiagnostico(doc, tipo, desde) });
+        } catch (err) {
+          return res.status(502).json({ ok: false, error: err.message });
+        }
+      }
+
+      // Monitoramento: todos os equipamentos do ACS de uma vez
+      case 'roteador.lista': {
+        if (!user.podeRoteador) return res.status(403).json({ ok: false, error: 'Sem permissão.' });
+        const cfg = ACS.acsConfig();
+        if (!ACS.acsLigado(cfg)) return res.status(200).json({ ok: true, configurado: false });
+        try {
+          const lista = await ACS.listar(cfg);
+          return res.status(200).json({ ok: true, configurado: true, equipamentos: lista, lido_em: new Date().toISOString() });
+        } catch (err) {
+          return res.status(502).json({ ok: false, error: err.message });
+        }
       }
 
       // Descobre os nomes reais das colunas nesta instalação do IXC.
@@ -8406,7 +8611,7 @@ export default async function handler(req, res) {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const pessoas = await sb(e,
           'perfis?atendimento=is.true&select=id,nome,email,perfil,atend_setor,atend_admin,'
-          + 'atend_pode_editar,atend_pode_apagar&order=nome.asc');
+          + 'atend_pode_editar,atend_pode_apagar,atend_pode_roteador&order=nome.asc');
         const setores = await sb(e, 'atend_setores?select=*&order=nome.asc');
         // quantas conversas abertas cada setor tem: ajuda a decidir a lotação
         const carga = await sb(e,
@@ -8430,6 +8635,7 @@ export default async function handler(req, res) {
         if ('atendimento' in body) patch.atendimento = !!body.atendimento;
         if ('pode_editar' in body) patch.atend_pode_editar = !!body.pode_editar;
         if ('pode_apagar' in body) patch.atend_pode_apagar = !!body.pode_apagar;
+        if ('pode_roteador' in body) patch.atend_pode_roteador = !!body.pode_roteador;
         if (!Object.keys(patch).length) return res.status(400).json({ ok: false, error: 'Nada a alterar.' });
 
         // Não deixa o último admin se rebaixar: sem admin ninguém consegue
