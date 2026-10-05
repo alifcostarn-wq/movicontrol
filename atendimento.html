@@ -1789,6 +1789,21 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .mb-doc:hover{background:rgba(0,0,0,.09);}
 .mb-doc .md-ico{font-size:17px;}
 .mb-audio{width:230px;max-width:100%;margin-top:4px;}
+/* --- localização --- */
+.mb-loc{margin-top:2px;width:260px;max-width:100%;border-radius:10px;overflow:hidden;background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.06);}
+.mb-loc.sem{padding:9px 11px;}
+.ml-mapa{position:relative;display:block;width:260px;max-width:100%;height:140px;overflow:hidden;background:#e8eef0;}
+.ml-mapa img{position:absolute;width:256px;height:256px;max-width:none;border-radius:0;cursor:pointer;}
+.ml-pino{position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);font-size:26px;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35));}
+.ml-osm{position:absolute;right:3px;bottom:2px;font-size:8.5px;color:#333;background:rgba(255,255,255,.75);padding:0 3px;border-radius:3px;}
+.ml-info{padding:8px 11px 10px;}
+.ml-t{font-size:12px;font-weight:800;}
+.ml-n{font-size:12.5px;font-weight:700;margin-top:3px;}
+.ml-s{font-size:11.5px;opacity:.8;margin-top:2px;line-height:1.4;}
+.ml-c{font-family:'JetBrains Mono',monospace;font-size:10.5px;opacity:.75;margin-top:5px;user-select:all;}
+.ml-acts{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+.ml-acts a,.ml-acts button{font:inherit;font-size:11px;font-weight:700;padding:5px 9px;border-radius:7px;border:1px solid rgba(0,0,0,.12);background:#fff;color:var(--text);text-decoration:none;cursor:pointer;}
+.ml-acts a:hover,.ml-acts button:hover{border-color:var(--green);color:var(--green-deep);}
 .midia-lightbox{
   position:fixed;inset:0;z-index:400;background:rgba(8,20,14,.96);
   display:flex;flex-direction:column;
@@ -3093,6 +3108,7 @@ const api = {
       id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
       dia: String(m.created_at).slice(0,10),
       tipo: m.tipo || 'texto', link: m.midia_link || null,
+      local: m.localizacao || null,
       respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
       status: m.status || null,
       // quem falou, quando não foi o painel: hoje o técnico, pelo MoviTec
@@ -4269,6 +4285,72 @@ function abrirBuscaCliente(c, aoVincular){
   inp.onkeydown=ev=>{ if(ev.key==='Enter') buscar(); };
 }
 
+/* ================= LOCALIZAÇÃO ================= */
+/* O cliente manda "Enviar localização" no WhatsApp — muito comum em zona rural,
+   onde o endereço não ajuda o técnico. Vira um cartão com o mapa e os atalhos
+   que interessam: abrir no Google Maps, traçar a rota e copiar as coordenadas
+   (para colar na O.S. ou no cadastro do IXC).
+   O mapa é montado com os ladrilhos do OpenStreetMap, sem chave de API e sem
+   iframe: o modal é remontado a cada mensagem nova, e um iframe recarregaria
+   o mapa inteiro toda vez. */
+const LOC_Z=16, LOC_W=260, LOC_H=140;
+const LOC_SEM=new Set();   // ids que a Evolution não devolveu: não pergunta de novo a cada mensagem nova
+function localMapa(lat,lng){
+  const n=Math.pow(2,LOC_Z), r=lat*Math.PI/180;
+  const px=(lng+180)/360*n*256;
+  const py=(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n*256;
+  const L=px-LOC_W/2, T=py-LOC_H/2;
+  let tiles='';
+  for(let tx=Math.floor(L/256); tx<=Math.floor((L+LOC_W)/256); tx++){
+    for(let ty=Math.floor(T/256); ty<=Math.floor((T+LOC_H)/256); ty++){
+      if(ty<0||ty>=n) continue;
+      const x=((tx%n)+n)%n;
+      tiles+=`<img src="https://tile.openstreetmap.org/${LOC_Z}/${x}/${ty}.png" alt="" loading="lazy" style="left:${Math.round(tx*256-L)}px;top:${Math.round(ty*256-T)}px">`;
+    }
+  }
+  return tiles;
+}
+function localHTML(m){
+  const l=m.local;
+  if(!l||!isFinite(l.lat)||!isFinite(l.lng)){
+    if(m.id && !m._locBuscou && !LOC_SEM.has(m.id)) localRecuperar(m);
+    return `<div class="mb-loc sem"><div class="ml-t">📍 Localização</div>
+      <div class="ml-s">${(m._locFalhou||LOC_SEM.has(m.id))
+        ? 'O WhatsApp não mandou as coordenadas desta localização. Peça ao cliente para enviar de novo.'
+        : 'Buscando as coordenadas no WhatsApp…'}</div></div>`;
+  }
+  const coord=`${l.lat.toFixed(6)}, ${l.lng.toFixed(6)}`;
+  const gmaps=`https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}`;
+  const rota=`https://www.google.com/maps/dir/?api=1&destination=${l.lat},${l.lng}`;
+  return `<div class="mb-loc">
+    <a class="ml-mapa" href="${esc(gmaps)}" target="_blank" rel="noopener" title="Abrir no Google Maps">
+      ${localMapa(l.lat,l.lng)}<span class="ml-pino">📍</span><span class="ml-osm">© OpenStreetMap</span></a>
+    <div class="ml-info">
+      <div class="ml-t">${l.ao_vivo?'📍 Localização em tempo real':'📍 Localização'}</div>
+      ${l.nome?`<div class="ml-n">${esc(l.nome)}</div>`:''}
+      ${l.endereco?`<div class="ml-s">${esc(l.endereco)}</div>`:''}
+      ${l.comentario?`<div class="ml-s">“${esc(l.comentario)}”</div>`:''}
+      ${l.ao_vivo?`<div class="ml-s">Posição no momento em que o cliente começou a compartilhar.</div>`:''}
+      <div class="ml-c" title="Latitude, longitude">${coord}${l.precisao_m?` · ±${Math.round(l.precisao_m)} m`:''}</div>
+      <div class="ml-acts">
+        <a href="${esc(gmaps)}" target="_blank" rel="noopener">🗺️ Abrir no mapa</a>
+        <a href="${esc(rota)}" target="_blank" rel="noopener">🧭 Rota</a>
+        <button type="button" data-copiarloc="${esc(coord)}">📋 Copiar</button>
+      </div>
+    </div></div>`;
+}
+/* Localização gravada antes da correção (sem coordenadas): pede ao servidor
+   para buscá-las na Evolution. Uma tentativa por mensagem por sessão. */
+async function localRecuperar(m){
+  m._locBuscou=true;
+  try{
+    const j=await chamar('mensagens.localizacao',{ mensagem_id:m.id });
+    if(j.localizacao) m.local=j.localizacao; else { m._locFalhou=true; LOC_SEM.add(m.id); }
+  }catch{ m._locFalhou=true; }
+  const c=state.conversas.find(x=>(x.msgs||[]).includes(m));
+  if(c && modalId===c.id) openModal(c.id);
+}
+
 /* ================= MODAL ================= */
 // Anexo da conversa, nos dois sentidos: imagem abre ampliada, PDF/doc abre em
 // aba nova, áudio toca no próprio painel.
@@ -4277,6 +4359,7 @@ function abrirBuscaCliente(c, aoVincular){
 // aparecia aqui como uma linha de texto ("Boleto em PDF 📄") sem nada para
 // abrir: o atendente não tinha como conferir se o anexo realmente saiu.
 function midiaHTML(m){
+  if(m.tipo==='localizacao') return localHTML(m);
   if(!m.link) return '';
   // figurinha: sem moldura nem fundo, como no WhatsApp (webp pode ser animado)
   if(m.tipo==='figurinha') return `<div class="mb-midia"><img class="mb-sticker" src="${esc(m.link)}" alt="Figurinha" data-zoom="${esc(m.link)}"></div>`;
@@ -7626,7 +7709,7 @@ function openModal(id){
             m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
               <div class="qa">${m.quoteDirecao==='in'?esc(c.nome):'Você'}</div>
               <div class="qt">${esc(semFormato(m.quoteTexto)).replace(/\n/g,' ')}</div></div>`:''
-          }${fmtWA(esc(m.x)).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${(()=>{
+          }${m.tipo==='localizacao'?'':fmtWA(esc(m.x)).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${(()=>{
             /* Os três eram pastilhas separadas com rótulo: numa bolha larga
                viravam uma faixa de 230px atravessando o rodapé. Agora são um
                bloco só, de ícones, com a explicação no title — o que a bolha
@@ -8319,6 +8402,19 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
 
   // clicar na imagem abre o visualizador (zoom, giro e arrasto)
   document.querySelectorAll('[data-zoom]').forEach(el=>el.onclick=()=>abrirVisualizador(el.dataset.zoom));
+  // localização: copiar "lat, lng" para colar na O.S. ou no cadastro
+  document.querySelectorAll('[data-copiarloc]').forEach(el=>el.onclick=async ev=>{
+    ev.stopPropagation();
+    const txt=el.dataset.copiarloc;
+    try{ await navigator.clipboard.writeText(txt); toast('Coordenadas copiadas'); return; }catch{}
+    // navegador que bloqueia a área de transferência: o jeito antigo ainda funciona
+    const ta=document.createElement('textarea');
+    ta.value=txt; ta.style.cssText='position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand('copy'); }catch{}
+    ta.remove();
+    toast(ok?'Coordenadas copiadas':'Não consegui copiar — selecione as coordenadas');
+  });
 
   // setor
   $('#mSetor').onchange=e=>{ c.setor=e.target.value; api.patchConversa(c,{setor:c.setor}); renderAll(); toast('Movido para o setor '+c.setor); };

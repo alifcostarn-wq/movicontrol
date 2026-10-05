@@ -3158,6 +3158,76 @@ const EDICAO_JANELA_MS = 15 * 60 * 1000;
 
    O formato varia entre versões da Evolution (o protocolMessage às vezes vem
    dentro de `editedMessage`), então procuramos nos dois lugares. */
+/* Localização que o cliente manda pelo WhatsApp ("Enviar localização").
+   O WhatsApp manda as coordenadas no próprio corpo da mensagem — não há
+   arquivo para baixar. Antes só o rótulo "📍 Localização" era gravado e as
+   coordenadas se perdiam; para uma instalação na zona rural, eram justamente
+   a informação que importava. A "localização em tempo real" vem como
+   liveLocationMessage: guardamos a posição do momento em que ela chegou. */
+function localizacaoDaMensagem(msg) {
+  const l = msg && (msg.locationMessage || msg.liveLocationMessage);
+  if (!l) return null;
+  const lat = Number(l.degreesLatitude), lng = Number(l.degreesLongitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;      // GPS sem sinal manda 0,0
+  const txt = (v, max) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
+  const url = txt(l.url, 300);
+  return {
+    lat: Math.round(lat * 1e6) / 1e6,
+    lng: Math.round(lng * 1e6) / 1e6,
+    nome: txt(l.name, 200),
+    endereco: txt(l.address, 300),
+    url: url && /^https?:\/\//i.test(url) ? url : null,
+    comentario: txt(l.comment || l.caption, 500),
+    ao_vivo: !!msg.liveLocationMessage,
+    precisao_m: Number.isFinite(Number(l.accuracyInMeters)) && Number(l.accuracyInMeters) > 0 ? Number(l.accuracyInMeters) : null,
+  };
+}
+
+function rotuloLocalizacao(loc) {
+  const base = loc && loc.ao_vivo ? '📍 Localização em tempo real' : '📍 Localização';
+  const qual = loc && (loc.nome || loc.endereco);
+  return qual ? `${base} — ${qual}` : base;
+}
+
+/* Recupera da Evolution as coordenadas de uma localização que já tinha
+   chegado (as de antes desta correção foram gravadas sem elas). Procura pelo
+   id da mensagem e, se a versão da Evolution não filtrar por id, varre o
+   histórico do contato. */
+async function localizacaoNaEvolution(e, waId, fone) {
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution não configurada.');
+  const jid = `${normalizarFone(fone)}@s.whatsapp.net`;
+  const tentativas = [
+    { where: { key: { id: waId } } },
+    { where: { key: { remoteJid: jid } }, page: 1, offset: 300 },
+    { where: { remoteJid: jid }, limit: 300 },
+  ];
+  let ultimoErro = null;
+  for (const corpo of tentativas) {
+    let dados;
+    try {
+      const r = await fetchComPrazo(`${e.EVO_URL}/chat/findMessages/${e.EVO_INST}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: e.EVO_KEY },
+        body: JSON.stringify(corpo),
+      }, 15000);
+      if (!r.ok) { ultimoErro = `Evolution ${r.status}`; continue; }
+      dados = await r.json().catch(() => null);
+    } catch (err) { ultimoErro = String(err.message).slice(0, 120); continue; }
+    let achou = null;
+    const varrer = (o, prof = 0) => {
+      if (achou || !o || prof > 7 || typeof o !== 'object') return;
+      if (Array.isArray(o)) { for (const x of o) varrer(x, prof + 1); return; }
+      if (o.key && o.key.id === waId && o.message) { achou = localizacaoDaMensagem(o.message); if (achou) return; }
+      for (const v of Object.values(o)) varrer(v, prof + 1);
+    };
+    varrer(dados);
+    if (achou) return achou;
+  }
+  if (ultimoErro) throw new Error(ultimoErro);
+  return null;
+}
+
 function edicaoDaMensagem(d) {
   const msg = d?.message || {};
   const pm = msg.protocolMessage
@@ -3400,7 +3470,8 @@ async function tratarWebhookInterno(e, body) {
   // o WhatsApp manda GIF como vídeo com gifPlayback: sem isso vira vídeo comum
   else if (msg.videoMessage) tipo = msg.videoMessage.gifPlayback ? 'gif' : 'video';
   else if (msg.documentMessage) tipo = 'documento';
-  else if (msg.locationMessage) tipo = 'localizacao';
+  const local = localizacaoDaMensagem(msg);
+  if (msg.locationMessage || msg.liveLocationMessage) tipo = 'localizacao';
 
   // dedupe por wa_id
   const waId = key.id || null;
@@ -3470,7 +3541,8 @@ async function tratarWebhookInterno(e, body) {
 
   // anexo (comprovante, foto do equipamento, PDF): baixa e guarda
   let caminhoMidia = null;
-  if (tipo !== 'texto' && waId) {
+  // localização não tem arquivo: as coordenadas vêm no corpo da mensagem
+  if (tipo !== 'texto' && tipo !== 'localizacao' && waId) {
     try {
       const arq = await baixarMidia(e, waId);
       caminhoMidia = await guardarMidia(e, conversa.id, waId, arq);
@@ -3481,7 +3553,8 @@ async function tratarWebhookInterno(e, body) {
   }
 
   // grava a mensagem recebida
-  const rotulo = { imagem: '📷 Imagem', audio: '🎤 Áudio', video: '🎬 Vídeo', documento: '📎 Documento', localizacao: '📍 Localização' }[tipo] || '';
+  const rotulo = tipo === 'localizacao' ? rotuloLocalizacao(local)
+    : { imagem: '📷 Imagem', audio: '🎤 Áudio', video: '🎬 Vídeo', documento: '📎 Documento' }[tipo] || '';
   // guarda o instante em que ela ENTROU (relógio do banco, o mesmo que carimba
   // as respostas): é o corte que separa a rajada do que veio depois do menu
   const gravada = await sb(e, 'atend_mensagens', {
@@ -3489,6 +3562,7 @@ async function tratarWebhookInterno(e, body) {
     body: {
       conversa_id: conversa.id, direcao: 'in',
       conteudo: texto || rotulo, tipo, wa_id: waId, midia_url: caminhoMidia,
+      ...(local ? { localizacao: local } : {}),
     },
   });
   const chegouEm = (Array.isArray(gravada) ? gravada[0] : gravada)?.created_at || null;
@@ -8780,7 +8854,7 @@ export default async function handler(req, res) {
           // banco, que é onde uma auditoria vai procurar — não numa resposta
           // de API que qualquer aba aberta consegue ler.
           if (m.excluido_em) {
-            m.conteudo = null; m.conteudo_original = null; m.midia_url = null; m.tipo = 'texto'; continue;
+            m.conteudo = null; m.conteudo_original = null; m.midia_url = null; m.localizacao = null; m.tipo = 'texto'; continue;
           }
           if (m.midia_url) m.midia_link = await assinarMidia(e, m.midia_url).catch(() => null);
         }
@@ -8805,6 +8879,28 @@ export default async function handler(req, res) {
          Conversa de provedor é prova — em reclamação no Procon, em cobrança
          contestada, em dúvida sobre prazo prometido. Um "apagar" que apaga
          o registro apaga a defesa do provedor junto. */
+      // Localização que chegou antes desta correção (gravada sem coordenadas):
+      // busca na Evolution e guarda. O painel chama ao abrir a conversa.
+      case 'mensagens.localizacao': {
+        const mid = Number(body.mensagem_id);
+        if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório.' });
+        const m = await sbUm(e, `atend_mensagens?id=eq.${mid}&select=id,conversa_id,tipo,wa_id,localizacao,excluido_em`);
+        if (!m || m.tipo !== 'localizacao' || m.excluido_em) return res.status(404).json({ ok: false, error: 'Localização não encontrada.' });
+        const acesso = await conversaDoUsuario(e, user, m.conversa_id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        if (m.localizacao) return res.status(200).json({ ok: true, localizacao: m.localizacao });
+        if (!m.wa_id) return res.status(200).json({ ok: true, localizacao: null });
+        let loc = null;
+        try { loc = await localizacaoNaEvolution(e, m.wa_id, acesso.c.contato_fone); }
+        catch (err) { return res.status(200).json({ ok: true, localizacao: null, erro: err.message }); }
+        if (!loc) return res.status(200).json({ ok: true, localizacao: null });
+        await sb(e, `atend_mensagens?id=eq.${mid}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: { localizacao: loc, conteudo: rotuloLocalizacao(loc) },
+        });
+        return res.status(200).json({ ok: true, localizacao: loc });
+      }
+
       case 'mensagens.excluir': {
         if (!(user.admin || user.podeApagar)) {
           return res.status(403).json({ ok: false, error:
