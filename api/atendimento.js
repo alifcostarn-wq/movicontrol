@@ -6708,6 +6708,14 @@ export default async function handler(req, res) {
       case 'me':
         return res.status(200).json({ ok: true, user });
 
+      // Contador do menu inicial do MoviOne: só o número de conversas
+      // esperando atendente, no setor de quem pergunta. Nenhum dado de cliente.
+      case 'resumo': {
+        const fila = await sb(e,
+          `atend_conversas?select=id&deleted_at=is.null&coluna=eq.fila${filtroSetor(user)}&limit=1000`);
+        return res.status(200).json({ ok: true, fila: (fila || []).length });
+      }
+
       // O painel chama de tempos em tempos enquanto está aberto. É o gatilho
       // que cobre o caso mais importante do ciclo: o atendente falou por último
       // e o cliente NÃO respondeu — não chega webhook nenhum, então sem isto o

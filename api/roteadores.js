@@ -123,6 +123,15 @@ export default async function handler(req, res) {
     switch (acao) {
       // Monitoramento: a base inteira. O nome do cliente é ligado no navegador,
       // que já tem os logins do IXC carregados.
+      // Contador do menu inicial do MoviOne: só os totais, sem a lista
+      case 'resumo': {
+        const lista = await ACS.listar(cfg);
+        const ruim = q => q.sinal && (q.sinal.situacao === 'ruim' || q.sinal.situacao === 'forte_demais');
+        return res.status(200).json({ ok: true, configurado: true, total: lista.length,
+          offline: lista.filter(q => !q.online).length,
+          sinal_ruim: lista.filter(q => q.online && ruim(q)).length });
+      }
+
       case 'lista': {
         const lista = await ACS.listar(cfg);
         return res.status(200).json({ ok: true, configurado: true, podeAgir: user.podeAgir,
