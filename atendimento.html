@@ -984,10 +984,29 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .anexo-bar .ab-rz:hover{background:#eff6ff;border-color:var(--blue);}
 /* janela de redimensionar */
 .rz-modal{max-width:480px;width:94vw;}
-.rz-prev{position:relative;display:flex;align-items:center;justify-content:center;height:240px;border-radius:10px;
-  background:repeating-conic-gradient(#f1f5f9 0% 25%,#fff 0% 50%) 0 0/16px 16px;border:1px solid var(--line);overflow:hidden;}
-.rz-prev img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
-.rz-carr{position:absolute;right:8px;bottom:8px;font-size:10.5px;font-weight:700;background:rgba(15,23,42,.7);color:#fff;padding:3px 8px;border-radius:6px;}
+.ed-modal{max-width:620px;max-height:min(860px,94vh);}
+.anexo-bar .ab-eds{display:flex;gap:4px;flex-shrink:0;}
+.ed-ferrs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.ed-ferrs button{flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:9px;padding:8px 6px;
+  font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--text);white-space:nowrap;}
+.ed-ferrs button.on{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);}
+.ed-ferrs .ed-desf{flex:0 0 auto;}
+.ed-ferrs button:disabled{opacity:.45;cursor:default;}
+.ed-palco{display:flex;align-items:center;justify-content:center;min-height:150px;border-radius:10px;overflow:hidden;
+  background:repeating-conic-gradient(#f1f5f9 0% 25%,#fff 0% 50%) 0 0/16px 16px;border:1px solid var(--line);}
+.ed-palco canvas{display:block;touch-action:none;user-select:none;-webkit-user-select:none;}
+.ed-opcoes{margin-top:10px;display:flex;flex-direction:column;gap:8px;}
+.ed-dica{font-size:11.5px;color:var(--text-mid);line-height:1.45;}
+.ed-opcoes .vinc-btn{align-self:flex-start;}
+.ed-cores{display:flex;gap:8px;flex-wrap:wrap;}
+.ed-cor{width:30px;height:30px;border-radius:50%;border:2px solid rgba(0,0,0,.15);cursor:pointer;padding:0;}
+.ed-cor.on{box-shadow:0 0 0 3px var(--card),0 0 0 5px var(--green);}
+.ed-esps{display:flex;gap:6px;}
+.ed-esp{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;
+  font:inherit;font-size:12px;font-weight:700;cursor:pointer;color:var(--text);}
+.ed-esp i{display:inline-block;width:18px;background:var(--text);border-radius:6px;}
+.ed-esp.on{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);}
+.ed-gerando{color:var(--text-low);}
 .rz-info{font-size:12.5px;margin:9px 0 10px;text-align:center;color:var(--text-mid);}
 .rz-info b{color:var(--text);}
 .rz-alerta{display:block;color:var(--red);font-weight:700;font-size:11.5px;margin-top:3px;}
@@ -1000,7 +1019,8 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 #rzFaixa{width:100%;margin:6px 0 4px;accent-color:var(--green);}
 .rz-nota{font-size:11px;color:var(--text-low);line-height:1.5;margin-top:4px;}
 .rz-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
-@media (max-width:520px){ .anexo-bar .ab-rz{padding:5px 7px;} .rz-prev{height:200px;} }
+@media (max-width:520px){ .anexo-bar .ab-rz{padding:5px 7px;} .anexo-bar .ab-rz span{display:none;}
+  .ed-ferrs button span{display:none;} .ed-ferrs button{font-size:16px;padding:7px 4px;} }
 
 /* ═══════ LISTA DE ATENDIMENTO — substitui o quadro de colunas ═══════════
    As mesmas etapas de sempre (Novos, Aguardando atendimento, Em atendimento,
@@ -3355,7 +3375,7 @@ async function recarregarConversas(){
       nova.avatarEm = nova.avatarEm || antiga.avatarEm;
       nova._avatarBuscando = antiga._avatarBuscando;
       nova._anexo = antiga._anexo;
-      nova._anexoOrig = antiga._anexoOrig; nova._anexoLado = antiga._anexoLado; nova._anexoMini = antiga._anexoMini;
+      nova._anexoOrig = antiga._anexoOrig; nova._anexoEdicao = antiga._anexoEdicao; nova._anexoMini = antiga._anexoMini;
     }
     return nova;
   });
@@ -7164,25 +7184,60 @@ function decodificarImagem(file){
 }
 const imgRedimensionavel = f => !!f && /^image\//.test(f.type) && !/gif|webp/i.test(f.type);
 
-/* Reduz a foto para o maior lado caber em `ladoMax` e a recomprime em JPEG.
-   O arquivo devolvido leva junto as medidas (_w, _h) e o maior lado do
-   original (_maiorOrig), que a barra e a janela de tamanho mostram. */
-async function redimensionarImagem(file, ladoMax){
+/* A edição fica guardada SOBRE o original, nunca sobre a cópia reduzida:
+   { recorte:{x,y,w,h} | null, tracos:[{cor, esp, pts:[[x,y],…]}], lado }
+   tudo em pixels da imagem original. Assim dá para voltar e mudar o recorte
+   ou o tamanho sem perder o desenho, e o desenho não borra ao reduzir. */
+function edicaoVazia(lado){ return { recorte:null, tracos:[], lado: lado||IMG_LADO_PADRAO }; }
+function recorteValido(r, W, H){
+  if(!r) return { x:0, y:0, w:W, h:H };
+  const x=Math.max(0,Math.min(W-1,Math.round(r.x))), y=Math.max(0,Math.min(H-1,Math.round(r.y)));
+  return { x, y, w:Math.max(1,Math.min(W-x,Math.round(r.w))), h:Math.max(1,Math.min(H-y,Math.round(r.h))) };
+}
+// desenha os traços (coordenadas do original) num contexto com escala k e origem (ox,oy)
+function desenharTracos(ctx, tracos, k, ox, oy){
+  for(const t of (tracos||[])){
+    if(!t.pts||!t.pts.length) continue;
+    ctx.strokeStyle=t.cor; ctx.fillStyle=t.cor;
+    ctx.lineWidth=Math.max(1,t.esp*k); ctx.lineCap='round'; ctx.lineJoin='round';
+    const P=([x,y])=>[(x-ox)*k,(y-oy)*k];
+    if(t.pts.length===1){
+      const [x,y]=P(t.pts[0]); ctx.beginPath(); ctx.arc(x,y,Math.max(1,t.esp*k/2),0,Math.PI*2); ctx.fill(); continue;
+    }
+    ctx.beginPath(); ctx.moveTo(...P(t.pts[0]));
+    // curva suave entre os pontos: o traço de mouse/dedo sai menos serrilhado
+    for(let i=1;i<t.pts.length-1;i++){
+      const [x1,y1]=P(t.pts[i]), [x2,y2]=P(t.pts[i+1]);
+      ctx.quadraticCurveTo(x1,y1,(x1+x2)/2,(y1+y2)/2);
+    }
+    ctx.lineTo(...P(t.pts[t.pts.length-1]));
+    ctx.stroke();
+  }
+}
+
+/* Monta o arquivo que vai sair: recorte → desenho → tamanho → JPEG.
+   O arquivo devolvido leva as medidas (_w, _h) e o maior lado da área
+   recortada (_maiorOrig), que a barra e o editor mostram. */
+async function renderizarImagem(file, ed){
   // GIF animado perde a animação no canvas; webp é figurinha. Ambos passam direto.
   if(!imgRedimensionavel(file)) return file;
+  ed = ed || {};
   try{
     const img=await decodificarImagem(file);
-    const W=img.naturalWidth, H=img.naturalHeight, maior=Math.max(W,H);
-    const lado=Math.min(Math.max(1, Number(ladoMax)||IMG_LADO_PADRAO), maior);
-    const escala=lado/maior;
-    const w=Math.max(1,Math.round(W*escala)), h=Math.max(1,Math.round(H*escala));
+    const W=img.naturalWidth, H=img.naturalHeight;
+    const r=recorteValido(ed.recorte, W, H);
+    const maior=Math.max(r.w,r.h);
+    const lado=Math.min(Math.max(1, Number(ed.lado)||IMG_LADO_PADRAO), maior);
+    const k=lado/maior;
+    const w=Math.max(1,Math.round(r.w*k)), h=Math.max(1,Math.round(r.h*k));
     const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
     const ctx=cv.getContext('2d');
     // fundo branco: PNG com transparência vira JPEG com fundo preto sem isto,
     // e print de tela recortado chega aqui com alfa o tempo todo
     ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
     ctx.imageSmoothingQuality='high';
-    ctx.drawImage(img,0,0,w,h);
+    ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, w, h);
+    desenharTracos(ctx, ed.tracos, k, r.x, r.y);
     // Até o tamanho "Grande", mira ANEXO_ALVO_BYTES: a foto fica guardada para
     // sempre e 400 KB já é perfeitamente legível. Para em 0.55 para não virar
     // borrão — abaixo disso o texto de um comprovante deixa de dar para ler.
@@ -7192,99 +7247,288 @@ async function redimensionarImagem(file, ladoMax){
     const alvo = grande ? ANEXO_MAX_BYTES : ANEXO_ALVO_BYTES;
     let q = grande ? 0.9 : 0.82, blob=null;
     for(let i=0;i<6;i++){
-      blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
+      blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',q));
       if(blob && blob.size<=alvo) break;
       q-=0.08; if(q<0.55) break;
     }
     // se nem no mínimo coube, o que manda é o limite técnico do envio
-    if(blob && blob.size>ANEXO_MAX_BYTES) blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.5));
+    if(blob && blob.size>ANEXO_MAX_BYTES) blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.5));
     if(!blob) return file;
     const medidas={ _w:w, _h:h, _maiorOrig:maior };
-    // no tamanho original, se o arquivo de origem já é menor, ele vai como está
-    if(escala===1 && blob.size>=file.size) return Object.assign(file, medidas);
+    const mexeu = r.w!==W || r.h!==H || (ed.tracos&&ed.tracos.length);
+    // sem edição e no tamanho original: se o arquivo de origem já é menor, vai como está
+    if(k===1 && !mexeu && blob.size>=file.size) return Object.assign(file, medidas);
     return Object.assign(new File([blob], file.name.replace(/\.\w+$/,'')+'.jpg', {type:'image/jpeg'}), medidas);
   }catch{ return file; }   // se algo falhar, tenta mandar o original
 }
-
+async function redimensionarImagem(file, ladoMax){ return renderizarImagem(file, { lado: ladoMax }); }
 async function comprimirImagem(file){ return redimensionarImagem(file, IMG_LADO_PADRAO); }
 
 /* Imagem escolhida ou colada na conversa: guarda o ORIGINAL ao lado da versão
-   reduzida, para o atendente poder trocar de tamanho sem escolher de novo. */
+   que vai sair, para o atendente poder recortar, desenhar e trocar de tamanho
+   sem escolher o arquivo de novo. */
 async function prepararImagemAnexo(c, f){
   pintarBarraAnexo(c,f,'preparando imagem…');
   const arq=await comprimirImagem(f);
   if(arq.size>ANEXO_MAX_BYTES){ toast('Imagem grande demais (limite ~3 MB).'); c._anexo=null; c._anexoOrig=null; pintarBarraResposta(c); return; }
   c._anexoOrig = imgRedimensionavel(f) ? f : null;
-  c._anexoLado = IMG_LADO_PADRAO;
+  c._anexoEdicao = edicaoVazia();
   c._anexo=arq; pintarBarraAnexo(c,arq);
 }
 
 const fmtKB = n => n>1048576 ? (n/1048576).toFixed(1).replace('.',',')+' MB' : Math.max(1,Math.round(n/1024))+' KB';
+const ED_CORES=[['#ef4444','Vermelho'],['#facc15','Amarelo'],['#22c55e','Verde'],['#3b82f6','Azul'],['#111827','Preto'],['#ffffff','Branco']];
+const ED_ESP=[['fina','Fino',3],['media','Médio',6],['grossa','Grosso',12]];   // espessura na tela, em px
 
-/* Janela "Redimensionar": prévia de verdade (o arquivo que vai sair), os
-   tamanhos prontos e um controle fino. Mostra medidas e peso finais antes de
-   aplicar — quem envia sabe exatamente o que o cliente vai receber. */
-async function abrirRedimensionar(c){
+/* EDITOR DE IMAGEM: recortar, desenhar (lápis) e escolher o tamanho.
+   A prévia é desenhada na hora num canvas do tamanho da tela; o arquivo
+   final (JPEG) só é gerado com uma pausa, para mostrar medidas e peso exatos
+   sem travar enquanto se arrasta. */
+async function abrirEditorImagem(c, aba){
   const orig=c._anexoOrig; if(!orig) return;
   let img;
   try{ img=await decodificarImagem(orig); }catch{ toast('Não consegui abrir a imagem.'); return; }
-  const maior=Math.max(img.naturalWidth,img.naturalHeight);
-  const minimo=Math.min(240,maior);
-  let lado=Math.min(c._anexoLado||IMG_LADO_PADRAO, maior), atual=null, urlPrev=null, seq=0;
+  const W=img.naturalWidth, H=img.naturalHeight;
+  const ed=JSON.parse(JSON.stringify(c._anexoEdicao||edicaoVazia()));
+  const hist=[];                                  // fotos do estado para o "Desfazer"
+  const guardar=()=>{ hist.push(JSON.stringify({recorte:ed.recorte,tracos:ed.tracos})); if(hist.length>60) hist.shift(); pintarBotoes(); };
+  let ferr=aba||'recortar', cor=ED_CORES[0][0], esp=ED_ESP[1][2], atual=null, seq=0, k=1, R=null;
+
   const ov=document.createElement('div');
   ov.className='tr-overlay rz-ov';
-  ov.innerHTML=`<div class="pn-modal rz-modal">
-    <div class="pn-head"><h3>📐 Redimensionar imagem</h3><button class="pn-x" id="rzX">✕</button></div>
+  ov.innerHTML=`<div class="pn-modal rz-modal ed-modal">
+    <div class="pn-head"><h3>✏️ Editar imagem</h3><button class="pn-x" id="rzX">✕</button></div>
     <div class="pn-body">
-      <div class="rz-prev"><img id="rzImg" alt="Prévia da imagem"><span class="rz-carr" id="rzCarr">gerando…</span></div>
-      <div class="rz-info" id="rzInfo">—</div>
-      <div class="rz-chips">
-        ${IMG_TAMANHOS.filter(([,,px])=>px<maior).map(([k,n,px])=>`<button type="button" class="rz-chip" data-px="${px}">${n}<small>${px} px</small></button>`).join('')}
-        <button type="button" class="rz-chip" data-px="${maior}">Original<small>${img.naturalWidth}×${img.naturalHeight}</small></button>
+      <div class="ed-ferrs">
+        <button type="button" data-ferr="recortar">✂️ <span>Recortar</span></button>
+        <button type="button" data-ferr="lapis">✏️ <span>Desenhar</span></button>
+        <button type="button" data-ferr="tamanho">📐 <span>Tamanho</span></button>
+        <button type="button" class="ed-desf" id="edDesfazer" title="Desfazer (Ctrl+Z)">↶ <span>Desfazer</span></button>
       </div>
-      <label class="rz-lab">Maior lado: <b id="rzLado">${lado}</b> px</label>
-      <input type="range" id="rzFaixa" min="${minimo}" max="${maior}" step="${maior-minimo>40?10:1}" value="${lado}">
-      <div class="rz-nota">Original: ${img.naturalWidth}×${img.naturalHeight} px · ${fmtKB(orig.size)}. Menor = chega mais rápido no celular do cliente; maior = mais detalhe (bom para print com texto miúdo).</div>
-      <div class="rz-acts"><button type="button" class="vinc-btn" id="rzCancelar">Cancelar</button>
-        <button type="button" class="vinc-btn solid" id="rzAplicar" disabled>Usar este tamanho</button></div>
+      <div class="ed-palco" id="edPalco"><canvas id="edCanvas"></canvas></div>
+      <div class="ed-opcoes" id="edOpcoes"></div>
+      <div class="rz-info" id="rzInfo">—</div>
+      <div class="rz-acts">
+        <button type="button" class="vinc-btn desf" id="edRestaurar" title="Volta à imagem como foi escolhida">Restaurar original</button>
+        <span style="flex:1"></span>
+        <button type="button" class="vinc-btn" id="rzCancelar">Cancelar</button>
+        <button type="button" class="vinc-btn solid" id="rzAplicar" disabled>Usar imagem</button>
+      </div>
     </div></div>`;
   document.body.appendChild(ov);
   const q=s=>ov.querySelector(s);
-  const fechar=()=>{ if(urlPrev) URL.revokeObjectURL(urlPrev); ov.remove(); document.removeEventListener('keydown',tecla); };
-  const tecla=ev=>{ if(ev.key==='Escape') fechar(); };
+  const cv=q('#edCanvas'), ctx=cv.getContext('2d');
+  const fechar=()=>{ ov.remove(); document.removeEventListener('keydown',tecla); window.removeEventListener('resize',medir); };
+  const tecla=ev=>{
+    if(ev.key==='Escape') fechar();
+    if((ev.ctrlKey||ev.metaKey) && ev.key.toLowerCase()==='z'){ ev.preventDefault(); desfazer(); }
+  };
   document.addEventListener('keydown',tecla);
   ov.onclick=ev=>{ if(ev.target===ov) fechar(); };
   q('#rzX').onclick=fechar; q('#rzCancelar').onclick=fechar;
-  const marcar=()=>{
-    q('#rzLado').textContent=lado;
-    ov.querySelectorAll('.rz-chip').forEach(b=>b.classList.toggle('on', Number(b.dataset.px)===lado));
+
+  // ---- prévia na tela -------------------------------------------------------
+  const regiao=()=> ferr==='recortar' ? {x:0,y:0,w:W,h:H} : recorteValido(ed.recorte,W,H);
+  const medir=()=>{
+    R=regiao();
+    const palco=q('#edPalco');
+    // a área da foto fica com o que sobra da altura: os botões de baixo têm
+    // de caber sem rolar, em notebook de tela baixa e no celular. Mede o que
+    // os controles da ferramenta atual ocupam de fato (cada uma tem os seus).
+    const modal=q('.ed-modal'), corpo=modal.querySelector('.pn-body'), cab=modal.querySelector('.pn-head');
+    const limite=parseFloat(getComputedStyle(modal).maxHeight)||window.innerHeight*0.94;
+    const resto=cab.offsetHeight + corpo.scrollHeight - palco.offsetHeight + 4;
+    const maxW=palco.clientWidth||400, maxH=Math.max(150, Math.min(460, limite-resto));
+    k=Math.min(maxW/R.w, maxH/R.h);
+    const dpr=window.devicePixelRatio||1;
+    cv.style.width=Math.round(R.w*k)+'px'; cv.style.height=Math.round(R.h*k)+'px';
+    cv.width=Math.round(R.w*k*dpr); cv.height=Math.round(R.h*k*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    pintar();
   };
+  window.addEventListener('resize',medir);
+  let pedido=false;
+  const pintar=()=>{
+    if(pedido) return; pedido=true;
+    requestAnimationFrame(()=>{
+      pedido=false;
+      const w=R.w*k, h=R.h*k;
+      ctx.clearRect(0,0,w,h);
+      ctx.imageSmoothingQuality='high';
+      ctx.drawImage(img, R.x,R.y,R.w,R.h, 0,0,w,h);
+      desenharTracos(ctx, ed.tracos, k, R.x, R.y);
+      if(ferr==='recortar'){
+        const r=recorteValido(ed.recorte,W,H);
+        const x=r.x*k, y=r.y*k, rw=r.w*k, rh=r.h*k;
+        ctx.fillStyle='rgba(15,23,42,.55)';
+        ctx.fillRect(0,0,w,y); ctx.fillRect(0,y+rh,w,h-y-rh); ctx.fillRect(0,y,x,rh); ctx.fillRect(x+rw,y,w-x-rw,rh);
+        ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(x+1,y+1,rw-2,rh-2);
+        // linhas dos terços, como na câmera do celular
+        ctx.strokeStyle='rgba(255,255,255,.45)'; ctx.lineWidth=1; ctx.beginPath();
+        for(const f of [1/3,2/3]){ ctx.moveTo(x+rw*f,y); ctx.lineTo(x+rw*f,y+rh); ctx.moveTo(x,y+rh*f); ctx.lineTo(x+rw,y+rh*f); }
+        ctx.stroke();
+        ctx.fillStyle='#fff';
+        for(const [hx,hy] of alcas(r)) ctx.fillRect(hx*k-6,hy*k-6,12,12);
+      }
+    });
+  };
+  const alcas=r=>[[r.x,r.y],[r.x+r.w,r.y],[r.x,r.y+r.h],[r.x+r.w,r.y+r.h],
+    [r.x+r.w/2,r.y],[r.x+r.w/2,r.y+r.h],[r.x,r.y+r.h/2],[r.x+r.w,r.y+r.h/2]];
+  const NOMES=['nw','ne','sw','se','n','s','w','e'];
+
+  // ---- ponteiro (mouse, caneta ou dedo) -------------------------------------
+  const ponto=ev=>{ const b=cv.getBoundingClientRect(); return [R.x+(ev.clientX-b.left)/k, R.y+(ev.clientY-b.top)/k]; };
+  const qualAlca=(p,toque)=>{
+    const r=recorteValido(ed.recorte,W,H), tol=(toque?22:14)/k;
+    const i=alcas(r).findIndex(([x,y])=>Math.abs(p[0]-x)<=tol && Math.abs(p[1]-y)<=tol);
+    if(i>=0) return NOMES[i];
+    if(ed.recorte && p[0]>r.x && p[0]<r.x+r.w && p[1]>r.y && p[1]<r.y+r.h) return 'mover';
+    return 'novo';
+  };
+  const CURSOR={nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',n:'ns-resize',s:'ns-resize',w:'ew-resize',e:'ew-resize',mover:'move',novo:'crosshair'};
+  let arrasto=null;
+  cv.onpointerdown=ev=>{
+    ev.preventDefault();
+    cv.setPointerCapture(ev.pointerId);
+    const p=ponto(ev);
+    if(ferr==='lapis'){
+      guardar();
+      // espessura escolhida na tela vira pixels da imagem: o traço fica do
+      // tamanho que se vê, qualquer que seja a resolução da foto
+      ed.tracos.push({ cor, esp:esp/k, pts:[[Math.round(p[0]*10)/10, Math.round(p[1]*10)/10]] });
+      arrasto={ tipo:'lapis' }; pintar(); return;
+    }
+    if(ferr!=='recortar') return;
+    const modo=qualAlca(p, ev.pointerType==='touch');
+    arrasto={ tipo:'recorte', modo, ini:p, base:recorteValido(ed.recorte,W,H), antes:JSON.stringify({recorte:ed.recorte,tracos:ed.tracos}) };
+  };
+  cv.onpointermove=ev=>{
+    const p=ponto(ev);
+    if(!arrasto){
+      if(ferr==='recortar') cv.style.cursor=CURSOR[qualAlca(p,false)];
+      return;
+    }
+    if(arrasto.tipo==='lapis'){
+      const t=ed.tracos[ed.tracos.length-1], u=t.pts[t.pts.length-1];
+      if(Math.hypot(p[0]-u[0],p[1]-u[1])*k<1.5) return;   // ignora tremidinha de 1px
+      t.pts.push([Math.round(p[0]*10)/10, Math.round(p[1]*10)/10]); pintar(); return;
+    }
+    const b=arrasto.base, dx=p[0]-arrasto.ini[0], dy=p[1]-arrasto.ini[1], m=arrasto.modo;
+    const MIN=Math.max(8, 16/k);
+    let x1=b.x, y1=b.y, x2=b.x+b.w, y2=b.y+b.h;
+    if(m==='novo'){ x1=arrasto.ini[0]; y1=arrasto.ini[1]; x2=p[0]; y2=p[1]; }
+    else if(m==='mover'){
+      const nx=Math.max(0,Math.min(W-b.w,b.x+dx)), ny=Math.max(0,Math.min(H-b.h,b.y+dy));
+      x1=nx; y1=ny; x2=nx+b.w; y2=ny+b.h;
+    } else {
+      if(m.includes('w')) x1=b.x+dx; if(m.includes('e')) x2=b.x+b.w+dx;
+      if(m.includes('n')) y1=b.y+dy; if(m.includes('s')) y2=b.y+b.h+dy;
+    }
+    // perto da borda (8px na tela) gruda nela: com a foto reduzida na tela,
+    // cada pixel do mouse vale vários da imagem e "até a borda" nunca chegava
+    if(m!=='mover'){
+      const SN=8/k, gruda=(v,lim)=> v<SN ? 0 : v>lim-SN ? lim : v;
+      x1=gruda(x1,W); x2=gruda(x2,W); y1=gruda(y1,H); y2=gruda(y2,H);
+    }
+    x1=Math.max(0,Math.min(W,x1)); x2=Math.max(0,Math.min(W,x2)); y1=Math.max(0,Math.min(H,y1)); y2=Math.max(0,Math.min(H,y2));
+    const nx=Math.min(x1,x2), ny=Math.min(y1,y2), nw=Math.abs(x2-x1), nh=Math.abs(y2-y1);
+    if(nw<MIN||nh<MIN){ if(m==='novo') return; }
+    ed.recorte={ x:Math.round(nx), y:Math.round(ny), w:Math.round(Math.max(MIN,nw)), h:Math.round(Math.max(MIN,nh)) };
+    pintar();
+  };
+  const soltar=()=>{
+    if(!arrasto) return;
+    const a=arrasto; arrasto=null;
+    if(a.tipo==='recorte'){
+      const r=ed.recorte;
+      // recorte do tamanho da imagem inteira = sem recorte
+      if(r && r.x<=0 && r.y<=0 && r.w>=W && r.h>=H) ed.recorte=null;
+      if(JSON.stringify({recorte:ed.recorte,tracos:ed.tracos})!==a.antes){ hist.push(a.antes); pintarBotoes(); }
+    }
+    mudou();
+  };
+  cv.onpointerup=soltar; cv.onpointercancel=soltar;
+
+  // ---- ferramentas ----------------------------------------------------------
+  const pintarOpcoes=()=>{
+    const op=q('#edOpcoes');
+    if(ferr==='recortar'){
+      op.innerHTML=`<div class="ed-dica">Arraste sobre a imagem para marcar a parte que fica. Puxe os cantos para ajustar e arraste o meio para mover.</div>
+        <button type="button" class="vinc-btn" id="edInteira" ${ed.recorte?'':'disabled'}>Imagem inteira</button>`;
+      const bi=q('#edInteira'); if(bi) bi.onclick=()=>{ guardar(); ed.recorte=null; pintar(); pintarOpcoes(); mudou(); };
+    } else if(ferr==='lapis'){
+      op.innerHTML=`<div class="ed-cores">${ED_CORES.map(([cc,n])=>`<button type="button" class="ed-cor ${cc===cor?'on':''}" data-cor="${cc}" title="${n}" style="background:${cc}"></button>`).join('')}</div>
+        <div class="ed-esps">${ED_ESP.map(([key,n,px])=>`<button type="button" class="ed-esp ${px===esp?'on':''}" data-esp="${px}" title="Traço ${n.toLowerCase()}"><i style="height:${px}px"></i>${n}</button>`).join('')}</div>
+        <div class="ed-dica">Desenhe com o mouse ou com o dedo para marcar onde o cliente deve olhar.</div>`;
+      op.querySelectorAll('[data-cor]').forEach(b=>b.onclick=()=>{ cor=b.dataset.cor; pintarOpcoes(); });
+      op.querySelectorAll('[data-esp]').forEach(b=>b.onclick=()=>{ esp=Number(b.dataset.esp); pintarOpcoes(); });
+    } else {
+      const r=recorteValido(ed.recorte,W,H), maior=Math.max(r.w,r.h), minimo=Math.min(240,maior);
+      const lado=Math.min(ed.lado||IMG_LADO_PADRAO, maior);
+      op.innerHTML=`<div class="rz-chips">
+          ${IMG_TAMANHOS.filter(([,,px])=>px<maior).map(([kk,n,px])=>`<button type="button" class="rz-chip ${px===lado?'on':''}" data-px="${px}">${n}<small>${px} px</small></button>`).join('')}
+          <button type="button" class="rz-chip ${lado===maior?'on':''}" data-px="${maior}">Original<small>${r.w}×${r.h}</small></button>
+        </div>
+        <label class="rz-lab">Maior lado: <b id="rzLado">${lado}</b> px</label>
+        <input type="range" id="rzFaixa" min="${minimo}" max="${maior}" step="${maior-minimo>40?10:1}" value="${lado}">
+        <div class="rz-nota">Menor = chega mais rápido no celular do cliente; maior = mais detalhe (bom para print com texto miúdo).</div>`;
+      let deb;
+      const marcar=v=>{ ed.lado=Math.max(minimo,Math.min(maior,Math.round(v)));
+        q('#rzLado').textContent=ed.lado;
+        op.querySelectorAll('.rz-chip').forEach(b=>b.classList.toggle('on', Number(b.dataset.px)===ed.lado)); };
+      op.querySelectorAll('.rz-chip').forEach(b=>b.onclick=()=>{ q('#rzFaixa').value=b.dataset.px; marcar(Number(b.dataset.px)); mudou(true); });
+      q('#rzFaixa').oninput=ev=>{ marcar(Number(ev.target.value)); clearTimeout(deb); deb=setTimeout(()=>mudou(true),150); };
+    }
+  };
+  const pintarBotoes=()=>{
+    ov.querySelectorAll('[data-ferr]').forEach(b=>b.classList.toggle('on', b.dataset.ferr===ferr));
+    q('#edDesfazer').disabled=!hist.length;
+    const mexido=!!(ed.recorte||ed.tracos.length||(ed.lado&&ed.lado!==IMG_LADO_PADRAO));
+    q('#edRestaurar').disabled=!mexido;
+    cv.style.cursor = ferr==='lapis' ? 'crosshair' : ferr==='recortar' ? 'crosshair' : 'default';
+    q('#edPalco').classList.toggle('lapis', ferr==='lapis');
+  };
+  const trocar=f=>{ ferr=f; pintarBotoes(); pintarOpcoes(); medir(); };
+  ov.querySelectorAll('[data-ferr]').forEach(b=>b.onclick=()=>trocar(b.dataset.ferr));
+  const desfazer=()=>{
+    if(!hist.length) return;
+    const ant=JSON.parse(hist.pop());
+    ed.recorte=ant.recorte; ed.tracos=ant.tracos;
+    pintarBotoes(); pintarOpcoes(); medir(); mudou();
+  };
+  q('#edDesfazer').onclick=desfazer;
+  q('#edRestaurar').onclick=()=>{
+    guardar(); ed.recorte=null; ed.tracos=[]; ed.lado=IMG_LADO_PADRAO;
+    pintarBotoes(); pintarOpcoes(); medir(); mudou();
+  };
+
+  // ---- arquivo final: medidas e peso exatos ---------------------------------
+  let debF;
   const gerar=async()=>{
     const meu=++seq;
-    q('#rzAplicar').disabled=true; q('#rzCarr').style.display='';
-    const arq=await redimensionarImagem(orig, lado);
-    if(meu!==seq || !document.body.contains(ov)) return;   // o controle já andou
+    q('#rzAplicar').disabled=true;
+    q('#rzInfo').innerHTML='<span class="ed-gerando">calculando…</span>';
+    const arq=await renderizarImagem(orig, ed);
+    if(meu!==seq || !document.body.contains(ov)) return;   // já mudou de novo
     atual=arq;
-    if(urlPrev) URL.revokeObjectURL(urlPrev);
-    urlPrev=URL.createObjectURL(arq); q('#rzImg').src=urlPrev;
-    q('#rzCarr').style.display='none';
     const grande=arq.size>ANEXO_MAX_BYTES;
-    q('#rzInfo').innerHTML=`<b>${arq._w||'?'} × ${arq._h||'?'} px</b> · ${fmtKB(arq.size)}${
+    q('#rzInfo').innerHTML=`Vai sair: <b>${arq._w||'?'} × ${arq._h||'?'} px</b> · ${fmtKB(arq.size)}${
       grande?' <span class="rz-alerta">grande demais para enviar — escolha um tamanho menor</span>':''}`;
     q('#rzAplicar').disabled=grande;
   };
-  let deb;
-  const mudar=(v,ja)=>{ lado=Math.max(minimo,Math.min(maior,Math.round(v))); marcar(); clearTimeout(deb); deb=setTimeout(gerar, ja?0:180); };
-  ov.querySelectorAll('.rz-chip').forEach(b=>b.onclick=()=>{ q('#rzFaixa').value=b.dataset.px; mudar(Number(b.dataset.px),true); });
-  q('#rzFaixa').oninput=ev=>mudar(Number(ev.target.value));
+  function mudou(ja){ pintarBotoes(); clearTimeout(debF); debF=setTimeout(gerar, ja?0:250); }
   q('#rzAplicar').onclick=()=>{
     if(!atual) return;
-    c._anexo=atual; c._anexoLado=lado;
+    c._anexo=atual; c._anexoEdicao=JSON.parse(JSON.stringify(ed));
     fechar(); pintarBarraAnexo(c, atual);
-    toast(`Imagem ajustada: ${atual._w}×${atual._h} px · ${fmtKB(atual.size)}`);
+    toast(`Imagem pronta: ${atual._w}×${atual._h} px · ${fmtKB(atual.size)}`);
   };
-  marcar(); gerar();
+
+  pintarBotoes(); pintarOpcoes();
+  requestAnimationFrame(()=>{ medir(); gerar(); });
 }
+// atalhos que a barra do anexo usa
+const abrirRedimensionar = c => abrirEditorImagem(c, 'tamanho');
 
 function pintarBarraAnexo(c, arq, estado){
   const el=$('#mReplyBar'); if(!el) return;
@@ -7302,13 +7546,16 @@ function pintarBarraAnexo(c, arq, estado){
       <div class="ab-n">${esc(arq.name)}</div>
       <div class="ab-s">${estado||('pronto para enviar · '+medidas+kb)}</div>
     </div>
-    ${pode?'<button class="ab-rz" id="abRz" title="Escolher o tamanho da imagem antes de enviar">📐 Redimensionar</button>':''}
+    ${pode?`<div class="ab-eds">
+      <button class="ab-rz" data-ed="recortar" title="Recortar: escolher a parte da imagem que vai">✂️<span> Recortar</span></button>
+      <button class="ab-rz" data-ed="lapis" title="Desenhar na imagem com o lápis">✏️<span> Desenhar</span></button>
+      <button class="ab-rz" id="abRz" data-ed="tamanho" title="Escolher o tamanho da imagem">📐<span> Tamanho</span></button>
+    </div>`:''}
     ${estado?'':'<button class="ab-x" id="abX" title="Cancelar">✕</button>'}
   </div>`;
   const x=$('#abX');
-  if(x) x.onclick=()=>{ c._anexo=null; c._anexoOrig=null; pintarBarraResposta(c); };
-  const rz=$('#abRz');
-  if(rz) rz.onclick=()=>abrirRedimensionar(c);
+  if(x) x.onclick=()=>{ c._anexo=null; c._anexoOrig=null; c._anexoEdicao=null; pintarBarraResposta(c); };
+  el.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>abrirEditorImagem(c, b.dataset.ed));
 }
 
 /* Clique no nome do cliente: mostra e esconde o painel do cadastro inteiro.
@@ -8292,7 +8539,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     // com anexo, o texto digitado vira legenda da mídia
     if(anexo){
       c._anexo=null;
-      const origAnexo=c._anexoOrig; c._anexoOrig=null;
+      const origAnexo=c._anexoOrig, edAnexo=c._anexoEdicao; c._anexoOrig=null; c._anexoEdicao=null;
       $('#mInput').value=''; $('#mInput').style.height='auto';
       limparRascunho(c.id); guardarRascunho(c.id,{ digitando:true });
       respondendoA=null;
@@ -8306,7 +8553,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
         openModal(c.id); renderAll();
       }catch(err){
         // devolve o arquivo para o atendente tentar de novo, sem reescolher
-        c._anexo=anexo; c._anexoOrig=origAnexo;
+        c._anexo=anexo; c._anexoOrig=origAnexo; c._anexoEdicao=edAnexo;
         pintarBarraAnexo(c, anexo);
         toast('Falha ao enviar arquivo: '+err.message);
       }
