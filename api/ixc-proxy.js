@@ -1,7 +1,9 @@
+import { groqChat } from './_groq.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-secret, x-ixc-method, x-target');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-secret, x-ixc-method, x-target');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -90,43 +92,43 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
-  // GROQ - analises de IA (Llama 3.3 70B)
-  // Acionado pelo header x-target: groq
-  // A chave fica SOMENTE no servidor (variavel de ambiente GROQ_API_KEY)
-  // Body: { messages:[{role,content},...], model?, temperature?, max_tokens? }
+  // GROQ - análises de IA do MoviOne (Inteligência Financeira, Gerente
+  // Financeiro, orçamento). Acionado pelo header x-target: groq
+  // A chave fica SOMENTE no servidor (GROQ_API_KEY) e o modelo também é
+  // escolhido aqui (api/_groq.js): o navegador não escolhe modelo.
+  // Exige a sessão de um usuário do MoviOne — antes qualquer um com o
+  // endereço usava a chave da Groq da empresa.
+  // Body: { messages:[{role,content},...], temperature?, max_tokens? }
   // ============================================================
   if ((req.headers['x-target'] || '').toLowerCase() === 'groq') {
-    const groqKey = process.env.GROQ_API_KEY || '';
-    if (!groqKey) {
-      return res.status(500).json({ error: 'GROQ_API_KEY nao configurada no servidor (Vercel > Settings > Environment Variables).' });
+    const SUPA_URL = process.env.SUPABASE_URL || 'https://mgtetsmcswdtvsgewcen.supabase.co';
+    const SRV = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+    if (!token) return res.status(401).json({ ok: false, error: 'Faça login no MoviOne para usar a IA.' });
+    try {
+      const rv = await fetch(`${SUPA_URL}/auth/v1/user`, { headers: { apikey: SRV, Authorization: `Bearer ${token}` } });
+      if (!rv.ok) return res.status(401).json({ ok: false, error: 'Sessão expirada. Entre de novo no MoviOne.' });
+      const uid = (await rv.json()).id;
+      const rp = await fetch(`${SUPA_URL}/rest/v1/perfis?id=eq.${encodeURIComponent(uid)}&select=perfil`,
+        { headers: { apikey: SRV, Authorization: `Bearer ${SRV}` } });
+      const perfil = ((await rp.json().catch(() => [])) || [])[0]?.perfil;
+      if (!perfil || perfil === 'tecnico') return res.status(403).json({ ok: false, error: 'Sem acesso à IA do MoviOne.' });
+    } catch (e) {
+      return res.status(401).json({ ok: false, error: 'Não consegui validar a sessão.' });
     }
     const b = req.body || {};
     if (!Array.isArray(b.messages) || !b.messages.length) {
-      return res.status(400).json({ error: 'Campo obrigatorio: messages (array).' });
+      return res.status(400).json({ ok: false, error: 'Campo obrigatorio: messages (array).' });
     }
     try {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: b.model || 'llama-3.3-70b-versatile',
-          messages: b.messages.slice(0, 20),
-          temperature: typeof b.temperature === 'number' ? b.temperature : 0.4,
-          max_tokens: Math.min(parseInt(b.max_tokens) || 900, 2000),
-        }),
+      const r = await groqChat({
+        messages: b.messages.slice(0, 20),
+        temperature: typeof b.temperature === 'number' ? b.temperature : 0.4,
+        maxTokens: Math.min(parseInt(b.max_tokens) || 900, 2000),
       });
-      const data = await r.json().catch(() => ({}));
-      console.log(`[groq] ${r.status}`);
-      if (r.status >= 200 && r.status < 300) {
-        return res.status(200).json({ ok: true, texto: data?.choices?.[0]?.message?.content || '', usage: data?.usage || null });
-      }
-      return res.status(r.status).json({ ok: false, groq: data });
+      return res.status(200).json({ ok: true, texto: r.texto, modelo: r.modelo, usage: r.usage });
     } catch (e) {
-      console.log(`[groq] ERRO ${e.message}`);
-      return res.status(502).json({ error: 'Falha ao consultar a IA (Groq).', detail: e.message });
+      return res.status(502).json({ ok: false, error: e.message });
     }
   }
 

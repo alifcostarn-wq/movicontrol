@@ -47,6 +47,7 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
+import { groqChat } from './_groq.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -2403,26 +2404,21 @@ async function responderIA(e, no, conversa, texto) {
   const socorro = t => ({ texto: t, encaminhar: true });
   if (!e.GROQ) return socorro('Não entendi. Vou te encaminhar para um atendente. 👤');
   try {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${e.GROQ}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 300,
-        messages: [
-          { role: 'system', content: `Você é o assistente da MoviOn, provedor de internet em Mossoró/RN. Responda em português do Brasil, no máximo 3 frases, de forma cordial. ${no.texto || ''} Se não souber responder, ou se o cliente pedir para falar com uma pessoa, diga que vai encaminhar para um atendente humano e escreva ${MARCA_ATENDENTE} no fim da mensagem.` },
-          { role: 'user', content: String(texto || '').slice(0, 500) },
-        ],
-      }),
+    const { texto: bruto } = await groqChat({
+      chave: e.GROQ,
+      maxTokens: 300,
+      messages: [
+        { role: 'system', content: `Você é o assistente da MoviOn, provedor de internet em Mossoró/RN. Responda em português do Brasil, no máximo 3 frases, de forma cordial. ${no.texto || ''} Se não souber responder, ou se o cliente pedir para falar com uma pessoa, diga que vai encaminhar para um atendente humano e escreva ${MARCA_ATENDENTE} no fim da mensagem.` },
+        { role: 'user', content: String(texto || '').slice(0, 500) },
+      ],
     });
-    const d = await r.json();
-    const bruto = d?.choices?.[0]?.message?.content?.trim() || '';
-    if (!bruto) return socorro('Vou te encaminhar para um atendente. 👤');
     const marcado = bruto.includes(MARCA_ATENDENTE);
     const limpo = bruto.split(MARCA_ATENDENTE).join(' ').replace(/[ \t]+/g, ' ').trim();
     if (!limpo) return socorro('Vou te encaminhar para um atendente. 👤');
     return { texto: limpo, encaminhar: marcado || pedeAtendente(limpo) };
-  } catch {
+  } catch (err) {
+    // a falha já foi para o log em groqChat; o cliente nunca fica sem resposta
+    console.error('[atendimento] IA:', err.message);
     return socorro('Vou te encaminhar para um atendente. 👤');
   }
 }

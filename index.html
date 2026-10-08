@@ -22071,14 +22071,18 @@ function ifGerencialCSV(){
 
 
 // ════════════════════════════════════════════════════════════════
-//  IF — ANÁLISES AVANÇADAS + IA GROQ (llama-3.3-70b via proxy, x-target: groq)
+//  IF — ANÁLISES AVANÇADAS + IA GROQ (via proxy, x-target: groq; o modelo é escolhido no servidor, api/_groq.js)
 // ════════════════════════════════════════════════════════════════
 
 // ── Helper central da IA ──
 async function ifGroq(system, user, maxTokens=900){
   const cfg=await getIXCConfig();
   if(!cfg.proxyUrl) throw new Error('Configure a integração (proxy) primeiro.');
-  const r=await fetch(cfg.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json','x-target':'groq'},
+  // a IA exige a sessão do MoviOne: sem isso qualquer um usaria a chave da Groq
+  const {data:sess}=await sbClient.auth.getSession();
+  const tok=sess&&sess.session&&sess.session.access_token;
+  if(!tok) throw new Error('Sessão expirada. Faça login novamente.');
+  const r=await fetch(cfg.proxyUrl,{method:'POST',headers:{'Content-Type':'application/json','x-target':'groq','Authorization':'Bearer '+tok},
     body:JSON.stringify({messages:[{role:'system',content:system},{role:'user',content:user}],max_tokens:maxTokens})});
   const d=await r.json().catch(()=>({}));
   if(!r.ok||!d.ok) throw new Error(d?.error||d?.groq?.error?.message||('HTTP '+r.status+' — o proxy pode precisar de deploy com o ramo groq'));
@@ -23368,7 +23372,7 @@ async function ifAnaliseExecutiva(alvo){
       efetividadeRegua:ef?ef.map(e=>`${e.nome}: ${e.taxa}% pagam em 7d (${e.enviadas} envios)`):'sem histórico de cobrança ainda'};
     const txt=await ifGroq(IF_GROQ_SYS,
       'Analise estes indicadores do provedor e produza uma ANÁLISE EXECUTIVA curta (máx 220 palavras): 1) diagnóstico do momento; 2) principal causa provável; 3) três ações práticas priorizadas para os próximos 7 dias, com foco em recuperar dinheiro sem desgastar clientes.\n\nDADOS:\n'+JSON.stringify(dados,null,1));
-    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise executiva — IA (Llama 3.3 via Groq)</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise executiva — IA (Groq)</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
   }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
 }
 

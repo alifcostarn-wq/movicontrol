@@ -1,3 +1,5 @@
+import { groqChat } from './_groq.js';
+
 // ════════════════════════════════════════════════════════════════
 // MoviApp API — endpoint isolado para o app do cliente
 // URL: https://movicontrol.vercel.app/api/moviapp
@@ -422,16 +424,8 @@ ${partesContexto}`;
           { role: 'user', content: mensagem }
         ];
 
-        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature: 0.6, max_tokens: 500 })
-        });
-        const d = await r.json();
-        const resposta = d?.choices?.[0]?.message?.content;
-        if (!resposta) return res.status(502).json({ ok: false, error: 'Sem resposta da IA', detalhe: d });
-
-        return res.status(200).json({ ok: true, resposta: resposta.trim() });
+        const { texto: resposta } = await groqChat({ chave: GROQ_KEY, messages, temperature: 0.6, maxTokens: 500 });
+        return res.status(200).json({ ok: true, resposta });
       } catch (e) {
         return res.status(502).json({ ok: false, error: 'Erro ao consultar IA', message: e.message });
       }
