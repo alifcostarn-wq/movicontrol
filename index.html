@@ -1990,6 +1990,37 @@ body.dark-mode .hub-abrir{color:#A9ACFF}
 #hub-screen .hub-abrir svg.ic{width:16px;height:16px}
 .hub-app:hover .hub-abrir svg.ic{transform:translateX(2px)}
 .hub-abrir svg.ic{transition:transform .15s}
+/* sistema de fora (MoviTalk, MoviFiber, MoviApp): o cartão inteiro é um link
+   para a aba própria; o "Abrir" é um botão por cima, que mostra o sistema
+   aqui dentro, sem sair do MoviOne */
+.hub-ext{position:relative}
+.hub-link{position:absolute;inset:0;border-radius:inherit;z-index:1}
+.hub-link:focus-visible{outline:3px solid color-mix(in srgb,var(--c) 55%,transparent);outline-offset:2px}
+.hub-ext .hub-abrir{position:relative;z-index:2;border:none;background:none;font-family:inherit;cursor:pointer;padding:7px 10px;margin:-7px -10px -7px auto;border-radius:9px;transition:background .15s}
+.hub-ext .hub-abrir:hover{background:color-mix(in srgb,#5056E0 12%,transparent)}
+.hub-ext .hub-abrir:focus-visible{outline:2px solid #5056E0;outline-offset:1px}
+
+/* sistema aberto dentro do MoviOne */
+#hub-sis{display:none;position:fixed;inset:0;z-index:490;flex-direction:column;background:var(--bg)}
+#hub-sis.visible{display:flex}
+html:has(#hub-sis.visible),html:has(#hub-sis.visible) body{overflow:hidden}
+.sis-barra{height:46px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 10px 0 14px;background:#111230;color:#fff;font-family:'DM Sans',sans-serif}
+.sis-barra img{width:26px;height:26px;border-radius:8px;display:block}
+.sis-nome{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sis-nome .sis-sep{color:rgba(255,255,255,.35);font-weight:400}
+.sis-nome svg{width:17px;height:17px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--c,#A9ACFF)}
+.sis-esp{flex:1}
+.sis-btn{display:flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;border-radius:8px;padding:6px 10px;font-family:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;transition:background .15s}
+.sis-btn:hover{background:rgba(255,255,255,.15)}
+.sis-btn:focus-visible{outline:2px solid #A9ACFF;outline-offset:1px}
+.sis-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sis-corpo{flex:1;position:relative;min-height:0}
+.sis-frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:#fff}
+.sis-frame.ativo{display:block}
+.sis-carregando{position:absolute;inset:0;display:none;align-items:center;justify-content:center;gap:10px;color:var(--text3);font-size:14px;z-index:1;background:var(--bg)}
+.sis-carregando.visivel{display:flex}
+.sis-carregando i{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--border);border-top-color:#5056E0;animation:au-girar .8s linear infinite}
+@media (max-width:700px){.sis-btn span{display:none}.sis-btn{padding:7px 9px}.sis-barra img{display:none}}
 /* selo de situação de cada sistema */
 .hub-sel{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .hub-sel:empty{display:none}
@@ -2026,6 +2057,7 @@ body.dark-mode .hub-ico{color:color-mix(in srgb,var(--c) 55%,#fff)}
   .hub-ico{width:40px;height:40px;border-radius:11px}
   .hub-app h3{font-size:15px}
   .hub-d,.hub-fora,.hub-abrir span{display:none}
+  .hub-ext .hub-abrir{padding:9px 11px;margin:-9px -11px -9px auto}
   .hub-atalhos{padding:0 14px}
   .hub-nm,.hub-sair span{display:none}
 }
@@ -2783,6 +2815,18 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
       <button type="button" class="hub-chip" onclick="hubAtalho('fluxo')"><svg class="ic" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Fluxo de caixa</button>
     </div>
   </section>
+</div>
+<!-- sistema de fora aberto aqui dentro (botão "Abrir" do menu inicial) -->
+<div id="hub-sis" role="region" aria-label="Sistema aberto">
+  <div class="sis-barra">
+    <img id="sis-logo" alt="MoviOn"/>
+    <div class="sis-nome"><span>moviOn</span><span class="sis-sep">/</span><span id="sis-ico"></span><span id="sis-titulo"></span></div>
+    <span class="sis-esp"></span>
+    <button type="button" class="sis-btn" onclick="hubSisVoltar()" title="Voltar ao menu inicial. O sistema continua aberto aqui."><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Início</span></button>
+    <button type="button" class="sis-btn" onclick="hubSisNovaAba()" title="Passar para uma aba própria"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>Nova aba</span></button>
+    <button type="button" class="sis-btn" onclick="hubSisFechar()" title="Fechar este sistema"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Fechar</span></button>
+  </div>
+  <div class="sis-corpo" id="sis-corpo"><div class="sis-carregando" id="sis-carregando"><i></i><span id="sis-carregando-txt">Carregando…</span></div></div>
 </div>
 <!-- ========== /MENU INICIAL ========== -->
 <aside class="sidebar" id="sidebar">
@@ -16588,9 +16632,12 @@ function hubRender(){
       +(a.url?`<span class="hub-fora" title="Abre em outra aba">${hubSvg('fora')}nova aba</span>`:'')+`</div>
       <div class="hub-d">${a.desc}</div>
       <div class="hub-pe"><span class="hub-sel${a.semSelo?'':' carregando'}" id="hub-sel-${a.id}"></span><span class="hub-abrir"><span>Abrir</span>${hubSvg('seta')}</span></div>`;
-    return a.url
-      ? `<a class="hub-app" style="--c:${a.cor}" href="${a.url}" target="${a.id}" data-app="${a.id}">${dentro}</a>`
-      : `<button type="button" class="hub-app" style="--c:${a.cor}" data-app="${a.id}" onclick="hubFechar('${a.abre}')">${dentro}</button>`;
+    if(!a.url) return `<button type="button" class="hub-app" style="--c:${a.cor}" data-app="${a.id}" onclick="hubFechar('${a.abre}')">${dentro}</button>`;
+    // sistema de fora: o cartão abre a aba própria; o "Abrir" mostra aqui dentro
+    return `<div class="hub-app hub-ext" style="--c:${a.cor}" data-app="${a.id}">
+      <a class="hub-link" href="${a.url}" target="${a.id}" title="Abrir o ${a.nome} em nova aba" aria-label="Abrir o ${a.nome} em nova aba"></a>
+      ${dentro.replace(`<span class="hub-abrir"><span>Abrir</span>${hubSvg('seta')}</span>`,
+        `<button type="button" class="hub-abrir" onclick="hubEmbutir('${a.id}')" title="Abrir aqui, sem sair do MoviOne" aria-label="Abrir o ${a.nome} aqui, sem sair do MoviOne"><span>Abrir</span>${hubSvg('seta')}</button>`)}</div>`;
   }).join('');
 }
 
@@ -16677,6 +16724,80 @@ function hubAbrir(){
 
   document.getElementById('hub-screen').classList.add('visible');
   try{ sessionStorage.setItem(HUB_VISTO_KEY,'1'); }catch(e){}
+}
+
+// ---------- sistema de fora aberto aqui dentro ----------
+// Cada sistema fica num quadro próprio. "Início" só esconde o quadro: o
+// sistema segue rodando (o MoviTalk continua avisando mensagem nova) e volta
+// na hora no próximo "Abrir". "Fechar" encerra o quadro.
+const _hubQuadros={};
+let _hubSisAtual=null;
+const HUB_TITULO=document.title;
+
+function hubEmbutir(id){
+  const a=HUB_APPS.find(x=>x.id===id);
+  if(!a||!a.url||!hubPode(a,window._usuario)) return;
+  const corpo=document.getElementById('sis-corpo'), carr=document.getElementById('sis-carregando');
+  let fr=_hubQuadros[id];
+  if(!fr){
+    fr=document.createElement('iframe');
+    fr.className='sis-frame';
+    fr.title=a.nome;
+    fr.setAttribute('allow','microphone; camera; geolocation; clipboard-read; clipboard-write; autoplay; fullscreen');
+    fr.dataset.carregando='1';
+    fr.addEventListener('load',()=>{
+      delete fr.dataset.carregando;
+      if(_hubSisAtual===id) carr.classList.remove('visivel');
+      // quem está trabalhando lá dentro não pode cair por "inatividade" no
+      // MoviOne: os cliques e teclas do quadro também contam
+      try{
+        ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev=>
+          fr.contentDocument.addEventListener(ev,()=>{ if(typeof resetarInatividade==='function') resetarInatividade(); },{passive:true}));
+      }catch(e){}
+    });
+    fr.src=a.url;
+    corpo.appendChild(fr);
+    _hubQuadros[id]=fr;
+  }
+  Object.entries(_hubQuadros).forEach(([k,f])=>f.classList.toggle('ativo',k===id));
+  document.getElementById('sis-carregando-txt').textContent=`Abrindo o ${a.nome}…`;
+  carr.classList.toggle('visivel',!!fr.dataset.carregando);
+  document.getElementById('sis-titulo').textContent=a.nome;
+  const ico=document.getElementById('sis-ico');
+  ico.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${HUB_ICO[a.ico]}</svg>`;
+  ico.style.setProperty('--c',a.cor);
+  const logo=document.querySelector('.sidebar .logo-icon img');
+  if(logo) document.getElementById('sis-logo').src=logo.src;
+  _hubSisAtual=id;
+  document.getElementById('hub-screen').classList.remove('visible');
+  document.getElementById('hub-sis').classList.add('visible');
+  document.title=`${a.nome} · MoviOne`;
+}
+
+function hubSisEsconder(){
+  document.getElementById('hub-sis').classList.remove('visible');
+  document.title=HUB_TITULO;
+}
+
+function hubSisVoltar(){
+  hubSisEsconder();
+  hubAbrir();
+}
+
+function hubSisFechar(){
+  const id=_hubSisAtual;
+  if(id&&_hubQuadros[id]){ _hubQuadros[id].remove(); delete _hubQuadros[id]; }
+  _hubSisAtual=null;
+  hubSisEsconder();
+  hubAbrir();
+}
+
+function hubSisNovaAba(){
+  const a=HUB_APPS.find(x=>x.id===_hubSisAtual);
+  if(!a) return;
+  // abre a aba primeiro (o navegador só deixa abrir no próprio clique)
+  window.open(a.url,a.id);
+  hubSisFechar();
 }
 
 function hubFechar(pagina){
