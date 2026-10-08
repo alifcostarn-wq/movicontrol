@@ -979,6 +979,28 @@ mark.achou.atual{background:var(--orange);color:#fff;}
 .anexo-bar .ab-s{font-size:10.5px;color:var(--text-mid);margin-top:1px;}
 .anexo-bar .ab-x{border:none;background:transparent;cursor:pointer;font-size:15px;color:var(--text-mid);padding:0 4px;font-family:inherit;}
 .anexo-bar .ab-x:hover{color:var(--red);}
+.anexo-bar .ab-mini{width:38px;height:38px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid rgba(0,0,0,.08);background:#fff;}
+.anexo-bar .ab-rz{border:1px solid #bfdbfe;background:#fff;color:#1d4ed8;border-radius:7px;padding:5px 9px;font:inherit;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.anexo-bar .ab-rz:hover{background:#eff6ff;border-color:var(--blue);}
+/* janela de redimensionar */
+.rz-modal{max-width:480px;width:94vw;}
+.rz-prev{position:relative;display:flex;align-items:center;justify-content:center;height:240px;border-radius:10px;
+  background:repeating-conic-gradient(#f1f5f9 0% 25%,#fff 0% 50%) 0 0/16px 16px;border:1px solid var(--line);overflow:hidden;}
+.rz-prev img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
+.rz-carr{position:absolute;right:8px;bottom:8px;font-size:10.5px;font-weight:700;background:rgba(15,23,42,.7);color:#fff;padding:3px 8px;border-radius:6px;}
+.rz-info{font-size:12.5px;margin:9px 0 10px;text-align:center;color:var(--text-mid);}
+.rz-info b{color:var(--text);}
+.rz-alerta{display:block;color:var(--red);font-weight:700;font-size:11.5px;margin-top:3px;}
+.rz-chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px;margin-bottom:12px;}
+.rz-chip{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:7px 6px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;color:var(--text);line-height:1.25;}
+.rz-chip small{display:block;font-size:10px;font-weight:600;color:var(--text-low);}
+.rz-chip.on{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);}
+.rz-chip.on small{color:var(--green-deep);}
+.rz-lab{font-size:12px;color:var(--text-mid);}
+#rzFaixa{width:100%;margin:6px 0 4px;accent-color:var(--green);}
+.rz-nota{font-size:11px;color:var(--text-low);line-height:1.5;margin-top:4px;}
+.rz-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
+@media (max-width:520px){ .anexo-bar .ab-rz{padding:5px 7px;} .rz-prev{height:200px;} }
 
 /* ═══════ LISTA DE ATENDIMENTO — substitui o quadro de colunas ═══════════
    As mesmas etapas de sempre (Novos, Aguardando atendimento, Em atendimento,
@@ -3333,6 +3355,7 @@ async function recarregarConversas(){
       nova.avatarEm = nova.avatarEm || antiga.avatarEm;
       nova._avatarBuscando = antiga._avatarBuscando;
       nova._anexo = antiga._anexo;
+      nova._anexoOrig = antiga._anexoOrig; nova._anexoLado = antiga._anexoLado; nova._anexoMini = antiga._anexoMini;
     }
     return nova;
   });
@@ -7122,60 +7145,170 @@ function lerArquivo(blob){
   });
 }
 
-async function comprimirImagem(file){
+/* Tamanhos prontos para quem envia. "Grande" é o padrão de sempre: legível no
+   celular e leve para guardar. "Original" existe para print de tela com texto
+   miúdo ou foto de equipamento em que o detalhe importa. */
+const IMG_TAMANHOS=[['pequena','Pequena',640],['media','Média',1024],['grande','Grande',1600]];
+const IMG_LADO_PADRAO=1600;
+
+// decodifica uma vez por arquivo: arrastar o controle não relê a foto a cada passo
+const _imgDecod=new WeakMap();
+function decodificarImagem(file){
+  if(!_imgDecod.has(file)) _imgDecod.set(file, new Promise((ok,err)=>{
+    const url=URL.createObjectURL(file), i=new Image();
+    i.onload=()=>{ URL.revokeObjectURL(url); ok(i); };
+    i.onerror=()=>{ URL.revokeObjectURL(url); _imgDecod.delete(file); err(new Error('imagem inválida')); };
+    i.src=url;
+  }));
+  return _imgDecod.get(file);
+}
+const imgRedimensionavel = f => !!f && /^image\//.test(f.type) && !/gif|webp/i.test(f.type);
+
+/* Reduz a foto para o maior lado caber em `ladoMax` e a recomprime em JPEG.
+   O arquivo devolvido leva junto as medidas (_w, _h) e o maior lado do
+   original (_maiorOrig), que a barra e a janela de tamanho mostram. */
+async function redimensionarImagem(file, ladoMax){
   // GIF animado perde a animação no canvas; webp é figurinha. Ambos passam direto.
-  if(/gif|webp/i.test(file.type)) return file;
+  if(!imgRedimensionavel(file)) return file;
   try{
-    const url=URL.createObjectURL(file);
-    const img=await new Promise((ok,err)=>{
-      const i=new Image();
-      i.onload=()=>ok(i); i.onerror=()=>err(new Error('imagem inválida'));
-      i.src=url;
-    });
-    const MAX=1600;
-    let {naturalWidth:w, naturalHeight:h}=img;
-    const escala = Math.max(w,h)>MAX ? MAX/Math.max(w,h) : 1;
-    w=Math.round(w*escala); h=Math.round(h*escala);
+    const img=await decodificarImagem(file);
+    const W=img.naturalWidth, H=img.naturalHeight, maior=Math.max(W,H);
+    const lado=Math.min(Math.max(1, Number(ladoMax)||IMG_LADO_PADRAO), maior);
+    const escala=lado/maior;
+    const w=Math.max(1,Math.round(W*escala)), h=Math.max(1,Math.round(H*escala));
     const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
     const ctx=cv.getContext('2d');
     // fundo branco: PNG com transparência vira JPEG com fundo preto sem isto,
     // e print de tela recortado chega aqui com alfa o tempo todo
     ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+    ctx.imageSmoothingQuality='high';
     ctx.drawImage(img,0,0,w,h);
-    URL.revokeObjectURL(url);
-    let q=0.82, blob=null;
-    // mira ANEXO_ALVO_BYTES, não o limite de envio: a foto fica guardada para
-    // sempre. Para em 0.55 para não virar borrão — abaixo disso o texto de um
-    // comprovante começa a não dar mais para ler.
-    for(let i=0;i<5;i++){
+    // Até o tamanho "Grande", mira ANEXO_ALVO_BYTES: a foto fica guardada para
+    // sempre e 400 KB já é perfeitamente legível. Para em 0.55 para não virar
+    // borrão — abaixo disso o texto de um comprovante deixa de dar para ler.
+    // Maior que isso, quem escolheu quer detalhe: qualidade alta, e só cede
+    // se não couber no limite de envio.
+    const grande = lado>IMG_LADO_PADRAO;
+    const alvo = grande ? ANEXO_MAX_BYTES : ANEXO_ALVO_BYTES;
+    let q = grande ? 0.9 : 0.82, blob=null;
+    for(let i=0;i<6;i++){
       blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',q));
-      if(blob && blob.size<=ANEXO_ALVO_BYTES) break;
-      q-=0.09; if(q<0.55) break;
+      if(blob && blob.size<=alvo) break;
+      q-=0.08; if(q<0.55) break;
     }
-    // se nem no mínimo coube no alvo, o que manda é o limite técnico do envio
-    if(blob && blob.size>ANEXO_MAX_BYTES){
-      blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.5));
-    }
-    if(blob && blob.size<file.size) return new File([blob], file.name.replace(/\.\w+$/,'')+'.jpg', {type:'image/jpeg'});
-    return file;
+    // se nem no mínimo coube, o que manda é o limite técnico do envio
+    if(blob && blob.size>ANEXO_MAX_BYTES) blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.5));
+    if(!blob) return file;
+    const medidas={ _w:w, _h:h, _maiorOrig:maior };
+    // no tamanho original, se o arquivo de origem já é menor, ele vai como está
+    if(escala===1 && blob.size>=file.size) return Object.assign(file, medidas);
+    return Object.assign(new File([blob], file.name.replace(/\.\w+$/,'')+'.jpg', {type:'image/jpeg'}), medidas);
   }catch{ return file; }   // se algo falhar, tenta mandar o original
+}
+
+async function comprimirImagem(file){ return redimensionarImagem(file, IMG_LADO_PADRAO); }
+
+/* Imagem escolhida ou colada na conversa: guarda o ORIGINAL ao lado da versão
+   reduzida, para o atendente poder trocar de tamanho sem escolher de novo. */
+async function prepararImagemAnexo(c, f){
+  pintarBarraAnexo(c,f,'preparando imagem…');
+  const arq=await comprimirImagem(f);
+  if(arq.size>ANEXO_MAX_BYTES){ toast('Imagem grande demais (limite ~3 MB).'); c._anexo=null; c._anexoOrig=null; pintarBarraResposta(c); return; }
+  c._anexoOrig = imgRedimensionavel(f) ? f : null;
+  c._anexoLado = IMG_LADO_PADRAO;
+  c._anexo=arq; pintarBarraAnexo(c,arq);
+}
+
+const fmtKB = n => n>1048576 ? (n/1048576).toFixed(1).replace('.',',')+' MB' : Math.max(1,Math.round(n/1024))+' KB';
+
+/* Janela "Redimensionar": prévia de verdade (o arquivo que vai sair), os
+   tamanhos prontos e um controle fino. Mostra medidas e peso finais antes de
+   aplicar — quem envia sabe exatamente o que o cliente vai receber. */
+async function abrirRedimensionar(c){
+  const orig=c._anexoOrig; if(!orig) return;
+  let img;
+  try{ img=await decodificarImagem(orig); }catch{ toast('Não consegui abrir a imagem.'); return; }
+  const maior=Math.max(img.naturalWidth,img.naturalHeight);
+  const minimo=Math.min(240,maior);
+  let lado=Math.min(c._anexoLado||IMG_LADO_PADRAO, maior), atual=null, urlPrev=null, seq=0;
+  const ov=document.createElement('div');
+  ov.className='tr-overlay rz-ov';
+  ov.innerHTML=`<div class="pn-modal rz-modal">
+    <div class="pn-head"><h3>📐 Redimensionar imagem</h3><button class="pn-x" id="rzX">✕</button></div>
+    <div class="pn-body">
+      <div class="rz-prev"><img id="rzImg" alt="Prévia da imagem"><span class="rz-carr" id="rzCarr">gerando…</span></div>
+      <div class="rz-info" id="rzInfo">—</div>
+      <div class="rz-chips">
+        ${IMG_TAMANHOS.filter(([,,px])=>px<maior).map(([k,n,px])=>`<button type="button" class="rz-chip" data-px="${px}">${n}<small>${px} px</small></button>`).join('')}
+        <button type="button" class="rz-chip" data-px="${maior}">Original<small>${img.naturalWidth}×${img.naturalHeight}</small></button>
+      </div>
+      <label class="rz-lab">Maior lado: <b id="rzLado">${lado}</b> px</label>
+      <input type="range" id="rzFaixa" min="${minimo}" max="${maior}" step="${maior-minimo>40?10:1}" value="${lado}">
+      <div class="rz-nota">Original: ${img.naturalWidth}×${img.naturalHeight} px · ${fmtKB(orig.size)}. Menor = chega mais rápido no celular do cliente; maior = mais detalhe (bom para print com texto miúdo).</div>
+      <div class="rz-acts"><button type="button" class="vinc-btn" id="rzCancelar">Cancelar</button>
+        <button type="button" class="vinc-btn solid" id="rzAplicar" disabled>Usar este tamanho</button></div>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const q=s=>ov.querySelector(s);
+  const fechar=()=>{ if(urlPrev) URL.revokeObjectURL(urlPrev); ov.remove(); document.removeEventListener('keydown',tecla); };
+  const tecla=ev=>{ if(ev.key==='Escape') fechar(); };
+  document.addEventListener('keydown',tecla);
+  ov.onclick=ev=>{ if(ev.target===ov) fechar(); };
+  q('#rzX').onclick=fechar; q('#rzCancelar').onclick=fechar;
+  const marcar=()=>{
+    q('#rzLado').textContent=lado;
+    ov.querySelectorAll('.rz-chip').forEach(b=>b.classList.toggle('on', Number(b.dataset.px)===lado));
+  };
+  const gerar=async()=>{
+    const meu=++seq;
+    q('#rzAplicar').disabled=true; q('#rzCarr').style.display='';
+    const arq=await redimensionarImagem(orig, lado);
+    if(meu!==seq || !document.body.contains(ov)) return;   // o controle já andou
+    atual=arq;
+    if(urlPrev) URL.revokeObjectURL(urlPrev);
+    urlPrev=URL.createObjectURL(arq); q('#rzImg').src=urlPrev;
+    q('#rzCarr').style.display='none';
+    const grande=arq.size>ANEXO_MAX_BYTES;
+    q('#rzInfo').innerHTML=`<b>${arq._w||'?'} × ${arq._h||'?'} px</b> · ${fmtKB(arq.size)}${
+      grande?' <span class="rz-alerta">grande demais para enviar — escolha um tamanho menor</span>':''}`;
+    q('#rzAplicar').disabled=grande;
+  };
+  let deb;
+  const mudar=(v,ja)=>{ lado=Math.max(minimo,Math.min(maior,Math.round(v))); marcar(); clearTimeout(deb); deb=setTimeout(gerar, ja?0:180); };
+  ov.querySelectorAll('.rz-chip').forEach(b=>b.onclick=()=>{ q('#rzFaixa').value=b.dataset.px; mudar(Number(b.dataset.px),true); });
+  q('#rzFaixa').oninput=ev=>mudar(Number(ev.target.value));
+  q('#rzAplicar').onclick=()=>{
+    if(!atual) return;
+    c._anexo=atual; c._anexoLado=lado;
+    fechar(); pintarBarraAnexo(c, atual);
+    toast(`Imagem ajustada: ${atual._w}×${atual._h} px · ${fmtKB(atual.size)}`);
+  };
+  marcar(); gerar();
 }
 
 function pintarBarraAnexo(c, arq, estado){
   const el=$('#mReplyBar'); if(!el) return;
   if(!arq){ pintarBarraResposta(c); return; }
-  const kb = arq.size>1048576 ? (arq.size/1048576).toFixed(1)+' MB' : Math.round(arq.size/1024)+' KB';
+  const kb = fmtKB(arq.size);
   const ico = /^image\//.test(arq.type)?'🖼️':/^video\//.test(arq.type)?'🎬':/^audio\//.test(arq.type)?'🎵':'📄';
+  // miniatura da imagem que vai sair (uma URL por conversa, trocada a cada pintura)
+  if(c._anexoMini){ URL.revokeObjectURL(c._anexoMini); c._anexoMini=null; }
+  const mini = /^image\//.test(arq.type) && !estado ? (c._anexoMini=URL.createObjectURL(arq)) : null;
+  const medidas = arq._w ? `${arq._w}×${arq._h} px · ` : '';
+  const pode = !estado && c._anexoOrig && c._anexo===arq;
   el.innerHTML=`<div class="anexo-bar">
-    <span class="ab-i">${ico}</span>
+    ${mini?`<img class="ab-mini" src="${mini}" alt="">`:`<span class="ab-i">${ico}</span>`}
     <div class="ab-l">
       <div class="ab-n">${esc(arq.name)}</div>
-      <div class="ab-s">${estado||('pronto para enviar · '+kb)}</div>
+      <div class="ab-s">${estado||('pronto para enviar · '+medidas+kb)}</div>
     </div>
+    ${pode?'<button class="ab-rz" id="abRz" title="Escolher o tamanho da imagem antes de enviar">📐 Redimensionar</button>':''}
     ${estado?'':'<button class="ab-x" id="abX" title="Cancelar">✕</button>'}
   </div>`;
   const x=$('#abX');
-  if(x) x.onclick=()=>{ c._anexo=null; pintarBarraResposta(c); };
+  if(x) x.onclick=()=>{ c._anexo=null; c._anexoOrig=null; pintarBarraResposta(c); };
+  const rz=$('#abRz');
+  if(rz) rz.onclick=()=>abrirRedimensionar(c);
 }
 
 /* Clique no nome do cliente: mostra e esconde o painel do cadastro inteiro.
@@ -7901,10 +8034,7 @@ function openModal(id){
       ev.preventDefault();
       const f=it.getAsFile(); if(!f) return;
       document.querySelector('.mais-wrap')?.classList.remove('aberto');
-      pintarBarraAnexo(c,f,'preparando imagem…');
-      const arq=await comprimirImagem(new File([f],'print.png',{type:f.type}));
-      if(arq.size>ANEXO_MAX_BYTES){ toast('Imagem grande demais.'); pintarBarraResposta(c); return; }
-      c._anexo=arq; pintarBarraAnexo(c,arq);
+      await prepararImagemAnexo(c, new File([f],'print.png',{type:f.type}));
     };
     // abre/fecha o leque; fecha ao clicar fora ou apertar Esc
     const wrap=document.querySelector('.mais-wrap'), bMais=$('#mMais');
@@ -7937,11 +8067,9 @@ function openModal(id){
         const f=inpArq.files&&inpArq.files[0];
         inpArq.value='';                       // permite reescolher o mesmo arquivo
         if(!f) return;
-        let arq=f;
-        if(/^image\//.test(f.type)){
-          pintarBarraAnexo(c,f,'preparando imagem…');
-          arq=await comprimirImagem(f);
-        }
+        if(/^image\//.test(f.type)){ await prepararImagemAnexo(c, f); inp.focus(); return; }
+        c._anexoOrig=null;
+        const arq=f;
         if(arq.size>ANEXO_MAX_BYTES){
           const mb=(arq.size/1048576).toFixed(1);
           toast(`Arquivo de ${mb} MB é grande demais (limite ~3 MB).`);
@@ -8164,6 +8292,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     // com anexo, o texto digitado vira legenda da mídia
     if(anexo){
       c._anexo=null;
+      const origAnexo=c._anexoOrig; c._anexoOrig=null;
       $('#mInput').value=''; $('#mInput').style.height='auto';
       limparRascunho(c.id); guardarRascunho(c.id,{ digitando:true });
       respondendoA=null;
@@ -8177,7 +8306,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
         openModal(c.id); renderAll();
       }catch(err){
         // devolve o arquivo para o atendente tentar de novo, sem reescolher
-        c._anexo=anexo;
+        c._anexo=anexo; c._anexoOrig=origAnexo;
         pintarBarraAnexo(c, anexo);
         toast('Falha ao enviar arquivo: '+err.message);
       }
