@@ -16,32 +16,37 @@
      Base:  azul #004E98 · verde #3C9D23 · vermelho #D00000
             off-white #F8F1F1 · navy #22223B
      O verde e o vermelho puros da paleta ficam em 3,48:1 e 5,70:1 contra o
-     branco. Como texto precisa de 4,5:1, o verde entra escurecido (#3C9D23)
-     onde vira TEXTO, e o tom puro fica reservado para preenchimentos, onde
-     o branco por cima passa folgado. Cada par abaixo foi medido; nenhum
-     regride em relação à paleta anterior.
-       texto/fundo   15,44:1      accent/fundo   5,16:1  (antes 4,62)
-       danger/fundo   6,27:1      info/fundo     8,26:1  (antes 5,64) */
+     branco. Como texto precisa de 4,5:1, o verde entra escurecido onde vira
+     TEXTO (#2A7518) e onde leva texto branco por cima (#2E7D1A); o tom puro
+     fica para barras, ícones e gráficos. Medidos contra o branco:
+       texto   15,44:1      accent   5,74:1  (antes 3,48)
+       danger   5,70:1      info     8,26:1 */
   --bg:#F1E9E9;--surface:#FFF;--surface2:#F8F1F1;--border:#C3B3B3;
   --text:#22223B;--text2:#4A4A63;--text3:#67677D;
-  --accent:#3C9D23;--accent2:#EFF9EB;--accent3:#B5DAAB;
-  --danger:#D00000;--danger-bg:#F7D1D1;
+  --accent:#2A7518;--accent2:#EFF9EB;--accent3:#B5DAAB;
+  --danger:#D00000;--danger-bg:#FCE6E6;
   --warn:#C40000;--warn-bg:#FFEAD9;
   --info:#004E98;--info-bg:#DFEEFB;
-  --fin-green:#3C9D23;--fin-red:#D00000;--fin-blue:#004E98;
-  /* Preenchimento (botão, barra, selo cheio) com texto branco por cima.
-     No claro é a mesma cor do texto; no escuro elas se separam: o texto
-     clareia para ler sobre o fundo escuro e o preenchimento escurece para
-     o branco por cima continuar legível. */
-  --accent-fill:#3C9D23;--danger-fill:#D00000;--warn-fill:#C40000;
-  /* Tintas e textos que antes estavam escritos direto nas regras */
-  --verde-txt:#2F7D1B;--laranja-txt:#B35400;--laranja-bg:#FFD3B0;--rosa-bg:#FADCDC;
+  --fin-green:#2A7518;--fin-red:#D00000;--fin-blue:#004E98;
+  /* Verde como TEXTO e verde de PREENCHIMENTO são tons diferentes: o verde
+     da marca (#3C9D23) fica em 3,5:1 tanto como texto sobre o branco quanto
+     com texto branco por cima. O texto usa #2A7518 (5,7:1 no branco, 4,8:1
+     no fundo da página) e o preenchimento #2E7D1A (branco por cima 5,2:1).
+     O vermelho fica: 5,7:1 no branco; o que mudou foi o fundo rosa dos
+     selos (danger-bg), clareado para o texto vermelho passar de 4,1 a 4,8:1. */
+  --accent-fill:#2E7D1A;--danger-fill:#D00000;--warn-fill:#C40000;
+  /* Tintas e textos que antes estavam escritos direto nas regras.
+     Laranja e azul-claro da paleta não leem como texto no fundo claro
+     (2,3 e 2,7:1): como texto entram em tons fechados da mesma cor. */
+  --verde-txt:#2A7518;--laranja-txt:#A84F00;--laranja-bg:#FFD3B0;--rosa-bg:#FADCDC;
+  --azul-txt:#2668AC;
+  --surface3:#E8DDDD;
   /* cartão em destaque (saldo total, grupo do plano de contas): navy no claro */
   --destaque-bg:#22223B;
   /* Tons escurecidos APENAS para texto pequeno sobre fundo claro, onde o
      verde puro fica em 3,48:1. O verde/vermelho da imagem seguem íntegros
      em preenchimentos, barras, ícones e números grandes. */
-  --accent-txt:#3C9D23;--danger-txt:#D00000;
+  --accent-txt:#2A7518;--danger-txt:#D00000;
   /* cores puras da paleta, para preenchimentos com texto branco por cima */
   --pal-azul:#004E98;--pal-verde:#3C9D23;--pal-vermelho:#D00000;
   --pal-claro:#F8F1F1;--pal-navy:#22223B;
@@ -108,7 +113,7 @@ body.dark-mode{
   --fin-green:#5CC243;--fin-red:#FF7A7A;--fin-blue:#6BB6F0;
   --accent-fill:#2E7D1A;--danger-fill:#D00000;--warn-fill:#C40000;
   --verde-txt:#5CC243;--laranja-txt:#FFB070;--laranja-bg:#3D2A1A;--rosa-bg:#3D1A24;
-  --destaque-bg:#004E98;
+  --destaque-bg:#004E98;--azul-txt:#4DA3E8;--surface3:#3A3A60;
   --pal-azul:#4DA3E8;--pal-verde:#3C9D23;--pal-vermelho:#D00000;
   --pal-claro:#F8F1F1;--pal-navy:#22223B;
   --chart-grid:rgba(248,241,241,0.10);
@@ -116,6 +121,11 @@ body.dark-mode{
   --sidebar-bg:#14153A;
   color-scheme:dark;
 }
+/* Nomes antigos ainda usados em telas e janelas, que antes não existiam
+   (a paginação, a aba ativa e os painéis ficavam sem cor). Declarados também
+   no body: var() dentro de uma variável é resolvido onde ela é declarada, e
+   só no :root o modo escuro herdaria os tons do claro. */
+:root,body{--bg2:var(--surface2);--bg1:var(--surface);--primary:var(--accent-fill);--muted:var(--text3);--success:var(--accent)}
 /* Sidebar cor fixa no dark — independente de --text */
 body.dark-mode .sidebar{background:var(--sidebar-bg,#101020)}
 body.dark-mode .row-parc td{background:var(--info-bg)!important}
@@ -728,7 +738,7 @@ table.dre{width:100%;border-collapse:collapse;min-width:850px}
 .sim-lever{border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:11px;background:var(--surface2)}
 .sim-lever .imp{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12.5px;gap:8px;flex-wrap:wrap}
 .sim-chip{font-size:11px;font-weight:800;padding:4px 11px;border-radius:11px;white-space:nowrap}
-.sim-chip.up{background:var(--accent-fill);color:#22223B}
+.sim-chip.up{background:var(--accent-fill);color:#fff}
 .sim-chip.down{background:var(--rosa-bg);color:var(--info)}
 .sim-pe-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:13px}
 @media(max-width:900px){.sim-pe-grid{grid-template-columns:1fr}}
@@ -754,7 +764,7 @@ table.dre{width:100%;border-collapse:collapse;min-width:850px}
 #page-simulador .planos th:first-child{text-align:left}
 #page-simulador .planos td{padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--bg)}
 #page-simulador .planos td:first-child{text-align:left;font-weight:700}
-.mc-pill{font-size:10px;font-weight:800;padding:2.5px 9px;border-radius:9px;background:var(--accent-fill);color:#22223B}
+.mc-pill{font-size:10px;font-weight:800;padding:2.5px 9px;border-radius:9px;background:var(--accent-fill);color:#fff}
 .sim-cfg{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--text2)}
 .sim-cfg input{border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;font-family:inherit;font-weight:600;width:70px;background:var(--surface);color:var(--text)}
 .sim-chart-wrap{height:170px}
@@ -781,7 +791,7 @@ body.dark-mode .sim-chip.down{background:rgba(225,29,72,.22);color:#FADCDC}
 .pr-res-row.tot{border-top:1.5px solid var(--border);margin-top:5px;padding-top:7px;font-weight:800;font-size:13.5px}
 .pr-res-row .lbl{color:var(--text2);font-weight:600}
 .pr-badge{font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;white-space:nowrap}
-.pr-badge.otimo{background:var(--accent-fill);color:#22223B}
+.pr-badge.otimo{background:var(--accent-fill);color:#fff}
 .pr-badge.bom{background:#BBDCF6;color:var(--info)}
 .pr-badge.atencao{background:var(--laranja-bg);color:var(--warn)}
 .pr-badge.ruim{background:var(--rosa-bg);color:var(--info)}
@@ -798,7 +808,7 @@ body.dark-mode .sim-chip.down{background:rgba(225,29,72,.22);color:#FADCDC}
 .pr-escada{display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .pr-esc-card{border:1.5px solid var(--border);border-radius:12px;padding:12px;text-align:center;position:relative}
 .pr-esc-card.ancora{border-color:#004E98;background:var(--info-bg)}
-.pr-esc-card.alvo{border-color:#22223B;background:var(--accent-fill);transform:scale(1.04)}
+.pr-esc-card.alvo{border-color:var(--accent);background:var(--accent2);transform:scale(1.04)}
 .pr-esc-tag{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:800;padding:2px 9px;border-radius:8px;white-space:nowrap}
 .pr-esc-card.ancora .pr-esc-tag{background:#004E98;color:#fff}
 .pr-esc-card.alvo .pr-esc-tag{background:var(--accent-fill);color:#fff}
@@ -822,7 +832,7 @@ body.dark-mode .pr-esc-card.alvo{background:rgba(5,150,105,.16)}
 @media(max-width:1050px){#gov-grid{grid-template-columns:1fr!important}}
 .gov-mes{display:flex;justify-content:space-between;align-items:center;padding:10px 13px;border:1.5px solid var(--border);border-radius:11px;margin-bottom:8px;font-size:13px;transition:transform .15s}
 .gov-mes:hover{transform:translateX(3px)}
-.gov-mes.fechado{background:var(--accent-fill);border-color:#22223B}
+.gov-mes.fechado{background:var(--accent2);border-color:var(--accent3)}
 .gov-mes.futuro{opacity:.45}
 .gov-st{font-size:9.5px;font-weight:800;padding:4px 10px;border-radius:11px;letter-spacing:.04em;white-space:nowrap}
 .gov-st.fechado{background:var(--accent-fill);color:#fff}
@@ -858,7 +868,7 @@ body.dark-mode .pr-esc-card.alvo{background:rgba(5,150,105,.16)}
 .gov-cfg-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--text2);margin-top:11px}
 .gov-cfg-row select,.gov-cfg-row input{border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;font-family:inherit;font-weight:600;background:var(--surface);color:var(--text)}
 .wpp-prev{background:#004E98;border-radius:14px;padding:12px;margin-top:12px}
-.wpp-msg{background:var(--accent-fill);color:#22223B;border-radius:10px 10px 2px 10px;padding:10px 12px;font-size:12px;line-height:1.55;white-space:pre-line}
+.wpp-msg{background:var(--accent-fill);color:#fff;border-radius:10px 10px 2px 10px;padding:10px 12px;font-size:12px;line-height:1.55;white-space:pre-line}
 body.dark-mode .gov-mes.fechado{background:rgba(5,150,105,.18);border-color:rgba(5,150,105,.4)}
 body.dark-mode .gov-ajuste{background:rgba(217,119,6,.18);border-color:rgba(217,119,6,.4);color:#FF8C2E}
 
@@ -888,7 +898,7 @@ body.dark-mode .gov-ajuste{background:rgba(217,119,6,.18);border-color:rgba(217,
 @media(max-width:1000px){#page-tesouraria .ts-aging{grid-template-columns:1fr 1fr}}
 #page-tesouraria .ts-ag{border-radius:11px;padding:12px 14px;border:1.5px solid var(--border);background:var(--surface2);transition:transform .18s;cursor:default}
 #page-tesouraria .ts-ag:hover{transform:translateY(-2px)}
-#page-tesouraria .ts-ag.a0{border-color:#22223B;background:var(--accent-fill)}
+#page-tesouraria .ts-ag.a0{border-color:var(--accent3);background:var(--accent2)}
 #page-tesouraria .ts-ag.a1{border-color:#22223B;background:var(--laranja-bg)}
 #page-tesouraria .ts-ag.a2{border-color:#B35400;background:var(--warn-bg)}
 #page-tesouraria .ts-ag.a3{border-color:#22223B;background:var(--rosa-bg)}
@@ -902,7 +912,7 @@ body.dark-mode .gov-ajuste{background:rgba(217,119,6,.18);border-color:rgba(217,
 #page-tesouraria .ts-tbl td{padding:9px 12px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--bg)}
 #page-tesouraria .ts-tbl td:first-child{text-align:left;font-weight:600}
 #page-tesouraria .ts-tbl tr.neg td{background:var(--rosa-bg)}
-#page-tesouraria .ts-tbl tr.hoje td{background:var(--accent-fill);font-weight:700}
+#page-tesouraria .ts-tbl tr.hoje td{background:var(--accent2);font-weight:700}
 #page-tesouraria .ts-negbox{display:inline-block;background:#D00000;color:#fff;font-weight:800;padding:2px 9px;border-radius:8px}
 #page-tesouraria .ts-empty{text-align:center;padding:30px;color:var(--text3);font-size:13px}
 body.dark-mode #page-tesouraria .ts-ag .l{color:#E7E5E4}
@@ -1016,7 +1026,7 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 #page-fluxo .dre th.fx-mesatual{color:#fff;background:var(--accent-fill);font-weight:800}
 #page-fluxo .dre .cv.fx-proj{opacity:.5;font-style:italic}
 #page-fluxo .dre .cv.fx-prev-col{color:var(--info);background:rgba(8,145,178,.09);font-style:italic;border-right:2px solid rgba(8,145,178,.25)}
-#page-fluxo .dre .cv.fx-prev-col .fx-avs{color:#4DA3E8}
+#page-fluxo .dre .cv.fx-prev-col .fx-avs{color:var(--azul-txt)}
 #page-fluxo .dre th.fx-sub-r{color:var(--accent);font-size:10px;padding-top:5px;padding-bottom:8px;font-weight:800}
 #page-fluxo .dre th.fx-sub-p{color:var(--info);font-size:10px;padding-top:5px;padding-bottom:8px;border-right:2px solid rgba(8,145,178,.25);font-weight:800}
 #page-fluxo .dre td.fx-cv-cell{cursor:pointer;transition:background .12s}
@@ -1091,7 +1101,7 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 /* tabela */
 #page-planejamento .plan th{font-size:10px;font-weight:800;padding:8px 9px}
 #page-planejamento .plan th.pl-h-orc{background:#BBDCF6;color:var(--info);font-size:9px}
-#page-planejamento .plan th.pl-h-real{background:var(--accent-fill);color:#22223B;font-size:9px}
+#page-planejamento .plan th.pl-h-real{background:var(--accent-fill);color:#fff;font-size:9px}
 #page-planejamento .plan th.pl-h-dif{background:var(--surface2);color:var(--text3);font-size:9px}
 #page-planejamento .plan td{font-size:12.5px}
 #page-planejamento .plan .pcn{font-size:12.5px;font-weight:600;padding:8px 10px}
@@ -1101,7 +1111,7 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 #page-planejamento .pcv-input:hover{border-color:#4DA3E8}
 #page-planejamento .pcv-input:focus{outline:none;border-color:#004E98;box-shadow:0 0 0 3px rgba(37,99,235,.16);background:#fff}
 #page-planejamento .pl-dif{font-weight:800;font-size:11.5px;text-align:center;border-radius:0}
-#page-planejamento .pl-dif.sem-ok{background:var(--accent-fill);color:#22223B}
+#page-planejamento .pl-dif.sem-ok{background:var(--accent-fill);color:#fff}
 #page-planejamento .pl-dif.sem-warn{background:var(--laranja-bg);color:var(--warn)}
 #page-planejamento .pl-dif.sem-bad{background:var(--rosa-bg);color:#A00000}
 body.dark-mode #page-planejamento .pcv-input{background:rgba(37,99,235,.2);color:#4DA3E8}
@@ -1153,7 +1163,7 @@ body.dark-mode #page-fluxo .dre tr.dcx-saldo td:first-child{background:rgba(37,9
 /* KPI de geração de caixa */
 #page-fluxo .fx-card.caixa::before{background:none}
 #page-fluxo .fx-cx-alerta{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:9px;background:var(--laranja-bg);color:var(--warn)}
-#page-fluxo .fx-cx-alerta.ok{background:var(--accent-fill);color:#22223B}
+#page-fluxo .fx-cx-alerta.ok{background:var(--accent-fill);color:#fff}
 
 /* modais do Fluxo — SEM escopo #page-fluxo (ficam fora da .page no DOM) */
 .fx-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:9000;padding:20px}
@@ -1173,7 +1183,7 @@ body.dark-mode #page-fluxo .dre tr.dcx-saldo td:first-child{background:rgba(37,9
 .fx-lanc-meta{font-size:11.5px;color:var(--text3);margin-top:2px}
 .fx-lanc-val{font-weight:800;font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .fx-lanc-st{font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}
-.fx-lanc-st.st-ef{background:var(--accent-fill);color:#22223B}
+.fx-lanc-st.st-ef{background:var(--accent-fill);color:#fff}
 .fx-lanc-st.st-pd{background:var(--info-bg);color:var(--info)}
 .fx-ia-sec{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 17px;margin-bottom:11px;font-size:14px;line-height:1.65;color:var(--text)}
 .fx-ia-cursor{display:inline-block;width:7px;height:15px;background:#004E98;animation:fxblink 1s steps(1) infinite;vertical-align:text-bottom}
@@ -1476,7 +1486,7 @@ table.pt{width:100%;border-collapse:collapse;min-width:360px}
 /* cores por nível */
 .score-critico .score-gauge-val{color:var(--danger)}
 .score-critico .score-gauge-label{background:var(--danger-bg);color:var(--danger)}
-.score-alerta .score-gauge-val{color:#FF8C2E}
+.score-alerta .score-gauge-val{color:var(--laranja-txt)}
 .score-alerta .score-gauge-label{background:var(--warn-bg);color:var(--warn)}
 .score-atencao .score-gauge-val{color:var(--warn)}
 .score-atencao .score-gauge-label{background:var(--laranja-bg);color:var(--warn)}
@@ -2539,7 +2549,7 @@ textarea.cp-form-input{resize:vertical}
 .cob-ag-n{font-size:11px;font-weight:600;color:var(--text3,#004E98);width:56px;text-align:right}
 .cob-mini{display:flex;align-items:center;justify-content:space-between;gap:10px;
   border:1.5px solid var(--line,#4DA3E8);border-radius:10px;padding:9px 11px;margin-bottom:7px}
-.cob-mini-v{font-size:12.5px;font-weight:800;color:#FF8C2E}
+.cob-mini-v{font-size:12.5px;font-weight:800;color:var(--laranja-txt)}
 /* ── MÓDULO COBRANÇA ─────────────────────────────────────────────────── */
 .cob-grid2{display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start}
 @media(max-width:1100px){.cob-grid2{grid-template-columns:1fr}}
@@ -2636,7 +2646,7 @@ textarea.cp-form-input{resize:vertical}
 .fatixc-kpi:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.07)}
 .fk-lab{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:4px}
 .fk-val{font-family:'DM Mono',monospace;font-size:16px;font-weight:500}
-.fk-warn{color:#FF8C2E}.fk-red{color:var(--danger)}.fk-green{color:var(--accent)}
+.fk-warn{color:var(--laranja-txt)}.fk-red{color:var(--danger)}.fk-green{color:var(--accent)}
 .fk-sub{font-size:10px;color:var(--text3);margin-top:3px}
 .fatixc-scroll{max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px}
 .fatixc-table{margin:0}
@@ -2678,7 +2688,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 .if-fstatus-pill b{font-family:'DM Mono',monospace}
 .if-fstatus-pill:hover{transform:translateY(-1px)}
 .if-fstatus-pill.ativa{background:var(--fc);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--fc) 45%,transparent)}
-.if-fstatus-aviso{font-size:10.5px;color:#FF8C2E;font-weight:600}
+.if-fstatus-aviso{font-size:10.5px;color:var(--laranja-txt);font-weight:600}
 .if-ger-topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .if-ger-modos,.if-ger-dimbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .if-ger-modo{font-size:11.5px;font-weight:700;padding:6px 14px;border-radius:11px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--text2);transition:all .12s ease}
@@ -2692,7 +2702,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 .if-ia-chamada{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap}
 .if-ia-box{background:none;border:1px solid rgba(124,58,237,.3);border-radius:14px;padding:14px 16px;font-size:12.5px;line-height:1.7;animation:ifFade .3s ease}
 .if-ia-box.erro{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.06)}
-.if-ia-tit{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4DA3E8;margin-bottom:8px}
+.if-ia-tit{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--azul-txt);margin-bottom:8px}
 .if-ia-txt{white-space:normal}
 .if-ia-selo{display:inline-block;background:#004E98;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px;vertical-align:middle;margin-right:4px}
 @keyframes ifFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -2731,7 +2741,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 .if-prev{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 .if-prev-item{background:none;border:1px solid rgba(124,58,237,.25);border-radius:12px;padding:12px 20px;text-align:center}
 .if-prev-d{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:700}
-.if-prev-v{font-family:'DM Mono',monospace;font-size:17px;font-weight:600;color:#4DA3E8;margin-top:4px}
+.if-prev-v{font-family:'DM Mono',monospace;font-size:17px;font-weight:600;color:var(--azul-txt);margin-top:4px}
 .if-prev-nota{font-size:10.5px;color:var(--text3);flex:1;min-width:220px}
 .if-filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .if-busca{flex:1;min-width:220px;padding:9px 14px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px}
@@ -2757,7 +2767,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 .if-gauge-num{font-family:'DM Mono',monospace;font-size:40px;font-weight:700;line-height:1}
 .if-gauge-lab{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-top:4px;font-weight:700}
 .if-resumo-ia{background:none;border:1px solid rgba(124,58,237,.22);border-radius:14px;padding:14px;font-size:12.5px;line-height:1.7}
-.if-resumo-tit{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#4DA3E8;margin-bottom:6px}
+.if-resumo-tit{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--azul-txt);margin-bottom:6px}
 .if-mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 .if-m{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
 .if-m-l{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:700}
@@ -2782,7 +2792,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 .if-lista{margin:6px 0 0;padding-left:18px}
 .if-lista li{margin-bottom:5px}
 .if-chips{display:flex;gap:6px;flex-wrap:wrap}
-.if-chip{font-size:10.5px;padding:5px 11px;border-radius:12px;background:rgba(124,58,237,.1);color:#4DA3E8;border:1px solid rgba(124,58,237,.25);cursor:pointer;font-weight:600;transition:all .12s ease}
+.if-chip{font-size:10.5px;padding:5px 11px;border-radius:12px;background:rgba(124,58,237,.1);color:var(--azul-txt);border:1px solid rgba(124,58,237,.25);cursor:pointer;font-weight:600;transition:all .12s ease}
 .if-chip:hover{background:#004E98;color:#fff}
 .if-chat-input{display:flex;gap:8px}
 .if-chat-input input{flex:1;padding:11px 16px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px}
@@ -3889,7 +3899,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
     </div>
 
     <!-- Folha de impressão da contagem (ESTOQUE V4) -->
-    <div id="est4-print"></div>
+    <div id="est4-print" class="pdf-fixo"></div>
 
     <!-- Modal: Selecionar Técnico para abrir OS -->
     <div class="modal-overlay" id="modal-selecionar-tecnico" onclick="if(event.target===this)fecharModal('modal-selecionar-tecnico')">
@@ -4285,7 +4295,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
           <div id="fx-drill-resumo" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 15px;font-size:13.5px;margin-bottom:14px"></div>
           <div id="fx-drill-lista"></div>
           <div id="fx-drill-nota-box" style="border-top:1px solid var(--border);margin-top:14px;padding-top:13px">
-            <div style="font-size:11px;font-weight:800;letter-spacing:.06em;color:#4DA3E8;margin-bottom:7px">📝 ANOTAÇÃO DESTA CONTA/MÊS</div>
+            <div style="font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--azul-txt);margin-bottom:7px">📝 ANOTAÇÃO DESTA CONTA/MÊS</div>
             <textarea id="fx-drill-nota" placeholder="Ex: energia alta — ar-condicionado do POP quebrou" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:9px 12px;font-family:inherit;font-size:13px;resize:vertical;min-height:56px;background:var(--surface);color:var(--text)"></textarea>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
               <span id="fx-drill-nota-meta" style="font-size:11px;color:var(--text3)"></span>
@@ -5417,12 +5427,12 @@ body.dark-mode .ct-kpi-purple .ct-kpi-icon{background:rgba(248,241,241,.12);colo
 .ct-pag-btns button:disabled{opacity:.4;cursor:default}
 .ct-badge{font-size:10px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
 .ct-badge::before{content:'';width:5px;height:5px;border-radius:50%}
-.ct-badge-aberto{background:rgba(245,158,11,.1);color:#FF8C2E}.ct-badge-aberto::before{background:#FF8C2E}
+.ct-badge-aberto{background:rgba(245,158,11,.1);color:var(--laranja-txt)}.ct-badge-aberto::before{background:#FF8C2E}
 .ct-badge-pago{background:rgba(34,197,94,.1);color:var(--accent)}.ct-badge-pago::before{background:var(--accent-fill)}
 .ct-badge-recebido{background:rgba(34,197,94,.1);color:var(--accent)}.ct-badge-recebido::before{background:var(--accent-fill)}
 .ct-badge-atrasado{background:rgba(239,68,68,.1);color:var(--danger)}.ct-badge-atrasado::before{background:#D00000}
 .ct-badge-cancelado{background:rgba(130,130,130,.1);color:var(--text3);text-decoration:line-through}.ct-badge-cancelado::before{background:var(--text3)}
-.ct-badge-hoje{background:rgba(59,130,246,.1);color:#4DA3E8}.ct-badge-hoje::before{background:#4DA3E8}
+.ct-badge-hoje{background:rgba(59,130,246,.1);color:var(--azul-txt)}.ct-badge-hoje::before{background:#4DA3E8}
 .ct-badge-parcial{background:rgba(168,85,247,.12);color:var(--info)}.ct-badge-parcial::before{background:#004E98}
 .ct-parcial-prog{font-size:9px;color:var(--text3);font-family:'DM Mono',monospace;margin-left:5px;white-space:nowrap}
 .mq-total-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text2);padding:3px 0;font-family:'DM Mono',monospace}
@@ -5786,6 +5796,100 @@ body.dark-mode .ctx-atraso-d{background:#D00000}
 .lanc-resumo-info{margin-top:12px;font-size:10px;color:var(--info);background:var(--info-bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;line-height:1.4}
 @media (max-width:700px){.lanc-grid{grid-template-columns:1fr}.lanc-form{border-right:none;border-bottom:1px solid var(--border)}}
 
+/* ======== AMBOS OS TEMAS — legibilidade sobre preenchimento cheio ========
+   Cartões, linhas e selos de cor cheia levam texto branco. Os rótulos em
+   branco quase transparente (0,4 a 0,55) ficavam entre 1,8 e 3:1. */
+.kd-label,.dkpi-label,.extrato-kpi.dark .extrato-kpi-label,
+.kpi-card.dark .kpi-label,.saldo-card.total-card .saldo-label{color:#fff}
+.kd-sub,.dkpi-sub{color:rgba(255,255,255,.93)}
+.dkpi-sub svg{stroke:rgba(255,255,255,.93)}
+.dkpi-tag{background:rgba(0,0,0,.22);color:#fff}
+.kd-delta{color:#fff!important}
+.dk-card:not(.dk-neutral) .dk-label{opacity:.92}
+/* "resultado negativo" é vermelho cheio: o texto navy ficava em 2,5:1 */
+.kd-res-neg,.kd-res-neg .kd-val,.dk-orange,.dk-orange .dk-val{color:#fff}
+.kd-res-neg .kd-label,.dk-orange .dk-label{color:#fff}
+.kd-res-neg .kd-sub,.dk-orange .dk-sub{color:rgba(255,255,255,.93)}
+.ct-kpi-orange .ct-kpi-label{color:#fff}
+.ct-kpi-orange .ct-kpi-sub{color:rgba(255,255,255,.92)}
+#page-tesouraria .ts-hero .ts-lbl{color:rgba(255,255,255,.92)}
+#page-tesouraria .ts-hero .ts-sub{color:#fff}
+.plano-l0-cod{color:rgba(255,255,255,.78)}
+.plano-l0-tag.tag-nop{color:rgba(255,255,255,.92)}
+#nav-movifiber .nav-badge{color:#fff!important}
+/* DRE: números dentro das linhas cheias (lucro, resultado, grupos) */
+#page-fluxo .dre tr.dlucrop td.cv:not(.fx-mesatual) .fx-avs,
+#page-fluxo .dre .cv .fx-negbox .fx-avs,
+#page-fluxo .dre tr.dresult td.cv .fx-negbox .fx-avs{color:rgba(255,255,255,.95)}
+/* linhas quase pretas (grupo e resultado): a coluna do mês atual tem fundo
+   próprio, claro, e fica de fora */
+#page-fluxo .dre tr.dn0 td.cv:not(.fx-mesatual) .fx-avs,
+#page-fluxo .dre tr.dresult td.cv:not(.fx-mesatual) .fx-avs{color:rgba(255,255,255,.75)}
+.dre tr.dresult td.cv.neg:not(.fx-mesatual),.dre tr.dn0 td.cv.neg:not(.fx-mesatual),
+#page-fluxo .dre tr.dresult td.cv.neg:not(.fx-mesatual),#page-fluxo .dre tr.dn0 td.cv.neg:not(.fx-mesatual){color:#FF8A80}
+.dre tr.dresult td.cv.pos:not(.fx-mesatual),.dre tr.dn0 td.cv.pos:not(.fx-mesatual),
+#page-fluxo .dre tr.dresult td.cv.pos:not(.fx-mesatual),#page-fluxo .dre tr.dn0 td.cv.pos:not(.fx-mesatual){color:#7ED957}
+#page-fluxo .dre tr.dresult td.cv .fx-negbox span.fx-avs,
+#page-fluxo .dre tr.dn0 td.cv .fx-negbox span.fx-avs{color:rgba(255,255,255,.95)}
+.prluc td.pcv,.prluc td.pcv.pos,.prluc td.pcv.neg{color:#fff}
+.prluc td.pcv.zero{color:rgba(255,255,255,.93)}
+/* Planejamento: linhas quase pretas (grupo e resultado) */
+.pr0 td.pcv.zero,.prres td.pcv.zero{color:rgba(255,255,255,.62)}
+.pr0 td.pcv.pos,.prres td.pcv.pos{color:#7ED957}
+.pr0 td.pcv.neg,.prres td.pcv.neg{color:#FF8A80}
+.nav-item .nav-badge.warn{color:#fff}
+.if-hero p{color:rgba(255,255,255,.88)!important}
+.hb-kpi.lar b{color:var(--laranja-txt)}
+/* cores que o JavaScript escreve na hora: verde e laranja da paleta como
+   texto não leem no fundo claro (os modelos de PDF, .pdf-fixo, ficam de fora) */
+:is([style^="color:#3C9D23" i],
+[style^="color: #3C9D23" i],
+[style*=";color:#3C9D23" i],
+[style*=";color: #3C9D23" i],
+[style*="; color:#3C9D23" i],
+[style*="; color: #3C9D23" i],
+[style^="color: rgb(60, 157, 35)"],
+[style*="; color: rgb(60, 157, 35)"]):not(:where(.pdf-fixo *)){color:var(--accent)!important}
+:is([style^="color:#FF8C2E" i],
+[style^="color: #FF8C2E" i],
+[style*=";color:#FF8C2E" i],
+[style*=";color: #FF8C2E" i],
+[style*="; color:#FF8C2E" i],
+[style*="; color: #FF8C2E" i],
+[style^="color: rgb(255, 140, 46)"],
+[style*="; color: rgb(255, 140, 46)"]):not(:where(.pdf-fixo *)){color:var(--laranja-txt)!important}
+:is([style^="color:#4DA3E8" i],
+[style^="color: #4DA3E8" i],
+[style*=";color:#4DA3E8" i],
+[style*=";color: #4DA3E8" i],
+[style*="; color:#4DA3E8" i],
+[style*="; color: #4DA3E8" i],
+[style^="color: rgb(77, 163, 232)"],
+[style*="; color: rgb(77, 163, 232)"]):not(:where(.pdf-fixo *)){color:var(--azul-txt)!important}
+
+/* legendas em branco quase transparente sobre cartões cheios */
+:is([style*="color:rgba(255,255,255,0.35)"],
+[style*="color:rgba(255,255,255,0.4)"],
+[style*="color:rgba(255,255,255,0.42)"],
+[style*="color:rgba(255,255,255,0.45)"],
+[style*="color:rgba(255,255,255,0.5)"],
+[style*="color:rgba(255,255,255,0.55)"],
+[style*="color:rgba(255,255,255,.35)"],
+[style*="color:rgba(255,255,255,.4)"],
+[style*="color:rgba(255,255,255,.45)"],
+[style*="color:rgba(255,255,255,.5)"],
+[style*="color:rgba(255,255,255,.55)"],
+[style*="color: rgba(255, 255, 255, 0.35)"],
+[style*="color: rgba(255, 255, 255, 0.4)"],
+[style*="color: rgba(255, 255, 255, 0.45)"],
+[style*="color: rgba(255, 255, 255, 0.5)"],
+[style*="color: rgba(255, 255, 255, 0.55)"]):not(:where(.pdf-fixo *)){color:rgba(255,255,255,.82)!important}
+/* preenchimento verde escrito no style="" (avatar, filtro ativo): o mesmo verde dos botões */
+:is([style*="background:#3C9D23;" i],
+[style$="background:#3C9D23" i],
+[style*="background: #3C9D23;" i],
+[style*="background: rgb(60, 157, 35)"]):not(:where(.pdf-fixo *)){background-color:var(--accent-fill)!important}
+
 /* ======== MODO ESCURO — ajustes por componente ========
    As cores de base vêm dos tokens do body.dark-mode. O que está aqui são as
    partes que tinham cor própria: cartões cheios (rótulos em branco quase
@@ -5844,100 +5948,79 @@ body.dark-mode .banco-icon[style*="--cor"]{color:color-mix(in srgb,var(--cor) 45
 
 /* cores que o JavaScript escreve direto nas linhas (status, valores):
    a mesma cor, na versão que lê sobre fundo escuro */
-body.dark-mode [style^="color:#3C9D23" i],
+:is(body.dark-mode [style^="color:#3C9D23" i],
 body.dark-mode [style^="color: #3C9D23" i],
 body.dark-mode [style*=";color:#3C9D23" i],
 body.dark-mode [style*=";color: #3C9D23" i],
 body.dark-mode [style*="; color:#3C9D23" i],
 body.dark-mode [style*="; color: #3C9D23" i],
 body.dark-mode [style^="color: rgb(60, 157, 35)"],
-body.dark-mode [style*="; color: rgb(60, 157, 35)"]{color:var(--accent)!important}
-body.dark-mode [style^="color:#D00000" i],
+body.dark-mode [style*="; color: rgb(60, 157, 35)"]):not(:where(.pdf-fixo *)){color:var(--accent)!important}
+:is(body.dark-mode [style^="color:#D00000" i],
 body.dark-mode [style^="color: #D00000" i],
 body.dark-mode [style*=";color:#D00000" i],
 body.dark-mode [style*=";color: #D00000" i],
 body.dark-mode [style*="; color:#D00000" i],
 body.dark-mode [style*="; color: #D00000" i],
 body.dark-mode [style^="color: rgb(208, 0, 0)"],
-body.dark-mode [style*="; color: rgb(208, 0, 0)"]{color:var(--danger)!important}
-body.dark-mode [style^="color:#004E98" i],
+body.dark-mode [style*="; color: rgb(208, 0, 0)"]):not(:where(.pdf-fixo *)){color:var(--danger)!important}
+:is(body.dark-mode [style^="color:#004E98" i],
 body.dark-mode [style^="color: #004E98" i],
 body.dark-mode [style*=";color:#004E98" i],
 body.dark-mode [style*=";color: #004E98" i],
 body.dark-mode [style*="; color:#004E98" i],
 body.dark-mode [style*="; color: #004E98" i],
 body.dark-mode [style^="color: rgb(0, 78, 152)"],
-body.dark-mode [style*="; color: rgb(0, 78, 152)"]{color:var(--info)!important}
-body.dark-mode [style^="color:#C40000" i],
+body.dark-mode [style*="; color: rgb(0, 78, 152)"]):not(:where(.pdf-fixo *)){color:var(--info)!important}
+:is(body.dark-mode [style^="color:#C40000" i],
 body.dark-mode [style^="color: #C40000" i],
 body.dark-mode [style*=";color:#C40000" i],
 body.dark-mode [style*=";color: #C40000" i],
 body.dark-mode [style*="; color:#C40000" i],
 body.dark-mode [style*="; color: #C40000" i],
 body.dark-mode [style^="color: rgb(196, 0, 0)"],
-body.dark-mode [style*="; color: rgb(196, 0, 0)"]{color:var(--warn)!important}
-body.dark-mode [style^="color:#2F7D1B" i],
+body.dark-mode [style*="; color: rgb(196, 0, 0)"]):not(:where(.pdf-fixo *)){color:var(--warn)!important}
+:is(body.dark-mode [style^="color:#2F7D1B" i],
 body.dark-mode [style^="color: #2F7D1B" i],
 body.dark-mode [style*=";color:#2F7D1B" i],
 body.dark-mode [style*=";color: #2F7D1B" i],
 body.dark-mode [style*="; color:#2F7D1B" i],
 body.dark-mode [style*="; color: #2F7D1B" i],
 body.dark-mode [style^="color: rgb(47, 125, 27)"],
-body.dark-mode [style*="; color: rgb(47, 125, 27)"]{color:var(--verde-txt)!important}
-body.dark-mode [style^="color:#B35400" i],
+body.dark-mode [style*="; color: rgb(47, 125, 27)"]):not(:where(.pdf-fixo *)){color:var(--verde-txt)!important}
+:is(body.dark-mode [style^="color:#B35400" i],
 body.dark-mode [style^="color: #B35400" i],
 body.dark-mode [style*=";color:#B35400" i],
 body.dark-mode [style*=";color: #B35400" i],
 body.dark-mode [style*="; color:#B35400" i],
 body.dark-mode [style*="; color: #B35400" i],
 body.dark-mode [style^="color: rgb(179, 84, 0)"],
-body.dark-mode [style*="; color: rgb(179, 84, 0)"]{color:var(--laranja-txt)!important}
-body.dark-mode [style^="color:#5F5E5A" i],
+body.dark-mode [style*="; color: rgb(179, 84, 0)"]):not(:where(.pdf-fixo *)){color:var(--laranja-txt)!important}
+:is(body.dark-mode [style^="color:#5F5E5A" i],
 body.dark-mode [style^="color: #5F5E5A" i],
 body.dark-mode [style*=";color:#5F5E5A" i],
 body.dark-mode [style*=";color: #5F5E5A" i],
 body.dark-mode [style*="; color:#5F5E5A" i],
 body.dark-mode [style*="; color: #5F5E5A" i],
 body.dark-mode [style^="color: rgb(95, 94, 90)"],
-body.dark-mode [style*="; color: rgb(95, 94, 90)"]{color:var(--text3)!important}
-body.dark-mode [style^="color:#6B2FBB" i],
+body.dark-mode [style*="; color: rgb(95, 94, 90)"]):not(:where(.pdf-fixo *)){color:var(--text3)!important}
+:is(body.dark-mode [style^="color:#6B2FBB" i],
 body.dark-mode [style^="color: #6B2FBB" i],
 body.dark-mode [style*=";color:#6B2FBB" i],
 body.dark-mode [style*=";color: #6B2FBB" i],
 body.dark-mode [style*="; color:#6B2FBB" i],
 body.dark-mode [style*="; color: #6B2FBB" i],
 body.dark-mode [style^="color: rgb(107, 47, 187)"],
-body.dark-mode [style*="; color: rgb(107, 47, 187)"]{color:#C4A3F5!important}
-body.dark-mode [style^="color:#7B4FC7" i],
+body.dark-mode [style*="; color: rgb(107, 47, 187)"]):not(:where(.pdf-fixo *)){color:#C4A3F5!important}
+:is(body.dark-mode [style^="color:#7B4FC7" i],
 body.dark-mode [style^="color: #7B4FC7" i],
 body.dark-mode [style*=";color:#7B4FC7" i],
 body.dark-mode [style*=";color: #7B4FC7" i],
 body.dark-mode [style*="; color:#7B4FC7" i],
 body.dark-mode [style*="; color: #7B4FC7" i],
 body.dark-mode [style^="color: rgb(123, 79, 199)"],
-body.dark-mode [style*="; color: rgb(123, 79, 199)"]{color:#C4A3F5!important}
-/* legendas em branco quase transparente sobre cartões cheios */
-body.dark-mode [style*="color:rgba(255,255,255,0.35)"],
-body.dark-mode [style*="color:rgba(255,255,255,0.4)"],
-body.dark-mode [style*="color:rgba(255,255,255,0.42)"],
-body.dark-mode [style*="color:rgba(255,255,255,0.45)"],
-body.dark-mode [style*="color:rgba(255,255,255,0.5)"],
-body.dark-mode [style*="color:rgba(255,255,255,0.55)"],
-body.dark-mode [style*="color:rgba(255,255,255,.35)"],
-body.dark-mode [style*="color:rgba(255,255,255,.4)"],
-body.dark-mode [style*="color:rgba(255,255,255,.45)"],
-body.dark-mode [style*="color:rgba(255,255,255,.5)"],
-body.dark-mode [style*="color:rgba(255,255,255,.55)"],
-body.dark-mode [style*="color: rgba(255, 255, 255, 0.35)"],
-body.dark-mode [style*="color: rgba(255, 255, 255, 0.4)"],
-body.dark-mode [style*="color: rgba(255, 255, 255, 0.45)"],
-body.dark-mode [style*="color: rgba(255, 255, 255, 0.5)"],
-body.dark-mode [style*="color: rgba(255, 255, 255, 0.55)"]{color:rgba(255,255,255,.82)!important}
-/* preenchimento verde escrito no style="" (avatar, filtro ativo): o mesmo verde dos botões */
-body.dark-mode [style*="background:#3C9D23;" i],
-body.dark-mode [style$="background:#3C9D23" i],
-body.dark-mode [style*="background: #3C9D23;" i],
-body.dark-mode [style*="background: rgb(60, 157, 35)"]{background-color:var(--accent-fill)!important}
+body.dark-mode [style*="; color: rgb(123, 79, 199)"]):not(:where(.pdf-fixo *)){color:#C4A3F5!important}
+
 </style>
 <div class="modal-overlay" id="modal-cli" onclick="if(event.target===this)fecharModal('modal-cli')">
   <div class="modal">
@@ -8419,7 +8502,7 @@ function renderDiario(){
   tbody.innerHTML=pag.map(l=>{
     if(l._transf){
       return`<tr style="background:rgba(59,130,246,0.045)">
-        <td class="td-mono" style="color:#4DA3E8;font-weight:700">⇄</td>
+        <td class="td-mono" style="color:var(--azul-txt);font-weight:700">⇄</td>
         <td><span class="status-badge" style="background:rgba(37,99,235,.14);color:var(--fin-blue)"><span class="status-dot" style="background:var(--fin-blue)"></span>Transferência</span></td>
         <td class="td-mono td-muted">${fmtData(l.data)}</td>
         <td class="td-mono td-muted">—</td>
@@ -8428,10 +8511,10 @@ function renderDiario(){
         <td class="td-muted">—</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text2);font-size:11px">${l.historico}</td>
         <td class="td-mono td-muted">—</td>
-        <td class="td-mono" style="color:#4DA3E8;font-weight:600" title="Entrada em ${l._destino} — não é receita">+ ${brlTxt(l._valor)}</td>
+        <td class="td-mono" style="color:var(--azul-txt);font-weight:600" title="Entrada em ${l._destino} — não é receita">+ ${brlTxt(l._valor)}</td>
         <td class="td-mono td-muted">—</td>
-        <td class="td-mono" style="color:#4DA3E8;font-weight:600" title="Saída de ${l._origem} — não é despesa">− ${brlTxt(l._valor)}</td>
-        <td style="font-size:11px;color:#4DA3E8">${l._origem} → ${l._destino}</td>
+        <td class="td-mono" style="color:var(--azul-txt);font-weight:600" title="Saída de ${l._origem} — não é despesa">− ${brlTxt(l._valor)}</td>
+        <td style="font-size:11px;color:var(--azul-txt)">${l._origem} → ${l._destino}</td>
         <td><div class="action-btns">
           <button class="action-btn del" onclick="cancelarTransferencia('${l._pairId}')" title="Cancelar transferência (reverte as duas pontas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
         </div></td>
@@ -8906,7 +8989,7 @@ function renderFluxo(){
   // cabeçalho
   const thead=document.getElementById('dre-thead-f');
   if(comparar){
-    thead.innerHTML = `<tr><th rowspan="2" style="text-align:left;min-width:240px;vertical-align:bottom">Conta</th>${cols.map(c=>`<th colspan="2" style="text-align:center${c.fds?';color:#FF8C2E':''}" class="${c.atual?'fx-mesatual':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th colspan="2" style="text-align:center">Total</th></tr>
+    thead.innerHTML = `<tr><th rowspan="2" style="text-align:left;min-width:240px;vertical-align:bottom">Conta</th>${cols.map(c=>`<th colspan="2" style="text-align:center${c.fds?';color:var(--laranja-txt)':''}" class="${c.atual?'fx-mesatual':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th colspan="2" style="text-align:center">Total</th></tr>
     <tr>${cols.map(()=>'<th class="fx-sub-r">Real</th><th class="fx-sub-p">Prev.</th>').join('')}<th class="fx-sub-r">Real</th><th class="fx-sub-p">Prev.</th></tr>`;
   } else {
     thead.innerHTML = `<tr><th style="text-align:left;min-width:240px">Conta</th>${cols.map(c=>`<th class="${c.atual?'fx-mesatual':''}${c.fds?' fx-fds':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th>Total</th></tr>`;
@@ -9076,7 +9159,7 @@ async function fxAbrirPDF(){
     return `<tr${l.t==='resultado'?' style="font-weight:700;background:var(--accent2)"':''}><td style="text-align:left">${l.nome}</td><td>${fxNum(tot)}</td><td>${av}</td></tr>`;
   }).join('');
   let container=document.getElementById('fx-pdf-render');
-  if(!container){ container=document.createElement('div'); container.id='fx-pdf-render'; container.style.cssText='position:fixed;left:-9999px;top:0;width:595px'; document.body.appendChild(container); }
+  if(!container){ container=document.createElement('div'); container.id='fx-pdf-render'; container.className='pdf-fixo'; container.style.cssText='position:fixed;left:-9999px;top:0;width:595px'; document.body.appendChild(container); }
   container.innerHTML = `<div style="font-family:Arial,sans-serif;padding:24px 28px;font-size:11px;color:#C40000">
     <div style="display:flex;justify-content:space-between;border-bottom:2.5px solid #3C9D23;padding-bottom:10px;margin-bottom:14px">
       <div><div style="font-size:16px;font-weight:800;color:#3C9D23">MoviOn Internet — Relatório Financeiro</div><div style="font-size:9px;color:#666;margin-top:2px">DRE Gerencial · ${ano} · Realizado</div></div>
@@ -14054,19 +14137,21 @@ function abrirModalCliente(idx=null){
   if(isIxc){
     ixcInfo.style.display = '';
     document.getElementById('cli-ixc-id').textContent = '#'+(cli.ixcId||'—');
+    // cores do tema: o cabeçalho tem fundo azulado e o tom translúcido por
+    // cima deixava o texto do selo abaixo de 4,5:1 no tema claro
     const statusMap = {
-      'Ativo':                {bg:'rgba(99,153,34,0.2)', cor:'#3C9D23'},
-      'Bloqueio Manual':      {bg:'rgba(194,59,42,0.2)', cor:'#D00000'},
-      'Bloqueio Automático':  {bg:'rgba(232,109,33,0.2)',cor:'#FF8C2E'},
-      'Aguardando Assinatura':{bg:'rgba(186,117,23,0.2)',cor:'#C40000'},
-      'Pré-contrato':         {bg:'rgba(186,117,23,0.2)',cor:'#C40000'},
-      'Negativado':           {bg:'rgba(124,58,237,0.16)',cor:'#004E98'},
-      'Inativo':              {bg:'rgba(14,116,144,0.15)', cor:'#004E98'},
-      'Cancelado':            {bg:'rgba(95,94,90,0.2)',  cor:'#5F5E5A'},
+      'Ativo':                {bg:'var(--accent2)',   cor:'var(--accent)'},
+      'Bloqueio Manual':      {bg:'var(--danger-bg)', cor:'var(--danger)'},
+      'Bloqueio Automático':  {bg:'var(--warn-bg)',   cor:'var(--laranja-txt)'},
+      'Aguardando Assinatura':{bg:'var(--warn-bg)',   cor:'var(--warn)'},
+      'Pré-contrato':         {bg:'var(--warn-bg)',   cor:'var(--warn)'},
+      'Negativado':           {bg:'rgba(124,58,237,0.16)',cor:'var(--info)'},
+      'Inativo':              {bg:'rgba(14,116,144,0.15)', cor:'var(--info)'},
+      'Cancelado':            {bg:'rgba(95,94,90,0.2)',  cor:'var(--text2)'},
     };
     const statusLegacy = {'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado'};
     const txt = cli.statusContrato || statusLegacy[cli.ixcStatus] || '—';
-    const st = statusMap[txt] || {bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'};
+    const st = statusMap[txt] || {bg:'rgba(95,94,90,0.2)',cor:'var(--text2)'};
     const elStatus = document.getElementById('cli-ixc-status');
     elStatus.textContent = txt; elStatus.style.background = st.bg; elStatus.style.color = st.cor;
     resyncBtn.style.display = '';
@@ -14118,23 +14203,23 @@ function renderCliContratos(cli){
     return;
   }
   const statusMap = {
-    'A':{txt:'Ativo',bg:'rgba(99,153,34,0.2)',cor:'#3C9D23'},
-    'D':{txt:'Cancelado',bg:'rgba(194,59,42,0.2)',cor:'#D00000'},
-    'I':{txt:'Inativo',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'},
-    'N':{txt:'Negativado',bg:'rgba(194,59,42,0.2)',cor:'#D00000'},
-    'AB':{txt:'Aberto',bg:'rgba(186,117,23,0.2)',cor:'#C40000'},
-    'CM':{txt:'Em montagem',bg:'rgba(186,117,23,0.2)',cor:'#C40000'},
-    'DS':{txt:'Desistiu',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'},
-    'PC':{txt:'Pré-contrato',bg:'rgba(186,117,23,0.2)',cor:'#C40000'},
+    'A':{txt:'Ativo',bg:'rgba(99,153,34,0.15)',cor:'#3C9D23'},
+    'D':{txt:'Cancelado',bg:'rgba(194,59,42,0.15)',cor:'#D00000'},
+    'I':{txt:'Inativo',bg:'rgba(95,94,90,0.15)',cor:'#5F5E5A'},
+    'N':{txt:'Negativado',bg:'rgba(194,59,42,0.15)',cor:'#D00000'},
+    'AB':{txt:'Aberto',bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
+    'CM':{txt:'Em montagem',bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
+    'DS':{txt:'Desistiu',bg:'rgba(95,94,90,0.15)',cor:'#5F5E5A'},
+    'PC':{txt:'Pré-contrato',bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
   };
   const statusAcessoMap = {
-    'A' :{txt:'Ativo',             bg:'rgba(99,153,34,0.2)', cor:'#3C9D23'},
-    'D' :{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.2)', cor:'#D00000'},
-    'DM':{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.2)', cor:'#D00000'},
-    'FA':{txt:'Bloqueio Automático',bg:'rgba(232,109,33,0.2)',cor:'#FF8C2E'},
-    'AA':{txt:'Ag. Assinatura',    bg:'rgba(186,117,23,0.2)',cor:'#C40000'},
+    'A' :{txt:'Ativo',             bg:'rgba(99,153,34,0.15)', cor:'#3C9D23'},
+    'D' :{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.15)', cor:'#D00000'},
+    'DM':{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.15)', cor:'#D00000'},
+    'FA':{txt:'Bloqueio Automático',bg:'rgba(232,109,33,0.15)',cor:'#FF8C2E'},
+    'AA':{txt:'Ag. Assinatura',    bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
   };
-  function pill(s, map){ const m=map[s]||{txt:s||'—',bg:'rgba(95,94,90,0.2)',cor:'#5F5E5A'}; return `<span class="cli-status-pill" style="background:${m.bg};color:${m.cor}">${m.txt}</span>`; }
+  function pill(s, map){ const m=map[s]||{txt:s||'—',bg:'rgba(95,94,90,0.15)',cor:'#5F5E5A'}; return `<span class="cli-status-pill" style="background:${m.bg};color:${m.cor}">${m.txt}</span>`; }
   target.innerHTML = `
     <div style="display:flex;justify-content:flex-end;padding:0 0 10px">
       <span style="font-size:11px;color:var(--text3)">Clique em ✏ para editar campos locais. Dados do IXC atualizam via sync.</span>
@@ -15424,7 +15509,7 @@ async function renderCliComodato(cli){
       ? '<span class="cli-status-pill" style="background:rgba(24,95,165,0.14);color:var(--info)">📦 Em uso</span>'
       : `<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:var(--accent)">✅ Devolvido</span><div style="font-size:10px;color:var(--text3);margin-top:2px">${fmtDataISO(it.data_devolucao)}</div>`;
     const acao = ativo
-      ? `<button class="btn" style="padding:5px 12px;font-size:12px;border-color:#FF8C2E;color:#FF8C2E;background:rgba(194,90,0,0.06)" onclick="abrirDevolucaoComodato(${it.id})">↩ Devolver</button>`
+      ? `<button class="btn" style="padding:5px 12px;font-size:12px;border-color:#FF8C2E;color:var(--laranja-txt);background:rgba(194,90,0,0.06)" onclick="abrirDevolucaoComodato(${it.id})">↩ Devolver</button>`
       : `<span style="font-size:11px;color:var(--text3)">${it.devolvido_para_sub_id?cpSubNome(it.devolvido_para_sub_id):''}</span>`;
     return `<tr>
       <td><div style="font-weight:500">${comPecaNome(it.peca_id)}</div>${it.modelo?`<div style="font-size:11px;color:var(--text3)">${it.modelo}</div>`:''}</td>
@@ -19120,7 +19205,7 @@ function abrirModalOS(id){
                 <div style="font-size:12.5px;font-weight:500">${l.label}</div>
                 <div style="font-size:11px;color:var(--text3)">${cpFmtDataHora(l.ts)}</div>
               </div>
-              ${i===linhas.length-1?'<span style="margin-left:auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(99,153,34,0.15);color:var(--accent)">Atual</span>':''}
+              ${i===linhas.length-1?'<span style="margin-left:auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--accent2);color:var(--accent)">Atual</span>':''}
             </div>`).join('');
         } else {
           hist.style.display='none';
@@ -19233,7 +19318,7 @@ function renderOS(){
     // Botão de próximo status
     let btnStatus = '';
     if(o.status==='aberta')      btnStatus=`<button class="action-btn" onclick="atualizarStatusOS(${o.id},'assumida')" title="Assumir OS" style="color:var(--info);border-color:#004E98"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>`;
-    else if(o.status==='assumida') btnStatus=`<button class="action-btn" onclick="atualizarStatusOS(${o.id},'executando')" title="Iniciar execução" style="color:#FF8C2E;border-color:#FF8C2E"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>`;
+    else if(o.status==='assumida') btnStatus=`<button class="action-btn" onclick="atualizarStatusOS(${o.id},'executando')" title="Iniciar execução" style="color:var(--laranja-txt);border-color:#FF8C2E"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>`;
     else if(['executando','andamento'].includes(o.status)) btnStatus=`<button class="action-btn" onclick="abrirModalOS(${o.id});setTimeout(()=>abrirModalFinalizarOS(),200)" title="Finalizar OS" style="color:var(--accent);border-color:var(--accent-fill)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg></button>`;
     return `<tr class="${prioRowCl}">
       <td style="font-weight:700;color:var(--accent)">#${String(o.numero||0).padStart(4,'0')}</td>
@@ -23216,7 +23301,7 @@ async function ifRenderCobranca(trilha){
                 ${it.bloqueio?`<span class="cob-bloq" title="Regra da régua ou da configuração">🚫 ${it.bloqueio}</span>`:''}
                 <button class="btn if-btn-wpp" ${fone&&!it.bloqueio?'':'disabled'} onclick="ifCobEnviar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}',this)">💬 Enviar</button>
                 ${fone?`<a class="btn" style="font-size:10.5px;text-decoration:none" target="_blank" href="https://wa.me/${fone}?text=${encodeURIComponent(it.msg)}" onclick="ifCobRegistrar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}','wa.me')">↗ wa.me</a>`:''}
-                <button class="btn" style="font-size:10.5px;color:#4DA3E8" title="Personalizar mensagem com IA" onclick="ifIAMensagem('${key}','${it.pf.ixcId}',this)">✨</button>
+                <button class="btn" style="font-size:10.5px;color:var(--azul-txt)" title="Personalizar mensagem com IA" onclick="ifIAMensagem('${key}','${it.pf.ixcId}',this)">✨</button>
                 <button class="btn" style="font-size:10.5px" onclick="navigator.clipboard.writeText(window._ifFilaMsgs['${key}']||'');showToast('Mensagem copiada!')">📋</button>
                 <button class="btn" style="font-size:10.5px" onclick="ifCobRegistrar('${key}','${it.pf.ixcId}','${it.fat.id}','${e.id}','manual');this.closest('tr').style.opacity='.35';this.disabled=true">✓</button>
               </td>
@@ -25382,10 +25467,10 @@ function ifGrowthCSV(){
      ================================================================ -->
 <style>
 .asn-tag{display:inline-block;padding:3px 9px;border-radius:6px;font-size:10.5px;font-weight:700;background:#BBDCF6;color:var(--info)}
-.asn-tag.sys{background:var(--accent-fill);color:#22223B}
+.asn-tag.sys{background:var(--accent-fill);color:#fff}
 .asn-status{padding:4px 10px;border-radius:7px;font-size:11px;font-weight:700}
 .asn-status.pendente{background:var(--laranja-bg);color:var(--warn)}
-.asn-status.assinado{background:var(--accent-fill);color:#22223B}
+.asn-status.assinado{background:var(--accent-fill);color:#fff}
 .asn-status.recusado{background:var(--rosa-bg);color:#A00000}
 .asn-doc-check{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--border,#BBDCF6);border-radius:11px;margin-bottom:8px;cursor:pointer;background:#fff}
 .asn-doc-check.sel{border-color:#004E98;background:#BBDCF6}
@@ -25409,6 +25494,11 @@ function ifGrowthCSV(){
 .asn-prog.run{background:#BBDCF6;color:#004E98}
 .asn-prog.err{background:#FADCDC;color:#A00000}
 #asn-pdf-render{position:fixed;left:-9999px;top:0;width:794px;background:#fff}
+/* Modelos que viram PDF ou impressão (.pdf-fixo) ficam fora das trocas de cor
+   do tema: o papel é sempre branco. As regras que reescrevem cores escritas
+   no style="" excluem .pdf-fixo, e os tokens usados nos modelos voltam aos
+   valores do tema claro. */
+.pdf-fixo{--accent2:#EFF9EB;color-scheme:light}
 .asn-pdf-page{width:794px;padding:72px 76px 88px;font-family:'Times New Roman',Georgia,serif;color:#111;position:relative}
 .asn-pdf-header{display:flex;align-items:center;gap:14px;border-bottom:2px solid #004E98;padding-bottom:16px;margin-bottom:28px}
 .asn-pdf-header img{width:54px;height:54px;border-radius:8px}
@@ -25427,7 +25517,7 @@ function ifGrowthCSV(){
 .asn-pdf-footer{position:absolute;bottom:36px;left:76px;right:76px;border-top:1px solid #ddd;padding-top:10px;font-size:9.5px;color:#888;font-family:'DM Sans',sans-serif;display:flex;justify-content:space-between}
 </style>
 
-<div id="asn-pdf-render"></div>
+<div id="asn-pdf-render" class="pdf-fixo"></div>
 
 <script>
 /* ================================================================
@@ -25480,7 +25570,7 @@ async function asnAbrirCliente(idx){
         <button class="modal-close" onclick="fecharModal('modal-asn')">✕</button>
       </div>
       <div class="modal-body" id="asn-body">
-        <div style="text-align:center;color:#4DA3E8;padding:20px 0">Carregando...</div>
+        <div style="text-align:center;color:var(--azul-txt);padding:20px 0">Carregando...</div>
       </div>
     </div>
   </div>`;
@@ -25507,7 +25597,7 @@ async function asnCarregarLista(){
     ${lotes.length ? lotes.map(l=>`
       <div style="border:1.5px solid #BBDCF6;border-radius:12px;padding:13px 15px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-size:12px;color:#4DA3E8">Lote de ${new Date(l.criado_em).toLocaleDateString('pt-BR')} · ${l.documentos.length} documento(s)</div>
+          <div style="font-size:12px;color:var(--azul-txt)">Lote de ${new Date(l.criado_em).toLocaleDateString('pt-BR')} · ${l.documentos.length} documento(s)</div>
           <span class="asn-status ${l.status}">${l.status.toUpperCase()}</span>
         </div>
         <div style="font-size:12.5px;color:#333">${l.documentos.map(d=>d.documento_url ? `<a href="${d.documento_url}" target="_blank" style="color:var(--info);text-decoration:none">${d.assinado_final?'✅':'📄'} ${d.documento_nome}</a>` : d.documento_nome).join(' &nbsp;·&nbsp; ')}</div>
@@ -25530,7 +25620,7 @@ async function asnCarregarLista(){
                 ? `Link enviado · <b>o cliente abriu</b> em ${new Date(l.link_aberto_em).toLocaleString('pt-BR')}`
                 : 'Link enviado · ainda não foi aberto'}</div>` : ''}
           </div>`}
-      </div>`).join('') : `<div style="text-align:center;color:#4DA3E8;font-size:13px;padding:14px 0">Nenhum documento enviado para este cliente ainda.</div>`}
+      </div>`).join('') : `<div style="text-align:center;color:var(--azul-txt);font-size:13px;padding:14px 0">Nenhum documento enviado para este cliente ainda.</div>`}
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-primary" onclick="asnAbrirEnvio()">+ Documento</button>
     </div>`;
@@ -25605,7 +25695,7 @@ async function asnAbrirEnvio(){
           <label class="asn-doc-check" onclick="asnToggleDoc(this)">
             <input type="checkbox" value="${m.id}" onclick="event.stopPropagation();asnAtualizaSel()">
             <div><div style="font-weight:700;font-size:13px">${m.nome}</div>
-            <div style="font-size:11px;color:#4DA3E8">${m.categoria||'geral'}</div></div>
+            <div style="font-size:11px;color:var(--azul-txt)">${m.categoria||'geral'}</div></div>
           </label>`).join('')}
       </div>
       <div style="font-size:11.5px;color:var(--info);margin-top:6px">Todos os selecionados vão para o mesmo lote — o cliente confirma os dados e tira 1 selfie para todos.</div>
