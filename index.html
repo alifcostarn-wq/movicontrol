@@ -2021,6 +2021,134 @@ html:has(#hub-sis.visible),html:has(#hub-sis.visible) body{overflow:hidden}
 .sis-carregando.visivel{display:flex}
 .sis-carregando i{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--border);border-top-color:#5056E0;animation:au-girar .8s linear infinite}
 @media (max-width:700px){.sis-btn span{display:none}.sis-btn{padding:7px 9px}.sis-barra img{display:none}}
+/* ---------- balões dos atalhos rápidos ---------- */
+/* Cada atalho abre um balão preso ao botão, com a função dentro (lançar,
+   pagar, abrir chamado, achar cliente, cobrar, ver o caixa) sem sair do menu.
+   No celular vira uma folha que sobe do rodapé. */
+.hub-atalhos{position:relative}
+.hub-chip.ativo{border-color:#5056E0;background:color-mix(in srgb,#5056E0 10%,var(--surface));box-shadow:0 0 0 3px rgba(80,86,224,.14)}
+#hub-balao{
+  position:absolute;z-index:20;display:none;flex-direction:column;width:420px;max-width:100%;
+  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:16px;
+  box-shadow:0 18px 50px rgba(17,18,48,.22),0 2px 8px rgba(17,18,48,.08);
+  --seta-x:50%;--hb-max:520px;
+}
+#hub-balao.aberto{display:flex;animation:hb-surgir .16s ease-out both}
+#hub-balao.acima{transform-origin:var(--seta-x) 100%}
+#hub-balao.abaixo{transform-origin:var(--seta-x) 0}
+@keyframes hb-surgir{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+#hub-balao::after{content:'';position:absolute;left:var(--seta-x);width:14px;height:14px;margin-left:-7px;background:var(--surface);border:1px solid var(--border);transform:rotate(45deg)}
+#hub-balao.acima::after{bottom:-8px;border-top:none;border-left:none}
+#hub-balao.abaixo::after{top:-8px;border-bottom:none;border-right:none}
+.hb-cab{display:flex;align-items:center;gap:10px;padding:14px 14px 12px 16px;border-bottom:1px solid var(--border)}
+.hb-ico{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,#5056E0 13%,transparent);color:#5056E0;flex-shrink:0}
+body.dark-mode .hb-ico{color:#A9ACFF}
+#hub-screen .hb-ico svg.ic{width:16px;height:16px}
+.hb-cab h3{font-size:15px;font-weight:600;margin:0;flex:1;color:var(--text)}
+.hb-x{border:none;background:none;color:var(--text3);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}
+.hb-x:hover{background:var(--surface2);color:var(--text)}
+.hb-corpo{padding:14px 16px 16px;overflow-y:auto;max-height:var(--hb-max);overscroll-behavior:contain}
+.hb-corpo>*+*{margin-top:12px}
+.hb-lin{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hb-campo{display:flex;flex-direction:column;gap:5px;min-width:0}
+.hb-campo>label,.hb-rot{font-size:11.5px;font-weight:600;color:var(--text2)}
+#hub-screen .hb-in{width:100%;box-sizing:border-box;height:38px;padding:0 11px;border:1.5px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13.5px;outline:none;transition:border-color .15s,box-shadow .15s}
+#hub-screen textarea.hb-in{height:auto;min-height:74px;padding:9px 11px;resize:vertical;line-height:1.45}
+#hub-screen .hb-in:focus{border-color:#5056E0;box-shadow:0 0 0 3px rgba(80,86,224,.14)}
+#hub-screen .hb-in.erro{border-color:#D00000}
+#hub-screen .hb-valor{font-family:'DM Mono',monospace;font-size:16px;font-weight:500}
+.hb-seg{display:flex;background:var(--surface2);border-radius:10px;padding:3px;gap:3px}
+.hb-seg button{flex:1;border:none;background:none;border-radius:8px;padding:8px 6px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--text3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:background .15s,color .15s}
+.hb-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.hb-seg button.on.rec{color:#2A7418}.hb-seg button.on.pag{color:#B00000}
+.hb-seg button.on.baixa{color:#2A7418}.hb-seg button.on.media{color:#A34D00}.hb-seg button.on.alta{color:#B00000}
+body.dark-mode .hb-seg button.on.rec,body.dark-mode .hb-seg button.on.baixa{color:#9BE07F}
+body.dark-mode .hb-seg button.on.pag,body.dark-mode .hb-seg button.on.alta{color:#FF9C9C}
+body.dark-mode .hb-seg button.on.media{color:#FFC08A}
+.hb-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none}
+#hub-screen .hb-check input{width:16px;height:16px;margin:0;accent-color:#3C9D23}
+.hb-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hb-btn{height:40px;padding:0 16px;border:none;border-radius:10px;background:#3C9D23;color:#fff;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:filter .15s}
+.hb-btn:hover:not(:disabled){filter:brightness(1.07)}
+.hb-btn:disabled{opacity:.6;cursor:progress}
+.hb-btn.cheio{flex:1}
+.hb-btn2{height:40px;padding:0 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.hb-btn2:hover:not(:disabled){border-color:#5056E0}
+.hb-btn2:disabled{opacity:.45;cursor:not-allowed}
+.hb-mini{height:30px;padding:0 11px;border-radius:8px;font-size:12px}
+.hb-link{border:none;background:none;padding:0;color:#5056E0;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+body.dark-mode .hb-link{color:#A9ACFF}
+.hb-link:hover{text-decoration:underline}
+.hb-rodape{display:flex;justify-content:center;padding-top:4px}
+.hb-msg{border-radius:10px;padding:9px 12px;font-size:12.5px;line-height:1.45;background:#FDECEC;border:1px solid #F3B5B5;color:#9B1C1C}
+.hb-msg.ok{background:#EFF9EB;border-color:#B5DAAB;color:#24661A}
+body.dark-mode .hb-msg{background:rgba(208,0,0,.15);border-color:rgba(208,0,0,.4);color:#FF9C9C}
+body.dark-mode .hb-msg.ok{background:rgba(60,157,35,.15);border-color:rgba(60,157,35,.4);color:#9BE07F}
+.hb-vazio{text-align:center;color:var(--text3);font-size:13px;padding:18px 8px}
+.hb-vazio b{display:block;font-size:26px;margin-bottom:4px}
+.hb-feito{text-align:center;padding:10px 4px 2px}
+.hb-feito .ok{width:46px;height:46px;border-radius:50%;background:#EFF9EB;color:#3C9D23;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:22px;font-weight:700}
+.hb-feito h4{margin:0 0 4px;font-size:15px;font-weight:600}
+.hb-feito p{margin:0 0 14px;font-size:12.5px;color:var(--text3)}
+.hb-feito .hb-acoes{justify-content:center}
+/* números em destaque */
+.hb-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.hb-kpi{border-radius:11px;padding:9px 10px;background:var(--surface2);min-width:0}
+.hb-kpi small{display:block;font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.hb-kpi b{display:block;font-family:'DM Mono',monospace;font-size:13.5px;font-weight:500;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb-kpi>span{font-size:11px;color:var(--text3)}
+.hb-kpi.verm b{color:#C40000}.hb-kpi.lar b{color:#C25E00}.hb-kpi.verde b{color:#2A7418}.hb-kpi.azul b{color:#004E98}
+body.dark-mode .hb-kpi.verm b{color:#FF9C9C}body.dark-mode .hb-kpi.lar b{color:#FFC08A}body.dark-mode .hb-kpi.verde b{color:#9BE07F}body.dark-mode .hb-kpi.azul b{color:#9CCBF5}
+/* listas */
+.hb-lista{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.hb-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);text-align:left;font-family:inherit;color:var(--text);border:none;width:100%;box-sizing:border-box}
+.hb-item+.hb-item{border-top:1px solid var(--border)}
+button.hb-item{cursor:pointer}
+button.hb-item:hover,button.hb-item:focus-visible{background:var(--surface2);outline:none}
+.hb-item .hb-tx{flex:1;min-width:0}
+.hb-item .hb-t1{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb-item .hb-t2{font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.hb-item .hb-val{font-family:'DM Mono',monospace;font-size:12.5px;white-space:nowrap}
+.hb-tag{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap}
+.hb-tag.verm{background:#F7D1D1;color:#B00000}.hb-tag.lar{background:#FFEAD9;color:#A34D00}.hb-tag.azul{background:#DFEEFB;color:#004E98}.hb-tag.verde{background:#EFF9EB;color:#2A7418}.hb-tag.cinza{background:var(--surface2);color:var(--text3)}
+body.dark-mode .hb-tag.verm{background:rgba(208,0,0,.22);color:#FF9C9C}body.dark-mode .hb-tag.lar{background:rgba(255,140,46,.2);color:#FFC08A}body.dark-mode .hb-tag.azul{background:rgba(77,163,232,.2);color:#9CCBF5}body.dark-mode .hb-tag.verde{background:rgba(60,157,35,.22);color:#9BE07F}
+.hb-sec{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)}
+/* ficha curta do cliente */
+.hb-ficha{border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:7px;font-size:12.5px}
+.hb-ficha .hb-nome{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+.hb-ficha .hb-nome span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb-ficha .hb-dado{display:flex;gap:8px;color:var(--text2);line-height:1.4}
+.hb-ficha .hb-dado b{font-weight:500;color:var(--text);word-break:break-word}
+.hb-ficha .hb-dado i{font-style:normal;width:18px;flex-shrink:0;text-align:center}
+.hb-ficha a{color:#3C9D23;font-weight:600;text-decoration:none}
+/* barras do fluxo */
+.hb-barras{display:flex;align-items:flex-end;gap:10px;height:96px;padding:6px 2px 0}
+.hb-mes{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;height:100%}
+.hb-mes .hb-par{flex:1;display:flex;align-items:flex-end;gap:3px;width:100%;justify-content:center}
+.hb-mes .hb-par i{display:block;width:40%;max-width:14px;border-radius:4px 4px 0 0;min-height:2px}
+.hb-mes .hb-par i.e{background:#3C9D23}.hb-mes .hb-par i.s{background:#D00000;opacity:.8}
+.hb-mes small{font-size:10.5px;color:var(--text3)}
+.hb-legenda{display:flex;gap:14px;font-size:11px;color:var(--text3);justify-content:center}
+.hb-legenda span::before{content:'';display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:#3C9D23}
+.hb-legenda span.s::before{background:#D00000;opacity:.8}
+.hb-trilha{display:flex;align-items:center;gap:10px}
+.hb-trilha .hb-tico{font-size:17px;width:26px;text-align:center}
+.hb-carregando{display:flex;align-items:center;gap:10px;justify-content:center;color:var(--text3);font-size:13px;padding:22px 6px}
+.hb-carregando i{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--border);border-top-color:#5056E0;animation:au-girar .8s linear infinite;flex-shrink:0}
+body.perfil-visualizador #hub-balao .perm-edit{display:none!important}
+/* com o menu aberto, as janelas do sistema abrem por cima dele */
+html:has(#hub-screen.visible) .modal-overlay,html:has(#hub-screen.visible) .modal-quitar-overlay{z-index:650}
+#hub-balao-fundo{display:none}
+@media (max-width:700px){
+  #hub-balao{position:fixed;left:0!important;right:0;bottom:0!important;top:auto!important;width:auto;max-width:none;border-radius:18px 18px 0 0;z-index:30;--hb-max:calc(86vh - 60px);padding-bottom:env(safe-area-inset-bottom)}
+  #hub-balao.aberto{animation:hb-subir .2s ease-out both}
+  #hub-balao::after{display:none}
+  #hub-balao-fundo.aberto{display:block;position:fixed;inset:0;background:rgba(17,18,48,.4);z-index:25}
+
+}
+@media (max-width:360px){.hb-lin{grid-template-columns:1fr}}
+@keyframes hb-subir{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+
 /* selo de situação de cada sistema */
 .hub-sel{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .hub-sel:empty{display:none}
@@ -2807,12 +2935,17 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
   <section class="hub-atalhos" aria-label="Atalhos rápidos">
     <h4>Atalhos rápidos</h4>
     <div class="hub-chips">
-      <button type="button" class="hub-chip perm-edit" onclick="hubAtalho('lancamento')"><svg class="ic" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo lançamento</button>
-      <button type="button" class="hub-chip" onclick="hubAtalho('contas')"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Contas a pagar</button>
-      <button type="button" class="hub-chip perm-edit" onclick="hubAtalho('chamado')"><svg class="ic" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Abrir chamado</button>
-      <button type="button" class="hub-chip" onclick="hubAtalho('cliente')"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar cliente</button>
-      <button type="button" class="hub-chip" onclick="hubAtalho('cobranca')"><svg class="ic" viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 8h6M8 12h8M8 16h5"/></svg>Cobrança</button>
-      <button type="button" class="hub-chip" onclick="hubAtalho('fluxo')"><svg class="ic" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Fluxo de caixa</button>
+      <button type="button" class="hub-chip perm-edit" data-hb="lancamento" aria-haspopup="dialog" aria-expanded="false" onclick="hubBalao('lancamento',this)"><svg class="ic" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo lançamento</button>
+      <button type="button" class="hub-chip" data-hb="contas" aria-haspopup="dialog" aria-expanded="false" onclick="hubBalao('contas',this)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Contas a pagar</button>
+      <button type="button" class="hub-chip perm-edit" data-hb="chamado" aria-haspopup="dialog" aria-expanded="false" onclick="hubBalao('chamado',this)"><svg class="ic" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Abrir chamado</button>
+      <button type="button" class="hub-chip" data-hb="cliente" aria-haspopup="dialog" aria-expanded="false" onclick="hubBalao('cliente',this)"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar cliente</button>
+      <button type="button" class="hub-chip" data-hb="cobranca" aria-haspopup="dialog" aria-expanded="false" onclick="hubBalao('cobranca',this)"><svg class="ic" viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 8h6M8 12h8M8 16h5"/></svg>Cobrança</button>
+      <button type="button" class="hub-chip" data-hb="fluxo" aria-haspopup="dialog" aria-expanded="false" onclick="hubBalao('fluxo',this)"><svg class="ic" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Fluxo de caixa</button>
+    </div>
+    <div id="hub-balao-fundo"></div>
+    <div id="hub-balao" role="dialog" aria-labelledby="hb-titulo">
+      <div class="hb-cab"><span class="hb-ico" id="hb-ico" aria-hidden="true"></span><h3 id="hb-titulo"></h3><button type="button" class="hb-x" onclick="hubBalaoFechar()" aria-label="Fechar" title="Fechar (Esc)">✕</button></div>
+      <div class="hb-corpo" id="hb-corpo"></div>
     </div>
   </section>
 </div>
@@ -6802,7 +6935,7 @@ function atualizarBadges(){
   el.textContent=atrasadas>0?`${atrasadas} ⚠`:abertos;
   el.style.background=atrasadas>0?'rgba(194,59,42,0.7)':'';
   navAlerta(el, atrasadas>0);
-  if(typeof hubSeloMoviOne==='function') hubSeloMoviOne();
+  if(typeof hubAposMudanca==='function') hubAposMudanca();
 }
 
 // ============================================================
@@ -16713,6 +16846,7 @@ function hubAbrir(){
   const logo=document.querySelector('.sidebar .logo-icon img');
   if(logo) document.getElementById('hub-logo').src=logo.src;
 
+  hubBalaoFechar();
   hubRender();
   hubSeloMoviOne();
   if(_hubCampoPronto) hubSeloCampo();
@@ -16801,19 +16935,501 @@ function hubSisNovaAba(){
 }
 
 function hubFechar(pagina){
+  hubBalaoFechar();
   document.getElementById('hub-screen').classList.remove('visible');
   if(pagina) navTo(pagina);
 }
 
-function hubAtalho(tipo){
-  if(tipo==='lancamento'){ hubFechar('diario'); abrirModalLancamento(); }
-  else if(tipo==='chamado'){ hubFechar('cp-chamados'); abrirModalChamado(); }
-  else if(tipo==='cliente'){
-    hubFechar('clientes');
-    setTimeout(()=>{ const b=document.getElementById('cli-busca'); if(b) b.focus(); },60);
-  }
-  else hubFechar({contas:'contas',cobranca:'cobranca',fluxo:'fluxo'}[tipo]||'painel');
+// ---------- balões dos atalhos rápidos ----------
+// Cada atalho abre um balão com a função dentro. Quem grava são as mesmas
+// rotinas das janelas completas (salvarLancamento, salvarChamado, a quitação,
+// o envio da cobrança): o balão só preenche e chama, para não existirem duas
+// regras de negócio para a mesma coisa.
+let _hbTipo=null;
+const HB_DEF={
+  lancamento:{titulo:'Novo lançamento', render:(el,d)=>hbLancamento(el,d)},
+  contas:    {titulo:'Contas a pagar',  render:(el,d)=>hbContas(el,d)},
+  chamado:   {titulo:'Abrir chamado',   render:(el,d)=>hbChamado(el,d)},
+  cliente:   {titulo:'Buscar cliente',  render:(el,d)=>hbCliente(el,d)},
+  cobranca:  {titulo:'Cobrança',        render:(el,d)=>hbCobranca(el,d)},
+  fluxo:     {titulo:'Fluxo de caixa',  render:(el,d)=>hbFluxo(el,d)},
+};
+const hbEsc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const hbNorm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+function hbSomaDias(iso,n){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return isoLocal(d); }
+function hbDiasEntre(a,b){ return Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/864e5); }
+// "1.234,56", "1234,5" ou "1234.56" → número
+function hbValor(txt){
+  let s=String(txt||'').trim().replace(/[R$\s]/g,'');
+  if(!s) return 0;
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  const v=parseFloat(s);
+  return isFinite(v)?Math.round(v*100)/100:0;
 }
+function hbPlanos(){
+  const out=[];
+  (PLANO_DATA||[]).forEach(g=>(g.itens||[]).filter(it=>it.l>=1).forEach(it=>out.push(`${it.c} ${it.n}`)));
+  return out;
+}
+function hbCorpo(){ return document.getElementById('hb-corpo'); }
+// leitura direta do cadastro: o gd() copia a lista inteira a cada tecla
+const hbCli=()=>_cache.sf_clientes||[];
+
+function hubBalao(tipo,chip,dados){
+  const def=HB_DEF[tipo];
+  if(!def) return;
+  if(_hbTipo===tipo&&!dados){ hubBalaoFechar(); return; }
+  _hbTipo=tipo;
+  chip=chip||document.querySelector(`.hub-chip[data-hb="${tipo}"]`);
+  document.querySelectorAll('.hub-chip').forEach(c=>{ c.classList.toggle('ativo',c===chip); c.setAttribute('aria-expanded',c===chip?'true':'false'); });
+  document.getElementById('hb-titulo').textContent=def.titulo;
+  const ico=chip&&chip.querySelector('svg');
+  document.getElementById('hb-ico').innerHTML=ico?ico.outerHTML:'';
+  const b=document.getElementById('hub-balao');
+  b.classList.remove('aberto'); void b.offsetWidth;   // reinicia a animação ao trocar de balão
+  b.classList.add('aberto');
+  document.getElementById('hub-balao-fundo').classList.add('aberto');
+  def.render(hbCorpo(),dados||{});
+  hubBalaoPosicionar(chip);
+  setTimeout(()=>{
+    const f=b.querySelector('[data-foco]');
+    if(f&&_hbTipo===tipo) try{ f.focus({preventScroll:true}); }catch(e){}
+  },40);
+}
+
+// Preso ao botão: em cima quando há espaço (o caso comum), embaixo quando não.
+function hubBalaoPosicionar(chip){
+  const b=document.getElementById('hub-balao');
+  chip=chip||document.querySelector('.hub-chip.ativo');
+  if(!b||!b.classList.contains('aberto')||!chip) return;
+  if(matchMedia('(max-width:700px)').matches){
+    b.classList.remove('acima','abaixo');
+    ['left','top','bottom','width'].forEach(p=>b.style[p]='');
+    b.style.removeProperty('--hb-max');
+    return;
+  }
+  const sec=b.offsetParent;
+  const larg=Math.min(420,sec.clientWidth);
+  b.style.width=larg+'px';
+  const centro=chip.offsetLeft+chip.offsetWidth/2;
+  const esq=Math.max(0,Math.min(centro-larg/2,sec.clientWidth-larg));
+  b.style.left=esq+'px';
+  b.style.setProperty('--seta-x',Math.max(18,Math.min(larg-18,centro-esq))+'px');
+  const r=chip.getBoundingClientRect();
+  const cab=b.querySelector('.hb-cab').offsetHeight;
+  const acima=r.top-28, abaixo=innerHeight-r.bottom-28;
+  const emCima=acima>=340||acima>=abaixo;
+  b.classList.toggle('acima',emCima);
+  b.classList.toggle('abaixo',!emCima);
+  if(emCima){ b.style.top='auto'; b.style.bottom=(sec.clientHeight-chip.offsetTop+12)+'px'; }
+  else{ b.style.bottom='auto'; b.style.top=(chip.offsetTop+chip.offsetHeight+12)+'px'; }
+  b.style.setProperty('--hb-max',Math.max(220,Math.min(580,(emCima?acima:abaixo)-cab-32))+'px');
+}
+
+function hubBalaoFechar(){
+  _hbTipo=null;
+  document.getElementById('hub-balao')?.classList.remove('aberto','acima','abaixo');
+  document.getElementById('hub-balao-fundo')?.classList.remove('aberto');
+  document.querySelectorAll('.hub-chip').forEach(c=>{ c.classList.remove('ativo'); c.setAttribute('aria-expanded','false'); });
+}
+
+// clique fora (dentro do menu) ou Esc fecham; as janelas abertas por cima não
+document.addEventListener('mousedown',ev=>{
+  if(!_hbTipo) return;
+  const hub=document.getElementById('hub-screen');
+  if(!hub||!hub.contains(ev.target)||ev.target.closest('#hub-balao,.hub-chip')) return;
+  hubBalaoFechar();
+});
+document.addEventListener('keydown',ev=>{
+  if(ev.key!=='Escape'||!_hbTipo) return;
+  if(document.querySelector('.modal-overlay.open,.modal-quitar-overlay.open')) return;
+  hubBalaoFechar();
+});
+window.addEventListener('resize',()=>hubBalaoPosicionar());
+
+// chamado pelo atualizarBadges: dado financeiro mudou (baixa, lançamento, outro usuário)
+function hubAposMudanca(){
+  hubSeloMoviOne();
+  if(_hbTipo==='contas'||_hbTipo==='fluxo'){
+    const c=hbCorpo(), st=c.scrollTop;
+    HB_DEF[_hbTipo].render(c,{});
+    c.scrollTop=st;
+  }
+}
+
+function hbErro(caixaId,texto,campoId){
+  const cx=document.getElementById(caixaId);
+  if(cx) cx.innerHTML=`<div class="hb-msg">${texto}</div>`;
+  if(campoId){
+    const e=document.getElementById(campoId);
+    if(e){ e.classList.add('erro'); e.focus(); e.addEventListener('input',()=>e.classList.remove('erro'),{once:true}); }
+  }
+  hubBalaoPosicionar();
+  return false;
+}
+
+function hbStatusCliente(c){
+  const legado={'A':'Ativo','S':'Ativo','D':'Cancelado','I':'Inativo','N':'Negativado'};
+  const st=c.statusContrato||legado[c.ixcStatus]||'';
+  const tom=st==='Ativo'?'verde':/Bloqueio/.test(st)?'lar':/Cancel|Inativ|Negativ/.test(st)?'verm':'cinza';
+  return st?`<span class="hb-tag ${tom}">${hbEsc(st)}</span>`:'';
+}
+
+// busca no cadastro: nome, razão, CPF/CNPJ, telefone e login PPPoE, sem acento
+function hbClientesBuscar(q,lim){
+  const t=hbNorm(q).trim();
+  if(t.length<2) return [];
+  const dig=t.replace(/\D/g,'');
+  const logins=new Set();
+  (_cache.sf_clientes_logins||[]).forEach(l=>{ if(hbNorm(l.login).includes(t)){ if(l.clienteId!=null) logins.add('i'+l.clienteId); if(l.ixcClienteId!=null) logins.add('x'+l.ixcClienteId); } });
+  const lista=hbCli(), out=[];
+  for(let i=0;i<lista.length&&out.length<(lim||8);i++){
+    const c=lista[i];
+    const ok=hbNorm(c.nome).includes(t)||hbNorm(c.razao).includes(t)||hbNorm(c.ixcLogin).includes(t)
+      ||logins.has('i'+c.id)||logins.has('x'+c.ixcId)
+      ||(dig.length>=4&&[c.cnpj,c.tel1,c.tel2,c.whatsapp].some(v=>String(v||'').replace(/\D/g,'').includes(dig)));
+    if(ok) out.push({c,i});
+  }
+  return out;
+}
+function hbItemCliente(c,acao){
+  return `<button type="button" class="hb-item" onclick="${acao}">
+    <div class="hb-tx"><div class="hb-t1">${hbEsc(c.nome||'—')}</div>
+    <div class="hb-t2">${hbEsc([c.cnpj,c.bairro,c.cidade].filter(Boolean).join(' · '))}</div></div>${hbStatusCliente(c)}</button>`;
+}
+function hbFoneWa(f){
+  let d=String(f||'').replace(/\D/g,'');
+  if(!d) return '';
+  if(d.length<=11) d='55'+d;
+  return d;
+}
+function hbFicha(c,{trocar,completa}={}){
+  const login=_getLoginCliente(c), ct=_getContratoAtivo(c);
+  const end=[c.end,c.numero,c.complemento,c.bairro,c.cidade].filter(Boolean).join(', ');
+  const fone=c.whatsapp||c.tel1||c.tel2||'';
+  const wa=hbFoneWa(c.whatsapp||c.tel1);
+  const dado=(i,v)=>v?`<div class="hb-dado"><i>${i}</i><b>${v}</b></div>`:'';
+  return `<div class="hb-ficha">
+    <div class="hb-nome"><span>${hbEsc(c.nome||'—')}</span>${hbStatusCliente(c)}${trocar?`<button type="button" class="hb-link" onclick="${trocar}">trocar</button>`:''}</div>
+    ${completa?dado('🪪',hbEsc(c.cnpj)):''}
+    ${dado('📍',hbEsc(end))}
+    ${fone?`<div class="hb-dado"><i>📞</i><b>${hbEsc(fone)}${wa&&completa?` · <a href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp</a>`:''}</b></div>`:''}
+    ${dado('🌐',hbEsc(login?.login||c.ixcLogin||''))}
+    ${ct?dado('📡',hbEsc(ct.plano||'')+(completa&&ct.valor?' · '+brl(ct.valor,true)+'/mês':'')):''}
+    ${completa&&ct&&ct.pagoAte?dado('🗓',`Pago até ${fmtData(String(ct.pagoAte).slice(0,10))}`):''}
+  </div>`;
+}
+
+/* ===== Novo lançamento ===== */
+let _hbLanc={tipo:'receber'};
+function hbLancamento(el,d){
+  if(d.tipo) _hbLanc.tipo=d.tipo;
+  const rec=_hbLanc.tipo==='receber';
+  const bancos=gdBancos(), planos=hbPlanos();
+  const padrao=rec?'3.1 Receita de Vendas':'4.2 Custos com Fornecedores';
+  const nomes=[...new Set((rec?hbCli():gd('sf_fornecedores')).map(c=>c.nome).filter(Boolean))];
+  el.innerHTML=`
+    <div class="hb-seg" role="group" aria-label="Tipo de lançamento">
+      <button type="button" class="${rec?'on rec':''}" onclick="hbLancTipo('receber')">↓ A receber</button>
+      <button type="button" class="${rec?'':'on pag'}" onclick="hbLancTipo('pagar')">↑ A pagar</button>
+    </div>
+    <div class="hb-lin">
+      <div class="hb-campo"><label for="hb-l-valor">Valor (R$)</label><input id="hb-l-valor" class="hb-in hb-valor" inputmode="decimal" placeholder="0,00" autocomplete="off" data-foco value="${hbEsc(d.valor||'')}"></div>
+      <div class="hb-campo"><label for="hb-l-data">Vencimento</label><input id="hb-l-data" type="date" class="hb-in" value="${hbEsc(d.data||hoje())}"></div>
+    </div>
+    <div class="hb-campo"><label for="hb-l-hist">Descrição</label><input id="hb-l-hist" class="hb-in" placeholder="${rec?'Ex.: instalação, mensalidade avulsa':'Ex.: energia do POP, fornecedor de fibra'}" value="${hbEsc(d.hist||'')}"></div>
+    <div class="hb-campo"><label for="hb-l-pessoa">${rec?'Cliente':'Fornecedor'}</label><input id="hb-l-pessoa" class="hb-in" list="hb-l-pessoas" autocomplete="off" placeholder="${rec?'Nome do cliente':'Nome do fornecedor'}" value="${hbEsc(d.pessoa||'')}"><datalist id="hb-l-pessoas">${nomes.map(n=>`<option value="${hbEsc(n)}">`).join('')}</datalist></div>
+    <div class="hb-campo"><label for="hb-l-plano">Plano de contas</label><input id="hb-l-plano" class="hb-in" list="hb-l-planos" autocomplete="off" placeholder="Digite o código ou o nome" value="${hbEsc(planos.includes(padrao)?padrao:'')}"><datalist id="hb-l-planos">${planos.map(p=>`<option value="${hbEsc(p)}">`).join('')}</datalist></div>
+    <div class="hb-campo"><label for="hb-l-conta">Conta</label><select id="hb-l-conta" class="hb-in">${bancos.length?bancos.map(b=>`<option value="${hbEsc(b.nome)}">${hbEsc(b.nome)}${b.banco?' · '+hbEsc(b.banco):''}</option>`).join(''):'<option value="">— Nenhuma conta cadastrada —</option>'}</select></div>
+    <label class="hb-check"><input type="checkbox" id="hb-l-feito"> ${rec?'Já foi recebido':'Já foi pago'}</label>
+    <div id="hb-l-msg"></div>
+    <div class="hb-acoes">
+      <button type="button" class="hb-btn cheio" onclick="hbLancSalvar()">Salvar lançamento</button>
+      <button type="button" class="hb-btn2" onclick="hbLancMais()" title="Parcelar, repetir, data original, cheque">Mais opções</button>
+    </div>`;
+  ['hb-l-valor','hb-l-hist'].forEach(id=>el.querySelector('#'+id).addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); hbLancSalvar(); } }));
+}
+function hbLancColetar(){
+  const g=id=>document.getElementById(id);
+  return { tipo:_hbLanc.tipo, rec:_hbLanc.tipo==='receber', valor:hbValor(g('hb-l-valor').value), valorTxt:g('hb-l-valor').value,
+    data:g('hb-l-data').value, hist:g('hb-l-hist').value.trim(), pessoa:g('hb-l-pessoa').value.trim(),
+    plano:g('hb-l-plano').value.trim(), conta:g('hb-l-conta').value, feito:g('hb-l-feito').checked };
+}
+function hbLancTipo(t){
+  const v=hbLancColetar();
+  hbLancamento(hbCorpo(),{tipo:t,valor:v.valorTxt,data:v.data,hist:v.hist});
+  hubBalaoPosicionar();
+}
+// a janela completa é quem guarda as regras: o balão preenche os campos dela
+function hbLancPreencherJanela(v){
+  lancEditIdx=null;
+  limparBuscaPlano(); popularSelectPlano();
+  setLancTipo(v.tipo);
+  setRepTipo('unico');
+  popularSelectContas('l-conta',v.conta);
+  const s=(id,x)=>{ const e=document.getElementById(id); if(e) e.value=x; };
+  s('l-data',v.data); s('l-dorig',v.data);
+  s('l-status',v.rec?(v.feito?'Recebido':'A Receber'):(v.feito?'Pago':'A Pagar'));
+  if(v.plano) s('l-plano',v.plano);
+  s('l-cliente',v.rec?v.pessoa:''); s('l-fornecedor',v.rec?'':v.pessoa);
+  const val=v.valor?String(v.valor):'';
+  s('l-ar',v.rec&&!v.feito?val:''); s('l-rec',v.rec&&v.feito?val:'');
+  s('l-ap',!v.rec&&!v.feito?val:''); s('l-pago',!v.rec&&v.feito?val:'');
+  s('l-hist',v.hist); s('l-cheque',''); s('parc-num',''); s('rec-meses','');
+  const rg=document.getElementById('lg-repeticao'); if(rg) rg.style.display='';
+  document.getElementById('lanc-titulo').textContent='Novo Lançamento';
+}
+function hbLancSalvar(){
+  const v=hbLancColetar();
+  if(!(v.valor>0)) return hbErro('hb-l-msg','Informe o valor.','hb-l-valor');
+  if(!v.data) return hbErro('hb-l-msg','Informe o vencimento.','hb-l-data');
+  if(!hbPlanos().includes(v.plano)) return hbErro('hb-l-msg','Escolha um plano de contas da lista.','hb-l-plano');
+  if(gdBancos().length&&!v.conta) return hbErro('hb-l-msg','Escolha a conta.','hb-l-conta');
+  hbLancPreencherJanela(v);
+  const antes=gd('sf_lancamentos').length;
+  salvarLancamento();
+  if(gd('sf_lancamentos').length<=antes) return hbErro('hb-l-msg','Não foi possível salvar. Confira os dados ou use "Mais opções".');
+  hbCorpo().innerHTML=`<div class="hb-feito"><div class="ok">✓</div><h4>Lançamento salvo</h4>
+    <p>${v.rec?'A receber':'A pagar'} · ${brl(v.valor,true)} · ${v.feito?(v.rec?'recebido em':'pago em'):'vence'} ${fmtData(v.data)}${v.hist?' · '+hbEsc(v.hist):''}</p>
+    <div class="hb-acoes"><button type="button" class="hb-btn" onclick="hubBalao('lancamento',null,{tipo:'${v.tipo}'})">Lançar outro</button><button type="button" class="hb-btn2" onclick="hubFechar('diario')">Ver no Livro Diário</button></div></div>`;
+  hubBalaoPosicionar();
+}
+function hbLancMais(){
+  const v=hbLancColetar();
+  hubBalaoFechar();
+  abrirModalLancamento(v.tipo);
+  hbLancPreencherJanela(v);
+  atualizarResumoLanc();
+}
+
+/* ===== Contas a pagar ===== */
+function hbContas(el){
+  const lc=gd('sf_lancamentos'), hj=hoje(), ate=hbSomaDias(hj,7);
+  const lista=lc.map((l,i)=>({l,i}))
+    .filter(({l})=>l.status==='A Pagar'&&!l.cancelado&&(+l.aPagar||0)>0&&(l.data||'')<=ate)
+    .sort((a,b)=>(a.l.data||'').localeCompare(b.l.data||''));
+  const soma=a=>a.reduce((s,{l})=>s+(+l.aPagar||0),0);
+  const venc=lista.filter(x=>(x.l.data||'')<hj), hoj=lista.filter(x=>x.l.data===hj), prox=lista.filter(x=>x.l.data>hj);
+  const qtd=n=>`${n} conta${n===1?'':'s'}`;
+  const pode=!document.body.classList.contains('perfil-visualizador');
+  el.innerHTML=`
+    <div class="hb-kpis">
+      <div class="hb-kpi verm"><small>Vencidas</small><b>${brl(soma(venc),true)}</b><span>${qtd(venc.length)}</span></div>
+      <div class="hb-kpi lar"><small>Hoje</small><b>${brl(soma(hoj),true)}</b><span>${qtd(hoj.length)}</span></div>
+      <div class="hb-kpi azul"><small>Próx. 7 dias</small><b>${brl(soma(prox),true)}</b><span>${qtd(prox.length)}</span></div>
+    </div>
+    ${lista.length?`<div class="hb-lista">${lista.slice(0,40).map(({l,i})=>{
+      const dd=hbDiasEntre(hj,l.data||hj);
+      const tag=dd<0?`<span class="hb-tag verm">vencida há ${-dd} dia${dd===-1?'':'s'}</span>`:dd===0?'<span class="hb-tag lar">vence hoje</span>':`<span class="hb-tag azul">${fmtData(l.data).slice(0,5)} · em ${dd} dia${dd===1?'':'s'}</span>`;
+      const t1=l.fornecedor||l.historico||l.plano||'Sem descrição';
+      const t2=l.fornecedor?(l.historico||l.plano||''):(l.historico?l.plano||'':'');
+      return `<div class="hb-item"><div class="hb-tx"><div class="hb-t1">${hbEsc(t1)}</div><div class="hb-t2">${tag} ${hbEsc(t2)}</div></div>
+        <div class="hb-val">${brl(l.aPagar,true)}</div>
+        ${pode?`<button type="button" class="hb-btn2 hb-mini perm-edit" data-idx="${i}" data-id="${hbEsc(JSON.stringify(l.id??null))}" onclick="hbPagar(this)">Pagar</button>`:''}</div>`;
+    }).join('')}</div>${lista.length>40?`<div class="hb-vazio" style="padding:4px">E mais ${lista.length-40} na tela completa.</div>`:''}`
+    :'<div class="hb-vazio"><b>🎉</b>Nada vencido nem vencendo nos próximos 7 dias.</div>'}
+    <div class="hb-rodape"><button type="button" class="hb-link" onclick="hubFechar('contas')">Ver todas as contas a pagar →</button></div>`;
+}
+// a baixa usa a janela de quitação de sempre (conta, multa, juros, baixa parcial);
+// quando ela grava, o atualizarBadges redesenha o balão
+function hbPagar(btn){
+  let id=null; try{ id=JSON.parse(btn.dataset.id); }catch(e){}
+  abrirModalQuitar(+btn.dataset.idx,id);
+}
+
+/* ===== Abrir chamado ===== */
+let _hbCh={};
+function hbChamado(el,d){
+  _hbCh={cli:d.cli||null,livre:'',busca:'',desc:'',prio:'media',tec:''};
+  hbChRender();
+}
+function hbChGuardar(){
+  const g=id=>document.getElementById(id);
+  if(g('hb-c-busca')) _hbCh.busca=g('hb-c-busca').value;
+  if(g('hb-c-desc')) _hbCh.desc=g('hb-c-desc').value.trim();
+  if(g('hb-c-tec')) _hbCh.tec=g('hb-c-tec').value;
+}
+function hbChRender(){
+  const c=_hbCh.cli;
+  const tecs=(_cpTecnicos||[]).filter(t=>t.status==='ativo');
+  const quem=c?hbFicha(c,{trocar:'hbChTrocar()'})
+    :_hbCh.livre?`<div class="hb-ficha"><div class="hb-nome"><span>${hbEsc(_hbCh.livre)}</span><span class="hb-tag cinza">sem cadastro</span><button type="button" class="hb-link" onclick="hbChTrocar()">trocar</button></div></div>`
+    :`<input id="hb-c-busca" class="hb-in" placeholder="Nome, CPF/CNPJ, telefone ou login" autocomplete="off" oninput="hbChBuscar(this.value)" data-foco value="${hbEsc(_hbCh.busca)}"><div id="hb-c-res"></div>`;
+  hbCorpo().innerHTML=`
+    <div class="hb-campo"><label for="hb-c-busca">Cliente</label>${quem}</div>
+    <div class="hb-campo"><label for="hb-c-desc">O que está acontecendo?</label><textarea id="hb-c-desc" class="hb-in" placeholder="Ex.: sem internet desde ontem, luz LOS vermelha" ${c||_hbCh.livre?'data-foco':''}>${hbEsc(_hbCh.desc)}</textarea></div>
+    <div class="hb-campo"><span class="hb-rot">Prioridade</span><div class="hb-seg">${[['baixa','Baixa'],['media','Média'],['alta','Alta']].map(([k,n])=>`<button type="button" class="${_hbCh.prio===k?'on '+k:''}" onclick="hbChPrio('${k}')">${n}</button>`).join('')}</div></div>
+    <div class="hb-campo"><label for="hb-c-tec">Técnico</label><select id="hb-c-tec" class="hb-in"><option value="">Sem técnico (fica na fila)</option>${tecs.map(t=>`<option value="${hbEsc(t.id)}" ${String(_hbCh.tec)===String(t.id)?'selected':''}>${hbEsc(t.nome)}</option>`).join('')}</select></div>
+    <div id="hb-c-msg"></div>
+    <div class="hb-acoes">
+      <button type="button" class="hb-btn cheio" id="hb-c-salvar" onclick="hbChSalvar()">Registrar chamado</button>
+      <button type="button" class="hb-btn2" onclick="hbChMais()" title="Endereço, login, referência, status e gerar OS">Mais opções</button>
+    </div>`;
+  if(!c&&!_hbCh.livre&&_hbCh.busca) hbChBuscar(_hbCh.busca);
+}
+function hbChBuscar(q){
+  _hbCh.busca=q;
+  const res=document.getElementById('hb-c-res');
+  if(!res) return;
+  const t=String(q||'').trim();
+  const lista=hbClientesBuscar(t,6);
+  res.innerHTML=t.length<2?'':`<div class="hb-lista" style="margin-top:6px">${lista.map(({c,i})=>hbItemCliente(c,`hbChEscolher(${i})`)).join('')}
+    ${t.length>=3?`<button type="button" class="hb-item" onclick="hbChSemCadastro()"><div class="hb-tx"><div class="hb-t1">Usar “${hbEsc(t)}”</div><div class="hb-t2">cliente fora do cadastro</div></div></button>`:''}</div>`;
+  hubBalaoPosicionar();
+}
+function hbChEscolher(i){ hbChGuardar(); _hbCh.cli=hbCli()[i]||null; _hbCh.livre=''; hbChRender(); hbChFocoDesc(); }
+function hbChSemCadastro(){ hbChGuardar(); _hbCh.livre=_hbCh.busca.trim(); _hbCh.cli=null; hbChRender(); hbChFocoDesc(); }
+function hbChTrocar(){ hbChGuardar(); _hbCh.cli=null; _hbCh.livre=''; hbChRender(); document.getElementById('hb-c-busca')?.focus(); }
+function hbChPrio(p){ hbChGuardar(); _hbCh.prio=p; hbChRender(); }
+function hbChFocoDesc(){ hubBalaoPosicionar(); setTimeout(()=>document.getElementById('hb-c-desc')?.focus(),20); }
+// preenche a janela de chamado (fonte das regras) com o que está no balão
+function hbChPreencherJanela(){
+  const s=(id,x)=>{ const e=document.getElementById(id); if(e) e.value=x; };
+  popularSelectsTecnicosCampo();
+  s('ch-id',''); s('ch-cliente-id','');
+  window._chamadoClienteAtual=null;
+  if(_hbCh.cli) preencherClienteChamado(_hbCh.cli);
+  else{ s('ch-cliente',_hbCh.livre||_hbCh.busca.trim()); ['ch-endereco','ch-telefone','ch-login-cliente','ch-localizacao'].forEach(id=>s(id,'')); }
+  s('ch-descricao',_hbCh.desc); s('ch-prioridade',_hbCh.prio||'media');
+  s('ch-tecnico',_hbCh.tec||''); s('ch-status',_hbCh.tec?'atribuido':'novo');
+}
+async function hbChSalvar(){
+  hbChGuardar();
+  const nome=_hbCh.cli?_hbCh.cli.nome:_hbCh.livre;
+  if(!nome) return hbErro('hb-c-msg','Escolha o cliente na lista.','hb-c-busca');
+  if(!_hbCh.desc) return hbErro('hb-c-msg','Descreva o problema.','hb-c-desc');
+  const btn=document.getElementById('hb-c-salvar');
+  btn.disabled=true; btn.textContent='Registrando…';
+  hbChPreencherJanela();
+  let ok=false;
+  try{ ok=await salvarChamado(); }catch(e){ console.error('[balão chamado]',e); }
+  if(ok!==true){ btn.disabled=false; btn.textContent='Registrar chamado'; return hbErro('hb-c-msg','Não foi possível registrar o chamado. Tente de novo.'); }
+  const tec=(_cpTecnicos||[]).find(t=>String(t.id)===String(_hbCh.tec));
+  hbCorpo().innerHTML=`<div class="hb-feito"><div class="ok">✓</div><h4>Chamado registrado</h4>
+    <p>${hbEsc(nome)} · prioridade ${{baixa:'baixa',media:'média',alta:'alta'}[_hbCh.prio]||'média'} · ${tec?'com '+hbEsc(tec.nome):'na fila, sem técnico'}</p>
+    <div class="hb-acoes"><button type="button" class="hb-btn" onclick="hubBalao('chamado',null,{})">Abrir outro</button><button type="button" class="hb-btn2" onclick="hubFechar('cp-chamados')">Ver chamados</button></div></div>`;
+  hubBalaoPosicionar();
+}
+function hbChMais(){
+  hbChGuardar();
+  hubBalaoFechar();
+  abrirModalChamado();
+  hbChPreencherJanela();
+}
+
+/* ===== Buscar cliente ===== */
+let _hbCliBusca='';
+function hbCliente(el,d){
+  if(d.idx!=null) return hbCliFicha(d.idx);
+  el.innerHTML=`<input id="hb-k-busca" class="hb-in" placeholder="Nome, CPF/CNPJ, telefone ou login" autocomplete="off" oninput="hbCliBuscar(this.value)" data-foco value="${hbEsc(_hbCliBusca)}"><div id="hb-k-res"></div>`;
+  hbCliBuscar(_hbCliBusca);
+}
+function hbCliBuscar(q){
+  _hbCliBusca=q;
+  const res=document.getElementById('hb-k-res');
+  if(!res) return;
+  const t=String(q||'').trim();
+  const lista=hbClientesBuscar(t,8);
+  res.innerHTML=t.length<2
+    ?`<div class="hb-vazio">Digite pelo menos 2 letras.<br>${hbCli().length.toLocaleString('pt-BR')} clientes no cadastro.</div>`
+    :lista.length?`<div class="hb-lista" style="margin-top:10px">${lista.map(({c,i})=>hbItemCliente(c,`hbCliFicha(${i})`)).join('')}</div>`
+    :'<div class="hb-vazio">Nenhum cliente encontrado.</div>';
+  hubBalaoPosicionar();
+}
+function hbCliFicha(i){
+  const c=hbCli()[i];
+  if(!c) return;
+  hbCorpo().innerHTML=`<button type="button" class="hb-link" onclick="hbCliente(hbCorpo(),{})">← Voltar à busca</button>
+    ${hbFicha(c,{completa:true})}
+    <div class="hb-acoes">
+      <button type="button" class="hb-btn2 hb-mini perm-edit" onclick="hubBalao('chamado',null,{cli:hbCli()[${i}]})">📞 Abrir chamado</button>
+      <button type="button" class="hb-btn2 hb-mini perm-edit" onclick="hbCliLancar(${i})">↓ Lançar recebimento</button>
+      <button type="button" class="hb-btn2 hb-mini" onclick="abrirModalCliente(${i})">Ficha completa</button>
+    </div>`;
+  hubBalaoPosicionar();
+}
+function hbCliLancar(i){ const c=hbCli()[i]; hubBalao('lancamento',null,{tipo:'receber',pessoa:c?c.nome:''}); }
+
+/* ===== Cobrança ===== */
+let _hbCobCarga=null;
+async function hbCobranca(el){
+  if(!COB_state.baseOk){
+    el.innerHTML='<div class="hb-carregando"><i></i><span id="hb-cob-load">Carregando a cobrança…</span></div>';
+    try{
+      // mesmo caminho da tela de Cobrança: histórico, configuração e faturas do IXC
+      _hbCobCarga=_hbCobCarga||(async()=>{
+        await ifCobCarregar(); await cobCarregarConfig(); COB_state.prontas=true;
+        if(!IF_state.geradoEm) await cobCarregarBase(document.getElementById('hb-cob-load'));
+        COB_state.baseOk=true;
+      })();
+      await _hbCobCarga;
+    }catch(e){
+      console.error('[balão cobrança]',e);
+      _hbCobCarga=null;
+      if(_hbTipo!=='cobranca') return;
+      el.innerHTML=`<div class="hb-msg">Não consegui abrir a cobrança: ${hbEsc(e.message||e)}</div>
+        <div class="hb-acoes"><button type="button" class="hb-btn2" onclick="hubBalao('cobranca',null,{})">Tentar de novo</button></div>`;
+      hubBalaoPosicionar();
+      return;
+    }
+    _hbCobCarga=null;
+    if(_hbTipo!=='cobranca') return;
+  }
+  const fila=k=>{ try{ return ifFilaCobranca(k).filter(x=>!x.bloqueio); }catch(e){ return []; } };
+  const trilhas=COB_ORDEM.map(k=>{ const f=fila(k); return {k,n:f.length,v:f.reduce((s,i)=>s+(+i.fat.valor||0),0)}; });
+  const agora=fila('recuperacao').slice(0,8);
+  window._ifFilaMsgs=window._ifFilaMsgs||{};
+  agora.forEach(it=>{ window._ifFilaMsgs[it.fat.id+'|'+it.etapa.id]=it.msg; });
+  el.innerHTML=`
+    <div class="hb-lista">${trilhas.map(t=>{ const T=COB_TRILHAS[t.k]; return `<button type="button" class="hb-item hb-trilha" onclick="hbCobTrilha('${t.k}')">
+      <span class="hb-tico">${T.ico}</span><div class="hb-tx"><div class="hb-t1">${T.lbl}</div><div class="hb-t2">${t.n?`${t.n} para cobrar · ${brl(t.v,true)}`:'nada pendente'}</div></div><span style="color:var(--text3)">›</span></button>`; }).join('')}</div>
+    <div class="hb-sec">Para cobrar agora (vencidas)</div>
+    ${agora.length?`<div class="hb-lista">${agora.map(it=>{
+      const key=it.fat.id+'|'+it.etapa.id, fone=ifFoneNorm(it.pf.fone);
+      return `<div class="hb-item"><div class="hb-tx"><div class="hb-t1">${hbEsc(it.pf.nome)}</div>
+        <div class="hb-t2"><span class="hb-tag verm">${it.dias>0?it.dias+' dia'+(it.dias===1?'':'s'):'hoje'}</span> ${hbEsc(it.etapa.nome||'')}${fone?'':' · sem telefone'}</div></div>
+        <div class="hb-val">${brl(it.fat.valor,true)}</div>
+        <button type="button" class="hb-btn2 hb-mini perm-edit" ${fone?'':'disabled'} onclick="ifCobEnviar('${hbEsc(key)}','${hbEsc(it.pf.ixcId)}','${hbEsc(it.fat.id)}','${hbEsc(it.etapa.id)}',this)">💬 Enviar</button></div>`;
+    }).join('')}</div>`:'<div class="hb-vazio"><b>🎉</b>Ninguém para cobrar agora.</div>'}
+    <div class="hb-rodape"><button type="button" class="hb-link" onclick="hubFechar('cobranca')">Abrir a cobrança completa →</button></div>`;
+  hubBalaoPosicionar();
+}
+function hbCobTrilha(k){ COB_state.tab=k; hubFechar('cobranca'); }
+
+/* ===== Fluxo de caixa ===== */
+function hbFluxo(el){
+  const lc=gd('sf_lancamentos'), hj=hoje(), mes=hj.slice(0,7), ate=hbSomaDias(hj,30);
+  const bancos=gdBancos();
+  const saldo=bancos.reduce((s,_,i)=>s+calcSaldoConta(i),0);
+  const meses=[], base=new Date(hj.slice(0,7)+'-01T12:00:00');
+  for(let k=5;k>=0;k--){ const d=new Date(base); d.setMonth(base.getMonth()-k); meses.push({k:isoLocal(d).slice(0,7),e:0,s:0}); }
+  const porMes=Object.fromEntries(meses.map(m=>[m.k,m]));
+  let arec=0,apag=0,vRec=0,vPag=0;
+  lc.forEach(l=>{
+    const v=_lancRealizado(l);
+    if(v){ const m=porMes[(l.dataEfetivacao||l.data||'').slice(0,7)]; if(m){ if(v>0) m.e+=v; else m.s-=v; } }
+    if(l.cancelado||l.status==='Cancelado') return;
+    const d=l.data||'';
+    if(l.status==='A Receber'){ if(d<hj) vRec+=+l.aReceber||0; else if(d<=ate) arec+=+l.aReceber||0; }
+    if(l.status==='A Pagar'){ if(d<hj) vPag+=+l.aPagar||0; else if(d<=ate) apag+=+l.aPagar||0; }
+  });
+  const ent=porMes[mes]?.e||0, sai=porMes[mes]?.s||0, previsto=saldo+arec-apag;
+  const max=Math.max(1,...meses.map(m=>Math.max(m.e,m.s)));
+  const NM=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const kpi=(tom,rot,v)=>`<div class="hb-kpi ${tom}"><small>${rot}</small><b>${brl(v,true)}</b></div>`;
+  el.innerHTML=`
+    <div class="hb-kpi ${saldo<0?'verm':'verde'}" style="padding:12px 14px"><small>Saldo hoje nas contas</small><b style="font-size:20px">${brl(saldo,true)}</b><span>${bancos.length} conta${bancos.length===1?'':'s'} bancária${bancos.length===1?'':'s'}</span></div>
+    <div class="hb-sec">Este mês · realizado</div>
+    <div class="hb-kpis">${kpi('verde','Entrou',ent)}${kpi('verm','Saiu',sai)}${kpi(ent-sai<0?'verm':'azul','Resultado',ent-sai)}</div>
+    <div class="hb-sec">Próximos 30 dias</div>
+    <div class="hb-kpis">${kpi('verde','A receber',arec)}${kpi('verm','A pagar',apag)}${kpi(previsto<0?'verm':'azul','Saldo previsto',previsto)}</div>
+    ${vRec||vPag?`<div class="hb-t2" style="font-size:12px;color:var(--text3);line-height:1.45">Fora da previsão: ${[vRec?brl(vRec,true)+' a receber vencido':'',vPag?brl(vPag,true)+' a pagar vencido':''].filter(Boolean).join(' e ')}.</div>`:''}
+    <div class="hb-sec">Últimos 6 meses</div>
+    <div class="hb-barras">${meses.map(m=>`<div class="hb-mes" title="${NM[+m.k.slice(5)-1]}: entrou ${brlTxt(m.e)} · saiu ${brlTxt(m.s)}"><div class="hb-par"><i class="e" style="height:${(m.e/max*100).toFixed(1)}%"></i><i class="s" style="height:${(m.s/max*100).toFixed(1)}%"></i></div><small>${NM[+m.k.slice(5)-1]}</small></div>`).join('')}</div>
+    <div class="hb-legenda"><span>Entradas</span><span class="s">Saídas</span></div>
+    <div class="hb-rodape"><button type="button" class="hb-link" onclick="hubFechar('fluxo')">Abrir o fluxo de caixa completo →</button></div>`;
+}
+
 
 async function fazerLogout(semConfirm){
   if(!semConfirm && !confirm('Deseja sair do sistema?'))return;
@@ -17530,7 +18146,7 @@ function abrirModalChamado(id){
 async function salvarChamado(){
   const cliente = document.getElementById('ch-cliente').value.trim();
   const descricao = document.getElementById('ch-descricao').value.trim();
-  if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return; }
+  if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return false; }
   const id = document.getElementById('ch-id').value;
   const tecId = document.getElementById('ch-tecnico').value || null;
   const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '' : '';
@@ -17566,7 +18182,7 @@ async function salvarChamado(){
     error = insErr;
     if(data) chamadoId = data.id;
   }
-  if(error){ showToast('Erro: '+error.message, true); return; }
+  if(error){ showToast('Erro: '+error.message, true); return false; }
 
   // Registra no histórico se o status mudou
   if(chamadoId && (!chamadoExistente || chamadoExistente.status!==status)){
@@ -17577,6 +18193,7 @@ async function salvarChamado(){
   await carregarCampo();
   renderChamados();
   showToast(id?'Chamado atualizado!':'Chamado registrado!');
+  return true;
 }
 
 // ============================================================
@@ -22461,7 +23078,7 @@ async function ifCobEnviar(key, ixcId, fatId, etapaId, btn){
       anexar_boleto:etapa?.anexar_boleto===true, anexar_pix:etapa?.anexar_pix===true});
     ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf.nome, canal:'whatsapp',
       quando:new Date().toISOString(), boleto:r.boleto, pix:r.pix, anexoErro:r.anexo_erro});
-    btn.closest('tr').style.opacity='.35';
+    const linha=btn.closest('tr,.hb-item'); if(linha) linha.style.opacity='.35';
     if(r.duplicado){
       // outra máquina já cobrou esta etapa — a trava está no banco, não aqui
       btn.textContent='✓ Já enviado';
