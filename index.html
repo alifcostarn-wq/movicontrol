@@ -17904,6 +17904,9 @@ function toggleTema(){
   const dark = document.body.classList.toggle('dark-mode');
   localStorage.setItem('movi_tema', dark ? 'dark' : 'light');
   showToast(dark ? '🌙 Modo escuro ativado.' : '☀️ Modo claro ativado.');
+  redesenharTema();
+}
+function redesenharTema(){
   temaGraficos();
   // Re-renderiza os gráficos para atualizar cores
   setTimeout(()=>{
@@ -17913,6 +17916,15 @@ function toggleTema(){
     try{ comGrafico[paginaAtiva]?.(); }catch(e){ console.warn('[tema] redesenho:', e.message); }
   }, 50);
 }
+// O MoviTalk grava a mesma chave (mesmo endereço). Trocar o tema lá — inclusive
+// com ele aberto aqui dentro, pelo menu inicial — troca o MoviOne junto.
+window.addEventListener('storage', e=>{
+  if(e.key!=='movi_tema' || !e.newValue) return;
+  const dark = e.newValue==='dark';
+  if(document.body.classList.contains('dark-mode')===dark) return;
+  document.body.classList.toggle('dark-mode', dark);
+  redesenharTema();
+});
 
 (function initTema(){
   const salvo = localStorage.getItem('movi_tema');
