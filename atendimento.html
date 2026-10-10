@@ -92,14 +92,52 @@ html,body{height:100%;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow:hidden;font-size:14px;}
 
 .app{display:grid;grid-template-columns:196px 1fr;height:100vh;transition:grid-template-columns .18s ease;}
-.app.slim{grid-template-columns:60px 1fr;}
-/* recolhida: some tudo que é texto, sobram os ícones centralizados */
-.app.slim .logo .word,.app.slim .logo .sub,.app.slim .setor-box,
-.app.slim .nav-item span,.app.slim .usr-rodape .u-txt{display:none;}
-.app.slim .nav-item{justify-content:center;padding:12px 0;gap:0;}
-.app.slim .nav-item svg{width:19px;height:19px;}
-.app.slim .logo{padding:0 0 18px;text-align:center;}
-.app.slim .usr-rodape{justify-content:center;}
+/* ===== MENU RECOLHIDO =====
+   Só no computador: no celular o menu é gaveta e aparece sempre inteiro.
+   As regras de antes apontavam para nomes que o menu não usa mais
+   (setor-box, u-txt): o logo sumia, o seletor de setor ficava espremido
+   em 20px e o nome do usuário e o "Sair" vazavam por cima da tela. Agora
+   fica o "MT" no lugar do logo, o setor vira uma etiqueta curta e embaixo
+   só a inicial do usuário; o nome de cada item aparece num balão ao lado. */
+.logo-mini,.setor-mini{display:none;}
+@media (min-width:861px){
+  .app.slim{grid-template-columns:60px 1fr;}
+  .app.slim .logo .word,.app.slim .logo .sub,.app.slim .sector-switch,
+  .app.slim .nav-item span,.app.slim .usr-chip > :not(.cc-av){display:none;}
+  .app.slim .logo{padding:0 0 14px;display:flex;justify-content:center;cursor:pointer;}
+  .app.slim .logo-mini{display:block;}
+  .app.slim .setor-mini{display:flex;}
+  .app.slim .nav-item{justify-content:center;padding:12px 0;gap:0;}
+  .app.slim .nav-item svg{width:19px;height:19px;}
+  .app.slim .usr-rodape{padding:10px 0 0;}
+  .app.slim .usr-chip{justify-content:center;}
+  .app.slim .usr-chip .cc-av{cursor:pointer;}
+  /* o botão de abrir fica na altura do "MT", com folga: colado nele parecia
+     parte do logo */
+  .app.slim .sb-toggle{top:24px;right:-14px;}
+}
+.logo-mini{font-size:19px;font-weight:800;letter-spacing:-.5px;line-height:26px;color:#fff;}
+.logo-mini .o-dot{position:relative;}
+.logo-mini .o-dot::after{content:'';position:absolute;top:0;right:-3px;width:7px;height:7px;background:#ffb020;border-radius:50%;}
+.setor-mini{
+  width:36px;margin:0 0 12px;padding:6px 0;border-radius:8px;border:1px solid rgba(255,255,255,.3);
+  background:rgba(0,0,0,.16);color:#fff;font-family:inherit;font-size:10px;font-weight:800;line-height:1;
+  flex-direction:column;align-items:center;gap:4px;cursor:pointer;
+}
+.setor-mini:hover{background:rgba(0,0,0,.26);}
+.setor-mini .sec-dot{width:7px;height:7px;box-shadow:0 0 0 1.5px rgba(255,255,255,.85);}
+/* o nome do item no menu recolhido: fica FORA do menu, preso no body */
+#menuDica{
+  position:fixed;z-index:300;transform:translateY(-50%);pointer-events:none;opacity:0;transition:opacity .12s;
+  background:#0f172a;color:#fff;font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:7px;white-space:nowrap;
+  border:1px solid rgba(255,255,255,.14);box-shadow:0 6px 18px rgba(0,0,0,.28);
+}
+#menuDica.on{opacity:1;}
+#menuDica::before{
+  content:'';position:absolute;left:-5px;top:50%;transform:translateY(-50%) rotate(45deg);width:8px;height:8px;
+  background:inherit;border-left:1px solid rgba(255,255,255,.14);border-bottom:1px solid rgba(255,255,255,.14);
+}
+body.dark-mode #menuDica{background:#334155;border-color:rgba(255,255,255,.18);}
 .sb-toggle{
   position:absolute;top:14px;right:-11px;width:22px;height:22px;border-radius:50%;
   border:1px solid var(--line);background:var(--card);color:var(--text-mid);cursor:pointer;
@@ -1581,18 +1619,15 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
   max-width:min(92vw,520px);line-height:1.45;text-align:center;
 }
 .toast.show{transform:translateX(-50%) translateY(0);}
-.versao-nova{
-  position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);
-  display:flex;align-items:center;gap:12px;
-  background:#0f172a;color:#fff;font-size:13px;font-weight:600;
-  padding:9px 10px 9px 18px;border-radius:11px;
-  transition:transform .25s;z-index:100;box-shadow:var(--shadow-lg);
+/* versão nova no servidor: fica no cabeçalho, com os outros avisos. Solta
+   no rodapé, ela caía em cima do campo onde o atendente escreve. Azul,
+   porque é convite e não problema */
+.vs-nova{
+  display:inline-flex;align-items:center;gap:6px;background:var(--blue-fill);color:#fff;border:0;
+  font-family:inherit;font-size:11.5px;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;
+  white-space:nowrap;flex-shrink:0;
 }
-.versao-nova.show{transform:translateX(-50%) translateY(0);}
-.versao-nova button{
-  background:var(--green-fill);color:#fff;border:0;border-radius:8px;padding:7px 14px;
-  font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
-}
+.vs-nova:hover{filter:brightness(1.1);}
 ::-webkit-scrollbar{width:8px;height:8px;}
 ::-webkit-scrollbar-thumb{background:#d3dae2;border-radius:4px;}
 
@@ -2501,10 +2536,10 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .search-box input{font-size:16px;}   /* 16px evita o zoom automático do iOS */
   .header.busca-on #btnBuscaMob{background:var(--green-soft);border-color:var(--green);color:var(--green-deep);}
   /* avisos ficam com a linha inteira: são estado do sistema, não decoração */
-  #waAviso,#vistoAviso{order:10;flex:1 0 100%;}
-  #waAviso:empty,#vistoAviso:empty{display:none;}
+  #waAviso,#vistoAviso,#versaoAviso{order:10;flex:1 0 100%;}
+  #waAviso:empty,#vistoAviso:empty,#versaoAviso:empty{display:none;}
   #waAviso .wa-chip,#vistoAviso .wa-chip,
-  #waAviso > *,#vistoAviso > *{width:100%;justify-content:center;}
+  #waAviso > *,#vistoAviso > *,#versaoAviso > *{width:100%;justify-content:center;}
 
   .content{padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));}
 
@@ -2759,7 +2794,7 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .header.cab-c2 #btnNovo{font-size:0;gap:0;}
   .header.cab-c2 #btnNovo::before{content:'＋ Novo';font-size:13.5px;}
   .header.cab-c3{flex-wrap:wrap;row-gap:8px;}
-  .header.cab-c3 #waAviso,.header.cab-c3 #vistoAviso{order:10;}
+  .header.cab-c3 #waAviso,.header.cab-c3 #vistoAviso,.header.cab-c3 #versaoAviso{order:10;}
   /* com quebra de linha os itens param de encolher: a busca passa a ocupar o
      que sobra da primeira linha, para o "＋ Novo" não descer junto dos avisos */
   .header.cab-c3 .h-spacer{display:none;}
@@ -2795,7 +2830,6 @@ body.dark-mode .sidebar{background:linear-gradient(180deg,#0b5e38 0%,#08462a 100
 body.dark-mode .sector-sel option{color:var(--text);background:var(--card);}
 body.dark-mode ::-webkit-scrollbar-thumb{background:#3b4a63;}
 body.dark-mode .toast{background:#334155;color:#f1f5f9;box-shadow:var(--shadow-lg);}
-body.dark-mode .versao-nova{background:#334155;}
 /* conversa: balões no padrão do WhatsApp escuro */
 body.dark-mode .mb.in,body.dark-mode .mb.bot{background:#263449;}
 body.dark-mode .dia-sep{background:var(--chip);}
@@ -2973,6 +3007,7 @@ try{var _t=localStorage.getItem('movi_tema');if(_t==='dark'||(!_t&&window.matchM
     <div class="logo">
       <div class="word">Movi<span class="o-dot">T</span>alk</div>
       <div class="sub">CENTRO DE ATENDIMENTO</div>
+      <div class="logo-mini" aria-hidden="true">M<span class="o-dot">T</span></div>
     </div>
     <div class="sector-switch">
       <div class="sector-lbl">Setor</div>
@@ -2983,41 +3018,42 @@ try{var _t=localStorage.getItem('movi_tema');if(_t==='dark'||(!_t&&window.matchM
         <option value="Vendas">Vendas</option>
       </select>
     </div>
+    <button class="setor-mini" id="setorMini" type="button"></button>
     <nav class="nav" id="nav">
-      <div class="nav-item active" data-view="kanban" title="Atendimento">
+      <div class="nav-item active" data-view="kanban">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h11"/></svg>
 <span>Atendimento</span>
       </div>
-      <div class="nav-item" data-view="agendamentos" title="Agendamentos">
+      <div class="nav-item" data-view="agendamentos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
 <span>Agendamentos</span>
       </div>
-      <div class="nav-item" data-view="chatinterno" title="Chat Interno">
+      <div class="nav-item" data-view="chatinterno">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 10h8M8 14h5M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
 <span>Chat Interno</span>
       </div>
-      <div class="nav-item" data-view="conversas" title="Conversas">
+      <div class="nav-item" data-view="conversas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/></svg>
 <span>Conversas</span>
       </div>
-      <div class="nav-item" data-view="contatos" title="Contatos">
+      <div class="nav-item" data-view="contatos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
 <span>Contatos</span>
       </div>
-      <div class="nav-item" data-view="notificacoes" title="Notificações">
+      <div class="nav-item" data-view="notificacoes">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-7-8-3z"/></svg>
 <span>Notificações</span>
       </div>
-      <div class="nav-item" data-view="relatorios" title="Relatórios">
+      <div class="nav-item" data-view="relatorios">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
 <span>Relatórios</span>
       </div>
-      <div class="nav-item" data-view="config" title="Configurações">
+      <div class="nav-item" data-view="config">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.9 2.9l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.2a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.9-2.9l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.2a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.9-2.9l.1.1a1.7 1.7 0 001.9.3h.1a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.2a1.7 1.7 0 001 1.5h.1a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.9 2.9l-.1.1a1.7 1.7 0 00-.3 1.9v.1a1.7 1.7 0 001.5 1h.2a2 2 0 110 4h-.2a1.7 1.7 0 00-1.5 1z"/></svg>
 <span>Configurações</span>
       </div>
     </nav>
-    <div class="nav-item tema-item" id="btnTema" role="button" tabindex="0" title="Modo escuro" aria-pressed="false">
+    <div class="nav-item tema-item" id="btnTema" role="button" tabindex="0" aria-label="Modo escuro" aria-pressed="false">
       <svg class="ico-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
       <svg class="ico-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2 12h2.2M19.8 12H22M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></svg>
 <span>Modo escuro</span>
@@ -3054,6 +3090,7 @@ try{var _t=localStorage.getItem('movi_tema');if(_t==='dark'||(!_t&&window.matchM
       </button>
       <span id="waAviso"></span>
       <span id="vistoAviso"></span>
+      <span id="versaoAviso"></span>
       <button class="btn" id="btnSom" title="Alerta sonoro de mensagem nova"></button>
       <button class="btn" id="btnStatus" title="Publicar status no WhatsApp da empresa">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="4 2.4"/><circle cx="12" cy="12" r="3.4"/></svg>
@@ -4190,6 +4227,7 @@ async function entrar(session){
     await carregarTudo();
     renderUsuarioRodape();
     $('#sectorSel').value = meuSetor;
+    pintarSetorMini();
     cargaTerminou();
     $('#shell').style.display='';
     // status é comunicação institucional: só admin publica. Precisa ser aqui,
@@ -4233,7 +4271,8 @@ async function entrar(session){
 
 function renderUsuarioRodape(){
   const el=$('#usr-rodape'); if(!el||!USUARIO) return;
-  el.innerHTML=`<div class="usr-chip">
+  const papel = (USUARIO.admin?'Administrador':'Atendente')+(USUARIO.setor?' · '+USUARIO.setor:'');
+  el.innerHTML=`<div class="usr-chip" data-dica="${esc((USUARIO.nome||USUARIO.email)+' · '+papel)}">
     <div class="cc-av" style="background:rgba(0,0,0,.2);width:28px;height:28px;">${ini(USUARIO.nome||'?')}</div>
     <div><div class="un">${esc(USUARIO.nome||USUARIO.email)}</div>
     <div class="ur">${USUARIO.admin?'Administrador':'Atendente'}${USUARIO.setor?' · '+esc(USUARIO.setor):''}</div></div>
@@ -11101,7 +11140,7 @@ function aplicarTema(escuro){
   const b=$('#btnTema');
   if(b){
     const txt=escuro?'Modo claro':'Modo escuro';
-    b.title=txt; b.setAttribute('aria-pressed', String(escuro));
+    b.setAttribute('aria-label', txt); b.setAttribute('aria-pressed', String(escuro));
     const sp=b.querySelector('span'); if(sp) sp.textContent=txt;
   }
   // a barra do navegador no celular acompanha a tela
@@ -11190,7 +11229,7 @@ function ajustarCabecalho(){
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(agendar);
 }
 $('#btnFiltros').onclick=()=>{ const fb=$('#filterbar'); fb.style.display=fb.style.display==='none'?'flex':'none'; };
-$('#sectorSel').onchange=e=>{ meuSetor=e.target.value; renderAll(); };
+$('#sectorSel').onchange=e=>{ meuSetor=e.target.value; pintarSetorMini(); renderAll(); };
 /* ================= AVISO RÁPIDO =================
    Cobrança manual, aviso de agendamento, recado pontual: manda UMA mensagem e
    pronto. Antes só existia "Novo atendimento", que abre a conversa em "Em
@@ -11517,21 +11556,79 @@ setInterval(()=>{
 }, 30000);
 
 /* ================= RENDER ALL ================= */
-/* ===== SIDEBAR RECOLHÍVEL ===== */
-// A preferência fica no próprio usuário (via userPrefs no bootstrap não existe),
-// então guardamos em memória de sessão: recolher é decisão de tela, não de dado.
-let sidebarSlim = false;
+/* ===== SIDEBAR RECOLHÍVEL =====
+   A escolha fica guardada neste navegador, como no MoviOne: quem recolhe o
+   menu quer encontrá-lo recolhido amanhã também. */
+const MENU_CHAVE = 'movitalk_menu_recolhido';
+let sidebarSlim = (()=>{ try{ return localStorage.getItem(MENU_CHAVE)==='1'; }catch(e){ return false; } })();
+let esconderDicaMenu = ()=>{};
 function aplicarSlim(){
   const shell=$('#shell'), btn=$('#sbToggle');
   if(!shell) return;
   shell.classList.toggle('slim', sidebarSlim);
-  if(btn){ btn.textContent = sidebarSlim ? '▶' : '◀'; btn.title = sidebarSlim ? 'Expandir menu' : 'Recolher menu'; }
+  if(btn){
+    const t = sidebarSlim ? 'Expandir menu' : 'Recolher menu';
+    btn.textContent = sidebarSlim ? '▶' : '◀'; btn.title = t;
+    btn.setAttribute('aria-label', t); btn.setAttribute('aria-expanded', String(!sidebarSlim));
+  }
+  esconderDicaMenu();
   // o Kanban tem altura calculada: precisa remedir depois da transição
-  setTimeout(()=>{ if(view==='kanban') renderBoard(); }, 200);
+  setTimeout(()=>{ if(view==='kanban' && USUARIO) renderBoard(); }, 200);
+}
+function alternarSlim(v){
+  sidebarSlim = v===undefined ? !sidebarSlim : !!v;
+  try{ localStorage.setItem(MENU_CHAVE, sidebarSlim?'1':'0'); }catch(e){}
+  aplicarSlim();
+}
+// a etiqueta do setor no menu recolhido: "Todos" ou as três letras, com a cor
+function pintarSetorMini(){
+  const b=$('#setorMini'); if(!b) return;
+  const sel=$('#sectorSel');
+  const nome = (sel && sel.selectedOptions[0] && sel.selectedOptions[0].textContent) || meuSetor;
+  b.innerHTML = meuSetor==='todos' ? 'Todos'
+    : `<span class="sec-dot" style="background:${corSetor(meuSetor)}"></span>${esc(String(meuSetor).slice(0,3))}`;
+  b.dataset.dica = 'Setor: '+nome+' · clique para trocar';
+  b.setAttribute('aria-label', 'Setor: '+nome+'. Abre o menu para trocar.');
 }
 (function(){
   const b=$('#sbToggle');
-  if(b) b.onclick=()=>{ sidebarSlim=!sidebarSlim; aplicarSlim(); };
+  if(b) b.onclick=()=>alternarSlim();
+  const sb=document.querySelector('.sidebar'); if(!sb) return;
+  // recolhido, o logo e a inicial do usuário abrem o menu; a etiqueta do
+  // setor abre e já põe o foco no seletor
+  sb.addEventListener('click', ev=>{
+    if(!sidebarSlim || window.innerWidth<=860) return;
+    if(ev.target.closest('#setorMini')){
+      alternarSlim(false);
+      setTimeout(()=>{ const s=$('#sectorSel'); if(s){ s.focus(); try{ s.showPicker(); }catch(e){} } }, 220);
+    } else if(ev.target.closest('.logo') || ev.target.closest('.usr-chip .cc-av')) alternarSlim(false);
+  });
+  /* O balão com o nome do item: um elemento só, no body, ao lado do ícone —
+     também aparece pelo teclado. O title nativo demorava e saía em cima. */
+  const dica=document.createElement('div'); dica.id='menuDica'; dica.setAttribute('role','tooltip');
+  document.body.appendChild(dica);
+  const texto=el=>{
+    if(el.classList.contains('logo')) return 'Expandir menu';
+    if(el.dataset.dica) return el.dataset.dica;
+    const sp=el.querySelector(':scope > span'); return (sp?sp.textContent:el.textContent).trim();
+  };
+  const mostrar=el=>{
+    if(!sidebarSlim || window.innerWidth<=860) return;
+    const t=texto(el); if(!t) return;
+    const r=el.getBoundingClientRect();
+    dica.textContent=t;
+    dica.style.top=(r.top+r.height/2)+'px';
+    dica.style.left=(sb.getBoundingClientRect().right+12)+'px';
+    dica.classList.add('on');
+  };
+  esconderDicaMenu=()=>dica.classList.remove('on');
+  const alvo='.nav-item,.logo,#setorMini,.usr-chip';
+  sb.addEventListener('mouseover', ev=>{ const el=ev.target.closest(alvo); if(el) mostrar(el); else esconderDicaMenu(); });
+  sb.addEventListener('mouseleave', ()=>esconderDicaMenu());
+  sb.addEventListener('focusin', ev=>{ const el=ev.target.closest('.nav-item,#setorMini'); if(el) mostrar(el); });
+  sb.addEventListener('focusout', ()=>esconderDicaMenu());
+  sb.addEventListener('click', ()=>esconderDicaMenu());
+  aplicarSlim();
 })();
 
 /* Conexão caída sem aviso é o pior cenário: o atendente escreve, envia, e só
@@ -11703,17 +11800,15 @@ async function assinaturaDoServidor(){
 }
 
 function mostrarAvisoVersao(){
-  if(VERSAO.avisado) return;
+  const el = $('#versaoAviso');
+  if(VERSAO.avisado || !el) return;
   VERSAO.avisado = true;
-  const el = document.createElement('div');
-  el.className = 'versao-nova';
-  el.innerHTML = '<span>✨ Tem uma versão nova do MoviTalk</span><button type="button">Atualizar</button>';
+  el.innerHTML = `<button class="vs-nova" type="button" title="O MoviTalk foi atualizado. Recarregue para usar a versão nova: o que estiver escrito volta para o campo.">✨ Versão nova — atualizar</button>`;
   el.querySelector('button').onclick = ()=>{
+    capturarRascunhoVivo();     // o que acabou de ser digitado também vai junto
     try{ sessionStorage.setItem('mt_rascunhos', JSON.stringify([...RASCUNHOS])); }catch{}
     location.reload();
   };
-  document.body.appendChild(el);
-  requestAnimationFrame(()=>el.classList.add('show'));
 }
 
 /* o que estava escrito antes do recarregar volta para o campo */
