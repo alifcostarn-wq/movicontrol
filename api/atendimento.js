@@ -2446,11 +2446,16 @@ function labelSemNumero(label) {
   return normalizarTxt(label).replace(/^\d+\s*[·.\-)]*\s*/, '').trim();
 }
 
-// Qual aresta o cliente escolheu no menu?
 /* Áudio mais longo que isto não é transcrito na chegada: o webhook espera a
    Groq, e um áudio de vários minutos atrasaria a resposta do bot. O
    atendente ainda pode pedir a transcrição pelo painel. */
 const AUDIO_TRANSCREVER_MAX_S = 180;
+/* Quanto o webhook espera a Groq. Enquanto isso ele segura a vez do número, e
+   a mensagem seguinte do mesmo cliente só espera BOT_TRAVA_ESPERA_MS (12s)
+   antes de seguir sem a trava: a transcrição tem de caber ali com folga.
+   Normalmente leva 1 a 2 segundos. Se estourar, o áudio entra sem o texto e o
+   botão "Transcrever áudio" fica no painel. */
+const AUDIO_TRANSCREVER_PRAZO_MS = 8000;
 
 /* Alerta de cliente esperando na fila (o painel de cada um avisa): primeiro
    quem atende o setor, depois quem supervisiona. */
@@ -2481,6 +2486,7 @@ function respostaFalada(transcricao) {
   return NUMEROS_FALADOS[p] !== undefined ? String(NUMEROS_FALADOS[p]) : transcricao;
 }
 
+// Qual aresta o cliente escolheu no menu?
 function casarOpcao(arestas, texto) {
   const t = normalizarTxt(texto);
   if (!t) return null;
@@ -3590,7 +3596,7 @@ async function tratarWebhookInterno(e, body) {
     const segundos = Number(msg.audioMessage?.seconds) || 0;
     if (segundos <= AUDIO_TRANSCREVER_MAX_S) {
       try {
-        const t = await groqTranscrever({ audio: arqMidia.base64, mimetype: arqMidia.mimetype, chave: e.GROQ, prazoMs: 15000 });
+        const t = await groqTranscrever({ audio: arqMidia.base64, mimetype: arqMidia.mimetype, chave: e.GROQ, prazoMs: AUDIO_TRANSCREVER_PRAZO_MS });
         transcricao = t.texto;          // '' = áudio sem fala reconhecível
       } catch (err) {
         console.error('[transcricao]', err.message);
