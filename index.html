@@ -6292,10 +6292,13 @@ body.dark-mode [style*="; color: rgb(123, 79, 199)"]):not(:where(.pdf-fixo *)){c
   </div>
 </div>
 
-<!-- ========== MODAL AJUSTE DE SALDO ========== -->
-<div class="modal-overlay" id="modal-ajuste" onclick="if(event.target===this)fecharModal('modal-ajuste')">
+<!-- ========== MODAL AJUSTE DE SALDO (BANCOS) ==========
+     Tinha o mesmo id da janela de ajuste do Estoque, e a função que a abria
+     o mesmo nome da do Estoque: as duas perdiam para a do Estoque, e "+ Entrada",
+     "− Saída" e "Ajustar saldo" dos Bancos abriam o ajuste de peça. -->
+<div class="modal-overlay" id="modal-ajuste-banco" onclick="if(event.target===this)fecharModal('modal-ajuste-banco')">
   <div class="modal md">
-    <div class="modal-header"><span class="modal-title" id="ajuste-titulo">Ajustar Saldo</span><button class="modal-close" onclick="fecharModal('modal-ajuste')">✕</button></div>
+    <div class="modal-header"><span class="modal-title" id="ajuste-titulo">Ajustar Saldo</span><button class="modal-close" onclick="fecharModal('modal-ajuste-banco')">✕</button></div>
     <div class="modal-body">
       <div style="background:var(--surface2);border-radius:10px;padding:14px 16px;margin-bottom:16px">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Saldo atual</div>
@@ -6316,7 +6319,7 @@ body.dark-mode [style*="; color: rgb(123, 79, 199)"]):not(:where(.pdf-fixo *)){c
         <div class="form-group full"><label class="form-label">Descrição<span>*</span></label><input type="text" id="aj-desc" style="width:100%" placeholder="Motivo do ajuste..."></div>
       </div>
     </div>
-    <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-ajuste')">Cancelar</button><button class="btn btn-primary" onclick="salvarMovimento()">Confirmar</button></div>
+    <div class="modal-footer"><button class="btn" onclick="fecharModal('modal-ajuste-banco')">Cancelar</button><button class="btn btn-primary" onclick="salvarMovimento()">Confirmar</button></div>
   </div>
 </div>
 
@@ -7173,7 +7176,7 @@ function navTo(page,btn){
   else if(page==='contas') tr.innerHTML=btnTema+btnOcultar+'<button class="btn btn-primary" onclick="abrirModalLancamento()">+ Lançamento</button>';
   else if(page==='clientes') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="abrirModalIXC()" title="Configurar integração IXC"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>IXC</button><button class="btn" onclick="syncIXC()" id="btn-sync-ixc" title="Sincronizar agora">⟳ Sync</button><button class="btn" onclick="exportarCadastroCSV(\'clientes\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'clientes\')">+ Novo Cliente</button>';
   else if(page==='fornecedores') tr.innerHTML=btnTema+btnOcultar+'<button class="btn" onclick="exportarCadastroCSV(\'fornecedores\')">↓ CSV</button><button class="btn btn-primary" onclick="abrirModalCadastro(\'fornecedores\')">+ Novo Fornecedor</button>';
-  else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjuste(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjuste(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
+  else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjusteBanco(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjusteBanco(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
   const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-movimentacoes':renderMovimentacoes,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false)};
@@ -16111,7 +16114,7 @@ function renderBancos(){
         </div>
         <div class="banco-actions">
           <button class="action-btn" title="Editar" onclick="event.stopPropagation();abrirModalBanco(${i})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="action-btn" title="Ajustar saldo" onclick="event.stopPropagation();abrirModalAjuste(${i},'entrada')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+          <button class="action-btn" title="Ajustar saldo" onclick="event.stopPropagation();abrirModalAjusteBanco(${i},'entrada')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
           <button class="action-btn del" title="Excluir" onclick="event.stopPropagation();excluirConta(${i})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg></button>
         </div>
       </div>
@@ -16572,7 +16575,7 @@ function setAjusteTipo(t){
   document.getElementById('ajuste-grupo-novo').style.display=t==='ajuste'?'':'none';
 }
 
-function abrirModalAjuste(idx=null,tipoInicial='entrada'){
+function abrirModalAjusteBanco(idx=null,tipoInicial='entrada'){
   const bancos=gdBancos();
   ajusteContaIdx=idx;
   // Se idx null, pegar conta selecionada ou a primeira
@@ -16587,7 +16590,7 @@ function abrirModalAjuste(idx=null,tipoInicial='entrada'){
   document.getElementById('aj-data').value=hoje();
   document.getElementById('aj-desc').value='';
   setAjusteTipo(tipoInicial);
-  abrirModal('modal-ajuste');
+  abrirModal('modal-ajuste-banco');
 }
 
 function salvarMovimento(){
@@ -16619,7 +16622,7 @@ function salvarMovimento(){
     ts:Date.now(),
   });
   sdMov(mov);
-  fecharModal('modal-ajuste');
+  fecharModal('modal-ajuste-banco');
   renderBancos();
   showToast('Movimentação registrada!');
 }
