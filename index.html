@@ -7146,6 +7146,8 @@ function navTo(page,btn){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
+  // moviTec e Roteadores têm o tema deles: a tela troca antes de montar a página
+  aplicarTemaDaTela();
   const activeBtn = btn || document.querySelector(`[data-page="${page}"]`);
   if(activeBtn){ activeBtn.classList.add('active'); navExpandGroupOf(activeBtn); }
   const m=PAGE_META[page]||{};
@@ -7153,13 +7155,14 @@ function navTo(page,btn){
   document.getElementById('page-sub').textContent=m.sub||'';
   // Botão topbar
   const tr=document.getElementById('topbar-right');
-  const isDark = document.body.classList.contains('dark-mode');
   const oculto = document.body.classList.contains('valores-ocultos');
-  const btnTema = `<button class="btn-tema" id="btn-tema" onclick="toggleTema()" title="Alternar tema claro/escuro">
-    <svg class="ico-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${isDark?'style="display:none"':''}>
+  // sol ou lua: quem decide é o CSS pelo body.dark-mode (com estilo fixo aqui,
+  // o ícone sumia depois do clique até trocar de tela)
+  const btnTema = `<button class="btn-tema" id="btn-tema" onclick="toggleTema()" title="Tema claro/escuro ${TEMA_SISTEMAS[sistemaDaPagina(page)].de}">
+    <svg class="ico-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
     </svg>
-    <svg class="ico-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${isDark?'':'style="display:none"'}>
+    <svg class="ico-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </svg>
   </button>`;
@@ -17130,6 +17133,7 @@ function hubAbrir(){
   hubSeloMoviApp();
 
   document.getElementById('hub-screen').classList.add('visible');
+  aplicarTemaDaTela();             // o menu inicial é do MoviOne
   try{ sessionStorage.setItem(HUB_VISTO_KEY,'1'); }catch(e){}
 }
 
@@ -17211,6 +17215,7 @@ function hubFechar(pagina){
   hubBalaoFechar();
   document.getElementById('hub-screen').classList.remove('visible');
   if(pagina) navTo(pagina);
+  else if(aplicarTemaDaTela()) redesenharTema();
 }
 
 // ---------- balões dos atalhos rápidos ----------
@@ -17912,10 +17917,50 @@ function temaGraficos(){
   Chart.defaults.borderColor = dark ? 'rgba(248,241,241,0.10)' : 'rgba(0,0,0,0.1)';
 }
 
+/* Cada sistema tem o seu tema. O moviTec (as telas de campo: chamados, OS,
+   técnicos, estoque) e os Roteadores abrem aqui dentro, no mesmo menu, mas
+   guardam a escolha à parte: ao entrar numa tela deles a tela inteira passa
+   para o tema daquele sistema, e o botão do topo troca só o sistema em que se
+   está. O menu inicial e a barra dos sistemas abertos aqui dentro ficam no
+   tema do MoviOne. Os sistemas com página própria têm o tema deles em outras
+   chaves (MoviTalk: movitalk_tema; MoviFiber: movifiber_tema; moviTec dos
+   técnicos: mtema) e não mexem nestes, nem abertos aqui dentro. Sem escolha
+   salva, cada um segue o sistema operacional. */
+const TEMA_SISTEMAS={
+  movione:   { no:'no MoviOne',     de:'do MoviOne',     chave:'movi_tema' },
+  movitec:   { no:'no moviTec',     de:'do moviTec',     chave:'movitec_tema' },
+  roteadores:{ no:'nos Roteadores', de:'dos Roteadores', chave:'roteadores_tema' },
+};
+function sistemaDaPagina(pagina){
+  if(/^cp-/.test(pagina||'')) return 'movitec';
+  if(pagina==='roteadores') return 'roteadores';
+  return 'movione';
+}
+// o sistema que está na frente agora
+function sistemaNaTela(){
+  if(document.getElementById('hub-screen')?.classList.contains('visible')
+    || document.getElementById('hub-sis')?.classList.contains('visible')) return 'movione';
+  return sistemaDaPagina(document.querySelector('.page.active')?.id?.replace('page-',''));
+}
+function temaSalvoDe(sis){ try{ return localStorage.getItem(TEMA_SISTEMAS[sis].chave); }catch(e){ return null; } }
+function escuroDe(sis){
+  const salvo=temaSalvoDe(sis);
+  return salvo ? salvo==='dark' : !!window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+}
+// põe na tela o tema do sistema que está na frente; diz se mudou
+function aplicarTemaDaTela(){
+  const dark=escuroDe(sistemaNaTela());
+  if(document.body.classList.contains('dark-mode')===dark) return false;
+  document.body.classList.toggle('dark-mode', dark);
+  temaGraficos();
+  return true;
+}
+
 function toggleTema(){
+  const sis=TEMA_SISTEMAS[sistemaNaTela()];
   const dark = document.body.classList.toggle('dark-mode');
-  localStorage.setItem('movi_tema', dark ? 'dark' : 'light');
-  showToast(dark ? '🌙 Modo escuro ativado.' : '☀️ Modo claro ativado.');
+  try{ localStorage.setItem(sis.chave, dark ? 'dark' : 'light'); }catch(e){}
+  showToast((dark ? '🌙 Modo escuro ativado ' : '☀️ Modo claro ativado ')+sis.no+'.');
   redesenharTema();
 }
 function redesenharTema(){
@@ -17928,22 +17973,21 @@ function redesenharTema(){
     try{ comGrafico[paginaAtiva]?.(); }catch(e){ console.warn('[tema] redesenho:', e.message); }
   }, 50);
 }
-// O MoviTalk grava a mesma chave (mesmo endereço). Trocar o tema lá — inclusive
-// com ele aberto aqui dentro, pelo menu inicial — troca o MoviOne junto.
+// outra aba trocou o tema de algum destes sistemas: se é o que está na frente
+// aqui, troca junto
 window.addEventListener('storage', e=>{
-  if(e.key!=='movi_tema' || !e.newValue) return;
-  const dark = e.newValue==='dark';
-  if(document.body.classList.contains('dark-mode')===dark) return;
-  document.body.classList.toggle('dark-mode', dark);
-  redesenharTema();
+  if(e.key!==null && !Object.values(TEMA_SISTEMAS).some(x=>x.chave===e.key)) return;
+  if(aplicarTemaDaTela()) redesenharTema();
 });
+// sem escolha salva, acompanha o sistema operacional também com a tela aberta
+if(window.matchMedia){
+  const mq=matchMedia('(prefers-color-scheme: dark)');
+  const mudou=()=>{ if(!temaSalvoDe(sistemaNaTela()) && aplicarTemaDaTela()) redesenharTema(); };
+  if(mq.addEventListener) mq.addEventListener('change', mudou); else if(mq.addListener) mq.addListener(mudou);
+}
 
 (function initTema(){
-  const salvo = localStorage.getItem('movi_tema');
-  const prefereDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-  if(salvo === 'dark' || (!salvo && prefereDark)){
-    document.body.classList.add('dark-mode');
-  }
+  aplicarTemaDaTela();
   temaGraficos();
 })();
 

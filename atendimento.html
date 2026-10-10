@@ -2908,8 +2908,9 @@ body.dark-mode .wa-qr-box{color-scheme:light;}
 <body>
 <script>
 /* o tema entra antes da primeira pintura: aplicado só no fim do script, o
-   escuro abria claro e piscava. A preferência é a mesma do MoviOne. */
-try{var _t=localStorage.getItem('movi_tema');if(_t==='dark'||(!_t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))document.body.classList.add('dark-mode');}catch(e){}
+   escuro abria claro e piscava. A escolha é só do MoviTalk (a mesma chave
+   de TEMA_CHAVE, lá embaixo): o escuro do MoviOne não vale aqui. */
+try{var _t=localStorage.getItem('movitalk_tema');if(_t==='dark'||(!_t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches))document.body.classList.add('dark-mode');}catch(e){}
 </script>
 
 <!-- ================= LOGIN ================= -->
@@ -11359,11 +11360,12 @@ function bindFlowNodeOnly(a,id){
 }
 
 /* ================= TEMA CLARO / ESCURO =================
-   A escolha é guardada na mesma chave do MoviOne (movi_tema, mesmo endereço):
-   quem liga o escuro num abre o outro escuro. Sem escolha salva, segue o
-   sistema. Aberto dentro do MoviOne (ou em outra aba), troca junto na hora:
-   o evento storage chega aos outros documentos do mesmo endereço. */
-const TEMA_CHAVE='movi_tema';
+   Cada sistema tem o seu tema. O MoviTalk guarda a escolha em movitalk_tema;
+   o MoviOne, no mesmo endereço, guarda a dele em movi_tema, e um não mexe no
+   outro, nem com o MoviTalk aberto dentro do MoviOne pelo menu inicial. Sem
+   escolha salva, segue o sistema operacional. Outra aba do MoviTalk troca
+   junto na hora (o evento storage chega aos outros documentos do endereço). */
+const TEMA_CHAVE='movitalk_tema';
 function temaSalvo(){ try{ return localStorage.getItem(TEMA_CHAVE); }catch(e){ return null; } }
 function sistemaEscuro(){ return !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
 function aplicarTema(escuro){
