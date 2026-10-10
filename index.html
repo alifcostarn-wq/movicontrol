@@ -15882,7 +15882,16 @@ async function resyncClienteIXC(){
 // MODAIS
 // ============================================================
 function abrirModal(id){document.getElementById(id).classList.add('open');}
-function fecharModal(id){document.getElementById(id).classList.remove('open');}
+function fecharModal(id){
+  const el=document.getElementById(id); if(!el) return;
+  el.classList.remove('open');
+  /* Janela montada na hora (Liberar MoviApp, Configuração IXC, Assinatura):
+     ela abre com style="display:flex", não pela classe, então tirar a
+     classe não a escondia — o ✕, o Cancelar e o Fechar não faziam nada.
+     Ela sai da página; na próxima vez é montada de novo. As janelas fixas
+     da página não têm display no style e seguem só com a classe. */
+  if(el.style.display) el.remove();
+}
 
 // ============================================================
 // TOAST
@@ -20155,6 +20164,8 @@ async function abrirModalIXC(){
   document.body.insertAdjacentHTML('beforeend', loadingHtml);
 
   const cfg = await getIXCConfig();
+  // fechada enquanto carregava: não reaparece sozinha
+  if(!document.getElementById('modal-ixc')) return;
   const lastSync = localStorage.getItem(IXC_LAST_SYNC_KEY);
   const lastSyncTxt = lastSync ? new Date(parseInt(lastSync)).toLocaleString('pt-BR') : 'Nunca';
   const html = `
@@ -25586,6 +25597,7 @@ async function asnAbrirCliente(idx){
       </div>
     </div>
   </div>`;
+  document.getElementById('modal-asn')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
   await asnCarregarLista();
 }
