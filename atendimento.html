@@ -406,6 +406,15 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 /* o horário anda junto do visto: a 9.5px ele virava um borrão ao lado do
    risquinho novo, de 18px */
 .mb .tm{display:block;font-size:11px;color:var(--text-low);text-align:right;margin-top:4px;}
+.m-antigas{align-self:center;flex-shrink:0;min-height:32px;font:inherit;font-size:12px;font-weight:700;color:var(--green-deep);
+  background:var(--card);border:1px solid var(--line-2);border-radius:20px;padding:7px 16px;cursor:pointer;}
+.m-antigas:hover:not(:disabled){border-color:var(--green-fill);}
+.m-antigas:disabled{color:var(--text-low);cursor:default;}
+.m-novas{position:sticky;bottom:2px;align-self:center;flex-shrink:0;z-index:2;font:inherit;font-size:12px;font-weight:800;
+  color:#fff;background:var(--green-fill);border:0;border-radius:20px;padding:7px 15px;cursor:pointer;
+  box-shadow:0 3px 12px rgba(15,23,42,.25);}
+.m-novas:hover{background:var(--green-fill-deep);}
+.busca-thread .bt-cont.parcial{white-space:nowrap;}
 .m-sys{align-self:center;font-size:10.5px;font-weight:600;color:var(--text-mid);background:var(--chip);padding:4px 12px;border-radius:12px;}
 /* o recado deixado por quem transferiu: fica no meio da conversa, com cara de
    bilhete preso na porta — é para ser lido, não para se misturar aos avisos */
@@ -2293,6 +2302,15 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   min-width:19px;height:19px;border-radius:10px;display:inline-flex;
   align-items:center;justify-content:center;padding:0 5px;
 }
+.cv-situacao{font-size:11.5px;color:var(--text-mid);margin:-6px 0 12px;display:flex;align-items:center;gap:7px;line-height:1.45;}
+.cv-situacao.erro{color:var(--red);}
+.cv-girando{width:11px;height:11px;flex-shrink:0;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--green-fill);animation:cvGira .8s linear infinite;}
+@keyframes cvGira{to{transform:rotate(360deg);}}
+.cv-mais{display:block;margin:14px auto 4px;font:inherit;font-size:12.5px;font-weight:700;color:var(--green-deep);
+  background:var(--card);border:1px solid var(--line-2);border-radius:20px;padding:9px 18px;cursor:pointer;}
+.cv-mais:hover:not(:disabled){border-color:var(--green-fill);}
+.cv-mais:disabled{color:var(--text-low);cursor:default;}
+.cc-tag.achou-msg{background:var(--blue-soft);color:var(--blue-txt);white-space:nowrap;}
 .cv-vazio{font-size:12.5px;color:var(--text-low);padding:22px 4px;text-align:center;line-height:1.6;}
 @media (max-width:900px){
   .cv-linha{grid-template-columns:34px minmax(0,1fr) auto;gap:10px;padding:10px 11px;}
@@ -3321,31 +3339,60 @@ const api = {
       recado: String(recado||'').trim() || null,
     });
   },
+  /* Traz as mensagens MAIS RECENTES (a API devolvia as mais antigas e, numa
+     conversa longa, as novas sumiam). Se a pessoa já abriu páginas anteriores,
+     elas continuam na tela: só a parte nova é trocada. */
   async carregarMensagens(c){
     const id = c.id;
     const j = await chamar('mensagens.listar', { conversa_id:id });
-    const msgs = (j.mensagens||[]).map(m=>({
-      id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
-      dia: String(m.created_at).slice(0,10),
-      tipo: m.tipo || 'texto', link: m.midia_link || null,
-      local: m.localizacao || null,
-      respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
-      status: m.status || null,
-      // quem falou, quando não foi o painel: hoje o técnico, pelo MoviTec
-      origem: m.origem || null, autorNome: m.autor_nome || null,
-      excluidoEm: m.excluido_em || null, excluidoPor: m.excluido_por_nome || null,
-      // o horário completo: o botão de editar só existe dentro dos 15 minutos
-      criadoEm: m.created_at || null,
-      editadoEm: m.editado_em || null, editadoPor: m.editado_por_nome || null,
-      textoOriginal: m.conteudo_original || null,
-    }));
+    const novas = (j.mensagens||[]).map(mapearMensagem);
     // Durante o await, o realtime pode ter recriado a lista de conversas e
     // trocado este objeto. Escrever só no `c` original faria a thread nova
     // cair num objeto órfão — e o modal seguiria mostrando a versão antiga.
     const atual = state.conversas.find(x=>x.id===id);
-    if(atual && atual!==c){ atual.msgs = msgs; atual._msgsCarregadas = true; }
-    c.msgs = msgs; c._msgsCarregadas = true;
+    const base = atual || c;
+    let msgs = novas, maisAntigas = !!j.mais_antigas, paginas = false;
+    if(base._paginasAntigas && novas.length){
+      // a página nova é "tudo do novas[0] para cá": o que estava na tela e
+      // não veio nela é mais antigo. Comparar pelo id evita o horário, que
+      // no navegador perde os microssegundos do banco
+      const idsNovas = new Set(novas.map(m=>m.id));
+      const doBanco = (base.msgs||[]).filter(m=>m.id);
+      const velhas = doBanco.filter(m=>!idsNovas.has(m.id));
+      // a página nova precisa encostar no que já estava na tela. Se não
+      // encosta (chegou coisa demais entre uma leitura e outra), sobraria um
+      // buraco no meio: aí recomeça do fim, como na primeira abertura
+      if(velhas.length && velhas.length < doBanco.length){
+        msgs = velhas.concat(novas); maisAntigas = !!base._maisAntigas; paginas = true;
+      }
+    }
+    for(const o of new Set([c, atual].filter(Boolean))){
+      o.msgs = msgs; o._msgsCarregadas = true; o._maisAntigas = maisAntigas; o._paginasAntigas = paginas;
+    }
     return msgs;
+  },
+  // a página anterior à mensagem mais antiga que está na tela
+  async carregarAnteriores(c){
+    const antes = state.conversas.find(x=>x.id===c.id) || c;
+    const ja = (antes.msgs||[]).slice();
+    const prim = ja.find(m=>m.id && m.criadoEm);   // a mais antiga da tela
+    if(!prim){ antes._maisAntigas = false; return 0; }
+    const j = await chamar('mensagens.listar', { conversa_id:c.id, antes:{ em:prim.criadoEm, id:prim.id } });
+    const velhas = (j.mensagens||[]).map(mapearMensagem);
+    // durante o await o realtime pode ter recarregado a thread: costura as
+    // três partes (a página antiga, o que estava na tela, o que está agora)
+    // pelo id, sem reordenar por horário e sem repetir mensagem
+    const agora = state.conversas.find(x=>x.id===c.id) || antes;
+    const atuais = agora.msgs || [];
+    const idsAtuais = new Set(atuais.map(m=>m.id).filter(Boolean));
+    // o que estava na tela e a recarga tirou (ela traz só as 300 do fim)
+    const meio = ja.filter(m=>m.id && !idsAtuais.has(m.id));
+    const depois = new Set([...meio.map(m=>m.id), ...idsAtuais]);
+    const msgs = velhas.filter(m=>!depois.has(m.id)).concat(meio, atuais);
+    for(const o of new Set([c, antes, agora])){
+      o.msgs = msgs; o._maisAntigas = !!j.mais_antigas; o._paginasAntigas = true;
+    }
+    return velhas.length;
   },
   // Repergunta ao WhatsApp em que pé está cada mensagem enviada. O webhook de
   // ACK pode não ter chegado (evento desligado na instância, function dormindo),
@@ -3532,12 +3579,14 @@ function mapearConversa(c){
 async function recarregarConversas(){
   const j = await chamar('conversas.listar', {});
   const anteriores = new Map(state.conversas.map(c => [c.id, c]));
-  state.conversas = (j.conversas||[]).map(c => {
+  const recebidas = (j.conversas||[]).map(c => {
     const nova = mapearConversa(c);
     const antiga = anteriores.get(nova.id);
     if (antiga) {
       nova.msgs = antiga.msgs;
       nova._msgsCarregadas = antiga._msgsCarregadas;
+      nova._maisAntigas = antiga._maisAntigas;
+      nova._paginasAntigas = antiga._paginasAntigas;
       nova.painel = antiga.painel;
       nova._painelCarregado = antiga._painelCarregado;
       nova.painelErro = antiga.painelErro;
@@ -3557,7 +3606,108 @@ async function recarregarConversas(){
     }
     return nova;
   });
+  /* A lista padrão não traz o que veio por página antiga ou pela busca: isso
+     continua na tela. Só fica de fora quem deveria estar na lista e não veio
+     (mais nova que o fim dela): saiu do alcance — outro setor, apagada. */
+  const ids = new Set(recebidas.map(c => c.id));
+  const extras = state.conversas.filter(c => !ids.has(c.id) && c.col==='resolvidos'
+    && (c._extra || HIST.paginas) && depoisDoCursor(c, j.cursor));
+  extras.forEach(c => { c._extra = true; });
+  state.conversas = recebidas.concat(extras).sort(ordemConversas);
+  // com páginas antigas abertas, o cursor que vale é o da última página
+  if(!HIST.paginas || !j.mais_antigas){
+    HIST.maisAntigas = !!j.mais_antigas; HIST.cursor = j.cursor || null;
+    if(!j.mais_antigas) HIST.paginas = false;
+  }
   renderAll();
+}
+
+/* ═══════════ HISTÓRICO DE CONVERSAS: páginas e busca no servidor ═══════════
+   O painel recebe todas as conversas abertas e as 300 resolvidas mais
+   recentes — a MESMA lista ao abrir e a cada atualização em tempo real
+   (antes eram 300 ao abrir e 200 depois, e um terço sumia da tela). As
+   resolvidas mais antigas vêm sob demanda: pelo botão no fim da lista, ou
+   pela busca, que também pergunta ao servidor (nome, telefone e o texto de
+   qualquer mensagem). O que chega assim é marcado _extra e sobrevive às
+   recargas da lista. */
+const HIST = { maisAntigas:false, cursor:null, paginas:false, carregando:false, achados:new Map() };
+
+// a ordem do servidor: mais recente primeiro, sem data no fim, desempate pelo id
+function ordemConversas(a, b){
+  const x = a.ultimaEm ? Date.parse(a.ultimaEm) : -Infinity;
+  const y = b.ultimaEm ? Date.parse(b.ultimaEm) : -Infinity;
+  return (y - x) || (b.id - a.id);
+}
+// `c` vem depois do cursor nessa ordem (é mais antiga que o fim da lista)?
+function depoisDoCursor(c, cur){
+  if(!cur) return false;
+  const x = c.ultimaEm ? Date.parse(c.ultimaEm) : -Infinity;
+  const y = cur.em ? Date.parse(cur.em) : -Infinity;
+  return x < y || (x === y && c.id < cur.id);
+}
+function juntarConversas(lista){
+  const ja = new Set(state.conversas.map(c => c.id));
+  let novas = 0;
+  for(const r of lista||[]){
+    if(ja.has(r.id)) continue;       // a da tela é a viva: o tempo real cuida dela
+    const c = mapearConversa(r); c._extra = true;
+    state.conversas.push(c); ja.add(c.id); novas++;
+  }
+  if(novas) state.conversas.sort(ordemConversas);
+  return novas;
+}
+async function carregarConversasAntigas(){
+  if(HIST.carregando || !HIST.maisAntigas || !HIST.cursor) return;
+  HIST.carregando = true;
+  // já conta como histórico aberto: uma recarga no meio do caminho não pode
+  // soltar a conversa que estiver saindo das 300 — ela não viria em página nenhuma
+  HIST.paginas = true;
+  renderAll();
+  try{
+    const j = await chamar('conversas.listar', { antes: HIST.cursor });
+    juntarConversas(j.conversas);
+    HIST.maisAntigas = !!j.mais_antigas; HIST.cursor = j.cursor || null;
+  }catch(err){ toast('Falha ao carregar conversas antigas: '+err.message); }
+  finally{ HIST.carregando = false; }
+  renderAll();
+}
+
+// o termo que vale levar ao servidor — as mesmas regras de lá
+function termoBuscavel(t){
+  t = String(t||'').trim().toLowerCase();
+  const limpo = t.replace(/[,()"'*%\\:;]/g,' ').replace(/\s+/g,' ').trim();
+  return (limpo.length >= 2 || t.replace(/\D/g,'').length >= 4) ? t : '';
+}
+function achadoNoServidor(termo){
+  const t = termoBuscavel(termo);
+  return t ? HIST.achados.get(t) || null : null;
+}
+function achadaNoServidor(c, termo){
+  const a = achadoNoServidor(termo);
+  return !!(a && a.ids.has(c.id));
+}
+// espera a digitação parar; o mesmo termo só volta ao servidor depois de 2 min
+// (mensagem nova pode ter passado a conter o termo)
+let _buscaServTimer = null;
+function pedirBuscaServidor(termo){
+  clearTimeout(_buscaServTimer);
+  const t = termoBuscavel(termo);
+  const ja = t && HIST.achados.get(t);
+  if(!t || (ja && ja.estado !== 'erro' && (ja.estado === 'buscando' || Date.now() - ja.em < 120000))) return;
+  _buscaServTimer = setTimeout(async ()=>{
+    // o que já tinha sido achado continua na tela enquanto a busca refaz
+    const a = { estado:'buscando', ids: ja && ja.ids || new Set(), erro:null, em: Date.now() };
+    HIST.achados.delete(t); HIST.achados.set(t, a);
+    if(HIST.achados.size > 12) HIST.achados.delete(HIST.achados.keys().next().value);
+    renderAll();
+    try{
+      const j = await chamar('conversas.buscar', { termo:t });
+      juntarConversas(j.conversas);
+      a.ids = new Set((j.conversas||[]).map(c => c.id));
+      a.estado = 'ok'; a.em = Date.now();
+    }catch(err){ a.estado = 'erro'; a.erro = err.message; }
+    renderAll();
+  }, 350);
 }
 
 async function recarregarChat(){
@@ -3583,6 +3733,7 @@ async function carregarTudo(){
   state.rules    = (j.regras||[]).map(r=>({ id:r.id, kw:r.palavra, acao:r.acao }));
   state.fluxo    = j.fluxo ? { id:j.fluxo.id, nodes:j.fluxo.nodes||[], edges:j.fluxo.edges||[] } : { nodes:[], edges:[] };
   state.conversas = (j.conversas||[]).map(mapearConversa);
+  HIST.maisAntigas = !!j.conversas_mais_antigas; HIST.cursor = j.conversas_cursor || null; HIST.paginas = false;
   /* o `quando` formatado ("13/09 20:31") serve para mostrar; ordenar por ele
      era erro silencioso — em texto, "01/10" vem antes de "13/09", então em
      toda virada de mês a lista saía fora de ordem. O cru vai junto. */
@@ -4260,9 +4411,12 @@ function renderFilterbar(){
 }
 
 /* ================= BOARD ================= */
+function casaBuscaTopo(c){
+  return c.nome.toLowerCase().includes(busca)||c.fone.includes(busca)||c.preview.toLowerCase().includes(busca);
+}
 function passa(c){
   if(meuSetor!=='todos' && c.setor!==meuSetor) return false;
-  if(busca && !(c.nome.toLowerCase().includes(busca)||c.fone.includes(busca)||c.preview.toLowerCase().includes(busca))) return false;
+  if(busca && !(casaBuscaTopo(c) || achadaNoServidor(c, busca))) return false;
   if(filtroTag && !c.tags.includes(filtroTag)) return false;
   if(filtroRisco && !emRisco(c)) return false;
   return true;
@@ -4301,7 +4455,7 @@ function renderEtapas(){
     // dia inteiro não ajuda ninguém a atender. A contagem fica no title.
     const soIcone = id==='resolvidos';
     return `<div class="etapa ${ativa?'on':''} ${id==='fila'?'destaque':''} ${alertaFila?'alerta':''} ${soIcone?'so-icone':''} ${PISCA_ETAPA.has(id)&&!ativa?'novo-alerta':''}" data-e="${id}"
-       ${ativa?`style="background:${cor}"`:''} title="${esc(k.nome)}${soIcone?` — ${cont[id]||0} no total`:''}">
+       ${ativa?`style="background:${cor}"`:''} title="${esc(k.nome)}${soIcone?` — ${cont[id]||0} ${HIST.maisAntigas?'carregadas (há mais antigas)':'no total'}`:''}">
       ${soIcone
         ? `<span class="et-ico">✓</span>${ativa?'<span class="et-nome">Resolvidos</span>':''}`
         : `<span class="et-n ${cont[id]?'':'zero'}">${cont[id]||0}</span>
@@ -4340,9 +4494,13 @@ function renderListaConv(){
   $('#reguaTxt').textContent = legenda;
   $('#reguaQtd').textContent = cards.length + (cards.length===1?' conversa':' conversas');
 
-  el.innerHTML = cards.length
+  el.innerHTML = (cards.length
     ? cards.map(c=>cardHTML(c, etapaAtual)).join('')
-    : '<div class="lista-vazia">Nenhuma conversa nesta etapa.</div>';
+    : '<div class="lista-vazia">Nenhuma conversa nesta etapa.</div>')
+    // as resolvidas mais antigas não vêm na lista inicial: o fim dela é a porta
+    + (etapaAtual==='resolvidos' && HIST.maisAntigas && !busca ? botaoMaisAntigas('Carregar resolvidas mais antigas') : '');
+  const bMais = el.querySelector('[data-mais-antigas]');
+  if(bMais) bMais.onclick = carregarConversasAntigas;
 
   // assumir direto pelo card — mesmo comportamento de antes
   el.querySelectorAll('[data-assumir]').forEach(btn=>{
@@ -4387,6 +4545,7 @@ function cardHTML(c,col){
   if(c.cliente.bloqueado) flags.push('<span class="cc-tag risk">BLOQUEADO</span>');
   else if(c.cliente.atraso>0) flags.push(`<span class="cc-tag risk">ATRASADO ${c.cliente.atraso}D</span>`);
   if(c.cliente.recorrente) flags.push(`<span class="cc-tag warn">${esc(c.cliente.recorrente.toUpperCase())}</span>`);
+  if(busca && !casaBuscaTopo(c) && achadaNoServidor(c, busca)) flags.push('<span class="cc-tag achou-msg" title="O termo aparece nas mensagens desta conversa">🔎 nas mensagens</span>');
   const tags=c.tags.map(t=>`<span class="cc-tag">${esc(t)}</span>`).join('');
   const espera=col==='fila'?esperaTexto(c):null;
   return `<div class="card-c ${PISCA.has(c.id)?'novo-alerta':''}" data-id="${c.id}">
@@ -5353,6 +5512,63 @@ function checkHTML(m){
   return `<span class="ck ${st}" title="${rotulo}"><svg viewBox="0 0 18 12">
     <path d="M1 6.5l3.2 3.2L10.5 2.5"/>${duplo?'<path d="M7.5 9.7L13.8 2.5"/>':''}
   </svg></span>`;
+}
+
+/* ===== MENSAGENS: do formato da API para o da tela ===== */
+function mapearMensagem(m){
+  return {
+    id: m.id, t: m.direcao, x: m.conteudo, h: new Date(m.created_at).toTimeString().slice(0,5),
+    dia: String(m.created_at).slice(0,10),
+    tipo: m.tipo || 'texto', link: m.midia_link || null,
+    local: m.localizacao || null,
+    respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
+    status: m.status || null,
+    // quem falou, quando não foi o painel: hoje o técnico, pelo MoviTec
+    origem: m.origem || null, autorNome: m.autor_nome || null,
+    excluidoEm: m.excluido_em || null, excluidoPor: m.excluido_por_nome || null,
+    // o horário completo: o botão de editar só existe dentro dos 15 minutos
+    criadoEm: m.created_at || null,
+    editadoEm: m.editado_em || null, editadoPor: m.editado_por_nome || null,
+    textoOriginal: m.conteudo_original || null,
+  };
+}
+
+/* ===== ROLAGEM DA THREAD =====
+   O modal é remontado a cada evento (mensagem nova, risquinho, foto). Antes a
+   thread sempre voltava para o fim — e quem subia para ler o histórico era
+   arrancado de lá a cada visto do cliente. Agora: quem está no fim continua no
+   fim; quem subiu fica na mesma mensagem, mesmo que entre coisa acima dela
+   (é o caso do "carregar anteriores"). */
+let buscandoAntigas = null;   // id da conversa com página antiga a caminho
+let novasAbaixo = null;       // id da conversa com mensagem nova fora da vista
+function chaveUltimaRecebida(c){
+  const msgs = c.msgs || [];
+  for(let i=msgs.length-1; i>=0; i--){
+    const m = msgs[i];
+    if(m.t==='in' && m.id && m.tipo!=='reacao') return String(m.id);
+  }
+  return '';
+}
+function lerRolagem(th){
+  if(!th) return null;
+  const topo = th.getBoundingClientRect().top;
+  let ancora = null, desloc = 0;
+  for(const el of th.querySelectorAll('[data-msgid]')){
+    const r = el.getBoundingClientRect();
+    if(r.bottom > topo){ ancora = el.dataset.msgid; desloc = r.top - topo; break; }
+  }
+  return { doFim: th.scrollHeight - th.scrollTop - th.clientHeight, topo: th.scrollTop,
+           ancora, desloc, ultima: th.dataset.ultima || '' };
+}
+function voltarRolagem(th, r){
+  const el = r.ancora && th.querySelector(`[data-msgid="${r.ancora}"]`);
+  if(el) th.scrollTop += el.getBoundingClientRect().top - th.getBoundingClientRect().top - r.desloc;
+  else th.scrollTop = r.topo;
+}
+// quem envia quer ver o que enviou: desce antes do remonte
+function rolarThreadAoFim(){
+  const th = $('#mThread'); if(th) th.scrollTop = th.scrollHeight;
+  novasAbaixo = null;
 }
 
 /* ===== RESPONDER MENSAGEM (citação) ===== */
@@ -6342,7 +6558,7 @@ async function gravEnviar(seg, tipo){
     await api.carregarMensagens(c);
     if(c.col==='novos'||c.col==='fila') c.col='atendimento';
     c.atendente=USUARIO.nome; c.botAtivo=false;
-    openModal(c.id); renderAll();
+    rolarThreadAoFim(); openModal(c.id); renderAll();
     toast('Áudio enviado');
   }catch(e){
     // a gravação NÃO é descartada: o erro costuma ser temporário e refazer o
@@ -8187,6 +8403,9 @@ function openModal(id){
   // e o campo de texto vivo — só quando a conversa é a mesma: trocar de
   // conversa é o único caso em que o conteúdo do campo deve mesmo mudar
   const _campoVivo = trocouConversa ? null : preservarComposer();
+  // e onde o leitor estava na thread — só vale na mesma conversa
+  const _rolagem = trocouConversa ? null : lerRolagem($('#mThread'));
+  if(trocouConversa) novasAbaixo = null;
 
   $('#modal').innerHTML=`
   <div class="m-abas only-mobile">
@@ -8230,7 +8449,8 @@ function openModal(id){
         <button class="bt-btn" id="btFechar" title="Fechar busca">✕</button>
       </div>
     </div>
-    <div class="m-thread" id="mThread">
+    <div class="m-thread" id="mThread" data-ultima="${chaveUltimaRecebida(c)}">
+      ${c._maisAntigas ? `<button class="m-antigas" id="mAntigas" type="button" ${buscandoAntigas===c.id?'disabled':''}>${buscandoAntigas===c.id?'Carregando mensagens anteriores…':'↑ Carregar mensagens anteriores'}</button>` : ''}
       ${(()=>{ let ultimoDia=null; return c.msgs.map(m=>{
         // separador só quando o dia muda — numa conversa de vários dias,
         // "09:00" sozinho não diz de quando é
@@ -8430,7 +8650,43 @@ function openModal(id){
   // devolve o MESMO campo de texto para a árvore nova, com o que o atendente
   // estava escrevendo dentro dele
   const _campoVoltou = restaurarComposer(_campoVivo);
-  $('#mThread').scrollTop=99999;
+  const th=$('#mThread');
+  if(!_rolagem || _rolagem.doFim < 80){ th.scrollTop=99999; novasAbaixo=null; }
+  else{
+    voltarRolagem(th, _rolagem);
+    // o cliente escreveu enquanto o atendente lia mais acima: a tela não é
+    // puxada, mas fica o aviso — a conversa aberta não bipa, este é o sinal
+    if(th.dataset.ultima && th.dataset.ultima!==_rolagem.ultima) novasAbaixo=c.id;
+  }
+  if(novasAbaixo===c.id){
+    th.insertAdjacentHTML('beforeend', `<button class="m-novas" id="mNovas" type="button">↓ Nova mensagem</button>`);
+    $('#mNovas').onclick=()=>{ novasAbaixo=null; $('#mNovas').remove(); th.scrollTo({ top:th.scrollHeight, behavior:'smooth' }); };
+  }
+  // foto que termina de carregar depois cresce a thread: quem estava no fim
+  // continua no fim (antes, eram os remontes seguintes que corrigiam isso)
+  const noFim=()=>th.scrollHeight-th.scrollTop-th.clientHeight<80;
+  let presoAoFim=noFim(), ultimoTopo=th.scrollTop;
+  const segura=()=>{ if(presoAoFim) th.scrollTop=th.scrollHeight; };
+  th.addEventListener('load', segura, true);
+  th.addEventListener('loadedmetadata', segura, true);
+  th.onscroll=()=>{
+    // só solta do fim quando o atendente SOBE: a foto crescendo embaixo também
+    // afasta o fim, e isso não é ele querendo ler o histórico
+    if(noFim()) presoAoFim=true;
+    else if(th.scrollTop < ultimoTopo-1) presoAoFim=false;
+    ultimoTopo=th.scrollTop;
+    if(novasAbaixo!==c.id || !noFim()) return;
+    novasAbaixo=null; const b=$('#mNovas'); if(b) b.remove();
+  };
+  const bAnt=$('#mAntigas');
+  if(bAnt) bAnt.onclick=async ()=>{
+    if(buscandoAntigas) return;
+    buscandoAntigas=c.id; bAnt.disabled=true; bAnt.textContent='Carregando mensagens anteriores…';
+    try{ await api.carregarAnteriores(c); }
+    catch(err){ toast('Falha ao carregar mensagens anteriores: '+err.message); }
+    finally{ buscandoAntigas=null; }
+    if(modalId===c.id) openModal(c.id);
+  };
   pintarBarraResposta(c);
 
   // O modal é remontado inteiro sempre que chega mensagem nova (realtime).
@@ -8665,10 +8921,24 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     }
   });
   // clicar na citação leva até a mensagem original
-  document.querySelectorAll('[data-irpara]').forEach(el=>el.onclick=ev=>{
+  document.querySelectorAll('[data-irpara]').forEach(el=>el.onclick=async ev=>{
     ev.stopPropagation();
-    const alvo=document.querySelector(`[data-msgid="${el.dataset.irpara}"]`);
-    if(!alvo){ toast('Mensagem original fora da janela carregada'); return; }
+    const alvoId=el.dataset.irpara, convId=c.id;
+    const achar=()=>document.querySelector(`#mThread [data-msgid="${alvoId}"]`);
+    let alvo=achar();
+    // a citada pode estar numa página que ainda não veio: busca para trás
+    // algumas páginas antes de desistir
+    for(let i=0; !alvo && i<5; i++){
+      const atual=state.conversas.find(x=>x.id===convId);
+      if(!atual || !atual._maisAntigas || buscandoAntigas || modalId!==convId) break;
+      buscandoAntigas=convId;
+      try{ await api.carregarAnteriores(atual); }
+      catch(err){ toast('Falha ao carregar mensagens anteriores: '+err.message); return; }
+      finally{ buscandoAntigas=null; }
+      if(modalId!==convId) return;
+      openModal(convId); alvo=achar();
+    }
+    if(!alvo){ toast('Não encontrei a mensagem original nesta conversa'); return; }
     alvo.scrollIntoView({behavior:'smooth',block:'center'});
     alvo.classList.add('destacada');
     setTimeout(()=>alvo.classList.remove('destacada'),1200);
@@ -8730,7 +9000,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
         await api.carregarMensagens(c);
         if(c.col==='novos'||c.col==='fila') c.col='atendimento';
         c.atendente=USUARIO.nome; c.botAtivo=false;
-        openModal(c.id); renderAll();
+        rolarThreadAoFim(); openModal(c.id); renderAll();
       }catch(err){
         // devolve o arquivo para o atendente tentar de novo, sem reescolher
         c._anexo=anexo; c._anexoOrig=origAnexo; c._anexoEdicao=edAnexo;
@@ -8754,7 +9024,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     limparRascunho(c.id);
     guardarRascunho(c.id,{ digitando:true });   // cursor segue no campo
     respondendoA=null;
-    openModal(c.id); renderAll();
+    rolarThreadAoFim(); openModal(c.id); renderAll();
     api.enviarMensagem(c,v,citada?citada.id:null).catch(err=>toast('Falha ao enviar: '+err.message));
   };
   $('#mSend').onclick=send;
@@ -9077,6 +9347,12 @@ function btBuscar(termo){
 function btContador(){
   const c=$('#btCont'); if(!c) return;
   c.textContent = btAchados.length ? (btAtual+1)+' de '+btAchados.length : 'nada encontrado';
+  // com página antiga ainda no servidor, a busca não viu a conversa inteira
+  const conv = state.conversas.find(x=>x.id===modalId);
+  const parcial = !!(conv && conv._maisAntigas);
+  c.classList.toggle('parcial', parcial);
+  c.title = parcial ? 'A busca olha só as mensagens já carregadas. Use "Carregar mensagens anteriores", no topo da conversa, para ir mais para trás.' : '';
+  if(parcial) c.textContent += ' · só as carregadas';
   const a=$('#btAnt'), p=$('#btProx');
   if(a) a.disabled = btAchados.length<2;
   if(p) p.disabled = btAchados.length<2;
@@ -9338,20 +9614,30 @@ function cvDia(iso){
     d.getFullYear()===hoje.getFullYear()?undefined:'numeric'});
 }
 
+function botaoMaisAntigas(rotulo){
+  return `<button class="cv-mais" type="button" data-mais-antigas ${HIST.carregando?'disabled':''}>${HIST.carregando?'Carregando…':'↓ '+esc(rotulo)}</button>`;
+}
+
 function renderConversasTela(a){
+  // o campo é recriado a cada repinte — inclusive pelo tempo real, no meio da
+  // digitação: quem estava escrevendo continua com o cursor no mesmo lugar
+  const bAntes = a.querySelector('#cvBusca');
+  const sel = bAntes && document.activeElement===bAntes ? [bAntes.selectionStart, bAntes.selectionEnd] : null;
   const todas = state.conversas.filter(passa);
   const termo = CV.busca.trim().toLowerCase();
   // só procura por telefone quando o que foi digitado TEM dígito: senão
   // "damiana" vira '' e o includes('') casa com todo mundo — a busca por nome
   // devolvia a lista inteira
   const digitos = termo.replace(/\D/g,'');
+  const casaLocal = c => (c.nome||'').toLowerCase().includes(termo)
+      || (!!digitos && (c.fone||'').includes(digitos))
+      || (c.preview||'').toLowerCase().includes(termo);
+  // o servidor procura no histórico inteiro, inclusive no texto das mensagens
+  const achado = termo ? achadoNoServidor(termo) : null;
   const lista = todas
     .filter(c => CV.filtro==='todas' || c.col===CV.filtro)
-    .filter(c => !termo
-      || (c.nome||'').toLowerCase().includes(termo)
-      || (!!digitos && (c.fone||'').includes(digitos))
-      || (c.preview||'').toLowerCase().includes(termo))
-    .sort((x,y) => new Date(y.ultimaEm||0) - new Date(x.ultimaEm||0));
+    .filter(c => !termo || casaLocal(c) || !!(achado && achado.ids.has(c.id)))
+    .sort(ordemConversas);
 
   const cont = {};
   todas.forEach(c=>{ cont[c.col]=(cont[c.col]||0)+1; });
@@ -9369,6 +9655,10 @@ function renderConversasTela(a){
     if(c.cliente.bloqueado) flags.push('<span class="cc-tag risk">BLOQUEADO</span>');
     else if(c.cliente.atraso>0) flags.push(`<span class="cc-tag risk">ATRASADO ${c.cliente.atraso}D</span>`);
     if(c.cliente.lead) flags.push('<span class="cc-tag">lead</span>');
+    // achada pelo texto de uma mensagem: a prévia (a última mensagem) não
+    // explicaria por que ela está aqui
+    const nasMsgs = termo && achado && achado.ids.has(c.id) && !casaLocal(c)
+      ? '<span class="cc-tag achou-msg" title="O termo aparece nas mensagens desta conversa">🔎 nas mensagens</span> ' : '';
     return sep + `<div class="cv-linha ${c.unread?'naolida':''}" data-id="${c.id}">
       ${avatarHTML(c, 'width:38px;height:38px;font-size:12px')}
       <div class="cv-meio">
@@ -9377,7 +9667,7 @@ function renderConversasTela(a){
           ${seloAssinatura(c)}
           <span class="sec-dot" style="background:${corSetor(c.setor)}" title="${esc(c.setor||'Sem setor')}"></span>
         </div>
-        <div class="cv-prev">${esc(semFormato(c.preview)) || '<i>sem mensagens</i>'}</div>
+        <div class="cv-prev">${nasMsgs}${esc(semFormato(c.preview)) || '<i>sem mensagens</i>'}</div>
       </div>
       <div class="cv-flags">${flags.join('')}</div>
       <div class="cv-att">${esc(c.atendente)}</div>
@@ -9389,30 +9679,48 @@ function renderConversasTela(a){
     </div>`;
   }).join('');
 
+  // o "+" diz que a contagem é do que está carregado: há resolvidas mais antigas
+  const mais = id => HIST.maisAntigas && (id==='todas' || id==='resolvidos') ? '+' : '';
+  let situacao = '';
+  if(achado){
+    situacao = achado.estado==='buscando' ? '<span class="cv-girando"></span>Procurando também no histórico inteiro…'
+      : achado.estado==='erro' ? `A busca no histórico falhou (${esc(achado.erro||'erro')}). Mostrando só as conversas já carregadas.`
+      : 'Busca feita no histórico inteiro: nome, telefone e texto das mensagens.'
+        + (achado.ids.size >= 60 ? ' Vieram as 60 mais recentes — detalhe mais a busca para achar outras.' : '');
+  } else if(termo && HIST.maisAntigas){
+    situacao = 'Digite mais uma letra (ou 4 dígitos do telefone) para procurar também nas conversas antigas.';
+  }
+  const podeMais = HIST.maisAntigas && !termo && (CV.filtro==='todas' || CV.filtro==='resolvidos');
+
   a.innerHTML = `<div class="viewbox cheia">
     <h2>Conversas</h2>
-    <div class="vsub">Todas as conversas, mais recentes primeiro. Clique para abrir o atendimento.</div>
+    <div class="vsub">${HIST.maisAntigas
+      ? 'Mais recentes primeiro. As resolvidas mais antigas vêm pelo botão no fim da lista — ou pela busca, que procura no histórico inteiro.'
+      : 'Todas as conversas, mais recentes primeiro. Clique para abrir o atendimento.'}</div>
     <div class="cv-topo">
-      <input class="cv-busca" id="cvBusca" placeholder="Buscar por nome, telefone ou pelo texto da última mensagem…" value="${esc(CV.busca)}">
+      <input class="cv-busca" id="cvBusca" placeholder="Buscar por nome, telefone ou texto das mensagens…" value="${esc(CV.busca)}">
       <div class="cv-fils">
-        ${filtros.map(([id,rot,n])=>`<button class="cv-fil ${CV.filtro===id?'on':''}" data-cvf="${id}">${rot}<span class="n">${n}</span></button>`).join('')}
+        ${filtros.map(([id,rot,n])=>`<button class="cv-fil ${CV.filtro===id?'on':''}" data-cvf="${id}">${rot}<span class="n">${n}${mais(id)}</span></button>`).join('')}
       </div>
     </div>
-    ${linhas || `<div class="cv-vazio">${termo?'Nenhuma conversa para esta busca.':'Nenhuma conversa nesta etapa.'}</div>`}
+    ${situacao ? `<div class="cv-situacao ${achado&&achado.estado==='erro'?'erro':''}">${situacao}</div>` : ''}
+    ${linhas || `<div class="cv-vazio">${termo?(achado&&achado.estado==='buscando'?'Nada nas conversas carregadas — procurando no histórico…':'Nenhuma conversa para esta busca.'):'Nenhuma conversa nesta etapa.'}</div>`}
+    ${podeMais ? botaoMaisAntigas('Carregar conversas mais antigas') : ''}
   </div>`;
+  const bMais = a.querySelector('[data-mais-antigas]');
+  if(bMais) bMais.onclick = carregarConversasAntigas;
 
   a.querySelectorAll('[data-cvf]').forEach(b=>b.onclick=()=>{ CV.filtro=b.dataset.cvf; renderConversasTela(a); });
   a.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>openModal(+el.dataset.id));
   const busca = a.querySelector('#cvBusca');
   if(busca){
-    // filtra em memória, então não precisa esperar a digitação parar; o que
-    // precisa é o cursor voltar para onde estava depois do repinte
+    if(sel){ busca.focus(); try{ busca.setSelectionRange(sel[0], sel[1]); }catch{} }
+    // filtra em memória na hora; o servidor é consultado quando a digitação
+    // para, e o resultado entra na lista quando chega
     busca.oninput = ()=>{
-      const pos = busca.selectionStart;
       CV.busca = busca.value;
       renderConversasTela(a);
-      const b2 = a.querySelector('#cvBusca');
-      if(b2){ b2.focus(); try{ b2.setSelectionRange(pos,pos); }catch{} }
+      pedirBuscaServidor(CV.busca);
     };
   }
 }
@@ -10838,7 +11146,7 @@ document.querySelectorAll('.nav-item[data-view]').forEach(el=>el.onclick=()=>{
   view=el.dataset.view; renderAll();
   abrirGaveta(false);              // no celular, fecha a gaveta ao escolher
 });
-$('#search').oninput=e=>{ busca=e.target.value.toLowerCase(); renderBoard(); };
+$('#search').oninput=e=>{ busca=e.target.value.toLowerCase(); renderBoard(); pedirBuscaServidor(busca); };
 // No celular a caixa de busca fica guardada: aberta o tempo todo ela empurrava
 // o cabeçalho para uma terceira linha e comia meia tela de conversas.
 $('#btnBuscaMob').onclick=()=>{

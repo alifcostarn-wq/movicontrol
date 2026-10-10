@@ -6219,6 +6219,63 @@ function filtroSetor(user) {
   return `&or=(setor.eq.${encodeURIComponent(user.setor)},setor.is.null)`;
 }
 
+/* ===== LISTAGENS PAGINADAS (conversas e mensagens) =========================
+
+   Conversas. O painel recebia as 300 mais recentes no bootstrap e só 200 a
+   cada atualização em tempo real; com 330 conversas, ~130 sumiam da tela
+   "Conversas" e da busca. Pior: com um limite único pelas mais recentes, uma
+   conversa EM ANDAMENTO parada há semanas cairia para fora e sumiria do
+   quadro. Agora a lista do painel traz todas as abertas (qualquer idade) e as
+   resolvidas mais recentes; o resto do histórico vem em páginas, por cursor.
+
+   Os filtros combinados (setor + cursor/busca) vão num and=(...) só: dois
+   or= na mesma consulta não se combinam no PostgREST. Valores com : . , ou
+   espaço entram entre aspas dentro das expressões lógicas. */
+const CONV_PAGINA = 300;
+const CONV_ORDEM = 'order=ultima_msg_em.desc.nullslast,id.desc';
+const pgQ = v => '"' + String(v).replace(/["\\]/g, '') + '"';
+function setorExpr(user) {
+  if (user.admin || !user.setor) return '';
+  return `or(setor.eq.${pgQ(user.setor)},setor.is.null)`;
+}
+function filtroLogico(user, expr) {
+  const setor = setorExpr(user);
+  return '&and=' + encodeURIComponent(`(${[setor, expr].filter(Boolean).join(',')})`);
+}
+// ordem do painel: mais recente primeiro, sem data por último, desempate pelo id
+function ordemConversa(a, b) {
+  const x = a.ultima_msg_em ? Date.parse(a.ultima_msg_em) : -Infinity;
+  const y = b.ultima_msg_em ? Date.parse(b.ultima_msg_em) : -Infinity;
+  return y - x || (b.id - a.id);
+}
+const cursorDe = c => (c ? { em: c.ultima_msg_em || null, id: c.id } : null);
+function limiteConversas(v) { return Math.min(Math.max(Number(v) || CONV_PAGINA, 1), 500); }
+
+async function listarConversasPainel(e, user, limite) {
+  const n = limiteConversas(limite);
+  const [abertas, resolvidas] = await Promise.all([
+    sb(e, `atend_conversas?select=*&deleted_at=is.null&coluna=neq.resolvidos${filtroSetor(user)}&${CONV_ORDEM}&limit=1000`),
+    sb(e, `atend_conversas?select=*&deleted_at=is.null&coluna=eq.resolvidos${filtroSetor(user)}&${CONV_ORDEM}&limit=${n + 1}`),
+  ]);
+  const res = resolvidas || [];
+  const mais = res.length > n;
+  const pagina = res.slice(0, n);
+  return { conversas: [...(abertas || []), ...pagina].sort(ordemConversa), mais_antigas: mais, cursor: mais ? cursorDe(pagina[pagina.length - 1]) : null };
+}
+
+// resolvidas mais antigas que o cursor (as abertas já vêm todas na primeira)
+async function conversasAntigas(e, user, cursor, limite) {
+  const n = limiteConversas(limite);
+  const id = Number(cursor && cursor.id) || 0;
+  const expr = cursor && cursor.em
+    ? `or(ultima_msg_em.lt.${pgQ(cursor.em)},and(ultima_msg_em.eq.${pgQ(cursor.em)},id.lt.${id}),ultima_msg_em.is.null)`
+    : `and(ultima_msg_em.is.null,id.lt.${id})`;
+  const lista = await sb(e, `atend_conversas?select=*&deleted_at=is.null&coluna=eq.resolvidos${filtroLogico(user, expr)}&${CONV_ORDEM}&limit=${n + 1}`) || [];
+  const mais = lista.length > n;
+  const pagina = lista.slice(0, n);
+  return { conversas: pagina, mais_antigas: mais, cursor: mais ? cursorDe(pagina[pagina.length - 1]) : null };
+}
+
 // ============================================================================
 // HANDLER
 // ============================================================================
@@ -6732,15 +6789,16 @@ export default async function handler(req, res) {
 
       // tudo que o app precisa para abrir, numa chamada só
       case 'bootstrap': {
-        const [setores, etiquetas, atalhos, regras, equipe, fluxo, conversas] = await Promise.all([
+        const [setores, etiquetas, atalhos, regras, equipe, fluxo, listaPainel] = await Promise.all([
           sb(e, 'atend_setores?select=nome,cor,ordem&ativo=is.true&order=ordem'),
           sb(e, 'atend_etiquetas?select=id,nome,cor&order=id'),
           sb(e, 'atend_atalhos?select=id,titulo,mensagem,setor&order=id'),
           sb(e, 'atend_regras?select=id,palavra,acao&ativa=is.true&order=id'),
           sb(e, 'perfis?select=id,nome,atend_setor&atendimento=is.true&order=nome'),
           sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1'),
-          sb(e, `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}&order=ultima_msg_em.desc.nullslast&limit=300`),
+          listarConversasPainel(e, user, CONV_PAGINA),
         ]);
+        const conversas = listaPainel.conversas;
         await marcarAssinaturaPendente(e, conversas);
         // média de satisfação vem do HISTÓRICO: conversas.rating guarda só a nota
         // do atendimento atual e é zerada a cada reabertura, então sozinho ele
@@ -6765,7 +6823,8 @@ export default async function handler(req, res) {
         // só ao tentar enviar significa perder a mensagem e o tempo do cliente
         let wa = 'desconhecido';
         try { wa = await evoEstado(e); } catch {}
-        return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos, avaliacoes, whatsapp: wa });
+        return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos, avaliacoes, whatsapp: wa,
+          conversas_mais_antigas: listaPainel.mais_antigas, conversas_cursor: listaPainel.cursor });
       }
 
       case 'agendamentos.criar': {
@@ -6989,10 +7048,44 @@ export default async function handler(req, res) {
       }
 
       case 'conversas.listar': {
-        const col = body.coluna ? `&coluna=eq.${encodeURIComponent(String(body.coluna))}` : '';
+        // `antes`: a próxima página do histórico (resolvidas mais antigas)
+        if (body.antes) {
+          const r = await conversasAntigas(e, user, body.antes, body.limite);
+          await marcarAssinaturaPendente(e, r.conversas);
+          return res.status(200).json({ ok: true, ...r });
+        }
+        // `coluna`: uma etapa só, como antes
+        if (body.coluna) {
+          const lista = await sb(e,
+            `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}&coluna=eq.${encodeURIComponent(String(body.coluna))}` +
+            `&${CONV_ORDEM}&limit=${limiteConversas(body.limite)}`);
+          await marcarAssinaturaPendente(e, lista);
+          return res.status(200).json({ ok: true, conversas: lista });
+        }
+        // sem nada: a mesma lista do bootstrap (todas as abertas + resolvidas recentes)
+        const r = await listarConversasPainel(e, user, body.limite);
+        await marcarAssinaturaPendente(e, r.conversas);
+        return res.status(200).json({ ok: true, ...r });
+      }
+
+      /* Busca no histórico inteiro: nome, telefone, última mensagem e o texto de
+         qualquer mensagem (as apagadas ficam de fora). A tela "Conversas" só
+         enxerga o que está carregado; esta é a busca que vai além. */
+      case 'conversas.buscar': {
+        const termo = String(body.termo || '').trim().slice(0, 60);
+        const limpo = termo.replace(/[,()"'*%\\:;]/g, ' ').replace(/\s+/g, ' ').trim();
+        const digitos = termo.replace(/\D/g, '');
+        if (limpo.length < 2 && digitos.length < 4) return res.status(200).json({ ok: true, conversas: [] });
+        const conds = [];
+        if (limpo.length >= 2) conds.push(`contato_nome.ilike.${pgQ('*' + limpo + '*')}`, `ultima_msg.ilike.${pgQ('*' + limpo + '*')}`);
+        if (digitos.length >= 4) conds.push(`contato_fone.like.${pgQ('*' + digitos + '*')}`);
+        if (limpo.length >= 3) {
+          const ms = await sb(e, `atend_mensagens?select=conversa_id&excluido_em=is.null&conteudo=ilike.${encodeURIComponent('*' + limpo + '*')}&order=created_at.desc&limit=400`) || [];
+          const ids = [...new Set(ms.map(m => m.conversa_id))].slice(0, 120);
+          if (ids.length) conds.push(`id.in.(${ids.join(',')})`);
+        }
         const lista = await sb(e,
-          `atend_conversas?select=*&deleted_at=is.null${filtroSetor(user)}${col}` +
-          `&order=ultima_msg_em.desc.nullslast&limit=${Math.min(Number(body.limite) || 200, 500)}`);
+          `atend_conversas?select=*&deleted_at=is.null${filtroLogico(user, `or(${conds.join(',')})`)}&${CONV_ORDEM}&limit=60`) || [];
         await marcarAssinaturaPendente(e, lista);
         return res.status(200).json({ ok: true, conversas: lista });
       }
@@ -8849,8 +8942,22 @@ export default async function handler(req, res) {
         // número: bastava trocar o id para ler histórico e anexos de outro setor
         const acesso = await conversaDoUsuario(e, user, id);
         if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
-        const msgs = await sb(e,
-          `atend_mensagens?conversa_id=eq.${id}&select=*&order=created_at.asc&limit=${Math.min(Number(body.limite) || 300, 1000)}`);
+        /* As N MAIS RECENTES. A consulta ia em ordem crescente com limite e
+           devolvia as N mais antigas: como cada número reaproveita a mesma
+           conversa, numa conversa longa as mensagens novas sumiriam do painel.
+           Agora vem de trás para frente e é virada; `antes` (a mensagem mais
+           antiga que já está na tela) traz a página anterior. */
+        const n = Math.min(Number(body.limite) || 300, 1000);
+        const a = body.antes || null;
+        const corte = a && a.id
+          ? (a.em
+            ? '&or=' + encodeURIComponent(`(created_at.lt.${pgQ(a.em)},and(created_at.eq.${pgQ(a.em)},id.lt.${Number(a.id)}))`)
+            : `&id=lt.${Number(a.id)}`)
+          : '';
+        const desc = await sb(e,
+          `atend_mensagens?conversa_id=eq.${id}&select=*${corte}&order=created_at.desc,id.desc&limit=${n + 1}`) || [];
+        const mais_antigas = desc.length > n;
+        const msgs = desc.slice(0, n).reverse();
         // assina os anexos para o atendente conseguir abrir
         for (const m of (msgs || [])) {
           // mensagem apagada não viaja com o conteúdo: ela saiu do WhatsApp do
@@ -8862,7 +8969,7 @@ export default async function handler(req, res) {
           }
           if (m.midia_url) m.midia_link = await assinarMidia(e, m.midia_url).catch(() => null);
         }
-        return res.status(200).json({ ok: true, mensagens: msgs });
+        return res.status(200).json({ ok: true, mensagens: msgs, mais_antigas });
       }
 
       /* Apagar no WhatsApp uma mensagem que NÓS enviamos.
