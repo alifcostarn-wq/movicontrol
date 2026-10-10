@@ -1511,6 +1511,16 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 }
 .aviso-msg:hover{border-color:var(--green);}
 .aviso-msg.saindo{animation:avisoSai .28s ease both;}
+.aviso-msg.aviso-fila{border-left-color:var(--orange-fill);}
+.aviso-msg.aviso-fila.super{border-left-color:var(--red-fill);}
+.aviso-msg.aviso-fila b{color:var(--text);}
+/* selo do cabeçalho para quem supervisiona */
+.fila-off{
+  display:inline-flex;align-items:center;gap:6px;background:var(--orange-fill);color:#fff;border:0;font-family:inherit;
+  font-size:11.5px;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;white-space:nowrap;flex-shrink:0;
+}
+.fila-off.grave{background:var(--red-fill);}
+.fila-off:hover{filter:brightness(1.08);}
 @keyframes avisoEntra{from{opacity:0;transform:translateX(28px);}to{opacity:1;transform:none;}}
 @keyframes avisoSai{to{opacity:0;transform:translateX(28px);}}
 .am-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -1929,6 +1939,14 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .mb-doc:hover{background:rgba(0,0,0,.09);}
 .mb-doc .md-ico{font-size:17px;}
 .mb-audio{width:230px;max-width:100%;margin-top:4px;}
+.mb-transc{margin-top:6px;padding:7px 10px;border-radius:8px;background:var(--chip-2);border:1px solid var(--line);
+  font-size:12.5px;line-height:1.45;color:var(--text);font-style:italic;max-width:300px;}
+.mb-transc .mt-ico{font-style:normal;margin-right:5px;}
+.mb-transc.vazio{color:var(--text-low);}
+.mb-transc-btn{display:inline-block;margin-top:6px;font:inherit;font-size:11.5px;font-weight:700;color:var(--green-deep);
+  background:var(--card);border:1px solid var(--line-2);border-radius:14px;padding:4px 11px;cursor:pointer;}
+.mb-transc-btn:hover:not(:disabled){border-color:var(--green-fill);}
+.mb-transc-btn:disabled{color:var(--text-low);cursor:default;}
 /* --- localização --- */
 .mb-loc{margin-top:2px;width:260px;max-width:100%;border-radius:10px;overflow:hidden;background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.06);}
 .mb-loc.sem{padding:9px 11px;}
@@ -2536,10 +2554,10 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .search-box input{font-size:16px;}   /* 16px evita o zoom automático do iOS */
   .header.busca-on #btnBuscaMob{background:var(--green-soft);border-color:var(--green);color:var(--green-deep);}
   /* avisos ficam com a linha inteira: são estado do sistema, não decoração */
-  #waAviso,#vistoAviso,#versaoAviso{order:10;flex:1 0 100%;}
-  #waAviso:empty,#vistoAviso:empty,#versaoAviso:empty{display:none;}
+  #filaAviso,#waAviso,#vistoAviso,#versaoAviso{order:10;flex:1 0 100%;}
+  #filaAviso:empty,#waAviso:empty,#vistoAviso:empty,#versaoAviso:empty{display:none;}
   #waAviso .wa-chip,#vistoAviso .wa-chip,
-  #waAviso > *,#vistoAviso > *,#versaoAviso > *{width:100%;justify-content:center;}
+  #filaAviso > *,#waAviso > *,#vistoAviso > *,#versaoAviso > *{width:100%;justify-content:center;}
 
   .content{padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));}
 
@@ -2794,7 +2812,7 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .header.cab-c2 #btnNovo{font-size:0;gap:0;}
   .header.cab-c2 #btnNovo::before{content:'＋ Novo';font-size:13.5px;}
   .header.cab-c3{flex-wrap:wrap;row-gap:8px;}
-  .header.cab-c3 #waAviso,.header.cab-c3 #vistoAviso,.header.cab-c3 #versaoAviso{order:10;}
+  .header.cab-c3 #filaAviso,.header.cab-c3 #waAviso,.header.cab-c3 #vistoAviso,.header.cab-c3 #versaoAviso{order:10;}
   /* com quebra de linha os itens param de encolher: a busca passa a ocupar o
      que sobra da primeira linha, para o "＋ Novo" não descer junto dos avisos */
   .header.cab-c3 .h-spacer{display:none;}
@@ -3088,6 +3106,7 @@ try{var _t=localStorage.getItem('movi_tema');if(_t==='dark'||(!_t&&window.matchM
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M7 12h10M10 19h4"/></svg>
         Filtros
       </button>
+      <span id="filaAviso"></span>
       <span id="waAviso"></span>
       <span id="vistoAviso"></span>
       <span id="versaoAviso"></span>
@@ -3657,6 +3676,7 @@ async function recarregarConversas(){
     if(!j.mais_antigas) HIST.paginas = false;
   }
   renderAll();
+  conferirFila();
 }
 
 /* ═══════════ HISTÓRICO DE CONVERSAS: páginas e busca no servidor ═══════════
@@ -3771,6 +3791,7 @@ async function carregarTudo(){
   state.fluxo    = j.fluxo ? { id:j.fluxo.id, nodes:j.fluxo.nodes||[], edges:j.fluxo.edges||[] } : { nodes:[], edges:[] };
   state.conversas = (j.conversas||[]).map(mapearConversa);
   HIST.maisAntigas = !!j.conversas_mais_antigas; HIST.cursor = j.conversas_cursor || null; HIST.paginas = false;
+  if(j.alerta_fila) ALERTA_FILA = { ...ALERTA_FILA, ...j.alerta_fila };
   /* o `quando` formatado ("13/09 20:31") serve para mostrar; ordenar por ele
      era erro silencioso — em texto, "01/10" vem antes de "13/09", então em
      toda virada de mês a lista saía fora de ordem. O cru vai junto. */
@@ -3859,6 +3880,7 @@ function ligarRealtime(){
         mudou = true;
       }
       if(p.new.status && m.status!==p.new.status){ m.status = p.new.status; mudou = true; }
+      if(p.new.transcricao!==undefined && !m.excluidoEm && p.new.transcricao!==m.transcricao){ m.transcricao = p.new.transcricao; mudou = true; }
       if(!mudou) return;
       if(modalId===c.id) openModal(c.id);
     })
@@ -4068,6 +4090,129 @@ function marcarNovidade(conv){
   }, 12000);
 }
 
+/* ═══════════ ALERTA DE FILA — sobe de nível ═══════════════════════════════
+   A espera mediana é de 2,3 min, mas 28 de 90 atendimentos esperaram mais de
+   15 — 16 deles em dia útil, das 8h às 17h, com a equipe trabalhando. O card
+   fica vermelho, mas ninguém está olhando para o card. Então o painel de cada
+   um chama a atenção, uma vez por nível:
+     1. quem atende o setor da conversa, depois de ALERTA_FILA.min minutos;
+     2. quem supervisiona (administrador), depois de ALERTA_FILA.super_min.
+   Toca, sacode a tela e deixa um aviso no canto até alguém abrir a conversa;
+   com a aba escondida, sai também a notificação do sistema. Cada nível sai
+   uma vez por entrada na fila — lembrado neste navegador, para recarregar a
+   página não repetir. Os tempos ficam em Configurações › Tempos. */
+let ALERTA_FILA = { ativo:true, min:10, super_min:30 };
+const ALERTA_FILA_CHAVE = 'mt_alertas_fila';
+function alertasFeitos(){ try{ return JSON.parse(localStorage.getItem(ALERTA_FILA_CHAVE)||'{}')||{}; }catch{ return {}; } }
+function guardarAlertasFeitos(d){ try{ localStorage.setItem(ALERTA_FILA_CHAVE, JSON.stringify(d)); }catch{} }
+// minutos esperando na fila, ou null para quem não está na fila
+function minutosNaFila(c, agora=Date.now()){
+  if(c.col!=='fila' || !c.filaDesde) return null;
+  const t=new Date(c.filaDesde).getTime();
+  return isNaN(t) ? null : Math.max(0, (agora-t)/60000);
+}
+// conversas que são da conta desta pessoa: o setor dela ou sem setor;
+// administrador e quem não tem setor respondem por todas
+function filaDoMeuAlcance(c){
+  if(!USUARIO) return false;
+  if(USUARIO.admin || !USUARIO.setor) return true;
+  return !c.setor || c.setor===USUARIO.setor;
+}
+function fmtEspera(min){
+  min=Math.floor(min);
+  if(min<60) return min+' min';
+  const h=Math.floor(min/60), r=min%60;
+  return h+'h'+(r?String(r).padStart(2,'0'):'');
+}
+function conferirFila(){
+  if(!USUARIO || !ALERTA_FILA.ativo) return;
+  const agora=Date.now(), feitos=alertasFeitos(), novos=[];
+  for(const c of state.conversas){
+    const min=minutosNaFila(c, agora);
+    if(min==null || !filaDoMeuAlcance(c)) continue;
+    const niveis=[];
+    if(min>=ALERTA_FILA.min) niveis.push('setor');
+    if(USUARIO.admin && min>=ALERTA_FILA.super_min) niveis.push('super');
+    let novo=null;
+    for(const n of niveis){
+      const k=c.id+'|'+c.filaDesde+'|'+n;
+      if(feitos[k]) continue;
+      feitos[k]=agora; novo=n;               // o nível mais alto que falta avisar
+    }
+    if(novo) novos.push({ c, nivel:novo, min });
+  }
+  // o que tem mais de dois dias já não volta: a lista não cresce para sempre
+  for(const k in feitos) if(agora-feitos[k] > 2*864e5) delete feitos[k];
+  guardarAlertasFeitos(feitos);
+  limparAvisosFila();
+  if(novos.length) avisarFila(novos);
+}
+function avisarFila(novos){
+  novos.sort((a,b)=>b.min-a.min);
+  for(const x of novos.slice(0,3)) avisoFila(x);
+  sacudirTela(); tocarZumbido();
+  // aba escondida (no IXC, no e-mail): a notificação do sistema é o que alcança
+  const pior=novos[0];
+  if('Notification' in window && Notification.permission==='granted' && document.hidden){
+    try{
+      const titulo = pior.nivel==='super' ? '🚨 Cliente esperando demais na fila' : '⏱ Cliente esperando na fila';
+      const corpo = novos.length>1
+        ? `${novos.length} clientes esperando. ${pior.c.nome} há ${fmtEspera(pior.min)}.`
+        : `${pior.c.nome} espera há ${fmtEspera(pior.min)}${pior.c.setor?' · '+pior.c.setor:''}.`;
+      const n=new Notification(titulo, { body: corpo, icon:'/favicon.ico', tag:'movitalk-fila', requireInteraction:true });
+      n.onclick=()=>{ window.focus(); abrirDaFila(pior.c.id); n.close(); };
+    }catch(e){}
+  }
+}
+function abrirDaFila(id){
+  const c=state.conversas.find(x=>x.id===id); if(!c) return;
+  if(view!=='kanban'){ view='kanban'; document.querySelectorAll('.nav-item[data-view]').forEach(x=>x.classList.toggle('active', x.dataset.view==='kanban')); }
+  etapaAtual=c.col; renderAll(); openModal(id);
+}
+// aviso no canto que FICA: só sai quando alguém assume, ou quando é dispensado
+function avisoFila({ c, nivel, min }){
+  const wrap = document.getElementById('avisos') || (()=>{
+    const d=document.createElement('div'); d.id='avisos'; d.className='avisos';
+    document.body.appendChild(d); return d;
+  })();
+  wrap.querySelectorAll(`.aviso-fila[data-conv="${c.id}"]`).forEach(x=>x.remove());
+  const el=document.createElement('div');
+  el.className='aviso-msg aviso-fila'+(nivel==='super'?' super':'');
+  el.dataset.conv=c.id;
+  el.setAttribute('role','alert');
+  el.innerHTML=`<div class="am-av" style="background:${avColor(c.id)}">${ini(c.nome)}</div>
+    <div class="am-txt"><b>${nivel==='super'?'🚨 ':'⏱ '}${esc(c.nome)}</b>
+      <span>esperando na fila há ${esc(fmtEspera(min))}${c.setor?' · '+esc(c.setor):''}</span></div>
+    <button class="am-x" title="Dispensar">✕</button>`;
+  el.onclick=ev=>{ if(ev.target.closest('.am-x')){ el.remove(); return; } el.remove(); abrirDaFila(c.id); };
+  wrap.appendChild(el);
+  while(wrap.children.length>4) wrap.firstChild.remove();
+}
+// o cliente saiu da fila (alguém assumiu, encerrou): o aviso dele some
+function limparAvisosFila(){
+  document.querySelectorAll('.aviso-fila').forEach(el=>{
+    const c=state.conversas.find(x=>x.id===+el.dataset.conv);
+    if(!c || c.col!=='fila') el.remove();
+  });
+}
+/* Para quem supervisiona: no cabeçalho, quantos esperam além do tempo — à
+   vista em qualquer tela (Relatórios, Configurações), não só no quadro. */
+function renderAvisoFila(){
+  const el=$('#filaAviso'); if(!el) return;
+  if(!USUARIO || !USUARIO.admin || !ALERTA_FILA.ativo){ el.innerHTML=''; return; }
+  const agora=Date.now();
+  const longas=state.conversas.map(c=>({ c, min:minutosNaFila(c, agora) })).filter(x=>x.min!=null && x.min>=ALERTA_FILA.min);
+  if(!longas.length){ el.innerHTML=''; return; }
+  const pior=Math.max(...longas.map(x=>x.min));
+  const grave=pior>=ALERTA_FILA.super_min;
+  el.innerHTML=`<button class="fila-off ${grave?'grave':''}" type="button" title="Clientes esperando na fila há mais de ${ALERTA_FILA.min} min. Clique para ver a fila.">
+    ⏱ ${longas.length} na fila há +${ALERTA_FILA.min} min · pior ${esc(fmtEspera(pior))}</button>`;
+  el.querySelector('button').onclick=()=>{
+    if(view!=='kanban'){ view='kanban'; document.querySelectorAll('.nav-item[data-view]').forEach(x=>x.classList.toggle('active', x.dataset.view==='kanban')); }
+    etapaAtual='fila'; renderAll();
+  };
+}
+
 /* Aviso flutuante — só para quem está esperando atendimento, onde o relógio
    do SLA corre. Para conversa já assumida seria interrupção sem urgência. */
 function avisoFlutuante(conv){
@@ -4251,6 +4396,7 @@ async function entrar(session){
       else bSt.style.display='none';
     }
     renderAll();
+    conferirFila();
     ligarRealtime();
     ligarRedeDeSeguranca();
     // em segundo plano: se o WhatsApp não estiver mandando os vistos, o aviso
@@ -4787,11 +4933,23 @@ function midiaHTML(m){
   // GIF: toca sozinho em loop e sem som — vídeo com controles descaracteriza
   if(m.tipo==='gif') return `<div class="mb-midia mb-gif"><video src="${esc(m.link)}" autoplay loop muted playsinline></video><span class="gif-tag">GIF</span></div>`;
   if(m.tipo==='imagem') return `<div class="mb-midia"><img src="${esc(m.link)}" alt="Imagem enviada pelo cliente" data-zoom="${esc(m.link)}"></div>`;
-  if(m.tipo==='audio')  return `<div class="mb-midia"><audio class="mb-audio" controls src="${esc(m.link)}"></audio></div>`;
+  if(m.tipo==='audio')  return `<div class="mb-midia"><audio class="mb-audio" controls src="${esc(m.link)}"></audio></div>${transcricaoHTML(m)}`;
   if(m.tipo==='video')  return `<div class="mb-midia"><video class="mb-audio" controls src="${esc(m.link)}"></video></div>`;
   const ico = m.tipo==='documento' ? '📄' : '📎';
   return `<div class="mb-midia"><a class="mb-doc" href="${esc(m.link)}" target="_blank" rel="noopener">
     <span class="md-ico">${ico}</span>Abrir anexo</a></div>`;
+}
+
+/* O que o cliente disse no áudio, escrito pela IA (Whisper, na Groq). Fica
+   embaixo do player: quem atende lê em vez de parar para ouvir, e a busca
+   acha o que foi dito. Áudio sem transcrição (antigo, longo, ou que falhou
+   na chegada) ganha o botão para transcrever na hora. */
+function transcricaoHTML(m){
+  if(m.t!=='in') return '';
+  if(m.transcricao) return `<div class="mb-transc" title="Transcrição automática — pode ter erros"><span class="mt-ico">📝</span>${fmtWA(esc(m.transcricao))}</div>`;
+  if(m.transcricao==='') return `<div class="mb-transc vazio">📝 Sem fala reconhecível no áudio</div>`;
+  if(!m.id) return '';
+  return `<button class="mb-transc-btn" type="button" data-transcrever="${m.id}">📝 Transcrever áudio</button>`;
 }
 
 /* ===== PAINEL AO VIVO DO IXC: financeiro + conexão + chamados ===== */
@@ -5569,6 +5727,8 @@ function mapearMensagem(m){
     criadoEm: m.created_at || null,
     editadoEm: m.editado_em || null, editadoPor: m.editado_por_nome || null,
     textoOriginal: m.conteudo_original || null,
+    // áudio escrito pela IA: null = não transcrito; '' = não havia fala
+    transcricao: m.transcricao === undefined ? null : m.transcricao,
   };
 }
 
@@ -6177,6 +6337,23 @@ async function renderTempos(el){
       </div>
     </div>
 
+    <div class="cp-box" style="border-color:var(--orange-fill)">
+      <label class="cob-check"><input type="checkbox" id="tpFila" ${g('fila_alerta_ativo',true)?'checked':''}>
+        <b>⏱ Avisar quando um cliente esperar demais na fila</b></label>
+      <div class="tp-linha">avisar quem atende o setor após
+        <input type="number" id="tpFilaMin" min="1" max="1440" value="${g('fila_alerta_min',10)}"> minutos na fila
+      </div>
+      <div class="tp-linha">avisar a supervisão (administradores) após
+        <input type="number" id="tpFilaSup" min="1" max="1440" value="${g('fila_alerta_super_min',30)}"> minutos
+      </div>
+      <div class="tp-nota">
+        O painel toca, sacode a tela e deixa um aviso no canto até alguém abrir a conversa — uma vez
+        por cliente em cada nível. Com o MoviTalk em segundo plano, sai também a notificação do
+        sistema (ative em 🔔 Alerta sonoro). Os administradores veem no cabeçalho quantos estão
+        esperando além do tempo, em qualquer tela.
+      </div>
+    </div>
+
     <div class="cp-box">
       <div class="cp-lab">Conversas ainda no bot</div>
       <div class="tp-linha">encerrar após
@@ -6212,6 +6389,12 @@ async function renderTempos(el){
   };
   ['tpAmin','tpBmin','tpCmin'].forEach(id=>{ const e2=$('#'+id); if(e2) e2.oninput=atualizar; });
   atualizar();
+  // supervisão nunca antes do setor: o segundo nível é para quando o primeiro não resolveu
+  const filaCampos=()=>{
+    const min=Math.max(1, Math.min(1440, +$('#tpFilaMin').value||10));
+    const sup=Math.max(min, Math.min(1440, +$('#tpFilaSup').value||30));
+    return { fila_alerta_ativo:$('#tpFila').checked, fila_alerta_min:min, fila_alerta_super_min:sup };
+  };
 
   $('#tpSalvar').onclick=async()=>{
     const b=$('#tpSalvar'); b.disabled=true; b.textContent='Salvando…';
@@ -6226,7 +6409,12 @@ async function renderTempos(el){
         bot_inatividade_min:+$('#tpBot').value||30,
         // campo vazio volta ao padrão; 0 digitado é intencional (desliga a trava)
         pesquisa_intervalo_dias:(d=>Number.isFinite(d)&&d>=0?Math.min(365,d):30)(parseInt($('#tpPesqDias').value,10)),
+        ...filaCampos(),
       }});
+      // vale já neste painel; os outros pegam ao recarregar
+      const fc=filaCampos();
+      ALERTA_FILA={ ativo:fc.fila_alerta_ativo, min:fc.fila_alerta_min, super_min:fc.fila_alerta_super_min };
+      renderAvisoFila(); conferirFila();
       toast('Tempos salvos');
     }catch(e){ toast('Falha: '+e.message); }
     b.disabled=false; b.textContent='Salvar tempos';
@@ -8959,6 +9147,21 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
       toast(err.message);
     }
   });
+  // transcrever na hora o áudio que chegou sem texto
+  document.querySelectorAll('[data-transcrever]').forEach(b=>b.onclick=async ev=>{
+    ev.stopPropagation();
+    const mid=+b.dataset.transcrever, convId=c.id;
+    b.disabled=true; b.textContent='📝 Transcrevendo…';
+    try{
+      const j=await chamar('mensagens.transcrever',{ mensagem_id:mid }, 45000);
+      const conv=state.conversas.find(x=>x.id===convId)||c;
+      const m=(conv.msgs||[]).find(x=>x.id===mid); if(m) m.transcricao=j.transcricao;
+      if(modalId===convId) openModal(convId);
+    }catch(err){
+      b.disabled=false; b.textContent='📝 Transcrever áudio';
+      toast('Não consegui transcrever: '+err.message);
+    }
+  });
   // clicar na citação leva até a mensagem original
   document.querySelectorAll('[data-irpara]').forEach(el=>el.onclick=async ev=>{
     ev.stopPropagation();
@@ -9989,8 +10192,36 @@ async function renderIntegracoes(body){
     <div class="wa-card" id="waCard">
       <div class="wa-status-row mid" id="waStatusRow"><span class="wa-status-dot"></span>Verificando conexão…</div>
       <div id="waBody"></div>
-    </div>`;
+    </div>
+    <div class="cp-box" id="iaAudio" style="margin-top:16px"><div class="pn-load">Carregando…</div></div>`;
+  pintarTranscricaoCfg();
   await atualizarStatusWA();
+}
+
+/* Transcrição dos áudios dos clientes. Liga e desliga aqui porque o áudio
+   sai para um serviço de fora (a Groq, a mesma IA do bot). */
+async function pintarTranscricaoCfg(){
+  const box=$('#iaAudio'); if(!box) return;
+  let cfg={};
+  try{ cfg=(await chamar('atendconfig.obter',{})).config||{}; }
+  catch(e){ box.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
+  const ligado=cfg.transcrever_audio!==false;
+  box.innerHTML=`
+    <label class="cob-check"><input type="checkbox" id="iaAudioOn" ${ligado?'checked':''} ${USUARIO&&USUARIO.admin?'':'disabled'}>
+      <b>🎤 Transcrever os áudios dos clientes</b></label>
+    <div class="tp-nota">
+      O áudio vira texto no balão da conversa, entra na busca e o bot responde como se o cliente
+      tivesse digitado (“opção dois” falado vale como 2). Quem transcreve é a Groq, a mesma IA do bot:
+      o áudio é enviado para ela. Áudios de até 3 minutos são transcritos na chegada; os mais longos
+      e os antigos têm o botão “Transcrever áudio” na conversa.
+    </div>`;
+  const ck=$('#iaAudioOn');
+  if(ck) ck.onchange=async()=>{
+    ck.disabled=true;
+    try{ await chamar('atendconfig.salvar',{ config:{ transcrever_audio: ck.checked } }); toast(ck.checked?'Transcrição ligada':'Transcrição desligada'); }
+    catch(e){ ck.checked=!ck.checked; toast('Falha: '+e.message); }
+    ck.disabled=false;
+  };
 }
 
 function pintarStatus(status){
@@ -11554,6 +11785,8 @@ setInterval(()=>{
   if(!state.conversas.some(c=>c.col==='fila')) return;
   renderKpis(); renderBoard();
 }, 30000);
+// o alerta de fila corre em qualquer tela: quem está em Relatórios também precisa saber
+setInterval(()=>{ if(!USUARIO) return; conferirFila(); renderAvisoFila(); }, 30000);
 
 /* ================= RENDER ALL ================= */
 /* ===== SIDEBAR RECOLHÍVEL =====
@@ -11703,7 +11936,7 @@ function renderSomBotao(){
           : 'Alerta sonoro ligado — clique com o botão direito para ajustar';
 }
 
-function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoWA(); renderAvisoVistos(); renderSomBotao(); atualizarTituloAlerta(); }
+function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoFila(); renderAvisoWA(); renderAvisoVistos(); renderSomBotao(); atualizarTituloAlerta(); }
 
 /* painel de ajuste: tipo de toque, volume e teste */
 function abrirAjusteSom(){

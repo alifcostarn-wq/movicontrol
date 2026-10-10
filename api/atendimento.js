@@ -47,7 +47,7 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
-import { groqChat } from './_groq.js';
+import { groqChat, groqTranscrever } from './_groq.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -2447,6 +2447,40 @@ function labelSemNumero(label) {
 }
 
 // Qual aresta o cliente escolheu no menu?
+/* Áudio mais longo que isto não é transcrito na chegada: o webhook espera a
+   Groq, e um áudio de vários minutos atrasaria a resposta do bot. O
+   atendente ainda pode pedir a transcrição pelo painel. */
+const AUDIO_TRANSCREVER_MAX_S = 180;
+
+/* Alerta de cliente esperando na fila (o painel de cada um avisa): primeiro
+   quem atende o setor, depois quem supervisiona. */
+const FILA_ALERTA_MIN = 10;
+const FILA_ALERTA_SUPER_MIN = 30;
+
+// Configurações › Integrações desliga a transcrição (o áudio vai para a Groq)
+async function transcricaoLigada(e) {
+  const cfg = await sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null);
+  return !cfg || !cfg.dados || cfg.dados.transcrever_audio !== false;
+}
+
+/* Resposta de menu dita em voz alta: "um", "opção dois", "a terceira",
+   "número 4". Vira o dígito que o menu espera. Qualquer coisa além do número
+   ("segunda via do boleto") fica como foi dita, para o casamento por texto. */
+const NUMEROS_FALADOS = {
+  zero: 0, um: 1, uma: 1, primeiro: 1, primeira: 1, dois: 2, duas: 2, segundo: 2, segunda: 2,
+  tres: 3, terceiro: 3, terceira: 3, quatro: 4, quarto: 4, quarta: 4, cinco: 5, quinto: 5, quinta: 5,
+  seis: 6, sexto: 6, sexta: 6, sete: 7, setimo: 7, setima: 7, oito: 8, oitavo: 8, oitava: 8,
+  nove: 9, nono: 9, nona: 9, dez: 10, decimo: 10, decima: 10,
+};
+function respostaFalada(transcricao) {
+  const palavras = normalizarTxt(transcricao).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean)
+    .filter(p => !['opcao', 'numero', 'a', 'o', 'e', 'eh', 'quero', 'escolho', 'na', 'no', 'nota'].includes(p));
+  if (palavras.length !== 1) return transcricao;
+  const p = palavras[0];
+  if (/^\d{1,2}$/.test(p)) return p;
+  return NUMEROS_FALADOS[p] !== undefined ? String(NUMEROS_FALADOS[p]) : transcricao;
+}
+
 function casarOpcao(arestas, texto) {
   const t = normalizarTxt(texto);
   if (!t) return null;
@@ -3449,7 +3483,7 @@ async function tratarWebhookInterno(e, body) {
     });
   }
 
-  const texto = (
+  let texto = (
     msg.conversation ||
     msg.extendedTextMessage?.text ||
     msg.imageMessage?.caption ||
@@ -3536,15 +3570,32 @@ async function tratarWebhookInterno(e, body) {
   }
 
   // anexo (comprovante, foto do equipamento, PDF): baixa e guarda
-  let caminhoMidia = null;
+  let caminhoMidia = null, arqMidia = null;
   // localização não tem arquivo: as coordenadas vêm no corpo da mensagem
   if (tipo !== 'texto' && tipo !== 'localizacao' && waId) {
     try {
-      const arq = await baixarMidia(e, waId);
-      caminhoMidia = await guardarMidia(e, conversa.id, waId, arq);
+      arqMidia = await baixarMidia(e, waId);
+      caminhoMidia = await guardarMidia(e, conversa.id, waId, arqMidia);
     } catch (err) {
       console.error('[atendimento] falha ao guardar mídia:', err.message);
       await logFluxo(e, { conversa_id: conversa.id, contato_fone: fone, erro: 'midia: ' + err.message });
+    }
+  }
+
+  // áudio do cliente vira texto: aparece escrito no balão e o bot entende.
+  // Falha aqui não pode custar a mensagem: ela entra como antes, sem o texto,
+  // e o atendente ainda pode pedir a transcrição pelo painel.
+  let transcricao = null;
+  if (tipo === 'audio' && arqMidia && e.GROQ && await transcricaoLigada(e)) {
+    const segundos = Number(msg.audioMessage?.seconds) || 0;
+    if (segundos <= AUDIO_TRANSCREVER_MAX_S) {
+      try {
+        const t = await groqTranscrever({ audio: arqMidia.base64, mimetype: arqMidia.mimetype, chave: e.GROQ, prazoMs: 15000 });
+        transcricao = t.texto;          // '' = áudio sem fala reconhecível
+      } catch (err) {
+        console.error('[transcricao]', err.message);
+        await logFluxo(e, { conversa_id: conversa.id, contato_fone: fone, erro: 'transcricao: ' + err.message });
+      }
     }
   }
 
@@ -3553,23 +3604,34 @@ async function tratarWebhookInterno(e, body) {
     : { imagem: '📷 Imagem', audio: '🎤 Áudio', video: '🎬 Vídeo', documento: '📎 Documento' }[tipo] || '';
   // guarda o instante em que ela ENTROU (relógio do banco, o mesmo que carimba
   // as respostas): é o corte que separa a rajada do que veio depois do menu
-  const gravada = await sb(e, 'atend_mensagens', {
-    method: 'POST',
-    body: {
-      conversa_id: conversa.id, direcao: 'in',
-      conteudo: texto || rotulo, tipo, wa_id: waId, midia_url: caminhoMidia,
-      ...(local ? { localizacao: local } : {}),
-    },
+  const linhaMsg = {
+    conversa_id: conversa.id, direcao: 'in',
+    conteudo: texto || rotulo, tipo, wa_id: waId, midia_url: caminhoMidia,
+    ...(local ? { localizacao: local } : {}),
+    ...(transcricao !== null ? { transcricao } : {}),
+  };
+  // banco sem a coluna da transcrição (código publicado antes da migração):
+  // a mensagem do cliente entra assim mesmo, só sem o texto do áudio
+  const gravada = await sb(e, 'atend_mensagens', { method: 'POST', body: linhaMsg }).catch(err => {
+    if (!('transcricao' in linhaMsg) || !/transcricao/.test(err.message)) throw err;
+    console.error('[transcricao] coluna ausente no banco — gravando sem o texto');
+    const { transcricao: _, ...semTexto } = linhaMsg;
+    return sb(e, 'atend_mensagens', { method: 'POST', body: semTexto });
   });
   const chegouEm = (Array.isArray(gravada) ? gravada[0] : gravada)?.created_at || null;
   await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
     method: 'PATCH', prefer: 'return=minimal',
     body: {
-      ultima_msg: (texto || rotulo).slice(0, 200),
+      // com a transcrição, o card mostra o que o cliente disse, não só "Áudio"
+      ultima_msg: (texto || (transcricao ? '🎤 ' + transcricao : rotulo)).slice(0, 200),
       ultima_msg_em: new Date().toISOString(),
       nao_lidas: (conversa.nao_lidas || 0) + 1,
     },
   });
+
+  // daqui para baixo (instabilidade, pesquisa, fluxo) o áudio conta como o que
+  // foi dito; "opção dois" falado vira o "2" que o menu espera
+  if (!texto && transcricao) texto = respostaFalada(transcricao);
 
   /* Rajada: "Oi" e "Bom dia" com meio segundo entre um e outro.
 
@@ -6789,7 +6851,7 @@ export default async function handler(req, res) {
 
       // tudo que o app precisa para abrir, numa chamada só
       case 'bootstrap': {
-        const [setores, etiquetas, atalhos, regras, equipe, fluxo, listaPainel] = await Promise.all([
+        const [setores, etiquetas, atalhos, regras, equipe, fluxo, listaPainel, cfgAtend] = await Promise.all([
           sb(e, 'atend_setores?select=nome,cor,ordem&ativo=is.true&order=ordem'),
           sb(e, 'atend_etiquetas?select=id,nome,cor&order=id'),
           sb(e, 'atend_atalhos?select=id,titulo,mensagem,setor&order=id'),
@@ -6797,8 +6859,10 @@ export default async function handler(req, res) {
           sb(e, 'perfis?select=id,nome,atend_setor&atendimento=is.true&order=nome'),
           sbUm(e, 'atend_fluxos?ativo=is.true&select=*&limit=1'),
           listarConversasPainel(e, user, CONV_PAGINA),
+          sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null),
         ]);
         const conversas = listaPainel.conversas;
+        const cfgA = (cfgAtend && cfgAtend.dados) || {};
         await marcarAssinaturaPendente(e, conversas);
         // média de satisfação vem do HISTÓRICO: conversas.rating guarda só a nota
         // do atendimento atual e é zerada a cada reabertura, então sozinho ele
@@ -6824,7 +6888,14 @@ export default async function handler(req, res) {
         let wa = 'desconhecido';
         try { wa = await evoEstado(e); } catch {}
         return res.status(200).json({ ok: true, user, setores, etiquetas, atalhos, regras, equipe, fluxo, conversas, agendamentos, avaliacoes, whatsapp: wa,
-          conversas_mais_antigas: listaPainel.mais_antigas, conversas_cursor: listaPainel.cursor });
+          conversas_mais_antigas: listaPainel.mais_antigas, conversas_cursor: listaPainel.cursor,
+          // o alerta de fila roda no painel de cada um: ele precisa dos tempos
+          alerta_fila: {
+            ativo: cfgA.fila_alerta_ativo !== false,
+            min: Number(cfgA.fila_alerta_min) || FILA_ALERTA_MIN,
+            super_min: Number(cfgA.fila_alerta_super_min) || FILA_ALERTA_SUPER_MIN,
+          },
+        });
       }
 
       case 'agendamentos.criar': {
@@ -7080,7 +7151,10 @@ export default async function handler(req, res) {
         if (limpo.length >= 2) conds.push(`contato_nome.ilike.${pgQ('*' + limpo + '*')}`, `ultima_msg.ilike.${pgQ('*' + limpo + '*')}`);
         if (digitos.length >= 4) conds.push(`contato_fone.like.${pgQ('*' + digitos + '*')}`);
         if (limpo.length >= 3) {
-          const ms = await sb(e, `atend_mensagens?select=conversa_id&excluido_em=is.null&conteudo=ilike.${encodeURIComponent('*' + limpo + '*')}&order=created_at.desc&limit=400`) || [];
+          // o texto das mensagens e o que foi dito nos áudios (transcrição)
+          const ms = await sb(e, `atend_mensagens?select=conversa_id&excluido_em=is.null` +
+            `&or=${encodeURIComponent(`(conteudo.ilike.${pgQ('*' + limpo + '*')},transcricao.ilike.${pgQ('*' + limpo + '*')})`)}` +
+            `&order=created_at.desc&limit=400`) || [];
           const ids = [...new Set(ms.map(m => m.conversa_id))].slice(0, 120);
           if (ids.length) conds.push(`id.in.(${ids.join(',')})`);
         }
@@ -8490,9 +8564,12 @@ export default async function handler(req, res) {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const d = body.config && typeof body.config === 'object' ? body.config : null;
         if (!d) return res.status(400).json({ ok: false, error: 'config inválida.' });
+        // soma ao que já existe: cada tela salva só as chaves dela. Substituir
+        // o JSON inteiro fazia "Salvar tempos" apagar o que outra tela guardou
+        const atual = await sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null);
         await sb(e, 'atend_config?id=eq.1', {
           method: 'PATCH', prefer: 'return=minimal',
-          body: { dados: d, updated_at: new Date().toISOString(), updated_by: user.id },
+          body: { dados: { ...((atual && atual.dados) || {}), ...d }, updated_at: new Date().toISOString(), updated_by: user.id },
         });
         return res.status(200).json({ ok: true });
       }
@@ -8965,11 +9042,36 @@ export default async function handler(req, res) {
           // banco, que é onde uma auditoria vai procurar — não numa resposta
           // de API que qualquer aba aberta consegue ler.
           if (m.excluido_em) {
-            m.conteudo = null; m.conteudo_original = null; m.midia_url = null; m.localizacao = null; m.tipo = 'texto'; continue;
+            m.conteudo = null; m.conteudo_original = null; m.midia_url = null; m.localizacao = null; m.transcricao = null; m.tipo = 'texto'; continue;
           }
           if (m.midia_url) m.midia_link = await assinarMidia(e, m.midia_url).catch(() => null);
         }
         return res.status(200).json({ ok: true, mensagens: msgs, mais_antigas });
+      }
+
+      /* Transcrição pedida pelo atendente: áudio que chegou antes da
+         transcrição existir, mais longo que o limite da chegada, ou que
+         falhou na hora. O resultado fica gravado para todo mundo. */
+      case 'mensagens.transcrever': {
+        const mid = Number(body.mensagem_id);
+        if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório' });
+        const m = await sbUm(e, `atend_mensagens?id=eq.${mid}&select=id,conversa_id,tipo,midia_url,excluido_em,transcricao`);
+        if (!m) return res.status(404).json({ ok: false, error: 'Mensagem não encontrada.' });
+        const acesso = await conversaDoUsuario(e, user, m.conversa_id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        if (m.tipo !== 'audio' || !m.midia_url || m.excluido_em) {
+          return res.status(400).json({ ok: false, error: 'Só dá para transcrever áudio guardado.' });
+        }
+        if (m.transcricao != null && !body.refazer) return res.status(200).json({ ok: true, transcricao: m.transcricao });
+        if (!e.GROQ) return res.status(400).json({ ok: false, error: 'A IA (GROQ_API_KEY) não está configurada na Vercel.' });
+        const url = await assinarMidia(e, m.midia_url, 300);
+        if (!url) return res.status(502).json({ ok: false, error: 'Não consegui abrir o arquivo do áudio.' });
+        const arq = await fetch(url);
+        if (!arq.ok) return res.status(502).json({ ok: false, error: `Não consegui baixar o áudio (${arq.status}).` });
+        const buf = Buffer.from(await arq.arrayBuffer());
+        const t = await groqTranscrever({ audio: buf, mimetype: arq.headers.get('content-type') || 'audio/ogg', chave: e.GROQ, prazoMs: 25000 });
+        await sb(e, `atend_mensagens?id=eq.${mid}`, { method: 'PATCH', prefer: 'return=minimal', body: { transcricao: t.texto } });
+        return res.status(200).json({ ok: true, transcricao: t.texto });
       }
 
       /* Apagar no WhatsApp uma mensagem que NÓS enviamos.
