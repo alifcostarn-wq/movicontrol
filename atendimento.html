@@ -917,6 +917,18 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
   border-radius:20px;padding:5px 13px;font-size:11.5px;font-weight:700;
 }
 .ci-zum .zt{font-weight:400;opacity:.8;font-size:10.5px;}
+/* aviso de fila que o MoviTalk posta no canal do setor */
+.ci-fila{
+  align-self:stretch;display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:6px 0;
+  background:var(--amber-tint);border:1px solid var(--amber-line);border-left:4px solid var(--orange,#f59e0b);
+  color:var(--brown-txt);border-radius:10px;padding:8px 12px;font-size:12.5px;line-height:1.45;
+}
+.ci-fila.super{background:var(--red-tint);border-color:var(--red-line);border-left-color:var(--red);color:var(--red-txt);}
+.ci-fila .cf-txt{flex:1 1 220px;font-weight:600;}
+.ci-fila .cf-de{display:block;font-size:10.5px;font-weight:800;letter-spacing:.03em;margin-bottom:1px;}
+.ci-fila .cf-abrir{border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:6px 11px;min-height:32px;
+  font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;}
+.ci-fila .cf-abrir:hover{background:color-mix(in srgb,currentColor 10%,transparent);}
 .ci-zumbtn{position:relative;}
 .ci-zumbtn:disabled{opacity:.45;cursor:not-allowed;}
 
@@ -4208,10 +4220,11 @@ function renderAvisoFila(){
   const grave=pior>=ALERTA_FILA.super_min;
   el.innerHTML=`<button class="fila-off ${grave?'grave':''}" type="button" title="Clientes esperando na fila há mais de ${ALERTA_FILA.min} min. Clique para ver a fila.">
     ⏱ ${longas.length} na fila há +${ALERTA_FILA.min} min · pior ${esc(fmtEspera(pior))}</button>`;
-  el.querySelector('button').onclick=()=>{
-    if(view!=='kanban'){ view='kanban'; document.querySelectorAll('.nav-item[data-view]').forEach(x=>x.classList.toggle('active', x.dataset.view==='kanban')); }
-    etapaAtual='fila'; renderAll();
-  };
+  el.querySelector('button').onclick=verFila;
+}
+function verFila(){
+  if(view!=='kanban'){ view='kanban'; document.querySelectorAll('.nav-item[data-view]').forEach(x=>x.classList.toggle('active', x.dataset.view==='kanban')); }
+  etapaAtual='fila'; renderAll();
 }
 
 /* Aviso flutuante — só para quem está esperando atendimento, onde o relógio
@@ -6351,7 +6364,8 @@ async function renderTempos(el){
         O painel toca, sacode a tela e deixa um aviso no canto até alguém abrir a conversa — uma vez
         por cliente em cada nível. Com o MoviTalk em segundo plano, sai também a notificação do
         sistema (ative em 🔔 Alerta sonoro). Os administradores veem no cabeçalho quantos estão
-        esperando além do tempo, em qualquer tela.
+        esperando além do tempo, em qualquer tela. E fica registrado no Chat Interno, no canal do
+        setor da conversa (no Geral, sem setor), enquanto a empresa está aberta.
       </div>
     </div>
 
@@ -10395,6 +10409,9 @@ function renderChatInterno(a){
           <span class="cp-x" data-cancelag="${g.id}" title="Cancelar">✕</span></div>`).join('')}
         ${thread.length?thread.map(m=> m.tipo==='zumbido'
           ? `<div class="ci-zum">🔔 ${esc(m.de===(USUARIO&&USUARIO.nome)?'Você chamou a atenção':m.de+' chamou sua atenção')}<span class="zt">${esc(m.h)}</span></div>`
+          : (m.tipo==='fila'||m.tipo==='fila_super')
+          ? `<div class="ci-fila${m.tipo==='fila_super'?' super':''}"><div class="cf-txt"><span class="cf-de">${esc(m.de||'MoviTalk')} · ${esc(m.h)}</span>${esc(m.x)}</div>
+              <button type="button" class="cf-abrir" data-cifila="${Number(m.conv)||''}">${m.conv?'Abrir conversa':'Ver a fila'}</button></div>`
           : `<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${esc(m.x)}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
           :'<div class="sched-empty" style="align-self:center;">Nenhuma mensagem ainda. Comece a conversa!</div>'}
       </div>
@@ -10410,6 +10427,13 @@ function renderChatInterno(a){
   const volt=$('#ciVoltar'); if(volt) volt.onclick=()=>{ ciEmThread=false; renderChatInterno(a); };
   const th=$('#ciThread'); if(th) th.scrollTop=99999;
 
+  // aviso de fila: abre a conversa (ou a fila, quando o aviso junta várias)
+  a.querySelectorAll('[data-cifila]').forEach(el=>el.onclick=()=>{
+    const id=Number(el.dataset.cifila);
+    if(!id){ verFila(); return; }
+    if(state.conversas.some(x=>x.id===id)) abrirDaFila(id);
+    else toast('Essa conversa não está mais na lista do painel.');
+  });
   a.querySelectorAll('[data-cancelag]').forEach(el=>el.onclick=async()=>{
     if(!confirm('Cancelar esta mensagem programada?')) return;
     try{

@@ -6123,6 +6123,11 @@ async function tratarCron(e) {
   try { interno = await entregarChatAgendado(e); }
   catch (err) { console.error('[chat interno]', err.message); interno = { erro: err.message }; }
 
+  // ---- chat interno: cliente esperando demais na fila ----
+  let filaChat = null;
+  try { filaChat = await avisarFilaNoChat(e, cfgAt); }
+  catch (err) { console.error('[fila] chat interno:', err.message); filaChat = { erro: err.message }; }
+
   // pagamento confirmado: substitui o SMS que o IXC manda hoje pelo gateway
   // Gammu/Evotrix — ver o comentário grande na função para o porquê
   let pagamento = null;
@@ -6149,7 +6154,7 @@ async function tratarCron(e) {
            bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
-           cobranca: auto, campanhas, pagamento, interno, aniversario, contas, movimentos };
+           cobranca: auto, campanhas, pagamento, interno, fila_chat: filaChat, aniversario, contas, movimentos };
 }
 
 // ============================================================================
@@ -6207,6 +6212,97 @@ async function entregarChatAgendado(e) {
   }
 
   return { postadas, lembretes };
+}
+
+// ============================================================================
+// CHAT INTERNO — cliente esperando demais na fila
+// ----------------------------------------------------------------------------
+// O painel de cada um já toca e mostra o aviso no canto; aqui fica o registro
+// no canal do setor da conversa (no Geral, sem setor), que a equipe toda vê:
+// aos fila_alerta_min minutos para quem atende o setor, aos
+// fila_alerta_super_min chamando a supervisão. Uma vez por nível e por entrada
+// na fila: a chave de atend_fila_alertas é a reivindicação, como o carimbo das
+// programadas, e duas varreduras juntas não postam em dobro.
+//
+// Com o expediente fechado não posta. Quem escreveu de madrugada aparece na
+// abertura, e várias conversas que passam do tempo na mesma varredura viram
+// uma mensagem só por canal, para não lotar o chat.
+//
+// Mensagem do sistema: sem autor (o painel mostra "MoviTalk") e com a
+// conversa, para o botão "Abrir conversa".
+// ============================================================================
+function esperaLegivel(min) {
+  min = Math.floor(min);
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60), r = min % 60;
+  return h + 'h' + (r ? String(r).padStart(2, '0') : '');
+}
+
+async function avisarFilaNoChat(e, cfg) {
+  if (cfg.fila_alerta_ativo === false) return { postadas: 0 };
+  if (!horarioSituacao(await horarioConfig(e), new Date()).aberto) return { postadas: 0, fechado: true };
+  const min = Number(cfg.fila_alerta_min) || FILA_ALERTA_MIN;
+  const superMin = Math.max(min, Number(cfg.fila_alerta_super_min) || FILA_ALERTA_SUPER_MIN);
+  const agora = Date.now();
+  const corte = new Date(agora - min * 60000).toISOString();
+  const fila = await sb(e,
+    `atend_conversas?coluna=eq.fila&deleted_at=is.null&fila_desde=lte.${encodeURIComponent(corte)}` +
+    `&select=id,contato_nome,contato_fone,setor,fila_desde&order=fila_desde.asc&limit=100`);
+  if (!fila || !fila.length) return { postadas: 0 };
+  // setor apagado ou desativado não tem canal na barra do chat: vai para o Geral
+  const setores = new Set(((await sb(e, 'atend_setores?ativo=is.true&select=nome')) || []).map(x => x.nome));
+
+  const grupos = new Map();
+  for (const c of fila) {
+    const minutos = (agora - new Date(c.fila_desde).getTime()) / 60000;
+    // já passou dos dois tempos (varredura atrasada, madrugada): só o nível de cima
+    const nivel = minutos >= superMin ? 'super' : 'setor';
+    const meu = await sb(e, 'atend_fila_alertas', {
+      method: 'POST', prefer: 'return=representation,resolution=ignore-duplicates',
+      body: { conversa_id: c.id, fila_desde: c.fila_desde, nivel },
+    }).catch(err => { console.error('[fila] reivindicar:', err.message); return null; });
+    if (!meu || !meu.length) continue;
+    const canal = c.setor && setores.has(c.setor) ? c.setor : 'Geral';
+    const k = canal + '|' + nivel;
+    if (!grupos.has(k)) grupos.set(k, { canal, nivel, itens: [] });
+    grupos.get(k).itens.push({ c, minutos });
+  }
+
+  let postadas = 0;
+  for (const g of grupos.values()) {
+    const sup = g.nivel === 'super';
+    const nome = c => String(c.contato_nome || '').trim() || c.contato_fone || 'Cliente sem nome';
+    let texto;
+    if (g.itens.length === 1) {
+      const { c, minutos } = g.itens[0];
+      texto = `${sup ? '🚨' : '⏱'} ${nome(c)} está esperando na fila há ${esperaLegivel(minutos)}.`;
+    } else {
+      const lista = g.itens.slice(0, 6).map(({ c, minutos }) => `${nome(c)} (${esperaLegivel(minutos)})`);
+      const resto = g.itens.length - lista.length;
+      const juntos = resto > 0 ? lista.join(', ') + ` e mais ${resto}`
+        : lista.slice(0, -1).join(', ') + ' e ' + lista[lista.length - 1];
+      texto = `${sup ? '🚨' : '⏱'} ${g.itens.length} clientes esperando na fila há mais de ${sup ? superMin : min} min: ${juntos}.`;
+    }
+    if (sup) texto += ' Supervisão avisada.';
+    try {
+      await sb(e, 'atend_chat_interno', {
+        method: 'POST', prefer: 'return=minimal',
+        body: {
+          canal: g.canal, dm_para: null, autor_id: null, tipo: sup ? 'fila_super' : 'fila',
+          conversa_id: g.itens.length === 1 ? g.itens[0].c.id : null, texto,
+        },
+      });
+      postadas++;
+    } catch (err) {
+      console.error('[fila] postar:', err.message);
+      // devolve a reivindicação: a próxima varredura tenta de novo
+      for (const { c } of g.itens) {
+        await sb(e, `atend_fila_alertas?conversa_id=eq.${c.id}&nivel=eq.${g.nivel}` +
+          `&fila_desde=eq.${encodeURIComponent(c.fila_desde)}`, { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {});
+      }
+    }
+  }
+  return { postadas };
 }
 
 // ============================================================================
@@ -6936,17 +7032,21 @@ export default async function handler(req, res) {
 
       case 'chat.listar': {
         const [linhas, perfis] = await Promise.all([
-          sb(e, 'atend_chat_interno?select=*&order=created_at&limit=500'),
+          // as 500 mais recentes (em ordem crescente eram as 500 PRIMEIRAS: a
+          // partir da 501ª, mensagem nova não aparecia mais)
+          sb(e, 'atend_chat_interno?select=*&order=created_at.desc,id.desc&limit=500'),
           sb(e, 'perfis?select=id,nome&atendimento=is.true'),
         ]);
         const nomeDe = Object.fromEntries((perfis || []).map(p => [p.id, p.nome]));
         const canais = {}, dm = {};
-        for (const l of (linhas || [])) {
+        for (const l of (linhas || []).reverse()) {
           const item = {
-            de: nomeDe[l.autor_id] || 'Usuário',
+            // sem autor = mensagem do sistema (aviso de fila)
+            de: l.autor_id ? (nomeDe[l.autor_id] || 'Usuário') : 'MoviTalk',
             x: l.texto,
             tipo: l.tipo || 'texto',
             h: new Date(l.created_at).toTimeString().slice(0, 5),
+            ...(l.conversa_id ? { conv: l.conversa_id } : {}),
           };
           if (l.canal) {
             (canais[l.canal] ||= []).push(item);
