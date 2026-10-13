@@ -12323,6 +12323,12 @@ function mostrarAvisoVersao(){
   if(VERSAO.avisado || !el) return;
   VERSAO.avisado = true;
   el.innerHTML = `<button class="vs-nova" type="button" title="O MoviTalk foi atualizado. Recarregue para usar a versão nova: o que estiver escrito volta para o campo.">✨ Versão nova — atualizar</button>`;
+  // no meio dos avisos de fila e do WhatsApp o botão passava despercebido
+  // (o toast comum some em 2s: este fica 8s)
+  try{
+    const t=$('#toast'); t.textContent='✨ O MoviTalk foi atualizado — clique em "Versão nova" no topo para atualizar.';
+    t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 8000);
+  }catch{}
   el.querySelector('button').onclick = ()=>{
     capturarRascunhoVivo();     // o que acabou de ser digitado também vai junto
     try{ sessionStorage.setItem('mt_rascunhos', JSON.stringify([...RASCUNHOS])); }catch{}
@@ -12340,16 +12346,39 @@ function mostrarAvisoVersao(){
   }catch{}
 })();
 
+/* Quando conferir. Só a cada 10 min e ao voltar para a aba deixava o aviso
+   para trás: com a aba sempre à frente o atendente esperava até 10 min, e com
+   o MoviTalk aberto DENTRO do MoviOne o "voltar para a aba" acontece na
+   página de fora e nem sempre chega no quadro. Agora confere a cada 2 min
+   (um HEAD, sem baixar nada), ao voltar para a aba ou para a janela — a de
+   fora também, quando é o MoviOne — e no primeiro clique ou tecla depois de
+   1 min sem conferir. */
+const VERSAO_INTERVALO = 2*60*1000, VERSAO_FOLGA = 60*1000;
 (async function vigiarVersao(){
   VERSAO.assinatura = await assinaturaDoServidor();
   if(!VERSAO.assinatura) return;          // sem ETag não há o que comparar
+  let ultima = Date.now(), conferindo = false;
   const conferir = async ()=>{
-    if(VERSAO.avisado || document.hidden) return;
-    const agora = await assinaturaDoServidor();
-    if(agora && agora !== VERSAO.assinatura) mostrarAvisoVersao();
+    if(VERSAO.avisado || document.hidden || conferindo) return;
+    conferindo = true; ultima = Date.now();
+    try{
+      const agora = await assinaturaDoServidor();
+      if(agora && agora !== VERSAO.assinatura) mostrarAvisoVersao();
+    } finally { conferindo = false; }
   };
-  setInterval(conferir, 10*60*1000);
+  const seFaz = ()=>{ if(Date.now() - ultima >= VERSAO_FOLGA) conferir(); };
+  setInterval(conferir, VERSAO_INTERVALO);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) conferir(); });
+  window.addEventListener('focus', conferir);
+  window.addEventListener('pageshow', conferir);
+  ['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev, seFaz, { capture:true, passive:true }));
+  // aberto dentro do MoviOne: a troca de aba acontece na página de fora
+  try{
+    if(window.top !== window && window.top.document){
+      window.top.document.addEventListener('visibilitychange', ()=>{ if(!window.top.document.hidden) conferir(); });
+      window.top.addEventListener('focus', conferir);
+    }
+  }catch{}
 })();
 
 /* o render inicial acontece depois do login, em entrar() */
