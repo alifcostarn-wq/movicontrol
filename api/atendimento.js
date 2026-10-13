@@ -2650,7 +2650,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
           'Extraia SOMENTE conhecimento que vale para QUALQUER cliente e que foi dito ou confirmado pelo ATENDENTE (nunca o que só o cliente ou o bot disse).',
           'Ignore: dados pessoais; valores, datas e vencimentos de um cliente específico; protocolos; endereços; combinados só daquele caso; saudações e despedidas; e o que já está em "JÁ NA BASE".',
           'Tipos: "fato" = informação geral da empresa (ex.: prazo de liberação depois do pagamento, formas de pagamento aceitas, horário de atendimento).',
-          '"exemplo" = pergunta comum de cliente (titulo) e a resposta do atendente reescrita para servir a qualquer cliente (conteudo); "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
+          '"exemplo" = pergunta comum de cliente (titulo) e, em conteudo, a RESPOSTA PRONTA PARA MANDAR ao cliente, falando com ele ("você"), do jeito que o atendente respondeu mas servindo a qualquer cliente — nunca uma descrição como "o atendente envia…"; "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
           `SETORES: ${setores.join(', ')}.`,
           'No máximo 3 itens. Se não houver nada geral para aprender, devolva {"itens": []}.',
           'Responda APENAS com JSON: {"itens":[{"tipo":"fato","titulo":"...","conteudo":"..."},{"tipo":"exemplo","titulo":"...","conteudo":"...","setor":null}]}',
@@ -2665,6 +2665,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       continue;
     }
     let novos = 0;
+    const desteAtendimento = new Set();   // dois itens parecidos na MESMA leitura não são "visto em 2 atendimentos"
     for (const it of itens) {
       // já existe parecido? sugestão repetida ganha +1; aprovado ou descartado não volta
       let melhor = null, nota = 0;
@@ -2674,7 +2675,8 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
         if (n > nota) { nota = n; melhor = x; }
       }
       if (melhor && nota >= 0.55) {
-        if (melhor.status === 'sugerido') {
+        if (melhor.status === 'sugerido' && !desteAtendimento.has(melhor.id)) {
+          desteAtendimento.add(melhor.id);
           melhor.vezes = (melhor.vezes || 1) + 1;
           await sb(e, `atend_ia_base?id=eq.${melhor.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { vezes: melhor.vezes } });
         }
@@ -2682,7 +2684,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       }
       const novo = await sbUm(e, 'atend_ia_base', { method: 'POST', body: {
         ...it, status: 'sugerido', origem: 'automatico', conversa_id: c.id, ativo: true } });
-      if (novo) { base.unshift(novo); novos++; }
+      if (novo) { base.unshift(novo); novos++; desteAtendimento.add(novo.id); }
     }
     await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { itens: novos } });
     lidas++; sugestoes += novos;
