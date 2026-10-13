@@ -1661,6 +1661,26 @@ select.transf:focus,input.transf:focus{border-color:var(--green);}
   color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 9px;outline:none;cursor:pointer;
 }
 .sector-sel option{color:#1e293b;}
+/* filtro de setor: um botão que abre uma lista de marcar (um, dois, todos) */
+.sector-switch{position:relative;}
+.sector-btn{display:flex;align-items:center;gap:7px;text-align:left;min-height:36px;}
+.sector-btn .sb-dots{display:inline-flex;gap:3px;flex-shrink:0;}
+.sector-btn .sb-dots:empty{display:none;}
+.sector-btn .sb-dots .sec-dot{box-shadow:0 0 0 1.5px rgba(255,255,255,.85);}
+.sector-btn .sb-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sector-btn svg{width:14px;height:14px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s;}
+.sector-btn[aria-expanded="true"] svg{transform:rotate(180deg);}
+/* pode passar da barra lateral: com a largura dela, "Todos os setores" quebrava */
+.sector-pop{position:absolute;left:10px;width:max(calc(100% - 20px),230px);top:calc(100% - 8px);z-index:40;background:var(--card);color:var(--text);
+  border:1px solid var(--line);border-radius:11px;box-shadow:0 14px 34px rgba(15,23,42,.3);padding:6px;}
+.sector-pop[hidden]{display:none;}
+.sp-item{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text);user-select:none;}
+.sp-item:hover{background:var(--card-2);}
+.sp-item input{width:16px;height:16px;margin:0;flex-shrink:0;accent-color:var(--green);cursor:pointer;}
+.sp-item .sec-dot{width:8px;height:8px;}
+.sp-sep{height:1px;background:var(--line);margin:4px 3px;}
+.sp-nota{font-size:11px;line-height:1.4;color:var(--text-mid);padding:6px 9px 4px;}
+.setor-mini .sm-dots{display:flex;gap:2px;}
 .sec-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block;}
 .sec-badge{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;padding:2.5px 8px 2.5px 6px;border-radius:6px;color:color-mix(in srgb,var(--sc) 55%,#000);}
 body.dark-mode .sec-badge{color:color-mix(in srgb,var(--sc) 55%,#fff);}
@@ -2523,6 +2543,7 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .drawer-back.open{opacity:1;pointer-events:auto;}
   .nav-item{padding:14px 12px;font-size:15px;}
   .sector-sel{padding:11px 10px;font-size:15px;}
+  .sp-item{padding:11px 10px;font-size:15px;}
 
   /* --- CABEÇALHO EM UMA LINHA SÓ ---------------------------------------
      Antes ele quebrava em quatro faixas (título, avisos, "Novo", busca) e
@@ -3045,13 +3066,12 @@ try{var _t=localStorage.getItem('movitalk_tema');if(_t==='dark'||(!_t&&window.ma
       <div class="logo-mini" aria-hidden="true">M<span class="o-dot">T</span></div>
     </div>
     <div class="sector-switch">
-      <div class="sector-lbl">Setor</div>
-      <select class="sector-sel" id="sectorSel">
-        <option value="todos">Todos (admin)</option>
-        <option value="Suporte">Suporte</option>
-        <option value="Financeiro">Financeiro</option>
-        <option value="Vendas">Vendas</option>
-      </select>
+      <div class="sector-lbl" id="sectorLbl">Setor</div>
+      <button class="sector-sel sector-btn" id="sectorBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="sectorPop">
+        <span class="sb-dots" aria-hidden="true"></span><span class="sb-txt">Todos os setores</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="sector-pop" id="sectorPop" role="group" aria-labelledby="sectorLbl" hidden></div>
     </div>
     <button class="setor-mini" id="setorMini" type="button"></button>
     <nav class="nav" id="nav">
@@ -3816,7 +3836,7 @@ async function carregarTudo(){
     id:a.id, convId:a.conversa_id, texto:a.texto,
     quando: fmtQuando(a.quando), quandoISO: a.quando, erro: a.erro||null,
   }));
-  meuSetor = USUARIO.setor || 'todos';
+  iniciarFiltroSetor();
   await recarregarChat();
 }
 
@@ -4389,8 +4409,7 @@ async function entrar(session){
   try{
     await carregarTudo();
     renderUsuarioRodape();
-    $('#sectorSel').value = meuSetor;
-    pintarSetorMini();
+    pintarFiltroSetor();
     cargaTerminou();
     $('#shell').style.display='';
     // status é comunicação institucional: só admin publica. Precisa ser aqui,
@@ -4449,7 +4468,7 @@ async function sair(){
   location.reload();
 }
 
-let filtroTag=null, filtroRisco=false, busca='', view='kanban', modalId=null, meuSetor='todos', ciAtivo='canal:Geral', ciEmThread=false;
+let filtroTag=null, filtroRisco=false, busca='', view='kanban', modalId=null, ciAtivo='canal:Geral', ciEmThread=false;
 let flowSelected=null, flowConnecting=null, flowDrag=null, flowZoom=1;
 // Deslocamento do desenho dentro da moldura. O canvas não rola mais: ele é
 // TRANSLADADO, que é o que permite arrastar com o mouse/trackpad como num
@@ -4618,7 +4637,7 @@ function casaBuscaTopo(c){
   return c.nome.toLowerCase().includes(busca)||c.fone.includes(busca)||c.preview.toLowerCase().includes(busca);
 }
 function passa(c){
-  if(meuSetor!=='todos' && c.setor!==meuSetor) return false;
+  if(!passaSetor(c)) return false;
   if(busca && !(casaBuscaTopo(c) || achadaNoServidor(c, busca))) return false;
   if(filtroTag && !c.tags.includes(filtroTag)) return false;
   if(filtroRisco && !emRisco(c)) return false;
@@ -11490,7 +11509,101 @@ function ajustarCabecalho(){
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(agendar);
 }
 $('#btnFiltros').onclick=()=>{ const fb=$('#filterbar'); fb.style.display=fb.style.display==='none'?'flex':'none'; };
-$('#sectorSel').onchange=e=>{ meuSetor=e.target.value; pintarSetorMini(); renderAll(); };
+/* ================= FILTRO DE SETOR =================
+   O que aparece no painel: todos os setores, ou os que a pessoa marcar (um,
+   dois, quantos quiser), mais "Sem setor" para as conversas que ainda não
+   foram encaminhadas. Quem tem setor só recebe o dele e as sem setor, então a
+   lista dele só traz essas duas. A escolha fica lembrada neste navegador, por
+   usuário. Vazio = todos. */
+const SEM_SETOR='__sem';
+let meusSetores=[];
+const chaveFiltroSetor=()=>'mt_filtro_setor:'+((USUARIO&&USUARIO.id)||'');
+const restritoAoSetor=()=>!!(USUARIO && !USUARIO.admin && USUARIO.setor);
+function opcoesSetor(){
+  return [...(restritoAoSetor() ? [USUARIO.setor] : SETORES.map(s=>s.id)), SEM_SETOR];
+}
+const nomeOpcaoSetor=v=>v===SEM_SETOR ? 'Sem setor' : v;
+const corOpcaoSetor=v=>v===SEM_SETOR ? '#94a3b8' : corSetor(v);
+const textoTodosSetores=()=>restritoAoSetor() ? 'Tudo o que você vê' : 'Todos os setores';
+function passaSetor(c){ return !meusSetores.length || meusSetores.includes(c.setor || SEM_SETOR); }
+function iniciarFiltroSetor(){
+  const ok=new Set(opcoesSetor());
+  let salvo=null;
+  try{ salvo=JSON.parse(localStorage.getItem(chaveFiltroSetor())||'null'); }catch(e){}
+  // sem escolha guardada, como sempre foi: quem tem setor começa nele
+  meusSetores = Array.isArray(salvo) ? salvo.filter(v=>ok.has(v))
+    : (USUARIO && USUARIO.setor && ok.has(USUARIO.setor) ? [USUARIO.setor] : []);
+  pintarFiltroSetor();
+}
+function textoFiltroSetor(){
+  if(!meusSetores.length) return textoTodosSetores();
+  if(meusSetores.length<=2) return meusSetores.map(nomeOpcaoSetor).join(' + ');
+  return meusSetores.length+' selecionados';
+}
+function pintarFiltroSetor(){
+  const bt=$('#sectorBtn'); if(!bt) return;
+  const txt=textoFiltroSetor();
+  bt.querySelector('.sb-txt').textContent=txt;
+  bt.querySelector('.sb-dots').innerHTML=meusSetores.slice(0,3).map(v=>`<span class="sec-dot" style="background:${corOpcaoSetor(v)}"></span>`).join('');
+  bt.setAttribute('aria-label','Setor: '+txt+'. Abre a lista para escolher.');
+  // o botão é estreito ("Suporte + Fi…"): o nome inteiro fica na dica
+  bt.title = meusSetores.length>2 ? meusSetores.map(nomeOpcaoSetor).join(', ') : txt;
+  marcarListaSetor();
+  pintarSetorMini();
+}
+function pintarListaSetor(){
+  const pop=$('#sectorPop'); if(!pop) return;
+  const item=(v,nome,cor)=>`<label class="sp-item"><input type="checkbox" data-fset="${esc(v)}">`
+    +(cor?`<span class="sec-dot" style="background:${cor}"></span>`:'')+`<span>${esc(nome)}</span></label>`;
+  pop.innerHTML = item('__todos', textoTodosSetores(), null)
+    + '<div class="sp-sep"></div>'
+    + opcoesSetor().map(v=>item(v, nomeOpcaoSetor(v), corOpcaoSetor(v))).join('')
+    + '<div class="sp-nota">Marque um ou mais. "Sem setor" são as conversas que ainda não foram encaminhadas.</div>';
+  marcarListaSetor();
+}
+function marcarListaSetor(){
+  const pop=$('#sectorPop'); if(!pop) return;
+  pop.querySelectorAll('[data-fset]').forEach(i=>{
+    i.checked = i.dataset.fset==='__todos' ? !meusSetores.length : meusSetores.includes(i.dataset.fset);
+  });
+}
+function abrirFiltroSetor(abrir){
+  const bt=$('#sectorBtn'), pop=$('#sectorPop'); if(!bt||!pop) return;
+  if(abrir===undefined) abrir=pop.hidden;
+  if(abrir){
+    pintarListaSetor(); pop.hidden=false; bt.setAttribute('aria-expanded','true');
+    const foco=pop.querySelector('[data-fset]:checked')||pop.querySelector('[data-fset]');
+    if(foco) foco.focus();
+  } else { pop.hidden=true; bt.setAttribute('aria-expanded','false'); }
+}
+$('#sectorBtn').onclick=()=>abrirFiltroSetor();
+// marca e já aplica; a lista fica aberta para marcar o segundo
+$('#sectorPop').addEventListener('change', ev=>{
+  const i=ev.target.closest('[data-fset]'); if(!i) return;
+  const v=i.dataset.fset;
+  if(v==='__todos') meusSetores=[];
+  else {
+    const sel=new Set(meusSetores);
+    if(i.checked) sel.add(v); else sel.delete(v);
+    meusSetores=opcoesSetor().filter(x=>sel.has(x));   // na ordem da lista
+  }
+  try{ localStorage.setItem(chaveFiltroSetor(), JSON.stringify(meusSetores)); }catch(e){}
+  pintarFiltroSetor();
+  renderAll();
+});
+document.addEventListener('mousedown', ev=>{
+  const pop=$('#sectorPop');
+  if(pop && !pop.hidden && !ev.target.closest('#sectorPop,#sectorBtn')) abrirFiltroSetor(false);
+});
+document.addEventListener('keydown', ev=>{
+  const pop=$('#sectorPop');
+  if(ev.key!=='Escape' || !pop || pop.hidden) return;
+  ev.stopPropagation(); abrirFiltroSetor(false); $('#sectorBtn').focus();
+}, true);
+// saiu pelo Tab para outro lugar: fecha
+$('#sectorPop').addEventListener('focusout', ev=>{
+  if(ev.relatedTarget && !ev.relatedTarget.closest('#sectorPop,#sectorBtn')) abrirFiltroSetor(false);
+});
 /* ================= AVISO RÁPIDO =================
    Cobrança manual, aviso de agendamento, recado pontual: manda UMA mensagem e
    pronto. Antes só existia "Novo atendimento", que abre a conversa em "Em
@@ -11697,7 +11810,7 @@ function novoAtendimentoDialogo(){
     // Suporte só por ter sido reaberto pelo painel. Sem um padrão que faça
     // sentido, a escolha passa a ser explícita: nada vem marcado.
     const padrao = USUARIO.setor
-      || (meuSetor && meuSetor !== 'todos' ? meuSetor : null);
+      || (meusSetores.length===1 && meusSetores[0]!==SEM_SETOR ? meusSetores[0] : null);
     const ov=document.createElement('div');
     ov.className='tr-overlay';
     ov.innerHTML=`<div class="pn-modal" style="width:min(480px,100%);">
@@ -11843,15 +11956,17 @@ function alternarSlim(v){
   try{ localStorage.setItem(MENU_CHAVE, sidebarSlim?'1':'0'); }catch(e){}
   aplicarSlim();
 }
-// a etiqueta do setor no menu recolhido: "Todos" ou as três letras, com a cor
+// a etiqueta do setor no menu recolhido: "Todos", as três letras com a cor,
+// ou, com vários marcados, os pontinhos e quantos são
 function pintarSetorMini(){
   const b=$('#setorMini'); if(!b) return;
-  const sel=$('#sectorSel');
-  const nome = (sel && sel.selectedOptions[0] && sel.selectedOptions[0].textContent) || meuSetor;
-  b.innerHTML = meuSetor==='todos' ? 'Todos'
-    : `<span class="sec-dot" style="background:${corSetor(meuSetor)}"></span>${esc(String(meuSetor).slice(0,3))}`;
-  b.dataset.dica = 'Setor: '+nome+' · clique para trocar';
-  b.setAttribute('aria-label', 'Setor: '+nome+'. Abre o menu para trocar.');
+  const n=meusSetores.length;
+  b.innerHTML = !n ? 'Todos'
+    : n===1 ? `<span class="sec-dot" style="background:${corOpcaoSetor(meusSetores[0])}"></span>${esc(nomeOpcaoSetor(meusSetores[0]).slice(0,3))}`
+    : `<span class="sm-dots">${meusSetores.slice(0,3).map(v=>`<span class="sec-dot" style="background:${corOpcaoSetor(v)}"></span>`).join('')}</span>${n}`;
+  const desc = n ? meusSetores.map(nomeOpcaoSetor).join(', ') : textoTodosSetores();
+  b.dataset.dica = (n>1?'Setores: ':'Setor: ')+desc+' · clique para trocar';
+  b.setAttribute('aria-label', (n>1?'Setores: ':'Setor: ')+desc+'. Abre o menu para trocar.');
 }
 (function(){
   const b=$('#sbToggle');
@@ -11863,7 +11978,7 @@ function pintarSetorMini(){
     if(!sidebarSlim || window.innerWidth<=860) return;
     if(ev.target.closest('#setorMini')){
       alternarSlim(false);
-      setTimeout(()=>{ const s=$('#sectorSel'); if(s){ s.focus(); try{ s.showPicker(); }catch(e){} } }, 220);
+      setTimeout(()=>abrirFiltroSetor(true), 220);
     } else if(ev.target.closest('.logo') || ev.target.closest('.usr-chip .cc-av')) alternarSlim(false);
   });
   /* O balão com o nome do item: um elemento só, no body, ao lado do ícone —
