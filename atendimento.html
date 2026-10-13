@@ -3881,7 +3881,7 @@ function ligarRealtime(){
       // não alerta pela conversa que já está aberta na tela: o atendente está
       // olhando para ela, o bipe só atrapalha
       // reação não bipa: é um sinal leve, não uma pergunta esperando resposta
-      if(p.new.direcao==='in' && p.new.tipo!=='reacao' && (modalId!==id || document.hidden)) tocarAlerta();
+      if(p.new.direcao==='in' && p.new.tipo!=='reacao' && (modalId!==id || document.hidden)) bipeSeForDoMeuSetor(id);
       atualizarTituloAlerta();
       const c = state.conversas.find(x=>x.id===id);
       if(!c) return;
@@ -4049,6 +4049,23 @@ function somDestravar(){
 // qualquer interação serve para o navegador liberar o áudio
 ['click','keydown','touchstart'].forEach(ev=>
   document.addEventListener(ev, somDestravar, {once:false, passive:true}));
+
+/* O bipe de mensagem nova é só do que a pessoa acompanha: os setores marcados
+   no filtro do menu (quem tem setor começa no dele). Antes tocava para toda
+   mensagem que o tempo real entregava: quem vê tudo (administrador, ou quem
+   está sem setor) ouvia o Financeiro inteiro estando no Suporte, e quem tem
+   setor ouvia as conversas sem setor, que ainda estão no bot. Conversa que
+   acabou de nascer ainda não está na lista: espera ela chegar (a lista se
+   recarrega pelo mesmo tempo real) para saber o setor. */
+async function bipeSeForDoMeuSetor(id){
+  let c = state.conversas.find(x=>x.id===id);
+  for(let i=0; !c && i<20; i++){
+    await new Promise(r=>setTimeout(r, 200));
+    c = state.conversas.find(x=>x.id===id);
+  }
+  // não chegou: é de fora do que esta pessoa recebe, a não ser que ela veja tudo
+  if(c ? passaSetor(c) : (!restritoAoSetor() && !meusSetores.length)) tocarAlerta();
+}
 
 function tocarAlerta(forcar){
   if(!SOM.ligado && !forcar) return;
@@ -4305,7 +4322,8 @@ async function pedirPermissaoNotificacao(){
    quem está com o volume baixo ou de fone tirado. */
 let _tituloBase=document.title, _piscaTimer=null, _naoLidasTotal=0;
 function atualizarTituloAlerta(){
-  const n=state.conversas ? state.conversas.reduce((s,c)=>s+(c.unread||0),0) : 0;
+  // conta o mesmo que bipa: só os setores marcados no filtro do menu
+  const n=state.conversas ? state.conversas.filter(passaSetor).reduce((s,c)=>s+(c.unread||0),0) : 0;
   _naoLidasTotal=n;
   if(_piscaTimer){ clearInterval(_piscaTimer); _piscaTimer=null; }
   if(!n || !document.hidden){ document.title=_tituloBase; return; }
@@ -12101,6 +12119,10 @@ function abrirAjusteSom(){
       </div>
       <div class="cp-lab" style="margin-top:14px">Volume</div>
       <input type="range" id="soVol" min="0.1" max="1" step="0.05" value="${SOM.vol}" style="width:100%">
+      <div class="tp-nota">
+        Toca só para os setores marcados no filtro "Setor" do menu, agora:
+        <b>${esc(textoFiltroSetor())}</b>. Para ouvir outro setor, marque-o lá.
+      </div>
       <div class="tp-nota">
         O alerta só toca uma vez a cada 1,5s — cliente que manda várias mensagens
         seguidas não vira uma sequência de bipes.
