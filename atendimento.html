@@ -1711,6 +1711,10 @@ body.dark-mode .sec-badge{color:color-mix(in srgb,var(--sc) 55%,#fff);}
 .ci-wrap{
   background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
   display:grid;grid-template-columns:220px 1fr;height:calc(100vh - 230px);overflow:hidden;
+  /* a linha da grade fica do tamanho da caixa: sem isto ela crescia com a
+     conversa, e numa conversa longa a barra de escrever era empurrada para
+     fora da caixa e sumia. A altura de verdade vem de ciAjustarAltura(). */
+  grid-template-rows:minmax(0,1fr);
 }
 .ci-list{border-right:1px solid var(--line);overflow-y:auto;padding:14px 10px;}
 .ci-sec-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-low);padding:8px 8px 6px;}
@@ -1722,9 +1726,9 @@ body.dark-mode .sec-badge{color:color-mix(in srgb,var(--sc) 55%,#fff);}
 .ci-item.on{background:var(--green-soft);color:var(--green-deep);}
 .ci-item .ci-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .ci-item .ci-av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0;}
-.ci-main{display:flex;flex-direction:column;min-width:0;}
+.ci-main{display:flex;flex-direction:column;min-width:0;min-height:0;}
 .ci-head{padding:14px 18px;border-bottom:1px solid var(--line);font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:9px;}
-.ci-thread{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:10px;background:var(--card-2);}
+.ci-thread{flex:1;min-height:0;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:10px;background:var(--card-2);}
 .ci-msg{max-width:62%;}
 .ci-msg.me{align-self:flex-end;}
 .ci-msg .ci-who{font-size:10px;font-weight:800;color:var(--text-low);margin-bottom:2px;}
@@ -2688,6 +2692,9 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   #auxview > *{flex:1 0 auto;min-height:0;}
   .ci-wrap,.flow-wrap{height:auto;min-height:0;}
   .ci-wrap{grid-template-columns:1fr;}
+  /* o chat ocupa o que sobra e NÃO cresce com a conversa: ela rola por dentro
+     e a barra de escrever fica no pé da tela, sem precisar rolar a página */
+  #auxview > .ci-wrap{flex:1 1 0;}
   .ci-list{border-right:none;padding:10px 8px;}
   .ci-wrap.emThread .ci-list{display:none;}
   .ci-wrap:not(.emThread) .ci-main{display:none;}
@@ -10505,6 +10512,7 @@ function renderChatInterno(a){
     </div>
   </div>`;
   ciLigarBarra(a);
+  ciAjustarAltura();
   const volt=$('#ciVoltar'); if(volt) volt.onclick=()=>{ ciEmThread=false; renderChatInterno(a); };
   const th=$('#ciThread'); if(th) th.scrollTop=99999;
 
@@ -10553,6 +10561,16 @@ function renderChatInterno(a){
     setTimeout(()=>{ const x=$('#ciZumbido'); if(x) x.disabled=false; }, 15000);
   };
 }
+
+/* Altura do chat no computador: o que sobra da janela abaixo do topo dele. Era
+   "100vh − 230px", um número fixo que deixava um vazio embaixo numa janela
+   baixa (e não acompanhava o cabeçalho). No celular quem manda é o flex. */
+function ciAjustarAltura(){
+  const w=document.querySelector('.ci-wrap'); if(!w) return;
+  if(window.innerWidth<=860){ w.style.height=''; return; }
+  w.style.height=Math.max(320, Math.floor(window.innerHeight-w.getBoundingClientRect().top-20))+'px';
+}
+window.addEventListener('resize', ()=>{ if(document.querySelector('.ci-wrap')) ciAjustarAltura(); });
 
 /* barra lateral compartilhada entre as threads e a aba de tarefas */
 function ciBarraLateral(outros){
@@ -10723,6 +10741,7 @@ function renderTarefas(a){
     </div>
   </div>`;
   ciLigarBarra(a);
+  ciAjustarAltura();
   const volt=$('#ciVoltar'); if(volt) volt.onclick=()=>{ ciEmThread=false; renderChatInterno(a); };
 
   a.querySelectorAll('[data-tf]').forEach(el=>el.onclick=async()=>{
