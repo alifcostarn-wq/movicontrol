@@ -29,6 +29,7 @@
 //   fluxo.obter        -> fluxo ativo
 //   fluxo.salvar       -> grava nodes/edges (só admin)
 //   fluxo.simular      -> testa o fluxo sem WhatsApp (dry-run)
+//   ia.testar          -> sala de teste da IA conversacional (Groq), sem WhatsApp
 //   instabilidades.listar -> quedas de regiao marcadas no MoviFiber
 //
 // INTEGRACAO MOVIFIBER: quedas marcadas la (movifiber_incidentes) viram
@@ -2430,6 +2431,71 @@ async function responderIA(e, no, conversa, texto) {
     console.error('[atendimento] IA:', err.message);
     return socorro('Vou te encaminhar para um atendente. 👤');
   }
+}
+
+// ============================================================================
+// IA CONVERSACIONAL — SALA DE TESTE (Configurações › Testar IA)
+// ============================================================================
+/* A IA de hoje (responderIA) responde uma mensagem solta, sem saber o que o
+   cliente disse antes nem o que a MoviOn oferece — e inventa: planos de 50,
+   100 e 300 Mbps, pagamento por cartão, um "portal". Esta é a versão que
+   conversa: recebe o histórico, conhece só o que está escrito no próprio
+   fluxo do bot (planos, preços, passos de suporte) e os setores, e diz quando
+   e para onde passaria a conversa. Por enquanto só roda na sala de teste: o
+   WhatsApp dos clientes continua com o fluxo de hoje. */
+const IA_MAX_TURNOS = 16;
+const IA_MARCA_RE = /\[(ENCAMINHAR|IGNORAR)(?::([^\]\n]*))?\]/i;
+
+/* O que o bot já diz ao cliente é o que a IA pode afirmar: os textos dos
+   blocos de mensagem e de menu do fluxo ativo. Mudou no editor, muda aqui. */
+function baseDaIA(fluxo) {
+  const linhas = [];
+  for (const n of (fluxo && fluxo.nodes) || []) {
+    if (!['mensagem', 'menu', 'acao'].includes(n.tipo)) continue;
+    const t = String(n.texto || '').trim();
+    if (!t || t.length < 12) continue;
+    linhas.push(`• ${String(n.titulo || n.tipo).trim()}: ${t.replace(/\n+/g, ' / ')}`);
+  }
+  return linhas.join('\n').slice(0, 6000);
+}
+
+function promptDaIA({ base, setores, instrucoes }) {
+  return [
+    'Você é o atendente virtual da MoviOn, provedora de internet por fibra em Mossoró/RN, conversando pelo WhatsApp.',
+    'Fale em português do Brasil, com cordialidade e poucas palavras: no máximo 3 frases curtas por resposta. Pode usar *negrito* do WhatsApp e no máximo 1 emoji.',
+    'Lembre do que o cliente já disse nesta conversa e não peça de novo.',
+    '',
+    'O QUE VOCÊ SABE (use SOMENTE isto como fato sobre a MoviOn):',
+    base || '(nada cadastrado)',
+    '',
+    'REGRAS:',
+    '- Nunca invente planos, velocidades, preços, prazos, formas de pagamento, links, aplicativos, endereços ou políticas que não estejam acima. Se não souber, diga que vai passar para a equipe certa.',
+    '- Você não acessa o cadastro, as faturas nem o equipamento do cliente: 2ª via, Pix, negociação, desbloqueio, visita técnica, cancelamento e mudança de plano são feitos pela equipe — encaminhe para o setor certo.',
+    '- Nunca peça senha, dados de cartão nem código de verificação.',
+    '- Problema de conexão: pode orientar os passos básicos que estão acima; se não resolver, encaminhe para o Suporte.',
+    '- Se o cliente pedir uma pessoa/atendente, encaminhe na hora.',
+    '- Saudação sozinha ("oi", "bom dia"): cumprimente e pergunte como pode ajudar, citando em uma frase o que você resolve. Não encaminhe.',
+    '- Propaganda, oferta de outra empresa ou mensagem automática que não é de cliente: não responda e não encaminhe.',
+    instrucoes ? `- Instruções da empresa: ${String(instrucoes).slice(0, 1500)}` : '',
+    '',
+    `SETORES para onde você pode passar a conversa: ${setores.join(', ')}.`,
+    'FORMATO: escreva só a mensagem para o cliente. Quando a conversa precisar ir para uma pessoa, termine com uma linha',
+    '[ENCAMINHAR:<setor>|<motivo em poucas palavras para o atendente>]',
+    'Para propaganda/mensagem automática, responda apenas [IGNORAR]. O cliente nunca vê essas marcas.',
+  ].filter(x => x !== '').join('\n');
+}
+
+/* Lê a marca do fim da resposta. Setor fora da lista vira "sem setor" (a fila
+   geral vê): melhor que inventar um setor que ninguém atende. */
+function lerMarcaIA(bruto, setores) {
+  const m = String(bruto || '').match(IA_MARCA_RE);
+  const texto = String(bruto || '').replace(new RegExp(IA_MARCA_RE.source, 'gi'), ' ').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').trim();
+  if (!m) return { texto, acao: pedeAtendente(texto) ? 'encaminhar' : 'responder', setor: null, motivo: null };
+  if (m[1].toUpperCase() === 'IGNORAR') return { texto: '', acao: 'ignorar', setor: null, motivo: null };
+  const [s0, ...resto] = String(m[2] || '').split('|');
+  const pedido = s0.trim().toLowerCase();
+  const setor = setores.find(x => x.toLowerCase() === pedido) || null;
+  return { texto, acao: 'encaminhar', setor, motivo: resto.join('|').trim().slice(0, 200) || null };
 }
 
 // ============================================================================
@@ -10052,6 +10118,46 @@ export default async function handler(req, res) {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         await fetch(`${e.EVO_URL}/instance/logout/${e.EVO_INST}`, { method: 'DELETE', headers: { apikey: e.EVO_KEY } });
         return res.status(200).json({ ok: true });
+      }
+
+      /* Sala de teste da IA: o admin escreve como se fosse o cliente e a Groq
+         responde de verdade — nada sai pelo WhatsApp e nada é gravado. Com
+         `comparar`, devolve também o que a IA de hoje (a do fluxo) diria. */
+      case 'ia.testar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const texto = String(body.texto || '').trim().slice(0, 800);
+        if (!texto) return res.status(400).json({ ok: false, error: 'Escreva a mensagem do cliente.' });
+        if (!e.GROQ) return res.status(400).json({ ok: false, error: 'A chave da Groq (GROQ_API_KEY) não está configurada na Vercel.' });
+        const historico = (Array.isArray(body.historico) ? body.historico : [])
+          .filter(h => h && (h.de === 'cliente' || h.de === 'ia') && String(h.texto || '').trim())
+          .slice(-IA_MAX_TURNOS)
+          .map(h => ({ role: h.de === 'cliente' ? 'user' : 'assistant', content: String(h.texto).slice(0, 800) }));
+        const [fluxo, linhasSetor] = await Promise.all([
+          sbUm(e, 'atend_fluxos?ativo=is.true&select=nodes&limit=1'),
+          sb(e, 'atend_setores?ativo=is.true&select=*&order=ordem'),
+        ]);
+        // setor interno (Gerência) não é destino de cliente: a IA nem sabe dele
+        const setores = (linhasSetor || []).filter(x => x.interno !== true).map(x => x.nome);
+        const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, instrucoes: body.instrucoes });
+        const t0 = Date.now();
+        let r;
+        try {
+          r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.3, prazoMs: 20000,
+            messages: [{ role: 'system', content: sistema }, ...historico, { role: 'user', content: texto }] });
+        } catch (err) {
+          return res.status(502).json({ ok: false, error: err.message });
+        }
+        const lida = lerMarcaIA(r.texto, setores);
+        const saida = { ok: true, ...lida, modelo: r.modelo, ms: Date.now() - t0, tokens: r.usage ? r.usage.total_tokens || null : null };
+        if (body.comparar) {
+          // a de hoje: o nó "IA (fallback)" do fluxo, com a mensagem solta
+          const no = ((fluxo && fluxo.nodes) || []).find(n => n.tipo === 'ia') || { texto: '' };
+          try {
+            const h = await responderIA(e, no, { id: 0, setor: null }, texto);
+            saida.hoje = { texto: h.texto, acao: h.encaminhar ? 'encaminhar' : 'responder' };
+          } catch (err) { saida.hoje = { erro: err.message }; }
+        }
+        return res.status(200).json(saida);
       }
 
       // dry-run: testa o fluxo sem WhatsApp e sem gravar nada

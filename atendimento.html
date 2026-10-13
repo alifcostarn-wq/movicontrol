@@ -1440,6 +1440,43 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .es-x{border:none;background:transparent;cursor:pointer;color:var(--text-low);font-size:13px;padding:0 3px;font-family:inherit;}
 .es-x:hover{color:var(--red);}
 .es-meta{font-size:11px;color:var(--text-low);margin-top:4px;}
+/* sala de teste da IA */
+.iat{display:flex;flex-direction:column;gap:12px;max-width:820px;}
+.iat-barra{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.iat-cmp{margin:0;display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;}
+.iat-barra .fbtn{margin-left:auto;}
+.iat-chat{border:1px solid var(--line);border-radius:12px;background:var(--card-2);padding:14px;
+  height:min(56vh,520px);min-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;}
+.iat-vazio{margin:auto;color:var(--text-mid);font-size:13px;}
+.iat-msg{display:flex;flex-direction:column;max-width:78%;gap:4px;}
+.iat-msg.cli{align-self:flex-end;align-items:flex-end;}
+.iat-msg.ia{align-self:flex-start;}
+.iat-bol{padding:9px 13px;border-radius:12px;font-size:13px;line-height:1.5;box-shadow:var(--shadow);background:var(--card);overflow-wrap:anywhere;}
+.iat-msg.cli .iat-bol{background:var(--green-bubble);border-bottom-right-radius:3px;}
+.iat-msg.ia .iat-bol{border-bottom-left-radius:3px;}
+.iat-bol.erro{background:var(--red-tint);color:var(--red-txt);}
+.iat-bol.digitando{color:var(--text-mid);font-style:italic;}
+.iat-bol a.mb-link{color:var(--blue-txt);text-decoration:underline;overflow-wrap:anywhere;}
+.iat-info{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.iat-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text-mid);}
+.iat-tag.ok{color:var(--green-deep);border-color:var(--green-line);background:var(--green-soft);}
+.iat-tag.enc{color:var(--blue-txt);border-color:var(--blue-line);background:var(--blue-soft);}
+.iat-tag.ign{color:var(--amber-txt);border-color:var(--amber-line);background:var(--amber-soft);}
+.iat-meta{font-size:10.5px;color:var(--text-low);}
+.iat-hoje{font-size:12px;color:var(--text-mid);border-left:3px solid var(--line);padding:4px 9px;margin-top:2px;}
+.iat-exemplos{display:flex;flex-wrap:wrap;gap:6px;}
+.iat-ex{font-family:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--text);
+  border-radius:999px;padding:5px 11px;cursor:pointer;}
+.iat-ex:hover{border-color:var(--green);background:var(--green-soft);}
+.iat-composer{display:flex;gap:9px;}
+.iat-composer input{flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 14px;font-family:inherit;font-size:13px;
+  background:var(--card);color:var(--text);outline:none;min-width:0;}
+.iat-composer input:focus{border-color:var(--green);}
+.iat-instr summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--text-mid);}
+.iat-instr summary span{font-weight:600;color:var(--text-low);margin-left:6px;}
+.iat-instr textarea{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;
+  font-family:inherit;font-size:12.5px;background:var(--card);color:var(--text);resize:vertical;box-sizing:border-box;}
+@media(max-width:860px){ .iat-msg{max-width:92%;} .iat-chat{height:52vh;} }
 .es-int{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mid);margin-top:7px;cursor:pointer;}
 .es-tag{font-size:9.5px;font-weight:800;letter-spacing:.03em;padding:2px 6px;border-radius:5px;background:var(--card-2);color:var(--text-mid);border:1px solid var(--line);}
 .eq-novo{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
@@ -4315,7 +4352,7 @@ function verFila(){
    saía. No celular cobriam a barra de escrever inteira. Se uma barra de
    escrever visível passa por baixo da coluna dos avisos, eles sobem para cima
    dela; sem barra embaixo, voltam para o canto. */
-const BARRAS_ESCRITA='.ci-composer, .m-composer';
+const BARRAS_ESCRITA='.ci-composer, .m-composer, .iat-composer';
 function posicionarAvisos(){
   const wrap=document.getElementById('avisos'); if(!wrap) return;
   let base=18;
@@ -6403,6 +6440,78 @@ async function renderCadastroIxc(el){
     }
     b.disabled = false; b.textContent = 'Traduzir cidades do IXC';
   };
+}
+
+/* ═══════════ SALA DE TESTE DA IA ═════════════════════════════════════════════
+   O admin escreve como se fosse o cliente e a IA (Groq) responde de verdade,
+   com memória da conversa e só com o que está no fluxo do bot. Nada sai pelo
+   WhatsApp e nada fica gravado: a conversa vive nesta aba. Embaixo de cada
+   resposta, o que aconteceria no atendimento real (respondeu sozinha, passaria
+   para um setor, ignoraria). Com "comparar", mostra também a IA de hoje. */
+const IAT = { hist: [], enviando: false, comparar: false };
+const IAT_EXEMPLOS = ['Bom dia', 'Quais são os planos?', 'Minha internet caiu', 'Tá muito lenta à noite',
+  'Quero a 2ª via do boleto', 'Paguei e continua bloqueado', 'Quero falar com uma pessoa',
+  'Oi! Sou a assistente do Banco X e tenho uma oferta de crédito para você'];
+const iatInstrucoes = ()=>{ try{ return localStorage.getItem('mt_ia_instr')||''; }catch{ return ''; } };
+
+function iatBolhaHTML(h){
+  if(h.de==='cliente') return `<div class="iat-msg cli"><div class="iat-bol">${fmtWA(esc(h.texto)).replace(/\n/g,'<br>')}</div></div>`;
+  if(h.de==='erro') return `<div class="iat-msg ia"><div class="iat-bol erro">⚠ ${esc(h.texto)}</div></div>`;
+  const tag = h.acao==='encaminhar'
+      ? `<span class="iat-tag enc">→ passaria para <b>${esc(h.setor||'a fila geral (sem setor)')}</b>${h.motivo?` · ${esc(h.motivo)}`:''}</span>`
+    : h.acao==='ignorar'
+      ? `<span class="iat-tag ign">⊘ ignoraria: propaganda ou mensagem automática — nada é enviado</span>`
+      : `<span class="iat-tag ok">✓ respondeu sozinha</span>`;
+  const meta = [h.modelo, h.ms!=null?(h.ms/1000).toFixed(1).replace('.',',')+'s':''].filter(Boolean).join(' · ');
+  const hoje = h.hoje ? `<div class="iat-hoje"><b>IA de hoje:</b> ${h.hoje.erro?esc(h.hoje.erro):fmtWA(esc(h.hoje.texto||'')).replace(/\n/g,'<br>')}
+      ${h.hoje.acao==='encaminhar'?'<span class="iat-tag enc">→ mandaria para a fila</span>':''}</div>` : '';
+  return `<div class="iat-msg ia">${h.texto?`<div class="iat-bol">${fmtWA(esc(h.texto)).replace(/\n/g,'<br>')}</div>`:''}
+    <div class="iat-info">${tag}${meta?`<span class="iat-meta">${esc(meta)}</span>`:''}</div>${hoje}</div>`;
+}
+
+function renderTesteIA(el){
+  el.innerHTML = `<div class="iat">
+    <div class="vsub">Escreva como se fosse o cliente. A IA da Groq responde de verdade, lembrando a conversa e usando
+      só o que está no fluxo do bot (planos, preços, passos de suporte). <b>Nada sai pelo WhatsApp e nada fica gravado.</b></div>
+    <div class="iat-barra">
+      <label class="cob-check iat-cmp"><input type="checkbox" id="iatComparar" ${IAT.comparar?'checked':''}> Comparar com a IA de hoje</label>
+      <button class="fbtn" id="iatNova" type="button">↺ Nova conversa</button>
+    </div>
+    <div class="iat-exemplos" aria-label="Exemplos de mensagem de cliente">${IAT_EXEMPLOS.map(x=>`<button type="button" class="iat-ex" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <div class="iat-chat" id="iatChat" aria-live="polite">${IAT.hist.length ? IAT.hist.map(iatBolhaHTML).join('')
+      : '<div class="iat-vazio">Comece com uma mensagem ou toque num exemplo acima.</div>'}${IAT.enviando?'<div class="iat-msg ia"><div class="iat-bol digitando">digitando…</div></div>':''}</div>
+    <div class="iat-composer">
+      <input id="iatInput" placeholder="Mensagem do cliente…" autocomplete="off" ${IAT.enviando?'disabled':''}>
+      <button class="m-send" id="iatEnviar" type="button" title="Enviar" ${IAT.enviando?'disabled':''}><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
+    </div>
+    <details class="iat-instr" ${iatInstrucoes()?'open':''}><summary>Instruções extras para a IA <span>só neste teste</span></summary>
+      <textarea id="iatInstr" rows="3" maxlength="1500" placeholder="Ex.: sempre ofereça o plano de 500 mega para quem reclamar de lentidão.">${esc(iatInstrucoes())}</textarea>
+    </details>
+  </div>`;
+  const chat = el.querySelector('#iatChat'); chat.scrollTop = chat.scrollHeight;
+  const inp = el.querySelector('#iatInput');
+  const enviar = async (txt)=>{
+    const texto = String(txt ?? inp.value).trim();
+    if(!texto || IAT.enviando) return;
+    const historico = IAT.hist.filter(h=>h.de==='cliente' || (h.de==='ia' && h.texto)).map(h=>({ de:h.de, texto:h.texto }));
+    IAT.hist.push({ de:'cliente', texto });
+    IAT.enviando = true; renderTesteIA(el);
+    try{
+      const r = await chamar('ia.testar', { texto, historico, comparar: IAT.comparar, instrucoes: iatInstrucoes() }, 45000);
+      IAT.hist.push({ de:'ia', texto:r.texto||'', acao:r.acao, setor:r.setor, motivo:r.motivo, modelo:r.modelo, ms:r.ms, hoje:r.hoje||null });
+    }catch(err){
+      IAT.hist.push({ de:'erro', texto: err.message });
+    }
+    IAT.enviando = false; renderTesteIA(el);
+    const novo = el.querySelector('#iatInput'); if(novo) novo.focus();
+  };
+  inp.onkeydown = ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); enviar(); } };
+  el.querySelector('#iatEnviar').onclick = ()=>enviar();
+  el.querySelectorAll('[data-ex]').forEach(b=>b.onclick=()=>enviar(b.dataset.ex));
+  el.querySelector('#iatNova').onclick = ()=>{ IAT.hist = []; renderTesteIA(el); el.querySelector('#iatInput').focus(); };
+  el.querySelector('#iatComparar').onchange = ev=>{ IAT.comparar = ev.target.checked; };
+  el.querySelector('#iatInstr').oninput = ev=>{ try{ localStorage.setItem('mt_ia_instr', ev.target.value); }catch{} };
+  if(!IAT.enviando) inp.focus();
 }
 
 async function renderHorarios(el){
@@ -10296,6 +10405,7 @@ function renderAux(){
     const abas=`<div class="cfg-tabs" id="cfgTabs">
         <div class="cfg-tab ${configTab==='regras'?'on':''}" data-tab="regras">Auto-responder</div>
         <div class="cfg-tab ${configTab==='fluxo'?'on':''}" data-tab="fluxo">🔀 Fluxo do Bot</div>
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='ia'?'on':''}" data-tab="ia">🤖 Testar IA</div>`:''}
         <div class="cfg-tab ${configTab==='atalhos'?'on':''}" data-tab="atalhos">⚡ Atalhos</div>
         <div class="cfg-tab ${configTab==='etiquetas'?'on':''}" data-tab="etiquetas">🏷️ Etiquetas</div>
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='tempos'?'on':''}" data-tab="tempos">⏱ Tempos do atendimento</div>`:''}
@@ -10334,6 +10444,7 @@ function renderAux(){
     else if(configTab==='atalhos'){ renderAtalhos(body, true); }
     else if(configTab==='etiquetas'){ renderEtiquetas(body, true); }
     else if(configTab==='tempos' && USUARIO&&USUARIO.admin){ renderTempos(body); }
+    else if(configTab==='ia' && USUARIO&&USUARIO.admin){ renderTesteIA(body); }
     else if(configTab==='horarios' && USUARIO&&USUARIO.admin){ renderHorarios(body); }
     else if(configTab==='equipe' && USUARIO&&USUARIO.admin){ renderEquipe(body); }
     else if(configTab==='integracoes' && USUARIO&&USUARIO.admin){
