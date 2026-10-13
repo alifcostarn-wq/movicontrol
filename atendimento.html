@@ -667,6 +667,12 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .tr-op.atual:hover{border-color:var(--line);background:var(--card);}
 .tr-op .tr-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
 .tr-op .tr-tag{margin-left:auto;font-size:9.5px;font-weight:800;color:var(--text-low);}
+/* setor interno (Gerência): separado dos demais e travado quando a conversa
+   ainda não está em atendimento com quem está transferindo */
+.tr-sep{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-low);margin:6px 2px 0;}
+.tr-op.trava{opacity:.55;cursor:not-allowed;}
+.tr-op.trava:hover{border-color:var(--line);background:var(--card);}
+.tr-int-nota{font-size:11.5px;line-height:1.45;color:var(--text-mid);margin:-2px 2px 0;}
 .tr-avisar{
   display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-mid);
   padding:10px 12px;background:var(--card-2);border-radius:9px;margin-bottom:14px;cursor:pointer;
@@ -1428,6 +1434,8 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .es-x{border:none;background:transparent;cursor:pointer;color:var(--text-low);font-size:13px;padding:0 3px;font-family:inherit;}
 .es-x:hover{color:var(--red);}
 .es-meta{font-size:11px;color:var(--text-low);margin-top:4px;}
+.es-int{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mid);margin-top:7px;cursor:pointer;}
+.es-tag{font-size:9.5px;font-weight:800;letter-spacing:.03em;padding:2px 6px;border-radius:5px;background:var(--card-2);color:var(--text-mid);border:1px solid var(--line);}
 .eq-novo{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .eq-novo input[type=color]{width:38px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer;}
 .eq-sel{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-family:inherit;font-size:12.5px;min-width:140px;}
@@ -3231,6 +3239,15 @@ const SETORES = [
   {id:'Vendas', cor:'#00a859'},
 ];
 function corSetor(s){ return (SETORES.find(x=>x.id===s)||{cor:'#94a3b8'}).cor; }
+/* Setor interno (Gerência): não aparece para o cliente e só recebe conversa
+   transferida por quem já está com ela em atendimento. O servidor confere de
+   novo — aqui é só para não oferecer o que vai ser recusado. */
+const setorInterno = s => !!(SETORES.find(x=>x.id===s)||{}).interno;
+const setoresDoCliente = () => SETORES.filter(x=>!x.interno);
+function podeMandarParaInterno(c){
+  return (c.col==='atendimento' || c.col==='aguardando') && !!c.atendenteId
+    && !!USUARIO && (USUARIO.admin || c.atendenteId===USUARIO.id);
+}
 
 
 /* fluxo de exemplo — usado só na primeira publicação, quando o banco ainda
@@ -3660,6 +3677,7 @@ function mapearConversa(c){
     ultimaEm: c.ultima_msg_em || null,
     unread:c.nao_lidas||0, tags:c.tags||[], notas:c.notas||'', rating:c.rating,
     atendente: c.atendente_id ? ((EQUIPE.find(p=>p.id===c.atendente_id)||{}).nome||'—') : '— Bot —',
+    atendenteId: c.atendente_id||null,
     setor: c.setor||null, preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
     asnPendente: !!c.asn_pendente,
     filaDesde: c.fila_desde||null, assumidoEm: c.assumido_em||null,
@@ -3832,7 +3850,7 @@ async function carregarTudo(){
   USUARIO = j.user;
   EQUIPE  = j.equipe||[];
   SETORES.length = 0;
-  (j.setores||[]).forEach(s=>SETORES.push({ id:s.nome, cor:s.cor }));
+  (j.setores||[]).forEach(s=>SETORES.push({ id:s.nome, cor:s.cor, interno: s.interno===true }));
   ATENDENTES.length = 0;
   EQUIPE.forEach(p=>ATENDENTES.push(p.nome));
   ATENDENTES.push('— Bot —');
@@ -5909,11 +5927,27 @@ function abrirTransferencia(c){
     <h3>Transferir atendimento</h3>
     <div class="tr-sub">A conversa está em <b>${esc(c.setor||'—')}</b>. Escolha o setor de destino.</div>
     <div class="tr-lista">
-      ${SETORES.map(s=>`
+      ${setoresDoCliente().map(s=>`
         <button class="tr-op ${s.id===c.setor?'atual':''}" data-setor="${esc(s.id)}" ${s.id===c.setor?'disabled':''}>
           <span class="tr-dot" style="background:${s.cor}"></span>${esc(s.id)}
           ${s.id===c.setor?'<span class="tr-tag">ATUAL</span>':''}
         </button>`).join('')}
+      ${(()=>{
+        const internos = SETORES.filter(x=>x.interno);
+        if(!internos.length) return '';
+        const pode = podeMandarParaInterno(c);
+        const nomes = internos.map(x=>x.id).join(' / ');
+        return `<div class="tr-sep">Interno · não aparece para o cliente</div>`
+          + internos.map(s=>{
+              const atual = s.id===c.setor, trava = !atual && !pode;
+              return `<button class="tr-op ${atual?'atual':''} ${trava?'trava':''}" data-setor="${esc(s.id)}" ${atual||trava?'disabled':''}
+                  ${trava?`title="${esc(s.id)} só recebe conversa que já está em atendimento com quem transfere"`:''}>
+                <span class="tr-dot" style="background:${s.cor}"></span>${esc(s.id)}
+                <span class="tr-tag">${atual?'ATUAL':(trava?'🔒 SÓ EM ATENDIMENTO':'🔒 INTERNO')}</span>
+              </button>`;
+            }).join('')
+          + (pode ? '' : `<div class="tr-int-nota">Para mandar para ${esc(nomes)}, a conversa precisa estar <b>em atendimento com você</b>: assuma primeiro e depois transfira.</div>`);
+      })()}
     </div>
     <label class="tr-avisar"><input type="checkbox" id="trAvisar" checked>
       Avisar o cliente no WhatsApp sobre a transferência</label>
@@ -6578,13 +6612,22 @@ function eqPintar(el){
             <div class="es-topo"><span class="es-dot"></span><b>${esc(st.nome)}</b>
               <button class="es-x" data-delsetor="${esc(st.nome)}" title="Remover setor">✕</button></div>
             <div class="es-meta">${n} pessoa(s) · ${conv} conversa(s) aberta(s)</div>
+            <label class="es-int" title="Não aparece para o cliente e só recebe conversa transferida por quem já está atendendo">
+              <input type="checkbox" data-interno="${esc(st.nome)}" ${st.interno?'checked':''}> Interno
+              ${st.interno?'<span class="es-tag">🔒 só por transferência</span>':''}</label>
           </div>`;
         }).join('') || '<div class="if-cli-sub">Nenhum setor cadastrado.</div>'}
       </div>
       <div class="eq-novo">
         <input class="cp-nome" id="eqNome" placeholder="Nome do novo setor" style="flex:1;min-width:150px">
         <input type="color" id="eqCor" value="#3b82f6" title="Cor">
+        <label class="cob-check" style="margin:0" title="Não aparece para o cliente e só recebe conversa transferida por quem já está atendendo">
+          <input type="checkbox" id="eqInterno"> Interno</label>
         <button class="btn primary" id="eqAdd">Adicionar setor</button>
+      </div>
+      <div class="rel-nota" style="margin-top:8px">
+        <b>Setor interno</b> (ex.: Gerência) não aparece para o cliente nem no fluxo do bot. Só recebe
+        conversa transferida por quem já está com ela em atendimento.
       </div>
     </div>
 
@@ -6669,12 +6712,22 @@ function eqPintar(el){
     catch(e){ toast('Falha: '+e.message); }
   });
 
+  el.querySelectorAll('[data-interno]').forEach(ck=>ck.onchange=async()=>{
+    ck.disabled=true;
+    try{
+      await chamar('setores.salvar',{nome:ck.dataset.interno, interno:ck.checked});
+      toast(ck.checked?`${ck.dataset.interno}: interno — só por transferência`:`${ck.dataset.interno} volta a ser um setor comum`);
+      const st=SETORES.find(x=>x.id===ck.dataset.interno); if(st) st.interno=ck.checked;
+      renderEquipe(el);
+    }catch(e){ toast('Falha: '+e.message); ck.checked=!ck.checked; ck.disabled=false; }
+  });
+
   const add=el.querySelector('#eqAdd');
   if(add) add.onclick=async()=>{
     const nome=el.querySelector('#eqNome').value.trim();
     if(!nome){ toast('Informe o nome do setor'); return; }
     try{
-      await chamar('setores.salvar',{nome, cor:el.querySelector('#eqCor').value});
+      await chamar('setores.salvar',{nome, cor:el.querySelector('#eqCor').value, interno:el.querySelector('#eqInterno').checked});
       toast('Setor criado'); renderEquipe(el);
     }catch(e){ toast('Falha: '+e.message); }
   };
@@ -6887,7 +6940,7 @@ async function gravEnviar(seg, tipo){
     c._msgsCarregadas=false;
     await api.carregarMensagens(c);
     if(c.col==='novos'||c.col==='fila') c.col='atendimento';
-    c.atendente=USUARIO.nome; c.botAtivo=false;
+    c.atendente=USUARIO.nome; c.atendenteId=c.atendenteId||USUARIO.id; c.botAtivo=false;
     rolarThreadAoFim(); openModal(c.id); renderAll();
     toast('Áudio enviado');
   }catch(e){
@@ -8934,7 +8987,7 @@ function openModal(id){
     </div>
     <div class="ms-sec">
       <h3>Setor</h3>
-      <select class="transf" id="mSetor">${SETORES.map(s=>`<option ${s.id===c.setor?'selected':''}>${s.id}</option>`).join('')}</select>
+      <select class="transf" id="mSetor">${SETORES.filter(s=>!s.interno || s.id===c.setor).map(s=>`<option ${s.id===c.setor?'selected':''}>${s.id}</option>`).join('')}</select>
     </div>
     <div class="ms-sec">
       <h3>Atendente responsável</h3>
@@ -9344,7 +9397,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
         c._msgsCarregadas=false;
         await api.carregarMensagens(c);
         if(c.col==='novos'||c.col==='fila') c.col='atendimento';
-        c.atendente=USUARIO.nome; c.botAtivo=false;
+        c.atendente=USUARIO.nome; c.atendenteId=c.atendenteId||USUARIO.id; c.botAtivo=false;
         rolarThreadAoFim(); openModal(c.id); renderAll();
       }catch(err){
         // devolve o arquivo para o atendente tentar de novo, sem reescolher
@@ -9360,7 +9413,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
       quoteTexto:citada?citada.texto:null, quoteDirecao:citada&&citada.autor!=='você'?'in':'out'});
     c.preview='Você: '+v;
     if(c.col==='novos'){ c.col='atendimento'; }
-    c.atendente=USUARIO.nome; c.botAtivo=false;
+    c.atendente=USUARIO.nome; c.atendenteId=c.atendenteId||USUARIO.id; c.botAtivo=false;
     // limpa o campo E o rascunho ANTES de qualquer remonte. Se a ordem se
     // inverter, o remonte restaura o texto que acabou de ser enviado e sobram
     // letras no campo — era a outra metade da queixa.
@@ -9442,7 +9495,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     api.patchConversa(c,{tags:c.tags}); openModal(c.id); renderAll();
   });
   // transferir
-  $('#mTransf').onchange=e=>{ c.atendente=e.target.value; const p=EQUIPE.find(x=>x.nome===c.atendente); api.patchConversa(c,{atendente_id:p?p.id:null}); renderAll(); toast('Transferido para '+c.atendente); };
+  $('#mTransf').onchange=e=>{ c.atendente=e.target.value; const p=EQUIPE.find(x=>x.nome===c.atendente); c.atendenteId=p?p.id:null; api.patchConversa(c,{atendente_id:p?p.id:null}); renderAll(); toast('Transferido para '+c.atendente); };
   // no celular o atendimento cobre a tela inteira: sem este botão não há
   // como voltar para a lista — o toque no fundo do overlay não existe mais
   const bVoltar=$('#mVoltar'); if(bVoltar) bVoltar.onclick=()=>closeModal();
@@ -9515,7 +9568,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
       bAssumir.disabled=true;
       try{
         await api.assumir(c, avisar);
-        c.botAtivo=false; c.atendente=USUARIO.nome;
+        c.botAtivo=false; c.atendente=USUARIO.nome; c.atendenteId=USUARIO.id;
         if(c.col==='novos') c.col='atendimento';
         await api.carregarMensagens(c);
         openModal(c.id); renderAll(); toast('Atendimento assumido');
@@ -11097,7 +11150,8 @@ function flowSideHTML(){
     fields+=`<div class="flow-field"><label>${n.tipo==='condicao'?'Regra da condição':'Mensagem enviada ao cliente'+(n.tipo==='acao'?' (junto com a ação)':'')}</label><textarea id="fTexto">${esc(n.texto||'')}</textarea></div>`;
   }
   if(n.tipo==='setor'){
-    fields+=`<div class="flow-field"><label>Setor de destino</label><select id="fSetor">${SETORES.map(s=>`<option ${s.id===n.setor?'selected':''}>${s.id}</option>`).join('')}</select></div>`;
+    // setor interno (Gerência) não aparece para o cliente: o bot nunca encaminha para ele
+    fields+=`<div class="flow-field"><label>Setor de destino</label><select id="fSetor">${SETORES.filter(s=>!s.interno || s.id===n.setor).map(s=>`<option value="${esc(s.id)}" ${s.id===n.setor?'selected':''}>${esc(s.id)}${s.interno?' — interno, o bot não usa':''}</option>`).join('')}</select></div>`;
   }
   if(n.tipo==='menu'){
     fields+=`<div class="flow-field"><label>Guardar a resposta como (opcional)</label>
@@ -11363,7 +11417,7 @@ function bindFlowEvents(a){
     const cy=o?(o.clientHeight/2-flowPanY)/flowZoom-55:120;
     const base={x:Math.round(cx+((id*26)%90)), y:Math.round(cy+((id*22)%90))};
     let novo;
-    if(tipo==='setor') novo={id,tipo,titulo:'Encaminhar → '+SETORES[0].id,texto:'',...base,setor:SETORES[0].id};
+    if(tipo==='setor'){ const s0=(setoresDoCliente()[0]||SETORES[0]).id; novo={id,tipo,titulo:'Encaminhar → '+s0,texto:'',...base,setor:s0}; }
     else if(tipo==='acao') novo={id,tipo,conector:'abrir_chamado',titulo:'Nova ação',texto:'',...base};
     else novo={id,tipo,
       titulo: tipo==='menu'?'Novo menu' : tipo==='ia'?'IA (fallback)' : tipo==='condicao'?'Nova condição' : tipo==='fim'?'Encerrar atendimento' : 'Nova mensagem',
@@ -11904,7 +11958,8 @@ function novoAtendimentoDialogo(){
           <input id="naFone" inputmode="tel" placeholder="84 99999-0000" autocomplete="off"></div>
         <div class="flow-field"><label for="naSetor">Setor</label>
           <select id="naSetor">${padrao?'':'<option value="" selected>— escolha o setor —</option>'}${
-            SETORES.map(x=>`<option value="${esc(x.id)}" ${x.id===padrao?'selected':''}>${esc(x.id)}</option>`).join('')}</select>
+            SETORES.filter(x=>!x.interno || USUARIO.admin || USUARIO.setor===x.id)
+              .map(x=>`<option value="${esc(x.id)}" ${x.id===padrao?'selected':''}>${esc(x.id)}</option>`).join('')}</select>
           <div class="fz-desc" id="naSetorNota"></div></div>
         <div class="flow-field" style="margin-bottom:4px"><label for="naMsg">Primeira mensagem <span style="font-weight:600;color:var(--text-low)">(opcional)</span></label>
           <textarea id="naMsg" style="min-height:76px" placeholder="Em branco, só abre o card sem mandar nada."></textarea></div>

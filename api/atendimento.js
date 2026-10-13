@@ -126,6 +126,15 @@ function variantesFone(fone) {
 // que chega adota o número de quem enviou (`adotarFoneDoWhatsApp` abaixo), e
 // todo envio nosso procura por variante e usa o número que a conversa já tem —
 // que é, por construção, o que o WhatsApp entrega.
+/* Setor INTERNO (ex.: Gerência). Não aparece para o cliente — o bot nunca
+   encaminha para ele — e só recebe conversa por transferência de quem já está
+   com ela em atendimento: a gerência entra quando o caso pede, não pela porta
+   da frente. Lido com select=* para não quebrar se a coluna ainda não existir. */
+const nomesInternos = lista => new Set((lista || []).filter(s => s && s.interno === true).map(s => s.nome));
+async function setoresInternos(e) {
+  return nomesInternos(await sb(e, 'atend_setores?select=*'));
+}
+
 async function conversaPorFone(e, fone, select = '*') {
   const lista = variantesFone(fone).map(f => `"${f}"`).join(',');
   if (!lista) return null;
@@ -2912,6 +2921,13 @@ async function aplicarResultado(e, conversa, out) {
   // 2. patch da conversa
   if (Object.keys(out.patch).length) {
     const patch = { ...out.patch };
+    // setor interno não é destino do bot: o editor não oferece, e um fluxo
+    // antigo apontando para ele encaminha sem setor (a fila geral vê)
+    if (patch.setor && (await setoresInternos(e)).has(patch.setor)) {
+      await logFluxo(e, { conversa_id: conversa.id, contato_fone: conversa.contato_fone,
+        erro: `fluxo tentou encaminhar para o setor interno ${patch.setor}: ficou sem setor` });
+      patch.setor = null;
+    }
     if (out.enviar.length) {
       const ult = out.enviar[out.enviar.length - 1];
       patch.ultima_msg = String(ult.texto || ult.rotulo || '').slice(0, 200);
@@ -6973,7 +6989,7 @@ export default async function handler(req, res) {
       // tudo que o app precisa para abrir, numa chamada só
       case 'bootstrap': {
         const [setores, etiquetas, atalhos, regras, equipe, fluxo, listaPainel, cfgAtend] = await Promise.all([
-          sb(e, 'atend_setores?select=nome,cor,ordem&ativo=is.true&order=ordem'),
+          sb(e, 'atend_setores?select=*&ativo=is.true&order=ordem'),
           sb(e, 'atend_etiquetas?select=id,nome,cor&order=id'),
           sb(e, 'atend_atalhos?select=id,titulo,mensagem,setor&order=id'),
           sb(e, 'atend_regras?select=id,palavra,acao&ativa=is.true&order=id'),
@@ -7297,6 +7313,9 @@ export default async function handler(req, res) {
         if (!user.admin && user.setor && atual.setor && atual.setor !== user.setor) {
           return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
         }
+        if (body.setor && body.setor !== atual.setor && (await setoresInternos(e)).has(body.setor)) {
+          return res.status(400).json({ ok: false, error: `${body.setor} é um setor interno: use "Transferir de setor" com a conversa em atendimento.` });
+        }
         const permitido = ['coluna', 'setor', 'atendente_id', 'tags', 'notas', 'nao_lidas', 'bot_ativo', 'rating', 'contato_nome'];
         const patch = { updated_by: user.id };
         for (const k of permitido) if (k in body) patch[k] = body[k];
@@ -7312,11 +7331,17 @@ export default async function handler(req, res) {
         // O setor é DIGITADO pelo painel: validar aqui é o que impede um
         // "suporte" minúsculo ou um "Suport" de criar um setor fantasma, com a
         // conversa sumindo do quadro de todo mundo.
-        const setoresOk = ((await sb(e, 'atend_setores?ativo=is.true&select=nome')) || []).map(x => x.nome);
+        const linhasSetor = (await sb(e, 'atend_setores?ativo=is.true&select=*')) || [];
+        const setoresOk = linhasSetor.map(x => x.nome);
         const pedido = String(body.setor || '').trim();
         const setorEscolhido = setoresOk.find(x => x.toLowerCase() === pedido.toLowerCase()) || null;
         if (pedido && !setorEscolhido) {
           return res.status(400).json({ ok: false, error: `Setor "${pedido}" não existe. Use: ${setoresOk.join(', ')}.` });
+        }
+        // setor interno: só quem é dele (ou admin) abre atendimento direto nele;
+        // os demais chegam lá transferindo uma conversa em atendimento
+        if (setorEscolhido && nomesInternos(linhasSetor).has(setorEscolhido) && !user.admin && user.setor !== setorEscolhido) {
+          return res.status(400).json({ ok: false, error: `${setorEscolhido} é um setor interno: abra o atendimento no seu setor e transfira depois.` });
         }
         // Quem abre a conversa manda no setor; o do usuário é só o padrão.
         // Sem nenhum dos dois a conversa nasce SEM SETOR, visível na fila geral
@@ -7333,7 +7358,10 @@ export default async function handler(req, res) {
           // prioridade, e como quase todo número já tem conversa do bot — que
           // encaminha a maioria para Suporte — abrir um atendimento pelo painel
           // caía em Suporte não importa o que o atendente escolhesse.
-          const patch = { setor: setorEscolhido || existente.setor || setorFinal };
+          // atendimento novo numa conversa resolvida não herda o setor do
+          // anterior (mesma regra de quando o cliente volta a escrever) — e
+          // assim não cai na Gerência porque o último caso foi parar lá
+          const patch = { setor: setorEscolhido || (existente.coluna === 'resolvidos' ? setorFinal : (existente.setor || setorFinal)) };
           if (existente.coluna === 'resolvidos') {
             patch.coluna = 'atendimento';
             patch.bot_ativo = false;
@@ -8834,10 +8862,17 @@ export default async function handler(req, res) {
         }
         const nome = String(body.nome || '').trim();
         if (!nome) return res.status(400).json({ ok: false, error: 'Nome do setor obrigatório.' });
+        // só liga/desliga "interno" de um setor que já existe: não mexe na cor
+        if ('interno' in body && !('cor' in body)) {
+          await sb(e, `atend_setores?nome=eq.${encodeURIComponent(nome)}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: { interno: !!body.interno },
+          });
+          return res.status(200).json({ ok: true });
+        }
         await sb(e, 'atend_setores?on_conflict=nome', {
           method: 'POST',
           headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: { nome, cor: body.cor || '#3b82f6' },
+          body: { nome, cor: body.cor || '#3b82f6', ...('interno' in body ? { interno: !!body.interno } : {}) },
         });
         return res.status(200).json({ ok: true });
       }
@@ -9651,12 +9686,23 @@ export default async function handler(req, res) {
         if (!user.admin && user.setor && c.setor && c.setor !== user.setor) {
           return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
         }
-        const setores = await sb(e, 'atend_setores?select=nome');
+        const setores = await sb(e, 'atend_setores?select=*');
         const validos = (setores || []).map(s => s.nome);
         if (validos.length && !validos.includes(destino)) {
           return res.status(400).json({ ok: false, error: `Setor inválido. Disponíveis: ${validos.join(', ')}` });
         }
         if (destino === c.setor) return res.status(400).json({ ok: false, error: 'A conversa já está nesse setor.' });
+        // setor interno (Gerência): só a partir de um atendimento em aberto, e
+        // por quem está com ele — não pega conversa da fila nem do bot
+        if (nomesInternos(setores).has(destino)) {
+          const emAtendimento = (c.coluna === 'atendimento' || c.coluna === 'aguardando') && c.atendente_id;
+          if (!emAtendimento) {
+            return res.status(400).json({ ok: false, error: `${destino} só recebe conversa que já está em atendimento. Assuma a conversa e transfira depois.` });
+          }
+          if (!user.admin && c.atendente_id !== user.id) {
+            return res.status(403).json({ ok: false, error: `Só quem está atendendo esta conversa pode transferi-la para ${destino}.` });
+          }
+        }
 
         await sb(e, `atend_conversas?id=eq.${id}`, {
           method: 'PATCH', prefer: 'return=minimal',
