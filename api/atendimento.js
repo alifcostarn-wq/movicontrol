@@ -3520,6 +3520,8 @@ async function tratarWebhookInterno(e, body) {
   // se já resolveu antes, REABRE a mesma conversa e mantém todo o histórico.
   // Nunca cria um card novo pra quem já é conhecido pelo número.
   let conversa = await conversaPorFone(e, fone);
+  // setor e dono que a conversa tinha antes de ser reaberta por esta mensagem
+  let atendimentoAnterior = null;
   // o número de quem escreveu passa a ser o número da conversa
   if (conversa) conversa = await adotarFoneDoWhatsApp(e, conversa, fone);
 
@@ -3539,13 +3541,26 @@ async function tratarWebhookInterno(e, body) {
     // reabre: volta pra fila, sem perder tags/notas/histórico.
     // rating volta a null porque começa um atendimento NOVO — a nota antiga já
     // está preservada em atend_avaliacoes e não deve bloquear a próxima pesquisa
+    /* Atendimento novo começa SEM setor e sem dono. O setor e o atendente do
+       atendimento anterior ficavam grudados na conversa: um comprovante
+       mandado meses depois de um atendimento no Suporte reabria já "no
+       Suporte" — e uma imagem sem legenda nem passa pelo menu, então ninguém
+       corrigia. Quem define o setor agora é o menu do bot ou quem assumir.
+       Se a mensagem for só a nota da pesquisa, o atendimento anterior é
+       devolvido mais abaixo (a nota é dele). */
+    atendimentoAnterior = {
+      setor: conversa.setor || null, atendente_id: conversa.atendente_id || null,
+      assumido_em: conversa.assumido_em || null, assumido_por: conversa.assumido_por || null,
+    };
+    const reabre = {
+      coluna: 'novos', bot_ativo: true, rating: null,
+      setor: null, atendente_id: null, assumido_em: null, assumido_por: null,
+    };
     await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
       method: 'PATCH', prefer: 'return=minimal',
-      body: { coluna: 'novos', bot_ativo: true, rating: null },
+      body: reabre,
     });
-    conversa.coluna = 'novos';
-    conversa.bot_ativo = true;
-    conversa.rating = null;
+    Object.assign(conversa, reabre);
   } else if (conversa.coluna === 'aguardando') {
     // O cliente voltou: devolve para "Em atendimento" com o MESMO atendente.
     // Sem isto a conversa ficava presa em "Aguardando cliente" mesmo com
@@ -3719,9 +3734,12 @@ async function tratarWebhookInterno(e, body) {
       sessaoValida = null;
       // garantirConversa() reabriu a conversa ao receber a mensagem; como isto
       // é só a nota, ela volta para resolvidos em vez de poluir o Kanban.
+      // a nota é do atendimento que acabou de fechar: ele volta inteiro, com
+      // o setor e o atendente que a reabertura tinha tirado
+      const avaliado = atendimentoAnterior || conversa;
       await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
         method: 'PATCH', prefer: 'return=minimal',
-        body: { rating: n, coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
+        body: { rating: n, coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, ...(atendimentoAnterior || {}) },
       });
       // série histórica: sobrevive à reabertura da conversa
       await sb(e, 'atend_avaliacoes', {
@@ -3729,7 +3747,7 @@ async function tratarWebhookInterno(e, body) {
         body: {
           conversa_id: conversa.id, contato_fone: fone, rating: n,
           origem: vars.origem || 'finalizacao_humana',
-          atendente_id: conversa.atendente_id || null, setor: conversa.setor || null,
+          atendente_id: avaliado.atendente_id || null, setor: avaliado.setor || null,
         },
       }).catch(err => console.error('[atendimento] avaliacao:', err.message));
       // fecha o disparo no livro da trava mensal — é o que separa
@@ -3776,9 +3794,10 @@ async function tratarWebhookInterno(e, body) {
         body: { tentativas: lembretes + 1, updated_at: new Date().toISOString() },
       });
       // conversa segue resolvida: pesquisa pendente não é atendimento aberto
+      // (e segue sendo do setor e do atendente que a resolveram)
       await sb(e, `atend_conversas?id=eq.${conversa.id}`, {
         method: 'PATCH', prefer: 'return=minimal',
-        body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0 },
+        body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, ...(atendimentoAnterior || {}) },
       });
       return { ok: true, pesquisa_pendente: true, conversa_id: conversa.id };
     }

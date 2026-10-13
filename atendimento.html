@@ -4702,7 +4702,7 @@ function casaBuscaTopo(c){
   return c.nome.toLowerCase().includes(busca)||c.fone.includes(busca)||c.preview.toLowerCase().includes(busca);
 }
 function passa(c){
-  if(!passaSetor(c)) return false;
+  if(!passaSetorNaEtapa(c)) return false;
   if(busca && !(casaBuscaTopo(c) || achadaNoServidor(c, busca))) return false;
   if(filtroTag && !c.tags.includes(filtroTag)) return false;
   if(filtroRisco && !emRisco(c)) return false;
@@ -11603,6 +11603,11 @@ const nomeOpcaoSetor=v=>v===SEM_SETOR ? 'Sem setor' : v;
 const corOpcaoSetor=v=>v===SEM_SETOR ? '#94a3b8' : corSetor(v);
 const textoTodosSetores=()=>restritoAoSetor() ? 'Tudo o que você vê' : 'Todos os setores';
 function passaSetor(c){ return !meusSetores.length || meusSetores.includes(c.setor || SEM_SETOR); }
+/* O filtro separa o trabalho de cada setor: quem espera atendimento, quem está
+   sendo atendido e quem aguarda o cliente. "Novos" (no bot, ainda sem setor) e
+   "Resolvidos" (arquivo) mostram tudo, de todos os setores. */
+const ETAPAS_DO_SETOR=new Set(['fila','atendimento','aguardando']);
+function passaSetorNaEtapa(c){ return !ETAPAS_DO_SETOR.has(c.col) || passaSetor(c); }
 function iniciarFiltroSetor(){
   const ok=new Set(opcoesSetor());
   let salvo=null;
@@ -11635,7 +11640,7 @@ function pintarListaSetor(){
   pop.innerHTML = item('__todos', textoTodosSetores(), null)
     + '<div class="sp-sep"></div>'
     + opcoesSetor().map(v=>item(v, nomeOpcaoSetor(v), corOpcaoSetor(v))).join('')
-    + '<div class="sp-nota">Marque um ou mais. "Sem setor" são as conversas que ainda não foram encaminhadas.</div>';
+    + '<div class="sp-nota">Marque um ou mais. "Sem setor" são as conversas que ainda não foram encaminhadas. Vale para Aguardando atendimento, Em atendimento e Aguardando cliente. Novos e Resolvidos mostram todos os setores.</div>';
   marcarListaSetor();
 }
 function marcarListaSetor(){
