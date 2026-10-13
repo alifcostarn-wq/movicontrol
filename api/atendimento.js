@@ -29,7 +29,6 @@
 //   fluxo.obter        -> fluxo ativo
 //   fluxo.salvar       -> grava nodes/edges (só admin)
 //   fluxo.simular      -> testa o fluxo sem WhatsApp (dry-run)
-//   ia.testar          -> sala de teste da IA conversacional (Groq), sem WhatsApp
 //   ia.base.*          -> base de conhecimento da IA (fatos, regras, exemplos)
 //   ia.feedback        -> 👍/👎 numa resposta da IA; correção vira exemplo
 //   (cron) aprenderComConversas -> atendimento finalizado vira sugestão na base
@@ -2387,23 +2386,12 @@ const CONECTORES = {
   },
 };
 
-// ============================================================================
-// IA (fallback) — Groq
-// ============================================================================
-// Marca que o modelo escreve quando não resolve sozinho. Existe porque a
-// promessa em prosa não movia nada: a IA dizia "vou te encaminhar para um
-// atendente", o nó só mandava o texto, e a conversa continuava com o bot, em
-// "Novos", sem entrar na fila de ninguém. Meia hora depois o encerramento por
-// inatividade se despedia com "como não tivemos retorno" — de um retorno que
-// era NOSSO. Quatro clientes que pediram uma pessoa (um perguntando o valor da
-// fatura, outro pedindo o endereço da loja) foram descartados assim, em
-// silêncio. A marca é tirada do texto antes do envio: o cliente nunca a vê.
-const MARCA_ATENDENTE = '[ATENDENTE]';
-
-// Rede de segurança para quando o modelo prometer o atendente sem a marca —
-// ele não obedece à instrução toda vez, e as três respostas de emergência
-// abaixo (sem chave, resposta vazia, erro de rede) prometem exatamente isso.
-// Uma promessa detectada aqui vale o mesmo que a marca: encaminha de verdade.
+// Rede de segurança para quando a IA prometer o atendente sem escrever a marca
+// [ENCAMINHAR:…] — ela não obedece à instrução toda vez. A promessa em prosa
+// não movia nada: a IA dizia "vou te encaminhar", a conversa ficava com o bot
+// e, meia hora depois, o encerramento por inatividade se despedia "como não
+// tivemos retorno" — de um retorno que era NOSSO. Uma promessa detectada aqui
+// vale o mesmo que a marca: encaminha de verdade.
 function pedeAtendente(t) {
   const s = String(t || '');
   return /\bencaminh\w*[^.!?\n]{0,60}\b(atendente|humano|especialista|equipe|setor|colaborador|respons[aá]vel)\b/i.test(s)
@@ -2411,41 +2399,16 @@ function pedeAtendente(t) {
       || /\bfalar com (um |uma )?(atendente|humano|pessoa|especialista|consultor)\b/i.test(s);
 }
 
-/* Devolve { texto, encaminhar }. `encaminhar` é o que faz o nó de IA botar a
-   conversa na fila — sem ele a IA vira um beco sem saída. */
-async function responderIA(e, no, conversa, texto) {
-  const socorro = t => ({ texto: t, encaminhar: true });
-  if (!e.GROQ) return socorro('Não entendi. Vou te encaminhar para um atendente. 👤');
-  try {
-    const { texto: bruto } = await groqChat({
-      chave: e.GROQ,
-      maxTokens: 300,
-      messages: [
-        { role: 'system', content: `Você é o assistente da MoviOn, provedor de internet em Mossoró/RN. Responda em português do Brasil, no máximo 3 frases, de forma cordial. ${no.texto || ''} Se não souber responder, ou se o cliente pedir para falar com uma pessoa, diga que vai encaminhar para um atendente humano e escreva ${MARCA_ATENDENTE} no fim da mensagem.` },
-        { role: 'user', content: String(texto || '').slice(0, 500) },
-      ],
-    });
-    const marcado = bruto.includes(MARCA_ATENDENTE);
-    const limpo = bruto.split(MARCA_ATENDENTE).join(' ').replace(/[ \t]+/g, ' ').trim();
-    if (!limpo) return socorro('Vou te encaminhar para um atendente. 👤');
-    return { texto: limpo, encaminhar: marcado || pedeAtendente(limpo) };
-  } catch (err) {
-    // a falha já foi para o log em groqChat; o cliente nunca fica sem resposta
-    console.error('[atendimento] IA:', err.message);
-    return socorro('Vou te encaminhar para um atendente. 👤');
-  }
-}
-
 // ============================================================================
-// IA CONVERSACIONAL — SALA DE TESTE (Configurações › Testar IA)
+// IA DO ATENDIMENTO (nó "IA" do fluxo)
 // ============================================================================
-/* A IA de hoje (responderIA) responde uma mensagem solta, sem saber o que o
-   cliente disse antes nem o que a MoviOn oferece — e inventa: planos de 50,
-   100 e 300 Mbps, pagamento por cartão, um "portal". Esta é a versão que
-   conversa: recebe o histórico, conhece só o que está escrito no próprio
-   fluxo do bot (planos, preços, passos de suporte) e os setores, e diz quando
-   e para onde passaria a conversa. Por enquanto só roda na sala de teste: o
-   WhatsApp dos clientes continua com o fluxo de hoje. */
+/* A IA antiga respondia uma mensagem solta, sem saber o que o cliente disse
+   antes nem o que a MoviOn oferece — e inventava: planos de 50, 100 e 300
+   Mbps, pagamento por cartão, um "portal". Esta conversa: recebe o histórico
+   recente, conhece só o que está escrito no próprio fluxo do bot (planos,
+   preços, passos de suporte), a Base da IA aprovada e os setores, e diz quando
+   e para onde passar a conversa. Liga/desliga em Configurações › IA
+   (atend_config.dados.ia_ativa). */
 const IA_MAX_TURNOS = 16;
 const IA_MARCA_RE = /\[(ENCAMINHAR|IGNORAR)(?::([^\]\n]*))?\]/i;
 
@@ -2705,6 +2668,44 @@ function lerMarcaIA(bruto, setores) {
   return { texto, acao: 'encaminhar', setor, motivo: resto.join('|').trim().slice(0, 200) || null };
 }
 
+/* A IA respondendo um cliente de verdade. Devolve { texto, acao, setor,
+   motivo }: acao 'responder' (a conversa continua com ela), 'encaminhar'
+   (vai para a fila do setor) ou 'ignorar' (propaganda: sem resposta). Falha
+   da Groq nunca deixa o cliente sem retorno: vira encaminhar. */
+const IA_HISTORICO_HORAS = 12;
+async function conversarIA(e, { conversa, texto, fluxo }) {
+  const socorro = { texto: 'Vou te encaminhar para um atendente. 👤', acao: 'encaminhar', setor: null, motivo: 'a IA não conseguiu responder' };
+  if (!e.GROQ) return socorro;
+  try {
+    // o que já foi dito nesta conversa nas últimas horas (a mensagem que
+    // acabou de chegar já está gravada: ela vai separada, no fim)
+    let hist = [];
+    if (conversa && conversa.id) {
+      const desde = new Date(Date.now() - IA_HISTORICO_HORAS * 3600e3).toISOString();
+      const ms = (await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&created_at=gte.${encodeURIComponent(desde)}`
+        + `&excluido_em=is.null&direcao=in.(in,out,bot)&select=id,direcao,conteudo,transcricao&order=id.desc&limit=${IA_MAX_TURNOS + 1}`)) || [];
+      hist = ms.reverse()
+        .map(m => ({ role: m.direcao === 'in' ? 'user' : 'assistant', content: String(m.transcricao || m.conteudo || '').slice(0, 800) }))
+        .filter(m => m.content.trim());
+      const ult = hist[hist.length - 1];
+      if (ult && ult.role === 'user' && normalizarTxt(ult.content) === normalizarTxt(texto)) hist.pop();
+      hist = hist.slice(-IA_MAX_TURNOS);
+    }
+    const setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*&order=ordem')) || []).filter(x => x.interno !== true).map(x => x.nome);
+    const extra = await baseExtraDaIA(e, [...hist.map(h => h.content), texto].join(' '));
+    const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, extra: textoBaseExtra(extra) });
+    const r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.3, prazoMs: 15000,
+      messages: [{ role: 'system', content: sistema }, ...hist, { role: 'user', content: String(texto || '').slice(0, 800) }] });
+    const lida = lerMarcaIA(r.texto, setores);
+    if (lida.acao === 'responder' && !lida.texto) return socorro;
+    if (lida.acao === 'encaminhar' && !lida.texto) lida.texto = 'Vou te passar para a nossa equipe. Já já alguém continua com você. 👤';
+    return { ...lida, modelo: r.modelo, base_usada: [...extra.regras, ...extra.fatos, ...extra.exemplos].map(x => x.id) };
+  } catch (err) {
+    console.error('[atendimento] IA:', err.message);
+    return socorro;
+  }
+}
+
 // ============================================================================
 // INTERPRETADOR DE FLUXO
 // ============================================================================
@@ -2850,7 +2851,9 @@ function inferirSetorEscolhido(aresta, noDestino, setores) {
  * um fluxo no editor não consulta nada, e o custo da consulta só aparece
  * quando o nó que precisa dela é realmente alcançado.
  */
-async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada, foraDoHorario }) {
+async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada, foraDoHorario, iaAtiva }) {
+  // sem quem pergunte (simulação do editor), a IA vale como ligada
+  const iaLigada = async () => !iaAtiva || await iaAtiva();
   const { nodes, saidas } = indexarFluxo(fluxo);
   const out = { enviar: [], logs: [], patch: {}, sessao: null, limparSessao: false };
   const vars = { ...(sessao?.variaveis || {}), ultima_msg: texto };
@@ -2860,7 +2863,17 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
   let noId = null;
   let retomando = null;   // nó de ação sendo reexecutado: não repete o texto do prompt
 
-  if (sessao?.node_atual && nodes.has(Number(sessao.node_atual))) {
+  const noSessao = sessao?.node_atual ? nodes.get(Number(sessao.node_atual)) : null;
+  if (noSessao && noSessao.tipo === 'ia' && sessao.aguardando === 'ia') {
+    // conversando com a IA: a próxima mensagem volta para ela, com a memória.
+    // Desligaram a IA no meio da conversa? Recomeça pelo menu.
+    if (await iaLigada()) noId = noSessao.id;
+    else {
+      const inicio = [...nodes.values()].find(n => n.tipo === 'inicio');
+      if (!inicio) throw new Error('Fluxo sem bloco de início.');
+      noId = inicio.id;
+    }
+  } else if (sessao?.node_atual && nodes.has(Number(sessao.node_atual))) {
     const noMenu = nodes.get(Number(sessao.node_atual));
     const arestas = saidas.get(noMenu.id) || [];
     // Quando um CONECTOR pediu um dado (CPF, número da fatura, endereço), a
@@ -2895,7 +2908,10 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
       retomando = noMenu.id;
     } else {
       const tentativas = Number(sessao.tentativas || 0) + 1;
-      const fb = arestaFallback(arestas);
+      let fb = arestaFallback(arestas);
+      // IA desligada: a saída "não reconhecido" que leva à IA não vale — o
+      // cliente ouve o menu de novo e, na 3ª vez, vai para um atendente
+      if (fb && (nodes.get(Number(fb.to)) || {}).tipo === 'ia' && !(await iaLigada())) fb = null;
       if (fb) {
         noId = Number(fb.to);
       } else if (tentativas >= MAX_TENTATIVAS) {
@@ -3021,24 +3037,44 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
         break;
 
       case 'ia': {
-        const r = await responderIA(e, no, conversa, texto);
-        out.enviar.push({ texto: r.texto, node: no.id });
-        out.logs.push({
-          node_id: no.id, node_tipo: 'ia', entrada: texto,
-          resultado: r.encaminhar ? 'encaminhado' : 'respondido',
-        });
-        out.limparSessao = true;
-        // A IA desistiu: encaminha DE VERDADE, com o mesmo patch do nó "setor".
-        // Dizer que vai encaminhar e deixar a conversa com o bot é pior que não
-        // dizer nada — o cliente espera uma pessoa que nunca foi avisada.
-        if (r.encaminhar) {
-          out.patch.setor = vars.setor_intencao || no.setor || conversa.setor || null;
+        const paraFila = setor => {
+          out.patch.setor = setor;
           out.patch.coluna = 'fila';
           out.patch.bot_ativo = false;
           out.patch.atendente_id = null;
           out.patch.fila_desde = new Date().toISOString();
           out.patch.assumido_em = null;
           out.patch.assumido_por = null;
+          out.limparSessao = true;
+        };
+        // desligada em Configurações › IA: quem chegou aqui vai para uma pessoa
+        if (!(await iaLigada())) {
+          out.enviar.push({ texto: 'Vou te passar para um atendente. 👤', node: no.id });
+          out.logs.push({ node_id: no.id, node_tipo: 'ia', entrada: texto, resultado: 'desligada' });
+          paraFila(vars.setor_intencao || no.setor || conversa.setor || null);
+          return out;
+        }
+        const r = await conversarIA(e, { conversa, texto, fluxo: { nodes: [...nodes.values()] } });
+        out.logs.push({
+          node_id: no.id, node_tipo: 'ia', entrada: texto,
+          resultado: r.acao === 'encaminhar' ? 'encaminhado' : r.acao === 'ignorar' ? 'ignorado' : 'respondido',
+        });
+        if (r.acao === 'ignorar') {
+          // propaganda ou mensagem automática: sem resposta e sem ocupar a fila
+          out.patch.coluna = 'resolvidos';
+          out.patch.bot_ativo = true;
+          out.limparSessao = true;
+          return out;
+        }
+        out.enviar.push({ texto: r.texto, node: no.id });
+        if (r.acao === 'encaminhar') {
+          // encaminha DE VERDADE, com o mesmo patch do nó "setor": dizer que vai
+          // passar e deixar com o bot é pior que não dizer nada
+          paraFila(r.setor || vars.setor_intencao || no.setor || conversa.setor || null);
+          // o motivo vira recado para quem pegar a conversa
+          if (r.motivo) out.recado = r.motivo;
+        } else {
+          out.sessao = { node_atual: no.id, aguardando: 'ia', variaveis: vars, tentativas: 0 };
         }
         return out;
       }
@@ -3207,6 +3243,13 @@ async function aplicarResultado(e, conversa, out) {
       patch.ultima_msg_em = new Date().toISOString();
     }
     await sb(e, `atend_conversas?id=eq.${conversa.id}`, { method: 'PATCH', body: patch, prefer: 'return=minimal' });
+  }
+
+  // recado da IA para quem pegar a conversa (fica só no painel)
+  if (out.recado && conversa.id) {
+    await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal', body: {
+      conversa_id: conversa.id, direcao: 'sys', origem: 'recado', autor_nome: 'IA',
+      conteudo: String(out.recado).slice(0, 300) } }).catch(err => console.error('[atendimento] recado da IA:', err.message));
   }
 
   // 3. sessão
@@ -4112,8 +4155,16 @@ async function tratarWebhookInterno(e, body) {
     }
     return fechadoLido;
   };
+  let iaLida;
+  const iaAtiva = async () => {
+    if (iaLida === undefined) {
+      const c = await sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null);
+      iaLida = !(c && c.dados && c.dados.ia_ativa === false);
+    }
+    return iaLida;
+  };
   const out = await rodarFluxo(e, {
-    fluxo, sessao: sessaoValida, conversa, texto, pesquisaLiberada, foraDoHorario,
+    fluxo, sessao: sessaoValida, conversa, texto, pesquisaLiberada, foraDoHorario, iaAtiva,
   });
   await aplicarResultado(e, conversa, out);
 
@@ -10334,50 +10385,6 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      /* Sala de teste da IA: o admin escreve como se fosse o cliente e a Groq
-         responde de verdade — nada sai pelo WhatsApp e nada é gravado. Com
-         `comparar`, devolve também o que a IA de hoje (a do fluxo) diria. */
-      case 'ia.testar': {
-        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
-        const texto = String(body.texto || '').trim().slice(0, 800);
-        if (!texto) return res.status(400).json({ ok: false, error: 'Escreva a mensagem do cliente.' });
-        if (!e.GROQ) return res.status(400).json({ ok: false, error: 'A chave da Groq (GROQ_API_KEY) não está configurada na Vercel.' });
-        const historico = (Array.isArray(body.historico) ? body.historico : [])
-          .filter(h => h && (h.de === 'cliente' || h.de === 'ia') && String(h.texto || '').trim())
-          .slice(-IA_MAX_TURNOS)
-          .map(h => ({ role: h.de === 'cliente' ? 'user' : 'assistant', content: String(h.texto).slice(0, 800) }));
-        const [fluxo, linhasSetor] = await Promise.all([
-          sbUm(e, 'atend_fluxos?ativo=is.true&select=nodes&limit=1'),
-          sb(e, 'atend_setores?ativo=is.true&select=*&order=ordem'),
-        ]);
-        // setor interno (Gerência) não é destino de cliente: a IA nem sabe dele
-        const setores = (linhasSetor || []).filter(x => x.interno !== true).map(x => x.nome);
-        const conversaTexto = [...historico.map(h => h.content), texto].join(' ');
-        const extra = await baseExtraDaIA(e, conversaTexto);
-        const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, instrucoes: body.instrucoes, extra: textoBaseExtra(extra) });
-        const t0 = Date.now();
-        let r;
-        try {
-          r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.3, prazoMs: 20000,
-            messages: [{ role: 'system', content: sistema }, ...historico, { role: 'user', content: texto }] });
-        } catch (err) {
-          return res.status(502).json({ ok: false, error: err.message });
-        }
-        const lida = lerMarcaIA(r.texto, setores);
-        const saida = { ok: true, ...lida, modelo: r.modelo, ms: Date.now() - t0, tokens: r.usage ? r.usage.total_tokens || null : null,
-          // o que da base foi junto: a sala de teste mostra, e quem corrige vê de onde veio
-          base_usada: [...extra.regras, ...extra.fatos, ...extra.exemplos].map(x => ({ id: x.id, tipo: x.tipo, titulo: x.titulo || x.conteudo.slice(0, 60) })) };
-        if (body.comparar) {
-          // a de hoje: o nó "IA (fallback)" do fluxo, com a mensagem solta
-          const no = ((fluxo && fluxo.nodes) || []).find(n => n.tipo === 'ia') || { texto: '' };
-          try {
-            const h = await responderIA(e, no, { id: 0, setor: null }, texto);
-            saida.hoje = { texto: h.texto, acao: h.encaminhar ? 'encaminhar' : 'responder' };
-          } catch (err) { saida.hoje = { erro: err.message }; }
-        }
-        return res.status(200).json(saida);
-      }
-
       // ===== Base de conhecimento da IA (só admin) =====
       case 'ia.base.listar': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
@@ -10394,6 +10401,7 @@ export default async function handler(req, res) {
         ]);
         const pos = (notas || []).filter(x => x.nota > 0).length, neg = (notas || []).filter(x => x.nota < 0).length;
         return res.status(200).json({ ok: true, itens: itens || [], sugestoes: sugestoes || [], resumo: { positivas: pos, negativas: neg }, negativos: negativos || [],
+          ia_ativa: !(cfgRow && cfgRow.dados && cfgRow.dados.ia_ativa === false),
           aprendizado: { ativo: !(cfgRow && cfgRow.dados && cfgRow.dados.ia_aprender_ativo === false), lidas: (lidas || []).length,
             sugeridas: (novas || []).length } });
       }
