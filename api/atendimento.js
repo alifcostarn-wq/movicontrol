@@ -30,6 +30,8 @@
 //   fluxo.salvar       -> grava nodes/edges (só admin)
 //   fluxo.simular      -> testa o fluxo sem WhatsApp (dry-run)
 //   ia.testar          -> sala de teste da IA conversacional (Groq), sem WhatsApp
+//   ia.base.*          -> base de conhecimento da IA (fatos, regras, exemplos)
+//   ia.feedback        -> 👍/👎 numa resposta da IA; correção vira exemplo
 //   instabilidades.listar -> quedas de regiao marcadas no MoviFiber
 //
 // INTEGRACAO MOVIFIBER: quedas marcadas la (movifiber_incidentes) viram
@@ -2459,7 +2461,7 @@ function baseDaIA(fluxo) {
   return linhas.join('\n').slice(0, 6000);
 }
 
-function promptDaIA({ base, setores, instrucoes }) {
+function promptDaIA({ base, setores, instrucoes, extra }) {
   return [
     'Você é o atendente virtual da MoviOn, provedora de internet por fibra em Mossoró/RN, conversando pelo WhatsApp.',
     'Fale em português do Brasil, com cordialidade e poucas palavras: no máximo 3 frases curtas por resposta. Pode usar *negrito* do WhatsApp e no máximo 1 emoji.',
@@ -2478,11 +2480,64 @@ function promptDaIA({ base, setores, instrucoes }) {
     '- Propaganda, oferta de outra empresa ou mensagem automática que não é de cliente: não responda e não encaminhe.',
     instrucoes ? `- Instruções da empresa: ${String(instrucoes).slice(0, 1500)}` : '',
     '',
+    extra || '',
     `SETORES para onde você pode passar a conversa: ${setores.join(', ')}.`,
     'FORMATO: escreva só a mensagem para o cliente. Quando a conversa precisar ir para uma pessoa, termine com uma linha',
     '[ENCAMINHAR:<setor>|<motivo em poucas palavras para o atendente>]',
     'Para propaganda/mensagem automática, responda apenas [IGNORAR]. O cliente nunca vê essas marcas.',
   ].filter(x => x !== '').join('\n');
+}
+
+/* BASE DE CONHECIMENTO (atend_ia_base): o que a equipe ensina à IA — fatos,
+   regras e exemplos de resposta aprovados. Melhoria contínua: cada correção
+   feita na sala de teste (ou a partir de uma conversa real) vira exemplo, e a
+   IA passa a usar nas conversas seguintes. Não é treino do modelo: é o que vai
+   no prompt, escolhido pelo que tem a ver com a conversa, dentro de um limite
+   de tamanho (prompt grande custa tempo e dinheiro e dilui as regras). */
+const IA_PARADAS = new Set(('que nao sim para por com uma uns umas dos das nos nas pelo pela meu minha seu sua voce voces '
+  + 'esta estou estao isso essa esse aqui ali tem ter tenho quero queria pode posso como qual quais quando onde mais muito '
+  + 'bom boa dia tarde noite obrigado obrigada ola oi favor pra pro').split(' '));
+function palavrasIA(t) {
+  return new Set(normalizarTxt(t).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !IA_PARADAS.has(w)));
+}
+function relevanciaIA(chave, texto) {
+  let n = 0;
+  for (const w of palavrasIA(texto)) if (chave.has(w)) n++;
+  return n;
+}
+const IA_LIMITE = { regra: 2500, fato: 4000, exemplo: 3000, exemplos: 6 };
+
+async function baseExtraDaIA(e, conversaTexto) {
+  const linhas = (await sb(e, 'atend_ia_base?ativo=is.true&select=id,tipo,titulo,conteudo,setor&order=id.desc&limit=500').catch(() => null)) || [];
+  const chave = palavrasIA(conversaTexto);
+  const ordenar = lista => lista.map(x => ({ x, r: relevanciaIA(chave, `${x.titulo || ''} ${x.conteudo}`) }))
+    .sort((a, b) => b.r - a.r || b.x.id - a.x.id);
+  const caber = (lista, limite, max = 1e9) => {
+    const out = []; let tam = 0;
+    for (const { x } of lista) {
+      const t = `${x.titulo || ''} ${x.conteudo}`.length + 20;
+      if (out.length >= max || tam + t > limite) continue;
+      out.push(x); tam += t;
+    }
+    return out;
+  };
+  // regras valem sempre (as mais novas primeiro); fatos e exemplos, os que
+  // têm a ver com a conversa primeiro
+  const regras = caber(linhas.filter(x => x.tipo === 'regra').map(x => ({ x })), IA_LIMITE.regra);
+  const fatos = caber(ordenar(linhas.filter(x => x.tipo === 'fato')), IA_LIMITE.fato);
+  const exemplos = caber(ordenar(linhas.filter(x => x.tipo === 'exemplo')), IA_LIMITE.exemplo, IA_LIMITE.exemplos);
+  return { regras, fatos, exemplos };
+}
+
+function textoBaseExtra({ regras, fatos, exemplos }) {
+  const partes = [];
+  if (fatos.length) partes.push('INFORMAÇÕES CADASTRADAS PELA EQUIPE (também são fatos da MoviOn):\n'
+    + fatos.map(x => `• ${x.titulo ? x.titulo.trim() + ': ' : ''}${x.conteudo.trim().replace(/\n+/g, ' / ')}`).join('\n'));
+  if (regras.length) partes.push('REGRAS DA EQUIPE (siga sempre; valem mais que as regras gerais):\n'
+    + regras.map(x => `- ${x.conteudo.trim().replace(/\n+/g, ' ')}`).join('\n'));
+  if (exemplos.length) partes.push('EXEMPLOS DE RESPOSTAS APROVADAS PELA EQUIPE (quando a situação for parecida, responda assim):\n'
+    + exemplos.map(x => `Cliente: ${String(x.titulo || '').trim()}\nResposta: ${x.conteudo.trim()}${x.setor ? `\n[ENCAMINHAR:${x.setor}]` : ''}`).join('\n---\n'));
+  return partes.join('\n\n');
 }
 
 /* Lê a marca do fim da resposta. Setor fora da lista vira "sem setor" (a fila
@@ -10138,7 +10193,9 @@ export default async function handler(req, res) {
         ]);
         // setor interno (Gerência) não é destino de cliente: a IA nem sabe dele
         const setores = (linhasSetor || []).filter(x => x.interno !== true).map(x => x.nome);
-        const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, instrucoes: body.instrucoes });
+        const conversaTexto = [...historico.map(h => h.content), texto].join(' ');
+        const extra = await baseExtraDaIA(e, conversaTexto);
+        const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, instrucoes: body.instrucoes, extra: textoBaseExtra(extra) });
         const t0 = Date.now();
         let r;
         try {
@@ -10148,7 +10205,9 @@ export default async function handler(req, res) {
           return res.status(502).json({ ok: false, error: err.message });
         }
         const lida = lerMarcaIA(r.texto, setores);
-        const saida = { ok: true, ...lida, modelo: r.modelo, ms: Date.now() - t0, tokens: r.usage ? r.usage.total_tokens || null : null };
+        const saida = { ok: true, ...lida, modelo: r.modelo, ms: Date.now() - t0, tokens: r.usage ? r.usage.total_tokens || null : null,
+          // o que da base foi junto: a sala de teste mostra, e quem corrige vê de onde veio
+          base_usada: [...extra.regras, ...extra.fatos, ...extra.exemplos].map(x => ({ id: x.id, tipo: x.tipo, titulo: x.titulo || x.conteudo.slice(0, 60) })) };
         if (body.comparar) {
           // a de hoje: o nó "IA (fallback)" do fluxo, com a mensagem solta
           const no = ((fluxo && fluxo.nodes) || []).find(n => n.tipo === 'ia') || { texto: '' };
@@ -10158,6 +10217,97 @@ export default async function handler(req, res) {
           } catch (err) { saida.hoje = { erro: err.message }; }
         }
         return res.status(200).json(saida);
+      }
+
+      // ===== Base de conhecimento da IA (só admin) =====
+      case 'ia.base.listar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const desde = new Date(Date.now() - 30 * 864e5).toISOString();
+        const [itens, notas, negativos] = await Promise.all([
+          sb(e, 'atend_ia_base?select=*&order=tipo.asc,id.desc&limit=1000'),
+          sb(e, `atend_ia_feedback?created_at=gte.${encodeURIComponent(desde)}&select=nota`),
+          sb(e, 'atend_ia_feedback?nota=eq.-1&correcao_id=is.null&select=id,mensagem,resposta,acao,setor,comentario,created_at&order=created_at.desc&limit=20'),
+        ]);
+        const pos = (notas || []).filter(x => x.nota > 0).length, neg = (notas || []).filter(x => x.nota < 0).length;
+        return res.status(200).json({ ok: true, itens: itens || [], resumo: { positivas: pos, negativas: neg }, negativos: negativos || [] });
+      }
+
+      case 'ia.base.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const tipo = String(body.tipo || '');
+        if (!['fato', 'regra', 'exemplo'].includes(tipo)) return res.status(400).json({ ok: false, error: 'Tipo inválido (fato, regra ou exemplo).' });
+        const conteudo = String(body.conteudo || '').trim().slice(0, 2000);
+        const titulo = String(body.titulo || '').trim().slice(0, 500) || null;
+        if (!conteudo) return res.status(400).json({ ok: false, error: tipo === 'exemplo' ? 'Escreva a resposta ideal.' : 'Escreva o conteúdo.' });
+        if (tipo === 'exemplo' && !titulo) return res.status(400).json({ ok: false, error: 'Escreva a mensagem do cliente do exemplo.' });
+        // setor só faz sentido no exemplo, e tem de ser um setor do cliente
+        let setor = null;
+        if (tipo === 'exemplo' && body.setor) {
+          const ok = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
+          setor = ok.find(x => x.toLowerCase() === String(body.setor).trim().toLowerCase()) || null;
+          if (!setor) return res.status(400).json({ ok: false, error: `Setor "${body.setor}" não existe. Use: ${ok.join(', ')}.` });
+        }
+        const origem = ['manual', 'teste', 'conversa'].includes(body.origem) ? body.origem : 'manual';
+        const linha = { tipo, titulo, conteudo, setor, ativo: body.ativo !== false, updated_by: user.id, updated_at: new Date().toISOString() };
+        const id = Number(body.id) || 0;
+        const r = id
+          ? await sbUm(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', body: linha })
+          : await sbUm(e, 'atend_ia_base', { method: 'POST', body: { ...linha, origem, created_by: user.id } });
+        if (!r) return res.status(404).json({ ok: false, error: 'Item não encontrado.' });
+        return res.status(200).json({ ok: true, item: r });
+      }
+
+      case 'ia.base.ativar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        await sb(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', prefer: 'return=minimal',
+          body: { ativo: body.ativo !== false, updated_by: user.id, updated_at: new Date().toISOString() } });
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'ia.base.remover': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        await sb(e, `atend_ia_base?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal' });
+        return res.status(200).json({ ok: true });
+      }
+
+      /* 👍/👎 numa resposta da IA. Com `correcao`, a resposta certa vira um
+         exemplo da base — é ela que a IA vai seguir da próxima vez. */
+      case 'ia.feedback': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const nota = Number(body.nota) > 0 ? 1 : -1;
+        const mensagem = String(body.mensagem || '').trim().slice(0, 800);
+        if (!mensagem) return res.status(400).json({ ok: false, error: 'Falta a mensagem do cliente.' });
+        let correcaoId = null;
+        const corr = body.correcao;
+        if (corr && String(corr.conteudo || '').trim()) {
+          let setor = null;
+          if (corr.setor) {
+            const ok = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
+            setor = ok.find(x => x.toLowerCase() === String(corr.setor).trim().toLowerCase()) || null;
+          }
+          const ex = await sbUm(e, 'atend_ia_base', { method: 'POST', body: {
+            tipo: 'exemplo', titulo: mensagem, conteudo: String(corr.conteudo).trim().slice(0, 2000), setor,
+            origem: 'teste', created_by: user.id, updated_by: user.id } });
+          correcaoId = ex ? ex.id : null;
+        }
+        // corrigindo um 👎 que já estava na lista "para revisar": só liga a
+        // correção a ele, sem contar uma nota nova
+        if (Number(body.feedback_id)) {
+          if (correcaoId) await sb(e, `atend_ia_feedback?id=eq.${Number(body.feedback_id)}`, { method: 'PATCH', prefer: 'return=minimal', body: { correcao_id: correcaoId } });
+          return res.status(200).json({ ok: true, correcao_id: correcaoId });
+        }
+        await sb(e, 'atend_ia_feedback', { method: 'POST', prefer: 'return=minimal', body: {
+          mensagem, resposta: String(body.resposta || '').slice(0, 2000) || null,
+          // "decisao", não "acao": no corpo do pedido, "acao" é o nome da ação da API
+          acao: ['responder', 'encaminhar', 'ignorar'].includes(body.decisao) ? body.decisao : null,
+          setor: body.setor ? String(body.setor).slice(0, 60) : null,
+          nota, comentario: String(body.comentario || '').trim().slice(0, 1000) || null,
+          correcao_id: correcaoId, origem: 'teste', created_by: user.id } });
+        return res.status(200).json({ ok: true, correcao_id: correcaoId });
       }
 
       // dry-run: testa o fluxo sem WhatsApp e sem gravar nada
