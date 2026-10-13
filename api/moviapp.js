@@ -424,7 +424,7 @@ ${partesContexto}`;
           { role: 'user', content: mensagem }
         ];
 
-        const { texto: resposta } = await groqChat({ chave: GROQ_KEY, messages, temperature: 0.6, maxTokens: 500 });
+        const { texto: resposta } = await groqChat({ chave: GROQ_KEY, messages, temperature: 0.6, maxTokens: 500, origem: 'moviapp' });
         return res.status(200).json({ ok: true, resposta });
       } catch (e) {
         return res.status(502).json({ ok: false, error: 'Erro ao consultar IA', message: e.message });

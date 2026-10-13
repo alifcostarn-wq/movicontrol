@@ -50,7 +50,7 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
-import { groqChat, groqTranscrever } from './_groq.js';
+import { groqChat, groqTranscrever, groqModelos, groqModelosAudio } from './_groq.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -2675,7 +2675,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       .map(x => `- ${(x.titulo || x.conteudo).replace(/\s+/g, ' ').slice(0, 90)}`).join('\n');
     let itens = [];
     try {
-      const r = await groqChat({ chave: e.GROQ, maxTokens: 700, temperature: 0.2, prazoMs: IA_APRENDER.prazoGroqMs, messages: [
+      const r = await groqChat({ chave: e.GROQ, maxTokens: 700, temperature: 0.2, prazoMs: IA_APRENDER.prazoGroqMs, origem: 'aprendizado', messages: [
         { role: 'system', content: [
           'Você analisa um atendimento JÁ FINALIZADO da MoviOn (provedor de internet por fibra em Mossoró/RN) para ensinar o atendente virtual.',
           'Extraia SOMENTE conhecimento que vale para QUALQUER cliente e que foi dito ou confirmado pelo ATENDENTE (nunca o que só o cliente ou o bot disse).',
@@ -2748,6 +2748,68 @@ function lerMarcaIA(bruto, setores) {
 const IA_HISTORICO_HORAS = 12;
 const IA_CONVERSA = { raciocinio: 'high', prazoMs: 10000, prazoRapidoMs: 7000 };
 
+/* MONITOR DO GROQ (Configurações › IA). Limites do plano grátis, por modelo,
+   como a Groq publica (docs/rate-limits). Valem até a própria Groq informar
+   os da conta: pedidos/dia e tokens/minuto chegam nos cabeçalhos de toda
+   resposta, tokens/dia na mensagem do erro 429 (tabela groq_limites). */
+const GROQ_LIMITES_GRATIS = {
+  'openai/gpt-oss-120b': { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  'openai/gpt-oss-20b': { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  'whisper-large-v3-turbo': { rpm: 20, rpd: 2000, ash: 7200, asd: 28800 },
+  'whisper-large-v3': { rpm: 20, rpd: 2000, ash: 7200, asd: 28800 },
+};
+const diaEmMossoro = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+
+/* Junta as linhas de groq_uso (dia × modelo × origem) no que o painel mostra.
+   "tokens" é o que conta no limite: entrada − cache + saída (o que veio do
+   cache não conta, segundo a Groq). */
+function resumoUsoGroq(linhas, limites, { hoje, dias, chat, audio }) {
+  const contados = x => Math.max(0, Number(x.tokens_entrada || 0) - Number(x.tokens_cache || 0)) + Number(x.tokens_saida || 0);
+  const papeis = new Map([[chat[0], 'principal'], [chat[1], 'reserva'], [audio[0], 'audio'], [audio[1], 'audio_reserva']]);
+  const vistos = new Set([...papeis.keys(), ...linhas.map(x => x.modelo)].filter(Boolean));
+  const lim = new Map(limites.map(x => [x.modelo, x]));
+  const pago = limites.some(x => /gpt-oss/.test(x.modelo) && Number(x.rpd_limite) > 1000);
+  const deHoje = linhas.filter(x => x.dia === hoje);
+  const modelos = [...vistos].map(modelo => {
+    const l = lim.get(modelo) || {}, padrao = GROQ_LIMITES_GRATIS[modelo] || {};
+    const rows = deHoje.filter(x => x.modelo === modelo);
+    const soma = k => rows.reduce((n, x) => n + Number(x[k] || 0), 0);
+    return {
+      modelo, papel: papeis.get(modelo) || 'outro',
+      requisicoes: soma('requisicoes'), tokens: rows.reduce((n, x) => n + contados(x), 0),
+      entrada: soma('tokens_entrada'), cache: soma('tokens_cache'), saida: soma('tokens_saida'),
+      audio_segundos: Math.round(soma('audio_segundos')), limitados: soma('limitados'),
+      limites: {
+        rpd: l.rpd_limite || padrao.rpd || null, tpm: l.tpm_limite || padrao.tpm || null,
+        tpd: l.tpd_limite || (pago ? null : padrao.tpd || null), asd: padrao.asd || null, rpm: padrao.rpm || null,
+      },
+      rpd_restante: l.rpd_restante ?? null, limites_vistos_em: l.atualizado_em || null,
+      ultimo_limite_em: l.ultimo_limite_em || null, ultimo_limite_tipo: l.ultimo_limite_tipo || null,
+    };
+  }).sort((a, b) => ['principal', 'reserva', 'audio', 'audio_reserva', 'outro'].indexOf(a.papel) - ['principal', 'reserva', 'audio', 'audio_reserva', 'outro'].indexOf(b.papel));
+  const porOrigem = new Map();
+  for (const x of deHoje) {
+    const o = porOrigem.get(x.origem) || { origem: x.origem, tokens: 0, requisicoes: 0, audio_segundos: 0, limitados: 0 };
+    o.tokens += contados(x); o.requisicoes += Number(x.requisicoes || 0);
+    o.audio_segundos += Number(x.audio_segundos || 0); o.limitados += Number(x.limitados || 0);
+    porOrigem.set(x.origem, o);
+  }
+  const chatHoje = deHoje.filter(x => !/whisper/.test(x.modelo));
+  const entrada = chatHoje.reduce((n, x) => n + Number(x.tokens_entrada || 0), 0);
+  const cache = chatHoje.reduce((n, x) => n + Number(x.tokens_cache || 0), 0);
+  return {
+    hoje, plano: pago ? 'pago' : 'gratis', modelos,
+    origens: [...porOrigem.values()].map(o => ({ ...o, audio_segundos: Math.round(o.audio_segundos) })).sort((a, b) => b.tokens - a.tokens || b.audio_segundos - a.audio_segundos),
+    cache_pct: entrada ? Math.round(cache * 100 / entrada) : null,
+    dias: dias.map(dia => {
+      const rows = linhas.filter(x => x.dia === dia);
+      const tok = m => rows.filter(x => x.modelo === m).reduce((n, x) => n + contados(x), 0);
+      return { dia, principal: tok(chat[0]), reserva: tok(chat[1]), requisicoes: rows.reduce((n, x) => n + Number(x.requisicoes || 0), 0),
+        limitados: rows.reduce((n, x) => n + Number(x.limitados || 0), 0), audio_segundos: Math.round(rows.reduce((n, x) => n + Number(x.audio_segundos || 0), 0)) };
+    }),
+  };
+}
+
 /* O WhatsApp não é Markdown: **negrito** aparece com os asteriscos sobrando
    e "### título" aparece com as cerquilhas. */
 function paraWhatsApp(t) {
@@ -2800,12 +2862,14 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
     // pensa bastante antes de responder (decide melhor quando encaminhar, o
     // que perguntar). Se passar do prazo, responde rápido em vez de deixar o
     // cliente esperando: a próxima mensagem do mesmo número só espera 12s.
+    // O mesmo se a Groq recusar o tamanho do pedido (limite por minuto) ou o
+    // raciocínio gastar a reserva toda e a resposta vier vazia.
     let r;
     try {
-      r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: IA_CONVERSA.raciocinio, prazoMs: IA_CONVERSA.prazoMs, messages });
+      r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: IA_CONVERSA.raciocinio, prazoMs: IA_CONVERSA.prazoMs, messages, origem: 'conversa' });
     } catch (err) {
-      if (!/demorou demais/.test(err.message)) throw err;
-      r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: 'low', prazoMs: IA_CONVERSA.prazoRapidoMs, messages });
+      if (!/demorou demais|grande demais|resposta vazia/.test(err.message)) throw err;
+      r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: 'low', prazoMs: IA_CONVERSA.prazoRapidoMs, messages, origem: 'conversa' });
     }
     const lida = lerMarcaIA(r.texto, setores);
     lida.texto = paraWhatsApp(lida.texto);
@@ -10629,6 +10693,18 @@ export default async function handler(req, res) {
         }
         await sb(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
         return res.status(200).json({ ok: true, status: patch.status });
+      }
+
+      case 'ia.uso': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const agora = Date.now();
+        const dias = Array.from({ length: 7 }, (_, i) => diaEmMossoro(new Date(agora - (6 - i) * 864e5)));
+        const [linhas, limites] = await Promise.all([
+          sb(e, `groq_uso?dia=gte.${dias[0]}&select=*&order=dia.asc&limit=2000`),
+          sb(e, 'groq_limites?select=*'),
+        ]);
+        return res.status(200).json({ ok: true, ...resumoUsoGroq(linhas || [], limites || [],
+          { hoje: dias[6], dias, chat: groqModelos(process.env), audio: groqModelosAudio(process.env) }) });
       }
 
       case 'ia.base.ativar': {

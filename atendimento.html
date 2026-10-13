@@ -1445,6 +1445,41 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .iab-form-bts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px;}
 /* base da IA */
 .iab{display:flex;flex-direction:column;gap:16px;max-width:900px;}
+/* ===== USO DO GROQ (Configurações › IA) =====
+   Medidor: o preenchimento carrega o estado (folgado → atenção → no limite) e
+   o trilho é um tom claro da MESMA cor, para o estado se ler na barra toda.
+   Estado nunca só por cor: sempre ícone + texto. No escuro os preenchimentos
+   são os tons claros (verde 7,4 · âmbar 7,9 · vermelho 5,6 sobre o trilho);
+   os do claro ficariam abaixo de 3:1 no fundo escuro. */
+:root{--meter-ok:#00864a;--meter-ok-track:#e6f7ef;--meter-warn:#b45309;--meter-warn-track:#fef3c7;--meter-bad:#dc2626;--meter-bad-track:#feecec;}
+body.dark-mode{--meter-ok:#4ade80;--meter-ok-track:#12382a;--meter-warn:#fbbf24;--meter-warn-track:#3d2e0c;--meter-bad:#f87171;--meter-bad-track:#3b1a22;}
+.iab-uso h3{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.iab-uso h3 .fbtn{margin-left:auto;}
+.uso-estado{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--text);border-radius:999px;padding:5px 12px;margin-bottom:10px;line-height:1.35;}
+.uso-estado.ok{background:var(--meter-ok-track);}
+.uso-estado.aviso{background:var(--meter-warn-track);}
+.uso-estado.perigo{background:var(--meter-bad-track);}
+.uso-meds{display:flex;flex-direction:column;gap:14px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px;}
+.uso-med-t{display:flex;justify-content:space-between;align-items:baseline;gap:4px 12px;font-size:12.5px;margin-bottom:6px;flex-wrap:wrap;}
+.uso-med-t b{color:var(--text);}
+.uso-med-t span{color:var(--text-mid);}
+.uso-barra{height:10px;border-radius:999px;background:var(--meter-ok-track);overflow:hidden;}
+.uso-barra > i{display:block;height:100%;border-radius:999px;background:var(--meter-ok);}
+.uso-barra.aviso{background:var(--meter-warn-track);}
+.uso-barra.aviso > i{background:var(--meter-warn);}
+.uso-barra.perigo{background:var(--meter-bad-track);}
+.uso-barra.perigo > i{background:var(--meter-bad);}
+.uso-med-n{font-size:11.5px;color:var(--text-low);margin-top:5px;}
+.uso-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px;}
+.uso-caixa{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 12px;overflow-x:auto;}
+.uso-caixa h4{font-size:12.5px;margin:0 0 6px;color:var(--text);}
+.uso-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
+.uso-tab th{text-align:left;font-size:11px;color:var(--text-mid);font-weight:700;padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap;}
+.uso-tab td{padding:5px 6px;border-bottom:1px solid var(--line);color:var(--text);}
+.uso-tab tr:last-child td{border-bottom:none;}
+.uso-tab .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.uso-tab .hoje td{font-weight:700;}
+.uso-nota{font-size:11.5px;color:var(--text-low);margin-top:10px;line-height:1.45;}
 .iab-resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
 .iab-num{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 12px;display:flex;flex-direction:column;}
 .iab-num b{font-size:20px;}
@@ -6492,6 +6527,105 @@ function iabFormHTML(){
   </div>`;
 }
 
+/* ===== USO DO GROQ =====
+   Quanto da cota do plano a IA já gastou hoje, por modelo, e quem gastou.
+   Fica no estado IAB.uso: digitar na busca da base redesenha a aba sem pedir
+   de novo ao servidor; abrir a aba ou "Atualizar" busca o número do momento. */
+const USO_ORIGEM = { conversa:'Conversa com clientes (WhatsApp)', aprendizado:'Aprendizado (atendimentos finalizados)', audio:'Áudios transcritos',
+  moviapp:'Assistente do MoviApp', movione:'Análises do MoviOne', outro:'Outros' };
+const USO_LIMITE_TIPO = { TPD:'tokens por dia', RPD:'pedidos por dia', TPM:'tokens por minuto', RPM:'pedidos por minuto', ASD:'áudio por dia', ASH:'áudio por hora', outro:'limite' };
+const fmtNum = n => Number(n||0).toLocaleString('pt-BR');
+// "100%" só quando acabou mesmo: 99,6% arredondado para 100 parece cota esgotada
+const usoPct = (usado, limite) => !limite ? 0 : usado >= limite ? 100 : usado > 0 && usado / limite < 0.01 ? '<1' : Math.min(99, Math.round(usado * 100 / limite));
+const usoEstadoDe = p => p >= 0.9 ? 'perigo' : p >= 0.7 ? 'aviso' : 'ok';
+function usoMedidor({ titulo, usado, limite, unidade, nota }){
+  // sem limite conhecido (plano pago não tem limite diário de tokens): só o número
+  if(!limite) return `<div class="uso-med"><div class="uso-med-t"><b>${titulo}</b><span>${fmtNum(usado)} ${unidade} hoje</span></div>${nota?`<div class="uso-med-n">${nota}</div>`:''}</div>`;
+  const p = Math.min(1, usado / limite);
+  const est = usoEstadoDe(p);
+  // fatia mínima visível: gasto pequeno não pode parecer zero
+  const larg = usado > 0 ? Math.max(p * 100, 1.5) : 0;
+  const rotulo = titulo.replace(/<[^>]+>/g, '');
+  return `<div class="uso-med">
+    <div class="uso-med-t"><b>${titulo}</b><span>${fmtNum(usado)} de ${fmtNum(limite)} ${unidade} · ${usoPct(usado, limite)}%</span></div>
+    <div class="uso-barra ${est}" role="meter" aria-label="${esc(rotulo)}" aria-valuemin="0" aria-valuemax="${limite}" aria-valuenow="${usado}"
+      title="${esc(rotulo)}: ${fmtNum(usado)} de ${fmtNum(limite)} ${unidade}"><i style="width:${larg.toFixed(1)}%"></i></div>
+    ${nota?`<div class="uso-med-n">${nota}</div>`:''}
+  </div>`;
+}
+function renderUsoGroq(box){
+  const u = IAB.uso; if(!box || !u) return;
+  const titulo = `<h3>📊 Uso do Groq hoje <span>${u.plano==='pago'?'plano pago':'plano grátis'} · conta desde 0h</span>
+    <button type="button" class="fbtn" id="iabUsoAtualizar">Atualizar</button></h3>`;
+  const mod = papel => u.modelos.find(m=>m.papel===papel);
+  const pri = mod('principal'), res = mod('reserva'), aud = mod('audio');
+  const hora = iso => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
+  const hojeIso = u.hoje;
+  const ehHoje = iso => iso && new Date(iso).toLocaleDateString('en-CA', { timeZone:'America/Fortaleza' }) === hojeIso;
+  // estado geral: o que estiver mais perto do limite manda
+  const fra = [];
+  if(pri && pri.limites.tpd) fra.push(pri.tokens / pri.limites.tpd);
+  if(pri && pri.limites.rpd) fra.push(pri.requisicoes / pri.limites.rpd);
+  if(aud && aud.limites.asd) fra.push(aud.audio_segundos / aud.limites.asd);
+  const maior = Math.max(0, ...fra);
+  const batidas = u.modelos.reduce((n,m)=>n+m.limitados, 0);
+  const ultimo = u.modelos.filter(m=>ehHoje(m.ultimo_limite_em)).sort((a,b)=>String(b.ultimo_limite_em).localeCompare(String(a.ultimo_limite_em)))[0];
+  let est = usoEstadoDe(maior), txt;
+  if(batidas && ultimo && /^(TPD|RPD|ASD)$/.test(ultimo.ultimo_limite_tipo||'')) { est = 'perigo';
+    txt = `⛔ O limite do dia acabou às ${hora(ultimo.ultimo_limite_em)} (${USO_LIMITE_TIPO[ultimo.ultimo_limite_tipo]}): a IA usa a reserva e, sem ela, passa para um atendente.`; }
+  else if(batidas){ if(est==='ok') est = 'aviso';
+    txt = `⚠️ Bateu o limite ${batidas} ${batidas===1?'vez':'vezes'} hoje${ultimo?` (último às ${hora(ultimo.ultimo_limite_em)}, ${USO_LIMITE_TIPO[ultimo.ultimo_limite_tipo]||'limite'})`:''}: nessas horas a IA respondeu pela reserva ou passou para um atendente.`; }
+  else { const pc = usoPct(maior, 1);
+    txt = est==='perigo' ? `⛔ Quase no limite: ${pc}% da cota de hoje. Quando acabar, a IA usa a reserva e depois passa para atendentes.`
+      : est==='aviso' ? `⚠️ Atenção: ${pc}% da cota de hoje já foi usada.`
+      : `✅ Folgado: ${pc==='<1' ? 'menos de 1' : pc}% da cota de hoje.`; }
+  const meds = [];
+  if(pri){
+    meds.push(usoMedidor({ titulo:`IA principal <span>(${esc(pri.modelo)})</span>`, usado:pri.tokens, limite:pri.limites.tpd || 0, unidade:'tokens',
+      nota: pri.limites.tpm ? `Por minuto: até ${fmtNum(pri.limites.tpm)} tokens e ${fmtNum(pri.limites.rpm||30)} pedidos. Rajadas acima disso vão para a reserva.` : '' }));
+    meds.push(usoMedidor({ titulo:'Pedidos à IA principal', usado:pri.requisicoes, limite:pri.limites.rpd || 0, unidade:'pedidos',
+      nota: pri.rpd_restante!=null && ehHoje(pri.limites_vistos_em) ? `O Groq informou às ${hora(pri.limites_vistos_em)}: restam ${fmtNum(pri.rpd_restante)} pedidos.` : '' }));
+  }
+  if(res) meds.push(usoMedidor({ titulo:`IA reserva <span>(${esc(res.modelo)})</span>`, usado:res.tokens, limite:res.limites.tpd || 0, unidade:'tokens',
+    nota:'Só trabalha quando a principal bate o limite. Tem cota própria.' }));
+  if(aud) meds.push(usoMedidor({ titulo:'Áudios transcritos', usado:Math.round(aud.audio_segundos/60), limite:Math.round((aud.limites.asd||0)/60), unidade:'min' }));
+  const origens = u.origens.length ? u.origens.map(o=>`<tr><td>${esc(USO_ORIGEM[o.origem]||o.origem)}</td>
+      <td class="n">${o.origem==='audio' ? `${fmtNum(Math.round(o.audio_segundos/60))} min` : fmtNum(o.tokens)}</td><td class="n">${fmtNum(o.requisicoes)}</td></tr>`).join('')
+    : '<tr><td colspan="3">Nenhum uso registrado hoje ainda.</td></tr>';
+  const nomeDia = d => { const dt = new Date(d+'T12:00:00'); return d===hojeIso ? 'Hoje' : dt.toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'2-digit' }).replace('.', ''); };
+  const tpd = pri && pri.limites.tpd;
+  const dias = u.dias.slice().reverse().map(d=>`<tr class="${d.dia===hojeIso?'hoje':''}"><td>${nomeDia(d.dia)}</td>
+      <td class="n">${fmtNum(d.principal)}</td><td class="n">${tpd ? usoPct(d.principal, tpd)+'%' : '—'}</td>
+      <td class="n">${fmtNum(d.reserva)}</td><td class="n">${d.limitados ? `⚠️ ${d.limitados}` : '—'}</td></tr>`).join('');
+  box.innerHTML = `${titulo}
+    <div class="uso-estado ${est}" role="status">${txt}</div>
+    <div class="uso-meds">${meds.join('')}</div>
+    <div class="uso-grade">
+      <div class="uso-caixa"><h4>Quem usou hoje</h4>
+        <table class="uso-tab"><thead><tr><th>Uso</th><th class="n">Tokens</th><th class="n">Pedidos</th></tr></thead><tbody>${origens}</tbody></table></div>
+      <div class="uso-caixa"><h4>Últimos 7 dias (tokens)</h4>
+        <table class="uso-tab"><thead><tr><th>Dia</th><th class="n">Principal</th><th class="n">da cota</th><th class="n">Reserva</th><th class="n">Limite</th></tr></thead><tbody>${dias}</tbody></table></div>
+    </div>
+    <div class="uso-nota">${u.cache_pct!=null ? `♻️ Hoje, ${u.cache_pct}% do texto enviado à IA veio do cache do Groq. Essa parte não conta no limite e custa metade. ` : ''}
+      Contagem do MoviControl, desde 0h (horário de Mossoró), de tudo que usa a IA: MoviTalk, MoviApp e MoviOne.</div>`;
+  box.querySelector('#iabUsoAtualizar').onclick = ()=>carregarUsoGroq(box, true);
+}
+async function carregarUsoGroq(box, forcar){
+  if(!box) return;
+  if(IAB.uso && !forcar){ renderUsoGroq(box); return; }
+  if(!IAB.uso) box.innerHTML = '<h3>📊 Uso do Groq hoje</h3><div class="pn-load">Carregando o uso do Groq…</div>';
+  const bt = box.querySelector('#iabUsoAtualizar'); if(bt){ bt.disabled = true; bt.textContent = 'Atualizando…'; }
+  try{
+    const r = await chamar('ia.uso', {});
+    // servidor de outra versão (ou resposta estranha): não quebra a aba
+    if(!r || !Array.isArray(r.modelos) || !Array.isArray(r.dias) || !Array.isArray(r.origens)) throw new Error('o servidor não mandou o uso (versão antiga?)');
+    IAB.uso = r;
+  }
+  catch(err){ if(!IAB.uso){ box.innerHTML = `<h3>📊 Uso do Groq hoje</h3><div class="ms-erro">Uso indisponível: ${esc(err.message)}</div>`; return; } toast('Falha ao atualizar o uso: '+err.message); }
+  // a aba pode ter sido redesenhada enquanto esperava: desenha no quadro atual
+  renderUsoGroq(document.getElementById('iabUso') || box);
+}
+
 async function renderBaseIA(el, recarregar=true){
   if(recarregar || !IAB.dados){
     el.innerHTML = '<div class="pn-load">Carregando a base da IA…</div>';
@@ -6514,6 +6648,7 @@ async function renderBaseIA(el, recarregar=true){
           ? 'Quando o cliente escreve algo fora das opções do menu, a IA responde: lembra a conversa, usa a base abaixo, passa para o setor certo quando precisa e ignora propaganda.'
           : 'O bot fica só com o menu: se o cliente escrever algo fora das opções, ele pede para escolher de novo e, na 3ª vez, passa para um atendente.'}</span></div></label>
     </div>
+    <div class="iab-sec iab-uso" id="iabUso"></div>
     <div class="vsub">O que a equipe ensina à IA. Ela usa as <b>regras</b> sempre, e os <b>fatos</b> e <b>exemplos</b> que têm a ver com a conversa.</div>
     <div class="iab-resumo">
       <div class="iab-num"><b>${cont('fato')}</b><span>fatos</span></div>
@@ -6572,6 +6707,7 @@ async function renderBaseIA(el, recarregar=true){
     </div>
   </div>`;
   const recarr = ()=>renderBaseIA(el, true);
+  carregarUsoGroq(el.querySelector('#iabUso'), recarregar);
   el.querySelector('#iabIaAtiva').onchange = async ev=>{
     const ligar = ev.target.checked;
     if(!ligar && !confirm('Desligar a IA no atendimento?\n\nO bot fica só com o menu: o que o cliente escrever fora das opções vai para um atendente depois da 3ª tentativa.')){ ev.target.checked = true; return; }

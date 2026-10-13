@@ -125,6 +125,7 @@ export default async function handler(req, res) {
         messages: b.messages.slice(0, 20),
         temperature: typeof b.temperature === 'number' ? b.temperature : 0.4,
         maxTokens: Math.min(parseInt(b.max_tokens) || 900, 2000),
+        origem: 'movione',
       });
       return res.status(200).json({ ok: true, texto: r.texto, modelo: r.modelo, usage: r.usage });
     } catch (e) {
