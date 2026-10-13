@@ -1145,6 +1145,17 @@ const MIN_INSISTIR_PESQUISA = () => Number(process.env.ATEND_PESQUISA_MIN || 15)
 // Mensagem de encerramento para quando a pesquisa está travada. Sem ela o
 // cliente ficava sem NENHUM retorno ao atendente finalizar: a pesquisa era a
 // própria despedida.
+/* O cliente pediu para encerrar? Só pedido explícito: "cancelar" sozinho pode
+   ser o contrato, e "já consegui" pode vir antes de um "mas continua…". */
+function pedeEncerrar(t) {
+  const s = normalizarTxt(t).replace(/[!.,;?]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s || s.length > 120) return false;
+  return /^(pode(m)? |por favor |pfv |pf )?(encerrar|finalizar|fechar|encerra|finaliza|fecha)( (o|a|esse|essa|meu|minha))?( (atendimento|conversa|chamado|solicitacao|protocolo))?( (por favor|pfv|pf|obrigad[oa]))?$/.test(s)
+      || /\b(encerr|finaliz|fech)\w* (o |a |esse |essa |meu |minha )?(atendimento|conversa|chamado|solicitacao)\b/.test(s)
+      || /\bcancel\w* (o |a |esse |essa |meu |minha )?(atendimento|conversa|chamado|solicitacao)\b/.test(s)
+      || /\bnao (preciso|quero) mais (de )?(atendimento|ajuda|falar)\b/.test(s);
+}
+
 const TEXTO_ENCERRAMENTO =
   'Seu atendimento foi encerrado por aqui. 👋\n' +
   'Se precisar de algo, é só mandar outra mensagem. A MoviOn agradece! 💚';
@@ -2410,7 +2421,7 @@ function pedeAtendente(t) {
    e para onde passar a conversa. Liga/desliga em Configurações › IA
    (atend_config.dados.ia_ativa). */
 const IA_MAX_TURNOS = 16;
-const IA_MARCA_RE = /\[(ENCAMINHAR|IGNORAR)(?::([^\]\n]*))?\]/i;
+const IA_MARCA_RE = /\[(ENCAMINHAR|IGNORAR|ENCERRAR)(?::([^\]\n]*))?\]/i;
 
 /* O que o bot já diz ao cliente é o que a IA pode afirmar: os textos dos
    blocos de mensagem e de menu do fluxo ativo. Mudou no editor, muda aqui. */
@@ -2418,7 +2429,14 @@ function baseDaIA(fluxo) {
   const linhas = [];
   for (const n of (fluxo && fluxo.nodes) || []) {
     if (!['mensagem', 'menu', 'acao'].includes(n.tipo)) continue;
-    const t = String(n.texto || '').trim();
+    let t = String(n.texto || '').trim();
+    if (n.tipo === 'menu') {
+      // "1️⃣ Suporte técnico / 2️⃣ Financeiro" vira "Suporte técnico; Financeiro": a
+      // IA copiava a lista numerada para o cliente, e na conversa com ela digitar
+      // um número não escolhe opção nenhuma
+      const ops = t.split('\n').map(l => l.replace(/^\s*(\d+\uFE0F?\u20E3|\d+\s*[-.)·]|[•\-–])\s*/u, '').trim()).filter(Boolean);
+      t = ops.length > 1 ? `${ops[0]} Opções: ${ops.slice(1).join('; ')}.` : ops.join(' ');
+    }
     if (!t || t.length < 12) continue;
     linhas.push(`• ${String(n.titulo || n.tipo).trim()}: ${t.replace(/\n+/g, ' / ')}`);
   }
@@ -2442,13 +2460,15 @@ function promptDaIA({ base, setores, instrucoes, extra }) {
     '- Se o cliente pedir uma pessoa/atendente, encaminhe na hora.',
     '- Saudação sozinha ("oi", "bom dia"): cumprimente e pergunte como pode ajudar, citando em uma frase o que você resolve. Não encaminhe.',
     '- Propaganda, oferta de outra empresa ou mensagem automática que não é de cliente: não responda e não encaminhe.',
+    '- Converse em texto corrido: não mande listas numeradas de opções nem peça para o cliente digitar números.',
+    '- Quando o cliente pedir para encerrar, disser que já resolveu ou se despedir ("obrigado, era só isso", "tchau"), despeça-se em uma frase e termine com [ENCERRAR].',
     instrucoes ? `- Instruções da empresa: ${String(instrucoes).slice(0, 1500)}` : '',
     '',
     extra || '',
     `SETORES para onde você pode passar a conversa: ${setores.join(', ')}.`,
     'FORMATO: escreva só a mensagem para o cliente. Quando a conversa precisar ir para uma pessoa, termine com uma linha',
     '[ENCAMINHAR:<setor>|<motivo em poucas palavras para o atendente>]',
-    'Para propaganda/mensagem automática, responda apenas [IGNORAR]. O cliente nunca vê essas marcas.',
+    'Para propaganda/mensagem automática, responda apenas [IGNORAR]. Para encerrar o atendimento, termine com [ENCERRAR]. O cliente nunca vê essas marcas.',
   ].filter(x => x !== '').join('\n');
 }
 
@@ -2662,6 +2682,7 @@ function lerMarcaIA(bruto, setores) {
   const texto = String(bruto || '').replace(new RegExp(IA_MARCA_RE.source, 'gi'), ' ').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').trim();
   if (!m) return { texto, acao: pedeAtendente(texto) ? 'encaminhar' : 'responder', setor: null, motivo: null };
   if (m[1].toUpperCase() === 'IGNORAR') return { texto: '', acao: 'ignorar', setor: null, motivo: null };
+  if (m[1].toUpperCase() === 'ENCERRAR') return { texto, acao: 'encerrar', setor: null, motivo: null };
   const [s0, ...resto] = String(m[2] || '').split('|');
   const pedido = s0.trim().toLowerCase();
   const setor = setores.find(x => x.toLowerCase() === pedido) || null;
@@ -3057,8 +3078,17 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
         const r = await conversarIA(e, { conversa, texto, fluxo: { nodes: [...nodes.values()] } });
         out.logs.push({
           node_id: no.id, node_tipo: 'ia', entrada: texto,
-          resultado: r.acao === 'encaminhar' ? 'encaminhado' : r.acao === 'ignorar' ? 'ignorado' : 'respondido',
+          resultado: ({ encaminhar: 'encaminhado', ignorar: 'ignorado', encerrar: 'encerrado' })[r.acao] || 'respondido',
         });
+        if (r.acao === 'encerrar') {
+          // o cliente se despediu ou pediu para encerrar: tchau e conversa resolvida
+          out.enviar.push({ texto: r.texto || TEXTO_ENCERRAMENTO, node: no.id });
+          out.patch.coluna = 'resolvidos';
+          out.patch.bot_ativo = true;
+          out.patch.nao_lidas = 0;
+          out.limparSessao = true;
+          return out;
+        }
         if (r.acao === 'ignorar') {
           // propaganda ou mensagem automática: sem resposta e sem ocupar a fila
           out.patch.coluna = 'resolvidos';
@@ -4029,6 +4059,26 @@ async function tratarWebhookInterno(e, body) {
     } catch (err) {
       console.error('[atendimento] instabilidade:', err.message);
     }
+  }
+
+  /* Pediu para encerrar enquanto espera na fila (ninguém assumiu ainda) ou
+     enquanto fala com o bot: encerra na hora. Na fila, o bot fica quieto — o
+     "encerrar atendimento" ficava lá parado até alguém assumir só para fechar.
+     Com um atendente já na conversa, quem encerra é ele. */
+  if (texto && pedeEncerrar(texto) && !conversa.atendente_id
+      && (conversa.coluna === 'fila' || conversa.coluna === 'novos')
+      && !(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
+    try {
+      const env = await waEnviar(e, fone, TEXTO_ENCERRAMENTO);
+      await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+        body: { conversa_id: conversa.id, direcao: 'bot', conteudo: TEXTO_ENCERRAMENTO, wa_id: idDaEvolution(env), status: 'enviado' } });
+    } catch (err) { console.error('[atendimento] encerrar a pedido:', err.message); }
+    await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+      body: { conversa_id: conversa.id, direcao: 'sys', conteudo: 'O cliente pediu para encerrar o atendimento' } });
+    await sb(e, `atend_conversas?id=eq.${conversa.id}`, { method: 'PATCH', prefer: 'return=minimal',
+      body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, ultima_msg: TEXTO_ENCERRAMENTO.slice(0, 200), ultima_msg_em: new Date().toISOString() } });
+    await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
+    return { ok: true, conversa_id: conversa.id, encerrado_a_pedido: true };
   }
 
   // humano assumiu → bot fica quieto
