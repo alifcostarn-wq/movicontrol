@@ -39,8 +39,11 @@ function modeloIndisponivel(status, err) {
 /* Conversa com a Groq. Devolve { texto, modelo, usage } ou lança Error com
    uma mensagem legível. `maxTokens` é o tamanho da RESPOSTA: nos modelos que
    raciocinam antes de responder (gpt-oss), o raciocínio também consome do
-   limite, então a reserva para ele é somada aqui. */
-export async function groqChat({ messages, maxTokens = 600, temperature = 0.4, chave, env = process.env, prazoMs = 25000 } = {}) {
+   limite, então a reserva para ele é somada aqui. `raciocinio` ('low',
+   'medium', 'high'): quanto o modelo pensa antes de responder — mais
+   pensamento, decisões melhores, resposta um pouco mais lenta. */
+const RESERVA_RACIOCINIO = { low: 1024, medium: 2048, high: 4096 };
+export async function groqChat({ messages, maxTokens = 600, temperature = 0.4, chave, env = process.env, prazoMs = 25000, raciocinio = 'low' } = {}) {
   const key = chave || env.GROQ_API_KEY || '';
   if (!key) throw new Error('GROQ_API_KEY não configurada na Vercel.');
   if (!Array.isArray(messages) || !messages.length) throw new Error('Sem mensagens para a IA.');
@@ -49,11 +52,12 @@ export async function groqChat({ messages, maxTokens = 600, temperature = 0.4, c
   for (const modelo of groqModelos(env)) {
     const corpo = { model: modelo, messages, temperature, max_completion_tokens: maxTokens };
     if (ehRaciocinio(modelo)) {
-      // raciocínio curto: as respostas aqui são de atendimento e resumo, não
-      // de matemática; e sem devolver o raciocínio, que só gastaria banda
-      corpo.reasoning_effort = 'low';
+      // por padrão, raciocínio curto (resumos e análises); a conversa com o
+      // cliente pede mais. Sem devolver o raciocínio, que só gastaria banda.
+      const nivel = RESERVA_RACIOCINIO[raciocinio] ? raciocinio : 'low';
+      corpo.reasoning_effort = nivel;
       corpo.include_reasoning = false;
-      corpo.max_completion_tokens = maxTokens + 1024;
+      corpo.max_completion_tokens = maxTokens + RESERVA_RACIOCINIO[nivel];
     }
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), prazoMs);

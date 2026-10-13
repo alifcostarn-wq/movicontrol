@@ -1449,10 +1449,11 @@ async function avisarNaFila(e, { conversa, fone, texto }) {
   // logo depois de entrar na fila o cliente já leu "encaminhando…": não repete
   if (conversa.fila_desde && Date.now() - new Date(conversa.fila_desde).getTime() < 60000) return { avisou: false };
   const sit = horarioSituacao(await horarioConfig(e), new Date());
-  const onde = conversa.setor ? ` do setor *${conversa.setor}*` : '';
-  const aviso = sit.ligado && !sit.aberto
-    ? `Recebi sua mensagem! 👍 Você está na fila${onde}. Nossa equipe está fora do horário agora e responde aqui assim que voltar.`
-    : `Recebi sua mensagem! 👍 Você está na fila${onde} e um atendente vai responder aqui em instantes.`;
+  const onde = conversa.setor ? ` do *${conversa.setor}*` : '';
+  const nome = primeiroNome(conversa.contato_nome);
+  const aviso = (sit.ligado && !sit.aberto
+    ? `Recebi sua mensagem${nome ? ', ' + nome : ''}! 😊 Você já está na fila${onde}. Agora estamos fora do horário de atendimento, mas assim que a equipe voltar a gente te responde por aqui.`
+    : `Recebi sua mensagem${nome ? ', ' + nome : ''}! 😊 Você já está na fila${onde} e logo alguém da equipe te responde por aqui.`);
   const env = await waEnviar(e, fone, aviso);
   await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
     body: { conversa_id: conversa.id, direcao: 'bot', origem: 'aviso_fila', conteudo: aviso, wa_id: idDaEvolution(env), status: 'enviado' } });
@@ -2466,10 +2467,17 @@ function baseDaIA(fluxo) {
   return linhas.join('\n').slice(0, 6000);
 }
 
-function promptDaIA({ base, setores, instrucoes, extra }) {
+function promptDaIA({ base, setores, instrucoes, extra, nome }) {
   return [
-    'Você é o atendente virtual da MoviOn, provedora de internet por fibra em Mossoró/RN, conversando pelo WhatsApp.',
-    'Fale em português do Brasil, com cordialidade e poucas palavras: no máximo 3 frases curtas por resposta. Pode usar *negrito* do WhatsApp e no máximo 1 emoji.',
+    'Você é a assistente virtual da MoviOn, provedora de internet por fibra em Mossoró/RN, e conversa com os clientes pelo WhatsApp.',
+    'JEITO DE FALAR: como uma pessoa simpática da equipe conversando no WhatsApp — natural, calorosa e direta. Português do Brasil do dia a dia, simples e correto (pode usar "pra", "tá", "beleza"), tratando o cliente por "você".',
+    '- Mensagens curtas: no máximo 3 frases curtas. Responda primeiro o que o cliente perguntou, e faça uma pergunta por vez.',
+    '- Nada de frase robótica ou de empresa: não use "Prezado(a)", "Informamos que", "Sua solicitação foi registrada", "Agradecemos o contato", "Estou à disposição", "Como posso ajudá-lo hoje?".',
+    '- Varie o começo das mensagens (não comece toda resposta com "Olá", "Ótimo" ou "Entendi") e não repita o que já disse.',
+    '- Mostre empatia de verdade quando o cliente tiver um problema (ex.: "Poxa, que chato ficar sem internet!") e acompanhe o tom dele: mais leve com quem está descontraído, mais objetiva com quem está com pressa ou chateado.',
+    '- Pode usar *negrito* do WhatsApp no que importa e no máximo 1 emoji, só quando combinar.',
+    nome ? `- O cliente se chama ${nome}: pode chamá-lo pelo nome de vez em quando, sem exagero.` : '',
+    '- Se perguntarem se você é robô ou pessoa, diga com naturalidade que é a assistente virtual da MoviOn e que chama alguém da equipe se o cliente preferir.',
     'Lembre do que o cliente já disse nesta conversa e não peça de novo.',
     '',
     'O QUE VOCÊ SABE (use SOMENTE isto como fato sobre a MoviOn):',
@@ -2507,7 +2515,8 @@ const IA_PARADAS = new Set(('que nao sim para por com uma uns umas dos das nos n
   + 'esta estou estao isso essa esse aqui ali tem ter tenho quero queria pode posso como qual quais quando onde mais muito '
   + 'bom boa dia tarde noite obrigado obrigada ola oi favor pra pro').split(' '));
 function palavrasIA(t) {
-  return new Set(normalizarTxt(t).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !IA_PARADAS.has(w)));
+  return new Set(normalizarTxt(t).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !IA_PARADAS.has(w))
+    .map(w => (w.length > 4 ? w.replace(/s$/, '') : w)));
 }
 function relevanciaIA(chave, texto) {
   let n = 0;
@@ -2545,7 +2554,7 @@ function textoBaseExtra({ regras, fatos, exemplos }) {
     + fatos.map(x => `• ${x.titulo ? x.titulo.trim() + ': ' : ''}${x.conteudo.trim().replace(/\n+/g, ' / ')}`).join('\n'));
   if (regras.length) partes.push('REGRAS DA EQUIPE (siga sempre; valem mais que as regras gerais):\n'
     + regras.map(x => `- ${x.conteudo.trim().replace(/\n+/g, ' ')}`).join('\n'));
-  if (exemplos.length) partes.push('EXEMPLOS DE RESPOSTAS APROVADAS PELA EQUIPE (quando a situação for parecida, responda assim):\n'
+  if (exemplos.length) partes.push('EXEMPLOS DE RESPOSTAS APROVADAS PELA EQUIPE (quando a situação for parecida, use a mesma informação e a mesma decisão de encaminhar ou não, falando do seu jeito):\n'
     + exemplos.map(x => `Cliente: ${String(x.titulo || '').trim()}\nResposta: ${x.conteudo.trim()}${x.setor ? `\n[ENCAMINHAR:${x.setor}]` : ''}`).join('\n---\n'));
   return partes.join('\n\n');
 }
@@ -2648,8 +2657,9 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       base = (await sb(e, 'atend_ia_base?select=id,tipo,titulo,conteudo,status,vezes&order=id.desc&limit=1000')) || [];
       setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
     }
-    const jaNaBase = base.filter(x => x.status !== 'descartado').slice(0, 40)
-      .map(x => `- ${x.titulo ? x.titulo + ': ' : ''}${x.conteudo}`.slice(0, 160)).join('\n');
+    // só os títulos: assim cabe a base inteira (com o conteúdo, só as 40 mais novas cabiam)
+    const jaNaBase = base.filter(x => x.status !== 'descartado').slice(0, 150)
+      .map(x => `- ${(x.titulo || x.conteudo).replace(/\s+/g, ' ').slice(0, 90)}`).join('\n');
     let itens = [];
     try {
       const r = await groqChat({ chave: e.GROQ, maxTokens: 700, temperature: 0.2, prazoMs: IA_APRENDER.prazoGroqMs, messages: [
@@ -2658,7 +2668,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
           'Extraia SOMENTE conhecimento que vale para QUALQUER cliente e que foi dito ou confirmado pelo ATENDENTE (nunca o que só o cliente ou o bot disse).',
           'Ignore: dados pessoais; valores, datas e vencimentos de um cliente específico; protocolos; endereços; combinados só daquele caso; saudações e despedidas; e o que já está em "JÁ NA BASE".',
           'Tipos: "fato" = informação geral da empresa (ex.: prazo de liberação depois do pagamento, formas de pagamento aceitas, horário de atendimento).',
-          '"exemplo" = pergunta comum de cliente (titulo) e, em conteudo, a RESPOSTA PRONTA PARA MANDAR ao cliente, falando com ele ("você"), do jeito que o atendente respondeu mas servindo a qualquer cliente — nunca uma descrição como "o atendente envia…"; "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
+          '"exemplo" = pergunta comum de cliente (titulo) e, em conteudo, a RESPOSTA PRONTA PARA MANDAR ao cliente, falando com ele ("você"), do jeito que o atendente respondeu mas servindo a qualquer cliente, em tom natural e simpático de WhatsApp (nada de "Informamos que", "Prezado") — nunca uma descrição como "o atendente envia…"; "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
           `SETORES: ${setores.join(', ')}.`,
           'No máximo 3 itens. Se não houver nada geral para aprender, devolva {"itens": []}.',
           'Responda APENAS com JSON: {"itens":[{"tipo":"fato","titulo":"...","conteudo":"..."},{"tipo":"exemplo","titulo":"...","conteudo":"...","setor":null}]}',
@@ -2679,7 +2689,11 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       let melhor = null, nota = 0;
       for (const x of base) {
         if (x.tipo !== it.tipo) continue;
-        const n = semelhancaIA(`${x.titulo || ''} ${x.conteudo}`, `${it.titulo || ''} ${it.conteudo}`);
+        // pelo texto todo ou só pelo título: "Como pagar a fatura usando Pix
+        // copia e cola?" e "Como pagar a fatura via Pix copia e cola" são o mesmo
+        // item escrito de outro jeito
+        const n = Math.max(semelhancaIA(`${x.titulo || ''} ${x.conteudo}`, `${it.titulo || ''} ${it.conteudo}`),
+          x.titulo && it.titulo ? semelhancaIA(x.titulo, it.titulo) : 0);
         if (n > nota) { nota = n; melhor = x; }
       }
       if (melhor && nota >= 0.55) {
@@ -2719,8 +2733,19 @@ function lerMarcaIA(bruto, setores) {
    (vai para a fila do setor) ou 'ignorar' (propaganda: sem resposta). Falha
    da Groq nunca deixa o cliente sem retorno: vira encaminhar. */
 const IA_HISTORICO_HORAS = 12;
+const IA_CONVERSA = { raciocinio: 'high', prazoMs: 10000, prazoRapidoMs: 7000 };
+
+/* "MARIA IRANILDE DE OLIVEIRA" → "Maria". Nome do WhatsApp que não parece
+   nome de gente (emoji, número, "Loja do Zé") não é usado. */
+const NAO_E_NOME = new Set('loja mercado mercadinho oficina empresa farmacia salao studio clinica restaurante distribuidora comercial igreja escola movion cliente'.split(' '));
+function primeiroNome(nome) {
+  const p = String(nome || '').trim().split(/\s+/)[0] || '';
+  if (!/^\p{L}{2,20}$/u.test(p) || NAO_E_NOME.has(normalizarTxt(p))) return null;
+  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+}
+
 async function conversarIA(e, { conversa, texto, fluxo }) {
-  const socorro = { texto: 'Vou te encaminhar para um atendente. 👤', acao: 'encaminhar', setor: null, motivo: 'a IA não conseguiu responder' };
+  const socorro = { texto: 'Vou chamar alguém da nossa equipe pra continuar com você, só um instante. 👤', acao: 'encaminhar', setor: null, motivo: 'a IA não conseguiu responder' };
   if (!e.GROQ) return socorro;
   try {
     // o que já foi dito nesta conversa nas últimas horas (a mensagem que
@@ -2739,9 +2764,18 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
     }
     const setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*&order=ordem')) || []).filter(x => x.interno !== true).map(x => x.nome);
     const extra = await baseExtraDaIA(e, [...hist.map(h => h.content), texto].join(' '));
-    const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, extra: textoBaseExtra(extra) });
-    const r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.3, prazoMs: 15000,
-      messages: [{ role: 'system', content: sistema }, ...hist, { role: 'user', content: String(texto || '').slice(0, 800) }] });
+    const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, extra: textoBaseExtra(extra), nome: primeiroNome(conversa && conversa.contato_nome) });
+    const messages = [{ role: 'system', content: sistema }, ...hist, { role: 'user', content: String(texto || '').slice(0, 800) }];
+    // pensa bastante antes de responder (decide melhor quando encaminhar, o
+    // que perguntar). Se passar do prazo, responde rápido em vez de deixar o
+    // cliente esperando: a próxima mensagem do mesmo número só espera 12s.
+    let r;
+    try {
+      r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: IA_CONVERSA.raciocinio, prazoMs: IA_CONVERSA.prazoMs, messages });
+    } catch (err) {
+      if (!/demorou demais/.test(err.message)) throw err;
+      r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: 'low', prazoMs: IA_CONVERSA.prazoRapidoMs, messages });
+    }
     const lida = lerMarcaIA(r.texto, setores);
     if (lida.acao === 'responder' && !lida.texto) return socorro;
     /* Perguntou E encaminhou na mesma mensagem ("…quer falar com um consultor?"
@@ -2753,7 +2787,7 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
         && !/\b(atendente|pessoa|humano|consultor)\b/i.test(normalizarTxt(texto))) {
       return { ...lida, acao: 'responder', segurou: true, setorGuardado: lida.setor, modelo: r.modelo };
     }
-    if (lida.acao === 'encaminhar' && !lida.texto) lida.texto = 'Vou te passar para a nossa equipe. Já já alguém continua com você. 👤';
+    if (lida.acao === 'encaminhar' && !lida.texto) lida.texto = 'Vou te passar pra nossa equipe, já já alguém continua com você. 👤';
     return { ...lida, modelo: r.modelo, base_usada: [...extra.regras, ...extra.fatos, ...extra.exemplos].map(x => x.id) };
   } catch (err) {
     console.error('[atendimento] IA:', err.message);
