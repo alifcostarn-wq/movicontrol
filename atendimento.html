@@ -1069,6 +1069,12 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 /* no celular não há Ctrl: o atalho escrito ali só rouba largura do rótulo */
 @media(max-width:900px){ .fmt-item .fi-at{display:none;} }
 /* monoespaçado dentro da bolha e da prévia */
+.mb a.mb-link,.ci-bubble a.mb-link{
+  color:var(--blue-txt);text-decoration:underline;text-underline-offset:2px;
+  /* endereço comprido não tem espaço para quebrar: quebra em qualquer ponto */
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.mb a.mb-link:hover,.ci-bubble a.mb-link:hover{text-decoration-thickness:2px;}
 .mb code.mb-mono,.fmt-pv code.mb-mono{
   font-family:'JetBrains Mono',monospace;font-size:.92em;background:rgba(0,0,0,.06);
   border-radius:5px;padding:1px 4px;
@@ -4615,6 +4621,29 @@ function fmtRegex(marca){
   const e = marca.replace(/[*~`]/g,'\\$&');
   return new RegExp(`(^|[^\\w${e}])${e}(?![\\s${e}])((?:[^${e}\\n]|\\n(?!\\n))*?[^\\s${e}])${e}(?![\\w${e}])`,'g');
 }
+/* LINKS CLICÁVEIS. O texto chega aqui já escapado (esc): "&" é "&amp;", e
+   um "<" ou ">" colado no endereço é "&lt;"/"&gt;". O endereço termina antes
+   deles e da pontuação do fim da frase ("veja https://x.com." não leva o
+   ponto); um ")" só fica se fechar um "(" do próprio link. Só http(s) — o
+   padrão não casa com javascript: nem outro esquema. Abre em outra aba, sem
+   dar ao site acesso a esta página (noopener) nem dizer de onde veio. */
+const LINK_RE = /(https?:\/\/|www\.)[^\s<]+/gi;
+function linkDoTexto(m){
+  let url = m, resto = '';
+  const corte = url.search(/&(lt|gt|quot|#39);/);
+  if(corte >= 0){ resto = url.slice(corte); url = url.slice(0, corte); }
+  for(;;){
+    const ult = url.slice(-1);
+    if(!/[.,;:!?)\]}*_~]/.test(ult)) break;
+    if(ult === ')' && (url.match(/\(/g)||[]).length >= (url.match(/\)/g)||[]).length) break;
+    resto = ult + resto; url = url.slice(0, -1);
+  }
+  if(!/^(https?:\/\/|www\.)[^\s]+[a-z0-9\/]/i.test(url)) return { html: m, resto: '' };   // só "www." ou "http://"
+  const href = /^www\./i.test(url) ? 'https://' + url : url;
+  return { html: `<a class="mb-link" href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`, resto };
+}
+/* só os links, sem a formatação do WhatsApp (Chat Interno) — texto já escapado */
+function comLinks(t){ return String(t||'').replace(LINK_RE, m=>{ const l=linkDoTexto(m); return l.html+l.resto; }); }
 function fmtWA(t){
   if(!t) return '';
   const guarda=[];
@@ -4623,7 +4652,8 @@ function fmtWA(t){
   // ``` primeiro: dentro dele nada mais é marcação
   s = s.replace(/```([\s\S]+?)```/g, (_,x)=>guardar('<code class="mb-mono">'+x+'</code>'));
   s = s.replace(/`([^`\n]+)`/g, (_,x)=>guardar('<code class="mb-mono">'+x+'</code>'));
-  s = s.replace(/(https?:\/\/|www\.)[^\s<]+/gi, m=>guardar(m));
+  // link vira link de verdade; a pontuação que sobra fica fora e segue o texto
+  s = s.replace(LINK_RE, m=>{ const l=linkDoTexto(m); return guardar(l.html)+l.resto; });
   for(const f of FMT_MARCAS){
     if(f.m==='```') continue;
     s = s.replace(fmtRegex(f.m), (_,a,x)=>`${a}<${f.tag}>${x}</${f.tag}>`);
@@ -10553,7 +10583,7 @@ function renderChatInterno(a){
           : (m.tipo==='fila'||m.tipo==='fila_super')
           ? `<div class="ci-fila${m.tipo==='fila_super'?' super':''}"><div class="cf-txt"><span class="cf-de">${esc(m.de||'MoviTalk')} · ${esc(m.h)}</span>${esc(m.x)}</div>
               <button type="button" class="cf-abrir" data-cifila="${Number(m.conv)||''}">${m.conv?'Abrir conversa':'Ver a fila'}</button></div>`
-          : `<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${esc(m.x)}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
+          : `<div class="ci-msg ${m.de===(USUARIO&&USUARIO.nome)?'me':''}"><div class="ci-who">${esc(m.de)}</div><div class="ci-bubble">${comLinks(esc(m.x))}</div><span class="ci-time">${esc(m.h)}</span></div>`).join('')
           :'<div class="sched-empty" style="align-self:center;">Nenhuma mensagem ainda. Comece a conversa!</div>'}
       </div>
       <div class="ci-composer">
