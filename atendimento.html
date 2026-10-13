@@ -4278,6 +4278,36 @@ function verFila(){
   etapaAtual='fila'; renderAll();
 }
 
+/* Os avisos do canto não podem cobrir onde se escreve. Fixos (o de fila só
+   sai quando alguém assume), em 1366px eles caíam em cima do botão de enviar
+   do Chat Interno: o clique abria a conversa do cliente e a mensagem não
+   saía. No celular cobriam a barra de escrever inteira. Se uma barra de
+   escrever visível passa por baixo da coluna dos avisos, eles sobem para cima
+   dela; sem barra embaixo, voltam para o canto. */
+const BARRAS_ESCRITA='.ci-composer, .m-composer';
+function posicionarAvisos(){
+  const wrap=document.getElementById('avisos'); if(!wrap) return;
+  let base=18;
+  if(wrap.children.length){
+    const esq=innerWidth-18-wrap.offsetWidth, dir=innerWidth-18;
+    document.querySelectorAll(BARRAS_ESCRITA).forEach(z=>{
+      const r=z.getBoundingClientRect();
+      if(!r.width || !r.height || r.bottom<=0 || r.top>=innerHeight) return;
+      if(r.right<=esq || r.left>=dir) return;       // não passa por baixo dos avisos
+      base=Math.max(base, Math.round(innerHeight-r.top+10));
+    });
+  }
+  if(wrap.style.bottom!==base+'px') wrap.style.bottom=base+'px';
+}
+// a tela muda o tempo todo (conversa abre e fecha, troca de tela, aviso novo):
+// confere uma vez por quadro, só quando algo mudou
+{
+  let pend=false;
+  const agendar=()=>{ if(pend) return; pend=true; requestAnimationFrame(()=>{ pend=false; posicionarAvisos(); }); };
+  new MutationObserver(agendar).observe(document.body,{childList:true,subtree:true});
+  window.addEventListener('resize', agendar);
+}
+
 /* Aviso flutuante — só para quem está esperando atendimento, onde o relógio
    do SLA corre. Para conversa já assumida seria interrupção sem urgência. */
 function avisoFlutuante(conv){
