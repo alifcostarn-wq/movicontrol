@@ -27,8 +27,9 @@ export function groqModelos(env = process.env) {
 const ehRaciocinio = m => /gpt-oss/i.test(m);
 
 /* O modelo deixou de existir (ou nunca existiu): vale tentar o próximo.
-   Qualquer outro erro (chave, limite, servidor fora) não muda trocando de
-   modelo, então sobe direto. */
+   Limite de uso (429) também: a Groq conta o limite POR MODELO, então o
+   próximo da lista tem a cota dele. Qualquer outro erro (chave, servidor
+   fora) não muda trocando de modelo, então sobe direto. */
 function modeloIndisponivel(status, err) {
   const cod = String(err?.code || '');
   const msg = String(err?.message || '');
@@ -48,7 +49,7 @@ export async function groqChat({ messages, maxTokens = 600, temperature = 0.4, c
   if (!key) throw new Error('GROQ_API_KEY não configurada na Vercel.');
   if (!Array.isArray(messages) || !messages.length) throw new Error('Sem mensagens para a IA.');
 
-  let ultimoErro = null;
+  let ultimoErro = null, limitado = false;
   for (const modelo of groqModelos(env)) {
     const corpo = { model: modelo, messages, temperature, max_completion_tokens: maxTokens };
     if (ehRaciocinio(modelo)) {
@@ -83,7 +84,7 @@ export async function groqChat({ messages, maxTokens = 600, temperature = 0.4, c
       console.error(`[groq] ${modelo}: HTTP ${r.status} ${err.code || ''} ${String(err.message || '').slice(0, 200)}`);
       if (modeloIndisponivel(r.status, err)) { ultimoErro = `modelo ${modelo} indisponível`; continue; }
       if (r.status === 401) throw new Error('A Groq recusou a chave (GROQ_API_KEY).');
-      if (r.status === 429) throw new Error('Limite de uso da Groq atingido. Tente de novo em instantes.');
+      if (r.status === 429) { limitado = true; ultimoErro = `limite de uso do ${modelo}`; continue; }
       throw new Error(`Groq ${r.status}: ${err.message || 'erro desconhecido'}`);
     }
 
@@ -97,6 +98,7 @@ export async function groqChat({ messages, maxTokens = 600, temperature = 0.4, c
     }
     return { texto, modelo, usage: d?.usage || null };
   }
+  if (limitado) throw new Error('Limite de uso da Groq atingido. Tente de novo em instantes.');
   throw new Error('IA indisponível: ' + (ultimoErro || 'nenhum modelo respondeu'));
 }
 
@@ -147,7 +149,7 @@ export async function groqTranscrever({ audio, mimetype = 'audio/ogg', idioma = 
   const tipo = String(mimetype || 'audio/ogg').split(';')[0].trim().toLowerCase();
   const ext = EXT_AUDIO[tipo] || 'ogg';
 
-  let ultimoErro = null;
+  let ultimoErro = null, limitado = false;
   for (const modelo of groqModelosAudio(env)) {
     const fd = new FormData();
     fd.append('file', new Blob([buf], { type: tipo }), `audio.${ext}`);
@@ -176,7 +178,7 @@ export async function groqTranscrever({ audio, mimetype = 'audio/ogg', idioma = 
       console.error(`[groq] ${modelo}: HTTP ${r.status} ${err.code || ''} ${String(err.message || '').slice(0, 200)}`);
       if (modeloIndisponivel(r.status, err)) { ultimoErro = `modelo ${modelo} indisponível`; continue; }
       if (r.status === 401) throw new Error('A Groq recusou a chave (GROQ_API_KEY).');
-      if (r.status === 429) throw new Error('Limite de uso da Groq atingido. Tente de novo em instantes.');
+      if (r.status === 429) { limitado = true; ultimoErro = `limite de uso do ${modelo}`; continue; }
       if (r.status === 413) throw new Error('Áudio grande demais para transcrever.');
       throw new Error(`Groq ${r.status}: ${err.message || 'erro desconhecido'}`);
     }
@@ -190,5 +192,6 @@ export async function groqTranscrever({ audio, mimetype = 'audio/ogg', idioma = 
     if (!/[\p{L}\p{N}]/u.test(texto)) texto = '';
     return { texto, modelo, duracao: Number(d?.duration) || null };
   }
+  if (limitado) throw new Error('Limite de uso da Groq atingido. Tente de novo em instantes.');
   throw new Error('Transcrição indisponível: ' + (ultimoErro || 'nenhum modelo respondeu'));
 }

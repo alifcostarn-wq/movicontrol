@@ -2467,7 +2467,13 @@ function baseDaIA(fluxo) {
   return linhas.join('\n').slice(0, 6000);
 }
 
-function promptDaIA({ base, setores, instrucoes, extra, nome }) {
+/* A ORDEM IMPORTA: a Groq reaproveita (cache) o começo do pedido que se repete
+   igualzinho de um cliente para outro — e o que vem do cache não conta no
+   limite de tokens e custa metade. Por isso tudo o que é igual em toda
+   conversa (regras, fluxo, informações da equipe, setores, formato) vem
+   primeiro, e só no fim o que muda: os exemplos escolhidos para esta
+   conversa e o nome do cliente. */
+function promptDaIA({ base, setores, instrucoes, extra, exemplos, nome }) {
   return [
     'Você é a assistente virtual da MoviOn, provedora de internet por fibra em Mossoró/RN, e conversa com os clientes pelo WhatsApp.',
     'JEITO DE FALAR: como uma pessoa simpática da equipe conversando no WhatsApp — natural, calorosa e direta. Português do Brasil do dia a dia, simples e correto (pode usar "pra", "tá", "beleza"), tratando o cliente por "você".',
@@ -2475,8 +2481,7 @@ function promptDaIA({ base, setores, instrucoes, extra, nome }) {
     '- Nada de frase robótica ou de empresa: não use "Prezado(a)", "Informamos que", "Sua solicitação foi registrada", "Agradecemos o contato", "Estou à disposição", "Como posso ajudá-lo hoje?".',
     '- Varie o começo das mensagens (não comece toda resposta com "Olá", "Ótimo" ou "Entendi") e não repita o que já disse.',
     '- Mostre empatia de verdade quando o cliente tiver um problema (ex.: "Poxa, que chato ficar sem internet!") e acompanhe o tom dele: mais leve com quem está descontraído, mais objetiva com quem está com pressa ou chateado.',
-    '- Pode usar *negrito* do WhatsApp no que importa e no máximo 1 emoji, só quando combinar.',
-    nome ? `- O cliente se chama ${nome}: pode chamá-lo pelo nome de vez em quando, sem exagero.` : '',
+    '- Pode usar *negrito* do WhatsApp (um asterisco de cada lado) no que importa. Emoji é tempero: a maioria das mensagens vai sem, e no máximo 1 quando combinar.',
     '- Se perguntarem se você é robô ou pessoa, diga com naturalidade que é a assistente virtual da MoviOn e que chama alguém da equipe se o cliente preferir.',
     'Lembre do que o cliente já disse nesta conversa e não peça de novo.',
     '',
@@ -2485,8 +2490,8 @@ function promptDaIA({ base, setores, instrucoes, extra, nome }) {
     '',
     'REGRAS:',
     '- Nunca invente planos, velocidades, preços, prazos, formas de pagamento, links, aplicativos, endereços ou políticas que não estejam acima. Se não souber, diga que vai passar para a equipe certa.',
-    '- Você não acessa o cadastro, as faturas nem o equipamento do cliente: 2ª via, Pix, negociação, desbloqueio, visita técnica, cancelamento e mudança de plano são feitos pela equipe — encaminhe para o setor certo.',
-    '- Nunca peça senha, dados de cartão nem código de verificação.',
+    '- Você não faz nada no sistema: não registra chamado, não envia 2ª via nem Pix, não desbloqueia, não negocia, não consulta cobertura nem o cadastro do cliente. As frases do menu que fazem isso ("Já registrei um chamado", "Estou te enviando a 2ª via", "me informe o CPF", "me envie seu endereço") são etapas automáticas do menu, não suas. Quando o cliente precisar de uma dessas coisas, diga que vai passar para o setor que resolve e encaminhe (chamado técnico e visita: Suporte; 2ª via, Pix, desbloqueio, negociação e cancelamento: Financeiro; contratação, cobertura e mudança de plano: Vendas, se existir).',
+    '- Nunca peça CPF, endereço, número de contrato ou outro dado de cadastro (quem pede é a equipe, depois que você encaminhar), nem senha, dados de cartão ou código de verificação.',
     '- Problema de conexão: pode orientar os passos básicos que estão acima; se não resolver, encaminhe para o Suporte.',
     '- Se o cliente pedir uma pessoa/atendente, encaminhe na hora.',
     '- Contratação/assinatura: primeiro tire as dúvidas (planos, preços, instalação, como funciona). Só encaminhe para o setor de vendas quando o cliente CONFIRMAR que quer contratar ou pedir um consultor.',
@@ -2502,6 +2507,9 @@ function promptDaIA({ base, setores, instrucoes, extra, nome }) {
     'FORMATO: escreva só a mensagem para o cliente. Quando a conversa precisar ir para uma pessoa, termine com uma linha',
     '[ENCAMINHAR:<setor>|<motivo em poucas palavras para o atendente>]',
     'Para propaganda/mensagem automática, responda apenas [IGNORAR]. Para encerrar o atendimento, termine com [ENCERRAR]. O cliente nunca vê essas marcas.',
+    // ↓ daqui para baixo muda de conversa para conversa (fica fora do cache)
+    exemplos ? '\n' + exemplos : '',
+    nome ? `O cliente se chama ${nome}: pode chamá-lo pelo nome de vez em quando, sem exagero.` : '',
   ].filter(x => x !== '').join('\n');
 }
 
@@ -2542,21 +2550,26 @@ async function baseExtraDaIA(e, conversaTexto) {
   };
   // regras valem sempre (as mais novas primeiro); fatos e exemplos, os que
   // têm a ver com a conversa primeiro
-  const regras = caber(linhas.filter(x => x.tipo === 'regra').map(x => ({ x })), IA_LIMITE.regra);
-  const fatos = caber(ordenar(linhas.filter(x => x.tipo === 'fato')), IA_LIMITE.fato);
+  // regras e fatos saem em ordem fixa (por id): quando cabem todos, o texto é
+  // o mesmo em toda conversa e entra no cache da Groq
+  const porId = (a, b) => a.id - b.id;
+  const regras = caber(linhas.filter(x => x.tipo === 'regra').map(x => ({ x })), IA_LIMITE.regra).sort(porId);
+  const fatos = caber(ordenar(linhas.filter(x => x.tipo === 'fato')), IA_LIMITE.fato).sort(porId);
   const exemplos = caber(ordenar(linhas.filter(x => x.tipo === 'exemplo')), IA_LIMITE.exemplo, IA_LIMITE.exemplos);
   return { regras, fatos, exemplos };
 }
 
+/* Devolve { fixo, exemplos }: o fixo (informações e regras da equipe) vai no
+   meio do pedido; os exemplos, escolhidos pela conversa, vão no fim. */
 function textoBaseExtra({ regras, fatos, exemplos }) {
   const partes = [];
   if (fatos.length) partes.push('INFORMAÇÕES CADASTRADAS PELA EQUIPE (também são fatos da MoviOn):\n'
     + fatos.map(x => `• ${x.titulo ? x.titulo.trim() + ': ' : ''}${x.conteudo.trim().replace(/\n+/g, ' / ')}`).join('\n'));
   if (regras.length) partes.push('REGRAS DA EQUIPE (siga sempre; valem mais que as regras gerais):\n'
     + regras.map(x => `- ${x.conteudo.trim().replace(/\n+/g, ' ')}`).join('\n'));
-  if (exemplos.length) partes.push('EXEMPLOS DE RESPOSTAS APROVADAS PELA EQUIPE (quando a situação for parecida, use a mesma informação e a mesma decisão de encaminhar ou não, falando do seu jeito):\n'
-    + exemplos.map(x => `Cliente: ${String(x.titulo || '').trim()}\nResposta: ${x.conteudo.trim()}${x.setor ? `\n[ENCAMINHAR:${x.setor}]` : ''}`).join('\n---\n'));
-  return partes.join('\n\n');
+  const ex = exemplos.length ? 'EXEMPLOS DE RESPOSTAS APROVADAS PELA EQUIPE (quando a situação for parecida, use a mesma informação e a mesma decisão de encaminhar ou não, falando do seu jeito):\n'
+    + exemplos.map(x => `Cliente: ${String(x.titulo || '').trim()}\nResposta: ${x.conteudo.trim()}${x.setor ? `\n[ENCAMINHAR:${x.setor}]` : ''}`).join('\n---\n') : '';
+  return { fixo: partes.join('\n\n'), exemplos: ex };
 }
 
 /* ---------------------------------------------------------------------------
@@ -2735,6 +2748,23 @@ function lerMarcaIA(bruto, setores) {
 const IA_HISTORICO_HORAS = 12;
 const IA_CONVERSA = { raciocinio: 'high', prazoMs: 10000, prazoRapidoMs: 7000 };
 
+/* O WhatsApp não é Markdown: **negrito** aparece com os asteriscos sobrando
+   e "### título" aparece com as cerquilhas. */
+function paraWhatsApp(t) {
+  return String(t || '')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '*$1*')
+    .replace(/__([^_\n]+?)__/g, '_$1_')
+    .replace(/^#{1,6}\s+/gm, '')
+    .trim();
+}
+
+// "me envia o CPF do titular?", "qual o seu CPF?": pedido de dado de cadastro
+function pedeDadoCadastro(t) {
+  const s = normalizarTxt(t);
+  return /\b(cpf|cnpj)\b[^.!\n]*\?/.test(s)
+    || /\b(envi|mand|inform|pass|digit|diz|diga|fala|confirm)\w*\s+(me\s+)?(o\s+|seu\s+|teu\s+)?(numero\s+do\s+)?(cpf|cnpj)\b/.test(s);
+}
+
 /* "MARIA IRANILDE DE OLIVEIRA" → "Maria". Nome do WhatsApp que não parece
    nome de gente (emoji, número, "Loja do Zé") não é usado. */
 const NAO_E_NOME = new Set('loja mercado mercadinho oficina empresa farmacia salao studio clinica restaurante distribuidora comercial igreja escola movion cliente'.split(' '));
@@ -2764,7 +2794,8 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
     }
     const setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*&order=ordem')) || []).filter(x => x.interno !== true).map(x => x.nome);
     const extra = await baseExtraDaIA(e, [...hist.map(h => h.content), texto].join(' '));
-    const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, extra: textoBaseExtra(extra), nome: primeiroNome(conversa && conversa.contato_nome) });
+    const daEquipe = textoBaseExtra(extra);
+    const sistema = promptDaIA({ base: baseDaIA(fluxo), setores, extra: daEquipe.fixo, exemplos: daEquipe.exemplos, nome: primeiroNome(conversa && conversa.contato_nome) });
     const messages = [{ role: 'system', content: sistema }, ...hist, { role: 'user', content: String(texto || '').slice(0, 800) }];
     // pensa bastante antes de responder (decide melhor quando encaminhar, o
     // que perguntar). Se passar do prazo, responde rápido em vez de deixar o
@@ -2777,7 +2808,13 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
       r = await groqChat({ chave: e.GROQ, maxTokens: 350, temperature: 0.7, raciocinio: 'low', prazoMs: IA_CONVERSA.prazoRapidoMs, messages });
     }
     const lida = lerMarcaIA(r.texto, setores);
+    lida.texto = paraWhatsApp(lida.texto);
     if (lida.acao === 'responder' && !lida.texto) return socorro;
+    /* Pediu CPF/CNPJ do cliente: a IA não tem onde usar — quem usa é a
+       equipe. A conversa vai para a pessoa, que já recebe o dado. */
+    if (pedeDadoCadastro(lida.texto) && lida.acao !== 'encerrar' && lida.acao !== 'ignorar') {
+      return { ...lida, acao: 'encaminhar', motivo: lida.motivo || 'A IA pediu o CPF: precisa consultar o cadastro', modelo: r.modelo };
+    }
     /* Perguntou E encaminhou na mesma mensagem ("…quer falar com um consultor?"
        + fila): o cliente responde e ninguém lê — o bot fica quieto na fila e
        parece travado. Pergunta feita = a conversa continua com a IA; o setor
