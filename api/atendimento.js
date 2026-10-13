@@ -1436,6 +1436,29 @@ async function avisarForaDoHorario(e, { conversa, fone }) {
   return { avisou: true };
 }
 
+/* Cliente escrevendo enquanto espera na fila: "recebi, você já está na fila".
+   Fora do horário, diz que a equipe responde quando voltar. Uma vez a cada
+   10 min por conversa (a última mensagem com origem 'aviso_fila' é o carimbo). */
+const AVISO_FILA_MIN = 10;
+async function avisarNaFila(e, { conversa, fone, texto }) {
+  const desde = new Date(Date.now() - AVISO_FILA_MIN * 60000).toISOString();
+  const recente = await sbUm(e, `atend_mensagens?conversa_id=eq.${conversa.id}&origem=eq.aviso_fila&created_at=gte.${encodeURIComponent(desde)}&select=id&limit=1`);
+  if (recente) return { avisou: false };
+  // "ok", "obrigado", "👍": o cliente só confirmou que leu — nada a responder
+  if (/^(ok(ay)?|blz|beleza|certo|ta|ta bom|ok obrigad[oa]|obrigad[oa]|vlw|valeu|aguardo|sim|👍|🙏)[\s!.,]*$/u.test(normalizarTxt(texto))) return { avisou: false };
+  // logo depois de entrar na fila o cliente já leu "encaminhando…": não repete
+  if (conversa.fila_desde && Date.now() - new Date(conversa.fila_desde).getTime() < 60000) return { avisou: false };
+  const sit = horarioSituacao(await horarioConfig(e), new Date());
+  const onde = conversa.setor ? ` do setor *${conversa.setor}*` : '';
+  const aviso = sit.ligado && !sit.aberto
+    ? `Recebi sua mensagem! 👍 Você está na fila${onde}. Nossa equipe está fora do horário agora e responde aqui assim que voltar.`
+    : `Recebi sua mensagem! 👍 Você está na fila${onde} e um atendente vai responder aqui em instantes.`;
+  const env = await waEnviar(e, fone, aviso);
+  await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+    body: { conversa_id: conversa.id, direcao: 'bot', origem: 'aviso_fila', conteudo: aviso, wa_id: idDaEvolution(env), status: 'enviado' } });
+  return { avisou: true };
+}
+
 const MOTIVO_QUEDA = {
   'lost-carrier':        ['Perda de sinal', 'O enlace caiu fisicamente: roteador/ONU desligado, falta de energia ou rompimento na fibra. É a causa mais comum.', 'cliente'],
   'user-request':        ['Cliente desconectou', 'O próprio equipamento do cliente encerrou a conexão — normalmente reinício do roteador.', 'cliente'],
@@ -2458,6 +2481,8 @@ function promptDaIA({ base, setores, instrucoes, extra }) {
     '- Nunca peça senha, dados de cartão nem código de verificação.',
     '- Problema de conexão: pode orientar os passos básicos que estão acima; se não resolver, encaminhe para o Suporte.',
     '- Se o cliente pedir uma pessoa/atendente, encaminhe na hora.',
+    '- Contratação/assinatura: primeiro tire as dúvidas (planos, preços, instalação, como funciona). Só encaminhe para o setor de vendas quando o cliente CONFIRMAR que quer contratar ou pedir um consultor.',
+    '- Só encaminhe quando precisar mesmo de uma pessoa. Quando encaminhar, diga que está passando para a equipe e NÃO faça pergunta na mesma mensagem: depois de encaminhar, quem responde é a equipe. Se ainda precisa perguntar algo ao cliente, pergunte e não encaminhe.',
     '- Saudação sozinha ("oi", "bom dia"): cumprimente e pergunte como pode ajudar, citando em uma frase o que você resolve. Não encaminhe.',
     '- Propaganda, oferta de outra empresa ou mensagem automática que não é de cliente: não responda e não encaminhe.',
     '- Converse em texto corrido: não mande listas numeradas de opções nem peça para o cliente digitar números.',
@@ -2719,6 +2744,15 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
       messages: [{ role: 'system', content: sistema }, ...hist, { role: 'user', content: String(texto || '').slice(0, 800) }] });
     const lida = lerMarcaIA(r.texto, setores);
     if (lida.acao === 'responder' && !lida.texto) return socorro;
+    /* Perguntou E encaminhou na mesma mensagem ("…quer falar com um consultor?"
+       + fila): o cliente responde e ninguém lê — o bot fica quieto na fila e
+       parece travado. Pergunta feita = a conversa continua com a IA; o setor
+       fica guardado para quando ela encaminhar de fato. Só não vale quando o
+       próprio cliente pediu uma pessoa. */
+    if (lida.acao === 'encaminhar' && /\?[\s\p{Extended_Pictographic}\uFE0F*_~]*$/u.test(lida.texto) && !pedeAtendente(texto)
+        && !/\b(atendente|pessoa|humano|consultor)\b/i.test(normalizarTxt(texto))) {
+      return { ...lida, acao: 'responder', segurou: true, setorGuardado: lida.setor, modelo: r.modelo };
+    }
     if (lida.acao === 'encaminhar' && !lida.texto) lida.texto = 'Vou te passar para a nossa equipe. Já já alguém continua com você. 👤';
     return { ...lida, modelo: r.modelo, base_usada: [...extra.regras, ...extra.fatos, ...extra.exemplos].map(x => x.id) };
   } catch (err) {
@@ -3076,6 +3110,12 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
           return out;
         }
         const r = await conversarIA(e, { conversa, texto, fluxo: { nodes: [...nodes.values()] } });
+        // segurar o encaminhamento (pergunta + fila) vale UMA vez por conversa:
+        // se a IA insiste, o cliente vai para a fila — nunca fica preso no bot
+        if (r.segurou) {
+          if (vars.ia_segurou) { r.acao = 'encaminhar'; r.setor = r.setorGuardado || null; }
+          else vars.ia_segurou = true;
+        }
         out.logs.push({
           node_id: no.id, node_tipo: 'ia', entrada: texto,
           resultado: ({ encaminhar: 'encaminhado', ignorar: 'ignorado', encerrar: 'encerrado' })[r.acao] || 'respondido',
@@ -3104,6 +3144,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
           // o motivo vira recado para quem pegar a conversa
           if (r.motivo) out.recado = r.motivo;
         } else {
+          // a IA pensou num setor mas ainda está perguntando: fica guardado para depois
+          if (r.segurou && r.setorGuardado) vars.setor_intencao = r.setorGuardado;
           out.sessao = { node_atual: no.id, aguardando: 'ia', variaveis: vars, tentativas: 0 };
         }
         return out;
@@ -4079,6 +4121,15 @@ async function tratarWebhookInterno(e, body) {
       body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, ultima_msg: TEXTO_ENCERRAMENTO.slice(0, 200), ultima_msg_em: new Date().toISOString() } });
     await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
     return { ok: true, conversa_id: conversa.id, encerrado_a_pedido: true };
+  }
+
+  /* Na fila, ninguém assumiu ainda e o cliente escreve de novo ("oi, alguém
+     aí?"): o bot ficava mudo e parecia travado. Responde que recebeu e que ele
+     já está na fila — no máximo uma vez a cada 10 minutos, para não virar eco. */
+  if (texto && conversa.coluna === 'fila' && !conversa.atendente_id && conversa.bot_ativo === false
+      && !(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
+    try { await avisarNaFila(e, { conversa, fone, texto }); }
+    catch (err) { console.error('[atendimento] aviso na fila:', err.message); }
   }
 
   // humano assumiu → bot fica quieto
