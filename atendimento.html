@@ -1524,6 +1524,19 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .iab-i-bts .fbtn{padding:4px 7px;}
 .iab-liga{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-mid);cursor:pointer;}
 .iab-vazio{font-size:12px;color:var(--text-low);}
+.iab-apr-liga{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;font-weight:700;cursor:pointer;margin-bottom:6px;}
+.iab-apr-liga input{margin-top:2px;}
+.iab-apr-liga span{display:block;font-weight:500;color:var(--text-mid);font-size:11.5px;margin-top:2px;}
+.iab-apr-st{font-size:11.5px;color:var(--text-mid);margin:0 0 8px 24px;}
+.iab-sug{border:1px solid var(--blue-line);background:var(--blue-soft);border-radius:10px;padding:9px 11px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;}
+.iab-sug label{font-size:11.5px;font-weight:800;color:var(--text-mid);}
+.iab-sug input,.iab-sug textarea,.iab-sug select{font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:var(--text);width:100%;box-sizing:border-box;}
+.iab-sug-t{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.iab-tipo{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:var(--card);border:1px solid var(--line);color:var(--text-mid);}
+.iab-vezes{font-size:11px;font-weight:700;color:var(--blue-txt);}
+.iab-ver{font-family:inherit;font-size:11px;background:none;border:0;color:var(--blue-txt);text-decoration:underline;cursor:pointer;padding:0;margin-left:auto;}
+.iab-sug-txt{overflow-wrap:anywhere;}
+.iab-sug-bts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
 @media(max-width:860px){ .iab-item{flex-direction:column;} .iab-i-bts{align-self:flex-end;} .iat-corr{min-width:0;} }
 .es-int{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mid);margin-top:7px;cursor:pointer;}
 .es-tag{font-size:9.5px;font-weight:800;letter-spacing:.03em;padding:2px 6px;border-radius:5px;background:var(--card-2);color:var(--text-mid);border:1px solid var(--line);}
@@ -6619,9 +6632,9 @@ function renderTesteIA(el){
    pagamento…), regras ("nunca prometa visita no mesmo dia") e exemplos de
    resposta aprovados — que nascem das correções da sala de teste e do botão
    📚 nas mensagens das conversas. Embaixo, os 👎 ainda sem resposta certa. */
-const IAB = { tipo:'fato', editando:null, filtro:'', dados:null };
+const IAB = { tipo:'fato', editando:null, filtro:'', dados:null, editSug:null };
 const IAB_TIPOS = { fato:['Fatos','Informação que a IA pode afirmar'], regra:['Regras','Instrução que a IA sempre segue'], exemplo:['Exemplos','Mensagem do cliente → resposta aprovada'] };
-const IAB_ORIGEM = { manual:'cadastrado aqui', teste:'da sala de teste', conversa:'de uma conversa real' };
+const IAB_ORIGEM = { manual:'cadastrado aqui', teste:'da sala de teste', conversa:'de uma conversa real', automatico:'aprendido de um atendimento' };
 
 function iabFormHTML(){
   const ed = IAB.editando || {};
@@ -6649,6 +6662,8 @@ async function renderBaseIA(el, recarregar=true){
     catch(err){ el.innerHTML = `<div class="ms-erro">Falha: ${esc(err.message)}</div>`; return; }
   }
   const { itens, resumo, negativos } = IAB.dados;
+  const sugestoes = IAB.dados.sugestoes || [];
+  const apr = IAB.dados.aprendizado || { ativo:true, lidas:0, sugeridas:0 };
   const ativos = itens.filter(x=>x.ativo);
   const cont = t => ativos.filter(x=>x.tipo===t).length;
   const total = resumo.positivas + resumo.negativas;
@@ -6662,6 +6677,27 @@ async function renderBaseIA(el, recarregar=true){
       <div class="iab-num"><b>${cont('regra')}</b><span>regras</span></div>
       <div class="iab-num"><b>${cont('exemplo')}</b><span>exemplos</span></div>
       <div class="iab-num ${total?'':'vazio'}"><b>${total?Math.round(resumo.positivas*100/total)+'%':'—'}</b><span>respostas aprovadas (30 dias): 👍 ${resumo.positivas} · 👎 ${resumo.negativas}</span></div>
+    </div>
+    <div class="iab-sec iab-apr"><h3>✨ Aprendido dos atendimentos <span>${sugestoes.length} ${sugestoes.length===1?'sugestão esperando':'sugestões esperando'} aprovação</span></h3>
+      <label class="iab-apr-liga"><input type="checkbox" id="iabAprender" ${apr.ativo?'checked':''}>
+        <div><b>Aprender sozinha com os atendimentos finalizados</b><span>A IA lê cada atendimento finalizado por um atendente e sugere o que vale para todos os clientes. Só passa a valer depois que você aprova.</span></div></label>
+      <div class="iab-apr-st">Últimos 7 dias: <b>${apr.lidas}</b> ${apr.lidas===1?'atendimento lido':'atendimentos lidos'}, <b>${apr.sugeridas}</b> ${apr.sugeridas===1?'sugestão nova':'sugestões novas'}.</div>
+      ${sugestoes.length ? sugestoes.map(x=>{
+        const ed = IAB.editSug===x.id;
+        return `<div class="iab-sug" data-sug="${x.id}">
+          <div class="iab-sug-t"><span class="iab-tipo ${x.tipo}">${({fato:'Fato',regra:'Regra',exemplo:'Exemplo'})[x.tipo]||x.tipo}</span>
+            ${x.vezes>1?`<span class="iab-vezes" title="A mesma coisa apareceu em ${x.vezes} atendimentos">visto em ${x.vezes} atendimentos</span>`:''}
+            ${x.conversa_id?`<button type="button" class="iab-ver" data-sug-ver="${x.conversa_id}">ver o atendimento</button>`:''}</div>
+          ${ed ? `${x.tipo!=='regra'?`<label>${x.tipo==='exemplo'?'Mensagem do cliente':'Assunto'}</label><input data-sug-titulo maxlength="500" value="${esc(x.titulo||'')}">`:''}
+              <label>${x.tipo==='exemplo'?'Resposta ideal':'Informação'}</label><textarea data-sug-conteudo rows="3" maxlength="2000">${esc(x.conteudo)}</textarea>
+              ${x.tipo==='exemplo'?`<label>Depois de responder</label><select data-sug-setor>${iatDestinos(x.setor||'')}</select>`:''}`
+            : `<div class="iab-sug-txt">${x.titulo?`<b>${esc(x.titulo)}</b>${x.tipo==='exemplo'?' → ':': '}`:''}${esc(x.conteudo)}${x.setor?` <span class="iab-set">→ ${esc(x.setor)}</span>`:''}</div>`}
+          <div class="iab-sug-bts">
+            <button type="button" class="fbtn" data-sug-descartar="${x.id}" title="Não serve: não volta a ser sugerido">✕ Descartar</button>
+            ${ed?`<button type="button" class="fbtn" data-sug-cancelar>Cancelar</button>`:`<button type="button" class="fbtn" data-sug-editar="${x.id}">✏️ Editar</button>`}
+            <button type="button" class="fbtn solid" data-sug-aprovar="${x.id}">✓ Aprovar</button>
+          </div></div>`;
+      }).join('') : `<div class="iab-vazio">${apr.ativo?'Nenhuma sugestão agora. Elas aparecem aqui conforme os atendimentos são finalizados.':'O aprendizado está desligado.'}</div>`}
     </div>
     ${negativos.length?`<div class="iab-sec"><h3>👎 Para revisar <span>respostas marcadas como ruins, ainda sem a resposta certa</span></h3>
       ${negativos.map(n=>`<div class="iab-neg" data-neg="${n.id}">
@@ -6693,6 +6729,34 @@ async function renderBaseIA(el, recarregar=true){
     </div>
   </div>`;
   const recarr = ()=>renderBaseIA(el, true);
+  el.querySelector('#iabAprender').onchange = async ev=>{
+    const ligar = ev.target.checked; ev.target.disabled = true;
+    try{ await chamar('atendconfig.salvar', { config:{ ia_aprender_ativo: ligar } });
+      apr.ativo = ligar; IAB.dados.aprendizado = apr;
+      toast(ligar?'✨ A IA volta a aprender com os atendimentos':'Aprendizado automático desligado'); renderBaseIA(el, false); }
+    catch(err){ toast('Falha: '+err.message); ev.target.checked = !ligar; ev.target.disabled = false; }
+  };
+  const revisar = async (id, aprovar)=>{
+    const box = el.querySelector(`.iab-sug[data-sug="${id}"]`);
+    const dados = { id, aprovar };
+    if(aprovar && IAB.editSug===id && box){
+      const t = box.querySelector('[data-sug-titulo]'), c = box.querySelector('[data-sug-conteudo]'), st = box.querySelector('[data-sug-setor]');
+      if(t) dados.titulo = t.value; if(c) dados.conteudo = c.value; if(st) dados.setor = st.value || null;
+    }
+    try{ await chamar('ia.base.revisar', dados); IAB.editSug = null;
+      toast(aprovar?'✓ Aprovado: a IA já passa a usar':'Descartado'); recarr(); }
+    catch(err){ toast('Falha: '+err.message); }
+  };
+  el.querySelectorAll('[data-sug-aprovar]').forEach(b=>b.onclick=()=>revisar(+b.dataset.sugAprovar, true));
+  el.querySelectorAll('[data-sug-descartar]').forEach(b=>b.onclick=()=>revisar(+b.dataset.sugDescartar, false));
+  el.querySelectorAll('[data-sug-editar]').forEach(b=>b.onclick=()=>{ IAB.editSug = +b.dataset.sugEditar; renderBaseIA(el, false);
+    const c = el.querySelector(`.iab-sug[data-sug="${b.dataset.sugEditar}"] [data-sug-conteudo]`); if(c) c.focus(); });
+  el.querySelectorAll('[data-sug-cancelar]').forEach(b=>b.onclick=()=>{ IAB.editSug = null; renderBaseIA(el, false); });
+  el.querySelectorAll('[data-sug-ver]').forEach(b=>b.onclick=()=>{
+    const id = +b.dataset.sugVer;
+    if(state.conversas.some(x=>x.id===id)) abrirDaFila(id);
+    else toast('Esse atendimento não está carregado no painel agora (procure pelo cliente em Conversas).');
+  });
   el.querySelectorAll('[data-iab-tipo]').forEach(b=>b.onclick=()=>{ IAB.tipo = b.dataset.iabTipo; renderBaseIA(el, false); });
   const busca = el.querySelector('#iabBusca');
   busca.oninput = ()=>{ IAB.filtro = busca.value; const pos = busca.selectionStart; renderBaseIA(el, false);

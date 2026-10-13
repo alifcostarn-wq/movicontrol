@@ -32,6 +32,7 @@
 //   ia.testar          -> sala de teste da IA conversacional (Groq), sem WhatsApp
 //   ia.base.*          -> base de conhecimento da IA (fatos, regras, exemplos)
 //   ia.feedback        -> 👍/👎 numa resposta da IA; correção vira exemplo
+//   (cron) aprenderComConversas -> atendimento finalizado vira sugestão na base
 //   instabilidades.listar -> quedas de regiao marcadas no MoviFiber
 //
 // INTEGRACAO MOVIFIBER: quedas marcadas la (movifiber_incidentes) viram
@@ -2508,7 +2509,8 @@ function relevanciaIA(chave, texto) {
 const IA_LIMITE = { regra: 2500, fato: 4000, exemplo: 3000, exemplos: 6 };
 
 async function baseExtraDaIA(e, conversaTexto) {
-  const linhas = (await sb(e, 'atend_ia_base?ativo=is.true&select=id,tipo,titulo,conteudo,setor&order=id.desc&limit=500').catch(() => null)) || [];
+  // só o aprovado: sugestão aprendida sozinha espera um admin
+  const linhas = (await sb(e, 'atend_ia_base?ativo=is.true&status=eq.aprovado&select=id,tipo,titulo,conteudo,setor&order=id.desc&limit=500').catch(() => null)) || [];
   const chave = palavrasIA(conversaTexto);
   const ordenar = lista => lista.map(x => ({ x, r: relevanciaIA(chave, `${x.titulo || ''} ${x.conteudo}`) }))
     .sort((a, b) => b.r - a.r || b.x.id - a.x.id);
@@ -2538,6 +2540,154 @@ function textoBaseExtra({ regras, fatos, exemplos }) {
   if (exemplos.length) partes.push('EXEMPLOS DE RESPOSTAS APROVADAS PELA EQUIPE (quando a situação for parecida, responda assim):\n'
     + exemplos.map(x => `Cliente: ${String(x.titulo || '').trim()}\nResposta: ${x.conteudo.trim()}${x.setor ? `\n[ENCAMINHAR:${x.setor}]` : ''}`).join('\n---\n'));
   return partes.join('\n\n');
+}
+
+/* ---------------------------------------------------------------------------
+   APRENDER COM OS ATENDIMENTOS. Cada atendimento finalizado em que um
+   atendente falou com o cliente é lido pela IA, que tira dele o que vale para
+   qualquer cliente. Entra como SUGESTÃO (status 'sugerido'): a IA só usa
+   depois que um admin aprova em Configurações › Base da IA. Os dados pessoais
+   saem antes de o texto ir para a Groq. Roda no ciclo do cron, uma conversa
+   por vez, só se sobrar tempo no ciclo.
+   --------------------------------------------------------------------------- */
+const IA_APRENDER = { conversasPorCiclo: 1, examinadas: 8, diasAtras: 3, tempoMaxCicloMs: 25000, prazoGroqMs: 15000 };
+
+function mascararDados(t, nome) {
+  let s = String(t || '')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[e-mail]')
+    .replace(/\b000201\S{20,}/g, '[código Pix]')        // Pix copia e cola (padrão EMV)
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, '[CNPJ]')
+    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, '[CPF]')
+    .replace(/(\+?55\s?)?\(?\b\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/g, '[telefone]')
+    .replace(/\b\d{6,}\b/g, '[número]');
+  for (const p of String(nome || '').split(/\s+/)) {
+    if (p.length < 3 || /\d/.test(p)) continue;
+    const esc = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    s = s.replace(new RegExp(`(?<![\\p{L}])${esc}(?![\\p{L}])`, 'giu'), '[nome]');
+  }
+  return s;
+}
+
+function semelhancaIA(a, b) {
+  const A = palavrasIA(a), B = palavrasIA(b);
+  if (!A.size || !B.size) return 0;
+  let comum = 0;
+  for (const w of A) if (B.has(w)) comum++;
+  return comum / (A.size + B.size - comum);
+}
+
+/* Lê o JSON que a IA devolveu (às vezes vem com texto em volta) e fica só
+   com o que serve: tipo certo, tamanho razoável e nada que ainda carregue um
+   dado mascarado — sinal de que era coisa daquele cliente. */
+function itensAprendidos(bruto, setores) {
+  const m = String(bruto || '').match(/\{[\s\S]*\}/);
+  if (!m) return [];
+  let j; try { j = JSON.parse(m[0]); } catch { return []; }
+  const lista = Array.isArray(j && j.itens) ? j.itens : [];
+  const out = [];
+  for (const it of lista.slice(0, 3)) {
+    const tipo = it && it.tipo;
+    if (tipo !== 'fato' && tipo !== 'exemplo') continue;
+    const titulo = String(it.titulo || '').trim().slice(0, 300);
+    const conteudo = String(it.conteudo || '').trim().slice(0, 1000);
+    if (conteudo.length < 15 || (tipo === 'exemplo' && titulo.length < 4)) continue;
+    if (/\[(nome|cpf|cnpj|telefone|e-mail|número|código pix)\]/i.test(titulo + ' ' + conteudo)) continue;
+    const setor = tipo === 'exemplo' && it.setor
+      ? setores.find(x => x.toLowerCase() === String(it.setor).trim().toLowerCase()) || null : null;
+    out.push({ tipo, titulo: titulo || null, conteudo, setor });
+  }
+  return out;
+}
+
+async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
+  if (cfg && cfg.ia_aprender_ativo === false) return { desligado: true };
+  if (!e.GROQ) return { sem_chave: true };
+  if (Date.now() - inicioCiclo > IA_APRENDER.tempoMaxCicloMs) return { sem_tempo: true };
+  const desde = new Date(Date.now() - IA_APRENDER.diasAtras * 864e5).toISOString();
+  const cands = (await sb(e, `atend_conversas?coluna=eq.resolvidos&deleted_at=is.null&updated_at=gte.${encodeURIComponent(desde)}`
+    + `&select=id,contato_nome&order=updated_at.desc&limit=25`)) || [];
+  if (!cands.length) return { lidas: 0, sugestoes: 0 };
+  const lidos = new Map(((await sb(e, `atend_ia_aprendizado?conversa_id=in.(${cands.map(c => c.id).join(',')})&select=conversa_id,ultima_msg_id`)) || [])
+    .map(x => [Number(x.conversa_id), Number(x.ultima_msg_id)]));
+  let base = null, setores = null, lidas = 0, sugestoes = 0, examinadas = 0;
+  for (const c of cands) {
+    if (lidas >= IA_APRENDER.conversasPorCiclo || examinadas >= IA_APRENDER.examinadas) break;
+    if (Date.now() - inicioCiclo > IA_APRENDER.tempoMaxCicloMs) break;
+    const ult = await sbUm(e, `atend_mensagens?conversa_id=eq.${c.id}&select=id&order=id.desc&limit=1`);
+    if (!ult) continue;
+    const antes = lidos.has(c.id) ? lidos.get(c.id) : null;
+    if (antes !== null && ult.id <= antes) continue;
+    examinadas++;
+    // reivindica a conversa: dois ciclos ao mesmo tempo não leem a mesma
+    const marca = { ultima_msg_id: ult.id, processado_em: new Date().toISOString(), itens: 0, erro: null, pulada: false };
+    const pego = antes === null
+      ? await sb(e, 'atend_ia_aprendizado', { method: 'POST', prefer: 'return=representation,resolution=ignore-duplicates', body: { conversa_id: c.id, ...marca } })
+      : await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}&ultima_msg_id=eq.${antes}`, { method: 'PATCH', body: marca });
+    if (!Array.isArray(pego) || !pego.length) continue;
+    // só a parte nova (se reabriu e foi finalizada de novo)
+    const msgs = (await sb(e, `atend_mensagens?conversa_id=eq.${c.id}&id=gt.${antes || 0}&id=lte.${ult.id}&excluido_em=is.null`
+      + `&select=id,direcao,conteudo,transcricao,tipo,autor_id&order=id.asc&limit=120`)) || [];
+    const humano = msgs.some(m => m.direcao === 'out' && m.autor_id);
+    if (!humano || !msgs.some(m => m.direcao === 'in')) {            // só bot, ou sem cliente: nada a aprender
+      await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { pulada: true } }).catch(() => {});
+      continue;
+    }
+    const quem = { in: 'Cliente', out: 'Atendente', bot: 'Bot' };
+    const transcricao = msgs.filter(m => quem[m.direcao])
+      .map(m => `${quem[m.direcao]}: ${mascararDados(m.transcricao || m.conteudo || '', c.contato_nome).replace(/\s+/g, ' ').slice(0, 400)}`)
+      .join('\n').slice(-6000);
+    if (!base) {
+      base = (await sb(e, 'atend_ia_base?select=id,tipo,titulo,conteudo,status,vezes&order=id.desc&limit=1000')) || [];
+      setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
+    }
+    const jaNaBase = base.filter(x => x.status !== 'descartado').slice(0, 40)
+      .map(x => `- ${x.titulo ? x.titulo + ': ' : ''}${x.conteudo}`.slice(0, 160)).join('\n');
+    let itens = [];
+    try {
+      const r = await groqChat({ chave: e.GROQ, maxTokens: 700, temperature: 0.2, prazoMs: IA_APRENDER.prazoGroqMs, messages: [
+        { role: 'system', content: [
+          'Você analisa um atendimento JÁ FINALIZADO da MoviOn (provedor de internet por fibra em Mossoró/RN) para ensinar o atendente virtual.',
+          'Extraia SOMENTE conhecimento que vale para QUALQUER cliente e que foi dito ou confirmado pelo ATENDENTE (nunca o que só o cliente ou o bot disse).',
+          'Ignore: dados pessoais; valores, datas e vencimentos de um cliente específico; protocolos; endereços; combinados só daquele caso; saudações e despedidas; e o que já está em "JÁ NA BASE".',
+          'Tipos: "fato" = informação geral da empresa (ex.: prazo de liberação depois do pagamento, formas de pagamento aceitas, horário de atendimento).',
+          '"exemplo" = pergunta comum de cliente (titulo) e a resposta do atendente reescrita para servir a qualquer cliente (conteudo); "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
+          `SETORES: ${setores.join(', ')}.`,
+          'No máximo 3 itens. Se não houver nada geral para aprender, devolva {"itens": []}.',
+          'Responda APENAS com JSON: {"itens":[{"tipo":"fato","titulo":"...","conteudo":"..."},{"tipo":"exemplo","titulo":"...","conteudo":"...","setor":null}]}',
+          jaNaBase ? `JÁ NA BASE:\n${jaNaBase}` : '',
+        ].filter(Boolean).join('\n') },
+        { role: 'user', content: transcricao },
+      ] });
+      itens = itensAprendidos(r.texto, setores);
+    } catch (err) {
+      await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { erro: String(err.message).slice(0, 300) } }).catch(() => {});
+      lidas++;
+      continue;
+    }
+    let novos = 0;
+    for (const it of itens) {
+      // já existe parecido? sugestão repetida ganha +1; aprovado ou descartado não volta
+      let melhor = null, nota = 0;
+      for (const x of base) {
+        if (x.tipo !== it.tipo) continue;
+        const n = semelhancaIA(`${x.titulo || ''} ${x.conteudo}`, `${it.titulo || ''} ${it.conteudo}`);
+        if (n > nota) { nota = n; melhor = x; }
+      }
+      if (melhor && nota >= 0.55) {
+        if (melhor.status === 'sugerido') {
+          melhor.vezes = (melhor.vezes || 1) + 1;
+          await sb(e, `atend_ia_base?id=eq.${melhor.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { vezes: melhor.vezes } });
+        }
+        continue;
+      }
+      const novo = await sbUm(e, 'atend_ia_base', { method: 'POST', body: {
+        ...it, status: 'sugerido', origem: 'automatico', conversa_id: c.id, ativo: true } });
+      if (novo) { base.unshift(novo); novos++; }
+    }
+    await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { itens: novos } });
+    lidas++; sugestoes += novos;
+  }
+  return { lidas, sugestoes };
 }
 
 /* Lê a marca do fim da resposta. Setor fora da lista vira "sem setor" (a fila
@@ -5994,6 +6144,7 @@ async function talvezVarrer(e, forcar) {
 }
 
 async function tratarCron(e) {
+  const inicioCiclo = Date.now();
   const agora = new Date().toISOString();
   const pend = await sb(e,
     `atend_agendamentos?enviado_em=is.null&quando=lte.${agora}&select=id,texto,conversa_id&limit=50`);
@@ -6306,7 +6457,13 @@ async function tratarCron(e) {
   try { movimentos = await avisarMovimentosContas(e); }
   catch (err) { console.error('[movimentos]', err.message); movimentos = { erro: err.message }; }
 
-  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas,
+  // a IA aprende com os atendimentos finalizados (vira sugestão para aprovar).
+  // Por último e com orçamento de tempo: é o que menos pode atrasar o resto.
+  let iaAprendeu = null;
+  try { iaAprendeu = await aprenderComConversas(e, cfgAt, inicioCiclo); }
+  catch (err) { console.error('[ia aprende]', err.message); iaAprendeu = { erro: err.message }; }
+
+  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas, ia_aprendeu: iaAprendeu,
            bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
@@ -10223,13 +10380,20 @@ export default async function handler(req, res) {
       case 'ia.base.listar': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const desde = new Date(Date.now() - 30 * 864e5).toISOString();
-        const [itens, notas, negativos] = await Promise.all([
-          sb(e, 'atend_ia_base?select=*&order=tipo.asc,id.desc&limit=1000'),
+        const semana = new Date(Date.now() - 7 * 864e5).toISOString();
+        const [itens, sugestoes, notas, negativos, lidas, novas, cfgRow] = await Promise.all([
+          sb(e, 'atend_ia_base?status=eq.aprovado&select=*&order=tipo.asc,id.desc&limit=1000'),
+          sb(e, 'atend_ia_base?status=eq.sugerido&select=*&order=vezes.desc,id.desc&limit=100'),
           sb(e, `atend_ia_feedback?created_at=gte.${encodeURIComponent(desde)}&select=nota`),
           sb(e, 'atend_ia_feedback?nota=eq.-1&correcao_id=is.null&select=id,mensagem,resposta,acao,setor,comentario,created_at&order=created_at.desc&limit=20'),
+          sb(e, `atend_ia_aprendizado?processado_em=gte.${encodeURIComponent(semana)}&pulada=is.false&select=conversa_id`).catch(() => []),
+          sb(e, `atend_ia_base?origem=eq.automatico&created_at=gte.${encodeURIComponent(semana)}&select=id`).catch(() => []),
+          sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null),
         ]);
         const pos = (notas || []).filter(x => x.nota > 0).length, neg = (notas || []).filter(x => x.nota < 0).length;
-        return res.status(200).json({ ok: true, itens: itens || [], resumo: { positivas: pos, negativas: neg }, negativos: negativos || [] });
+        return res.status(200).json({ ok: true, itens: itens || [], sugestoes: sugestoes || [], resumo: { positivas: pos, negativas: neg }, negativos: negativos || [],
+          aprendizado: { ativo: !(cfgRow && cfgRow.dados && cfgRow.dados.ia_aprender_ativo === false), lidas: (lidas || []).length,
+            sugeridas: (novas || []).length } });
       }
 
       case 'ia.base.salvar': {
@@ -10252,9 +10416,37 @@ export default async function handler(req, res) {
         const id = Number(body.id) || 0;
         const r = id
           ? await sbUm(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', body: linha })
-          : await sbUm(e, 'atend_ia_base', { method: 'POST', body: { ...linha, origem, created_by: user.id } });
+          : await sbUm(e, 'atend_ia_base', { method: 'POST', body: { ...linha, status: 'aprovado', origem, created_by: user.id } });
         if (!r) return res.status(404).json({ ok: false, error: 'Item não encontrado.' });
         return res.status(200).json({ ok: true, item: r });
+      }
+
+      /* Sugestão aprendida sozinha: aprovar (a IA passa a usar, podendo vir
+         editada) ou descartar (não volta a ser sugerida). */
+      case 'ia.base.revisar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const id = Number(body.id);
+        if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        const atual = await sbUm(e, `atend_ia_base?id=eq.${id}&select=*`);
+        if (!atual) return res.status(404).json({ ok: false, error: 'Sugestão não encontrada.' });
+        const patch = { status: body.aprovar ? 'aprovado' : 'descartado', ativo: true, updated_by: user.id, updated_at: new Date().toISOString() };
+        if (body.aprovar) {
+          if ('conteudo' in body) {
+            const c = String(body.conteudo || '').trim().slice(0, 2000);
+            if (!c) return res.status(400).json({ ok: false, error: 'O conteúdo não pode ficar vazio.' });
+            patch.conteudo = c;
+          }
+          if ('titulo' in body) patch.titulo = String(body.titulo || '').trim().slice(0, 500) || null;
+          if ('setor' in body && atual.tipo === 'exemplo') {
+            if (!body.setor) patch.setor = null;
+            else {
+              const ok = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
+              patch.setor = ok.find(x => x.toLowerCase() === String(body.setor).trim().toLowerCase()) || null;
+            }
+          }
+        }
+        await sb(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', prefer: 'return=minimal', body: patch });
+        return res.status(200).json({ ok: true, status: patch.status });
       }
 
       case 'ia.base.ativar': {
