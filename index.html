@@ -1970,6 +1970,7 @@ html:has(#auth-screen.visible),html:has(#auth-screen.visible) body{overflow:hidd
 }
 .auth-error.show{display:block;animation:au-tremer .4s ease}
 .auth-error.ok{background:var(--accent2);border-color:var(--accent3);color:#24661A;animation:none}
+.auth-error.aviso{background:#FFF6E0;border-color:#F0D58C;color:#6E4B05;animation:none}
 .auth-error a{color:inherit;font-weight:600}
 @keyframes au-tremer{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
 
@@ -16769,7 +16770,8 @@ function authMsg(id,texto,ok){
   el.textContent=texto;
   el.classList.remove('show');
   void el.offsetWidth; // reinicia o tremor quando o mesmo erro se repete
-  el.classList.toggle('ok',!!ok);
+  el.classList.toggle('ok',ok===true);
+  el.classList.toggle('aviso',ok==='aviso');
   el.classList.add('show');
 }
 
@@ -17192,7 +17194,7 @@ function hubEmbutir(id){
       // quem está trabalhando lá dentro não pode cair por "inatividade" no
       // MoviOne: os cliques e teclas do quadro também contam
       try{
-        ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev=>
+        INATIV_EVENTOS.forEach(ev=>
           fr.contentDocument.addEventListener(ev,()=>{ if(typeof resetarInatividade==='function') resetarInatividade(); },{passive:true}));
       }catch(e){}
     });
@@ -17744,7 +17746,6 @@ async function fazerLogout(semConfirm){
   try{ if(_rtChannel){ sbClient.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){}
   pararMonitorInatividade();
   await sbClient.auth.signOut();
-  sessionStorage.removeItem('movi_lastActivity');
   sessionStorage.removeItem(HUB_VISTO_KEY);
   location.reload();
 }
@@ -17909,10 +17910,22 @@ async function renderUsuarios(){
       authPagina('nova');
       return;
     }
+    // ficou parado além do limite (navegador fechado, computador desligado ou
+    // dormindo): a sessão salva não vale mais, sai antes de abrir o sistema
+    if(inativVenceu()){
+      await inativEncerrarSessao();
+      authMostrarTela();
+      authMsg('login-error',INATIV_MSG,'aviso');
+      return;
+    }
     await authEntrarCom(data.session.user,'login-error');
     return;
   }
   authMostrarTela();
+  // acabou de sair por inatividade (a página recarregou): avisa o motivo
+  let saiu=false;
+  try{ saiu=sessionStorage.getItem(INATIV_SAIU)==='1'; sessionStorage.removeItem(INATIV_SAIU); }catch(e){}
+  if(saiu) authMsg('login-error',INATIV_MSG,'aviso');
 })();
 
 // (fim do bloco de auth)
@@ -18054,39 +18067,64 @@ atualizarBadges();
 // ============================================================
 // SIDEBAR TOGGLE
 // ============================================================
-// SISTEMA DE INATIVIDADE — logout automático após 2h
+// SISTEMA DE INATIVIDADE — logout automático após 2h sem uso
 // ============================================================
-const INATIV_LIMITE   = 2 * 60 * 60 * 1000; // 2 horas em ms
-const INATIV_AVISO    = 10 * 60 * 1000;       // avisa 10 min antes
-let _inativTimer      = null;  // timer principal (dispara o aviso)
-let _inativLogoutTimer= null;  // timer do countdown (dispara o logout)
-let _inativCountdown  = null;  // interval do contador visual
-let _inativAtivo      = false; // se o modal está aberto
+// A última atividade fica no localStorage: vale para todas as abas, sobrevive a
+// fechar o navegador e também é gravada pelo MoviTalk e pelo MoviFiber (a sessão
+// é a mesma). A conta é pelo relógio, não por "ticks": numa aba escondida o
+// navegador segura os timers (o contador de 10 min chegava a levar horas) e com
+// o computador dormindo eles param. E quem volta depois do limite sai antes de
+// o movimento do mouse renovar a sessão.
+const INATIV_LIMITE  = 2 * 60 * 60 * 1000;  // 2 horas sem uso
+const INATIV_AVISO   = 10 * 60 * 1000;      // o aviso aparece 10 min antes
+const INATIV_CHAVE   = 'movi_ultima_atividade';
+const INATIV_SAIU    = 'movi_saiu_inatividade';
+const INATIV_MSG     = 'Sua sessão foi encerrada por inatividade (2 horas sem uso). Entre de novo para continuar.';
+const INATIV_EVENTOS = ['mousemove','mousedown','keydown','wheel','touchstart'];
+let _inativVerif  = null;   // conferência pelo relógio, a cada segundo
+let _inativAtivo  = false;  // o aviso está aberto
+let _inativGravou = 0;      // última gravação desta aba (no máximo a cada 15 s)
+let _inativSaindo = false;
 
-function resetarInatividade(){
-  if(_inativAtivo) return; // não resetar enquanto modal está aberto
-  clearTimeout(_inativTimer);
-  // Salva timestamp da última atividade
-  sessionStorage.setItem('movi_lastActivity', Date.now().toString());
-  _inativTimer = setTimeout(mostrarAvisoInatividade, INATIV_LIMITE - INATIV_AVISO);
+function inativUltima(){ try{ return +localStorage.getItem(INATIV_CHAVE)||0; }catch(e){ return 0; } }
+function inativGravar(t){ _inativGravou=t; try{ localStorage.setItem(INATIV_CHAVE,String(t)); }catch(e){} }
+// passou do limite desde a última atividade (desta ou de outra aba)?
+function inativVenceu(){ const u=inativUltima(); return !!u && Date.now()-u>=INATIV_LIMITE; }
+// encerra só a sessão deste navegador (o celular e os outros computadores seguem
+// com a deles). Sem internet o Supabase não apaga a sessão salva: sai daqui mesmo assim.
+async function inativEncerrarSessao(){
+  let ok=false;
+  try{ const r=await sbClient.auth.signOut({scope:'local'}); ok=!(r&&r.error); }catch(e){}
+  if(!ok){ try{ Object.keys(localStorage).filter(k=>/^sb-.+-auth-token/.test(k)).forEach(k=>localStorage.removeItem(k)); }catch(e){} }
 }
 
-function mostrarAvisoInatividade(){
-  _inativAtivo = true;
-  document.getElementById('modal-inatividade').classList.add('open');
-  let segsRestantes = INATIV_AVISO / 1000; // 600 segundos = 10 min
-  atualizarCountdown(segsRestantes);
-  _inativCountdown = setInterval(()=>{
-    segsRestantes--;
-    atualizarCountdown(segsRestantes);
-    if(segsRestantes <= 0){
-      clearInterval(_inativCountdown);
-      fazerLogoutInatividade();
-    }
-  }, 1000);
+function resetarInatividade(){
+  if(_inativAtivo || _inativSaindo) return;   // com o aviso aberto, só o "Continuar conectado" renova
+  if(inativVenceu()){ fazerLogoutInatividade(); return; }
+  const agora=Date.now();
+  if(agora-_inativGravou<15000) return;
+  inativGravar(agora);
+}
+
+function verificarInatividade(){
+  if(_inativSaindo) return;
+  const u=inativUltima();
+  if(!u){ inativGravar(Date.now()); return; }
+  const parado=Date.now()-u;
+  if(parado>=INATIV_LIMITE){ fazerLogoutInatividade(); return; }
+  const modal=document.getElementById('modal-inatividade');
+  if(parado>=INATIV_LIMITE-INATIV_AVISO){
+    if(!_inativAtivo){ _inativAtivo=true; modal.classList.add('open'); }
+    atualizarCountdown(Math.ceil((INATIV_LIMITE-parado)/1000));
+  }else if(_inativAtivo){
+    // houve atividade em outra aba (ou no MoviTalk/MoviFiber): o aviso some
+    _inativAtivo=false;
+    modal.classList.remove('open');
+  }
 }
 
 function atualizarCountdown(segs){
+  segs=Math.max(0,segs);
   const min = Math.floor(segs / 60);
   const s   = segs % 60;
   const el  = document.getElementById('inativ-countdown');
@@ -18096,40 +18134,44 @@ function atualizarCountdown(segs){
 }
 
 function renovarSessao(){
-  clearInterval(_inativCountdown);
-  clearTimeout(_inativLogoutTimer);
   _inativAtivo = false;
   document.getElementById('modal-inatividade').classList.remove('open');
-  resetarInatividade();
+  inativGravar(Date.now());
   showToast('✓ Sessão renovada com sucesso.');
 }
 
-function fazerLogoutInatividade(){
-  clearInterval(_inativCountdown);
+async function fazerLogoutInatividade(){
+  if(_inativSaindo) return;
+  _inativSaindo = true;
+  pararMonitorInatividade();
+  // tira os dados da tela na hora (antes um alert() segurava o sistema aberto)
   document.getElementById('modal-inatividade').classList.remove('open');
-  sessionStorage.removeItem('movi_lastActivity');
-  sessionStorage.removeItem(HUB_VISTO_KEY);
-  sbClient.auth.signOut().then(()=>{
-    // Mostra mensagem antes de recarregar
-    alert('Sua sessão foi encerrada por inatividade (2 horas sem uso).');
-    location.reload();
-  });
+  document.body.style.visibility='hidden';
+  try{ if(_rtChannel){ sbClient.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){}
+  try{ sessionStorage.removeItem(HUB_VISTO_KEY); sessionStorage.setItem(INATIV_SAIU,'1'); }catch(e){}
+  await inativEncerrarSessao();
+  location.reload();
 }
 
 function iniciarMonitorInatividade(){
-  // Eventos que resetam o timer
-  ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev=>{
-    document.addEventListener(ev, resetarInatividade, {passive:true});
-  });
-  resetarInatividade();
+  pararMonitorInatividade();
+  _inativSaindo = false;
+  inativGravar(Date.now());   // acabou de entrar: conta como atividade
+  INATIV_EVENTOS.forEach(ev=>document.addEventListener(ev, resetarInatividade, {passive:true, capture:true}));
+  // voltou para a aba, para a janela ou o computador acordou: confere na hora
+  document.addEventListener('visibilitychange', verificarInatividade);
+  window.addEventListener('focus', verificarInatividade);
+  window.addEventListener('pageshow', verificarInatividade);
+  _inativVerif = setInterval(verificarInatividade, 1000);
 }
 
 function pararMonitorInatividade(){
-  clearTimeout(_inativTimer);
-  clearInterval(_inativCountdown);
-  ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev=>{
-    document.removeEventListener(ev, resetarInatividade);
-  });
+  clearInterval(_inativVerif);
+  _inativVerif = null;
+  INATIV_EVENTOS.forEach(ev=>document.removeEventListener(ev, resetarInatividade, {capture:true}));
+  document.removeEventListener('visibilitychange', verificarInatividade);
+  window.removeEventListener('focus', verificarInatividade);
+  window.removeEventListener('pageshow', verificarInatividade);
 }
 // ============================================================
 function toggleSidebar(){

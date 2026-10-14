@@ -10232,5 +10232,14 @@ function abrirIncidenteDoMapa(){
 
 <!-- o aviso encosta na direita: o rodapé do meio já é do #hint do mapa -->
 <script src="/versao.js" data-app="MoviFiber" data-canto="direita" defer></script>
+<!-- a sessão é a mesma do MoviOne: quem trabalha aqui não pode cair pela
+     inatividade de lá. O MoviOne confere esta última atividade antes de encerrar. -->
+<script>
+(function(){
+  var CHAVE='movi_ultima_atividade', ultima=0;
+  function marcar(){ var t=Date.now(); if(t-ultima<15000) return; ultima=t; try{ localStorage.setItem(CHAVE,String(t)); }catch(e){} }
+  ['mousemove','mousedown','keydown','wheel','touchstart'].forEach(function(ev){ document.addEventListener(ev,marcar,{passive:true,capture:true}); });
+})();
+</script>
 </body>
 </html>

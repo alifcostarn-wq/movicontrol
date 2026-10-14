@@ -12846,5 +12846,14 @@ const VERSAO_INTERVALO = 2*60*1000, VERSAO_FOLGA = 60*1000;
 
 /* o render inicial acontece depois do login, em entrar() */
 </script>
+<!-- a sessão é a mesma do MoviOne: quem trabalha aqui não pode cair pela
+     inatividade de lá. O MoviOne confere esta última atividade antes de encerrar. -->
+<script>
+(function(){
+  var CHAVE='movi_ultima_atividade', ultima=0;
+  function marcar(){ var t=Date.now(); if(t-ultima<15000) return; ultima=t; try{ localStorage.setItem(CHAVE,String(t)); }catch(e){} }
+  ['mousemove','mousedown','keydown','wheel','touchstart'].forEach(function(ev){ document.addEventListener(ev,marcar,{passive:true,capture:true}); });
+})();
+</script>
 </body>
 </html>
