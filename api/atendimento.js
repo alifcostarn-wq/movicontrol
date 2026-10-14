@@ -1073,14 +1073,17 @@ async function financeiroAoVivo(e, ixcId) {
 }
 
 // ---- CONTRATOS / BLOQUEIO -------------------------------------------------
-// status_internet: A = ativo | B / CM / FA = bloqueios | D = desativado
+// status_internet (guia da API do IXC): A ativo · CM bloqueio manual ·
+// CA bloqueio automático · FA financeiro em atraso · D desativado. O CA não
+// estava na lista: cliente com bloqueio automático aparecia como liberado.
+const IXC_BLOQUEIOS = ['B', 'CM', 'CA', 'FA'];
 async function contratosAoVivo(e, ixcId) {
   const d = await ixc(e, 'cliente_contrato', {
     qtype: 'cliente_contrato.id_cliente', query: String(ixcId), oper: '=', rp: '20',
   });
   const regs = d.registros || [];
-  const MOTIVO = { B: 'Bloqueio manual', CM: 'Bloqueio por atraso', FA: 'Bloqueio financeiro', D: 'Desativado' };
-  const bloqueado = regs.some(c => ['B', 'CM', 'FA'].includes(String(c.status_internet || '').toUpperCase()));
+  const MOTIVO = { B: 'Bloqueio manual', CM: 'Bloqueio manual', CA: 'Bloqueio automático', FA: 'Financeiro em atraso', AA: 'Aguardando assinatura', D: 'Desativado' };
+  const bloqueado = regs.some(c => IXC_BLOQUEIOS.includes(String(c.status_internet || '').toUpperCase()));
   return {
     bloqueado,
     itens: regs.map(c => {
@@ -2165,8 +2168,8 @@ const CONECTORES = {
       qtype: 'cliente_contrato.id_cliente', query: String(id), oper: '=', rp: '20',
     });
     const contratos = d.registros || [];
-    // status_internet: A=ativo | B/CM/FA=bloqueios | D=desativado
-    const bloqueado = contratos.some(c => ['B', 'CM', 'FA'].includes(String(c.status_internet || '').toUpperCase()));
+    // status_internet: A ativo · CM/CA/FA bloqueios · D desativado
+    const bloqueado = contratos.some(c => IXC_BLOQUEIOS.includes(String(c.status_internet || '').toUpperCase()));
     return {
       resultado: bloqueado ? 'sim' : 'nao',
       variaveis: { bloqueado: bloqueado ? 'sim' : 'nao' },
@@ -5984,8 +5987,11 @@ function ixcNumero(v) {
   return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
+// Só passa adiante data de verdade: um valor estranho numa coluna date
+// derrubaria a gravação do lote inteiro.
 function ixcData(v) {
-  return v && v !== '0000-00-00' ? v : null;
+  const t = String(v || '').trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(t) && !t.startsWith('0000') ? t.slice(0, 10) : null;
 }
 
 /* 'ativo' do cliente no IXC vem como S/N. Mesma tradução do MoviOne — os dois
@@ -6041,6 +6047,7 @@ function linhaClienteDoIxc(r) {
     moradia: r.tipo_moradia || null,
     obs: r.obs || null,
     ativo: r.ativo === 'S',
+    data_cadastro_ixc: ixcData(r.data_cadastro || r.data_cad || r.data_criacao),
     // datacad NÃO vai no corpo de propósito. No PostgREST, coluna ausente do
     // corpo fica fora do ON CONFLICT DO UPDATE — então reenviar um cliente
     // nunca reescreve a data de cadastro dele. Linha nova o banco preenche
@@ -6060,7 +6067,9 @@ function velocidadeDoPlano(nome) {
 }
 
 function linhaContratoDoIxc(r, clienteIdLocal) {
-  const plano = r.descricao_aux_plano_venda || r.descricao_aux || r.descricao || String(r.id_vd_contrato || '');
+  // 'contrato' é a descrição do plano no IXC (a mesma que o painel do
+  // atendente já mostra); sem ela o plano ficava só o número do plano de venda
+  const plano = r.descricao_aux_plano_venda || r.contrato || r.descricao_aux || r.descricao || String(r.id_vd_contrato || '');
   return {
     ixc_id: String(r.id || ''),
     ixc_cliente_id: String(r.id_cliente || ''),
@@ -6075,7 +6084,9 @@ function linhaContratoDoIxc(r, clienteIdLocal) {
     valor: ixcNumero(r.valor_servico || r.valor || r.mensalidade),
     data_ativacao: ixcData(r.data_ativacao),
     data_renovacao: ixcData(r.data_renovacao),
-    pago_ate: ixcData(r.pago_ate),
+    // o campo do IXC é pago_ate_data — lendo só pago_ate, ficava vazio
+    pago_ate: ixcData(r.pago_ate_data || r.pago_ate),
+    data_expiracao: ixcData(r.data_expiracao),
   };
 }
 

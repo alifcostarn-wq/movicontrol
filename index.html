@@ -1777,6 +1777,7 @@ table.cpt{width:100%;border-collapse:collapse;min-width:800px}
 .modo-badge-todos{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
 .toast{position:fixed;bottom:22px;right:22px;background:var(--text);color:#fff;font-size:12.5px;font-weight:500;padding:11px 18px;border-radius:10px;z-index:999;transform:translateY(80px);opacity:0;transition:all 0.28s;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,0.18)}
 .toast.show{transform:translateY(0);opacity:1}
+.toast.erro,body.dark-mode .toast.erro{background:var(--danger-fill);border-color:var(--danger-fill);color:#fff}
 
 /* ======== BOTÃO OCULTAR VALORES ======== */
 .btn-ocultar-vals{
@@ -2662,6 +2663,102 @@ textarea.cp-form-input{resize:vertical}
 #page-clientes .kpi-strip .kpi-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
 #cli-filtros-status>*{transition:transform .1s ease}
 #cli-filtros-status>*:hover{transform:translateY(-1px)}
+/* ===== CLIENTES: tabela enxuta + ficha ao lado =====
+   Tons de situação com as tintas do tema (legíveis no claro e no escuro).
+   Atraso usa o fundo warn-bg: no laranja-bg o texto laranja ficava em 4,0:1. */
+#page-clientes{--cl-ok-bg:var(--accent2);--cl-ok:var(--accent);--cl-at-bg:var(--warn-bg);--cl-at:var(--laranja-txt);
+  --cl-bl-bg:var(--danger-bg);--cl-bl:var(--danger);--cl-ng-bg:var(--info-bg);--cl-ng:var(--info);--cl-in-bg:var(--surface3);--cl-in:var(--text2)}
+.cl-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.cl-chip{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.cl-chip b{color:var(--text);font-weight:700}
+.cl-chip:hover{border-color:var(--text3)}
+.cl-chip.on{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}.cl-chip.on b{color:#fff}
+.cl-cdot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.cl-cdot.ok{background:#3C9D23}.cl-cdot.on{background:#3C9D23;box-shadow:0 0 0 3px rgba(60,157,35,.2)}.cl-cdot.at{background:#FF8C2E}
+.cl-cdot.bl{background:#D00000}.cl-cdot.ng{background:#4DA3E8}.cl-cdot.in{background:var(--text3)}
+.cl-chip.on .cl-cdot{background:#fff;box-shadow:none}
+.cl-barra{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.cl-barra .search-wrap{flex:1;min-width:240px}
+.cl-barra .search-wrap input{width:100%!important}
+.cl-sel{height:34px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:0 10px;font:inherit;font-size:12.5px;max-width:230px}
+.cl-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+.cl-wrap.com-ficha{grid-template-columns:minmax(0,1fr) 480px}
+.cl-wrap.com-ficha .cl-col-local,.cl-wrap.com-ficha .cl-col-wa{display:none}
+.cl-t td{vertical-align:middle;padding-top:9px;padding-bottom:9px}
+.cl-row{cursor:pointer}
+.cl-row.sel td{background:var(--info-bg)!important}
+.cl-row.sel td:first-child{box-shadow:inset 3px 0 0 var(--info)}
+.cl-cli{display:flex;gap:11px;align-items:center;min-width:0}
+.cl-cli-t{min-width:0}
+.cl-av{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.cl-nome{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;color:var(--text)}
+.cl-wrap.com-ficha .cl-nome{max-width:200px}
+.cl-doc{font-family:'DM Mono',monospace;font-size:11.5px;color:var(--text3);white-space:nowrap}
+.cl-ixc{display:inline-block;padding:1px 6px;border-radius:6px;background:var(--info-bg);color:var(--info);font-size:9.5px;font-weight:800;margin-left:6px;vertical-align:2px;font-family:'DM Sans',sans-serif}
+.cl-fw{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;color:var(--text)}
+.cl-sub{font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px}
+.cl-uf{font-size:11px;font-weight:700;color:var(--text3)}
+.cl-on{display:flex;align-items:center;gap:6px;margin-top:4px}
+.cl-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;background:var(--text3)}
+.cl-dot.on{background:#3C9D23;box-shadow:0 0 0 3px rgba(60,157,35,.2)}
+.cl-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.cl-pill.k-ok,.cl-av.k-ok{background:var(--cl-ok-bg);color:var(--cl-ok)}
+.cl-pill.k-at,.cl-av.k-at{background:var(--cl-at-bg);color:var(--cl-at)}
+.cl-pill.k-bl,.cl-av.k-bl{background:var(--cl-bl-bg);color:var(--cl-bl)}
+.cl-pill.k-ng,.cl-av.k-ng{background:var(--cl-ng-bg);color:var(--cl-ng)}
+.cl-pill.k-in,.cl-av.k-in{background:var(--cl-in-bg);color:var(--cl-in)}
+.cl-wa{display:inline-flex;align-items:center;gap:7px;color:var(--text2);white-space:nowrap}
+.cl-wa svg{width:16px;height:16px;color:#25A244;flex-shrink:0}
+.cl-acoes{white-space:nowrap;text-align:right}
+/* ficha */
+.cl-ficha{position:sticky;top:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:calc(100vh - 100px);overflow:auto}
+.cl-ficha[hidden]{display:none}
+.clf-h{padding:16px 18px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
+.clf-top{display:flex;gap:12px;align-items:flex-start}
+.clf-top .cl-av{width:48px;height:48px;border-radius:13px;font-size:16px}
+.clf-nome{font-size:17px;font-weight:800;line-height:1.25;margin:0 0 3px;color:var(--text);word-break:break-word}
+.clf-x{margin-left:auto;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.clf-x svg{width:15px;height:15px}.clf-x:hover{color:var(--text);background:var(--surface2)}
+.clf-pills{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0}
+.clf-acts{display:flex;gap:6px;flex-wrap:wrap}
+.clf-ab{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.clf-ab svg{width:14px;height:14px}.clf-ab:hover{background:var(--surface2)}
+.clf-ab.wa{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}.clf-ab.wa:hover{filter:brightness(1.08);background:var(--accent-fill)}
+.clf-wa{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.clf-wa[hidden]{display:none}
+.clf-wa textarea{width:100%;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:9px;padding:9px 11px;font:inherit;font-size:13px;resize:vertical}
+.clf-wa-p{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.clf-wa-p .cl-sub{white-space:normal}
+.clf-corpo{padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px}
+.clf-card{border:1px solid var(--border);border-radius:11px;padding:11px 13px;background:var(--surface2);min-width:0}
+.clf-card h4{margin:0 0 7px;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.clf-ln{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12.5px;color:var(--text2)}
+.clf-ln span:first-child{flex-shrink:0}
+.clf-ln b{color:var(--text);font-weight:600;text-align:right;word-break:break-word;min-width:0}
+.clf-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.clf-ctr+.clf-ctr{border-top:1px dashed var(--border);margin-top:8px;padding-top:8px}
+.clf-ctr-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;font-size:13px;color:var(--text)}
+.clf-ctr-h b{margin-right:auto}
+.clf-ctr-h .action-btn{width:26px;height:26px}
+.clf-resumo{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.clf-resumo>div{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
+.clf-resumo span{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.clf-resumo b{font-size:14px;color:var(--text);font-family:'DM Mono',monospace}
+.clf-resumo small{font-size:11px;color:var(--text3)}
+.clf-resumo .ruim b{color:var(--danger)}
+.clf-fat{display:grid;grid-template-columns:82px 1fr auto 86px;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;color:var(--text2);border-top:1px solid var(--border)}
+.clf-fat .td-mono{color:var(--text)}
+.clf-fat-ac{display:flex;gap:9px;justify-content:flex-end}
+.clf-link{background:none;border:0;color:var(--info);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0}
+.clf-link:hover{text-decoration:underline}
+.clf-vazio{font-size:12.5px;color:var(--text3);padding:2px 0}
+.clf-nota{font-size:11.5px;color:var(--text3);margin-top:6px}
+.clf-obs{font-size:12.5px;color:var(--text2);white-space:pre-wrap;word-break:break-word}
+@media (max-width:1180px){
+  .cl-wrap.com-ficha{grid-template-columns:minmax(0,1fr)}
+  .cl-ficha{position:fixed;top:0;right:0;bottom:0;width:min(500px,100vw);max-height:none;border-radius:0;z-index:900;box-shadow:-12px 0 40px rgba(0,0,0,.28)}
+}
+@media (max-width:560px){ .clf-grid2,.clf-resumo{grid-template-columns:1fr} }
 
 /* Ficha do cliente: mini-tabelas com zebra e hover */
 .cli-mini-table tbody tr:nth-child(even){background:color-mix(in srgb, var(--surface2) 45%, transparent)}
@@ -4980,16 +5077,23 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 
     <!-- ====== CLIENTES ====== -->
     <div class="page" id="page-clientes">
-      <div class="kpi-strip" id="kpi-clientes"></div>
-      <div class="filtros-bar">
-        <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="cli-busca" placeholder="Buscar por nome, CPF/CNPJ, telefone, endereço, bairro..." oninput="renderCadastro('clientes')" style="width:360px"></div>
-        <div id="cli-filtros-status" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:12px"></div>
-        <button class="btn" onclick="exportarCadastroCSV('clientes')" style="margin-left:auto">↓ CSV</button>
+      <div class="cl-chips" id="cli-filtros-status"></div>
+      <div class="cl-barra">
+        <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="cli-busca" placeholder="Buscar por nome, CPF/CNPJ, telefone, login, endereço, bairro, cidade…" oninput="cliBuscaMudou()"></div>
+        <select id="cli-f-cidade" class="cl-sel" onchange="cliFiltroMudou()" aria-label="Cidade"><option value="">Cidade: todas</option></select>
+        <select id="cli-f-plano" class="cl-sel" onchange="cliFiltroMudou()" aria-label="Plano"><option value="">Plano: todos</option></select>
+        <select id="cli-f-ordem" class="cl-sel" onchange="cliFiltroMudou()" aria-label="Ordenar">
+          <option value="nome">Ordenar: nome</option><option value="recentes">Mais recentes no IXC</option>
+          <option value="cidade">Cidade e bairro</option><option value="online">Online primeiro</option></select>
+        <button class="btn" onclick="exportarCadastroCSV('clientes')">↓ CSV</button>
       </div>
-      <div class="table-wrap">
-        <div class="table-scroll"><table class="t" style="min-width:1100px"><thead><tr><th style="width:36px"></th><th>Nome Fantasia</th><th>CNPJ / CPF</th><th>Login IXC</th><th>Status Contrato / Acesso</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>A Receber</th><th>Recebido</th><th>Data Cad.</th><th>Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
+      <div class="cl-wrap" id="cli-wrap">
+      <div class="table-wrap" style="min-width:0">
+        <div class="table-scroll"><table class="t cl-t"><thead><tr><th>Cliente</th><th>Plano</th><th>Situação</th><th class="cl-col-local">Local</th><th class="cl-col-wa">WhatsApp</th><th style="text-align:right">Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
         <div id="cli-empty" class="empty-state" style="display:none"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="empty-title">Nenhum cliente cadastrado</div><div class="empty-sub">Clique em "+ Novo Cliente" para começar.</div><button class="btn btn-primary" onclick="abrirModalCadastro('clientes')">+ Novo Cliente</button></div>
         <div class="paginacao"><span class="pag-info" id="cli-pinfo">0 clientes</span><div class="pag-btns" id="cli-pbtn"></div></div>
+      </div>
+      <aside class="cl-ficha" id="cli-ficha" hidden aria-label="Ficha do cliente"></aside>
       </div>
     </div>
 
@@ -6136,7 +6240,7 @@ body.dark-mode [style*="; color: rgb(123, 79, 199)"]):not(:where(.pdf-fixo *)){c
           <div class="form-group" id="cli-fg-numero"><label class="form-label">Número</label><input type="text" id="cli-numero" style="width:100%"></div>
           <div class="form-group"><label class="form-label">Complemento</label><input type="text" id="cli-complemento" style="width:100%" placeholder="Apto, bloco, etc"></div>
           <div class="form-group" id="cli-fg-bairro"><label class="form-label">Bairro</label><input type="text" id="cli-bairro" style="width:100%"></div>
-          <div class="form-group" id="cli-fg-cidade"><label class="form-label">Cidade</label><input type="text" id="cli-cidade" style="width:100%"></div>
+          <div class="form-group" id="cli-fg-cidade"><label class="form-label">Cidade</label><input type="text" id="cli-cidade" style="width:100%"><div class="cl-sub" id="cli-cidade-nome" style="max-width:none;margin-top:4px"></div></div>
           <div class="form-group"><label class="form-label">UF</label><input type="text" id="cli-uf" style="width:100%" maxlength="2" placeholder="CE"></div>
           <div class="form-group"><label class="form-label">Referência</label><input type="text" id="cli-referencia" style="width:100%" placeholder="Próximo a..."></div>
           <div class="form-group"><label class="form-label">Moradia</label><select id="cli-moradia" style="width:100%"><option value="">—</option><option>Própria</option><option>Alugada</option><option>Financiada</option><option>Cedida</option></select></div>
@@ -6578,6 +6682,7 @@ const _SYNC_MAP = {
       referencia: c.referencia || null,
       moradia: c.moradia || null,
       uf: c.uf || null,
+      data_cadastro_ixc: c.dataCadastroIxc || null,
       };
       // Só inclui id se tiver valor válido (evita erro "cannot insert non-DEFAULT value into id")
       if(c.id != null) row.id = c.id;
@@ -6599,6 +6704,7 @@ const _SYNC_MAP = {
       numero: r.numero, complemento: r.complemento, referencia: r.referencia,
       moradia: r.moradia, uf: r.uf,
       latitude: r.latitude, longitude: r.longitude,
+      dataCadastroIxc: r.data_cadastro_ixc,
     }),
   },
   sf_clientes_contratos: {
@@ -6619,6 +6725,8 @@ const _SYNC_MAP = {
         pago_ate: c.pagoAte || null,
         velocidade_mbps: c.velocidadeMbps || null,
         id_plano_venda: c.idPlanoVenda || null,
+        data_expiracao: c.dataExpiracao || null,
+        fidelidade_meses: c.fidelidadeMeses || null,
       };
       if(c.id != null) row.id = c.id;
       return row;
@@ -6632,6 +6740,7 @@ const _SYNC_MAP = {
       dataRenovacao: r.data_renovacao, pagoAte: r.pago_ate,
       velocidadeMbps: r.velocidade_mbps,
       idPlanoVenda: r.id_plano_venda,
+      dataExpiracao: r.data_expiracao, fidelidadeMeses: r.fidelidade_meses,
     }),
   },
   sf_clientes_logins: {
@@ -6654,6 +6763,10 @@ const _SYNC_MAP = {
         senha_wifi: l.senhaWifi || null,
         obs: l.obs || null,
         velocidade_mbps: l.velocidadeMbps || null,
+        ip: l.ip || null,
+        mac: l.mac || null,
+        ultima_conexao_ini: l.ultimaConexaoIni || null,
+        ultima_conexao_fim: l.ultimaConexaoFim || null,
       };
       if(l.id != null) row.id = l.id;
       return row;
@@ -6665,6 +6778,7 @@ const _SYNC_MAP = {
       tipoConexao: r.tipo_conexao, ativo: r.ativo, online: r.online,
       plano: r.plano, ssid: r.ssid, senhaWifi: r.senha_wifi, obs: r.obs,
       velocidadeMbps: r.velocidade_mbps,
+      ip: r.ip, mac: r.mac, ultimaConexaoIni: r.ultima_conexao_ini, ultimaConexaoFim: r.ultima_conexao_fim,
     }),
   },
   sf_fornecedores: {
@@ -12982,7 +13096,479 @@ function cadCamposBusca(i){
   return txt+' '+nums;
 }
 
+/* ════════════════════════════════════════════════════════
+   CLIENTES — tabela enxuta + ficha ao lado
+   • Situação calculada na hora a partir dos contratos (não da coluna gravada,
+     que só muda na próxima sincronização)
+   • Cidade e UF pelo NOME: o cadastro guarda o código do IXC (1161, 25)
+   • A ficha abre ao lado da tabela; faturas, conexão e comodato chegam ao vivo
+   ════════════════════════════════════════════════════════ */
+const CLI_POR_PAG = 25;
+// [filtro, rótulo do chip, tom]
+const CLI_CHIPS = [
+  ['Todos','Todos',''], ['Ativo','Ativos','ok'], ['__online','Online','on'],
+  ['Financeiro em Atraso','Em atraso','at'], ['Bloqueio Manual','Bloqueio manual','bl'],
+  ['Bloqueio Automático','Bloqueio automático','bl'], ['Negativado','Negativados','ng'],
+  ['Inativo','Inativos','in'], ['Cancelado','Cancelados','in'],
+  ['Pré-contrato','Pré-contrato','at'], ['Aguardando Assinatura','Ag. assinatura','at'],
+];
+const CLI_TOM = {
+  'Ativo':'ok', 'Financeiro em Atraso':'at', 'Aguardando Assinatura':'at', 'Pré-contrato':'at',
+  'Bloqueio Manual':'bl', 'Bloqueio Automático':'bl', 'Negativado':'ng',
+};
+const CLI_IC = {
+  wa:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.4 14.1c-.2.6-1.3 1.2-1.8 1.3-.5.1-1 .2-3.3-.7-2.8-1.1-4.5-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .6l-.4.6-.4.4c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l1.9.9c.3.1.5.2.5.3.1.2.1.7-.1 1.3z"/></svg>',
+  asn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M7.5 17c1.2-2.2 2.2-2.2 3 0s1.8 2.2 3 0 1.8-1 3 0"/></svg>',
+  app:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="11" y1="18" x2="13" y2="18"/></svg>',
+  ed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
+  del:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>',
+  diag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+};
+
+// gd() devolve uma CÓPIA inteira a cada chamada: na tabela de clientes isso
+// seria uma cópia de todos os contratos e logins por cliente (milhões de objetos
+// a cada tecla na busca). Aqui só se lê — direto da memória, sem copiar.
+function _cliCache(k){ return (typeof _cache !== 'undefined' && _cache[k]) || gd(k); }
+
+// ---- Cidade e UF pelo nome (tabelas ixc_cidades / ixc_ufs) ----
+const _ixcLocais = { cidades:new Map(), ufs:new Map(), pedidas:new Set(), ufsCarregadas:false };
+async function carregarLocaisIXC(){
+  if(!sbClient) return;
+  const ids = [...new Set(_cliCache('sf_clientes').map(c => String(c.cidade||'').trim()).filter(v => /^\d+$/.test(v)))]
+    .filter(id => !_ixcLocais.pedidas.has(id));
+  const pedirUfs = !_ixcLocais.ufsCarregadas;
+  if(!ids.length && !pedirUfs) return;
+  ids.forEach(id => _ixcLocais.pedidas.add(id));
+  let mudou = false;
+  try{
+    for(let i=0; i<ids.length; i+=150){
+      const { data } = await sbClient.from('ixc_cidades').select('ixc_id,nome,uf_id').in('ixc_id', ids.slice(i, i+150));
+      (data||[]).forEach(r => { _ixcLocais.cidades.set(String(r.ixc_id), { nome:r.nome, ufId:String(r.uf_id||'') }); mudou = true; });
+    }
+    if(pedirUfs){
+      const { data } = await sbClient.from('ixc_ufs').select('ixc_id,sigla');
+      if(data && data.length){ data.forEach(r => _ixcLocais.ufs.set(String(r.ixc_id), r.sigla)); _ixcLocais.ufsCarregadas = true; mudou = true; }
+    }
+  }catch(e){ console.warn('[clientes] nomes de cidade/UF:', e); }
+  if(mudou && document.getElementById('page-clientes')?.classList.contains('active')) renderClientes();
+}
+function cidadeNomeCli(c){
+  const v = String(c?.cidade||'').trim();
+  if(!/^\d+$/.test(v)) return v;
+  return _ixcLocais.cidades.get(v)?.nome || '';
+}
+function ufSiglaCli(c){
+  const u = String(c?.uf||'').trim();
+  if(u && !/^\d+$/.test(u)) return u.toUpperCase();
+  const id = u || _ixcLocais.cidades.get(String(c?.cidade||'').trim())?.ufId || '';
+  return _ixcLocais.ufs.get(String(id)) || '';
+}
+
+// ---- Índices contratos/logins por cliente (refeitos só quando os dados mudam) ----
+let _cliIdx = null;
+function _cliIndices(){
+  const ctrs = _cliCache('sf_clientes_contratos'), logs = _cliCache('sf_clientes_logins');
+  if(_cliIdx && _cliIdx.ctrs===ctrs && _cliIdx.nc===ctrs.length && _cliIdx.logs===logs && _cliIdx.nl===logs.length) return _cliIdx;
+  const ix = { ctrs, logs, nc:ctrs.length, nl:logs.length, cLocal:new Map(), cIxc:new Map(), lLocal:new Map(), lIxc:new Map() };
+  const por = (m, k, v) => { if(k==null || k==='') return; k = String(k); (m.get(k) || m.set(k, []).get(k)).push(v); };
+  ctrs.forEach(c => { por(ix.cLocal, c.clienteId, c); por(ix.cIxc, c.ixcClienteId, c); });
+  logs.forEach(l => { por(ix.lLocal, l.clienteId, l); por(ix.lIxc, l.ixcClienteId, l); });
+  return (_cliIdx = ix);
+}
+function _cliUniao(a, b){ if(!a) return b||[]; if(!b) return a; return [...new Set([...a, ...b])]; }
+function contratosDoCli(c){ const ix=_cliIndices(); return _cliUniao(ix.cLocal.get(String(c.id)), c.ixcId ? ix.cIxc.get(String(c.ixcId)) : null); }
+function loginsDoCli(c){ const ix=_cliIndices(); return _cliUniao(ix.lLocal.get(String(c.id)), c.ixcId ? ix.lIxc.get(String(c.ixcId)) : null); }
+
+// Situação do cliente: pelos contratos, na hora; sem contrato, o que estiver gravado
+function statusDoCli(c, ctrs){
+  const vivo = agregarStatusCliente(ctrs || contratosDoCli(c));
+  if(vivo) return vivo;
+  const legado = {'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado'};
+  const g = c.statusContrato;
+  if(g) return legado[g] || g;
+  if(c.ixcStatus) return legado[c.ixcStatus] || c.ixcStatus;
+  return c.origem !== 'ixc' ? (c.ativo===false ? 'Inativo' : 'Ativo') : null;
+}
+// Contrato que representa o cliente: o vivo (ativo/bloqueado) antes do encerrado
+function contratoPrincipalCli(ctrs){
+  if(!ctrs.length) return null;
+  const peso = s => ({'Ativo':0,'Financeiro em Atraso':1,'Bloqueio Manual':2,'Bloqueio Automático':2,'Aguardando Assinatura':3,'Pré-contrato':4,'Negativado':5,'Inativo':6,'Cancelado':7}[s] ?? 8);
+  return [...ctrs].sort((a,b) => peso(calcStatusContrato(a.statusContrato,a.statusAcesso)) - peso(calcStatusContrato(b.statusContrato,b.statusAcesso))
+    || String(b.dataAtivacao||'').localeCompare(String(a.dataAtivacao||'')))[0];
+}
+function _cliInfo(c){
+  const ctrs = contratosDoCli(c), logs = loginsDoCli(c);
+  const ctr = contratoPrincipalCli(ctrs);
+  const status = statusDoCli(c, ctrs);
+  const logOn = logs.find(l => l.online);
+  const log = logOn || logs.find(l => l.ativo) || logs[0] || null;
+  return { ctrs, logs, ctr, log, status, tom: CLI_TOM[status] || 'in', online: !!logOn,
+    plano: ctr?.plano || log?.plano || '', valor: ctr?.valor || null, vel: ctr?.velocidadeMbps || log?.velocidadeMbps || null,
+    cidade: cidadeNomeCli(c), uf: ufSiglaCli(c) };
+}
+
+// iniciais sem "da/das/de/do/dos/e": Maria das Graças → MG (e não MD)
+function _cliIni(n){
+  const p = String(n||'').trim().split(/\s+/).filter(w => w && !/^(da|das|de|do|dos|e|ltda|me|epp)$/i.test(w));
+  return p.length ? (p[0][0] + (p[1]?.[0] || '')).toUpperCase() : '?';
+}
+function _cliFone(v){
+  let d = String(v||'').replace(/\D/g,'');
+  if(d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  if(d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if(d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return String(v||'');
+}
+// 'AAAA-MM-DD HH:MM:SS' do IXC (hora local) → "hoje 14:32" / "ontem 09:10" / "12/10 18:22"
+function _cliQuando(ts){
+  const m = String(ts||'').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if(!m) return '';
+  const d = new Date(+m[1], +m[2]-1, +m[3]);
+  const h = new Date(); h.setHours(0,0,0,0);
+  const dias = Math.round((h - d) / 864e5);
+  const hora = m[4]+':'+m[5];
+  if(dias === 0) return 'hoje '+hora;
+  if(dias === 1) return 'ontem '+hora;
+  return m[3]+'/'+m[2]+(+m[1] !== h.getFullYear() ? '/'+m[1] : '')+' '+hora;
+}
+function _cliVel(mbps){ if(!mbps) return ''; return mbps >= 1000 ? (mbps/1000).toLocaleString('pt-BR')+' Giga' : mbps+' Mega'; }
+function _cliOnlineTxt(info){
+  if(!info.logs.length) return '';
+  if(info.online) return 'online';
+  const fim = info.logs.map(l => l.ultimaConexaoFim).filter(Boolean).sort().pop();
+  return fim ? 'offline · saiu '+_cliQuando(fim) : 'offline';
+}
+
+function cliBuscaMudou(){ paginaAtual['clientes'] = 1; renderClientes(); }
+function cliFiltroMudou(){ paginaAtual['clientes'] = 1; renderClientes(); }
+
+function renderClientes(){
+  const lista = _cliCache('sf_clientes');
+  const busca = (document.getElementById('cli-busca')?.value || '').trim().toLowerCase();
+  const fCid = document.getElementById('cli-f-cidade')?.value || '';
+  const fPlano = document.getElementById('cli-f-plano')?.value || '';
+  const ordem = document.getElementById('cli-f-ordem')?.value || 'nome';
+  const statusFiltro = window._cliStatusFiltro || 'Ativo';
+  carregarLocaisIXC();
+
+  const todos = lista.map((c, idx) => ({ c, idx, i:_cliInfo(c) }));
+  // contagens dos chips: valem para a busca e os filtros de cidade/plano
+  const base = todos.filter(r => (!fCid || r.i.cidade === fCid) && (!fPlano || r.i.plano === fPlano)
+    && (!busca || (cadCamposBusca(r.c)+' '+r.i.cidade+' '+r.i.plano+' '+r.i.logs.map(l=>l.login).join(' ')+' '+(r.c.ixcId||'')).toLowerCase().includes(busca)));
+  const conta = { 'Todos': base.length, '__online': 0 };
+  base.forEach(r => { conta[r.i.status] = (conta[r.i.status]||0) + 1; if(r.i.online) conta.__online++; });
+  const fil = base.filter(r => statusFiltro === 'Todos' ? true : statusFiltro === '__online' ? r.i.online : r.i.status === statusFiltro);
+
+  const chipsEl = document.getElementById('cli-filtros-status');
+  if(chipsEl) chipsEl.innerHTML = CLI_CHIPS
+    .filter(([k]) => ['Todos','Ativo','__online'].includes(k) || conta[k] || k === statusFiltro)
+    .map(([k, rot, tom]) => `<button type="button" class="cl-chip ${k===statusFiltro?'on':''}" onclick="setCliStatusFiltro('${k}')">${tom?`<i class="cl-cdot ${tom}"></i>`:''}${rot} <b>${(conta[k]||0).toLocaleString('pt-BR')}</b></button>`).join('');
+
+  // opções de cidade e plano: as que existem na base, mais frequentes primeiro
+  const opcoes = (sel, campo, rotulo) => {
+    const el = document.getElementById(sel); if(!el) return;
+    const n = new Map(); todos.forEach(r => { const v = r.i[campo]; if(v) n.set(v, (n.get(v)||0) + 1); });
+    const atual = el.value;
+    el.innerHTML = `<option value="">${rotulo}</option>` + [...n.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'pt-BR')).slice(0, 60)
+      .map(([v, q]) => `<option value="${_fxEsc(v)}">${_fxEsc(v)} (${q.toLocaleString('pt-BR')})</option>`).join('');
+    el.value = n.has(atual) ? atual : '';
+  };
+  opcoes('cli-f-cidade', 'cidade', 'Cidade: todas');
+  opcoes('cli-f-plano', 'plano', 'Plano: todos');
+
+  const nome = r => String(r.c.nome||'');
+  const cmp = {
+    nome: (a,b) => nome(a).localeCompare(nome(b), 'pt-BR'),
+    recentes: (a,b) => String(b.c.dataCadastroIxc||'').localeCompare(String(a.c.dataCadastroIxc||'')) || (parseInt(b.c.ixcId)||0) - (parseInt(a.c.ixcId)||0),
+    cidade: (a,b) => a.i.cidade.localeCompare(b.i.cidade,'pt-BR') || String(a.c.bairro||'').localeCompare(String(b.c.bairro||''),'pt-BR') || nome(a).localeCompare(nome(b),'pt-BR'),
+    online: (a,b) => (b.i.online - a.i.online) || nome(a).localeCompare(nome(b), 'pt-BR'),
+  }[ordem] || ((a,b) => nome(a).localeCompare(nome(b), 'pt-BR'));
+  fil.sort(cmp);
+
+  const tp = Math.max(1, Math.ceil(fil.length / CLI_POR_PAG));
+  if((paginaAtual['clientes']||1) > tp) paginaAtual['clientes'] = tp;
+  const pg = paginaAtual['clientes'] || 1;
+  const pag = fil.slice((pg-1)*CLI_POR_PAG, pg*CLI_POR_PAG);
+
+  const emp = document.getElementById('cli-empty');
+  if(emp){
+    emp.style.display = fil.length ? 'none' : '';
+    const t = emp.querySelector('.empty-title'), s = emp.querySelector('.empty-sub');
+    if(t) t.textContent = lista.length ? 'Nenhum cliente com esses filtros' : 'Nenhum cliente cadastrado';
+    if(s) s.textContent = lista.length ? 'Mude a busca, a situação, a cidade ou o plano.' : 'Clique em "+ Novo Cliente" para começar.';
+  }
+  const tb = document.getElementById('cli-tbody');
+  if(tb) tb.innerHTML = pag.map(({ c, idx, i }) => {
+    const ixc = c.origem === 'ixc' ? '<span class="cl-ixc" title="Importado do IXC">IXC</span>' : '';
+    const doc = [c.cnpj, c.ixcId ? '#'+c.ixcId : ''].filter(Boolean).join(' · ');
+    const planoSub = [i.valor ? brl(i.valor, true)+'/mês' : '', !i.valor && i.vel && !/\d/.test(i.plano) ? _cliVel(i.vel) : ''].filter(Boolean).join(' · ');
+    const onTxt = _cliOnlineTxt(i);
+    const wa = c.whatsapp || c.tel1 || '';
+    return `<tr class="cl-row${idx===_cliFichaIdx?' sel':''}" data-idx="${idx}" onclick="cliAbrirFicha(${idx})">
+      <td><div class="cl-cli"><div class="cl-av k-${i.tom}">${_fxEsc(_cliIni(c.nome))}</div><div class="cl-cli-t">
+        <div class="cl-nome" title="${_fxEsc(c.nome||'')}">${_fxEsc(c.nome||'—')}${ixc}</div><div class="cl-doc">${_fxEsc(doc)||'—'}</div></div></div></td>
+      <td><div class="cl-fw" title="${_fxEsc(i.plano)}">${_fxEsc(i.plano)||'<span class="td-muted">—</span>'}</div>${planoSub?`<div class="cl-sub">${planoSub}</div>`:''}</td>
+      <td>${i.status?`<span class="cl-pill k-${i.tom}">${_fxEsc(i.status)}</span>`:'<span class="td-muted">—</span>'}${onTxt?`<div class="cl-sub cl-on"><span class="cl-dot${i.online?' on':''}"></span>${onTxt}</div>`:''}</td>
+      <td class="cl-col-local"><div class="cl-fw">${_fxEsc(i.cidade)||'<span class="td-muted">—</span>'}${i.uf?` <span class="cl-uf">${_fxEsc(i.uf)}</span>`:''}</div><div class="cl-sub">${_fxEsc(c.bairro||'')}</div></td>
+      <td class="cl-col-wa">${wa?`<span class="cl-wa">${CLI_IC.wa}${_fxEsc(_cliFone(wa))}</span>`:'<span class="td-muted">—</span>'}</td>
+      <td class="cl-acoes" onclick="event.stopPropagation()"><div class="action-btns" style="justify-content:flex-end">
+        <button class="action-btn" title="Liberar acesso MoviApp" onclick="abrirLiberarMoviApp(${idx})">${CLI_IC.app}</button>
+        <button class="action-btn" title="Assinatura Eletrônica" onclick="asnAbrirCliente(${idx})">${CLI_IC.asn}</button>
+        <button class="action-btn" title="Editar cadastro" onclick="abrirModalCadastro('clientes',${idx})">${CLI_IC.ed}</button>
+        <button class="action-btn del" title="Excluir" onclick="deletarCad('clientes',${idx})">${CLI_IC.del}</button>
+      </div></td></tr>`;
+  }).join('');
+  renderPag('cli', fil.length, tp, 'clientes');
+  const pi = document.getElementById('cli-pinfo');
+  if(pi){
+    const de = fil.length ? (pg-1)*CLI_POR_PAG + 1 : 0, ate = Math.min(pg*CLI_POR_PAG, fil.length);
+    pi.textContent = fil.length ? `Mostrando ${de}–${ate} de ${fil.length.toLocaleString('pt-BR')} cliente${fil.length!==1?'s':''}` : '0 clientes';
+  }
+  if(_cliFichaIdx != null) cliRenderFicha();
+}
+
+/* ---------- FICHA AO LADO ---------- */
+let _cliFichaIdx = null;
+const _cliComodatoCache = {};   // cliente id → { itens:[], quando }
+const _cliConexaoViva = {};     // ixcId → quando (radusuarios consultado ao vivo)
+
+function cliAbrirFicha(idx){
+  const cli = _cliCache('sf_clientes')[idx];
+  if(!cli) return;
+  _cliFichaIdx = idx;
+  window._cliAtual = cli;
+  _cliWaAberto = false;
+  document.getElementById('cli-wrap')?.classList.add('com-ficha');
+  const f = document.getElementById('cli-ficha');
+  if(f){ f.hidden = false; f.scrollTop = 0; }
+  document.querySelectorAll('#cli-tbody .cl-row').forEach(tr => tr.classList.toggle('sel', +tr.dataset.idx === idx));
+  cliRenderFicha();
+  cliFichaCarregar(cli);
+}
+function cliFecharFicha(){
+  _cliFichaIdx = null;
+  document.getElementById('cli-wrap')?.classList.remove('com-ficha');
+  const f = document.getElementById('cli-ficha'); if(f){ f.hidden = true; f.innerHTML = ''; }
+  document.querySelectorAll('#cli-tbody .cl-row.sel').forEach(tr => tr.classList.remove('sel'));
+}
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape' || _cliFichaIdx == null) return;
+  if(document.querySelector('.modal-overlay.open, .modal-overlay[style*="flex"]')) return;
+  cliFecharFicha();
+});
+function cliFichaModal(aba){
+  const idx = _cliFichaIdx; if(idx == null) return;
+  abrirModalCadastro('clientes', idx);
+  if(aba){ cliTab(aba); if(aba==='financeiro') carregarFaturasIXC(); if(aba==='diagnostico') initDiagnostico(); }
+}
+function cliFichaMapa(){
+  const c = _cliCache('sf_clientes')[_cliFichaIdx]; if(!c) return;
+  const lat = _coordValida(c.latitude), lng = _coordValida(c.longitude);
+  const end = [c.end, c.numero, c.bairro, cidadeNomeCli(c), ufSiglaCli(c)].filter(Boolean).join(', ');
+  if(lat == null && !end){ showToast('Sem coordenadas nem endereço para localizar.', true); return; }
+  window.open('https://www.google.com/maps/search/?api=1&query='+(lat!=null && lng!=null ? lat+','+lng : encodeURIComponent(end)), '_blank');
+}
+
+// WhatsApp: sai pelo MoviTalk, como todo aviso ao cliente (a resposta cai na conversa dele)
+let _cliWaAberto = false;
+function cliFichaWa(){
+  _cliWaAberto = !_cliWaAberto;
+  const box = document.getElementById('clf-wa');
+  if(box){ box.hidden = !_cliWaAberto; if(_cliWaAberto) box.querySelector('textarea')?.focus(); }
+}
+async function cliFichaWaEnviar(){
+  const c = _cliCache('sf_clientes')[_cliFichaIdx]; if(!c) return;
+  const ta = document.getElementById('clf-wa-txt'), bt = document.getElementById('clf-wa-btn');
+  const texto = (ta?.value || '').trim();
+  if(!texto){ showToast('Escreva a mensagem.', true); return; }
+  if(bt){ bt.disabled = true; bt.textContent = 'Enviando…'; }
+  try{
+    await mtAvisar(c.whatsapp || c.tel1, texto, { nome: c.nome||'', cliente_ixc_id: c.ixcId||null });
+    showToast('📲 Mensagem enviada pelo MoviTalk.');
+    _cliWaAberto = false; cliRenderFicha();
+  }catch(e){
+    showToast('Não enviou: '+(e.message||e), true);
+    if(bt){ bt.disabled = false; bt.textContent = 'Enviar pelo MoviTalk'; }
+  }
+}
+
+async function cliFichaCarregar(cli, force){
+  const tarefas = [];
+  const ixcId = cli.ixcId ? String(cli.ixcId) : '';
+  let cfg = null;
+  const cfgIxc = async () => cfg || (cfg = await getIXCConfig());
+  // conexão ao vivo (o "online" da lista é o da última sincronização)
+  if(ixcId && (force || !_cliConexaoViva[ixcId] || Date.now() - _cliConexaoViva[ixcId] > 120000)){
+    tarefas.push((async () => {
+      const k = await cfgIxc(); if(!k.proxyUrl) return;
+      const r = await chamarIXC(k, 'radusuarios', { qtype:'radusuarios.id_cliente', query:ixcId, oper:'=', rp:'20' });
+      const logs = loginsDoCli(cli);
+      (r?.registros || []).forEach(x => {
+        const l = logs.find(y => String(y.ixcId) === String(x.id)); if(!l) return;
+        l.online = String(x.online||'').toUpperCase() === 'S';
+        l.ip = x.ip || l.ip; l.mac = x.mac || x.mac_address || l.mac;
+        l.ultimaConexaoIni = _ixcHoraOk(x.ultima_conexao_inicial) || l.ultimaConexaoIni;
+        l.ultimaConexaoFim = _ixcHoraOk(x.ultima_conexao_final) || l.ultimaConexaoFim;
+      });
+      _cliConexaoViva[ixcId] = Date.now();
+    })().catch(e => console.warn('[ficha] conexão:', e)));
+  }
+  // faturas (mesmo cache da aba Financeiro da janela do cliente)
+  if(ixcId && (force || !_ixcFinCache[ixcId] || Date.now() - _ixcFinCache[ixcId].quando > 300000)){
+    tarefas.push((async () => {
+      const k = await cfgIxc(); if(!k.proxyUrl) throw new Error('Integração IXC não configurada.');
+      const resp = await chamarIXC(k, 'fn_areceber', { qtype:'fn_areceber.id_cliente', query:ixcId, oper:'=', rp:'500', sortname:'fn_areceber.data_vencimento', sortorder:'desc' });
+      _ixcFinCache[ixcId] = { registros: resp?.registros || [], quando: Date.now() };
+    })().catch(e => { _ixcFinCache['erro:'+ixcId] = String(e.message||e); }));
+  }
+  // equipamentos em comodato
+  if(cli.id && (force || !_cliComodatoCache[cli.id])){
+    tarefas.push((async () => {
+      const { data, error } = await sbClient.from('campo_comodato').select('id, serial, mac, modelo, status, campo_estoque(nome, categoria)').eq('cliente_id', cli.id).eq('status','ativo');
+      if(error) throw error;
+      _cliComodatoCache[cli.id] = { itens: data || [], quando: Date.now() };
+    })().catch(e => { _cliComodatoCache[cli.id] = { itens: [], erro: String(e.message||e) }; }));
+  }
+  if(!tarefas.length) return;
+  await Promise.all(tarefas);
+  // ainda é a mesma ficha aberta? (compara o cliente, não a posição)
+  const aberto = _cliFichaIdx != null ? _cliCache('sf_clientes')[_cliFichaIdx] : null;
+  if(aberto && (aberto === cli || (aberto.id != null && aberto.id === cli.id))){ cliRenderFicha(); renderClientesSoTabela(); }
+}
+// re-render leve depois da conexão ao vivo (não mexe na ficha de novo)
+function renderClientesSoTabela(){ const f = _cliFichaIdx; _cliFichaIdx = null; renderClientes(); _cliFichaIdx = f;
+  document.querySelectorAll('#cli-tbody .cl-row').forEach(tr => tr.classList.toggle('sel', +tr.dataset.idx === f)); }
+
+function cliRenderFicha(){
+  const el = document.getElementById('cli-ficha');
+  const c = _cliCache('sf_clientes')[_cliFichaIdx];
+  if(!el || !c){ cliFecharFicha(); return; }
+  // a sincronização redesenha a ficha: a mensagem que está sendo escrita fica
+  const waTxt = _cliWaAberto ? document.getElementById('clf-wa-txt')?.value : null;
+  const i = _cliInfo(c);
+  const E = _fxEsc;
+  const ln = (r, v) => v ? `<div class="clf-ln"><span>${r}</span><b>${v}</b></div>` : '';
+  const datas = i.ctrs.map(x => x.dataAtivacao).filter(Boolean).sort();
+  const desde = c.dataCadastroIxc || datas[0] || '';
+  const acesso = i.ctr ? rotuloAcessoIXC(i.ctr.statusAcesso) : '';
+  const wa = c.whatsapp || c.tel1 || '';
+  const sincEm = parseInt(localStorage.getItem(IXC_LAST_SYNC_KEY)||'0', 10);
+  const todosCtr = _cliCache('sf_clientes_contratos');
+
+  // contratos: vivos primeiro
+  const ordemCtr = [...i.ctrs].sort((a,b) => (a===i.ctr ? -1 : b===i.ctr ? 1 : 0) || String(b.dataAtivacao||'').localeCompare(String(a.dataAtivacao||'')));
+  const ctrHtml = ordemCtr.length ? ordemCtr.map(x => {
+    const st = calcStatusContrato(x.statusContrato, x.statusAcesso);
+    const tom = CLI_TOM[st] || 'in';
+    const fimFid = x.dataExpiracao && x.dataExpiracao >= hoje() ? fmtData(x.dataExpiracao) : '';
+    return `<div class="clf-ctr">
+      <div class="clf-ctr-h"><b>${E(x.plano||'Contrato')}</b>${x.velocidadeMbps && !/\d/.test(x.plano||'') ? `<span class="cl-pill k-ng">${_cliVel(x.velocidadeMbps)}</span>`:''}
+        <span class="cl-pill k-${tom}">${E(st)}</span>${_ctrAcaoDesbloqueio(x, todosCtr.indexOf(x))}</div>
+      ${ln('Mensalidade', x.valor ? brl(x.valor, true) : '')}
+      ${ln('Acesso', E(rotuloAcessoIXC(x.statusAcesso)))}
+      ${ln('Ativado em', x.dataAtivacao ? fmtData(x.dataAtivacao) : '')}
+      ${ln('Pago até', x.pagoAte ? fmtData(x.pagoAte) : '')}
+      ${ln('Fidelidade até', fimFid)}
+      ${ln('Contrato no IXC', x.ixcId ? '#'+E(x.ixcId) : '')}
+    </div>`;
+  }).join('') : '<div class="clf-vazio">Nenhum contrato vinculado.</div>';
+
+  const vivo = c.ixcId && _cliConexaoViva[String(c.ixcId)];
+  const conHtml = i.logs.length ? i.logs.map(l => `<div class="clf-ctr">
+      <div class="clf-ctr-h"><b class="td-mono">${E(l.login||'—')}</b><span class="cl-pill ${l.online?'k-ok':'k-in'}"><span class="cl-dot${l.online?' on':''}"></span>${l.online?'Online':'Offline'}</span></div>
+      ${ln(l.online ? 'Conectado desde' : 'Última conexão', E(_cliQuando(l.online ? l.ultimaConexaoIni : (l.ultimaConexaoFim || l.ultimaConexaoIni))))}
+      ${ln('IP', l.ip ? `<span class="td-mono">${E(l.ip)}</span>` : '')}
+      ${ln('MAC', l.mac ? `<span class="td-mono">${E(l.mac)}</span>` : '')}
+      ${ln('Wi-Fi', E(l.ssid||''))}
+      ${ln('Autenticação', E([l.autenticacao, l.tipoConexao].filter(Boolean).join(' · ')))}
+    </div>`).join('') + `<div class="clf-nota">${vivo ? 'Consultado no IXC agora.' : (c.ixcId ? '<span class="diag-spinner"></span> Consultando o IXC…' : '')}</div>`
+    : '<div class="clf-vazio">Nenhum login de internet.</div>';
+
+  // financeiro do IXC
+  let finHtml;
+  const fin = c.ixcId ? _ixcFinCache[String(c.ixcId)] : null;
+  const finErro = c.ixcId ? _ixcFinCache['erro:'+String(c.ixcId)] : null;
+  if(!c.ixcId) finHtml = '<div class="clf-vazio">Cliente fora do IXC: sem faturas para consultar.</div>';
+  else if(!fin && finErro) finHtml = `<div class="clf-vazio">Não consegui consultar o IXC: ${E(finErro)}</div>`;
+  else if(!fin) finHtml = '<div class="clf-vazio"><span class="diag-spinner"></span> Buscando faturas no IXC…</div>';
+  else {
+    const regs = fin.registros, hj = hoje();
+    const abertas = regs.filter(r => ['A','P'].includes(String(r.status||'').toUpperCase()));
+    const venc = abertas.filter(r => String(r.data_vencimento||'').slice(0,10) < hj);
+    const soma = l => l.reduce((s,r) => s + _abertoIXC(r), 0);
+    const prox = abertas.filter(r => String(r.data_vencimento||'').slice(0,10) >= hj).sort((a,b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento)))[0];
+    const pagas = regs.filter(r => String(r.status||'').toUpperCase()==='R').sort((a,b) => String(b.pagamento_data||b.data_vencimento||'').localeCompare(String(a.pagamento_data||a.data_vencimento||'')));
+    const ult = pagas[0];
+    const lista = [...venc, ...abertas.filter(r => !venc.includes(r)), ...regs.filter(r => !abertas.includes(r))].slice(0, 6);
+    finHtml = `<div class="clf-resumo">
+        <div><span>Em aberto</span><b>${abertas.length ? brl(soma(abertas), true) : '—'}</b><small>${abertas.length} fatura${abertas.length!==1?'s':''}</small></div>
+        <div class="${venc.length?'ruim':''}"><span>Vencidas</span><b>${venc.length ? brl(soma(venc), true) : 'nenhuma'}</b><small>${venc.length ? venc.length+' fatura'+(venc.length!==1?'s':'') : 'em dia'}</small></div>
+        <div><span>Próximo vencimento</span><b>${prox ? E(_fmtDataIXC(prox.data_vencimento)) : '—'}</b><small>${prox ? brl(_abertoIXC(prox), true) : ''}</small></div>
+        <div><span>Último pagamento</span><b>${ult ? E(_fmtDataIXC(ult.pagamento_data || ult.data_vencimento)) : '—'}</b><small>${ult ? brl(_pagoIXC(ult), true) : ''}</small></div>
+      </div>
+      ${lista.length ? lista.map(r => { const s = _statusFaturaIXC(r); const aberta = ['A','P'].includes(String(r.status||'').toUpperCase());
+        const tom = {vencida:'bl', aberta:'at', recebida:'ok', parcial:'ng'}[s.k] || 'in';
+        const fid = String(r.id||'').replace(/\D/g,'');
+        return `<div class="clf-fat"><span>${E(_fmtDataIXC(r.data_vencimento))}</span><span class="td-mono">${brl(aberta ? _abertoIXC(r) : (s.k==='recebida' ? _pagoIXC(r) : _numIXC(r.valor)), true)}</span>
+          <span class="cl-pill k-${tom}">${E(s.txt)}</span>
+          ${aberta && fid ? `<span class="clf-fat-ac"><button class="clf-link" onclick="fatIxcBoleto('${fid}')">Boleto</button><button class="clf-link" onclick="fatIxcPix('${fid}')">PIX</button></span>` : '<span class="clf-fat-ac"></span>'}</div>`; }).join('')
+        : '<div class="clf-vazio">Nenhuma fatura no IXC.</div>'}`;
+  }
+
+  const com = c.id ? _cliComodatoCache[c.id] : null;
+  const comHtml = !com ? '<div class="clf-vazio"><span class="diag-spinner"></span> Carregando…</div>'
+    : com.erro ? `<div class="clf-vazio">Não consegui carregar: ${E(com.erro)}</div>`
+    : com.itens.length ? com.itens.map(e => `<div class="clf-ln"><span>${E(e.campo_estoque?.categoria || 'Equipamento')}</span><b>${E([e.campo_estoque?.nome, e.modelo].filter(Boolean).join(' · '))}${e.serial?`<br><span class="td-mono">${E(e.serial)}</span>`:''}</b></div>`).join('')
+    : '<div class="clf-vazio">Nenhum equipamento em comodato.</div>';
+
+  el.innerHTML = `
+    <div class="clf-h">
+      <div class="clf-top"><div class="cl-av k-${i.tom}">${E(_cliIni(c.nome))}</div>
+        <div style="min-width:0;flex:1"><h3 class="clf-nome">${E(c.nome||'—')}</h3>
+          <div class="cl-doc">${E([c.cnpj, c.ixcId ? 'IXC #'+c.ixcId : ''].filter(Boolean).join(' · '))}</div>
+          ${desde ? `<div class="cl-sub" style="max-width:none">Cliente desde ${fmtData(desde)}</div>` : ''}</div>
+        <button class="clf-x" title="Fechar (Esc)" onclick="cliFecharFicha()">${CLI_IC.x}</button></div>
+      <div class="clf-pills">${i.status ? `<span class="cl-pill k-${i.tom}">${E(i.status)}</span>` : ''}
+        ${acesso && acesso !== i.status ? `<span class="cl-pill k-${CLI_TOM[acesso] || (acesso==='Ativo'?'ok':'in')}">Acesso: ${E(acesso)}</span>` : ''}
+        ${i.logs.length ? `<span class="cl-pill ${i.online?'k-ok':'k-in'}"><span class="cl-dot${i.online?' on':''}"></span>${i.online?'Online':'Offline'}</span>` : ''}</div>
+      <div class="clf-acts">
+        ${wa ? `<button class="clf-ab wa" onclick="cliFichaWa()">${CLI_IC.wa}WhatsApp</button>` : ''}
+        <button class="clf-ab" onclick="asnAbrirCliente(${_cliFichaIdx})">${CLI_IC.asn}Assinatura</button>
+        <button class="clf-ab" onclick="abrirLiberarMoviApp(${_cliFichaIdx})">${CLI_IC.app}MoviApp</button>
+        ${i.logs.length ? `<button class="clf-ab" onclick="cliFichaModal('diagnostico')">${CLI_IC.diag}Diagnóstico</button>` : ''}
+        <button class="clf-ab" onclick="cliFichaModal()">${CLI_IC.ed}Editar</button>
+      </div>
+      <div class="clf-wa" id="clf-wa" ${_cliWaAberto ? '' : 'hidden'}>
+        <textarea id="clf-wa-txt" rows="3" placeholder="Mensagem para ${E(String(c.nome||'').split(' ')[0])}…">Olá ${E(String(c.nome||'').split(' ')[0])}! </textarea>
+        <div class="clf-wa-p"><span class="cl-sub" style="max-width:none">Para ${E(_cliFone(wa))} · sai pelo MoviTalk e a resposta cai na conversa dele.</span>
+          <button class="btn btn-primary" id="clf-wa-btn" onclick="cliFichaWaEnviar()">Enviar pelo MoviTalk</button></div>
+      </div>
+    </div>
+    <div class="clf-corpo">
+      <section class="clf-card"><h4>Contrato${i.ctrs.length>1?'s ('+i.ctrs.length+')':''}</h4>${ctrHtml}</section>
+      <section class="clf-card"><h4>Conexão</h4>${conHtml}</section>
+      <section class="clf-card"><h4>Financeiro no IXC ${c.ixcId ? `<button class="clf-link" onclick="cliFichaModal('financeiro')">Ver todas</button>` : ''}</h4>${finHtml}</section>
+      <div class="clf-grid2">
+        <section class="clf-card"><h4>Contato</h4>
+          ${ln('WhatsApp', E(_cliFone(c.whatsapp)))}${ln('Celular', c.tel1 && c.tel1 !== c.whatsapp ? E(_cliFone(c.tel1)) : '')}
+          ${ln('Telefone', E(_cliFone(c.telResidencial && c.telResidencial !== c.tel1 ? c.telResidencial : (c.tel2 && c.tel2 !== c.tel1 ? c.tel2 : ''))))}
+          ${ln('E-mail', E(c.email||''))}${!(c.whatsapp||c.tel1||c.email) ? '<div class="clf-vazio">Sem contato no cadastro.</div>' : ''}</section>
+        <section class="clf-card"><h4>Endereço <button class="clf-link" onclick="cliFichaMapa()">${CLI_IC.pin.replace('<svg','<svg width="12" height="12"')} Mapa</button></h4>
+          ${ln('Rua', E([c.end, c.numero].filter(Boolean).join(', ')))}${ln('Complemento', E(c.complemento||''))}
+          ${ln('Bairro', E(c.bairro||''))}${ln('Cidade', E([i.cidade, i.uf].filter(Boolean).join(' / ')))}
+          ${ln('CEP', E(c.cep||''))}${ln('Referência', E(c.referencia||''))}</section>
+      </div>
+      <section class="clf-card"><h4>Equipamentos em comodato</h4>${comHtml}</section>
+      ${c.obs ? `<section class="clf-card"><h4>Observações</h4><div class="clf-obs">${E(c.obs)}</div></section>` : ''}
+      <div class="clf-nota">${sincEm ? 'Cadastro, contratos e logins sincronizados com o IXC '+_cliQuando(new Date(sincEm - new Date().getTimezoneOffset()*60000).toISOString().replace('T',' ')) + '.' : ''}</div>
+    </div>`;
+  if(waTxt != null){ const ta = document.getElementById('clf-wa-txt'); if(ta) ta.value = waTxt; }
+}
+
 function renderCadastro(tipo){
+  if(tipo==='clientes') return renderClientes();
   const isCli=tipo==='clientes';
   const key='sf_'+tipo;
   const lista=gd(key);
@@ -13290,16 +13876,17 @@ function exportarCadastroCSV(tipo){
   const l=gd('sf_'+tipo);if(!l.length){showToast('Sem dados.',true);return;}
   const isCliCSV = tipo==='clientes';
   const h='Nome;Razão Social;CNPJ;IE;Contato;Tel1;Tel2;Email;Site;Endereço;Bairro;CEP;Cidade;Data Cad.;Obs'
-    +(isCliCSV?';ID IXC;Status Contrato;Status Acesso;Status Geral;Qtd Contratos':'');
+    +(isCliCSV?';UF;ID IXC;Status Contrato;Status Acesso;Status Geral;Qtd Contratos;Plano;Mensalidade;Pago até;Login;Online;Cliente no IXC desde':'');
+  const limpa=v=>String(v==null?'':v).replace(/[;\r\n]+/g,' ');
   const r=l.map(i=>{
-    const base=[i.nome,i.razao,i.cnpj,i.ie,i.contato,i.tel1,i.tel2,i.email,i.site,i.end,i.bairro,i.cep,i.cidade,i.datacad,(i.obs||'').replace(/;/g,' ')];
+    const base=[i.nome,i.razao,i.cnpj,i.ie,i.contato,i.tel1,i.tel2,i.email,i.site,i.end,i.bairro,i.cep,isCliCSV?(cidadeNomeCli(i)||i.cidade):i.cidade,i.datacad,i.obs];
     if(isCliCSV){
-      const sca=statusContratoAcessoDe(i);
-      const legacy={'A':'Ativo','S':'Ativo','D':'Cancelado','CM':'Pré-contrato','AB':'Pré-contrato','I':'Inativo','N':'Negativado','PC':'Pré-contrato','DS':'Cancelado'};
-      const geral=i.statusContrato||legacy[i.ixcStatus]||(i.origem!=='ixc'?(i.ativo===false?'Inativo':'Ativo'):'');
-      base.push(i.ixcId||'', sca?sca.contrato:'', sca?sca.acesso:'', geral, sca?sca.nContratos:0);
+      const inf=_cliInfo(i);
+      const sca=statusContratoAcessoDe(i, inf.ctrs);
+      base.push(inf.uf, i.ixcId||'', sca?sca.contrato:'', sca?sca.acesso:'', inf.status||'', sca?sca.nContratos:0,
+        inf.plano, inf.valor?String(inf.valor).replace('.',','):'', inf.ctr?.pagoAte||'', inf.log?.login||'', inf.logs.length?(inf.online?'sim':'não'):'', i.dataCadastroIxc||'');
     }
-    return base.join(';');
+    return base.map(limpa).join(';');
   });
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));
@@ -14213,6 +14800,13 @@ function abrirModalCliente(idx=null){
     resyncBtn.style.display = 'none';
   }
 
+  // O IXC guarda o CÓDIGO da cidade e da UF (1161, 25): o nome aparece embaixo
+  const _cidNome = document.getElementById('cli-cidade-nome');
+  if(_cidNome){
+    const n = cidadeNomeCli(cli), u = ufSiglaCli(cli);
+    _cidNome.textContent = /^\d+$/.test(String(cli.cidade||'').trim()) && n ? n + (u ? ' / '+u : '') : '';
+  }
+
   // Pré-render Contratos / Logins / Financeiro
   renderCliContratos(cli);
   renderCliLogins(cli);
@@ -14265,13 +14859,15 @@ function renderCliContratos(cli){
     'DS':{txt:'Desistiu',bg:'rgba(95,94,90,0.15)',cor:'#5F5E5A'},
     'PC':{txt:'Pré-contrato',bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
   };
-  const statusAcessoMap = {
-    'A' :{txt:'Ativo',             bg:'rgba(99,153,34,0.15)', cor:'#3C9D23'},
-    'D' :{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.15)', cor:'#D00000'},
-    'DM':{txt:'Bloqueio Manual',   bg:'rgba(194,59,42,0.15)', cor:'#D00000'},
-    'FA':{txt:'Bloqueio Automático',bg:'rgba(232,109,33,0.15)',cor:'#FF8C2E'},
-    'AA':{txt:'Ag. Assinatura',    bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
+  const _corAcesso = {
+    'Ativo':{bg:'rgba(99,153,34,0.15)',cor:'#3C9D23'},
+    'Bloqueio Manual':{bg:'rgba(194,59,42,0.15)',cor:'#D00000'},
+    'Bloqueio Automático':{bg:'rgba(232,109,33,0.15)',cor:'#FF8C2E'},
+    'Financeiro em Atraso':{bg:'rgba(232,109,33,0.15)',cor:'#FF8C2E'},
+    'Ag. Assinatura':{bg:'rgba(186,117,23,0.15)',cor:'#C40000'},
   };
+  const statusAcessoMap = Object.fromEntries(Object.entries(IXC_ACESSO).map(([k,txt]) =>
+    [k, {txt, ...(_corAcesso[txt] || {bg:'rgba(95,94,90,0.15)',cor:'#5F5E5A'})}]));
   function pill(s, map){ const m=map[s]||{txt:s||'—',bg:'rgba(95,94,90,0.15)',cor:'#5F5E5A'}; return `<span class="cli-status-pill" style="background:${m.bg};color:${m.cor}">${m.txt}</span>`; }
   target.innerHTML = `
     <div style="display:flex;justify-content:flex-end;padding:0 0 10px">
@@ -14376,7 +14972,8 @@ function renderCliLogins(cli){
 //   A  292  contrato A          → ativo
 //   CM   34  contrato A ou N     → bloqueio manual (contrato vivo)
 //   D  1753  contrato I, N ou D  → DESATIVADO, contrato encerrado
-//   CA    3  contrato A          → cancelado
+//   CA    3  contrato A          → bloqueio automático (guia da API do IXC;
+//                                   antes estava anotado como "cancelado")
 //   AA    1  contrato P          → aguardando assinatura
 // Atenção: 'D' NÃO é bloqueio. Nunca aparece em contrato ativo.
 const DM_ROTULO = {
@@ -14385,7 +14982,7 @@ const DM_ROTULO = {
   'FA':'Financeiro em atraso',
   'BL':'Bloqueio automático',
   'D' :'Desativado', 'DM':'Desativado',
-  'CA':'Cancelado',
+  'CA':'Bloqueio automático',
   'AA':'Aguardando assinatura',
 };
 // Acesso cortado com contrato ainda vivo — só aqui faz sentido desbloquear.
@@ -15957,7 +16554,10 @@ function showToast(msg,err=false){
   // preservando um "<" solto de comparação no texto.
   const limpo=String(msg==null?'':msg).replace(/<\/?(span|b|i|em|strong|div|br|small)\b[^>]*>/gi,'');
   document.getElementById('toast-msg').textContent=limpo;
-  t.style.background=err?'var(--danger)':'var(--text)';
+  // cor pela classe, não no style: o fundo fixo em var(--text) virava quase
+  // branco no modo escuro, com o texto branco por cima — o aviso sumia
+  t.style.background='';
+  t.classList.toggle('erro',!!err);
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
@@ -20494,17 +21094,38 @@ function _ixcCoord(v){
 }
 
 // Calcula label legível do status do CONTRATO combinando status do contrato + status de acesso (internet).
+/* STATUS DE ACESSO do contrato no IXC (cliente_contrato.status_internet).
+   Um mapa só para o arquivo inteiro: antes eram três, e discordavam — o CM
+   (bloqueio manual, 39 contratos) virava "Bloqueio Automático" num lugar e
+   "Ativo" no status do cliente; o CA (bloqueio automático) virava "Ativo" ou
+   "Cancelado"; o D (contrato DESATIVADO, 1.760) virava "Bloqueio Manual".
+   Códigos do guia da API do IXC: A ativo · CM bloqueio manual · CA bloqueio
+   automático · FA financeiro em atraso · AA aguardando assinatura ·
+   D desativado · DE data expirada. Os demais são de versões antigas. */
+const IXC_ACESSO = {
+  'A':'Ativo', '':'Ativo',
+  'CM':'Bloqueio Manual', 'CA':'Bloqueio Automático',
+  'FA':'Financeiro em Atraso', 'AA':'Ag. Assinatura',
+  'D':'Desativado', 'DE':'Data Expirada',
+  'S':'Bloqueio Manual', 'SU':'Bloqueio Manual', 'B':'Bloqueio Manual',
+  'BL':'Bloqueio Automático', 'DM':'Desativado',
+};
+function rotuloAcessoIXC(cod){ const c=String(cod||'').toUpperCase(); return IXC_ACESSO[c] || c || '—'; }
+
 function calcStatusContrato(statusContrato, statusAcesso){
   const sc = (statusContrato||'').toUpperCase();
   const sa = (statusAcesso||'').toUpperCase();
   if(sc === 'D' || sc === 'DS' || sc === 'C' || sc === 'EC') return 'Cancelado';
   if(sc === 'N') return 'Negativado';
   if(sc === 'I') return 'Inativo';
-  if(sc === 'PC' || sc === 'CM' || sc === 'AB') return 'Pré-contrato';
+  if(sc === 'P' || sc === 'PC' || sc === 'CM' || sc === 'AB') return 'Pré-contrato';
   if(sc === 'A' || sc === 'AT'){
-    if(sa === 'S'  || sa === 'SU') return 'Bloqueio Manual';   // Suspenso manual
-    if(sa === 'D'  || sa === 'DM') return 'Bloqueio Manual';   // Desativado manual
-    if(sa === 'FA' || sa === 'BL') return 'Bloqueio Automático'; // Financeiro/auto
+    if(['CM','S','SU','B'].includes(sa)) return 'Bloqueio Manual';
+    // acesso desativado com contrato vivo: cortado, como um bloqueio manual
+    if(sa === 'D'  || sa === 'DM') return 'Bloqueio Manual';
+    if(sa === 'CA' || sa === 'BL') return 'Bloqueio Automático';
+    // FA: o acesso pode seguir liberado — atraso, não bloqueio
+    if(sa === 'FA') return 'Financeiro em Atraso';
     if(sa === 'AA') return 'Aguardando Assinatura';
     if(sa === 'A'  || sa === '')   return 'Ativo';
     return 'Ativo';
@@ -20517,16 +21138,15 @@ function calcStatusContrato(statusContrato, statusAcesso){
 // Resolve os DOIS status do cliente (IXC trabalha com Status do CONTRATO e Status de ACESSO)
 // Usa o contrato "principal": o primeiro Ativo; senão, o primeiro da lista.
 // Retorna null se o cliente não tem contratos espelhados.
-function statusContratoAcessoDe(cli){
-  const todos = gd('sf_clientes_contratos');
-  const ctrs = todos.filter(c => (cli.id && c.clienteId==cli.id) || (cli.ixcId && c.ixcClienteId==cli.ixcId));
+function statusContratoAcessoDe(cli, ctrsDoCliente){
+  const ctrs = ctrsDoCliente || gd('sf_clientes_contratos').filter(c => (cli.id && c.clienteId==cli.id) || (cli.ixcId && c.ixcClienteId==cli.ixcId));
   if(!ctrs.length) return null;
   const principal = ctrs.find(c => String(c.statusContrato||'').toUpperCase()==='A') || ctrs[0];
   const mapC = {'A':'Ativo','AT':'Ativo','D':'Cancelado','DS':'Desistiu','C':'Cancelado','EC':'Cancelado','N':'Negativado','I':'Inativo','PC':'Pré-contrato','CM':'Em montagem','AB':'Aberto','S':'Ativo'};
   // FA = Financeiro em Atraso: o acesso ainda pode estar liberado. Tratar como
   // bloqueio faria o bot dizer "sua internet está bloqueada" para quem está
   // navegando normalmente.
-  const mapA = {'A':'Ativo','':'Ativo','D':'Bloqueio Manual','DM':'Bloqueio Manual','S':'Bloqueio Manual','SU':'Bloqueio Manual','FA':'Financeiro em Atraso','CM':'Bloqueio Automático','BL':'Bloqueio Automático','AA':'Ag. Assinatura'};
+  const mapA = IXC_ACESSO;
   const sc=String(principal.statusContrato||'').toUpperCase();
   const sa=String(principal.statusAcesso||'').toUpperCase();
   return {
@@ -20540,7 +21160,7 @@ function statusContratoAcessoDe(cli){
 function agregarStatusCliente(contratosCliente){
   if(!contratosCliente || !contratosCliente.length) return null;
   const statusList = contratosCliente.map(c => calcStatusContrato(c.statusContrato, c.statusAcesso));
-  const prioridade = ['Ativo','Bloqueio Manual','Bloqueio Automático','Aguardando Assinatura','Pré-contrato','Negativado','Inativo','Cancelado'];
+  const prioridade = ['Ativo','Financeiro em Atraso','Bloqueio Manual','Bloqueio Automático','Aguardando Assinatura','Pré-contrato','Negativado','Inativo','Cancelado'];
   for(const p of prioridade){
     if(statusList.includes(p)) return p;
   }
@@ -20569,6 +21189,18 @@ async function buscarTudoIXC(cfg, endpoint, baseParams={}){
 // Normaliza CPF/CNPJ para comparação (só dígitos)
 function normDoc(s){ return String(s||'').replace(/\D+/g,''); }
 
+// Datas do IXC: 'AAAA-MM-DD' (às vezes com hora) ou '0000-00-00' para vazio.
+// Só passa adiante o que é data de verdade: um valor estranho numa coluna date
+// derrubaria a gravação da sincronização inteira.
+function _ixcDataOk(v){
+  const t = String(v||'').trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(t) && !t.startsWith('0000') ? t.slice(0,10) : null;
+}
+function _ixcHoraOk(v){
+  const t = String(v||'').trim();
+  return /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(t) && !t.startsWith('0000') ? t.slice(0,19) : null;
+}
+
 async function syncIXC(silent){
   if(window._syncIXCRodando) return; // evita sincronizações sobrepostas
   window._syncIXCRodando = true;
@@ -20585,14 +21217,24 @@ async function syncIXC(silent){
   try {
     // Busca paginada de clientes, contratos e logins em paralelo
     const rp = String(cfg.rp||500);
-    const [respCli, respCtr, respLog] = await Promise.all([
+    const [respCli, respCtr, respLog, respPlanos] = await Promise.all([
       buscarTudoIXC(cfg, 'cliente',          { rp, sortname:'id', sortorder:'asc' }),
       buscarTudoIXC(cfg, 'cliente_contrato', { rp, sortname:'id', sortorder:'asc' }).catch(e=>({registros:[],_err:e.message})),
       buscarTudoIXC(cfg, 'radusuarios',      { rp, sortname:'id', sortorder:'asc' }).catch(e=>({registros:[],_err:e.message})),
+      // planos de venda: o contrato guarda só o NÚMERO do plano (id_vd_contrato)
+      buscarTudoIXC(cfg, 'vd_contratos',     { rp, sortname:'id', sortorder:'asc' }).catch(e=>({registros:[],_err:e.message})),
     ]);
     const regCli = respCli.registros || [];
     const regCtr = respCtr.registros || [];
     const regLog = respLog.registros || [];
+    const planosIxc = new Map((respPlanos.registros || []).map(p => [String(p.id), {
+      nome: p.nome || p.descricao || '',
+      valor: _numIXC(p.valor_contrato || p.valor) || null,
+    }]));
+    // Campos que cada tabela do IXC devolveu: se um dado não aparecer na tela,
+    // o console mostra se o IXC desta instalação usa outro nome para ele.
+    [['cliente',regCli],['cliente_contrato',regCtr],['radusuarios',regLog],['vd_contratos',respPlanos.registros||[]]]
+      .forEach(([t,regs]) => { if(regs[0]) console.info('[sync IXC] campos de '+t+':', Object.keys(regs[0]).join(', ')); });
 
     // === 1) Processar CLIENTES ===
     const clientes = gd('sf_clientes');
@@ -20651,6 +21293,7 @@ async function syncIXC(silent){
         ativo: r.ativo === 'S',
         moradia: r.tipo_moradia || '',
         obs: r.obs || '',
+        dataCadastroIxc: _ixcDataOk(r.data_cadastro || r.data_cad || r.data_criacao),
       };
       if(idx!==undefined){
         const existente = clientes[idx];
@@ -20705,10 +21348,13 @@ async function syncIXC(silent){
       const ixcId = String(r.id||'');
       const ixcCliId = String(r.id_cliente||'');
 
-      // Nome do plano: "Descrição auxiliar do plano" > "Descrição auxiliar" > "Descrição" > id do plano
-      const nomePlano = r.descricao_aux_plano_venda || r.descricao_aux || r.descricao || String(r.id_vd_contrato||'');
       // ID numérico do plano de venda (ex: "36" → "500MB")
       const idPlanoVenda = String(r.id_vd_contrato||'');
+      const planoVd = planosIxc.get(idPlanoVenda) || null;
+      // Nome do plano: descrição auxiliar > nome do plano de venda (vd_contratos)
+      // > descrição do contrato > id. Sem o vd_contratos, 9 em cada 10
+      // contratos ficavam com o plano "31", "34"…
+      const nomePlano = r.descricao_aux_plano_venda || planoVd?.nome || r.contrato || r.descricao_aux || r.descricao || idPlanoVenda;
 
       // Extrai velocidade em Mbps do nome do plano (ex: "PROMOÇÃO 500MEGA" → 500, "1GB" → 1000)
       let velocidadeMbps = null;
@@ -20731,10 +21377,14 @@ async function syncIXC(silent){
         statusContrato: r.status || '',
         // status de acesso: A=ativo, S=suspenso(bloqueio manual), FA=bloqueio financeiro, DM=desativado manual, AA=ag.assinatura
         statusAcesso: r.status_internet || r.status_acesso || '',
-        valor: parseFloat(String(r.valor_servico||r.valor||r.mensalidade||'0').replace(',','.')) || null,
+        // o contrato raramente traz valor próprio: cai no valor do plano de venda
+        valor: parseFloat(String(r.valor_servico||r.valor||r.mensalidade||'0').replace(',','.')) || planoVd?.valor || null,
         dataAtivacao: r.data_ativacao && r.data_ativacao !== '0000-00-00' ? r.data_ativacao : null,
         dataRenovacao: r.data_renovacao && r.data_renovacao !== '0000-00-00' ? r.data_renovacao : null,
-        pagoAte: r.pago_ate && r.pago_ate !== '0000-00-00' ? r.pago_ate : null,
+        // o campo do IXC é pago_ate_data — lendo só pago_ate, ficava vazio
+        pagoAte: _ixcDataOk(r.pago_ate_data || r.pago_ate),
+        dataExpiracao: _ixcDataOk(r.data_expiracao),
+        fidelidadeMeses: parseInt(r.tempo_contrato || r.meses_contrato || r.fidelidade, 10) || null,
       };
       const idx = ctrByIxcId.get(ixcId);
       if(idx!==undefined){
@@ -20814,6 +21464,10 @@ async function syncIXC(silent){
         velocidadeMbps,                 // velocidade em Mbps extraída do plano do contrato
         ssid: ssidFinal,
         senhaWifi: senhaFinal,
+        ip: r.ip || r.enderecoip || r.ultimo_ip || '',
+        mac: r.mac || r.mac_address || r.onu_mac || '',
+        ultimaConexaoIni: _ixcHoraOk(r.ultima_conexao_inicial),
+        ultimaConexaoFim: _ixcHoraOk(r.ultima_conexao_final),
       };
       const idx = logByIxcId.get(ixcId);
       let objLogin;
