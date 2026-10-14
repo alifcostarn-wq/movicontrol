@@ -18,8 +18,11 @@
 //                    sistema: movione | movitalk | movifiber | movitec
 //                    evento:  login (entrou com senha) | sessao (abriu já
 //                             conectado) | saida | inatividade
-//   - "listar"    -> {dias?, usuario_id?, sistema?, evento?, limite?}
-//                    só administrador; devolve os acessos e as pessoas.
+//   - "listar"    -> {sistema, dias?, usuario_id?, evento?, limite?}
+//                    cada sistema tem o seu registro: devolve só os acessos
+//                    daquele sistema e as pessoas que aparecem nele. Quem vê:
+//                    MoviOne, moviTec e MoviFiber -> administrador;
+//                    MoviTalk -> administrador ou admin do atendimento.
 // ============================================================================
 
 export const SISTEMAS = ['movione', 'movitalk', 'movifiber', 'movitec'];
@@ -56,8 +59,8 @@ export async function quemEsta(e, req) {
     if (r.ok) u = await r.json();
   } catch { /* cai no erro abaixo */ }
   if (!u || !u.id) throw erro(401, 'Sessão inválida ou expirada.');
-  const p = (await sb(e, `perfis?id=eq.${encodeURIComponent(u.id)}&select=nome,email,perfil`))?.[0] || null;
-  return { id: u.id, email: u.email || p?.email || null, nome: p?.nome || u.email || null, perfil: p?.perfil || null };
+  const p = (await sb(e, `perfis?id=eq.${encodeURIComponent(u.id)}&select=nome,email,perfil,atend_admin`))?.[0] || null;
+  return { id: u.id, email: u.email || p?.email || null, nome: p?.nome || u.email || null, perfil: p?.perfil || null, atendAdmin: !!p?.atend_admin };
 }
 
 const cab = (req, nome) => { const v = req.headers[nome]; return String((Array.isArray(v) ? v[0] : v) || ''); };
@@ -121,22 +124,34 @@ async function registrar(e, req, b) {
   return { ok: true };
 }
 
+// quem pode ver o registro de cada sistema
+export function podeVer(quem, sistema) {
+  if (quem.perfil === 'admin') return true;
+  return sistema === 'movitalk' && quem.atendAdmin;
+}
+
 async function listar(e, req, b) {
+  const sistema = String(b.sistema || '');
+  if (!SISTEMAS.includes(sistema)) throw erro(400, 'Informe o sistema.');
   const quem = await quemEsta(e, req);
-  if (quem.perfil !== 'admin') throw erro(403, 'Só administradores veem o registro de acessos.');
+  if (!podeVer(quem, sistema)) throw erro(403, 'Só administradores veem o registro de acessos.');
   const dias = Math.min(Math.max(parseInt(b.dias, 10) || 7, 1), 365);
   const limite = Math.min(Math.max(parseInt(b.limite, 10) || 500, 1), 2000);
   const desde = new Date(Date.now() - dias * 864e5).toISOString();
+  const periodo = `sistema=eq.${sistema}&criado_em=gte.${encodeURIComponent(desde)}`;
   let q = 'acessos_log?select=id,criado_em,usuario_id,usuario_nome,usuario_email,perfil,sistema,evento,ip,cidade,uf,pais,latitude,longitude,navegador,so,aparelho,user_agent'
-    + `&criado_em=gte.${encodeURIComponent(desde)}&order=criado_em.desc&limit=${limite}`;
+    + `&${periodo}&order=criado_em.desc&limit=${limite}`;
   if (b.usuario_id) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.usuario_id))) throw erro(400, 'Pessoa inválida.');
     q += `&usuario_id=eq.${b.usuario_id}`;
   }
-  if (b.sistema) { if (!SISTEMAS.includes(b.sistema)) throw erro(400, 'Sistema inválido.'); q += `&sistema=eq.${b.sistema}`; }
   if (b.evento) { if (!EVENTOS.includes(b.evento)) throw erro(400, 'Evento inválido.'); q += `&evento=eq.${b.evento}`; }
-  const [acessos, pessoas] = await Promise.all([sb(e, q), sb(e, 'perfis?select=id,nome,email,perfil&order=nome.asc')]);
-  return { ok: true, acessos: acessos || [], pessoas: pessoas || [], dias, limite };
+  // pessoas do filtro: só quem aparece no registro deste sistema, no período
+  const [acessos, gente] = await Promise.all([sb(e, q), sb(e, `acessos_log?select=usuario_id,usuario_nome,usuario_email&${periodo}&order=criado_em.desc&limit=5000`)]);
+  const vistos = new Map();
+  for (const g of gente || []) if (g.usuario_id && !vistos.has(g.usuario_id)) vistos.set(g.usuario_id, { id: g.usuario_id, nome: g.usuario_nome, email: g.usuario_email });
+  const pessoas = [...vistos.values()].sort((a, b) => String(a.nome || a.email).localeCompare(String(b.nome || b.email), 'pt-BR'));
+  return { ok: true, sistema, acessos: acessos || [], pessoas, dias, limite };
 }
 
 export default async function handler(req, res) {

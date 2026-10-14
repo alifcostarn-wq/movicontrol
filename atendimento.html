@@ -4659,6 +4659,13 @@ function registrarAcessoSessao(){
   try{ if(sessionStorage.getItem('talk_acesso_sessao')) return; sessionStorage.setItem('talk_acesso_sessao','1'); }catch(e){}
   registrarAcesso('sessao');
 }
+// Configurações › Acessos: só as entradas do MoviTalk (a tela é a de /acessos-tela.js)
+function renderAcessosTalk(el){
+  if(!window.AcessosTela){ el.innerHTML='<div class="ms-erro">Não consegui carregar a tela de acessos. Recarregue a página.</div>'; return; }
+  AcessosTela.montar(el,{sistema:'movitalk',cartao:true,
+    token:async()=>{ const sb=_sb(); return sb?((await sb.auth.getSession()).data?.session?.access_token||''):''; },
+    escuro:()=>document.body.classList.contains('dark-mode')});
+}
 
 async function sair(){
   if(!confirm('Sair do MoviTalk?')) return;
@@ -10757,6 +10764,7 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='contratos'?'on':''}" data-tab="contratos">✍️ Contratos assinados</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='cadastro'?'on':''}" data-tab="cadastro">🗂 Cadastro do IXC</div>`:''}
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='acessos'?'on':''}" data-tab="acessos">🔐 Acessos</div>`:''}
       </div>`;
     // o editor de fluxo precisa da largura toda: fica FORA da moldura
     // No editor do bot o cabeçalho encolhe: o título ocupava ~45px que fazem
@@ -10795,6 +10803,7 @@ function renderAux(){
     }
     else if(configTab==='contratos' && USUARIO&&USUARIO.admin){ renderContratos(body); }
     else if(configTab==='cadastro' && USUARIO&&USUARIO.admin){ renderCadastroIxc(body); }
+    else if(configTab==='acessos' && USUARIO&&USUARIO.admin){ renderAcessosTalk(body); }
     else {
       body.innerHTML=`<div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>
         ${state.rules.map((r,i)=>`<div class="rule-line"><span class="rule-kw">"${esc(r.kw)}"</span><span class="rule-arrow">→</span><span class="rule-desc">${esc(r.acao)}</span><span class="rule-del" data-i="${i}">✕</span></div>`).join('')}
@@ -12867,6 +12876,7 @@ const VERSAO_INTERVALO = 2*60*1000, VERSAO_FOLGA = 60*1000;
 
 /* o render inicial acontece depois do login, em entrar() */
 </script>
+<script src="/acessos-tela.js" defer></script>
 <!-- a sessão é a mesma do MoviOne: quem trabalha aqui não pode cair pela
      inatividade de lá. O MoviOne confere esta última atividade antes de encerrar. -->
 <script>

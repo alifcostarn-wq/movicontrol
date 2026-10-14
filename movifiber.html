@@ -978,6 +978,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div class="navsec">Gerenciamento</div>
     <div class="nav-i" data-pg="cadastros" onclick="irPg('cadastros')"><span class="ic" data-i="dio"></span> Cadastros</div>
     <div class="nav-i" data-pg="instab" onclick="irPg('instab')"><span class="ic">🔴</span> Instabilidades <span class="badge" id="instab-badge" style="display:none"></span></div>
+    <div class="nav-i" data-pg="acessos" id="nav-acessos" onclick="irPg('acessos')" style="display:none"><span class="ic">🔐</span> Acessos</div>
     <div class="foot">
       <button class="btn ghost sm" style="width:100%" onclick="document.getElementById('imp-proj-file').click()">📂 Importar projeto</button>
       <input type="file" id="imp-proj-file" accept=".json" style="display:none" onchange="importarProjetoArquivo(event)">
@@ -1003,6 +1004,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         </div>
       </div>
       <div id="dashboard-body"></div>
+    </div>
+    <!-- ACESSOS (só administrador): as entradas no MoviFiber -->
+    <div class="pg" id="pg-acessos">
+      <div class="pg-head">
+        <div><h1>🔐 Acessos</h1><p>Quem entrou no MoviFiber, quando e de onde.</p></div>
+      </div>
+      <div id="acs-movifiber"></div>
     </div>
     <!-- INSTABILIDADES -->
     <div class="pg" id="pg-instab">
@@ -2821,6 +2829,7 @@ function irPg(pg){
   if(pg==='dashboard')initDashboard();
   if(pg==='cadastros')initCadastros();
   if(pg==='instab')initInstab();
+  if(pg==='acessos')abrirAcessosMF();
   if(pg==='projetos')renderHome();
 }
 function abrirProjetoSelecionado(){
@@ -9441,6 +9450,14 @@ function registrarAcessoSessao(){
   try{ if(sessionStorage.getItem('mf_acesso_sessao')) return; sessionStorage.setItem('mf_acesso_sessao','1'); }catch(e){}
   registrarAcesso('sessao');
 }
+// Gerenciamento › Acessos: só as entradas do MoviFiber (a tela é a de /acessos-tela.js)
+function abrirAcessosMF(){
+  const el=document.getElementById('acs-movifiber');
+  if(!window.AcessosTela){el.innerHTML='<div class="info-box">Não consegui carregar a tela de acessos. Recarregue a página.</div>';return}
+  AcessosTela.montar(el,{sistema:'movifiber',cartao:true,
+    token:async()=>{const sb=_sbAuth();return sb?((await sb.auth.getSession()).data?.session?.access_token||''):''},
+    escuro:()=>!document.body.classList.contains('tema-claro')});
+}
 async function mfSair(){
   if(!confirm('Sair do MoviFiber?'))return;
   try{await nuvemFlush()}catch(e){}
@@ -9457,6 +9474,9 @@ function mfRenderUsuario(){
 }
 async function mfEntrar(u,comAnimacao){
   USUARIO=u;
+  // o registro de acessos do MoviFiber é só para o administrador
+  const navAcs=document.getElementById('nav-acessos');
+  if(navAcs)navAcs.style.display=(u&&u.perfil==='admin')?'':'none';
   const tela=document.getElementById('tela-login');
   const entrar=()=>{
     tela.style.display='none';
@@ -10252,6 +10272,7 @@ function abrirIncidenteDoMapa(){
 </script>
 
 <!-- o aviso encosta na direita: o rodapé do meio já é do #hint do mapa -->
+<script src="/acessos-tela.js" defer></script>
 <script src="/versao.js" data-app="MoviFiber" data-canto="direita" defer></script>
 <!-- a sessão é a mesma do MoviOne: quem trabalha aqui não pode cair pela
      inatividade de lá. O MoviOne confere esta última atividade antes de encerrar. -->
