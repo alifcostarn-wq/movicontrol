@@ -1957,6 +1957,7 @@ html:has(#auth-screen.visible),html:has(#auth-screen.visible) body{overflow:hidd
 @keyframes au-girar{to{transform:rotate(360deg)}}
 .au-tec{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:7px;font-size:12.5px;color:var(--au-txt3);margin-top:18px}
 #auth-screen .au-tec svg.ic{width:15px;height:15px}
+.au-tec .au-tec-ico{width:18px;height:18px;border-radius:5px;display:block}
 .au-tec a{font-weight:600;color:var(--au-roxo);text-decoration:none}
 .au-tec a:hover{text-decoration:underline}
 .au-voltar{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;margin-bottom:18px;font-size:13px}
@@ -2864,7 +2865,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
       <div class="au-apps">
         <div><img class="au-logo" src="/movione-icon.svg" alt="" width="22" height="22"><span><b>MoviOne</b><small>Financeiro e gestão</small></span></div>
         <div><img class="au-logo" src="/movitalk-icon.svg" alt="" width="22" height="22"><span><b>MoviTalk</b><small>Atendimento WhatsApp</small></span></div>
-        <div><svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span><b>moviTec</b><small>Ordens de serviço</small></span></div>
+        <div><img class="au-logo" src="/movitec-icon.svg" alt="" width="22" height="22"><span><b>moviTec</b><small>Ordens de serviço</small></span></div>
         <div><img class="au-logo" src="/movifiber-icon.svg" alt="" width="22" height="22"><span><b>MoviFiber</b><small>Projetos FTTH</small></span></div>
       </div>
     </div>
@@ -2911,7 +2912,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
         </button>
 
         <div class="au-tec">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          <img class="au-tec-ico" src="/movitec-icon.svg" alt="" width="18" height="18">
           Técnico de campo? <a href="/campo.html">Entre pelo moviTec</a>
         </div>
       </form>
@@ -17051,13 +17052,13 @@ const HUB_ICO={
 const HUB_APPS=[
   { id:'movione',    nome:'MoviOne',    desc:'Financeiro, cobrança, clientes e campo',     cor:'#5056E0', ico:'grade',    logo:'/movione-icon.svg', abre:'painel' },
   { id:'movitalk',   nome:'MoviTalk',   desc:'Atendimento pelo WhatsApp',                  cor:'#00A859', ico:'chat',     logo:'/movitalk-icon.svg', url:'/atendimento.html', pode:u=>u.perfil==='admin'||u.atendimento },
-  { id:'movitec',    nome:'moviTec',    desc:'Chamados e ordens de serviço dos técnicos',  cor:'#004E98', ico:'chave',    abre:'cp-chamados' },
+  { id:'movitec',    nome:'moviTec',    desc:'Chamados e ordens de serviço dos técnicos',  cor:'#004E98', ico:'chave',    logo:'/movitec-icon.svg', abre:'cp-chamados' },
   { id:'movifiber',  nome:'MoviFiber',  desc:'Projetos e viabilidade FTTH',                cor:'#3C9D23', ico:'antena',   logo:'/movifiber-icon.svg', url:'/movifiber.html', pode:u=>u.perfil==='admin'||u.movifiber, semSelo:true },
   { id:'roteadores', nome:'Roteadores', desc:'Equipamentos dos clientes (TR-069)',         cor:'#FF8C2E', ico:'roteador', abre:'roteadores', pode:u=>u.perfil==='admin'||u.roteadores },
   { id:'moviapp',    nome:'MoviApp',    desc:'App do assinante (abre como o cliente vê)',   cor:'#7B4FC7', ico:'celular',  url:'/moviapp.html' },
 ];
 const hubSvg=(n,cls)=>`<svg class="ic${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true">${HUB_ICO[n]}</svg>`;
-// o logo do sistema quando ele tem um (MoviOne, MoviTalk, MoviFiber); senão, o ícone de linha
+// o logo do sistema quando ele tem um (MoviOne, MoviTalk, moviTec, MoviFiber); senão, o ícone de linha
 const hubMarca=a=>a.logo?`<img src="${a.logo}" alt="" width="48" height="48">`:hubSvg(a.ico);
 const hubPode=(a,u)=>!a.pode||!!a.pode(u||{});
 const hubPlural=(n,um,varios)=>n===1?um:n.toLocaleString('pt-BR')+' '+varios;
