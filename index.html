@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoviOne</title>
+<!-- ícone do MoviOne (selo 1 com o rastro de velocidade): a versão simplificada
+     é a da aba, que aparece com 16px; a cheia fica no menu inicial e no celular -->
+<link rel="icon" type="image/svg+xml" href="/movione-favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/movione-icon-32.png">
+<link rel="apple-touch-icon" href="/movione-icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -2012,8 +2017,8 @@ html:has(#hub-screen.visible),html:has(#hub-screen.visible) body{overflow:hidden
 .hub-app:focus-visible{outline:3px solid color-mix(in srgb,var(--c) 55%,transparent);outline-offset:2px}
 .hub-cab{display:flex;align-items:center;gap:12px}
 .hub-ico{width:48px;height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--c);background:color-mix(in srgb,var(--c) 13%,transparent)}
-.hub-ico.hub-logo{background:none;overflow:hidden}
-.hub-ico.hub-logo img{width:100%;height:100%;display:block}
+.hub-ico.com-logo{background:none;overflow:hidden}
+.hub-ico.com-logo img{width:100%;height:100%;display:block}
 .hub-app h3{font-size:17px;font-weight:600;margin:0;color:var(--text)}
 .hub-fora{font-size:11px;color:var(--text3);font-weight:500;margin-left:auto;display:flex;align-items:center;gap:4px;white-space:nowrap}
 #hub-screen .hub-fora svg.ic{width:13px;height:13px}
@@ -2842,7 +2847,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
       <h2>O centro de operações<br>da <em>MoviOn</em>.</h2>
       <p>Clientes, rede, atendimento e financeiro — tudo em um lugar só.</p>
       <div class="au-apps">
-        <div><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span><b>MoviOne</b><small>Financeiro e gestão</small></span></div>
+        <div><img class="au-logo" src="/movione-icon.svg" alt="" width="22" height="22"><span><b>MoviOne</b><small>Financeiro e gestão</small></span></div>
         <div><img class="au-logo" src="/movitalk-icon.svg" alt="" width="22" height="22"><span><b>MoviTalk</b><small>Atendimento WhatsApp</small></span></div>
         <div><svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span><b>moviTec</b><small>Ordens de serviço</small></span></div>
         <div><img class="au-logo" src="/movifiber-icon.svg" alt="" width="22" height="22"><span><b>MoviFiber</b><small>Projetos FTTH</small></span></div>
@@ -17028,7 +17033,7 @@ const HUB_ICO={
    sessão é a mesma do MoviOne — o clique derrubaria o login daqui também.
    `abre`: página do MoviOne. `url`: outro sistema, numa aba própria. */
 const HUB_APPS=[
-  { id:'movione',    nome:'MoviOne',    desc:'Financeiro, cobrança, clientes e campo',     cor:'#5056E0', ico:'grade',    abre:'painel' },
+  { id:'movione',    nome:'MoviOne',    desc:'Financeiro, cobrança, clientes e campo',     cor:'#5056E0', ico:'grade',    logo:'/movione-icon.svg', abre:'painel' },
   { id:'movitalk',   nome:'MoviTalk',   desc:'Atendimento pelo WhatsApp',                  cor:'#00A859', ico:'chat',     logo:'/movitalk-icon.svg', url:'/atendimento.html', pode:u=>u.perfil==='admin'||u.atendimento },
   { id:'movitec',    nome:'moviTec',    desc:'Chamados e ordens de serviço dos técnicos',  cor:'#004E98', ico:'chave',    abre:'cp-chamados' },
   { id:'movifiber',  nome:'MoviFiber',  desc:'Projetos e viabilidade FTTH',                cor:'#3C9D23', ico:'antena',   logo:'/movifiber-icon.svg', url:'/movifiber.html', pode:u=>u.perfil==='admin'||u.movifiber, semSelo:true },
@@ -17036,7 +17041,7 @@ const HUB_APPS=[
   { id:'moviapp',    nome:'MoviApp',    desc:'App do assinante (abre como o cliente vê)',   cor:'#7B4FC7', ico:'celular',  url:'/moviapp.html' },
 ];
 const hubSvg=(n,cls)=>`<svg class="ic${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true">${HUB_ICO[n]}</svg>`;
-// o logo do sistema quando ele tem um (MoviTalk, MoviFiber); senão, o ícone de linha
+// o logo do sistema quando ele tem um (MoviOne, MoviTalk, MoviFiber); senão, o ícone de linha
 const hubMarca=a=>a.logo?`<img src="${a.logo}" alt="" width="48" height="48">`:hubSvg(a.ico);
 const hubPode=(a,u)=>!a.pode||!!a.pode(u||{});
 const hubPlural=(n,um,varios)=>n===1?um:n.toLocaleString('pt-BR')+' '+varios;
@@ -17044,7 +17049,7 @@ const hubPlural=(n,um,varios)=>n===1?um:n.toLocaleString('pt-BR')+' '+varios;
 function hubRender(){
   const u=window._usuario||{};
   document.getElementById('hub-grade').innerHTML=HUB_APPS.filter(a=>hubPode(a,u)).map(a=>{
-    const dentro=`<div class="hub-cab"><div class="hub-ico${a.logo?' hub-logo':''}">${hubMarca(a)}</div><h3>${a.nome}</h3>`
+    const dentro=`<div class="hub-cab"><div class="hub-ico${a.logo?' com-logo':''}">${hubMarca(a)}</div><h3>${a.nome}</h3>`
       +(a.url?`<span class="hub-fora" title="Abre em outra aba">${hubSvg('fora')}nova aba</span>`:'')+`</div>
       <div class="hub-d">${a.desc}</div>
       <div class="hub-pe"><span class="hub-sel${a.semSelo?'':' carregando'}" id="hub-sel-${a.id}"></span><span class="hub-abrir"><span>Abrir</span>${hubSvg('seta')}</span></div>`;
