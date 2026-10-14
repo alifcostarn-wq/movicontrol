@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoviFiber — Projetos FTTH (Protótipo v1)</title>
+<!-- ícone do MoviFiber ("fibra no escuro" com o selo F): a versão simplificada
+     é a da aba, que aparece com 16px; a cheia fica no login, no menu e no celular -->
+<link rel="icon" type="image/svg+xml" href="/movifiber-favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/movifiber-icon-32.png">
+<link rel="apple-touch-icon" href="/movifiber-icon-180.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -77,7 +82,7 @@ input:focus,select:focus{border-color:var(--accent)}
 #shell{display:flex;height:100vh}
 #sidebar{width:230px;background:var(--sidebar-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 #sidebar .brand{padding:18px 18px 14px;display:flex;align-items:center;gap:11px}
-#sidebar .brand .dot{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#1A7C4A);display:flex;align-items:center;justify-content:center;font-size:17px}
+#sidebar .brand .brand-ico{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:block}
 #sidebar .brand b{font-size:15px;font-weight:700;display:block}
 #sidebar .brand small{font-size:9px;letter-spacing:2px;color:var(--accent)}
 #sidebar .navsec{font-size:10px;letter-spacing:1.5px;color:var(--text-dim);padding:14px 18px 6px;text-transform:uppercase}
@@ -645,7 +650,9 @@ body.com-inspetor #camadas{right:366px}
 .tag-sangria{background:rgba(255,138,60,.18);color:#FF8A3C;border:1px solid rgba(255,138,60,.4);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;white-space:nowrap}
 .tag-ponta{background:rgba(46,134,255,.18);color:#2E86FF;border:1px solid rgba(46,134,255,.4);border-radius:4px;padding:0 5px;font-size:9.5px;font-weight:700;white-space:nowrap}
 #tela-login{
-  position:fixed;inset:0;z-index:99999;background:#080A0E;
+  /* a tela de entrada é sempre escura: o texto não pode herdar a cor do tema
+     claro (#1B1F27), senão o "Movi" do nome some no fundo */
+  position:fixed;inset:0;z-index:99999;background:#080A0E;color:#E2E0DB;
   display:grid;place-items:center;padding:24px;overflow:hidden;
   /* código de cores ABNT — a sequência real das 12 fibras */
   --f1:#00A651;--f2:#FFD400;--f3:#FFFFFF;--f4:#2E86FF;
@@ -695,6 +702,8 @@ body.com-inspetor #camadas{right:366px}
 @keyframes lg-acender{from{opacity:0;transform:scaleY(0)}to{opacity:.5;transform:none}}
 #tela-login .marca{display:flex;align-items:baseline;gap:9px;margin-bottom:5px}
 #tela-login .marca h1{font-family:'Archivo',sans-serif;font-size:27px;font-weight:700;letter-spacing:-.024em;animation:lg-surgir .6s ease .1s both}
+#tela-login .marca-ico{width:40px;height:40px;border-radius:10px;align-self:center;flex-shrink:0;animation:lg-surgir .6s ease .05s both;
+  box-shadow:0 6px 18px rgba(0,0,0,.35)}
 #tela-login .marca h1 em{font-style:normal;color:var(--accent)}
 #tela-login .selo{font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--lg-luz);
   border:1px solid rgba(95,224,160,.32);padding:2px 6px;border-radius:4px;text-transform:uppercase;animation:lg-surgir .6s ease .2s both}
@@ -736,6 +745,7 @@ body.com-inspetor #camadas{right:366px}
 @media (max-width:520px){
   .login-caixa{padding:30px 22px 24px}
   #tela-login .marca h1{font-size:23px}
+  #tela-login .marca-ico{width:34px;height:34px;border-radius:9px}
   #tela-login .emenda{width:340px;height:340px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -932,7 +942,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 
   <main class="login-caixa">
     <div class="faixa" aria-hidden="true" id="faixa"></div>
-    <div class="marca"><h1>Movi<em>Fiber</em></h1><span class="selo">FTTH</span></div>
+    <div class="marca"><img class="marca-ico" src="/movifiber-icon.svg" alt="" width="40" height="40"><h1>Movi<em>Fiber</em></h1><span class="selo">FTTH</span></div>
     <p class="login-sub">Planejamento e documentação da rede óptica da MoviOn.</p>
 
     <div class="aviso" id="lg-erro" role="alert" aria-live="polite"></div>
@@ -961,7 +971,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 <!-- ================= SHELL ================= -->
 <div id="shell" style="display:none">
   <div id="sidebar">
-    <div class="brand"><div class="dot">⬡</div><div><b>MoviFiber</b><small>FTTH · MOVIONE</small></div></div>
+    <div class="brand"><img class="brand-ico" src="/movifiber-icon.svg" alt="" width="34" height="34"><div><b>MoviFiber</b><small>FTTH · MOVIONE</small></div></div>
     <div class="navsec">Geral</div>
     <div class="nav-i" data-pg="dashboard" onclick="irPg('dashboard')"><span class="ic" data-i="rack"></span> Dashboard</div>
     <div class="nav-i on" data-pg="projetos" onclick="irPg('projetos')"><span class="ic" data-i="area"></span> Meus Projetos</div>
