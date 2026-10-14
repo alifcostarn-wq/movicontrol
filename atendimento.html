@@ -4517,6 +4517,7 @@ async function fazerLogin(ev){
       _lgErro('Seu usuário <b>não tem acesso liberado</b> ao Centro de Atendimento.<br>Peça a um administrador para marcar <b>“Atendimento”</b> no cadastro de usuários do MoviOn.');
       return;
     }
+    registrarAcesso('login');
     await entrar(data.session);
   }catch(e){
     _lgErro('Falha ao entrar: '+e.message);
@@ -4640,8 +4641,28 @@ function renderUsuarioRodape(){
     <button class="sair" onclick="sair()">Sair</button></div>`;
 }
 
+/* REGISTRO DE ACESSOS — quem entrou, quando e de onde (MoviOne › Sistema ›
+   Acessos). O servidor pega o IP e o local; daqui só vão o sistema e o que
+   aconteceu. Nunca atrasa nem impede a entrada: se o registro falhar, segue. */
+async function registrarAcesso(evento, esperar){
+  let token=null;
+  try{ const sb=_sb(); if(sb) token=(await sb.auth.getSession()).data?.session?.access_token||null; }catch(e){}
+  if(!token) return;
+  const envio=fetch('/api/acessos',{method:'POST',keepalive:true,
+    headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+    body:JSON.stringify({acao:'registrar',sistema:'movitalk',evento})}).catch(()=>{});
+  // na saída, espera o registro chegar (até 2,5 s) antes de a sessão acabar
+  if(esperar) await Promise.race([envio,new Promise(r=>setTimeout(r,2500))]);
+}
+// "abriu já conectado": uma vez por aba (o F5 não conta de novo)
+function registrarAcessoSessao(){
+  try{ if(sessionStorage.getItem('talk_acesso_sessao')) return; sessionStorage.setItem('talk_acesso_sessao','1'); }catch(e){}
+  registrarAcesso('sessao');
+}
+
 async function sair(){
   if(!confirm('Sair do MoviTalk?')) return;
+  await registrarAcesso('saida',true);
   try{ const sb=_sb(); if(sb) await sb.auth.signOut(); }catch(e){}
   location.reload();
 }
@@ -12486,7 +12507,7 @@ $('#lg-form').addEventListener('submit', fazerLogin);
     const { data:{ session } } = await sb.auth.getSession();
     if(session){
       const { data:ok } = await sb.rpc('tem_atendimento', { p_id: session.user.id });
-      if(ok===true){ await entrar(session); return; }
+      if(ok===true){ registrarAcessoSessao(); await entrar(session); return; }
       await sb.auth.signOut();
     }
   }catch(e){ /* cai na tela de login */ }

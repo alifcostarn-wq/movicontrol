@@ -901,6 +901,25 @@ const PR_LB = { alta:'🔴 Alta', media:'🟡 Média', baixa:'🟢 Baixa' };
 const PR_CL = { alta:'p-alta', media:'p-media', baixa:'p-baixa' };
 
 /* ---- AUTH ---- */
+/* REGISTRO DE ACESSOS — quem entrou, quando e de onde (MoviOne › Sistema ›
+   Acessos). O servidor pega o IP e o local; daqui só vão o sistema e o que
+   aconteceu. Nunca atrasa nem impede a entrada: se o registro falhar, segue. */
+async function registrarAcesso(evento, esperar){
+  let token=null;
+  try{ if(sb) token=(await sb.auth.getSession()).data?.session?.access_token||null; }catch(e){}
+  if(!token) return;
+  const envio=fetch('/api/acessos',{method:'POST',keepalive:true,
+    headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+    body:JSON.stringify({acao:'registrar',sistema:'movitec',evento})}).catch(()=>{});
+  // na saída, espera o registro chegar (até 2,5 s) antes de a sessão acabar
+  if(esperar) await Promise.race([envio,new Promise(r=>setTimeout(r,2500))]);
+}
+// "abriu já conectado": uma vez por aba (o F5 não conta de novo)
+function registrarAcessoSessao(){
+  try{ if(sessionStorage.getItem('tec_acesso_sessao')) return; sessionStorage.setItem('tec_acesso_sessao','1'); }catch(e){}
+  registrarAcesso('sessao');
+}
+
 async function login(){
   const email=$('l-email').value.trim(), senha=$('l-senha').value;
   const err=$('l-err'); err.classList.remove('show');
@@ -911,10 +930,12 @@ async function login(){
   ld(false);
   if(!tec){ err.textContent='Técnico não cadastrado. Fale com o administrador.'; err.classList.add('show'); await sb.auth.signOut(); return; }
   _tec = tec;
+  registrarAcesso('login');
   entrar();
 }
 
 async function logout(){
+  await registrarAcesso('saida',true);
   await sb.auth.signOut(); _tec=null; _os=[];
   $('ls').classList.remove('hide');
 }
@@ -941,7 +962,7 @@ async function entrar(){
   const { data: { session } } = await sb.auth.getSession();
   if(session){
     const { data: tec } = await sb.from('campo_tecnicos').select('*').eq('user_id', session.user.id).maybeSingle();
-    if(tec){ _tec=tec; await entrar(); return; }
+    if(tec){ _tec=tec; registrarAcessoSessao(); await entrar(); return; }
   }
 })();
 
