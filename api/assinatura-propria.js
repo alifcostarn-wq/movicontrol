@@ -235,8 +235,39 @@ function situacaoContrato(statusContrato, statusAcesso) {
 }
 const PESO_SITUACAO = { 'Ativo': 0, 'Financeiro em Atraso': 1, 'Bloqueio Manual': 2, 'Bloqueio Automático': 2,
   'Aguardando Assinatura': 3, 'Pré-contrato': 4, 'Negativado': 5, 'Inativo': 6, 'Cancelado': 7 };
+/* Velocidade como o IXC escreve no grupo (radgrupos): "300M", "1500k", "1G". */
+function velIxcMbps(txt) {
+  const m = String(txt || '').trim().match(/^([\d.,]+)\s*([kmg])?/i);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(',', '.'));
+  if (!(n > 0)) return null;
+  const u = (m[2] || '').toLowerCase();
+  return u === 'g' ? n * 1000 : u === 'k' ? n / 1000 : u === 'm' ? n : (n >= 1000 ? n / 1000 : n);
+}
+/* O que o IXC diz do contrato para o Termo — as mesmas regras do MoviOne:
+   velocidade do grupo do login, IP fixo (S), equipamento (C comodato /
+   P próprio) e forma de pagamento pela carteira de cobrança. null = o IXC
+   não diz, fica o padrão da tela. */
+function dadosIxcDoContrato(r, { logins = [], grupos = new Map(), carteiras = new Map() } = {}) {
+  const doCtr = logins.filter(l => String(l.ixc_contrato_id || '') === String(r.ixc_id));
+  const log = doCtr.find(l => l.ativo) || doCtr[0] || null;
+  const g = log ? grupos.get(String(log.id_grupo || '')) : null;
+  const car = carteiras.get(String(r.id_carteira_cobranca || ''));
+  const tr = String(car?.tipo_recebimento || '').toLowerCase();
+  const fx = String(log?.fixar_ip || '').toUpperCase(), te = String(log?.tipo_equipamento || '').toUpperCase();
+  return {
+    download_mbps: g ? velIxcMbps(g.download) : null,
+    upload_mbps: g ? velIxcMbps(g.upload) : null,
+    ip: fx === 'S' ? 'Fixo' : (fx === 'N' || fx === 'H') ? 'Variável' : null,
+    equipamento: te === 'C' ? 'Comodato da Contratada' : te === 'P' ? 'Próprio' : null,
+    forma_pagamento: r.cartao_recorrente ? 'Cartão de Crédito'
+      : !tr ? null : tr.startsWith('cart') ? 'Cartão de Crédito' : /d[eé]bito/.test(tr) ? 'Débito Automático' : 'Boleto Bancário',
+    carteira: car?.descricao || null,
+  };
+}
+
 // o principal primeiro; cancelado só entra se for tudo o que o cliente tem
-function contratosParaTermo(linhas) {
+function contratosParaTermo(linhas, apoio) {
   const vistos = new Set();
   const todos = (linhas || []).filter(r => {
     const k = String(r.ixc_id ?? '');
@@ -250,6 +281,7 @@ function contratosParaTermo(linhas) {
     fidelidade_meses: Number(r.fidelidade_meses) || null,
     data_ativacao: r.data_ativacao || null,
     situacao: situacaoContrato(r.status_contrato, r.status_acesso),
+    ...dadosIxcDoContrato(r, apoio),
   })).sort((a, b) => ((PESO_SITUACAO[a.situacao] ?? 8) - (PESO_SITUACAO[b.situacao] ?? 8))
     || String(b.data_ativacao || '').localeCompare(String(a.data_ativacao || '')));
   const vivos = todos.filter(x => x.situacao !== 'Cancelado');
@@ -553,12 +585,22 @@ function soNomeDeLugar(v) {
       const filtroCtr = /^\d+$/.test(ixcCli)
         ? `or=(cliente_id.eq.${alvo.id},ixc_cliente_id.eq.${ixcCli})`
         : `cliente_id=eq.${alvo.id}`;
-      const [cli, mods, equips, ctrs] = await Promise.all([
+      const [cli, mods, equips, ctrs, logs, grupos, carteiras] = await Promise.all([
         sb(`clientes?id=eq.${alvo.id}&select=id,nome,razao,cnpj,ie,endereco,numero,bairro,cidade,uf,cep,cep_full,whatsapp,tel1,ixc_id`),
         sb('modelos_documento?ativo=eq.true&assinavel=eq.true&select=id,nome,categoria,conteudo_html&order=ordem.asc'),
         sb(`campo_comodato?cliente_id=eq.${alvo.id}&status=eq.ativo&select=id,serial,mac,modelo,status,campo_estoque(nome,categoria)`),
-        sb(`clientes_contratos?${filtroCtr}&select=ixc_id,plano,velocidade_mbps,valor,status_contrato,status_acesso,data_ativacao,fidelidade_meses&limit=50`),
+        sb(`clientes_contratos?${filtroCtr}&select=ixc_id,plano,velocidade_mbps,valor,status_contrato,status_acesso,data_ativacao,fidelidade_meses,id_carteira_cobranca,cartao_recorrente&limit=50`),
+        // para o Termo: login do contrato (grupo de velocidade, IP fixo, equipamento),
+        // grupos de velocidade e carteiras de cobrança copiados do IXC
+        sb(`clientes_logins?${filtroCtr}&select=ixc_contrato_id,id_grupo,fixar_ip,tipo_equipamento,ativo&limit=50`),
+        sb('ixc_radgrupos?select=id,download,upload&limit=500'),
+        sb('ixc_carteiras?select=id,descricao,tipo_recebimento&limit=200'),
       ]);
+      const apoio = {
+        logins: logs.ok && Array.isArray(logs.data) ? logs.data : [],
+        grupos: new Map((grupos.ok && Array.isArray(grupos.data) ? grupos.data : []).map(g => [String(g.id), g])),
+        carteiras: new Map((carteiras.ok && Array.isArray(carteiras.data) ? carteiras.data : []).map(c => [String(c.id), c])),
+      };
       const equipamentos = (equips.data || []).map(e => ({
         tipo: e.campo_estoque?.categoria || 'Equipamento',
         nome: e.campo_estoque?.nome || '',
@@ -577,7 +619,7 @@ function soNomeDeLugar(v) {
         modelos: mods.data || [], equipamentos,
         // sem contrato (ou se a consulta falhar) o Termo abre do mesmo jeito,
         // com os campos para preencher à mão
-        contratos: ctrs.ok ? contratosParaTermo(ctrs.data) : [],
+        contratos: ctrs.ok ? contratosParaTermo(ctrs.data, apoio) : [],
       });
     }
 

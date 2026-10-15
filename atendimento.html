@@ -5634,7 +5634,14 @@ function asnPasso2(){
   ASN.ctr = (ASN.contratos || [])[0] || null;
   const ctr = ASN.ctr || {};
   const nCtrs = (ASN.contratos || []).length;
-  const tagIxc = ASN.ctr ? ' <span class="asn-tag-sys">IXC</span>' : '';
+  const tagIxc = ASN.ctr ? asnTagIxc() : '';
+  // IP, equipamento e pagamento: o padrão da tela, trocado pelo que o IXC diz
+  ASN.rev = { ...ASN_REV_PADRAO };
+  if(ctr.ip) ASN.rev.ip = ctr.ip;
+  if(ctr.equipamento) ASN.rev.equip = ctr.equipamento;
+  if(ctr.forma_pagamento) ASN.rev.pagamento = ctr.forma_pagamento;
+  const velDown = ctr.download_mbps || ctr.velocidade_mbps, velUp = ctr.upload_mbps || ctr.velocidade_mbps;
+  const tagVel = ctr.download_mbps ? asnTagIxc('Grupo de velocidade do login no IXC') : (ctr.velocidade_mbps ? asnTagIxc('Tirada do nome do plano') : '');
 
   $('#asnBody').innerHTML = `
     <div class="asn-sub">Confira antes de gerar. O que está marcado como <span class="asn-tag-sys">sistema</span> vem do cadastro e do patrimônio, e <span class="asn-tag-sys">IXC</span> do contrato no IXC.</div>
@@ -5645,20 +5652,21 @@ function asnPasso2(){
     <div class="asn-grid">
       ${nCtrs > 1 ? `<div style="grid-column:1/-1"><label class="asn-lbl" for="asnCtr">Contrato do IXC <span class="asn-tag-sys">${nCtrs} contratos</span></label>
         <select class="asn-inp" id="asnCtr">${ASN.contratos.map(x=>`<option value="${esc(x.ixc_id)}">${esc(asnCtrRotulo(x))}</option>`).join('')}</select></div>` : ''}
-      <div style="grid-column:1/-1"><label class="asn-lbl" for="asnPlano">Plano${tagIxc}</label><input class="asn-inp" id="asnPlano" value="${esc(ctr.plano || (nCtrs ? '' : ASN.c.cliente?.plano) || '')}" placeholder="Nome do plano"></div>
-      <div><label class="asn-lbl" for="asnVel">Velocidade${ctr.velocidade_mbps ? tagIxc : ''}</label><input class="asn-inp" id="asnVel" value="${esc(asnVelTxt(ctr.velocidade_mbps))}" placeholder="ex.: 100 Mbps"></div>
+      <div><label class="asn-lbl" for="asnPlano">Plano${tagIxc}</label><input class="asn-inp" id="asnPlano" value="${esc(ctr.plano || (nCtrs ? '' : ASN.c.cliente?.plano) || '')}" placeholder="Nome do plano"></div>
       <div><label class="asn-lbl" for="asnValor">Mensalidade${ctr.valor ? tagIxc : ''}</label><input class="asn-inp" id="asnValor" value="${esc(asnValorTxt(ctr.valor))}" placeholder="R$ 0,00"></div>
+      <div><label class="asn-lbl" for="asnDown" data-lbl="down">Download${tagVel}</label><input class="asn-inp" id="asnDown" value="${esc(asnVelTxt(velDown))}" placeholder="ex.: 300 Mbps"></div>
+      <div><label class="asn-lbl" for="asnUp" data-lbl="up">Upload${tagVel}</label><input class="asn-inp" id="asnUp" value="${esc(asnVelTxt(velUp))}" placeholder="ex.: 150 Mbps"></div>
       <div><label class="asn-lbl" for="asnNContrato">Nº do contrato${ASN.ctr ? tagIxc : ' (IXC)'}</label><input class="asn-inp" id="asnNContrato" value="${esc(ctr.ixc_id||'')}"></div>
       <div><label class="asn-lbl" for="asnVenc">Vencimento (dia)</label><input class="asn-inp" id="asnVenc" value="15" inputmode="numeric"></div>
       <div><label class="asn-lbl" for="asnPrazo">Prazo (meses)${ctr.fidelidade_meses ? tagIxc : ''}</label><input class="asn-inp" id="asnPrazo" value="${esc(ctr.fidelidade_meses||12)}"></div>
       <div><label class="asn-lbl">Taxa de instalação</label><input class="asn-inp" id="asnTaxa" value="R$ 380,00"></div>
-      <div><label class="asn-lbl">IP</label><div class="asn-radio-row" data-campo="ip"><button data-v="Fixo">Fixo</button><button data-v="Variável" class="on">Variável</button></div></div>
-      <div><label class="asn-lbl">Equipamentos</label><div class="asn-radio-row" data-campo="equip"><button data-v="Próprio">Próprio</button><button data-v="Comodato da Contratada" class="on">Comodato</button></div></div>
-      <div><label class="asn-lbl">Fidelidade</label><div class="asn-radio-row" data-campo="fidelidade"><button data-v="Sim" class="on">Sim</button><button data-v="Não">Não</button></div></div>
-      <div><label class="asn-lbl">Multa rescisória</label><div class="asn-radio-row" data-campo="multa"><button data-v="Sim" class="on">Sim</button><button data-v="Não">Não</button></div></div>
-      <div><label class="asn-lbl">Autoriza mensagens</label><div class="asn-radio-row" data-campo="msg"><button data-v="S" class="on">Sim</button><button data-v="N">Não</button></div></div>
-      <div><label class="asn-lbl">Autoriza cobranças</label><div class="asn-radio-row" data-campo="cobranca"><button data-v="S" class="on">Sim</button><button data-v="N">Não</button></div></div>
-      <div style="grid-column:1/-1"><label class="asn-lbl">Forma de pagamento</label><div class="asn-radio-row" data-campo="pagamento"><button data-v="Boleto Bancário" class="on">Boleto</button><button data-v="Débito Automático">Débito</button><button data-v="Cartão de Crédito">Cartão</button></div></div>
+      <div><label class="asn-lbl" data-lbl="ip">IP${ctr.ip ? asnTagIxc('Login no IXC: IP fixo ou não') : ''}</label>${asnRadios('ip', [['Fixo','Fixo'],['Variável','Variável']])}</div>
+      <div><label class="asn-lbl" data-lbl="equip">Equipamentos${ctr.equipamento ? asnTagIxc('Login no IXC: equipamento próprio ou comodato') : ''}</label>${asnRadios('equip', [['Próprio','Próprio'],['Comodato da Contratada','Comodato']])}</div>
+      <div><label class="asn-lbl">Fidelidade</label>${asnRadios('fidelidade', [['Sim','Sim'],['Não','Não']])}</div>
+      <div><label class="asn-lbl">Multa rescisória</label>${asnRadios('multa', [['Sim','Sim'],['Não','Não']])}</div>
+      <div><label class="asn-lbl">Autoriza mensagens</label>${asnRadios('msg', [['S','Sim'],['N','Não']])}</div>
+      <div><label class="asn-lbl">Autoriza cobranças</label>${asnRadios('cobranca', [['S','Sim'],['N','Não']])}</div>
+      <div style="grid-column:1/-1"><label class="asn-lbl" data-lbl="pag">Forma de pagamento${ctr.forma_pagamento ? asnTagIxc('Carteira de cobrança do contrato no IXC'+(ctr.carteira ? ': '+ctr.carteira : '')) : ''}</label>${asnRadios('pagamento', [['Boleto Bancário','Boleto'],['Débito Automático','Débito'],['Cartão de Crédito','Cartão']])}</div>
       <div><label class="asn-lbl">Pontos de conexão</label><input class="asn-inp" type="number" id="asnPontos" value="1"></div>
       <div><label class="asn-lbl">Qtd. de PCs</label><input class="asn-inp" type="number" id="asnPcs" value="1"></div>
       <div><label class="asn-lbl">Acessos ao roteador</label><input class="asn-inp" type="number" id="asnAcessos" value="1"></div>
@@ -5705,7 +5713,20 @@ function asnPasso2(){
 function asnVelTxt(mbps){
   const n = Number(mbps) || 0;
   if(!n) return '';
-  return n >= 1000 ? (n/1000).toLocaleString('pt-BR')+' Gbps' : n+' Mbps';
+  if(n < 1) return Math.round(n*1000)+' Kbps';   // planos antigos: "550k"
+  return n >= 1000 ? (n/1000).toLocaleString('pt-BR')+' Gbps' : n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })+' Mbps';
+}
+const ASN_REV_PADRAO = { ip:'Variável', equip:'Comodato da Contratada', fidelidade:'Sim', multa:'Sim', msg:'S', cobranca:'S', pagamento:'Boleto Bancário' };
+const asnTagIxc = (titulo) => ' <span class="asn-tag-sys" data-ixc'+(titulo ? ' title="'+esc(titulo)+'"' : '')+'>IXC</span>';
+// põe ou tira a etiqueta IXC de um rótulo (ao trocar de contrato)
+function asnTagEm(lbl, mostrar, titulo){
+  const l = ASN.ov && ASN.ov.querySelector('[data-lbl="'+lbl+'"]');
+  if(!l) return;
+  l.querySelectorAll('.asn-tag-sys[data-ixc]').forEach(t => t.remove());
+  if(mostrar) l.insertAdjacentHTML('beforeend', asnTagIxc(titulo));
+}
+function asnRadios(campo, opcoes){
+  return `<div class="asn-radio-row" data-campo="${campo}">${opcoes.map(([v, r]) => `<button data-v="${esc(v)}"${ASN.rev[campo]===v?' class="on"':''}>${r}</button>`).join('')}</div>`;
 }
 function asnValorTxt(v){
   const n = Number(v);
@@ -5720,10 +5741,21 @@ function asnUsarContrato(ixcId){
   const x = ASN.ctr || {};
   const por = (id, v)=>{ const el=document.getElementById(id); if(el) el.value = v; };
   por('asnPlano', x.plano||'');
-  por('asnVel', asnVelTxt(x.velocidade_mbps));
+  por('asnDown', asnVelTxt(x.download_mbps || x.velocidade_mbps));
+  por('asnUp', asnVelTxt(x.upload_mbps || x.velocidade_mbps));
   por('asnValor', asnValorTxt(x.valor));
   por('asnNContrato', x.ixc_id||'');
   if(x.fidelidade_meses) por('asnPrazo', String(x.fidelidade_meses));
+  if(x.ip) ASN.rev.ip = x.ip;
+  if(x.equipamento) ASN.rev.equip = x.equipamento;
+  if(x.forma_pagamento) ASN.rev.pagamento = x.forma_pagamento;
+  ASN.ov.querySelectorAll('.asn-radio-row').forEach(row => row.querySelectorAll('button').forEach(b => b.classList.toggle('on', ASN.rev[row.dataset.campo] === b.dataset.v)));
+  const tVel = x.download_mbps ? 'Grupo de velocidade do login no IXC' : 'Tirada do nome do plano';
+  asnTagEm('down', !!(x.download_mbps || x.velocidade_mbps), tVel);
+  asnTagEm('up', !!(x.upload_mbps || x.velocidade_mbps), tVel);
+  asnTagEm('ip', !!x.ip, 'Login no IXC: IP fixo ou não');
+  asnTagEm('equip', !!x.equipamento, 'Login no IXC: equipamento próprio ou comodato');
+  asnTagEm('pag', !!x.forma_pagamento, 'Carteira de cobrança do contrato no IXC'+(x.carteira ? ': '+x.carteira : ''));
   asnCarregarVenc();
 }
 /* Dia de vencimento pelos boletos do IXC (o servidor conta o dia mais comum
@@ -5781,7 +5813,8 @@ function asnDadosCliente(){
   const c = ASN.cliente || {};
   const conv = ASN.c;
   const ctr = ASN.ctr || {};
-  const vel = asnVal('asnVel', asnVelTxt(ctr.velocidade_mbps));
+  const down = asnVal('asnDown', asnVelTxt(ctr.download_mbps || ctr.velocidade_mbps));
+  const up = asnVal('asnUp', asnVelTxt(ctr.upload_mbps || ctr.velocidade_mbps));
   return {
     nome: c.nome || conv.clienteVinculado.nome || conv.nome || '',
     cpf: c.cnpj || conv.clienteVinculado.cpf || '', rg: c.ie || '',
@@ -5792,7 +5825,7 @@ function asnDadosCliente(){
     valor: asnVal('asnValor', asnValorTxt(ctr.valor)),
     contrato_numero: asnVal('asnNContrato', ctr.ixc_id||''),
     data_extenso: asnDataExtenso(),
-    banda_maxima: vel, upload: vel, download: vel,
+    banda_maxima: down, upload: up, download: down,
     prazo: asnVal('asnPrazo', String(ctr.fidelidade_meses||12)), vencimento: asnVal('asnVenc','15'), validade: asnVal('asnPrazo', String(ctr.fidelidade_meses||12)),
     taxa_instalacao: asnVal('asnTaxa','R$ 380,00'), taxa_instalacao_extenso: '',
     chk_ip: asnChk(ASN.rev.ip, ['Fixo','Variável']),

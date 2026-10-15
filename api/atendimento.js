@@ -6105,6 +6105,11 @@ function linhaContratoDoIxc(r, clienteIdLocal) {
     // o campo do IXC é pago_ate_data — lendo só pago_ate, ficava vazio
     pago_ate: ixcData(r.pago_ate_data || r.pago_ate),
     data_expiracao: ixcData(r.data_expiracao),
+    // o Termo de Adesão usa (nomes conferidos no catálogo ixc_campos)
+    fidelidade_meses: parseInt(r.fidelidade, 10) || null,
+    id_carteira_cobranca: String(r.id_carteira_cobranca || '') || null,
+    cartao_recorrente: !!String(r.credit_card_recorrente_bandeira_cartao || '').trim(),
+    taxa_instalacao: r.taxa_instalacao == null || r.taxa_instalacao === '' || !Number.isFinite(Number(r.taxa_instalacao)) ? null : Number(r.taxa_instalacao),
   };
 }
 
