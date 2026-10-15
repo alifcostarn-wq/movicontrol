@@ -24391,6 +24391,8 @@ async function syncIXC(silent){
     // o console mostra se o IXC desta instalação usa outro nome para ele.
     [['cliente',regCli],['cliente_contrato',regCtr],['radusuarios',regLog],['vd_contratos',respPlanos.registros||[]]]
       .forEach(([t,regs]) => { if(regs[0]) console.info('[sync IXC] campos de '+t+':', Object.keys(regs[0]).join(', ')); });
+    // ...e fica guardado no banco, para ligar dado novo pelo nome certo
+    _ixcCatalogar(cfg, [['cliente',regCli],['cliente_contrato',regCtr],['radusuarios',regLog],['vd_contratos',respPlanos.registros||[]]]);
 
     // === 1) Processar CLIENTES ===
     const clientes = gd('sf_clientes');
@@ -24737,6 +24739,42 @@ async function syncIXC(silent){
   } finally {
     window._syncIXCRodando = false;
   }
+}
+
+/* Catálogo dos campos do IXC (tabela ixc_campos): o nome de cada campo, em
+   quantos registros vem preenchido e, só para campos de contrato, plano e
+   rede, alguns exemplos curtos. Cada instalação do IXC tem seus nomes — com
+   isso um dado novo é ligado pelo nome que ESTE IXC usa, sem adivinhar.
+   Do cadastro de pessoa (cliente) vão só os nomes, nunca valores. Uma vez por
+   dia; falha aqui nunca atrapalha a sincronização. */
+const IXC_CATALOGO_KEY = 'sf_ixc_catalogo_em';
+const _IXC_CAT_EXEMPLO = /venc|taxa|instal|fidel|multa|fixar|grupo|download|upload|banda|veloc|carteira|cobr|pagam|tipo|cartao|bandeira|recorr|desconto|isent|comodato|plano|valor|prazo|tempo|renov|aviso|bloq|status|ativo|modelo|descri|^id_/i;
+const _IXC_CAT_NUNCA = /senha|token|login|mac|cpf|cnpj|e?mail|fone|telefone|celular|whats|endereco|bairro|cep|razao|fantasia|obs|^ip$|ipv6|lat|long|^rg|nascimento|conta|agencia|chave|pix|hash|key|secret|segredo|convenio|cedente|cartao_num|numero_cartao|card_token|^id_cliente$/i;
+async function _ixcCatalogar(cfg, pares){
+  try{
+    const ult = parseInt(localStorage.getItem(IXC_CATALOGO_KEY)||'0', 10);
+    if(Date.now() - ult < 864e5) return;
+    // tabelas pequenas que a sincronização não traz: grupos de velocidade e carteiras de cobrança
+    const extra = await Promise.all(['radgrupos','fn_carteira_cobranca'].map(t =>
+      chamarIXC(cfg, t, { qtype: t+'.id', query:'0', oper:'>', rp:'200', sortname: t+'.id', sortorder:'asc' })
+        .then(r => [t, r?.registros || []]).catch(() => [t, []])));
+    const linhas = [...pares, ...extra].filter(([, regs]) => regs && regs.length).map(([tabela, regs]) => {
+      const campos = {};
+      const semExemplo = tabela === 'cliente';
+      regs.forEach(r => Object.entries(r || {}).forEach(([k, v]) => {
+        const c = campos[k] || (campos[k] = { preenchidos: 0, exemplos: [] });
+        const txt = v == null ? '' : String(v).trim();
+        if(txt === '' || /^0000-00-00/.test(txt)) return;
+        c.preenchidos++;
+        if(!semExemplo && txt.length <= 30 && c.exemplos.length < 6 && _IXC_CAT_EXEMPLO.test(k) && !_IXC_CAT_NUNCA.test(k) && !c.exemplos.includes(txt)) c.exemplos.push(txt);
+      }));
+      return { tabela, registros: regs.length, campos, atualizado_em: new Date().toISOString() };
+    });
+    if(!linhas.length) return;
+    const { error } = await sbClient.from('ixc_campos').upsert(linhas, { onConflict: 'tabela' });
+    if(error) throw error;
+    localStorage.setItem(IXC_CATALOGO_KEY, String(Date.now()));
+  }catch(e){ console.warn('[sync IXC] catálogo de campos:', e); }
 }
 
 // Auto-sync ao abrir aba Clientes — sempre, silencioso (em segundo plano)
@@ -29580,6 +29618,45 @@ function asnValorTxt(v){
 function asnCtrRotulo(x){
   return ['#'+(x.ixcId||'?'), x.plano||'Contrato', asnValorTxt(x.valor), calcStatusContrato(x.statusContrato, x.statusAcesso)].filter(Boolean).join(' · ');
 }
+/* Dia de vencimento pelos boletos do IXC: o dia mais comum entre os 6 mais
+   recentes (cancelado não conta) — boleto de fevereiro do dia 30 sai dia 28.
+   Do contrato escolhido, quando o boleto diz o contrato; senão, do cliente. */
+function asnDiaVencDosBoletos(regs, ixcCtrId){
+  const validos = (regs||[]).filter(f => String(f.status||'').toUpperCase() !== 'C' && /^\d{4}-\d{2}-\d{2}/.test(String(f.data_vencimento||'')));
+  const doCtr = ixcCtrId ? validos.filter(f => String(f.id_contrato||'') === String(ixcCtrId)) : [];
+  const ultimos = (doCtr.length ? doCtr : validos).slice()
+    .sort((a,b) => String(b.data_vencimento).localeCompare(String(a.data_vencimento))).slice(0, 6);
+  if(!ultimos.length) return null;
+  const conta = new Map();
+  ultimos.forEach((f, i) => { const d = +String(f.data_vencimento).slice(8,10); const c = conta.get(d) || { n:0, i }; c.n++; conta.set(d, c); });
+  return [...conta.entries()].sort((a,b) => (b[1].n - a[1].n) || (a[1].i - b[1].i))[0][0];
+}
+let _asnBoletos = null;   // boletos do cliente no IXC, para o vencimento do contrato escolhido
+function asnAplicarVenc(){
+  const el = document.getElementById('asn-venc');
+  if(!el || el.dataset.mexido || !_asnBoletos) return;
+  const dia = asnDiaVencDosBoletos(_asnBoletos, asnCtrSel?.ixcId);
+  if(!dia) return;
+  el.value = String(dia);
+  const lbl = document.querySelector('label[for="asn-venc"]');
+  if(lbl && !lbl.querySelector('.asn-tag')) lbl.insertAdjacentHTML('beforeend', ' <span class="asn-tag sys" title="Dia dos boletos deste contrato no IXC">IXC</span>');
+}
+async function asnCarregarBoletos(cli){
+  _asnBoletos = null;
+  const ixcId = cli && cli.ixcId;
+  if(!ixcId) return;
+  const cache = typeof _ixcFinCache !== 'undefined' && _ixcFinCache[ixcId];
+  if(cache && cache.registros){ _asnBoletos = cache.registros; asnAplicarVenc(); return; }
+  try{
+    const cfg = await getIXCConfig();
+    if(!cfg.proxyUrl) return;
+    const resp = await chamarIXC(cfg, 'fn_areceber', { qtype:'fn_areceber.id_cliente', query:String(ixcId), oper:'=', rp:'24', sortname:'fn_areceber.data_vencimento', sortorder:'desc' });
+    if(asnCli !== cli) return;   // trocou de cliente enquanto buscava
+    _asnBoletos = resp?.registros || [];
+    asnAplicarVenc();
+  }catch(e){ console.warn('[assinatura] boletos para o vencimento:', e); }
+}
+
 // Troca o contrato: os campos que vêm dele são refeitos (o resto fica como está)
 function asnUsarContrato(ixcId){
   asnCtrSel = asnCtrs.find(x => String(x.ixcId) === String(ixcId)) || asnCtrs[0] || null;
@@ -29590,6 +29667,7 @@ function asnUsarContrato(ixcId){
   por('asn-valor', asnValorTxt(x.valor));
   por('asn-ncontrato', x.ixcId || '');
   if(x.fidelidadeMeses) por('asn-prazo', String(x.fidelidadeMeses));
+  asnAplicarVenc();
 }
 
 async function asnToken(){
@@ -29865,7 +29943,7 @@ function asnIrRevisao(){
         <div><label class="asn-lbl" for="asn-vel">Velocidade (down/up)${asnCtrSel && ctr.velocidadeMbps ? tagIxc : ''}</label><input class="asn-inp" id="asn-vel" value="${asnA(asnVelTxt(ctr.velocidadeMbps))}" placeholder="ex.: 100 Mbps"></div>
         <div><label class="asn-lbl" for="asn-valor">Valor da mensalidade${asnCtrSel && ctr.valor ? tagIxc : ''}</label><input class="asn-inp" id="asn-valor" value="${asnA(asnValorTxt(ctr.valor))}" placeholder="R$ 0,00"></div>
         <div><label class="asn-lbl" for="asn-ncontrato">Nº do contrato${asnCtrSel ? tagIxc : ' (IXC)'}</label><input class="asn-inp" id="asn-ncontrato" value="${asnA(ctr.ixcId)}"></div>
-        <div><label class="asn-lbl" for="asn-venc">Vencimento (dia)</label><input class="asn-inp" id="asn-venc" value="15"></div>
+        <div><label class="asn-lbl" for="asn-venc">Vencimento (dia)</label><input class="asn-inp" id="asn-venc" value="15" inputmode="numeric" oninput="this.dataset.mexido='1'"></div>
         <div><label class="asn-lbl" for="asn-prazo">Prazo contratual (meses)${ctr.fidelidadeMeses ? tagIxc : ''}</label><input class="asn-inp" id="asn-prazo" value="${asnA(ctr.fidelidadeMeses || 12)}"></div>
         <div><label class="asn-lbl" for="asn-taxa">Taxa de instalação</label><input class="asn-inp" id="asn-taxa" value="R$ 380,00"></div>
         <div><label class="asn-lbl">IP</label><div class="asn-radio-row" data-campo="ip"><button data-v="Fixo">Fixo</button><button data-v="Variável" class="on">Variável</button></div></div>
@@ -29900,6 +29978,7 @@ function asnIrRevisao(){
         <button class="btn btn-primary" id="asn-btn-enviar" onclick="asnGerarEnviar()">📄 Gerar e enviar para o MoviApp</button>
       </div>
     </div>`;
+  if(temAdesao) asnCarregarBoletos(asnCli);
 }
 
 document.addEventListener('click', function(e){

@@ -1024,6 +1024,24 @@ async function faturasDoCliente(e, ixcId, rp = 100) {
   return regs.slice().sort((a, b) => emMs(a) - emMs(b));
 }
 
+/* Dia de vencimento do cliente, tirado dos boletos: o dia mais comum entre os
+   6 mais recentes (cancelado não conta). Mais comum, e não o último, porque
+   boleto de fevereiro com vencimento 30 sai dia 28. Com o contrato informado
+   e boletos que digam o contrato, conta só os dele. */
+function diaVencimentoDosBoletos(regs, ixcContratoId) {
+  const validos = (regs || []).filter(f => String(f.status || '').toUpperCase() !== 'C');
+  const doCtr = ixcContratoId ? validos.filter(f => String(f.id_contrato || '') === String(ixcContratoId)) : [];
+  const dias = (doCtr.length ? doCtr : validos)
+    .map(f => String(f.data_vencimento || '').match(/^\d{4}-\d{2}-(\d{2})/))
+    .filter(Boolean)
+    .map((m, i) => ({ dia: Number(m[1]), ordem: i }));
+  const ultimos = dias.slice(-6);   // faturasDoCliente vem em ordem crescente de vencimento
+  if (!ultimos.length) return null;
+  const conta = new Map();
+  ultimos.forEach(({ dia, ordem }) => { const c = conta.get(dia) || { n: 0, ordem }; c.n++; c.ordem = ordem; conta.set(dia, c); });
+  return [...conta.entries()].sort((a, b) => (b[1].n - a[1].n) || (b[1].ordem - a[1].ordem))[0][0];
+}
+
 // R = recebido/pago, C = cancelado. Qualquer outro status está em aberto.
 async function financeiroAoVivo(e, ixcId) {
   const todas = await faturasDoCliente(e, ixcId, 100);
@@ -8070,7 +8088,8 @@ export default async function handler(req, res) {
           return res.status(403).json({ ok: false, error: 'Cliente fora do seu setor.' });
         }
         const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-        const itens = (await faturasDoCliente(e, ixcId, 100))
+        const todas = await faturasDoCliente(e, ixcId, 100);
+        const itens = todas
           .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()))
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
@@ -8086,7 +8105,9 @@ export default async function handler(req, res) {
               link: pick(f, 'gateway_link'),
             };
           });
-        return res.status(200).json({ ok: true, faturas: itens });
+        // o Termo de Adesão usa: dia de vencimento pelos boletos (pagos também)
+        const ctrId = String(body.ixc_contrato_id || '').replace(/\D/g, '');
+        return res.status(200).json({ ok: true, faturas: itens, dia_vencimento: diaVencimentoDosBoletos(todas, ctrId || null) });
       }
 
       // envia a cobrança escolhida ao cliente: PDF, Pix ou código de barras

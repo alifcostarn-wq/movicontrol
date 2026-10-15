@@ -5649,7 +5649,7 @@ function asnPasso2(){
       <div><label class="asn-lbl" for="asnVel">Velocidade${ctr.velocidade_mbps ? tagIxc : ''}</label><input class="asn-inp" id="asnVel" value="${esc(asnVelTxt(ctr.velocidade_mbps))}" placeholder="ex.: 100 Mbps"></div>
       <div><label class="asn-lbl" for="asnValor">Mensalidade${ctr.valor ? tagIxc : ''}</label><input class="asn-inp" id="asnValor" value="${esc(asnValorTxt(ctr.valor))}" placeholder="R$ 0,00"></div>
       <div><label class="asn-lbl" for="asnNContrato">Nº do contrato${ASN.ctr ? tagIxc : ' (IXC)'}</label><input class="asn-inp" id="asnNContrato" value="${esc(ctr.ixc_id||'')}"></div>
-      <div><label class="asn-lbl" for="asnVenc">Vencimento (dia)</label><input class="asn-inp" id="asnVenc" value="15"></div>
+      <div><label class="asn-lbl" for="asnVenc">Vencimento (dia)</label><input class="asn-inp" id="asnVenc" value="15" inputmode="numeric"></div>
       <div><label class="asn-lbl" for="asnPrazo">Prazo (meses)${ctr.fidelidade_meses ? tagIxc : ''}</label><input class="asn-inp" id="asnPrazo" value="${esc(ctr.fidelidade_meses||12)}"></div>
       <div><label class="asn-lbl">Taxa de instalação</label><input class="asn-inp" id="asnTaxa" value="R$ 380,00"></div>
       <div><label class="asn-lbl">IP</label><div class="asn-radio-row" data-campo="ip"><button data-v="Fixo">Fixo</button><button data-v="Variável" class="on">Variável</button></div></div>
@@ -5694,6 +5694,9 @@ function asnPasso2(){
   });
   const selCtr = $('#asnCtr');
   if(selCtr) selCtr.onchange = ()=>asnUsarContrato(selCtr.value);
+  const venc = $('#asnVenc');
+  if(venc) venc.oninput = ()=>{ venc.dataset.mexido = '1'; };
+  if(temAdesao) asnCarregarVenc();
   $('#asnVoltar').onclick=asnPasso1;
   $('#asnGerar').onclick=()=>asnGerar(true);
   $('#asnSoGerar').onclick=()=>asnGerar(false);
@@ -5721,6 +5724,23 @@ function asnUsarContrato(ixcId){
   por('asnValor', asnValorTxt(x.valor));
   por('asnNContrato', x.ixc_id||'');
   if(x.fidelidade_meses) por('asnPrazo', String(x.fidelidade_meses));
+  asnCarregarVenc();
+}
+/* Dia de vencimento pelos boletos do IXC (o servidor conta o dia mais comum
+   entre os últimos boletos do contrato). Não sobrescreve o que a pessoa já
+   digitou; sem boleto, fica o 15 de sempre. */
+async function asnCarregarVenc(){
+  const c = ASN.c, ctr = ASN.ctr;
+  if(!c || !c.clienteVinculado) return;
+  try{
+    const r = await chamar('cliente.faturas', { cliente_ixc_id: c.clienteVinculado.id, ixc_contrato_id: ctr ? ctr.ixc_id : '' });
+    if(ASN.c !== c || ASN.ctr !== ctr) return;   // trocou de contrato enquanto buscava
+    const el = document.getElementById('asnVenc');
+    if(!el || el.dataset.mexido || !r || !r.dia_vencimento) return;
+    el.value = String(r.dia_vencimento);
+    const lbl = document.querySelector('label[for="asnVenc"]');
+    if(lbl && !lbl.querySelector('.asn-tag-sys')) lbl.insertAdjacentHTML('beforeend', ' <span class="asn-tag-sys" title="Dia dos boletos deste contrato no IXC">IXC</span>');
+  }catch(err){ console.warn('[assinatura] vencimento pelos boletos:', err); }
 }
 
 /* ---- montagem do documento (idêntica à do MoviControl) ---- */
