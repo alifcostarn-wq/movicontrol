@@ -5420,10 +5420,10 @@ function blocoAssinatura(c){
       ${docs.map(d=>`<div class="asn-doc-linha">
         <span>${d.assinado_final?'✅':'📄'}</span>
         ${d.documento_url
-          ? `<a href="${esc(d.documento_url)}" target="_blank" rel="noopener">${esc(d.documento_nome||'documento')}</a>`
+          ? `<a href="${esc(d.documento_url)}" target="_blank" rel="noopener" title="${esc(d.documento_nome||'documento')}">${esc(d.documento_nome||'documento')}</a>`
           : `<span style="flex:1">${esc(d.documento_nome||'documento')}</span>`}
-        ${(d.assinado_final && d.documento_url)
-          ? `<button class="fin-copy" data-asnpdf="${d.id}" title="Enviar este PDF assinado na conversa">📲 enviar</button>` : ''}
+        ${d.documento_url ? `<button class="fin-copy" data-asnbaixar="${d.id}" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ PDF</button>
+          <button class="fin-copy" data-asnpdf="${d.id}" title="${d.assinado_final?'Enviar este PDF assinado na conversa':'Enviar o PDF na conversa para o cliente ler (ainda sem assinatura)'}">📲 enviar</button>` : ''}
       </div>`).join('')}
       ${l.status==='assinado' ? `<div class="asn-meta">
         Assinado em ${l.assinado_em?dataHora(l.assinado_em):'—'}${l.dados_confirmados&&l.dados_confirmados.nome?' por '+esc(l.dados_confirmados.nome):''}
@@ -5515,21 +5515,43 @@ async function asnMandarLink(c, lote, soLink){
   return j;
 }
 
+/* O PDF do documento, pendente ou assinado, pedido na hora ao servidor.
+   Antes o envio baixava o arquivo no navegador, pelo endereço que veio na
+   lista — endereço que vence em 1 hora com a conversa aberta, e que depende
+   de o bucket aceitar leitura de outra origem. O servidor lê do R2 sem nenhum
+   desses dois problemas, e devolve sempre o melhor que existe: o assinado,
+   com o certificado, se o cliente já assinou; o original, se ainda não. */
+async function asnPdfDoc(docId, como){
+  return asnChamar('pdf_documento', { contrato_id: docId, como }, como==='arquivo' ? 90000 : 30000);
+}
+
+/* Baixar: o servidor devolve um endereço do R2 que já responde como
+   download, com o nome do documento e do cliente. Abre em outra aba de
+   propósito — se um dia o R2 ignorar o "baixe como", o PDF abre lá, e a
+   conversa continua aqui onde estava. */
+async function asnBaixarPdf(docId){
+  const j = await asnPdfDoc(docId, 'link');
+  if(!j.url) throw new Error('O servidor não devolveu o endereço do PDF.');
+  const a = document.createElement('a');
+  a.href = j.url; a.download = j.nome || 'documento.pdf';
+  a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  return j;
+}
+
 async function asnEnviarPdfNaConversa(c, doc){
-  const r = await fetch(doc.documento_url);
-  if(!r.ok) throw new Error('Não consegui baixar o PDF assinado (HTTP '+r.status+').');
-  const buf = await r.arrayBuffer();
-  // ArrayBuffer -> base64 em pedaços: String.fromCharCode(...) com o array
-  // inteiro estoura a pilha em contratos de algumas centenas de KB
-  const bytes = new Uint8Array(buf);
-  let bin = '';
-  for(let i=0;i<bytes.length;i+=8192) bin += String.fromCharCode.apply(null, bytes.subarray(i,i+8192));
-  const base64 = btoa(bin);
-  const nome = (doc.documento_nome||'contrato').replace(/[^\w .-]/g,'_') + '.pdf';
+  const j = await asnPdfDoc(doc.id, 'arquivo');
+  if(!j.base64) throw new Error('O servidor não devolveu o PDF.');
+  // a legenda diz o que o cliente tem na mão: um PDF sem assinatura não pode
+  // parecer contrato fechado
+  const legenda = j.assinado
+    ? `Segue o seu ${doc.documento_nome} assinado. Guarde uma cópia. 💚`
+    : `Segue o ${doc.documento_nome} em PDF para você ler com calma. 📄`;
   await chamar('mensagens.enviar_midia', {
-    conversa_id: c.id, base64, mimetype:'application/pdf', nome,
-    legenda:`Segue o seu ${doc.documento_nome} assinado. Guarde uma cópia. 💚`,
+    conversa_id: c.id, base64: j.base64, mimetype: 'application/pdf',
+    nome: j.nome || ((doc.documento_nome||'documento').replace(/[^\w .-]/g,'_') + '.pdf'), legenda,
   }, 90000);
+  return j;
 }
 
 /* ---- folha de criação do lote (2 passos, igual ao MoviControl) ---- */
@@ -9972,10 +9994,18 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     for(const l of (c.asn&&c.asn.lotes||[])) for(const d of (l.documentos||[]))
       if(String(d.id)===el.dataset.asnpdf) doc=d;
     if(!doc) return;
-    if(!confirm('Enviar o PDF assinado de "'+doc.documento_nome+'" para '+c.nome+' pelo WhatsApp?')) return;
+    if(!confirm(doc.assinado_final
+      ? 'Enviar o PDF assinado de "'+doc.documento_nome+'" para '+c.nome+' pelo WhatsApp?'
+      : 'Enviar o PDF de "'+doc.documento_nome+'" para '+c.nome+' pelo WhatsApp?\n\nEle ainda NÃO está assinado: serve para o cliente ler. Para valer, ele assina pelo link ou pelo MoviApp.')) return;
     el.disabled=true; el.textContent='…';
-    try{ await asnEnviarPdfNaConversa(c, doc); toast('PDF assinado enviado'); openModal(c.id); }
+    try{ const j=await asnEnviarPdfNaConversa(c, doc); toast(j.assinado?'PDF assinado enviado':'PDF enviado na conversa'); openModal(c.id); }
     catch(err){ el.disabled=false; el.textContent='📲 enviar'; toast('Falha: '+err.message); }
+  });
+  document.querySelectorAll('[data-asnbaixar]').forEach(el=>el.onclick=async()=>{
+    el.disabled=true; el.textContent='…';
+    try{ const j=await asnBaixarPdf(el.dataset.asnbaixar); toast('⬇ Baixando '+(j.nome||'o PDF')); }
+    catch(err){ toast('Falha: '+err.message); }
+    el.disabled=false; el.textContent='⬇ PDF';
   });
   // tags toggle
   document.querySelectorAll('[data-tg]').forEach(el=>el.onclick=()=>{
@@ -10661,7 +10691,7 @@ function ctrPintar(el){
               ${docs.length?docs.map(d=>`<div class="ctr-doc">
                 <span>${d.assinado_final?'✅':'📄'}</span>
                 <span class="cd-n">${esc(d.documento_nome||'documento')}</span>
-                ${d.documento_url?`<button class="ctr-ver" data-ctrver="${d.id}">👁 ver</button>`:'<span class="ctr-cont">sem arquivo</span>'}
+                ${d.documento_url?`<button class="ctr-ver" data-ctrver="${d.id}">👁 ver</button><button class="ctr-ver" data-ctrbaixar="${d.id}" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ baixar</button>`:'<span class="ctr-cont">sem arquivo</span>'}
               </div>`).join(''):'<div class="ctr-cont">sem documentos</div>'}
             </div>
           </div>
@@ -10712,6 +10742,12 @@ function ctrPintar(el){
     for(const l of CTR.lotes) for(const d of (l.documentos||[]))
       if(String(d.id)===b.dataset.ctrver) doc = d;
     if(doc) ctrAbrirVisor(doc.documento_url, doc.documento_nome || 'Contrato');
+  });
+  el.querySelectorAll('[data-ctrbaixar]').forEach(b=>b.onclick=async()=>{
+    b.disabled = true; b.textContent = '…';
+    try{ const j = await asnBaixarPdf(b.dataset.ctrbaixar); toast('⬇ Baixando '+(j.nome||'o PDF')); }
+    catch(err){ toast('Falha: '+err.message); }
+    b.disabled = false; b.textContent = '⬇ baixar';
   });
   el.querySelectorAll('[data-ctrselfie]').forEach(b=>b.onclick=()=>{
     const l = CTR.lotes.find(x=>String(x.id)===b.dataset.ctrselfie);

@@ -9610,6 +9610,42 @@ export default async function handler(req, res) {
           }
         }
 
+        /* PDF avulso: o contrato que o MoviOne manda para o cliente — para ler
+           antes de assinar, ou a cópia assinada. Chega pronto do navegador;
+           quem leu o arquivo do R2 foi a API de assinatura, que confere quem
+           pode ver o contrato. Aqui só se confere que é PDF de verdade: o
+           cliente recebe exatamente o que está escrito na legenda. */
+        let okPdf = null;
+        const anexo = body.anexo_pdf && typeof body.anexo_pdf === 'object' ? body.anexo_pdf : null;
+        if (anexo) {
+          okPdf = false;
+          const b64 = String(anexo.base64 || '').replace(/^data:[^;]+;base64,/, '');
+          let nomeArq = String(anexo.nome || 'documento.pdf').replace(/[^\w .()-]/g, '_').replace(/_+/g, '_').slice(0, 120).trim() || 'documento.pdf';
+          if (!/\.pdf$/i.test(nomeArq)) nomeArq += '.pdf';
+          const leg = String(anexo.legenda || '').trim().slice(0, 500);
+          const bytes = b64 ? Buffer.from(b64, 'base64') : null;
+          if (!bytes || bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
+            falhas.push('o anexo não é um PDF');
+          } else {
+            let idDoc = null;
+            try {
+              await new Promise(r => setTimeout(r, 700));
+              const r1 = await waEnviarMidia(e, fone, {
+                base64: b64, tipo: 'document', mimetype: 'application/pdf', nomeArquivo: nomeArq, legenda: leg,
+              });
+              idDoc = idDaEvolution(r1);
+              okPdf = true;
+            } catch (err) { falhas.push('o WhatsApp recusou o PDF'); console.error('[aviso] anexo pdf:', err.message); }
+            if (okPdf) {
+              const guardado = await guardarSaida(e, c.id, idDoc, b64, 'application/pdf');
+              await sb(e, 'atend_mensagens', {
+                method: 'POST', prefer: 'return=minimal',
+                body: { conversa_id: c.id, direcao: 'out', conteudo: leg || nomeArq, autor_id: user.id, tipo: 'documento', wa_id: idDoc, status: 'enviado', midia_url: guardado },
+              });
+            }
+          }
+        }
+
         // SÓ o resumo da lista. Coluna e bot_ativo ficam como estavam: aviso
         // não abre atendimento, e conversa em andamento com outro atendente
         // continua com ele.
@@ -9622,7 +9658,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
           ok: true, conversa_id: c.id, contato_fone: fone,
-          boleto: okBoleto, pix: okPix,
+          boleto: okBoleto, pix: okPix, pdf: okPdf,
           anexo_erro: falhas.length ? falhas.join(' | ') : null,
         });
       }

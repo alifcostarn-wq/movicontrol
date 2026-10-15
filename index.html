@@ -29476,6 +29476,18 @@ function ifGrowthCSV(){
 .asn-status.pendente{background:var(--laranja-bg);color:var(--warn)}
 .asn-status.assinado{background:var(--accent-fill);color:#fff}
 .asn-status.recusado{background:var(--danger-bg);color:var(--danger)}
+/* uma linha por documento: baixar o PDF ou mandar o arquivo pelo WhatsApp —
+   antes e depois da assinatura (antes só existia o link de assinatura) */
+.asn-docs-acoes{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.asn-doc-acao{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px dashed var(--border)}
+.asn-doc-acao:last-child{border-bottom:none}
+.asn-doc-acao-n{flex:1 1 170px;min-width:0;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.asn-doc-acao-n{color:var(--info);text-decoration:none}
+a.asn-doc-acao-n:hover{text-decoration:underline}
+.asn-bt{font-size:11.5px;padding:7px 12px;border-radius:8px;background:var(--info-bg);color:var(--info);border:1px solid var(--info-bg);white-space:nowrap}
+.asn-bt.wa{background:var(--accent-fill);color:#fff;border-color:var(--accent-fill)}
+.asn-bt:disabled{opacity:.7;cursor:wait}
+.asn-sem-pdf{font-size:11px;color:var(--text3)}
 .asn-doc-check{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--border,#BBDCF6);border-radius:11px;margin-bottom:8px;cursor:pointer;background:var(--surface);color:var(--text)}
 .asn-doc-check.sel{border-color:var(--info);background:var(--info-bg)}
 .asn-doc-check input{width:17px;height:17px;flex-shrink:0}
@@ -29536,6 +29548,8 @@ let asnEquips = [];
 let asnIdsSel = [];
 let asnRev = { ip:'Variável', equip:'Comodato da Contratada', fidelidade:'Sim', multa:'Sim', msg:'S', cobranca:'S', pagamento:'Boleto Bancário' };
 let asnEditandoId = null;
+let asnLotes = [];   // a lista que está na tela: os botões de PDF acham o documento por aqui
+const asnA = s => escHtml(String(s ?? '')).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
 async function asnToken(){
   const { data } = await sbClient.auth.getSession();
@@ -29598,6 +29612,7 @@ async function asnCarregarLista(){
     return;
   }
   const lotes = (r.ok && r.lotes) ? r.lotes : [];
+  asnLotes = lotes;
   body.innerHTML = `
     ${lotes.length ? lotes.map(l=>`
       <div style="border:1.5px solid var(--border);border-radius:12px;padding:13px 15px;margin-bottom:10px">
@@ -29605,18 +29620,12 @@ async function asnCarregarLista(){
           <div style="font-size:12px;color:var(--azul-txt)">Lote de ${new Date(l.criado_em).toLocaleDateString('pt-BR')} · ${l.documentos.length} documento(s)</div>
           <span class="asn-status ${l.status}">${l.status.toUpperCase()}</span>
         </div>
-        <div style="font-size:12.5px;color:var(--text)">${l.documentos.map(d=>d.documento_url ? `<a href="${d.documento_url}" target="_blank" style="color:var(--info);text-decoration:none">${d.assinado_final?'✅':'📄'} ${d.documento_nome}</a>` : d.documento_nome).join(' &nbsp;·&nbsp; ')}</div>
+        ${asnDocsAcoes(l)}
         ${l.status==='assinado' ? `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--info-bg)">
-            <div style="font-size:11.5px;color:var(--info);margin-bottom:10px">
+            <div style="font-size:11.5px;color:var(--info)">
               Assinado em ${l.assinado_em ? new Date(l.assinado_em).toLocaleString('pt-BR') : ''}${l.dados_confirmados ? ' · Confirmado por: '+(l.dados_confirmados.nome||'')+' · CPF: '+(l.dados_confirmados.cpf||'') : ''}
               ${l.codigo_verificacao ? `<br><span style="color:var(--info);font-weight:700">Código: ${l.codigo_verificacao}</span>` : ''}${(l.geo_lat && l.geo_lng) ? ` · <a href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" style="color:var(--info)">📍 Localização</a>` : ''}
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px">
-              ${l.documentos.filter(d=>d.documento_url).map(d=>`
-                <a href="${d.documento_url}" download="${(d.documento_nome||'contrato').replace(/[^a-zA-Z0-9._-]/g,'_')}_assinado.pdf" target="_blank" class="btn btn-sm" style="background:var(--info-bg);color:var(--info);border:1px solid var(--info-bg);text-decoration:none;font-size:11.5px;padding:7px 12px;border-radius:8px">⬇️ Baixar ${d.documento_nome}</a>
-                <button class="btn btn-sm" style="background:var(--accent-fill);color:#fff;border:none;font-size:11.5px;padding:7px 12px;border-radius:8px" onclick='asnEnviarWhatsApp(${JSON.stringify(d.documento_url)}, ${JSON.stringify(d.documento_nome||"Contrato")})'>📱 WhatsApp</button>
-              `).join('')}
             </div>
           </div>` : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--info-bg)">
@@ -29660,21 +29669,89 @@ async function asnMandarLinkAssinatura(loteId){
   }
 }
 
-/* ── Enviar link do contrato assinado por WhatsApp (pelo MoviTalk) ── */
-async function asnEnviarWhatsApp(url, nomeDoc){
+/* ── PDF do documento: baixar ou mandar pelo WhatsApp ──────────
+   Antes da assinatura também: até aqui, com o contrato pendente, o único
+   caminho era o link de assinatura — quem queria o PDF para o cliente ler
+   com calma, imprimir ou conferir ficava sem saída. O PDF é pedido na hora
+   ao servidor (pdf_documento): é ele quem confere quem pode ver o contrato
+   e devolve sempre o melhor que existe — o assinado, com o certificado, se
+   o cliente já assinou; o original, se ainda não. */
+function asnDocsAcoes(l){
+  const docs = l.documentos || [];
+  if(!docs.length) return '';
+  return `<div class="asn-docs-acoes">${docs.map(d=>`
+    <div class="asn-doc-acao">
+      ${d.documento_url
+        ? `<a class="asn-doc-acao-n" href="${asnA(d.documento_url)}" target="_blank" rel="noopener" title="Abrir: ${asnA(d.documento_nome||'Documento')}">${d.assinado_final?'✅':'📄'} ${escHtml(d.documento_nome||'Documento')}</a>`
+        : `<span class="asn-doc-acao-n" title="${asnA(d.documento_nome||'Documento')}">${d.assinado_final?'✅':'📄'} ${escHtml(d.documento_nome||'Documento')}</span>`}
+      ${d.documento_url ? `
+      <button type="button" class="btn btn-sm asn-bt" data-asnbaixar="${d.id}" onclick="asnBaixarPdf(${Number(d.id)}, this)" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado de assinatura':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ Baixar PDF</button>
+      <button type="button" class="btn btn-sm asn-bt wa" data-asnwhats="${d.id}" onclick="asnEnviarPdfWhats(${Number(d.id)}, this)" title="${d.assinado_final?'Mandar o PDF assinado na conversa do cliente':'Mandar o PDF para o cliente ler (ainda sem assinatura)'}">📲 Enviar PDF no WhatsApp</button>`
+      : '<span class="asn-sem-pdf">sem PDF guardado</span>'}
+    </div>`).join('')}</div>`;
+}
+function asnDocDaTela(docId){
+  for(const l of asnLotes) for(const d of (l.documentos||[])) if(String(d.id)===String(docId)) return d;
+  return null;
+}
+function asnOcupado(bt, rotulo){
+  if(!bt) return ()=>{};
+  const antes = bt.textContent; bt.disabled = true; bt.textContent = rotulo;
+  return ()=>{ bt.disabled = false; bt.textContent = antes; };
+}
+
+/* Baixar: o servidor devolve um endereço do R2 que já responde como
+   download, com o nome do documento e do cliente. Abre em outra aba de
+   propósito — se um dia o R2 ignorar o "baixe como", o PDF abre lá e o
+   MoviOne continua aqui. */
+async function asnBaixarPdf(docId, bt){
+  const livre = asnOcupado(bt, 'Preparando…');
+  try{
+    const j = await asnProxy('pdf_documento', { contrato_id: docId, como: 'link' });
+    if(!j.ok) throw new Error(j.error || 'Falha ao gerar o PDF');
+    if(!j.url) throw new Error('O servidor não devolveu o endereço do PDF.');
+    const a = document.createElement('a');
+    a.href = j.url; a.download = j.nome || 'documento.pdf'; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('⬇ Baixando '+(j.nome||'o PDF'));
+  } catch(e) {
+    console.error('[assinatura-pdf]', e);
+    showToast('Não deu para baixar: '+(e.message||e), true);
+  } finally { livre(); }
+}
+
+/* Mandar o ARQUIVO pelo WhatsApp, pela conversa do cliente no MoviTalk.
+   Antes ia só um link do contrato assinado, que vencia em 1 hora — o cliente
+   que abria a mensagem no dia seguinte encontrava um erro. */
+async function asnEnviarPdfWhats(docId, bt){
   const cli = asnCli;
+  const doc = asnDocDaTela(docId);
+  if(!cli || !doc) return;
   const fone = (cli.whatsapp || cli.tel1 || '').replace(/\D/g,'');
   if(!fone || fone.length < 10){ showToast('Cliente sem WhatsApp cadastrado.', true); return; }
-  const nomeCli = (cli.nome||'').split(' ')[0];
-  const msg = `Olá ${nomeCli}! 📄\n\nSegue o seu *${nomeDoc}* assinado junto à MoviOn Internet.\n\nAcesse o documento pelo link abaixo (válido por tempo limitado):\n${url}\n\nGuarde uma cópia para seus registros. Qualquer dúvida, estamos à disposição! 😊`;
-  if(!confirm(`Enviar o contrato assinado por WhatsApp para ${cli.nome} (${fone})?`)) return;
-  try {
-    await mtAvisar(fone, msg, { nome: cli.nome||'', cliente_ixc_id: cli.ixcId||null });
-    showToast('📲 Contrato enviado por WhatsApp para '+nomeCli+'!');
+  const assinado = !!doc.assinado_final;
+  const nomeDoc = doc.documento_nome || 'Contrato';
+  if(!confirm(assinado
+    ? `Enviar o PDF assinado de "${nomeDoc}" para ${cli.nome} (${fone}) pelo WhatsApp?`
+    : `Enviar o PDF de "${nomeDoc}" para ${cli.nome} (${fone}) pelo WhatsApp?\n\nEle ainda NÃO está assinado: serve para o cliente ler. Para valer, ele assina pelo link ou pelo MoviApp.`)) return;
+  const livre = asnOcupado(bt, 'Enviando…');
+  try{
+    const j = await asnProxy('pdf_documento', { contrato_id: docId, como: 'arquivo' });
+    if(!j.ok) throw new Error(j.error || 'Falha ao ler o PDF');
+    if(!j.base64) throw new Error('O servidor não devolveu o PDF.');
+    const nomeCli = (cli.nome||'').split(' ')[0];
+    const msg = j.assinado
+      ? `Olá ${nomeCli}! 📄\n\nSegue o seu *${nomeDoc}* assinado junto à MoviOn Internet.\n\nGuarde uma cópia para seus registros. Qualquer dúvida, estamos à disposição! 💚`
+      : `Olá ${nomeCli}! 📄\n\nSegue o *${nomeDoc}* da MoviOn Internet em PDF, para você ler com calma.\n\nQualquer dúvida, é só responder por aqui. 💚`;
+    const r = await mtAvisar(fone, msg, { nome: cli.nome||'', cliente_ixc_id: cli.ixcId||null,
+      anexo_pdf: { base64: j.base64, nome: j.nome, legenda: nomeDoc + (j.assinado ? ' (assinado)' : '') } });
+    // a mensagem saiu mas o arquivo não: dizer isso, e não "enviado"
+    if(r && r.pdf === false) throw new Error('a mensagem foi, mas o PDF não: '+(r.anexo_erro||'o WhatsApp recusou o arquivo'));
+    showToast('📲 PDF enviado para '+nomeCli+' no WhatsApp!');
   } catch(e) {
-    console.error('[assinatura-whatsapp]', e);
+    console.error('[assinatura-pdf-whatsapp]', e);
     showToast('Falha no envio: '+(e.message||e), true);
-  }
+  } finally { livre(); }
 }
 
 /* ── Fluxo de envio (2 passos) ──────────────────────────────── */

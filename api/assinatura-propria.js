@@ -218,12 +218,30 @@ function soNomeDeLugar(v) {
     return /^\d+$/.test(s) ? '' : s;
   }
 
-  async function r2SignedUrl(key, expiresIn = 3600) {
+  // `extra`: parâmetros response-* do S3, que o R2 devolve como cabeçalho da
+  // resposta (ex.: response-content-disposition faz o navegador BAIXAR com o
+  // nome certo em vez de abrir o PDF numa aba com o nome da chave do bucket)
+  async function r2SignedUrl(key, expiresIn = 3600, extra) {
     if (!key) return null;
     const url = new URL(`${R2_ENDPOINT}/${R2_BUCKET}/${key}`);
     url.searchParams.set('X-Amz-Expires', String(expiresIn));
+    for (const [k, v] of Object.entries(extra || {})) url.searchParams.set(k, v);
     const signed = await r2.sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } });
     return signed.url;
+  }
+
+  /* Nome do arquivo que o atendente baixa e o cliente recebe no WhatsApp:
+     "Contrato_de_prestacao_de_servico-Andreia_Souza.pdf". Sem acento, sem
+     espaço e sem aspas de propósito — o nome viaja dentro da assinatura do
+     link do R2, e um "+" ou um espaço mal codificado ali derruba a assinatura
+     inteira com "SignatureDoesNotMatch". */
+  function nomeArquivoPdf(documento, cliente, assinado) {
+    const limpo = (s, max) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9._-]+/g, '_').replace(/_+/g, '_').replace(/^[_.-]+|[_.-]+$/g, '').slice(0, max)
+      .replace(/[_.-]+$/, '');
+    const doc = limpo(documento, 70) || 'documento';
+    const cli = limpo(cliente, 40);
+    return doc + (cli ? '-' + cli : '') + (assinado ? '-assinado' : '') + '.pdf';
   }
 
   /* ═══════════ MOTOR DE ASSINATURA — uma porta só ═══════════
@@ -596,6 +614,53 @@ function soNomeDeLugar(v) {
         });
       }
       return res.status(200).json({ ok: true, lotes: out });
+    }
+
+    /* O PDF de um documento, para a equipe BAIXAR ou MANDAR ao cliente — antes
+       da assinatura também. Até aqui o único caminho com o contrato pendente
+       era o link de assinatura; quem queria o PDF para o cliente ler com
+       calma, imprimir ou conferir com o setor ficava sem saída.
+
+       como = 'link'    → endereço de download (10 min) que já baixa com o
+                          nome certo. Quem baixa é o navegador direto do R2,
+                          sem passar o arquivo por aqui.
+       como = 'arquivo' → o PDF em base64, para o MoviTalk/MoviOne mandarem
+                          como documento no WhatsApp. Lido aqui do R2, não no
+                          navegador: assim não depende de CORS no bucket nem do
+                          link de 1 hora da lista, que vence com a tela aberta.
+
+       Sempre o melhor que existe: o assinado (com o certificado no fim) se o
+       cliente já assinou; o original, se ainda não. */
+    if (action === 'pdf_documento') {
+      const id = Number(req.body.contrato_id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: 'contrato_id obrigatório' });
+      const r = await sb(`contratos_assinatura?id=eq.${id}&select=id,cliente_id,documento_nome,documento_url,documento_assinado_url,status`);
+      if (!r.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar o documento' });
+      const d = r.data?.[0];
+      if (!d) return res.status(404).json({ ok: false, error: 'Documento não encontrado' });
+      const chave = d.documento_assinado_url || d.documento_url;
+      if (!chave) return res.status(404).json({ ok: false, error: 'Este documento não tem PDF guardado.' });
+      const assinado = !!d.documento_assinado_url;
+      const cli = d.cliente_id ? await sb(`clientes?id=eq.${d.cliente_id}&select=nome,razao`) : null;
+      const nome = nomeArquivoPdf(d.documento_nome, nomeCliente(cli?.data?.[0]), assinado);
+
+      if (req.body.como === 'arquivo') {
+        const bytes = await r2Get(chave);
+        if (!bytes) return res.status(404).json({ ok: false, error: 'Não achei o PDF no armazenamento.' });
+        // o arquivo ainda vai subir de novo, em base64, para a API do WhatsApp
+        // (limite de 4 MB por chamada): acima disto não chega lá inteiro
+        const MAX = Math.round(2.8 * 1024 * 1024);
+        if (bytes.length > MAX) {
+          return res.status(413).json({ ok: false, error: `O PDF tem ${(bytes.length / 1048576).toFixed(1).replace('.', ',')} MB — grande demais para mandar por aqui. Baixe e envie pelo WhatsApp do celular.` });
+        }
+        return res.status(200).json({ ok: true, nome, assinado, mimetype: 'application/pdf', bytes: bytes.length, base64: bytes.toString('base64') });
+      }
+
+      const url = await r2SignedUrl(chave, 600, {
+        'response-content-disposition': `attachment;filename=${nome}`,
+        'response-content-type': 'application/pdf',
+      });
+      return res.status(200).json({ ok: true, nome, assinado, url });
     }
 
     /* Link de assinatura para mandar no WhatsApp. Existe porque o MoviApp
