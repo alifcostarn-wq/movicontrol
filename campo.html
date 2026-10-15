@@ -523,6 +523,35 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 .eq-dica{font-size:12px;font-weight:600;margin-top:6px;padding:7px 10px;border-radius:9px;background:var(--ac2);color:var(--ac)}
 .est-grupo{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--tx3);margin:6px 2px 0}
 .est-sn{font-size:11px;color:var(--tx3);margin-top:3px;font-family:monospace;word-break:break-all}
+
+/* ---- BAIXA DO TÉCNICO: material inutilizável ou consumo sem OS ---- */
+.bx-cta{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:52px;padding:10px 14px;margin:0 0 12px;
+  border-radius:12px;border:1px dashed var(--tx3);background:var(--sf);color:var(--tx);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;text-align:left}
+.bx-cta>span:first-child{font-size:20px}
+.bx-cta small{display:block;font-size:11.5px;font-weight:500;color:var(--tx3);margin-top:1px}
+.bx-cta:active{opacity:.8}
+.est-acao{margin-top:8px;min-height:34px;padding:6px 12px;border-radius:9px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx2);
+  font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.est-acao:active{opacity:.75}
+.bx-tipo{display:flex;flex-direction:column;gap:3px}
+.bx-tipo b{font-size:14px}
+.bx-tipo small{font-size:12px;font-weight:400;color:var(--tx3);line-height:1.4}
+.bx-tipo.sel small{color:inherit}
+.bx-qtd{display:flex;align-items:stretch;gap:8px}
+.bx-qtd input{flex:1;min-width:0;text-align:center;font-size:19px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.bx-qtd button{flex:0 0 54px;border-radius:10px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-size:22px;font-weight:700;cursor:pointer;font-family:inherit}
+.bx-qtd button:disabled{opacity:.4;cursor:not-allowed}
+.bx-saldo{font-size:12px;color:var(--tx2);margin-top:7px;line-height:1.45}
+.bx-saldo.aviso{color:var(--amb);font-weight:600}
+.bx-sug{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.bx-sug button{min-height:34px;padding:6px 11px;border-radius:18px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx2);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.bx-sug button:active{border-color:var(--ac);color:var(--ac)}
+.bx-falta{font-size:12px;color:var(--tx3);text-align:center;margin-top:10px;min-height:16px}
+.btn-red{background:var(--red);color:#fff}
+body.dk .btn-red{background:#C42B27}  /* o vermelho do tema escuro é claro demais para texto branco */
+.bx-rec-it{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--bd);border-radius:11px;background:var(--sf);margin-top:8px;font-size:12.5px;line-height:1.4}
+.bx-rec-it .q{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--red);flex-shrink:0;min-width:34px}
+.bx-rec-it small{display:block;color:var(--tx3);margin-top:2px}
 .scan-btn{width:100%;padding:13px;border-radius:11px;border:1px dashed var(--ac);background:var(--ac2);color:var(--ac);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
 
 /* ---- SCANNER FULLSCREEN ---- */
@@ -658,8 +687,10 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
     </div>
 
     <div id="view-estoque" style="display:none">
-      <div class="alert">📦 Peças sob sua responsabilidade. As baixas acontecem ao finalizar uma OS. Para receber mais peças, fale com o administrador.</div>
+      <div class="alert">📦 Peças sob sua responsabilidade. O que vai para o cliente baixa ao finalizar a OS. Material com defeito ou usado fora de OS: use <b>Dar baixa</b>. Para receber mais peças, fale com o administrador.</div>
+      <button class="bx-cta" id="bx-cta" onclick="abrirBaixa()" style="display:none"><span aria-hidden="true">🗑️</span><span>Dar baixa<small>Material com defeito ou consumo sem OS</small></span></button>
       <div class="list" id="lista-est"></div>
+      <div id="bx-recentes"></div>
     </div>
 
   </div>
@@ -707,6 +738,46 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 
       <button class="btn-full btn-amb" id="btn-confirmar-reag" onclick="confirmarReagendar()" style="margin-top:4px" disabled>📅 Confirmar Reagendamento</button>
       <button class="btn-full btn-ghost" onclick="fecharReagendar()" style="margin-top:6px">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DAR BAIXA (material inutilizável ou consumo sem OS) -->
+<div class="ov" id="ov-baixa" onclick="if(event.target===this)fecharBaixa()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="bx-titulo">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" onclick="fecharBaixa()" aria-label="Fechar">✕</button>
+    <div class="sheet-head">
+      <div class="sheet-title" id="bx-titulo">🗑️ Dar baixa no estoque</div>
+      <div class="sheet-sub">MATERIAL QUE NÃO VAI PARA NENHUM CLIENTE</div>
+    </div>
+    <div class="sheet-body">
+      <label class="flabel" for="bx-peca">Material</label>
+      <select class="finput" id="bx-peca" onchange="bxPecaMudou()"></select>
+
+      <label class="flabel">Por que está dando baixa? <span style="color:var(--red)">*</span></label>
+      <div class="reagendar-opts" style="margin-top:0">
+        <button type="button" class="reagendar-opt bx-tipo" data-t="inutilizavel" aria-pressed="false" onclick="bxTipo('inutilizavel')">
+          <b>🗑️ Inutilizável / com defeito</b><small>Veio com defeito, quebrou ou estragou. Vai para o lixo, não para um cliente.</small></button>
+        <button type="button" class="reagendar-opt bx-tipo" data-t="consumo" aria-pressed="false" onclick="bxTipo('consumo')">
+          <b>🧰 Consumo sem OS</b><small>Usei na rede, numa manutenção ou num teste, fora de uma OS.</small></button>
+      </div>
+
+      <label class="flabel" for="bx-qtd">Quantidade</label>
+      <div class="bx-qtd">
+        <button type="button" id="bx-menos" onclick="bxPasso(-1)" aria-label="Uma a menos">−</button>
+        <input class="finput" id="bx-qtd" type="number" inputmode="numeric" min="1" step="1" value="1" oninput="bxAtualiza()">
+        <button type="button" id="bx-mais" onclick="bxPasso(1)" aria-label="Uma a mais">+</button>
+      </div>
+      <div class="bx-saldo" id="bx-saldo" aria-live="polite">—</div>
+
+      <label class="flabel" for="bx-motivo">Justificativa <span style="color:var(--red)">*</span></label>
+      <div class="bx-sug" id="bx-sug"></div>
+      <textarea class="finput" id="bx-motivo" rows="3" maxlength="300" placeholder="Diga o que aconteceu com a peça" oninput="bxAtualiza()"></textarea>
+
+      <button class="btn-full btn-red" id="bx-ok" onclick="confirmarBaixa()" disabled>Confirmar baixa</button>
+      <div class="bx-falta" id="bx-falta"></div>
+      <button class="btn-full btn-ghost" onclick="fecharBaixa()" style="margin-top:6px">Cancelar</button>
     </div>
   </div>
 </div>
@@ -980,6 +1051,7 @@ async function atualizar(manual=false, smart=false){
   const { data } = await sb.from('campo_os').select('*').eq('tecnico_id', _tec.id).order('id',{ascending:false});
   _os = data||[];
   await carregarMeuEstoque();
+  carregarBaixasRecentes();
   if(manual){ setTimeout(()=>$('ptr').classList.remove('show'), 500); }
   kpis();
   render();
@@ -1026,6 +1098,7 @@ function _ehEquipamento(p){
 
 function renderMeuEstoque(){
   const el = $('lista-est'); if(!el) return;
+  const cta = $('bx-cta'); if(cta) cta.style.display = _bxMateriais().length ? '' : 'none';
   if(!_subEstoqueId){
     el.innerHTML = `<div class="empty"><div class="empty-ico">📦</div>Você ainda não tem um estoque atribuído.<br>Fale com o administrador.</div>`;
     return;
@@ -1042,6 +1115,7 @@ function renderMeuEstoque(){
         <div class="est-nome">${_escR(p.nome)}</div>
         <div class="est-meta">${p.sku?`<code>${_escR(p.sku)}</code> · `:''}${p.qtd<=0?'Zerado':(p.qtd<=p.qtd_minima?'Estoque baixo':'Disponível')}</div>
         ${sns.length?`<div class="est-sn">Nº de série: ${sns.slice(0,6).map(_escR).join(', ')}${sns.length>6?` e mais ${sns.length-6}`:''}</div>`:''}
+        ${_bxPode(p)?`<button type="button" class="est-acao" onclick="abrirBaixa(${p.peca_id})">🗑️ Dar baixa</button>`:''}
       </div>
       <div class="est-qtd ${cls}">${p.qtd}<small>${_escR(p.unidade)}</small></div>
     </div>`;
@@ -1050,6 +1124,142 @@ function renderMeuEstoque(){
   el.innerHTML = (eq.length && mat.length)
     ? `<div class="est-grupo">Equipamentos</div>${eq.map(card).join('')}<div class="est-grupo">Materiais</div>${mat.map(card).join('')}`
     : _meuEstoque.map(card).join('');
+}
+
+/* ---- DAR BAIXA: material inutilizável ou consumo sem OS ----
+   Conector com defeito, bucha que quebrou, material gasto numa manutenção de
+   rede: sai do estoque do técnico com a justificativa. Equipamento (ONU,
+   roteador…) não entra aqui: com defeito, volta para o escritório. */
+let _bx = { tipo:null, chave:null, enviando:false }, _baixasRec = [];
+const BX_SUG = {
+  inutilizavel: ['Veio com defeito de fábrica', 'Quebrou na hora de instalar', 'Molhou ou oxidou', 'Caiu e quebrou'],
+  consumo: ['Manutenção na rede', 'Reparo em caixa de emenda / CTO', 'Teste de equipamento'],
+};
+const _bxPode = p => !p.equip && !p.serializado && p.qtd > 0;
+const _bxMateriais = () => _subEstoqueId ? _meuEstoque.filter(_bxPode) : [];
+// uma chave por tentativa: se o sinal cair e o técnico tocar de novo, não baixa duas vezes
+function _bxNovaChave(){
+  try{ if(crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+  return 'bx-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+}
+function abrirBaixa(pecaId){
+  const itens = _bxMateriais();
+  if(!itens.length){ toast(_subEstoqueId ? 'Nenhum material no seu estoque para dar baixa.' : 'Você ainda não tem um estoque atribuído.'); return; }
+  const sel = $('bx-peca');
+  sel.innerHTML = itens.map(p=>`<option value="${p.peca_id}">${_escR(p.nome)} · ${p.qtd} ${_escR(p.unidade)}</option>`).join('');
+  if(pecaId && itens.some(p=>p.peca_id===pecaId)) sel.value = String(pecaId);
+  _bx = { tipo:null, chave:_bxNovaChave(), enviando:false };
+  document.querySelectorAll('.bx-tipo').forEach(b=>{ b.classList.remove('sel'); b.setAttribute('aria-pressed','false'); });
+  $('bx-sug').innerHTML = '';
+  $('bx-qtd').value = 1;
+  $('bx-motivo').value = '';
+  $('bx-motivo').placeholder = 'Diga o que aconteceu com a peça';
+  bxAtualiza();
+  $('ov-baixa').classList.add('open');
+}
+function fecharBaixa(){
+  if(_bx.enviando) return;
+  $('ov-baixa').classList.remove('open');
+}
+function bxPecaMudou(){
+  _bx.chave = _bxNovaChave();
+  const p = _bxPeca();
+  if(p && +$('bx-qtd').value > p.qtd) $('bx-qtd').value = p.qtd;
+  bxAtualiza();
+}
+const _bxPeca = () => _meuEstoque.find(x=>x.peca_id===+$('bx-peca').value) || null;
+function bxTipo(t){
+  _bx.tipo = t;
+  document.querySelectorAll('.bx-tipo').forEach(b=>{
+    const on = b.dataset.t===t; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on?'true':'false');
+  });
+  $('bx-sug').innerHTML = BX_SUG[t].map(s=>`<button type="button" onclick="bxSugerir(this)">${_escR(s)}</button>`).join('');
+  $('bx-motivo').placeholder = t==='inutilizavel'
+    ? 'Ex.: conector APC com a trava quebrada, não encaixa'
+    : 'Ex.: emenda na caixa CTO 12 da Rua das Flores';
+  bxAtualiza();
+}
+function bxSugerir(btn){
+  const m = $('bx-motivo'), atual = m.value.trim();
+  m.value = atual ? atual.replace(/[\s.;,]+$/,'')+'. '+btn.textContent : btn.textContent;
+  m.focus();
+  try{ m.setSelectionRange(m.value.length, m.value.length); }catch(e){}
+  bxAtualiza();
+}
+function bxPasso(d){
+  const p = _bxPeca(); if(!p) return;
+  const q = parseInt($('bx-qtd').value,10) || 0;
+  $('bx-qtd').value = Math.min(p.qtd, Math.max(1, q+d));
+  bxAtualiza();
+}
+function bxAtualiza(){
+  const p = _bxPeca(), max = p ? p.qtd : 0;
+  const q = parseInt($('bx-qtd').value,10);
+  const qOk = Number.isInteger(q) && q>=1 && q<=max && String($('bx-qtd').value).trim()===String(q);
+  const motivo = $('bx-motivo').value.trim().replace(/\s+/g,' ');
+  const qn = Number.isInteger(q) ? q : 0;
+  $('bx-qtd').max = max;
+  $('bx-menos').disabled = !p || qn<=1;
+  $('bx-mais').disabled = !p || qn>=max;
+  const s = $('bx-saldo');
+  if(!p){ s.textContent = '—'; s.className = 'bx-saldo'; }
+  else if(Number.isInteger(q) && q>max){
+    s.textContent = `Você tem só ${max} ${p.unidade} no seu estoque.`; s.className = 'bx-saldo aviso';
+  } else {
+    const fica = max - (qOk ? q : 0), baixo = p.qtd_minima>0 && fica<=p.qtd_minima;
+    s.textContent = `No seu estoque: ${max} → ${fica} ${p.unidade}` + (baixo ? ` · ficou no mínimo (${p.qtd_minima}): peça reposição ao escritório` : '');
+    s.className = 'bx-saldo'+(baixo?' aviso':'');
+  }
+  const falta = !p ? 'Escolha o material.'
+    : !_bx.tipo ? 'Escolha por que está dando baixa.'
+    : !qOk ? `A quantidade vai de 1 a ${max}.`
+    : motivo.length<5 ? 'Escreva a justificativa.' : '';
+  $('bx-falta').textContent = _bx.enviando ? '' : falta;
+  const b = $('bx-ok');
+  b.disabled = !!falta || _bx.enviando;
+  b.textContent = _bx.enviando ? 'Registrando…'
+    : (p && qOk && _bx.tipo) ? `Dar baixa em ${q} ${p.unidade} · ${_bx.tipo==='inutilizavel'?'inutilizável':'consumo'}`
+    : 'Confirmar baixa';
+}
+async function confirmarBaixa(){
+  const p = _bxPeca(), q = parseInt($('bx-qtd').value,10);
+  const motivo = $('bx-motivo').value.trim().replace(/\s+/g,' ');
+  if(!p || !_bx.tipo || !(q>=1 && q<=p.qtd) || motivo.length<5 || _bx.enviando) return;
+  if(navigator.onLine===false){ toast('⚠️ Sem internet. Tente de novo quando o sinal voltar.', 3500); return; }
+  _bx.enviando = true; bxAtualiza();
+  let r;
+  try{
+    r = await sb.rpc('tecnico_baixa_estoque', { p_sub_estoque_id:_subEstoqueId, p_peca_id:p.peca_id, p_qtd:q,
+      p_tipo:_bx.tipo, p_motivo:motivo, p_chave:_bx.chave });
+  }catch(e){ r = { error:{ message:'Sem conexão com o servidor.' } }; }
+  _bx.enviando = false;
+  // erro: a janela fica aberta e a mesma chave vale para tentar de novo
+  if(r.error){ bxAtualiza(); toast('⚠️ '+(r.error.message||'Não foi possível registrar a baixa.'), 4500); return; }
+  $('ov-baixa').classList.remove('open');
+  toast(r.data && r.data.ja_registrado ? 'Essa baixa já estava registrada.' : `✓ Baixa registrada: ${q} ${p.unidade} de ${p.nome}`, 3200);
+  await carregarMeuEstoque();
+  renderMeuEstoque();
+  carregarBaixasRecentes();
+}
+// as últimas baixas do técnico, para ele conferir o que já lançou
+async function carregarBaixasRecentes(){
+  if(!_tec) return;
+  const { data, error } = await sb.from('campo_estoque_mov')
+    .select('id, qtd, motivo, created_at, campo_estoque(nome, unidade)')
+    .eq('tecnico_id', _tec.id).eq('tipo','saida')
+    .order('created_at',{ascending:false}).limit(5);
+  if(error) return;
+  _baixasRec = (data||[]).filter(m=>/^\[(inutilizavel|consumo)\]/.test(m.motivo||''));
+  renderBaixasRecentes();
+}
+function renderBaixasRecentes(){
+  const el = $('bx-recentes'); if(!el) return;
+  if(!_baixasRec.length){ el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="est-grupo" style="margin-top:18px">Suas últimas baixas</div>` + _baixasRec.map(m=>{
+    const inut = /^\[inutilizavel\]/.test(m.motivo||'');
+    const mot = (m.motivo||'').replace(/^\[(inutilizavel|consumo)\]\s*/,'');
+    return `<div class="bx-rec-it"><span class="q">−${m.qtd}</span><span><b>${_escR(m.campo_estoque?.nome||'Peça')}</b> · ${inut?'🗑️ Inutilizável':'🧰 Consumo sem OS'}<small>${_escR(mot)} · ${fmtDH(m.created_at)}</small></span></div>`;
+  }).join('');
 }
 
 /* menu da conta (tema, recarregar, sair) */

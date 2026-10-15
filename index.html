@@ -3763,6 +3763,8 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
               <option value="transferencia">🔄 Transferência</option>
               <option value="consumo_os">🔧 Consumo em OS</option>
               <option value="saida">📤 Saída</option>
+              <option value="inutilizavel">🗑️ Inutilizável / defeito</option>
+              <option value="consumo_tec">🧰 Consumo do técnico (sem OS)</option>
               <option value="comodato">🏠 Comodato manual</option>
               <option value="devolucao">↩️ Devolução de comodato</option>
               <option value="ajuste">⚙️ Ajuste</option>
@@ -4166,7 +4168,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
             <div class="form-group"><label class="form-label">Tipo de saída<span>*</span></label>
               <select class="cp-form-select" id="sai-tipo">
                 <option value="perda">Perda / Extravio</option>
-                <option value="defeito">Defeito / Descarte</option>
+                <option value="defeito">Inutilizável / defeito (descarte)</option>
                 <option value="devolucao">Devolução a fornecedor</option>
                 <option value="uso_infra">Aplicado na rede (infra)</option>
                 <option value="venda">Venda avulsa</option>
@@ -21040,14 +21042,26 @@ function renderEstoque(){
 // ============================================================
 // MOVIMENTAÇÕES DE ESTOQUE (livro-razão campo_estoque_mov)
 // ============================================================
-const MOV_LB = { entrada:'📥 Entrada', transferencia:'🔄 Transferência', consumo_os:'🔧 Consumo OS', saida:'📤 Saída', ajuste:'⚙️ Ajuste', comodato:'🏠 Comodato', devolucao:'↩️ Devolução' };
-const MOV_CL = { entrada:'cp-st-concluido', transferencia:'cp-st-atribuido', consumo_os:'cp-st-andamento', saida:'cp-st-cancelado', ajuste:'cp-st-novo', comodato:'cp-st-andamento', devolucao:'cp-st-concluido' };
+const MOV_LB = { entrada:'📥 Entrada', transferencia:'🔄 Transferência', consumo_os:'🔧 Consumo OS', saida:'📤 Saída', ajuste:'⚙️ Ajuste', comodato:'🏠 Comodato', devolucao:'↩️ Devolução', inutilizavel:'🗑️ Inutilizável', consumo_tec:'🧰 Consumo do técnico' };
+const MOV_CL = { entrada:'cp-st-concluido', transferencia:'cp-st-atribuido', consumo_os:'cp-st-andamento', saida:'cp-st-cancelado', ajuste:'cp-st-novo', comodato:'cp-st-andamento', devolucao:'cp-st-concluido', inutilizavel:'cp-st-cancelado', consumo_tec:'cp-st-andamento' };
 // tipo de leitura: a devolução de comodato é gravada como entrada e o comodato
-// manual como saída; aqui cada um aparece com o nome dele
+// manual como saída; aqui cada um aparece com o nome dele. A baixa que o técnico
+// dá no moviTec é uma saída marcada [inutilizavel] ou [consumo]; a saída
+// "Defeito / Descarte" do escritório é o mesmo inutilizável.
 function movTipo(m){
   if(m.tipo==='entrada' && /^devolu[çc][ãa]o de comodato/i.test(m.motivo||'')) return 'devolucao';
-  if(m.tipo==='saida' && /^comodato manual/i.test(m.motivo||'')) return 'comodato';
+  if(m.tipo==='saida'){
+    const mo = m.motivo||'';
+    if(/^comodato manual/i.test(mo)) return 'comodato';
+    if(/^\[(inutilizavel|defeito)\]/i.test(mo)) return 'inutilizavel';
+    if(/^\[consumo\]/i.test(mo)) return 'consumo_tec';
+  }
   return m.tipo;
+}
+// motivo sem a marca do tipo (o tipo já aparece no selo)
+function movMotivo(m){
+  const t = movTipo(m), mo = m.motivo||'';
+  return (t==='inutilizavel'||t==='consumo_tec') ? mo.replace(/^\[[a-z_]+\]\s*/i,'') : mo;
 }
 // sinal da movimentação no saldo da empresa: entra (+), sai (−) ou só muda de lugar (⇄)
 function movSinal(m){
@@ -21133,9 +21147,15 @@ function renderMovimentacoes(){
       <td style="font-size:12px;color:var(--text2);white-space:nowrap">${seta}</td>
       <td style="font-size:12px">${m.os_id?`<a href="#" onclick="irParaOS(${m.os_id});return false" style="color:var(--info);font-weight:600;text-decoration:none">${osNum(m.os_id)}</a>`:'—'}</td>
       <td style="font-size:12px;color:var(--text2)">${escHtml(resp)}</td>
-      <td style="font-size:12px;color:var(--text3)">${escHtml(m.motivo||'—')}</td>
+      <td style="font-size:12px;color:var(--text3)">${escHtml(movMotivo(m)||'—')}</td>
     </tr>`;
   }).join('');
+}
+// atalho do painel: abre o histórico já filtrado por um tipo
+function estMovVerTipo(t){
+  const s = document.getElementById('mov-fil-tipo');
+  if(s) s.value = t;   // antes de abrir: a página já desenha filtrada
+  estAbaIr('cp-movimentacoes');
 }
 // ============================================================
 // ESTOQUE · PAINEL BI — valor, consumo, giro, comodato e a baixa
@@ -21341,7 +21361,7 @@ function estBiCalcular(){
     }
     return (t==='entrada'||t==='devolucao') ? 'in' : 'out';
   };
-  const ehConsumo = m => m._tipo==='consumo_os' || m._tipo==='saida' || m._tipo==='comodato';
+  const ehConsumo = m => m._tipo==='consumo_os' || m._tipo==='saida' || m._tipo==='comodato' || m._tipo==='inutilizavel' || m._tipo==='consumo_tec';
   // custo gravado na movimentação; o que veio antes disso usa o custo médio de hoje
   const valor = m => (m.qtd||0)*((m.custo_unitario!=null && m.custo_unitario!=='') ? (parseFloat(m.custo_unitario)||0) : vu(porId.get(m.peca_id)));
 
@@ -21468,6 +21488,15 @@ function estBiCalcular(){
     acao:['Ver itens',"estBiStatus('parado')"], m:true });
   if(comSemId) at.push({ n:'aviso', txt:`${comSemId===1?'1 equipamento':comSemId+' equipamentos'} em comodato sem MAC nem nº de série`,
     sub:'Sem isso não dá para cobrar a devolução do equipamento certo.' });
+  // perda: material dado como inutilizável (pelo técnico no moviTec ou pelo escritório)
+  const inut = consJan.filter(m=>m._tipo==='inutilizavel');
+  if(inut.length){
+    const qI = inut.reduce((a,m)=>a+(m.qtd||0),0), vI = inut.reduce((a,m)=>a+(m._v||0),0);
+    const porPI = new Map(); inut.forEach(m=>porPI.set(m.peca_id,(porPI.get(m.peca_id)||0)+(m.qtd||0)));
+    const topI = [...porPI.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(([id,n])=>`${porId.get(id)?.nome||'Peça'} (${n})`).join(', ');
+    at.push({ n:'aviso', txt:`${qI===1?'1 unidade dada':qI+' unidades dadas'} como inutilizável no período, ${estFmtBRL(vI)} em material`,
+      sub:topI+(porPI.size>3?'…':''), acao:['Ver no histórico',"estMovVerTipo('inutilizavel')"], m:true });
+  }
   const semCusto = jan.filter(m=>m.custo_unitario==null && m.tipo!=='transferencia').length;
   if(semCusto) at.push({ n:'neutro', txt:`${semCusto===1?'1 movimentação':semCusto+' movimentações'} do período sem custo gravado`,
     sub:'São de antes desta versão: o valor delas usa o custo médio de hoje.' });
