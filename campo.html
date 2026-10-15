@@ -518,6 +518,11 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 .chip{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:9px 12px;font-size:13px}
 .chip .x{width:24px;height:24px;border-radius:7px;border:none;background:var(--red-bg);color:var(--red);font-weight:700;cursor:pointer;flex-shrink:0}
 .chip .mac{font-family:monospace;font-weight:700;color:var(--ac)}
+.chip .orig{display:block;font-size:11px;color:var(--tx3);margin-top:2px}
+.chip .orig.est{color:var(--ac);font-weight:600}
+.eq-dica{font-size:12px;font-weight:600;margin-top:6px;padding:7px 10px;border-radius:9px;background:var(--ac2);color:var(--ac)}
+.est-grupo{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--tx3);margin:6px 2px 0}
+.est-sn{font-size:11px;color:var(--tx3);margin-top:3px;font-family:monospace;word-break:break-all}
 .scan-btn{width:100%;padding:13px;border-radius:11px;border:1px dashed var(--ac);background:var(--ac2);color:var(--ac);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
 
 /* ---- SCANNER FULLSCREEN ---- */
@@ -795,13 +800,15 @@ body.dk .dav-laudo.err{background:rgba(226,75,74,.15);color:#F7C1C1}
 
       <!-- EQUIPAMENTOS -->
       <label class="flabel">📡 Equipamentos instalados <span style="color:var(--red)">*</span></label>
-      <div style="font-size:11px;color:var(--tx3);margin-bottom:2px">Registre ao menos 1 (MAC ou nº de série). Use a câmera ou digite.</div>
+      <div style="font-size:11px;color:var(--tx3);margin-bottom:2px">Registre ao menos 1 (MAC ou nº de série) e diga de onde ele veio. Se veio do seu estoque, a baixa sai sozinha.</div>
       <button class="scan-btn" type="button" onclick="abrirScanner()">📷 Escanear MAC / Nº de Série</button>
       <div class="frow2" style="margin-top:8px">
-        <input class="finput" id="eq-mac" placeholder="MAC" autocapitalize="characters">
-        <input class="finput" id="eq-serial" placeholder="Nº de Série">
+        <input class="finput" id="eq-mac" placeholder="MAC" autocapitalize="characters" oninput="_casarSerial()">
+        <input class="finput" id="eq-serial" placeholder="Nº de Série" oninput="_casarSerial()">
       </div>
       <input class="finput" id="eq-modelo" placeholder="Modelo (opcional, ex.: ONU Huawei EG8145)" style="margin-top:8px">
+      <select class="finput" id="eq-origem" style="margin-top:8px" aria-label="De onde veio o equipamento"><option value="">— De onde veio este equipamento? —</option></select>
+      <div class="eq-dica" id="eq-dica" hidden></div>
       <button class="btn-full btn-ghost" type="button" onclick="addEquipFin()" style="margin-top:8px">➕ Adicionar equipamento</button>
       <div class="chip-list" id="fin-equip-list"></div>
 
@@ -862,7 +869,7 @@ const SB_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 
 let _tec = null, _os = [], _fil = '', _aberta = null, _proxyUrl = '', _ixcUrl = '', _ixcToken = '', _ixcUser = '';
-let _subEstoqueId = null, _meuEstoque = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os', _finGeo = null;
+let _subEstoqueId = null, _meuEstoque = [], _meusSeriais = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os', _finGeo = null;
 
 /* ---- UTILS ---- */
 const $  = id => document.getElementById(id);
@@ -987,17 +994,34 @@ async function carregarMeuEstoque(){
   const { data: subs } = await sb.from('campo_sub_estoques')
     .select('id').eq('tipo','tecnico').eq('tecnico_id', _tec.id).eq('ativo',true).limit(1);
   _subEstoqueId = subs && subs.length ? subs[0].id : null;
-  if(!_subEstoqueId){ _meuEstoque = []; return; }
-  const { data: saldos } = await sb.from('campo_estoque_saldo')
-    .select('qtd, peca_id, campo_estoque(nome, sku, unidade, qtd_minima)')
-    .eq('sub_estoque_id', _subEstoqueId);
-  _meuEstoque = (saldos||[]).map(s=>({
-    peca_id: s.peca_id, qtd: s.qtd,
-    nome: s.campo_estoque?.nome || 'Peça',
-    sku: s.campo_estoque?.sku || '',
-    unidade: s.campo_estoque?.unidade || 'unid.',
-    qtd_minima: s.campo_estoque?.qtd_minima || 0,
-  })).sort((a,b)=>a.nome.localeCompare(b.nome));
+  if(!_subEstoqueId){ _meuEstoque = []; _meusSeriais = []; return; }
+  const [{ data: saldos }, { data: seriais }] = await Promise.all([
+    sb.from('campo_estoque_saldo')
+      .select('qtd, peca_id, campo_estoque(nome, sku, unidade, qtd_minima, categoria, serializado)')
+      .eq('sub_estoque_id', _subEstoqueId),
+    sb.from('campo_estoque_serial').select('peca_id, serial, mac')
+      .eq('sub_estoque_id', _subEstoqueId).eq('status','disponivel').limit(1000),
+  ]);
+  _meusSeriais = seriais || [];
+  _meuEstoque = (saldos||[]).map(s=>{
+    const p = {
+      peca_id: s.peca_id, qtd: s.qtd,
+      nome: s.campo_estoque?.nome || 'Peça',
+      sku: s.campo_estoque?.sku || '',
+      unidade: s.campo_estoque?.unidade || 'unid.',
+      qtd_minima: s.campo_estoque?.qtd_minima || 0,
+      categoria: s.campo_estoque?.categoria || '',
+      serializado: !!s.campo_estoque?.serializado,
+    };
+    p.equip = _ehEquipamento(p);
+    return p;
+  }).sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+// mesmo critério do banco (_peca_e_equipamento): vai para o cliente em comodato
+function _ehEquipamento(p){
+  return !!p.serializado
+    || /(onu|ont|roteador|router|r[aá]dio|radio|sxt|antena|equip|modem|switch|cpe|wi-?fi|mesh)/i.test(p.categoria||'')
+    || /(^| )(onu|ont|roteador|router|sxt|cpe|modem)( |$)/i.test(p.nome||'');
 }
 
 function renderMeuEstoque(){
@@ -1010,16 +1034,22 @@ function renderMeuEstoque(){
     el.innerHTML = `<div class="empty"><div class="empty-ico">📦</div>Seu estoque está vazio.</div>`;
     return;
   }
-  el.innerHTML = _meuEstoque.map(p=>{
+  const card = p=>{
     const cls = p.qtd<=0 ? 'zero' : (p.qtd<=p.qtd_minima ? 'low' : '');
+    const sns = _meusSeriais.filter(s=>s.peca_id===p.peca_id).map(s=>s.serial||s.mac).filter(Boolean);
     return `<div class="est-card">
       <div>
-        <div class="est-nome">${p.nome}</div>
-        <div class="est-meta">${p.sku?`<code>${p.sku}</code> · `:''}${p.qtd<=0?'Zerado':(p.qtd<=p.qtd_minima?'Estoque baixo':'Disponível')}</div>
+        <div class="est-nome">${_escR(p.nome)}</div>
+        <div class="est-meta">${p.sku?`<code>${_escR(p.sku)}</code> · `:''}${p.qtd<=0?'Zerado':(p.qtd<=p.qtd_minima?'Estoque baixo':'Disponível')}</div>
+        ${sns.length?`<div class="est-sn">Nº de série: ${sns.slice(0,6).map(_escR).join(', ')}${sns.length>6?` e mais ${sns.length-6}`:''}</div>`:''}
       </div>
-      <div class="est-qtd ${cls}">${p.qtd}<small>${p.unidade}</small></div>
+      <div class="est-qtd ${cls}">${p.qtd}<small>${_escR(p.unidade)}</small></div>
     </div>`;
-  }).join('');
+  };
+  const eq = _meuEstoque.filter(p=>p.equip), mat = _meuEstoque.filter(p=>!p.equip);
+  el.innerHTML = (eq.length && mat.length)
+    ? `<div class="est-grupo">Equipamentos</div>${eq.map(card).join('')}<div class="est-grupo">Materiais</div>${mat.map(card).join('')}`
+    : _meuEstoque.map(card).join('');
 }
 
 /* menu da conta (tema, recarregar, sair) */
@@ -2472,16 +2502,16 @@ async function _carregarEquipDet(osId){
   if(!alvo) return;
   try {
     const { data, error } = await sb.from('campo_os_equipamentos')
-      .select('mac,serial,modelo,created_at')
+      .select('mac,serial,modelo,peca_id,created_at')
       .eq('os_id', osId)
       .order('id');
     if(error || !data || !data.length){ alvo.innerHTML=''; return; }
     const linhas = data.map(e=>`
       <div class="drow">
-        <span class="dlab">📡 ${e.modelo||'Equipamento'}</span>
+        <span class="dlab">📡 ${_escR(e.modelo||'Equipamento')}<br><span style="color:var(--tx3);font-size:10.5px">${e.peca_id?'📦 Saiu do seu estoque':'🏠 Do cliente'}</span></span>
         <span class="dval" style="font-size:11.5px;text-align:right">
-          ${e.mac?`<span class="mono" style="font-size:11px">${e.mac}</span>`:''}
-          ${e.serial?`<br><span style="color:var(--tx3);font-size:10.5px">SN: ${e.serial}</span>`:''}
+          ${e.mac?`<span class="mono" style="font-size:11px">${_escR(e.mac)}</span>`:''}
+          ${e.serial?`<br><span style="color:var(--tx3);font-size:10.5px">SN: ${_escR(e.serial)}</span>`:''}
         </span>
       </div>`).join('');
     alvo.innerHTML = `<div class="row-sec" style="margin-top:10px">
@@ -3691,8 +3721,9 @@ function abrirFin(evt, id){
   $('fin-sol').value=''; $('fin-sinal').value=''; $('fin-down').value=''; $('fin-up').value=''; $('fin-obs').value='';
   // reset peças e equipamentos
   _finPecas = []; _finEquip = [];
-  $('fin-peca-qtd').value=''; $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value='';
-  popularPecaSelect(); renderFinPecas(); renderFinEquip();
+  $('fin-peca-qtd').value=''; $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value=''; $('eq-origem').value='';
+  $('eq-dica').hidden=true;
+  popularPecaSelect(); popularOrigemEquip(); renderFinPecas(); renderFinEquip();
   $('ov-fin').classList.add('open');
   setTimeout(_assinaInit, 180);
   capturarLocalizacao();
@@ -3735,12 +3766,20 @@ function abrirFinDet(){
 function fecharFin(){ $('ov-fin').classList.remove('open'); }
 
 /* ---- PEÇAS UTILIZADAS ---- */
+// quanto ainda sobra da peça no estoque do técnico, descontando o que já foi
+// lançado nesta finalização (peças avulsas + equipamentos ligados a ela)
+function _dispFin(id){
+  const p = _meuEstoque.find(x=>x.peca_id===id); if(!p) return 0;
+  const emPecas = _finPecas.filter(x=>x.peca_id===id).reduce((s,x)=>s+x.qtd,0);
+  const emEquip = _finEquip.filter(x=>x.peca_id===id).length;
+  return p.qtd - emPecas - emEquip;
+}
 function popularPecaSelect(){
   const sel = $('fin-peca-sel');
   const usadas = _finPecas.map(p=>p.peca_id);
-  const disp = _meuEstoque.filter(p=>p.qtd>0 && !usadas.includes(p.peca_id));
+  const disp = _meuEstoque.filter(p=>_dispFin(p.peca_id)>0 && !usadas.includes(p.peca_id));
   sel.innerHTML = `<option value="">— Selecione a peça —</option>` +
-    disp.map(p=>`<option value="${p.peca_id}">${p.nome} (${p.qtd} ${p.unidade})</option>`).join('');
+    disp.map(p=>`<option value="${p.peca_id}">${_escR(p.nome)} (${_dispFin(p.peca_id)} ${_escR(p.unidade)})</option>`).join('');
 }
 function addPecaFin(){
   const id = parseInt($('fin-peca-sel').value);
@@ -3749,16 +3788,17 @@ function addPecaFin(){
   if(!qtd || qtd<=0){ toast('⚠️ Informe a quantidade.'); return; }
   const p = _meuEstoque.find(x=>x.peca_id===id);
   if(!p) return;
-  if(qtd>p.qtd){ toast(`⚠️ Você só tem ${p.qtd} ${p.unidade} de ${p.nome}.`); return; }
+  const disp = _dispFin(id);
+  if(qtd>disp){ toast(`⚠️ Você só tem ${disp} ${p.unidade} de ${p.nome}.`); return; }
   _finPecas.push({ peca_id:id, qtd, nome:p.nome, unidade:p.unidade });
   $('fin-peca-qtd').value='';
-  popularPecaSelect(); renderFinPecas();
+  popularPecaSelect(); popularOrigemEquip(); renderFinPecas();
 }
-function removePecaFin(i){ _finPecas.splice(i,1); popularPecaSelect(); renderFinPecas(); }
+function removePecaFin(i){ _finPecas.splice(i,1); popularPecaSelect(); popularOrigemEquip(); renderFinPecas(); }
 function renderFinPecas(){
   const el = $('fin-pecas-list');
   el.innerHTML = _finPecas.map((p,i)=>`<div class="chip">
-    <span>📦 <b>${p.qtd}</b> ${p.unidade} — ${p.nome}</span>
+    <span>📦 <b>${p.qtd}</b> ${_escR(p.unidade)} — ${_escR(p.nome)}</span>
     <button class="x" type="button" onclick="removePecaFin(${i})">✕</button>
   </div>`).join('');
 }
@@ -3766,20 +3806,60 @@ function renderFinPecas(){
 /* ---- EQUIPAMENTOS ---- */
 function ehMac(t){ return /^([0-9a-f]{2}[:\-]?){5}[0-9a-f]{2}$/i.test((t||'').trim()); }
 function normMac(t){ const h=(t||'').replace(/[^0-9a-f]/ig,''); return h.length===12 ? h.match(/.{2}/g).join(':').toUpperCase() : (t||'').trim(); }
+// "De onde veio?": itens do estoque do técnico (equipamentos primeiro) ou do cliente
+function popularOrigemEquip(){
+  const sel = $('eq-origem'); if(!sel) return;
+  const atual = sel.value;
+  const itens = _meuEstoque.filter(p=>_dispFin(p.peca_id)>0);
+  const op = p=>`<option value="${p.peca_id}">${_escR(p.nome)} — ${_dispFin(p.peca_id)} no seu estoque</option>`;
+  const eq = itens.filter(p=>p.equip), outros = itens.filter(p=>!p.equip);
+  sel.innerHTML = `<option value="">— De onde veio este equipamento? —</option>`
+    + (eq.length ? `<optgroup label="Do seu estoque (a baixa sai sozinha)">${eq.map(op).join('')}</optgroup>` : '')
+    + (outros.length ? `<optgroup label="Outros itens do seu estoque">${outros.map(op).join('')}</optgroup>` : '')
+    + `<option value="cliente">Do cliente / já estava instalado (sem baixa)</option>`;
+  if([...sel.options].some(o=>o.value===atual)) sel.value = atual;
+}
+// MAC ou nº de série cadastrado no estoque do técnico: já escolhe a peça certa
+function _casarSerial(){
+  const dica = $('eq-dica'); if(!dica) return;
+  const mac = normMac($('eq-mac').value).toUpperCase();
+  const sn = $('eq-serial').value.trim().toUpperCase();
+  const s = (mac||sn) ? _meusSeriais.find(x=>
+      (sn && String(x.serial||'').trim().toUpperCase()===sn) ||
+      (mac && x.mac && normMac(x.mac).toUpperCase()===mac)) : null;
+  if(s && _dispFin(s.peca_id)>0){
+    const p = _meuEstoque.find(x=>x.peca_id===s.peca_id);
+    $('eq-origem').value = String(s.peca_id);
+    dica.textContent = '✅ Está no seu estoque: '+(p?p.nome:'peça')+'. A baixa sai sozinha.';
+    dica.hidden = false;
+  } else dica.hidden = true;
+}
 function addEquipFin(){
   const mac = $('eq-mac').value.trim();
   const serial = $('eq-serial').value.trim();
   const modelo = $('eq-modelo').value.trim();
+  const origem = $('eq-origem').value;
   if(!mac && !serial){ toast('⚠️ Informe MAC ou nº de série.'); return; }
-  _finEquip.push({ mac: mac?normMac(mac):null, serial: serial||null, modelo: modelo||null });
-  $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value='';
-  renderFinEquip();
+  if(!origem){ toast('⚠️ Diga de onde veio o equipamento: do seu estoque ou do cliente.'); $('eq-origem').focus(); return; }
+  let peca_id = null, peca_nome = null;
+  if(origem!=='cliente'){
+    peca_id = parseInt(origem);
+    const p = _meuEstoque.find(x=>x.peca_id===peca_id);
+    if(!p){ toast('⚠️ Item não encontrado no seu estoque.'); return; }
+    if(_dispFin(peca_id)<1){ toast(`⚠️ Você não tem mais ${p.nome} no seu estoque.`); return; }
+    peca_nome = p.nome;
+  }
+  _finEquip.push({ mac: mac?normMac(mac):null, serial: serial||null, modelo: modelo||peca_nome||null, peca_id, peca_nome });
+  $('eq-mac').value=''; $('eq-serial').value=''; $('eq-modelo').value=''; $('eq-origem').value='';
+  $('eq-dica').hidden=true;
+  popularOrigemEquip(); popularPecaSelect(); renderFinEquip();
 }
-function removeEquipFin(i){ _finEquip.splice(i,1); renderFinEquip(); }
+function removeEquipFin(i){ _finEquip.splice(i,1); popularOrigemEquip(); popularPecaSelect(); renderFinEquip(); }
 function renderFinEquip(){
   const el = $('fin-equip-list');
   el.innerHTML = _finEquip.map((e,i)=>`<div class="chip">
-    <span>📡 ${e.mac?`<span class="mac">${e.mac}</span>`:''}${e.mac&&e.serial?' · ':''}${e.serial?`SN: ${e.serial}`:''}${e.modelo?`<br><small style="color:var(--tx3)">${e.modelo}</small>`:''}</span>
+    <span>📡 ${e.mac?`<span class="mac">${_escR(e.mac)}</span>`:''}${e.mac&&e.serial?' · ':''}${e.serial?`SN: ${_escR(e.serial)}`:''}${e.modelo&&e.modelo!==e.peca_nome?`<br><small style="color:var(--tx3)">${_escR(e.modelo)}</small>`:''}
+      ${e.peca_id?`<small class="orig est">📦 Do seu estoque: ${_escR(e.peca_nome)}</small>`:`<small class="orig">🏠 Do cliente (sem baixa)</small>`}</span>
     <button class="x" type="button" onclick="removeEquipFin(${i})">✕</button>
   </div>`).join('');
 }
@@ -3818,6 +3898,7 @@ function onLeitura(texto){
   texto = (texto||'').trim();
   if(ehMac(texto)){ $('eq-mac').value = normMac(texto); toast('✅ MAC: '+normMac(texto)); }
   else            { $('eq-serial').value = texto; toast('✅ Nº de série: '+texto); }
+  _casarSerial();
 }
 async function toggleLanterna(){
   if(!_track){ toast('Lanterna indisponível neste aparelho.'); return; }
@@ -3992,23 +4073,32 @@ async function confirmarFin(){
       if(eAss){ toast('Erro ao salvar assinatura: '+eAss.message, 3500); btn.disabled=false; btn.textContent='✅ Confirmar Finalização'; return; }
     }
 
-    // 1) Baixa de peças do estoque do técnico (transação na RPC) — se houver
-    if(_finPecas.length){
-      const { error: ePeca } = await sb.rpc('consumir_pecas_os', {
-        p_os_id: _aberta.id,
-        p_itens: _finPecas.map(p=>({ peca_id:p.peca_id, qtd:p.qtd }))
-      });
-      if(ePeca){ toast('Erro nas peças: '+ePeca.message, 3500); return; }
+    // 1+2) Equipamentos instalados e baixa no estoque do técnico numa transação só:
+    //      o equipamento que veio do estoque baixa uma unidade da peça e vira
+    //      comodato com o MAC/série dele. Se faltar saldo, nada é gravado.
+    //      A chave identifica esta finalização: repetir (rede caiu depois de gravar)
+    //      não baixa de novo, e ela só some quando a OS fecha de verdade.
+    const _kChave = 'fin_chave_'+_aberta.id;
+    let _chave = null;
+    try{ _chave = sessionStorage.getItem(_kChave); }catch(e){}
+    if(!_chave){
+      _chave = window.crypto?.randomUUID?.() || (Date.now().toString(36)+Math.random().toString(36).slice(2));
+      try{ sessionStorage.setItem(_kChave, _chave); }catch(e){}
     }
+    const { error: eEst } = await sb.rpc('finalizar_os_estoque', {
+      p_os_id: _aberta.id,
+      p_pecas: _finPecas.map(p=>({ peca_id:p.peca_id, qtd:p.qtd })),
+      p_equip: _finEquip.map(e=>({ mac:e.mac, serial:e.serial, modelo:e.modelo, peca_id:e.peca_id||null })),
+      p_chave: _chave,
+    });
+    if(eEst){ toast('Erro no estoque: '+eEst.message, 4500); return; }
 
-    // 2) Equipamentos instalados
-    const { error: eEq } = await sb.from('campo_os_equipamentos').insert(
-      _finEquip.map(e=>({ os_id:_aberta.id, mac:e.mac, serial:e.serial, modelo:e.modelo, tecnico_id:_tec.id }))
-    );
-    if(eEq){ toast('Erro nos equipamentos: '+eEq.message, 3500); return; }
-
-    // 3) Resumo legível de peças no campo texto da OS
-    const resumoPecas = _finPecas.map(p=>`${p.qtd}x ${p.nome}`).join(', ') || null;
+    // 3) Resumo legível de peças no campo texto da OS (avulsas + equipamentos do estoque)
+    const _usados = new Map();   // na ordem em que o técnico lançou
+    const _somar = (id, nome, q)=>{ if(!_usados.has(id)) _usados.set(id, { nome, qtd:0 }); _usados.get(id).qtd += q; };
+    _finPecas.forEach(p=>_somar(p.peca_id, p.nome, p.qtd));
+    _finEquip.filter(e=>e.peca_id).forEach(e=>_somar(e.peca_id, e.peca_nome, 1));
+    const resumoPecas = [..._usados.values()].map(u=>`${u.qtd}x ${u.nome}`).join(', ') || null;
 
     // 4) Update final da OS
     const {error} = await sb.from('campo_os').update({
@@ -4028,6 +4118,7 @@ async function confirmarFin(){
     }).eq('id',_aberta.id);
 
     if(error){ toast('Erro: '+error.message); return; }
+    try{ sessionStorage.removeItem(_kChave); }catch(e){}
 
     // Aviso automático ao cliente (WhatsApp) — atendimento concluído
     _autoWaStatus(_aberta, 'finalizada');
