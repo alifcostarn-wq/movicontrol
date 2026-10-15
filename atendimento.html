@@ -2570,6 +2570,9 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
 .asn-doc-check .dn{font-weight:700;font-size:13px;}
 .asn-doc-check .dc{font-size:11px;color:var(--text-mid);}
 .asn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+/* rótulo com etiqueta (IXC) é mais alto: o campo desce até a base da linha */
+.asn-grid>div{display:flex;flex-direction:column;min-width:0;}
+.asn-grid>div>.asn-inp,.asn-grid>div>.asn-radio-row{margin-top:auto;}
 .asn-lbl{display:block;font-size:11px;font-weight:700;color:var(--text-low);margin-bottom:4px;
   text-transform:uppercase;letter-spacing:.03em;}
 .asn-inp{
@@ -2595,6 +2598,9 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:800;
   background:var(--green-soft);color:var(--green-deep);text-transform:none;letter-spacing:0;
 }
+.asn-inp::placeholder{color:var(--text-low);}
+.asn-ctr-aviso{font-size:12px;line-height:1.5;color:var(--brown-txt);background:var(--amber-soft);
+  border-left:3px solid var(--amber-line);border-radius:8px;padding:9px 12px;margin-bottom:10px;}
 .asn-prog{font-size:12px;padding:9px 12px;border-radius:8px;background:var(--chip);margin-bottom:6px;color:var(--text-mid);}
 .asn-prog.ok{background:var(--green-soft);color:var(--green-deep);font-weight:700;}
 .asn-prog.err{background:var(--red-soft);color:var(--red);font-weight:700;}
@@ -5579,6 +5585,7 @@ async function abrirAssinatura(c){
     ASN.modelos = j.modelos || [];
     ASN.equips  = j.equipamentos || [];
     ASN.cliente = j.cliente || null;
+    ASN.contratos = j.contratos || [];   // do IXC, o principal primeiro
     if(!ASN.modelos.length){
       $('#asnBody').innerHTML = `<div class="ms-erro">Nenhum modelo assinável cadastrado. Cadastre em <b>MoviOne › Configurações › Documentos</b>.</div>`;
       return;
@@ -5622,20 +5629,28 @@ function asnPasso2(){
   const cats = ASN.sel.map(id=>(ASN.modelos.find(m=>m.id===id)||{}).categoria);
   const temAdesao = cats.includes('adesao');
   const temComodato = cats.includes('comodato');
-  const cli = ASN.cliente || {};
-  const pv = ASN.c.painel || null;
+  // plano, velocidade, valor e nº saem do contrato do IXC. Antes: plano em
+  // branco, 310Mbps para todo mundo e, no nº do contrato, o nº do CLIENTE
+  ASN.ctr = (ASN.contratos || [])[0] || null;
+  const ctr = ASN.ctr || {};
+  const nCtrs = (ASN.contratos || []).length;
+  const tagIxc = ASN.ctr ? ' <span class="asn-tag-sys">IXC</span>' : '';
 
   $('#asnBody').innerHTML = `
-    <div class="asn-sub">Confira antes de gerar. O que está marcado como <span class="asn-tag-sys">sistema</span> vem do cadastro e do patrimônio.</div>
+    <div class="asn-sub">Confira antes de gerar. O que está marcado como <span class="asn-tag-sys">sistema</span> vem do cadastro e do patrimônio, e <span class="asn-tag-sys">IXC</span> do contrato no IXC.</div>
 
     ${temAdesao ? `
     <div class="asn-tit">Opções do Termo de Adesão</div>
+    ${nCtrs ? '' : `<div class="asn-ctr-aviso">Não achei contrato do IXC para este cliente no MoviOne. Preencha plano, velocidade e valor à mão — ou sincronize no MoviOne (Clientes › IXC) e abra de novo.</div>`}
     <div class="asn-grid">
-      <div><label class="asn-lbl">Plano</label><input class="asn-inp" id="asnPlano" value="${esc(ASN.c.cliente.plano||'')}"></div>
-      <div><label class="asn-lbl">Velocidade</label><input class="asn-inp" id="asnVel" value="310Mbps"></div>
-      <div><label class="asn-lbl">Nº do contrato (IXC)</label><input class="asn-inp" id="asnNContrato" value="${esc(cli.ixc_id||ASN.c.clienteVinculado.id||'')}"></div>
-      <div><label class="asn-lbl">Vencimento (dia)</label><input class="asn-inp" id="asnVenc" value="15"></div>
-      <div><label class="asn-lbl">Prazo (meses)</label><input class="asn-inp" id="asnPrazo" value="12"></div>
+      ${nCtrs > 1 ? `<div style="grid-column:1/-1"><label class="asn-lbl" for="asnCtr">Contrato do IXC <span class="asn-tag-sys">${nCtrs} contratos</span></label>
+        <select class="asn-inp" id="asnCtr">${ASN.contratos.map(x=>`<option value="${esc(x.ixc_id)}">${esc(asnCtrRotulo(x))}</option>`).join('')}</select></div>` : ''}
+      <div style="grid-column:1/-1"><label class="asn-lbl" for="asnPlano">Plano${tagIxc}</label><input class="asn-inp" id="asnPlano" value="${esc(ctr.plano || (nCtrs ? '' : ASN.c.cliente?.plano) || '')}" placeholder="Nome do plano"></div>
+      <div><label class="asn-lbl" for="asnVel">Velocidade${ctr.velocidade_mbps ? tagIxc : ''}</label><input class="asn-inp" id="asnVel" value="${esc(asnVelTxt(ctr.velocidade_mbps))}" placeholder="ex.: 100 Mbps"></div>
+      <div><label class="asn-lbl" for="asnValor">Mensalidade${ctr.valor ? tagIxc : ''}</label><input class="asn-inp" id="asnValor" value="${esc(asnValorTxt(ctr.valor))}" placeholder="R$ 0,00"></div>
+      <div><label class="asn-lbl" for="asnNContrato">Nº do contrato${ASN.ctr ? tagIxc : ' (IXC)'}</label><input class="asn-inp" id="asnNContrato" value="${esc(ctr.ixc_id||'')}"></div>
+      <div><label class="asn-lbl" for="asnVenc">Vencimento (dia)</label><input class="asn-inp" id="asnVenc" value="15"></div>
+      <div><label class="asn-lbl" for="asnPrazo">Prazo (meses)${ctr.fidelidade_meses ? tagIxc : ''}</label><input class="asn-inp" id="asnPrazo" value="${esc(ctr.fidelidade_meses||12)}"></div>
       <div><label class="asn-lbl">Taxa de instalação</label><input class="asn-inp" id="asnTaxa" value="R$ 380,00"></div>
       <div><label class="asn-lbl">IP</label><div class="asn-radio-row" data-campo="ip"><button data-v="Fixo">Fixo</button><button data-v="Variável" class="on">Variável</button></div></div>
       <div><label class="asn-lbl">Equipamentos</label><div class="asn-radio-row" data-campo="equip"><button data-v="Próprio">Próprio</button><button data-v="Comodato da Contratada" class="on">Comodato</button></div></div>
@@ -5677,9 +5692,35 @@ function asnPasso2(){
     b.classList.add('on');
     ASN.rev[b.parentElement.dataset.campo] = b.dataset.v;
   });
+  const selCtr = $('#asnCtr');
+  if(selCtr) selCtr.onchange = ()=>asnUsarContrato(selCtr.value);
   $('#asnVoltar').onclick=asnPasso1;
   $('#asnGerar').onclick=()=>asnGerar(true);
   $('#asnSoGerar').onclick=()=>asnGerar(false);
+}
+
+function asnVelTxt(mbps){
+  const n = Number(mbps) || 0;
+  if(!n) return '';
+  return n >= 1000 ? (n/1000).toLocaleString('pt-BR')+' Gbps' : n+' Mbps';
+}
+function asnValorTxt(v){
+  const n = Number(v);
+  return n > 0 ? 'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
+}
+function asnCtrRotulo(x){
+  return ['#'+(x.ixc_id||'?'), x.plano||'Contrato', asnValorTxt(x.valor), x.situacao].filter(Boolean).join(' · ');
+}
+// trocar o contrato refaz os campos que vêm dele; o resto fica como está
+function asnUsarContrato(ixcId){
+  ASN.ctr = (ASN.contratos||[]).find(x=>String(x.ixc_id)===String(ixcId)) || (ASN.contratos||[])[0] || null;
+  const x = ASN.ctr || {};
+  const por = (id, v)=>{ const el=document.getElementById(id); if(el) el.value = v; };
+  por('asnPlano', x.plano||'');
+  por('asnVel', asnVelTxt(x.velocidade_mbps));
+  por('asnValor', asnValorTxt(x.valor));
+  por('asnNContrato', x.ixc_id||'');
+  if(x.fidelidade_meses) por('asnPrazo', String(x.fidelidade_meses));
 }
 
 /* ---- montagem do documento (idêntica à do MoviControl) ---- */
@@ -5719,18 +5760,20 @@ function soNomeDeLugar(v){
 function asnDadosCliente(){
   const c = ASN.cliente || {};
   const conv = ASN.c;
-  const vel = asnVal('asnVel','');
+  const ctr = ASN.ctr || {};
+  const vel = asnVal('asnVel', asnVelTxt(ctr.velocidade_mbps));
   return {
     nome: c.nome || conv.clienteVinculado.nome || conv.nome || '',
     cpf: c.cnpj || conv.clienteVinculado.cpf || '', rg: c.ie || '',
     endereco: c.endereco||'', numero: c.numero||'', bairro: c.bairro||'',
     cidade: soNomeDeLugar(c.cidade), estado: soNomeDeLugar(c.uf) || 'RN', cep: c.cep||c.cep_full||'',
     telefone: c.whatsapp || c.tel1 || conv.fone || '',
-    plano: asnVal('asnPlano', conv.cliente.plano||''),
-    contrato_numero: asnVal('asnNContrato', c.ixc_id||''),
+    plano: asnVal('asnPlano', ctr.plano || conv.cliente?.plano || ''),
+    valor: asnVal('asnValor', asnValorTxt(ctr.valor)),
+    contrato_numero: asnVal('asnNContrato', ctr.ixc_id||''),
     data_extenso: asnDataExtenso(),
     banda_maxima: vel, upload: vel, download: vel,
-    prazo: asnVal('asnPrazo','12'), vencimento: asnVal('asnVenc','15'), validade: asnVal('asnPrazo','12'),
+    prazo: asnVal('asnPrazo', String(ctr.fidelidade_meses||12)), vencimento: asnVal('asnVenc','15'), validade: asnVal('asnPrazo', String(ctr.fidelidade_meses||12)),
     taxa_instalacao: asnVal('asnTaxa','R$ 380,00'), taxa_instalacao_extenso: '',
     chk_ip: asnChk(ASN.rev.ip, ['Fixo','Variável']),
     chk_equip: asnChk(ASN.rev.equip, ['Próprio','Comodato da Contratada']),
@@ -5813,9 +5856,12 @@ async function asnGerar(enviar = true){
       asnProg('✓ '+modelo.nome, 'ok');
     }
     asnProg('Criando o lote de assinatura…');
+    // o lote fica ligado ao CONTRATO do IXC que está no documento — antes ia
+    // o id do cliente no lugar
+    const nCtr = String(dados.contrato_numero||'').trim();
     const lote = await asnChamar('criar_lote', {
       cliente_ixc_id: c.clienteVinculado.id,
-      ixc_contrato_id: c.clienteVinculado.id || null, documentos,
+      ixc_contrato_id: /^\d+$/.test(nCtr) ? nCtr : (ASN.ctr?.ixc_id || null), documentos,
     });
     asnProg('✓ Pronto — os documentos estão prontos para assinar.', 'ok');
 

@@ -213,6 +213,49 @@ function nomeCliente(c) {
   return String(c.nome || '').trim() || null;
 }
 
+/* Situação do contrato do IXC: a mesma regra do MoviOne (calcStatusContrato).
+   O Termo de Adesão sai com o plano, a velocidade, o valor e o número do
+   contrato — e o contrato certo é o vivo, não o cancelado de anos atrás. */
+function situacaoContrato(statusContrato, statusAcesso) {
+  const sc = String(statusContrato || '').toUpperCase();
+  const sa = String(statusAcesso || '').toUpperCase();
+  if (['D', 'DS', 'C', 'EC'].includes(sc)) return 'Cancelado';
+  if (sc === 'N') return 'Negativado';
+  if (sc === 'I') return 'Inativo';
+  if (['P', 'PC', 'CM', 'AB'].includes(sc)) return 'Pré-contrato';
+  if (sc === 'A' || sc === 'AT') {
+    if (['CM', 'S', 'SU', 'B', 'D', 'DM'].includes(sa)) return 'Bloqueio Manual';
+    if (sa === 'CA' || sa === 'BL') return 'Bloqueio Automático';
+    if (sa === 'FA') return 'Financeiro em Atraso';
+    if (sa === 'AA') return 'Aguardando Assinatura';
+    return 'Ativo';
+  }
+  if (sc === 'S') return 'Ativo';
+  return sc || '—';
+}
+const PESO_SITUACAO = { 'Ativo': 0, 'Financeiro em Atraso': 1, 'Bloqueio Manual': 2, 'Bloqueio Automático': 2,
+  'Aguardando Assinatura': 3, 'Pré-contrato': 4, 'Negativado': 5, 'Inativo': 6, 'Cancelado': 7 };
+// o principal primeiro; cancelado só entra se for tudo o que o cliente tem
+function contratosParaTermo(linhas) {
+  const vistos = new Set();
+  const todos = (linhas || []).filter(r => {
+    const k = String(r.ixc_id ?? '');
+    if (!k || vistos.has(k)) return false;
+    vistos.add(k); return true;
+  }).map(r => ({
+    ixc_id: String(r.ixc_id),
+    plano: r.plano || '',
+    velocidade_mbps: Number(r.velocidade_mbps) || null,
+    valor: r.valor == null ? null : Number(r.valor),
+    fidelidade_meses: Number(r.fidelidade_meses) || null,
+    data_ativacao: r.data_ativacao || null,
+    situacao: situacaoContrato(r.status_contrato, r.status_acesso),
+  })).sort((a, b) => ((PESO_SITUACAO[a.situacao] ?? 8) - (PESO_SITUACAO[b.situacao] ?? 8))
+    || String(b.data_ativacao || '').localeCompare(String(a.data_ativacao || '')));
+  const vivos = todos.filter(x => x.situacao !== 'Cancelado');
+  return vivos.length ? vivos : todos;
+}
+
 function soNomeDeLugar(v) {
     const s = String(v == null ? '' : v).trim();
     return /^\d+$/.test(s) ? '' : s;
@@ -505,10 +548,16 @@ function soNomeDeLugar(v) {
     if (action === 'painel_assinatura') {
       const alvo = await resolverClienteId(req.body || {});
       if (alvo.erro) return res.status(400).json({ ok: false, error: alvo.erro });
-      const [cli, mods, equips] = await Promise.all([
+      // o contrato pode estar ligado pelo id local ou só pelo id do cliente no IXC
+      const ixcCli = String(req.body?.cliente_ixc_id ?? '').trim();
+      const filtroCtr = /^\d+$/.test(ixcCli)
+        ? `or=(cliente_id.eq.${alvo.id},ixc_cliente_id.eq.${ixcCli})`
+        : `cliente_id=eq.${alvo.id}`;
+      const [cli, mods, equips, ctrs] = await Promise.all([
         sb(`clientes?id=eq.${alvo.id}&select=id,nome,razao,cnpj,ie,endereco,numero,bairro,cidade,uf,cep,cep_full,whatsapp,tel1,ixc_id`),
         sb('modelos_documento?ativo=eq.true&assinavel=eq.true&select=id,nome,categoria,conteudo_html&order=ordem.asc'),
         sb(`campo_comodato?cliente_id=eq.${alvo.id}&status=eq.ativo&select=id,serial,mac,modelo,status,campo_estoque(nome,categoria)`),
+        sb(`clientes_contratos?${filtroCtr}&select=ixc_id,plano,velocidade_mbps,valor,status_contrato,status_acesso,data_ativacao,fidelidade_meses&limit=50`),
       ]);
       const equipamentos = (equips.data || []).map(e => ({
         tipo: e.campo_estoque?.categoria || 'Equipamento',
@@ -526,6 +575,9 @@ function soNomeDeLugar(v) {
       return res.status(200).json({
         ok: true, cliente,
         modelos: mods.data || [], equipamentos,
+        // sem contrato (ou se a consulta falhar) o Termo abre do mesmo jeito,
+        // com os campos para preencher à mão
+        contratos: ctrs.ok ? contratosParaTermo(ctrs.data) : [],
       });
     }
 
