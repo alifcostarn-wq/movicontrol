@@ -978,6 +978,26 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .tf-vazio{font-size:12.5px;color:var(--text-low);text-align:center;padding:26px 10px;}
 
 /* ---- reação com emoji ---- */
+/* selo na bolha, como no WhatsApp: pendurado na borda de baixo */
+.mb.com-reac{margin-bottom:14px;}
+.mb-reacoes{
+  position:absolute;bottom:-16px;display:inline-flex;align-items:center;gap:3px;
+  padding:1px 7px;border-radius:999px;background:var(--card);border:1px solid var(--line);
+  box-shadow:var(--shadow);font-size:15px;line-height:22px;cursor:default;user-select:none;
+}
+.mb.in .mb-reacoes{left:10px;}
+.mb.out .mb-reacoes,.mb.bot .mb-reacoes{right:10px;}
+/* a paleta do 😊: seis emojis, como a do WhatsApp */
+.reac-pop{
+  position:fixed;z-index:9999;display:flex;gap:2px;padding:5px 6px;border-radius:999px;
+  background:var(--card);border:1px solid var(--line);box-shadow:0 10px 28px rgba(0,0,0,.2);
+}
+.reac-pop button{
+  font-size:22px;line-height:1;width:40px;height:40px;border:0;border-radius:50%;
+  background:transparent;cursor:pointer;transition:transform .1s,background .1s;font-family:inherit;
+}
+.reac-pop button:hover,.reac-pop button:focus-visible{background:var(--chip);transform:scale(1.15);outline:none;}
+.reac-pop button.on{background:var(--green-soft);box-shadow:inset 0 0 0 2px var(--green);}
 .mb-reac{
   display:flex;align-items:center;gap:7px;max-width:70%;padding:5px 11px 5px 8px;
   border-radius:14px;background:var(--card);border:1px solid var(--line);
@@ -6104,6 +6124,81 @@ function checkHTML(m){
   </svg></span>`;
 }
 
+/* ===== REAÇÕES =====
+   Cada reação é uma linha `reacao` que aponta (respondeA) para a mensagem
+   reagida. Na tela ela não é linha: é um selo na própria bolha, como no
+   WhatsApp — a do cliente e a nossa (o número da empresa tem uma só por
+   mensagem; vale a última). Reação a mensagem que não está carregada fica de
+   fora daqui e o desenho cai na linha antiga, que leva até ela. */
+function reacoesDaConversa(c){
+  const porId = new Map((c.msgs||[]).filter(m=>m.id && m.tipo!=='reacao').map(m=>[m.id, m]));
+  const porMsg = new Map(), presas = new Set();
+  for(const r of (c.msgs||[])){
+    if(r.tipo!=='reacao' || r.excluidoEm || !r.respondeA) continue;
+    const alvo = porId.get(r.respondeA);
+    if(!alvo) continue;
+    presas.add(r.id);
+    if(alvo.excluidoEm) continue;              // mensagem apagada leva a reação junto
+    const lado = r.t==='in' ? 'in' : 'out';
+    const k = porMsg.get(alvo.id) || {};
+    k[lado] = r;                                // a mais nova de cada lado fica
+    porMsg.set(alvo.id, k);
+  }
+  return { porMsg, presas };
+}
+function seloReacoes(r, c){
+  if(!r) return '';
+  const itens = [];
+  if(r.in) itens.push([r.in.x, `${(c.nome||'Cliente').split(' ')[0]} reagiu com ${r.in.x}${r.in.h?' às '+r.in.h:''}`]);
+  if(r.out) itens.push([r.out.x, `${r.out.autorNome||'Você'} reagiu com ${r.out.x}${r.out.h?' às '+r.out.h:''}`]);
+  const titulo = itens.map(i=>i[1]).join(' · ');
+  return `<div class="mb-reacoes" title="${esc(titulo)}" aria-label="${esc(titulo)}">${itens.map(i=>`<span>${esc(i[0])}</span>`).join('')}</div>`;
+}
+const REACOES_RAPIDAS = ['👍','❤️','😂','😮','😢','🙏'];
+function fecharReacoes(){
+  const p = document.getElementById('reacPop'); if(p) p.remove();
+  document.removeEventListener('mousedown', _foraReac, true);
+  document.removeEventListener('keydown', _escReac, true);
+}
+function _foraReac(ev){ if(!ev.target.closest('#reacPop')) fecharReacoes(); }
+function _escReac(ev){ if(ev.key==='Escape'){ ev.stopPropagation(); fecharReacoes(); } }
+function abrirReacoes(c, m, botao){
+  fecharReacoes();
+  const minha = ((reacoesDaConversa(c).porMsg.get(m.id))||{}).out;
+  const pop = document.createElement('div');
+  pop.className = 'reac-pop'; pop.id = 'reacPop';
+  pop.setAttribute('role','menu'); pop.setAttribute('aria-label','Reagir com emoji');
+  pop.innerHTML = REACOES_RAPIDAS.map(e=>{
+    const on = minha && minha.x===e;
+    return `<button type="button" role="menuitem" data-reac-emoji="${e}" class="${on?'on':''}" title="${on?'Tirar a reação':'Reagir com '+e}">${e}</button>`;
+  }).join('');
+  document.body.appendChild(pop);
+  // em cima do botão, sem sair da tela
+  const r = botao.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left + r.width/2 - w/2, innerWidth - w - 8)) + 'px';
+  pop.style.top = (r.top - h - 6 >= 8 ? r.top - h - 6 : r.bottom + 6) + 'px';
+  pop.onclick = ev=>{
+    const b = ev.target.closest('[data-reac-emoji]'); if(!b) return;
+    fecharReacoes();
+    reagirMensagem(c, m, b.dataset.reacEmoji);
+  };
+  setTimeout(()=>{ document.addEventListener('mousedown', _foraReac, true); document.addEventListener('keydown', _escReac, true); }, 0);
+  const foco = pop.querySelector('.on') || pop.querySelector('button'); if(foco) foco.focus();
+}
+async function reagirMensagem(c, m, emoji){
+  try{
+    const j = await chamar('mensagens.reagir', { mensagem_id: m.id, emoji });
+    if(j.sem_mudanca) return;
+    // já na tela; o tempo real confirma e recarrega para todo mundo
+    const agora = new Date(), quando = j.criado_em || agora.toISOString();
+    for(const x of (c.msgs||[])) if(x.tipo==='reacao' && x.t==='out' && x.respondeA===m.id && !x.excluidoEm) x.excluidoEm = quando;
+    if(j.reacao) c.msgs.push({ id: j.id || ('reac'+agora.getTime()), t:'out', tipo:'reacao', x:j.reacao, respondeA:m.id,
+      autorNome: j.autor_nome || USUARIO.nome, h: agora.toTimeString().slice(0,5), dia: String(quando).slice(0,10), criadoEm: quando });
+    if(modalId===c.id) openModal(c.id);
+    toast(j.reacao ? `Reação ${j.reacao} enviada ao cliente` : 'Reação tirada');
+  }catch(err){ toast(err.message); }
+}
+
 /* ===== MENSAGENS: do formato da API para o da tela ===== */
 function mapearMensagem(m){
   return {
@@ -6113,6 +6208,8 @@ function mapearMensagem(m){
     local: m.localizacao || null,
     respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
     status: m.status || null,
+    // sem o id do WhatsApp não há como reagir (nem editar, nem apagar) lá
+    temWa: !!m.wa_id,
     // quem falou, quando não foi o painel: hoje o técnico, pelo MoviTec
     origem: m.origem || null, autorNome: m.autor_nome || null,
     excluidoEm: m.excluido_em || null, excluidoPor: m.excluido_por_nome || null,
@@ -9443,18 +9540,22 @@ function openModal(id){
     </div>
     <div class="m-thread" id="mThread" data-ultima="${chaveUltimaRecebida(c)}">
       ${c._maisAntigas ? `<button class="m-antigas" id="mAntigas" type="button" ${buscandoAntigas===c.id?'disabled':''}>${buscandoAntigas===c.id?'Carregando mensagens anteriores…':'↑ Carregar mensagens anteriores'}</button>` : ''}
-      ${(()=>{ let ultimoDia=null; return c.msgs.map(m=>{
+      ${(()=>{ let ultimoDia=null; const reac=reacoesDaConversa(c); return c.msgs.map(m=>{
+        // reação não é mensagem: é um selo NA BOLHA que ela responde, como no
+        // WhatsApp (ver reacoesDaConversa). Tirada, ou presa a uma mensagem
+        // que está na tela, não ocupa linha nenhuma
+        if(m.tipo==='reacao' && (m.excluidoEm || reac.presas.has(m.id))) return '';
         // separador só quando o dia muda — numa conversa de vários dias,
         // "09:00" sozinho não diz de quando é
         let sep='';
         if(m.dia && m.dia!==ultimoDia){ sep=`<div class="dia-sep">${rotuloDia(m.dia)}</div>`; ultimoDia=m.dia; }
-        // reação não é mensagem: é um selo preso ao que ela responde. Bolha
-        // cheia daria a entender que o cliente escreveu um emoji sozinho.
+        // a mensagem reagida é mais antiga que o que está carregado: fica uma
+        // linha com o trecho dela (clicar leva até lá)
         if(m.tipo==='reacao'){
-          const alvo = m.quoteTexto ? `<b>${esc(semFormato(m.quoteTexto).slice(0,60))}</b>` : 'sua mensagem';
+          const alvo = m.quoteTexto ? `<b>${esc(semFormato(m.quoteTexto).slice(0,60))}</b>` : (m.t==='in'?'sua mensagem':'uma mensagem');
           return sep + `<div class="mb-reac ${m.t==='in'?'in':'out'}" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
             <span class="rc-emo">${esc(m.x)}</span>
-            <span class="rc-txt">reagiu a ${alvo}</span>
+            <span class="rc-txt">${m.t==='in'?'':esc(m.autorNome||'Você')+' '}reagiu a ${alvo}</span>
             <span class="rc-h">${esc(m.h||'')}</span></div>`;
         }
         // apagada: sobra o lugar dela na conversa, sem o conteúdo e sem a
@@ -9474,7 +9575,7 @@ function openModal(id){
         }
         return sep + (m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
-        :`<div class="mb ${m.t}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
+        :`<div class="mb ${m.t}${reac.porMsg.has(m.id)?' com-reac':''}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
             // o cliente recebe tudo pelo mesmo número; aqui dentro, quem
             // atende precisa saber que quem falou foi o técnico em campo
             m.origem==='movitec'?`<span class="bt tec" title="Aviso enviado pelo aplicativo dos técnicos">🔧 ${esc(m.autorNome||'Técnico')} · MoviTec</span>`:''}${
@@ -9487,6 +9588,8 @@ function openModal(id){
                bloco só, de ícones, com a explicação no title — o que a bolha
                precisa mostrar é a mensagem, não a barra de ferramentas. */
             const acoes=[];
+            if(m.id && m.temWa && !m.excluidoEm)
+              acoes.push(`<button data-reagir="${m.id}" title="Reagir com emoji" aria-haspopup="true">😊</button>`);
             if(m.id) acoes.push(`<button data-responder="${m.id}" title="Responder esta mensagem">↩</button>`);
             if((USUARIO.admin || USUARIO.podeEditar) && podeEditar(m))
               acoes.push(`<button data-editar="${m.id}" title="Editar: corrigir o texto no WhatsApp do cliente (o WhatsApp dá 15 minutos)">✏️</button>`);
@@ -9495,7 +9598,7 @@ function openModal(id){
             if(m.id && (USUARIO.admin || USUARIO.podeApagar) && (m.t==='out'||m.t==='bot'))
               acoes.push(`<button class="x" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑</button>`);
             return acoes.length?`<div class="mb-acoes">${acoes.join('')}</div>`:'';
-          })()}<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div></div>`);
+          })()}<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div>${seloReacoes(reac.porMsg.get(m.id), c)}</div>`);
       }).join(''); })()}
     </div>
     <div id="mReplyBar"></div>
@@ -9863,6 +9966,12 @@ function openModal(id){
   document.querySelectorAll('[data-responder]').forEach(el=>el.onclick=ev=>{
     ev.stopPropagation();
     iniciarResposta(c, el.dataset.responder);
+  });
+  // reagir com emoji: abre a paleta em cima do botão
+  document.querySelectorAll('[data-reagir]').forEach(el=>el.onclick=ev=>{
+    ev.stopPropagation();
+    const m=(c.msgs||[]).find(x=>String(x.id)===el.dataset.reagir);
+    if(m) abrirReacoes(c, m, el);
   });
   /* editar mensagem enviada — a janela é de 15 minutos, e quem confere de
      verdade é o servidor. O texto novo é pedido num prompt do navegador de

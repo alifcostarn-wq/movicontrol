@@ -2716,7 +2716,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       : await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}&ultima_msg_id=eq.${antes}`, { method: 'PATCH', body: marca });
     if (!Array.isArray(pego) || !pego.length) continue;
     // só a parte nova (se reabriu e foi finalizada de novo)
-    const msgs = (await sb(e, `atend_mensagens?conversa_id=eq.${c.id}&id=gt.${antes || 0}&id=lte.${ult.id}&excluido_em=is.null`
+    const msgs = (await sb(e, `atend_mensagens?conversa_id=eq.${c.id}&id=gt.${antes || 0}&id=lte.${ult.id}&excluido_em=is.null&tipo=neq.reacao`
       + `&select=id,direcao,conteudo,transcricao,tipo,autor_id&order=id.asc&limit=120`)) || [];
     if (!base) {
       base = (await sb(e, 'atend_ia_base?select=id,tipo,titulo,conteudo,setor,status,ativo,vezes,revisado_por&order=id.desc&limit=1000')) || [];
@@ -3157,7 +3157,7 @@ async function conversarIA(e, { conversa, texto, fluxo }) {
     if (conversa && conversa.id) {
       const desde = new Date(Date.now() - IA_HISTORICO_HORAS * 3600e3).toISOString();
       const ms = (await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&created_at=gte.${encodeURIComponent(desde)}`
-        + `&excluido_em=is.null&direcao=in.(in,out,bot)&select=id,direcao,conteudo,transcricao&order=id.desc&limit=${IA_MAX_TURNOS + 1}`)) || [];
+        + `&excluido_em=is.null&direcao=in.(in,out,bot)&tipo=neq.reacao&select=id,direcao,conteudo,transcricao&order=id.desc&limit=${IA_MAX_TURNOS + 1}`)) || [];
       hist = ms.reverse()
         .map(m => ({ role: m.direcao === 'in' ? 'user' : 'assistant', content: String(m.transcricao || m.conteudo || '').slice(0, 800) }))
         .filter(m => m.content.trim());
@@ -3991,10 +3991,14 @@ async function tratarReacao(e, { fone, waId, emoji, alvoWaId }) {
     `&select=id,conteudo,direcao&limit=1`);
   if (!alvo) return { ok: true, ignorado: 'mensagem reagida não está no histórico' };
 
-  // texto vazio = o cliente REMOVEU a reação; some do painel também
+  // texto vazio = o cliente REMOVEU a reação; some do painel também. Fica
+  // marcada como removida em vez de apagada: a marca chega aos painéis abertos
+  // pelo tempo real (apagar não chegava, e o selo ficava lá até recarregar)
+  const tirarAnteriores = () => sb(e,
+    `atend_mensagens?conversa_id=eq.${conversa.id}&tipo=eq.reacao&direcao=eq.in&responde_a=eq.${alvo.id}&excluido_em=is.null`,
+    { method: 'PATCH', prefer: 'return=minimal', body: { excluido_em: new Date().toISOString() } });
   if (!emoji) {
-    await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&tipo=eq.reacao&direcao=eq.in&responde_a=eq.${alvo.id}`,
-      { method: 'DELETE', prefer: 'return=minimal' });
+    await tirarAnteriores();
     return { ok: true, reacao: 'removida' };
   }
 
@@ -4004,8 +4008,7 @@ async function tratarReacao(e, { fone, waId, emoji, alvoWaId }) {
   }
 
   // uma reação por mensagem: trocar o emoji substitui, não empilha
-  await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&tipo=eq.reacao&direcao=eq.in&responde_a=eq.${alvo.id}`,
-    { method: 'DELETE', prefer: 'return=minimal' });
+  await tirarAnteriores();
 
   await sb(e, 'atend_mensagens', {
     method: 'POST', prefer: 'return=minimal',
@@ -6883,7 +6886,7 @@ async function tratarCron(e) {
     for (const c of (alvos || [])) {
       if (esperandoNota(c)) continue;
       const ult = await sbUm(e,
-        `atend_mensagens?conversa_id=eq.${c.id}&select=direcao&order=created_at.desc&limit=1`);
+        `atend_mensagens?conversa_id=eq.${c.id}&tipo=neq.reacao&select=direcao&order=created_at.desc&limit=1`);
       if (!ult || ult.direcao === 'in') continue;   // bola está com a gente
       await sb(e, `atend_conversas?id=eq.${c.id}`, {
         method: 'PATCH', prefer: 'return=minimal',
@@ -6995,7 +6998,7 @@ async function tratarCron(e) {
   for (const c of (paradas || [])) {
     if (esperandoNota(c)) continue;
     const ult = await sbUm(e,
-      `atend_mensagens?conversa_id=eq.${c.id}&select=direcao&order=created_at.desc&limit=1`);
+      `atend_mensagens?conversa_id=eq.${c.id}&tipo=neq.reacao&select=direcao&order=created_at.desc&limit=1`);
 
     // A última palavra foi do cliente: quem está devendo resposta somos nós.
     // Encerrar aqui seria mandar embora quem está esperando. Vai para a fila,
@@ -10182,7 +10185,9 @@ export default async function handler(req, res) {
         const desc = await sb(e,
           `atend_mensagens?conversa_id=eq.${id}&select=*${corte}&order=created_at.desc,id.desc&limit=${n + 1}`) || [];
         const mais_antigas = desc.length > n;
-        const msgs = desc.slice(0, n).reverse();
+        // reação tirada (pelo cliente ou por alguém da equipe) não é "mensagem
+        // apagada": simplesmente some
+        const msgs = desc.slice(0, n).reverse().filter(m => !(m.tipo === 'reacao' && m.excluido_em));
         // assina os anexos para o atendente conseguir abrir
         for (const m of (msgs || [])) {
           // mensagem apagada não viaja com o conteúdo: ela saiu do WhatsApp do
@@ -10260,6 +10265,67 @@ export default async function handler(req, res) {
           body: { localizacao: loc, conteudo: rotuloLocalizacao(loc) },
         });
         return res.status(200).json({ ok: true, localizacao: loc });
+      }
+
+      /* Reagir com emoji a uma mensagem, como no WhatsApp. Vai pela Evolution
+         (sendReaction) e fica gravada como a reação do cliente: uma linha
+         `reacao` presa à mensagem (responde_a), que o painel desenha como selo
+         na bolha. O número da empresa tem UMA reação por mensagem: outro emoji
+         substitui, o mesmo emoji de novo (ou vazio) tira. Reação não é
+         resposta: não assume a conversa, não mexe na fila nem na prévia. */
+      case 'mensagens.reagir': {
+        const mid = Number(body.mensagem_id);
+        const emoji = String(body.emoji || '').trim();
+        if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório.' });
+        if (emoji && (emoji.length > 16 || !/\p{Extended_Pictographic}/u.test(emoji)
+            || !/^[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f\u20e3]+$/u.test(emoji))) {
+          return res.status(400).json({ ok: false, error: 'Reação inválida: escolha um emoji.' });
+        }
+        const m = await sbUm(e, `atend_mensagens?id=eq.${mid}&select=id,conversa_id,direcao,tipo,wa_id,conteudo,excluido_em`);
+        if (!m) return res.status(404).json({ ok: false, error: 'Mensagem não encontrada.' });
+        const acesso = await conversaDoUsuario(e, user, m.conversa_id);
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        if (m.excluido_em) return res.status(400).json({ ok: false, error: 'Esta mensagem foi apagada.' });
+        if (m.direcao === 'sys' || m.tipo === 'reacao') return res.status(400).json({ ok: false, error: 'Não dá para reagir a isto.' });
+        if (!m.wa_id) {
+          return res.status(400).json({ ok: false, error:
+            'Esta mensagem foi registrada sem o id do WhatsApp (acontece nas mais antigas), então não há como reagir a ela.' });
+        }
+        if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return res.status(400).json({ ok: false, error: 'Evolution API não configurada.' });
+        const minhas = (await sb(e, `atend_mensagens?conversa_id=eq.${m.conversa_id}&tipo=eq.reacao&direcao=eq.out`
+          + `&responde_a=eq.${m.id}&excluido_em=is.null&select=id,conteudo`)) || [];
+        const atual = minhas.length ? String(minhas[minhas.length - 1].conteudo || '') : '';
+        const novo = emoji && emoji !== atual ? emoji : '';
+        if (!novo && !minhas.length) return res.status(200).json({ ok: true, reacao: null, sem_mudanca: true });
+
+        const numero = normalizarFone(acesso.c.contato_fone);
+        const key = { remoteJid: `${numero}@s.whatsapp.net`, fromMe: m.direcao !== 'in', id: m.wa_id };
+        let resp;
+        try {
+          resp = await evoPost(e, 'message/sendReaction', { key, reaction: novo }, 15000, 2);
+        } catch (err) {
+          // Evolution antiga: o corpo vinha dentro de reactionMessage
+          if (/reactionMessage/i.test(err.message)) {
+            try { resp = await evoPost(e, 'message/sendReaction', { reactionMessage: { key, reaction: novo } }, 15000, 1); }
+            catch (err2) { err = err2; }
+          }
+          if (!resp) return res.status(502).json({ ok: false, error:
+            `O WhatsApp não aceitou a reação: ${String(err.message).slice(0, 160)}. Nada foi alterado.` });
+        }
+        const agora = new Date().toISOString();
+        if (minhas.length) {
+          await sb(e, `atend_mensagens?id=in.(${minhas.map(x => x.id).join(',')})`, { method: 'PATCH', prefer: 'return=minimal',
+            body: { excluido_em: agora, excluido_por: user.id, excluido_por_nome: user.nome || null } });
+        }
+        let linha = null;
+        if (novo) {
+          linha = await sbUm(e, 'atend_mensagens', { method: 'POST', body: {
+            conversa_id: m.conversa_id, direcao: 'out', tipo: 'reacao', conteudo: novo, wa_id: idDaEvolution(resp),
+            responde_a: m.id, quote_texto: String(m.conteudo || '').slice(0, 200), quote_direcao: m.direcao,
+            autor_id: user.id, autor_nome: user.nome || null, status: 'enviado' } });
+        }
+        return res.status(200).json({ ok: true, reacao: novo || null, id: linha ? linha.id : null,
+          autor_nome: user.nome || null, criado_em: linha ? linha.created_at : agora });
       }
 
       case 'mensagens.excluir': {
