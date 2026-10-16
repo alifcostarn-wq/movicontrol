@@ -2594,12 +2594,15 @@ function textoBaseExtra({ regras, fatos, exemplos }) {
 }
 
 /* ---------------------------------------------------------------------------
-   APRENDER COM OS ATENDIMENTOS. Cada atendimento finalizado em que um
-   atendente falou com o cliente é lido pela IA, que tira dele o que vale para
-   qualquer cliente. Entra como SUGESTÃO (status 'sugerido'): a IA só usa
-   depois que um admin aprova em Configurações › Base da IA. Os dados pessoais
-   saem antes de o texto ir para a Groq. Roda no ciclo do cron, uma conversa
-   por vez, só se sobrar tempo no ciclo.
+   APRENDER COM OS ATENDIMENTOS — sozinha, sem aprovação manual. Cada
+   atendimento finalizado em que um atendente falou com o cliente é lido pela
+   IA, que tira dele o que vale para qualquer cliente, com a frase do
+   atendente que prova (o que não foi dito por ele não entra). O item entra
+   "em análise" (status 'sugerido') e a curadoria (curarBaseIA, abaixo)
+   decide sozinha se fica ou sai. Os dados pessoais saem antes de o texto ir
+   para a Groq. Roda no ciclo do cron, uma conversa por vez, só se sobrar
+   tempo no ciclo. Cada atendimento lido também conta para os itens da base
+   cujo assunto apareceu nele: é isso que mantém um item vivo.
    --------------------------------------------------------------------------- */
 const IA_APRENDER = { conversasPorCiclo: 1, examinadas: 8, diasAtras: 3, tempoMaxCicloMs: 25000, prazoGroqMs: 15000 };
 
@@ -2627,6 +2630,43 @@ function semelhancaIA(a, b) {
   return comum / (A.size + B.size - comum);
 }
 
+/* Palavra longa vale pelas 5 primeiras letras: "cancelar" e "cancelamento",
+   "fatura" e "faturas" contam como a mesma. Errar para o lado de achar que
+   o assunto apareceu só segura um item por mais tempo na base. */
+function raizesIA(t) {
+  return new Set([...palavrasIA(t)].map(w => (w.length >= 6 ? w.slice(0, 5) : w)));
+}
+function semelhancaRaiz(a, b) {
+  const A = raizesIA(a), B = raizesIA(b);
+  if (!A.size || !B.size) return 0;
+  let comum = 0;
+  for (const w of A) if (B.has(w)) comum++;
+  return comum / (A.size + B.size - comum);
+}
+
+/* O assunto do item apareceu na conversa? Pelo título (no exemplo, a
+   pergunta do cliente; no fato, o assunto): metade das palavras dele, no
+   mínimo duas. Sem título que sirva, pelo texto todo, com régua mais alta. */
+function assuntoApareceu(item, raizes) {
+  const tit = raizesIA(item.titulo || '');
+  const alvo = tit.size >= 2 ? tit : raizesIA(`${item.titulo || ''} ${item.conteudo || ''}`);
+  if (alvo.size < 2) return false;
+  let n = 0;
+  for (const w of alvo) if (raizes.has(w)) n++;
+  return n >= 2 && n / alvo.size >= (alvo === tit ? 0.5 : 0.35);
+}
+
+/* A frase que a IA diz ter tirado da fala do atendente está mesmo lá? (ela
+   pode vir com outras palavras: basta a maior parte bater) */
+function provaConfere(prova, falaAtendente) {
+  const p = raizesIA(prova);
+  if (p.size < 2) return false;
+  const f = raizesIA(falaAtendente);
+  let n = 0;
+  for (const w of p) if (f.has(w)) n++;
+  return n / p.size >= 0.6;
+}
+
 /* Lê o JSON que a IA devolveu (às vezes vem com texto em volta) e fica só
    com o que serve: tipo certo, tamanho razoável e nada que ainda carregue um
    dado mascarado — sinal de que era coisa daquele cliente. */
@@ -2645,7 +2685,7 @@ function itensAprendidos(bruto, setores) {
     if (/\[(nome|cpf|cnpj|telefone|e-mail|número|código pix)\]/i.test(titulo + ' ' + conteudo)) continue;
     const setor = tipo === 'exemplo' && it.setor
       ? setores.find(x => x.toLowerCase() === String(it.setor).trim().toLowerCase()) || null : null;
-    out.push({ tipo, titulo: titulo || null, conteudo, setor });
+    out.push({ tipo, titulo: titulo || null, conteudo, setor, prova: String(it.prova || '').trim().slice(0, 600) });
   }
   return out;
 }
@@ -2657,10 +2697,10 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
   const desde = new Date(Date.now() - IA_APRENDER.diasAtras * 864e5).toISOString();
   const cands = (await sb(e, `atend_conversas?coluna=eq.resolvidos&deleted_at=is.null&updated_at=gte.${encodeURIComponent(desde)}`
     + `&select=id,contato_nome&order=updated_at.desc&limit=25`)) || [];
-  if (!cands.length) return { lidas: 0, sugestoes: 0 };
+  if (!cands.length) return { lidas: 0, novos: 0 };
   const lidos = new Map(((await sb(e, `atend_ia_aprendizado?conversa_id=in.(${cands.map(c => c.id).join(',')})&select=conversa_id,ultima_msg_id`)) || [])
     .map(x => [Number(x.conversa_id), Number(x.ultima_msg_id)]));
-  let base = null, setores = null, lidas = 0, sugestoes = 0, examinadas = 0;
+  let base = null, setores = null, lidas = 0, novos = 0, examinadas = 0, reforcos = 0, voltaram = 0, semProva = 0, usos = 0;
   for (const c of cands) {
     if (lidas >= IA_APRENDER.conversasPorCiclo || examinadas >= IA_APRENDER.examinadas) break;
     if (Date.now() - inicioCiclo > IA_APRENDER.tempoMaxCicloMs) break;
@@ -2678,34 +2718,40 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
     // só a parte nova (se reabriu e foi finalizada de novo)
     const msgs = (await sb(e, `atend_mensagens?conversa_id=eq.${c.id}&id=gt.${antes || 0}&id=lte.${ult.id}&excluido_em=is.null`
       + `&select=id,direcao,conteudo,transcricao,tipo,autor_id&order=id.asc&limit=120`)) || [];
+    if (!base) {
+      base = (await sb(e, 'atend_ia_base?select=id,tipo,titulo,conteudo,setor,status,ativo,vezes,revisado_por&order=id.desc&limit=1000')) || [];
+      setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
+    }
+    // o que a base já sabe e apareceu neste atendimento conta como usado
+    // (até no atendimento só do bot: o cliente perguntou, o assunto é do dia a dia)
+    usos += await marcarUsoDaBase(e, base, msgs);
     const humano = msgs.some(m => m.direcao === 'out' && m.autor_id);
     if (!humano || !msgs.some(m => m.direcao === 'in')) {            // só bot, ou sem cliente: nada a aprender
       await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { pulada: true } }).catch(() => {});
       continue;
     }
     const quem = { in: 'Cliente', out: 'Atendente', bot: 'Bot' };
-    const transcricao = msgs.filter(m => quem[m.direcao])
-      .map(m => `${quem[m.direcao]}: ${mascararDados(m.transcricao || m.conteudo || '', c.contato_nome).replace(/\s+/g, ' ').slice(0, 400)}`)
-      .join('\n').slice(-6000);
-    if (!base) {
-      base = (await sb(e, 'atend_ia_base?select=id,tipo,titulo,conteudo,status,vezes&order=id.desc&limit=1000')) || [];
-      setores = ((await sb(e, 'atend_setores?ativo=is.true&select=*')) || []).filter(x => x.interno !== true).map(x => x.nome);
-    }
+    const linhas = msgs.filter(m => quem[m.direcao])
+      .map(m => ({ m, txt: mascararDados(m.transcricao || m.conteudo || '', c.contato_nome).replace(/\s+/g, ' ').slice(0, 400) }));
+    const transcricao = linhas.map(({ m, txt }) => `${quem[m.direcao]}: ${txt}`).join('\n').slice(-6000);
+    // o que o atendente disse, mascarado do mesmo jeito: é onde a prova tem de estar
+    const falaAtendente = linhas.filter(({ m }) => m.direcao === 'out' && m.autor_id).map(({ txt }) => txt).join(' ');
     // só os títulos: assim cabe a base inteira (com o conteúdo, só as 40 mais novas cabiam)
     const jaNaBase = base.filter(x => x.status !== 'descartado').slice(0, 150)
       .map(x => `- ${(x.titulo || x.conteudo).replace(/\s+/g, ' ').slice(0, 90)}`).join('\n');
     let itens = [];
     try {
-      const r = await groqChat({ chave: e.GROQ, maxTokens: 700, temperature: 0.2, prazoMs: IA_APRENDER.prazoGroqMs, origem: 'aprendizado', messages: [
+      const r = await groqChat({ chave: e.GROQ, maxTokens: 900, temperature: 0.2, prazoMs: IA_APRENDER.prazoGroqMs, origem: 'aprendizado', messages: [
         { role: 'system', content: [
           'Você analisa um atendimento JÁ FINALIZADO da MoviOn (provedor de internet por fibra em Mossoró/RN) para ensinar o atendente virtual.',
           'Extraia SOMENTE conhecimento que vale para QUALQUER cliente e que foi dito ou confirmado pelo ATENDENTE (nunca o que só o cliente ou o bot disse).',
           'Ignore: dados pessoais; valores, datas e vencimentos de um cliente específico; protocolos; endereços; combinados só daquele caso; saudações e despedidas; e o que já está em "JÁ NA BASE".',
           'Tipos: "fato" = informação geral da empresa (ex.: prazo de liberação depois do pagamento, formas de pagamento aceitas, horário de atendimento).',
           '"exemplo" = pergunta comum de cliente (titulo) e, em conteudo, a RESPOSTA PRONTA PARA MANDAR ao cliente, falando com ele ("você"), do jeito que o atendente respondeu mas servindo a qualquer cliente, em tom natural e simpático de WhatsApp (nada de "Informamos que", "Prezado") — nunca uma descrição como "o atendente envia…"; "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
+          'Em "prova", copie a frase do ATENDENTE, como está na conversa, que mostra isso. Sem uma frase do atendente que prove, não inclua o item.',
           `SETORES: ${setores.join(', ')}.`,
           'No máximo 3 itens. Se não houver nada geral para aprender, devolva {"itens": []}.',
-          'Responda APENAS com JSON: {"itens":[{"tipo":"fato","titulo":"...","conteudo":"..."},{"tipo":"exemplo","titulo":"...","conteudo":"...","setor":null}]}',
+          'Responda APENAS com JSON: {"itens":[{"tipo":"fato","titulo":"...","conteudo":"...","prova":"..."},{"tipo":"exemplo","titulo":"...","conteudo":"...","setor":null,"prova":"..."}]}',
           jaNaBase ? `JÁ NA BASE:\n${jaNaBase}` : '',
         ].filter(Boolean).join('\n') },
         { role: 'user', content: transcricao },
@@ -2716,10 +2762,14 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
       lidas++;
       continue;
     }
-    let novos = 0;
+    // sem a frase do atendente que prove, não entra: é invenção da IA ou fala do cliente
+    const comProva = itens.filter(it => provaConfere(it.prova, falaAtendente));
+    semProva += itens.length - comProva.length;
+    let novosAqui = 0;
     const desteAtendimento = new Set();   // dois itens parecidos na MESMA leitura não são "visto em 2 atendimentos"
-    for (const it of itens) {
-      // já existe parecido? sugestão repetida ganha +1; aprovado ou descartado não volta
+    for (const { prova, ...it } of comProva) {
+      // já existe parecido? o que vale ou está em análise ganha +1; o que saiu
+      // por falta de uso volta; o que a IA ou um admin descartou não volta
       let melhor = null, nota = 0;
       for (const x of base) {
         if (x.tipo !== it.tipo) continue;
@@ -2731,21 +2781,230 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
         if (n > nota) { nota = n; melhor = x; }
       }
       if (melhor && nota >= 0.55) {
-        if (melhor.status === 'sugerido' && !desteAtendimento.has(melhor.id)) {
-          desteAtendimento.add(melhor.id);
-          melhor.vezes = (melhor.vezes || 1) + 1;
-          await sb(e, `atend_ia_base?id=eq.${melhor.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { vezes: melhor.vezes } });
+        if (desteAtendimento.has(melhor.id)) continue;
+        desteAtendimento.add(melhor.id);
+        const agora = new Date().toISOString();
+        if (melhor.status === 'sugerido' || melhor.status === 'aprovado') {
+          melhor.vezes = (melhor.vezes || 1) + 1; reforcos++;
+          await sb(e, `atend_ia_base?id=eq.${melhor.id}`, { method: 'PATCH', prefer: 'return=minimal',
+            body: { vezes: melhor.vezes, ...(melhor.status === 'aprovado' ? { usado_em: agora } : {}) } });
+        } else if (melhor.revisado_por === 'uso') {
+          melhor.vezes = (melhor.vezes || 1) + 1; melhor.status = 'aprovado'; voltaram++;
+          await sb(e, `atend_ia_base?id=eq.${melhor.id}`, { method: 'PATCH', prefer: 'return=minimal', body: {
+            status: 'aprovado', vezes: melhor.vezes, usado_em: agora, revisado_em: agora, revisado_por: 'ia', decisao: 'voltou',
+            motivo: 'voltou a aparecer nos atendimentos', updated_at: agora } });
         }
         continue;
       }
       const novo = await sbUm(e, 'atend_ia_base', { method: 'POST', body: {
         ...it, status: 'sugerido', origem: 'automatico', conversa_id: c.id, ativo: true } });
-      if (novo) { base.unshift(novo); novos++; desteAtendimento.add(novo.id); }
+      if (novo) { base.unshift(novo); novosAqui++; desteAtendimento.add(novo.id); }
     }
-    await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { itens: novos } });
-    lidas++; sugestoes += novos;
+    await sb(e, `atend_ia_aprendizado?conversa_id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { itens: novosAqui } });
+    lidas++; novos += novosAqui;
   }
-  return { lidas, sugestoes };
+  return { lidas, novos, reforcos, voltaram, sem_prova: semProva, usos };
+}
+
+/* Os itens da base cujo assunto apareceu no atendimento (no que o cliente e
+   o atendente escreveram; o texto pronto do bot não conta) ganham +1 uso. */
+async function marcarUsoDaBase(e, base, msgs) {
+  const falado = msgs.filter(m => m.direcao === 'in' || (m.direcao === 'out' && m.autor_id))
+    .map(m => m.transcricao || m.conteudo || '').join(' ');
+  const raizes = raizesIA(falado);
+  if (raizes.size < 2) return 0;
+  const ids = base.filter(x => x.status === 'aprovado' && x.ativo !== false && assuntoApareceu(x, raizes)).map(x => x.id);
+  if (!ids.length) return 0;
+  try { await sb(e, 'rpc/ia_base_marcar_uso', { method: 'POST', prefer: 'return=minimal', body: { p_ids: ids } }); }
+  catch (err) { console.error('[ia uso]', err.message); return 0; }
+  return ids.length;
+}
+
+/* ---------------------------------------------------------------------------
+   CURADORIA AUTOMÁTICA: a própria IA decide o que fica na base. O que foi
+   aprendido entra em análise e, num ciclo seguinte, vai em lote para a Groq
+   junto com o que a base já tem de parecido, o fluxo do bot e as regras da
+   equipe. Para cada item: manter (passa a valer), repetido (a base já diz
+   isso: o item que já existe soma os atendimentos) ou descartar (dado de um
+   cliente, combinado de um caso só, saudação, trabalho interno, coisa vaga,
+   errada ou que o fluxo já diz). O que já estava aprovado antes disso passa
+   uma vez pela mesma revisão, para limpar os repetidos. E o que não aparece
+   em nenhum atendimento por muito tempo sai sozinho (ia_base_podar) — e volta
+   se reaparecer. O admin pode desfazer qualquer decisão; o que ele mexe fica
+   fixo e a IA não descarta mais. Uma chamada à Groq por ciclo, no máximo.
+   --------------------------------------------------------------------------- */
+const IA_CURADORIA = { porLote: 6, esperaMin: 30, vizinhos: 4, maxVizinhos: 20, reservaMin: 15, tentativas: 3, prazoGroqMs: 20000, podarDias: 45, podarMinLidos: 150 };
+
+const PROMPT_CURADORIA = [
+  'Você cuida da base de conhecimento do atendente virtual da MoviOn (provedor de internet por fibra em Mossoró/RN). O atendente virtual responde clientes no WhatsApp usando só o fluxo do bot e essa base, então ela deve ter apenas o que é correto, útil no dia a dia e vale para QUALQUER cliente.',
+  'Para cada item de PARA DECIDIR, escolha uma decisão:',
+  '- "manter": informação geral e útil para atender clientes, que a base e o fluxo ainda não têm.',
+  '- "repetido": outro item do MESMO tipo (de NA BASE ou da própria lista PARA DECIDIR) já diz tudo o que importa deste, mesmo com outras palavras. Em "de", o id desse outro item. Se dois itens da lista dizem a mesma coisa, mantenha o mais completo e marque o outro como repetido dele.',
+  '- "descartar": não serve para o atendente virtual. Por exemplo: dado de um cliente (valor ou vencimento de uma fatura, data, protocolo, nome, endereço); combinado só daquele atendimento; saudação, despedida ou aviso de transferência; descrição do trabalho interno da equipe ("o setor X informa…", "o atendente registra…") sem nada que o cliente precise saber; orientação vaga ou duvidosa; o que contradiz o fluxo, as regras ou a base; o que o fluxo do bot já diz.',
+  'Em "exemplo", o conteúdo tem de ser uma resposta pronta para mandar ao cliente, falando com ele. Instrução para o atendente ("peça ao cliente…", "o atendente envia…") é descartar.',
+  'Responda APENAS com JSON, uma decisão para cada id de PARA DECIDIR: {"decisoes":[{"id":1,"decisao":"manter"},{"id":2,"decisao":"repetido","de":7},{"id":3,"decisao":"descartar","motivo":"valor da fatura de um cliente"}]}',
+  'O motivo é curto (até 8 palavras), em português.',
+].join('\n');
+
+const textoCurto = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+function linhaCuradoria(x, max) {
+  return x.tipo === 'exemplo'
+    ? `#${x.id} [exemplo] Cliente: "${textoCurto(x.titulo, 140)}" → Resposta: "${textoCurto(x.conteudo, max)}"${x.setor ? ` (→ ${x.setor})` : ''}`
+    : `#${x.id} [${x.tipo}] ${x.titulo ? textoCurto(x.titulo, 140) + ': ' : ''}${textoCurto(x.conteudo, max)}`;
+}
+
+/* Lê o JSON da curadoria. null = não deu para ler (a chamada conta como falha). */
+function decisoesDaCuradoria(bruto) {
+  const m = String(bruto || '').match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let j; try { j = JSON.parse(m[0]); } catch { return null; }
+  if (!Array.isArray(j && j.decisoes)) return null;
+  return j.decisoes.map(d => ({
+    id: Number(d && d.id), decisao: String((d && d.decisao) || '').toLowerCase().trim(), de: Number(d && d.de) || null,
+    motivo: textoCurto(d && d.motivo, 120) || null,
+  })).filter(d => d.id && ['manter', 'repetido', 'descartar'].includes(d.decisao));
+}
+
+/* O lote da vez: primeiro o que acabou de ser aprendido; sem nada novo, o que
+   já estava aprovado e a IA ainda não revisou. O aprendido espera juntar um
+   lote cheio (ou até meia hora): uma chamada para 6 itens gasta bem menos da
+   cota diária da Groq que 6 chamadas de um. A reserva (revisado_em) evita
+   que dois ciclos ao mesmo tempo decidam os mesmos itens; se o ciclo cair no
+   meio, ela vence em alguns minutos e o lote volta. */
+async function reservarLoteCuradoria(e) {
+  const limite = new Date(Date.now() - IA_CURADORIA.reservaMin * 60000).toISOString();
+  const livre = x => !x.revisado_em || Date.parse(x.revisado_em) < Date.parse(limite);
+  const espera = Date.now() - IA_CURADORIA.esperaMin * 60000;
+  for (const [q, junta] of [
+    ['atend_ia_base?status=eq.sugerido&revisado_por=is.null&ativo=is.true&select=*&order=id.asc&limit=40', true],
+    ['atend_ia_base?status=eq.aprovado&origem=eq.automatico&revisado_por=is.null&fixo=is.false&ativo=is.true&select=*&order=id.asc&limit=40', false],
+  ]) {
+    const cands = ((await sb(e, q)) || []).filter(livre).slice(0, IA_CURADORIA.porLote);
+    if (!cands.length) continue;
+    if (junta && cands.length < IA_CURADORIA.porLote && !cands.some(x => Date.parse(x.created_at) < espera)) continue;
+    const agora = new Date().toISOString();
+    const nulos = cands.filter(x => !x.revisado_em).map(x => x.id), velhos = cands.filter(x => x.revisado_em).map(x => x.id);
+    const pegos = [
+      ...(nulos.length ? (await sb(e, `atend_ia_base?id=in.(${nulos.join(',')})&revisado_por=is.null&revisado_em=is.null`,
+        { method: 'PATCH', body: { revisado_em: agora } })) || [] : []),
+      ...(velhos.length ? (await sb(e, `atend_ia_base?id=in.(${velhos.join(',')})&revisado_por=is.null&revisado_em=lt.${encodeURIComponent(limite)}`,
+        { method: 'PATCH', body: { revisado_em: agora } })) || [] : []),
+    ];
+    if (pegos.length) return pegos;
+  }
+  return [];
+}
+
+async function curarBaseIA(e, cfg, inicioCiclo = Date.now(), { jaChamouGroq = false } = {}) {
+  if (cfg && cfg.ia_aprender_ativo === false) return { desligado: true };
+  const out = { podados: 0 };
+  // sai o que não aparece mais nos atendimentos (sem IA: é só a conta)
+  try {
+    const p = await sb(e, 'rpc/ia_base_podar', { method: 'POST', body: { p_dias: IA_CURADORIA.podarDias, p_min_lidos: IA_CURADORIA.podarMinLidos } });
+    out.podados = Array.isArray(p) ? p.length : 0;
+  } catch (err) { console.error('[ia curadoria] poda:', err.message); }
+  if (!e.GROQ) return { ...out, sem_chave: true };
+  if (jaChamouGroq) return { ...out, depois: true };     // o aprendizado já usou a Groq neste ciclo
+  if (Date.now() - inicioCiclo > IA_APRENDER.tempoMaxCicloMs) return { ...out, sem_tempo: true };
+  const reservado = await reservarLoteCuradoria(e);
+  if (!reservado.length) return out;
+  const agora = new Date().toISOString();
+  const res = { lote: reservado.length, aprendidos: 0, mantidos: 0, repetidos: 0, descartados: 0 };
+  const salvar = (id, body) => sb(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', prefer: 'return=minimal',
+    body: { revisado_por: 'ia', revisado_em: agora, updated_at: agora, ...body } });
+  const manter = async it => {
+    if (it.status === 'sugerido') { await salvar(it.id, { status: 'aprovado', decisao: 'aprendido', motivo: null, usado_em: agora }); res.aprendidos++; }
+    else { await salvar(it.id, { decisao: 'mantido', motivo: null }); res.mantidos++; }
+  };
+  // quem já falhou demais fica (a régua do uso tira depois, se não servir):
+  // a Groq não gasta para sempre com o mesmo item
+  const lote = [];
+  for (const it of reservado) {
+    if ((it.tentativas || 0) >= IA_CURADORIA.tentativas) await manter(it); else lote.push(it);
+  }
+  if (!lote.length) return { ...out, ...res };
+
+  const [ativos, fluxo] = await Promise.all([
+    sb(e, 'atend_ia_base?status=eq.aprovado&ativo=is.true&select=id,tipo,titulo,conteudo,setor,vezes,usos&order=id.asc&limit=1000'),
+    sbUm(e, 'atend_fluxos?ativo=is.true&select=nodes&limit=1').catch(() => null),
+  ]);
+  const doLote = new Map(lote.map(x => [x.id, x]));
+  const outros = (ativos || []).filter(x => !doLote.has(x.id));
+  // o que a base tem de mais parecido com cada item do lote
+  const viz = new Map();
+  for (const it of lote) {
+    const txt = `${it.titulo || ''} ${it.conteudo}`;
+    outros.filter(x => x.tipo !== 'regra')
+      .map(x => ({ x, n: Math.max(semelhancaRaiz(`${x.titulo || ''} ${x.conteudo}`, txt), x.titulo && it.titulo ? semelhancaRaiz(x.titulo, it.titulo) : 0) }))
+      .filter(v => v.n >= 0.08).sort((a, b) => b.n - a.n).slice(0, IA_CURADORIA.vizinhos)
+      .forEach(v => { if (!viz.has(v.x.id) || viz.get(v.x.id).n < v.n) viz.set(v.x.id, v); });
+  }
+  const vizinhos = [...viz.values()].sort((a, b) => b.n - a.n).slice(0, IA_CURADORIA.maxVizinhos).map(v => v.x).sort((a, b) => a.id - b.id);
+  const regras = outros.filter(x => x.tipo === 'regra').map(x => `- ${textoCurto(x.conteudo, 300)}`).join('\n').slice(0, 1500);
+  const doFluxo = fluxo ? baseDaIA(fluxo).slice(0, 2500) : '';
+
+  let decisoes = null;
+  try {
+    const r = await groqChat({ chave: e.GROQ, maxTokens: 700, temperature: 0.1, raciocinio: 'medium', prazoMs: IA_CURADORIA.prazoGroqMs, origem: 'aprendizado', messages: [
+      { role: 'system', content: PROMPT_CURADORIA },
+      { role: 'user', content: [
+        doFluxo ? `FLUXO DO BOT (o que ele já diz):\n${doFluxo}` : '',
+        regras ? `REGRAS DA EQUIPE:\n${regras}` : '',
+        `NA BASE (parecidos com os itens a decidir):\n${vizinhos.map(x => linhaCuradoria(x, 240)).join('\n') || '(nada parecido)'}`,
+        `PARA DECIDIR:\n${lote.map(x => linhaCuradoria(x, 450)).join('\n')}`,
+      ].filter(Boolean).join('\n\n') },
+    ] });
+    decisoes = decisoesDaCuradoria(r.texto);
+    if (!decisoes || !decisoes.length) throw new Error('a IA não devolveu as decisões');
+  } catch (err) {
+    // o lote fica reservado e volta daqui a pouco; cada falha conta
+    console.error('[ia curadoria]', err.message);
+    for (const it of lote) {
+      await sb(e, `atend_ia_base?id=eq.${it.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { tentativas: (it.tentativas || 0) + 1 } }).catch(() => {});
+    }
+    return { ...out, ...res, erro: String(err.message).slice(0, 200) };
+  }
+
+  const dec = new Map();
+  for (const d of decisoes) if (doLote.has(d.id) && !dec.has(d.id)) dec.set(d.id, d);
+  const porId = new Map([...vizinhos, ...lote].map(x => [x.id, x]));
+  const final = new Map();       // id do lote → 'aprovado' | 'descartado'
+  const trocadoPor = new Map();  // id do repetido → id do item que ficou no lugar
+  for (const d of dec.values()) {
+    if (d.decisao !== 'manter') continue;
+    await manter(doLote.get(d.id)); final.set(d.id, 'aprovado');
+  }
+  for (const d of dec.values()) {
+    if (d.decisao !== 'descartar') continue;
+    await salvar(d.id, { status: 'descartado', decisao: 'descartado', motivo: d.motivo || 'não ajuda no atendimento' });
+    final.set(d.id, 'descartado'); res.descartados++;
+  }
+  // repetido: o outro pode ser da base ou do próprio lote (decidido acima)
+  for (let volta = 0; volta < 3; volta++) {
+    for (const d of dec.values()) {
+      if (d.decisao !== 'repetido' || final.has(d.id) || !d.de) continue;
+      let alvo = d.de;
+      for (let i = 0; i < 6 && trocadoPor.has(alvo); i++) alvo = trocadoPor.get(alvo);
+      const x = porId.get(alvo);
+      if (!x || alvo === d.id || (doLote.has(alvo) && !final.has(alvo))) continue;
+      if (final.get(alvo) === 'descartado') {
+        await salvar(d.id, { status: 'descartado', decisao: 'descartado', motivo: 'repete um item que também saiu' });
+        final.set(d.id, 'descartado'); res.descartados++;
+        continue;
+      }
+      // fica o que já estava, com a conta dos atendimentos dos dois
+      const it = doLote.get(d.id);
+      x.vezes = (x.vezes || 1) + (it.vezes || 1);
+      x.usos = (x.usos || 0) + (it.usos || 0);
+      await sb(e, `atend_ia_base?id=eq.${x.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { vezes: x.vezes, usos: x.usos, usado_em: agora } });
+      await salvar(d.id, { status: 'descartado', decisao: 'repetido', motivo: `a base já tem: ${textoCurto(x.titulo || x.conteudo, 80)}` });
+      final.set(d.id, 'descartado'); trocadoPor.set(d.id, x.id); res.repetidos++;
+    }
+  }
+  // sem decisão que dê para usar (a IA pulou o item ou apontou um repetido que
+  // não existe): fica, e a régua do uso tira depois se não servir
+  for (const it of lote) if (!final.has(it.id)) await manter(it);
+  return { ...out, ...res };
 }
 
 /* Lê a marca do fim da resposta. Setor fora da lista vira "sem setor" (a fila
@@ -6780,13 +7039,17 @@ async function tratarCron(e) {
   try { movimentos = await avisarMovimentosContas(e); }
   catch (err) { console.error('[movimentos]', err.message); movimentos = { erro: err.message }; }
 
-  // a IA aprende com os atendimentos finalizados (vira sugestão para aprovar).
-  // Por último e com orçamento de tempo: é o que menos pode atrasar o resto.
-  let iaAprendeu = null;
+  // a IA aprende com os atendimentos finalizados e cuida sozinha da base:
+  // guarda o que vale para todos, descarta o repetido e o que não serve, e
+  // tira o que não aparece mais. Por último e com orçamento de tempo: é o que
+  // menos pode atrasar o resto.
+  let iaAprendeu = null, iaCuradoria = null;
   try { iaAprendeu = await aprenderComConversas(e, cfgAt, inicioCiclo); }
   catch (err) { console.error('[ia aprende]', err.message); iaAprendeu = { erro: err.message }; }
+  try { iaCuradoria = await curarBaseIA(e, cfgAt, inicioCiclo, { jaChamouGroq: !!(iaAprendeu && iaAprendeu.lidas) }); }
+  catch (err) { console.error('[ia curadoria]', err.message); iaCuradoria = { erro: err.message }; }
 
-  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas, ia_aprendeu: iaAprendeu,
+  return { ok: true, enviados, falhas, encerradas_por_inatividade: encerradas, ia_aprendeu: iaAprendeu, ia_curadoria: iaCuradoria,
            bot_parado: { despedidas: encerradas, para_fila: enfileiradas, caladas: encerradasMudas },
            espera: { movidas, avisadas, encerradas: encerradasHumano },
            pesquisas_encerradas: pesquisasEncerradas, sessoes_expiradas: sessoes,
@@ -10699,20 +10962,26 @@ export default async function handler(req, res) {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const desde = new Date(Date.now() - 30 * 864e5).toISOString();
         const semana = new Date(Date.now() - 7 * 864e5).toISOString();
-        const [itens, sugestoes, notas, negativos, lidas, novas, cfgRow] = await Promise.all([
+        const [itens, emAnalise, decisoes, notas, negativos, lidas, cfgRow] = await Promise.all([
           sb(e, 'atend_ia_base?status=eq.aprovado&select=*&order=tipo.asc,id.desc&limit=1000'),
-          sb(e, 'atend_ia_base?status=eq.sugerido&select=*&order=vezes.desc,id.desc&limit=100'),
+          sb(e, 'atend_ia_base?status=eq.sugerido&select=*&order=id.asc&limit=200'),
+          // o que a IA decidiu sozinha na semana (e o que um admin desfez)
+          sb(e, `atend_ia_base?origem=eq.automatico&revisado_em=gte.${encodeURIComponent(semana)}&decisao=neq.mantido`
+            + '&select=id,tipo,titulo,conteudo,setor,status,decisao,motivo,revisado_em,vezes,usos,conversa_id,fixo,ativo&order=revisado_em.desc&limit=200').catch(() => []),
           sb(e, `atend_ia_feedback?created_at=gte.${encodeURIComponent(desde)}&select=nota`),
           sb(e, 'atend_ia_feedback?nota=eq.-1&correcao_id=is.null&select=id,mensagem,resposta,acao,setor,comentario,created_at&order=created_at.desc&limit=20'),
           sb(e, `atend_ia_aprendizado?processado_em=gte.${encodeURIComponent(semana)}&pulada=is.false&select=conversa_id`).catch(() => []),
-          sb(e, `atend_ia_base?origem=eq.automatico&created_at=gte.${encodeURIComponent(semana)}&select=id`).catch(() => []),
           sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null),
         ]);
         const pos = (notas || []).filter(x => x.nota > 0).length, neg = (notas || []).filter(x => x.nota < 0).length;
-        return res.status(200).json({ ok: true, itens: itens || [], sugestoes: sugestoes || [], resumo: { positivas: pos, negativas: neg }, negativos: negativos || [],
+        const dec = decisoes || [], conta = (...ks) => dec.filter(x => ks.includes(x.decisao)).length;
+        return res.status(200).json({ ok: true, itens: itens || [], resumo: { positivas: pos, negativas: neg }, negativos: negativos || [],
+          // "sugestoes" fica para a tela antiga (aberta antes da atualização)
+          sugestoes: emAnalise || [], decisoes: dec.slice(0, 60),
           ia_ativa: !(cfgRow && cfgRow.dados && cfgRow.dados.ia_ativa === false),
           aprendizado: { ativo: !(cfgRow && cfgRow.dados && cfgRow.dados.ia_aprender_ativo === false), lidas: (lidas || []).length,
-            sugeridas: (novas || []).length } });
+            em_analise: (emAnalise || []).length, aprendidos: conta('aprendido', 'voltou'), descartados: conta('repetido', 'descartado'),
+            sem_uso: conta('sem_uso'), dias_sem_uso: IA_CURADORIA.podarDias } });
       }
 
       case 'ia.base.salvar': {
@@ -10733,22 +11002,27 @@ export default async function handler(req, res) {
         const origem = ['manual', 'teste', 'conversa'].includes(body.origem) ? body.origem : 'manual';
         const linha = { tipo, titulo, conteudo, setor, ativo: body.ativo !== false, updated_by: user.id, updated_at: new Date().toISOString() };
         const id = Number(body.id) || 0;
+        // o que o admin edita fica fixo: a curadoria automática não descarta mais
         const r = id
-          ? await sbUm(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', body: linha })
+          ? await sbUm(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', body: { ...linha, fixo: true } })
           : await sbUm(e, 'atend_ia_base', { method: 'POST', body: { ...linha, status: 'aprovado', origem, created_by: user.id } });
         if (!r) return res.status(404).json({ ok: false, error: 'Item não encontrado.' });
         return res.status(200).json({ ok: true, item: r });
       }
 
-      /* Sugestão aprendida sozinha: aprovar (a IA passa a usar, podendo vir
-         editada) ou descartar (não volta a ser sugerida). */
+      /* O admin desfaz uma decisão da IA: restaurar (volta a valer, podendo
+         vir editado) ou descartar (não volta a ser aprendido). O que ele
+         decide fica fixo: a curadoria automática não mexe mais. */
       case 'ia.base.revisar': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const id = Number(body.id);
         if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
         const atual = await sbUm(e, `atend_ia_base?id=eq.${id}&select=*`);
-        if (!atual) return res.status(404).json({ ok: false, error: 'Sugestão não encontrada.' });
-        const patch = { status: body.aprovar ? 'aprovado' : 'descartado', ativo: true, updated_by: user.id, updated_at: new Date().toISOString() };
+        if (!atual) return res.status(404).json({ ok: false, error: 'Item não encontrado.' });
+        const agora = new Date().toISOString();
+        const patch = { status: body.aprovar ? 'aprovado' : 'descartado', ativo: true, fixo: !!body.aprovar, decisao: 'admin',
+          revisado_por: 'admin', revisado_em: agora, motivo: null, ...(body.aprovar ? { usado_em: agora } : {}),
+          updated_by: user.id, updated_at: agora };
         if (body.aprovar) {
           if ('conteudo' in body) {
             const c = String(body.conteudo || '').trim().slice(0, 2000);
@@ -10785,7 +11059,7 @@ export default async function handler(req, res) {
         const id = Number(body.id);
         if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
         await sb(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', prefer: 'return=minimal',
-          body: { ativo: body.ativo !== false, updated_by: user.id, updated_at: new Date().toISOString() } });
+          body: { ativo: body.ativo !== false, fixo: true, updated_by: user.id, updated_at: new Date().toISOString() } });
         return res.status(200).json({ ok: true });
       }
 

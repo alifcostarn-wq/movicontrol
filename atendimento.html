@@ -1516,15 +1516,20 @@ body.dark-mode{--meter-ok:#4ade80;--meter-ok-track:#12382a;--meter-warn:#fbbf24;
 .iab-apr-liga input{margin-top:2px;}
 .iab-apr-liga span{display:block;font-weight:500;color:var(--text-mid);font-size:11.5px;margin-top:2px;}
 .iab-apr-st{font-size:11.5px;color:var(--text-mid);margin:0 0 8px 24px;}
-.iab-sug{border:1px solid var(--blue-line);background:var(--blue-soft);border-radius:10px;padding:9px 11px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;}
-.iab-sug label{font-size:11.5px;font-weight:800;color:var(--text-mid);}
-.iab-sug input,.iab-sug textarea,.iab-sug select{font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:var(--text);width:100%;box-sizing:border-box;}
 .iab-sug-t{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .iab-tipo{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:var(--card);border:1px solid var(--line);color:var(--text-mid);}
-.iab-vezes{font-size:11px;font-weight:700;color:var(--blue-txt);}
 .iab-ver{font-family:inherit;font-size:11px;background:none;border:0;color:var(--blue-txt);text-decoration:underline;cursor:pointer;padding:0;margin-left:auto;}
 .iab-sug-txt{overflow-wrap:anywhere;}
 .iab-sug-bts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+.iab-dec-t{font-size:12px;font-weight:800;color:var(--text-mid);margin:12px 0 6px;}
+.iab-dec{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 11px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;}
+.iab-dec-st{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--chip);color:var(--text-mid);white-space:nowrap;}
+.iab-dec-st.ok{background:var(--green-soft);border-color:var(--green-line);color:var(--green-deep);}
+.iab-dec-st.volta{background:var(--blue-soft);border-color:var(--blue-line);color:var(--blue-txt);}
+.iab-dec-st.uso{background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber-txt);}
+.iab-dec-qd{font-size:11px;color:var(--text-low);}
+.iab-dec-mot{font-size:11.5px;color:var(--text-mid);overflow-wrap:anywhere;}
+.iab-dec-mais{align-self:flex-start;}
 @media(max-width:860px){ .iab-item{flex-direction:column;} .iab-i-bts{align-self:flex-end;} }
 .iab-liga-ia{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px;}
 .iab-liga-ia.on{border-color:var(--green-line);background:var(--green-soft);}
@@ -6653,9 +6658,29 @@ const iatDestinos = sel => `<option value="" ${!sel?'selected':''}>Continua com 
    ("nunca prometa visita no mesmo dia") e exemplos de resposta aprovados —
    que nascem do botão 📚 nas conversas e do que ela aprende sozinha com os
    atendimentos finalizados. */
-const IAB = { tipo:'fato', editando:null, filtro:'', dados:null, editSug:null };
+const IAB = { tipo:'fato', editando:null, filtro:'', dados:null, decTodas:false };
 const IAB_TIPOS = { fato:['Fatos','Informação que a IA pode afirmar'], regra:['Regras','Instrução que a IA sempre segue'], exemplo:['Exemplos','Mensagem do cliente → resposta aprovada'] };
 const IAB_ORIGEM = { manual:'cadastrado aqui', teste:'da sala de teste', conversa:'de uma conversa real', automatico:'aprendido de um atendimento' };
+/* Uma decisão da IA sobre o que aprendeu (ou de um admin desfazendo): o que
+   foi, por quê, e o botão para desfazer. */
+const IAB_DEC = { aprendido:['ok','✓ Aprendeu'], voltou:['volta','↺ Voltou'], repetido:['fora','Repetido'],
+  descartado:['fora','✕ Descartou'], sem_uso:['uso','Sem uso'] };
+function iabDecisaoHTML(x){
+  const [cls, rot] = x.decisao==='admin'
+    ? (x.status==='aprovado' ? ['ok','Restaurado por um admin'] : ['fora','Descartado por um admin'])
+    : (IAB_DEC[x.decisao] || ['fora', x.decisao]);
+  const curto = (t, n)=>{ t = String(t||''); return t.length>n ? t.slice(0, n-1)+'…' : t; };
+  return `<div class="iab-dec" data-dec="${x.id}">
+    <div class="iab-sug-t"><span class="iab-dec-st ${cls}">${rot}</span><span class="iab-tipo">${({fato:'Fato',regra:'Regra',exemplo:'Exemplo'})[x.tipo]||esc(x.tipo)}</span>
+      <span class="iab-dec-qd">${fmtQuando(x.revisado_em)}</span>
+      ${x.conversa_id?`<button type="button" class="iab-ver" data-sug-ver="${x.conversa_id}">ver o atendimento</button>`:''}</div>
+    <div class="iab-sug-txt">${x.titulo?`<b>${esc(curto(x.titulo, 160))}</b>${x.tipo==='exemplo'?' → ':': '}`:''}${esc(curto(x.conteudo, 320))}${x.setor?` <span class="iab-set">→ ${esc(x.setor)}</span>`:''}</div>
+    ${x.motivo && x.decisao!=='aprendido' ? `<div class="iab-dec-mot"><b>Por quê:</b> ${esc(x.motivo)}</div>` : ''}
+    <div class="iab-sug-bts">${x.status==='aprovado'
+      ? `<button type="button" class="fbtn" data-dec-descartar="${x.id}" title="A IA para de usar e não aprende isso de novo">✕ Descartar</button>`
+      : `<button type="button" class="fbtn" data-dec-restaurar="${x.id}" title="A IA volta a usar e não descarta mais">↺ Restaurar</button>`}</div>
+  </div>`;
+}
 
 function iabFormHTML(){
   const ed = IAB.editando || {};
@@ -6782,8 +6807,8 @@ async function renderBaseIA(el, recarregar=true){
     catch(err){ el.innerHTML = `<div class="ms-erro">Falha: ${esc(err.message)}</div>`; return; }
   }
   const { itens, resumo, negativos } = IAB.dados;
-  const sugestoes = IAB.dados.sugestoes || [];
-  const apr = IAB.dados.aprendizado || { ativo:true, lidas:0, sugeridas:0 };
+  const decisoes = IAB.dados.decisoes || [];
+  const apr = IAB.dados.aprendizado || { ativo:true, lidas:0 };
   const ativos = itens.filter(x=>x.ativo);
   const cont = t => ativos.filter(x=>x.tipo===t).length;
   const total = resumo.positivas + resumo.negativas;
@@ -6805,26 +6830,14 @@ async function renderBaseIA(el, recarregar=true){
       <div class="iab-num"><b>${cont('exemplo')}</b><span>exemplos</span></div>
       <div class="iab-num ${total?'':'vazio'}"><b>${total?Math.round(resumo.positivas*100/total)+'%':'—'}</b><span>respostas aprovadas (30 dias): 👍 ${resumo.positivas} · 👎 ${resumo.negativas}</span></div>
     </div>
-    <div class="iab-sec iab-apr"><h3>✨ Aprendido dos atendimentos <span>${sugestoes.length} ${sugestoes.length===1?'sugestão esperando':'sugestões esperando'} aprovação</span></h3>
+    <div class="iab-sec iab-apr"><h3>✨ Aprendizado automático <span>${apr.ativo?'a IA aprende e descarta sozinha':'desligado'}</span></h3>
       <label class="iab-apr-liga"><input type="checkbox" id="iabAprender" ${apr.ativo?'checked':''}>
-        <div><b>Aprender sozinha com os atendimentos finalizados</b><span>A IA lê cada atendimento finalizado por um atendente e sugere o que vale para todos os clientes. Só passa a valer depois que você aprova.</span></div></label>
-      <div class="iab-apr-st">Últimos 7 dias: <b>${apr.lidas}</b> ${apr.lidas===1?'atendimento lido':'atendimentos lidos'}, <b>${apr.sugeridas}</b> ${apr.sugeridas===1?'sugestão nova':'sugestões novas'}.</div>
-      ${sugestoes.length ? sugestoes.map(x=>{
-        const ed = IAB.editSug===x.id;
-        return `<div class="iab-sug" data-sug="${x.id}">
-          <div class="iab-sug-t"><span class="iab-tipo ${x.tipo}">${({fato:'Fato',regra:'Regra',exemplo:'Exemplo'})[x.tipo]||x.tipo}</span>
-            ${x.vezes>1?`<span class="iab-vezes" title="A mesma coisa apareceu em ${x.vezes} atendimentos">visto em ${x.vezes} atendimentos</span>`:''}
-            ${x.conversa_id?`<button type="button" class="iab-ver" data-sug-ver="${x.conversa_id}">ver o atendimento</button>`:''}</div>
-          ${ed ? `${x.tipo!=='regra'?`<label>${x.tipo==='exemplo'?'Mensagem do cliente':'Assunto'}</label><input data-sug-titulo maxlength="500" value="${esc(x.titulo||'')}">`:''}
-              <label>${x.tipo==='exemplo'?'Resposta ideal':'Informação'}</label><textarea data-sug-conteudo rows="3" maxlength="2000">${esc(x.conteudo)}</textarea>
-              ${x.tipo==='exemplo'?`<label>Depois de responder</label><select data-sug-setor>${iatDestinos(x.setor||'')}</select>`:''}`
-            : `<div class="iab-sug-txt">${x.titulo?`<b>${esc(x.titulo)}</b>${x.tipo==='exemplo'?' → ':': '}`:''}${esc(x.conteudo)}${x.setor?` <span class="iab-set">→ ${esc(x.setor)}</span>`:''}</div>`}
-          <div class="iab-sug-bts">
-            <button type="button" class="fbtn" data-sug-descartar="${x.id}" title="Não serve: não volta a ser sugerido">✕ Descartar</button>
-            ${ed?`<button type="button" class="fbtn" data-sug-cancelar>Cancelar</button>`:`<button type="button" class="fbtn" data-sug-editar="${x.id}">✏️ Editar</button>`}
-            <button type="button" class="fbtn solid" data-sug-aprovar="${x.id}">✓ Aprovar</button>
-          </div></div>`;
-      }).join('') : `<div class="iab-vazio">${apr.ativo?'Nenhuma sugestão agora. Elas aparecem aqui conforme os atendimentos são finalizados.':'O aprendizado está desligado.'}</div>`}
+        <div><b>Aprender sozinha com os atendimentos finalizados</b><span>A IA lê cada atendimento finalizado por um atendente e guarda o que vale para qualquer cliente. Ela mesma descarta o que é repetido, é de um cliente só ou não ajuda. O que não aparecer em nenhum atendimento por ${apr.dias_sem_uso||45} dias também sai, e volta se aparecer de novo. Não precisa aprovar nada: aqui você só acompanha e, se quiser, desfaz.</span></div></label>
+      <div class="iab-apr-st">Últimos 7 dias: <b>${apr.lidas}</b> ${apr.lidas===1?'atendimento lido':'atendimentos lidos'} · <b>${apr.aprendidos||0}</b> ${apr.aprendidos===1?'aprendido':'aprendidos'} · <b>${apr.descartados||0}</b> ${apr.descartados===1?'descartado':'descartados'} pela IA · <b>${apr.sem_uso||0}</b> por falta de uso${apr.em_analise?` · <b>${apr.em_analise}</b> em análise agora`:''}.</div>
+      ${decisoes.length ? `<div class="iab-dec-t">Últimas decisões da IA</div>
+        ${decisoes.slice(0, IAB.decTodas ? decisoes.length : 12).map(iabDecisaoHTML).join('')}
+        ${decisoes.length>12 && !IAB.decTodas ? `<button type="button" class="fbtn iab-dec-mais" id="iabDecMais">Ver todas as ${decisoes.length} decisões</button>` : ''}`
+      : `<div class="iab-vazio">${apr.ativo?(apr.em_analise?'A IA está analisando o que aprendeu. As decisões aparecem aqui em alguns minutos.':'Nenhuma decisão nos últimos 7 dias. Elas aparecem aqui conforme os atendimentos são finalizados.'):'O aprendizado está desligado.'}</div>`}
     </div>
     ${negativos.length?`<div class="iab-sec"><h3>👎 Para revisar <span>respostas marcadas como ruins, ainda sem a resposta certa</span></h3>
       ${negativos.map(n=>`<div class="iab-neg" data-neg="${n.id}">
@@ -6846,7 +6859,7 @@ async function renderBaseIA(el, recarregar=true){
         return `<div class="iab-grupo"><div class="iab-g-t">${nome} <span>${desc}</span></div>
           ${daq.length?daq.map(x=>`<div class="iab-item ${x.ativo?'':'off'}">
             <div class="iab-i-txt">${x.titulo?`<b>${esc(x.titulo)}</b>${k==='exemplo'?' → ':': '}`:''}${esc(x.conteudo)}${x.setor?` <span class="iab-set">→ ${esc(x.setor)}</span>`:''}
-              <div class="iab-i-meta">${esc(IAB_ORIGEM[x.origem]||x.origem)}${x.ativo?'':' · desligado'}</div></div>
+              <div class="iab-i-meta">${esc(IAB_ORIGEM[x.origem]||x.origem)}${x.usos?` · apareceu em ${x.usos} ${x.usos===1?'atendimento':'atendimentos'}`:''}${x.origem==='automatico'&&x.fixo?' · 📌 fixo: a IA não descarta':''}${x.ativo?'':' · desligado'}</div></div>
             <div class="iab-i-bts">
               <label class="iab-liga" title="Ligado: a IA usa este item"><input type="checkbox" data-iab-ativo="${x.id}" ${x.ativo?'checked':''}> usar</label>
               <button type="button" class="fbtn" data-iab-editar="${x.id}" title="Editar">✏️</button>
@@ -6873,22 +6886,15 @@ async function renderBaseIA(el, recarregar=true){
       toast(ligar?'✨ A IA volta a aprender com os atendimentos':'Aprendizado automático desligado'); renderBaseIA(el, false); }
     catch(err){ toast('Falha: '+err.message); ev.target.checked = !ligar; ev.target.disabled = false; }
   };
-  const revisar = async (id, aprovar)=>{
-    const box = el.querySelector(`.iab-sug[data-sug="${id}"]`);
-    const dados = { id, aprovar };
-    if(aprovar && IAB.editSug===id && box){
-      const t = box.querySelector('[data-sug-titulo]'), c = box.querySelector('[data-sug-conteudo]'), st = box.querySelector('[data-sug-setor]');
-      if(t) dados.titulo = t.value; if(c) dados.conteudo = c.value; if(st) dados.setor = st.value || null;
-    }
-    try{ await chamar('ia.base.revisar', dados); IAB.editSug = null;
-      toast(aprovar?'✓ Aprovado: a IA já passa a usar':'Descartado'); recarr(); }
+  // desfazer o que a IA decidiu: o que o admin decide fica fixo
+  const desfazer = async (id, restaurar)=>{
+    try{ await chamar('ia.base.revisar', { id, aprovar: restaurar });
+      toast(restaurar?'↺ Restaurado: a IA volta a usar e não descarta mais':'Descartado: a IA não usa mais'); recarr(); }
     catch(err){ toast('Falha: '+err.message); }
   };
-  el.querySelectorAll('[data-sug-aprovar]').forEach(b=>b.onclick=()=>revisar(+b.dataset.sugAprovar, true));
-  el.querySelectorAll('[data-sug-descartar]').forEach(b=>b.onclick=()=>revisar(+b.dataset.sugDescartar, false));
-  el.querySelectorAll('[data-sug-editar]').forEach(b=>b.onclick=()=>{ IAB.editSug = +b.dataset.sugEditar; renderBaseIA(el, false);
-    const c = el.querySelector(`.iab-sug[data-sug="${b.dataset.sugEditar}"] [data-sug-conteudo]`); if(c) c.focus(); });
-  el.querySelectorAll('[data-sug-cancelar]').forEach(b=>b.onclick=()=>{ IAB.editSug = null; renderBaseIA(el, false); });
+  el.querySelectorAll('[data-dec-restaurar]').forEach(b=>b.onclick=()=>desfazer(+b.dataset.decRestaurar, true));
+  el.querySelectorAll('[data-dec-descartar]').forEach(b=>b.onclick=()=>desfazer(+b.dataset.decDescartar, false));
+  const mais = el.querySelector('#iabDecMais'); if(mais) mais.onclick = ()=>{ IAB.decTodas = true; renderBaseIA(el, false); };
   el.querySelectorAll('[data-sug-ver]').forEach(b=>b.onclick=()=>{
     const id = +b.dataset.sugVer;
     if(state.conversas.some(x=>x.id===id)) abrirDaFila(id);
