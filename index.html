@@ -6148,6 +6148,10 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
   }
   .cli-lock-badge { font-size:9.5px; color:var(--accent); margin-left:4px; font-weight:600; letter-spacing:.04em; }
   .cli-mini-table { width:100%; border-collapse:collapse; font-size:12px; }
+  /* logins: com as datas de entrada e saída a tabela pode passar da janela */
+  .cli-mini-scroll { overflow-x:auto; }
+  .cli-sessao { font-size:11px; color:var(--text); white-space:nowrap; margin-top:3px; }
+  .cli-sessao span { color:var(--text2); display:inline-block; min-width:56px; }
   .cli-mini-table th { text-align:left; padding:8px 10px; background:var(--bg2); color:var(--text2); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
   .cli-mini-table td { padding:8px 10px; border-bottom:1px solid var(--border); }
   .cli-status-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10.5px; font-weight:600; }
@@ -13906,6 +13910,38 @@ function _cliQuando(ts){
   return m[3]+'/'+m[2]+(+m[1] !== h.getFullYear() ? '/'+m[1] : '')+' '+hora;
 }
 function _cliVel(mbps){ if(!mbps) return ''; return mbps >= 1000 ? (mbps/1000).toLocaleString('pt-BR')+' Giga' : mbps+' Mega'; }
+/* Sessão do login (radusuarios do IXC): quando logou e quando deslogou, com
+   data e hora. Online, a saída que o IXC guarda é da sessão ANTERIOR — mostrar
+   essa data como "deslogou" enganaria quem atende; vira "ainda conectado". */
+function _cliTs(ts){
+  const m = String(ts||'').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  return m ? { d: new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +(m[6]||0)), txt: `${m[3]}/${m[2]}/${m[1]} às ${m[4]}:${m[5]}` } : null;
+}
+function _cliRelDia(d){
+  const h = new Date(); h.setHours(0,0,0,0);
+  const d0 = new Date(d); d0.setHours(0,0,0,0);
+  const dias = Math.round((h - d0) / 864e5);
+  return dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : dias > 1 && dias <= 60 ? `há ${dias} dias` : '';
+}
+function _cliDuracao(ms){
+  if(!(ms >= 0)) return '';
+  const min = Math.floor(ms / 60000), h = Math.floor(min / 60), d = Math.floor(h / 24);
+  if(d >= 1) return `${d} ${d === 1 ? 'dia' : 'dias'}${h % 24 ? ` e ${h % 24} h` : ''}`;
+  if(h >= 1) return `${h} h${min % 60 ? ` ${min % 60} min` : ''}`;
+  return min >= 1 ? `${min} min` : 'menos de 1 min';
+}
+function _cliSessao(l){
+  const ini = _cliTs(l.ultimaConexaoIni), fim = _cliTs(l.ultimaConexaoFim);
+  const comDia = t => t.txt + (_cliRelDia(t.d) ? ` (${_cliRelDia(t.d)})` : '');
+  // offline com saída mais antiga que a entrada: o IXC não gravou o fim
+  const fimOk = !l.online && fim && (!ini || fim.d >= ini.d);
+  return {
+    logou: ini ? comDia(ini) : '',
+    deslogou: l.online ? (ini ? 'ainda conectado' : '') : fimOk ? comDia(fim) : (ini ? 'não registrado no IXC' : ''),
+    tempoRot: l.online ? 'Conectado há' : 'Ficou conectado',
+    tempo: l.online ? (ini ? _cliDuracao(Date.now() - ini.d) : '') : (fimOk && ini ? _cliDuracao(fim.d - ini.d) : ''),
+  };
+}
 function _cliOnlineTxt(info){
   if(!info.logs.length) return '';
   if(info.online) return 'online';
@@ -14218,7 +14254,7 @@ function cliRenderFicha(){
   const vivo = c.ixcId && _cliConexaoViva[String(c.ixcId)];
   const conHtml = i.logs.length ? i.logs.map(l => `<div class="clf-ctr">
       <div class="clf-ctr-h"><b class="td-mono">${E(l.login||'—')}</b><span class="cl-pill ${l.online?'k-ok':'k-in'}"><span class="cl-dot${l.online?' on':''}"></span>${l.online?'Online':'Offline'}</span></div>
-      ${ln(l.online ? 'Conectado desde' : 'Última conexão', E(_cliQuando(l.online ? l.ultimaConexaoIni : (l.ultimaConexaoFim || l.ultimaConexaoIni))))}
+      ${(s => ln('Logou em', s.logou) + ln('Deslogou em', s.deslogou) + ln(s.tempoRot, s.tempo))(_cliSessao(l))}
       ${ln('IP', l.ip ? `<span class="td-mono">${E(l.ip)}</span>` : '')}
       ${ln('MAC', l.mac ? `<span class="td-mono">${E(l.mac)}</span>` : '')}
       ${ln('Wi-Fi', E(l.ssid||''))}
@@ -15661,8 +15697,8 @@ function renderCliLogins(cli){
       <span style="font-size:11px;color:var(--text3)">${Object.keys(_wifiMap).length?'📶 Wi-Fi carregado do IXC automaticamente.':'<span class="diag-spinner"></span> Carregando Wi-Fi do IXC…'} Clique em ✏ para editar campos locais.</span>
       <button class="btn" id="cli-btn-wifi" onclick="carregarWifiIXC(true)" style="font-size:11px" title="Buscar novamente no IXC">↻ Atualizar Wi-Fi</button>
     </div>
-    <table class="cli-mini-table">
-      <thead><tr><th>Login</th><th>Senha</th><th>Plano / Velocidade</th><th>Autenticação</th><th>SSID Wi-Fi</th><th>Senha Wi-Fi</th><th>Ativo</th><th>Online</th><th></th></tr></thead>
+    <div class="cli-mini-scroll"><table class="cli-mini-table">
+      <thead><tr><th>Login</th><th>Senha</th><th>Plano / Velocidade</th><th>Autenticação</th><th>SSID Wi-Fi</th><th>Senha Wi-Fi</th><th>Ativo</th><th>Conexão</th><th></th></tr></thead>
       <tbody>${logins.map(l=>{
         const globalIdx = todos.indexOf(l);
         const velBadge = l.velocidadeMbps
@@ -15676,13 +15712,13 @@ function renderCliLogins(cli){
           <td class="td-mono">${l.ssid||(_wifiMap[String(l.ixcId)]?.ssid?_wifiMap[String(l.ixcId)].ssid+' <span class="wifi-ixc-badge">IXC</span>':'<span class="td-muted">—</span>')}</td>
           <td class="td-mono">${l.senhaWifi||(_wifiMap[String(l.ixcId)]?.senha?_wifiMap[String(l.ixcId)].senha+' <span class="wifi-ixc-badge">IXC</span>':'<span class="td-muted">—</span>')}</td>
           <td>${l.ativo?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:var(--accent)">Sim</span>':'<span class="cli-status-pill" style="background:rgba(95,94,90,0.2);color:#5F5E5A">Não</span>'}</td>
-          <td>${l.online?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:var(--accent)">● Online</span>':'<span class="td-muted">Offline</span>'}</td>
+          <td>${l.online?'<span class="cli-status-pill" style="background:rgba(99,153,34,0.2);color:var(--accent)">● Online</span>':'<span class="td-muted">Offline</span>'}${(s => s.logou || s.deslogou ? `<div class="cli-sessao"><span>Logou</span> ${s.logou || '—'}</div><div class="cli-sessao"><span>Deslogou</span> ${s.deslogou || '—'}</div>` : '')(_cliSessao(l))}</td>
           <td><button class="action-btn" title="Editar" onclick="abrirEditLogin(${globalIdx})">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button></td>
         </tr>`;
       }).join('')}</tbody>
-    </table>
+    </table></div>
     <div id="ftth-login-card"></div>`;
   _ftthCard(cli);
 }
