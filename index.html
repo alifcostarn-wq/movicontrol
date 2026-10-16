@@ -1210,6 +1210,266 @@ body.dark-mode #page-fluxo .dre tr.dcx-saldo td:first-child{background:rgba(37,9
 @keyframes fxblink{50%{opacity:0}}
 body.dark-mode .fx-lanc-st.st-ef{background:rgba(5,150,105,.22);color:var(--accent)}
 body.dark-mode .fx-lanc-st.st-pd{background:rgba(8,145,178,.22);color:#BBDCF6}
+/* ============ FLUXO DE CAIXA — visual de out/2026 (#page-fluxo[data-fxv2]) ============
+   Cores "Índigo & Âmbar" (Modelo B), layout "planilha executiva" (C) e números em
+   R$ mil (D), escolhidos pelo usuário. Os cálculos são os mesmos; só a apresentação.
+   - prefixo :root body #page-fluxo[data-fxv2] vence as regras antigas da página sem !important;
+   - cores de série validadas (faixa de luminosidade, croma, daltonismo, contraste 3:1)
+     e textos ≥ 4,5:1 no claro e no escuro. */
+#page-fluxo[data-fxv2]{
+  --fx-plano:#F5F4F1;--fx-card:#FFFFFF;--fx-card2:#F7F6FB;--fx-borda:#E2E0EA;--fx-linha:#ECEAF2;
+  --fx-tinta:#1C1A33;--fx-tinta2:#46435F;--fx-tinta3:#625F7C;
+  --fx-acento:#4338CA;--fx-acento-sobre:#FFFFFF;--fx-acento-tx:#4338CA;--fx-acento-bg:#EEEDFB;
+  --fx-pos-tx:#3730A3;--fx-neg:#B4232D;--fx-neg-bg:#FDECEE;--fx-negbox:#B4232D;
+  --fx-g0-bg:#EEEDFB;--fx-g0-tx:#2E2A78;--fx-g0-num:#1C1A33;--fx-g0-neg:#B4232D;--fx-g0-avs:#625F7C;--fx-g0-barra:#4F46E5;
+  --fx-g1-bg:#FFFFFF;--fx-g1-tx:#1C1A33;--fx-g1r-bg:#FFFFFF;--fx-g1r-tx:#3730A3;
+  --fx-g2-bg:#FFFFFF;--fx-g2-tx:#46435F;--fx-g2-hover:#F7F6FB;
+  --fx-mc-bg:#FFF6E5;--fx-mc-tx:#7A4100;--fx-mc-borda:#F2A72F;
+  --fx-lo-bg:#FFEFD2;--fx-lo-tx:#6B3900;--fx-lo-avs:#7A5320;--fx-lo-borda:#E8890C;
+  --fx-rs-bg:#2E2A78;--fx-rs-tx:#FFFFFF;--fx-rs-avs:rgba(255,255,255,.8);
+  --fx-th-bg:#FFFFFF;--fx-th-tx:#625F7C;
+  --fx-mes:#F59E0B;--fx-mes-tint:rgba(245,158,11,.08);--fx-mes-th-bg:#F59E0B;--fx-mes-th-tx:#1C1A33;--fx-hover:rgba(79,70,229,.07);
+  --fx-hero-bg:#2E2A78;--fx-hero-neg-bg:#9F1D2C;
+  --fx-c-rec:#4F46E5;--fx-c-sai:#C96A00;--fx-c-res:#0D9488;--fx-c-grade:#ECEAF2;--fx-c-eixo:#625F7C;
+  --fx-comp-cv:#D6336C;--fx-comp-df:#C96A00;--fx-comp-inv:#0D9488;--fx-comp-sobra:#4F46E5;
+  --fx-ok-bg:#E3F5F2;--fx-ok-tx:#0A5E56;--fx-warn-bg:#FFF4DE;--fx-warn-tx:#7A4100;--fx-bad-bg:#FDECEE;--fx-bad-tx:#A51D2D;
+  --fx-cx-bg:#EEEDFB;--fx-cx-tx:#3730A3;--fx-ia-barra:#4F46E5;
+}
+body.dark-mode #page-fluxo[data-fxv2]{
+  --fx-plano:#100F1F;--fx-card:#1A1930;--fx-card2:#22203D;--fx-borda:#34315A;--fx-linha:#2A2848;
+  --fx-tinta:#F1F0FA;--fx-tinta2:#C4C1DE;--fx-tinta3:#A6A2CA;
+  --fx-acento:#4F46E5;--fx-acento-sobre:#FFFFFF;--fx-acento-tx:#B4BEFD;--fx-acento-bg:#2A2858;
+  --fx-pos-tx:#B4BEFD;--fx-neg:#FF95A4;--fx-neg-bg:#3A1A24;--fx-negbox:#B4232D;
+  --fx-g0-bg:#26244E;--fx-g0-tx:#DCDAFF;--fx-g0-num:#F1F0FA;--fx-g0-neg:#FF95A4;--fx-g0-avs:#A6A2CA;--fx-g0-barra:#818CF8;
+  --fx-g1-bg:#1A1930;--fx-g1-tx:#F1F0FA;--fx-g1r-bg:#1A1930;--fx-g1r-tx:#B4BEFD;
+  --fx-g2-bg:#1A1930;--fx-g2-tx:#C4C1DE;--fx-g2-hover:#22203D;
+  --fx-mc-bg:#33260F;--fx-mc-tx:#FBC94A;--fx-mc-borda:#D9900F;
+  --fx-lo-bg:#3F2D10;--fx-lo-tx:#FCD34D;--fx-lo-avs:#E8C987;--fx-lo-borda:#F59E0B;
+  --fx-rs-bg:#4338CA;--fx-rs-tx:#FFFFFF;--fx-rs-avs:rgba(255,255,255,.84);
+  --fx-th-bg:#1A1930;--fx-th-tx:#A6A2CA;
+  --fx-mes:#FBBF24;--fx-mes-tint:rgba(251,191,36,.07);--fx-mes-th-bg:#FBBF24;--fx-mes-th-tx:#1A1930;--fx-hover:rgba(129,140,248,.12);
+  --fx-hero-bg:#312E81;--fx-hero-neg-bg:#7F1D2D;
+  --fx-c-rec:#7C83F2;--fx-c-sai:#C97A0A;--fx-c-res:#14A394;--fx-c-grade:#2A2848;--fx-c-eixo:#A6A2CA;
+  --fx-comp-cv:#E0567F;--fx-comp-df:#C97A0A;--fx-comp-inv:#14A394;--fx-comp-sobra:#7C83F2;
+  --fx-ok-bg:#123A36;--fx-ok-tx:#6EE7D6;--fx-warn-bg:#3A2A10;--fx-warn-tx:#FBC94A;--fx-bad-bg:#3A1A24;--fx-bad-tx:#FF95A4;
+  --fx-cx-bg:#26244E;--fx-cx-tx:#C7D2FE;--fx-ia-barra:#818CF8;
+}
+/* os tokens do sistema dentro da página passam a apontar para os do fluxo */
+#page-fluxo[data-fxv2]{
+  --surface:var(--fx-card);--surface2:var(--fx-card2);--border:var(--fx-borda);
+  --text:var(--fx-tinta);--text2:var(--fx-tinta2);--text3:var(--fx-tinta3);
+  --accent:var(--fx-pos-tx);--accent2:var(--fx-g1r-bg);--accent3:var(--fx-borda);--accent-fill:var(--fx-acento);
+  --info:var(--fx-acento-tx);--info-bg:var(--fx-acento-bg);--azul-txt:var(--fx-acento-tx);
+  --danger:var(--fx-neg);--danger-bg:var(--fx-neg-bg);--rosa-bg:var(--fx-neg-bg);
+  --warn:var(--fx-warn-tx);--laranja-bg:var(--fx-warn-bg);--laranja-txt:var(--fx-warn-tx);--verde-txt:var(--fx-pos-tx);
+  --dado-1:var(--fx-comp-cv);--dado-2:var(--fx-comp-df);--dado-3:var(--fx-comp-inv);--dado-4:var(--fx-comp-sobra);
+  /* fundo próprio cobrindo a área de conteúdo (.content tem 24px 30px) */
+  margin:-24px -30px;padding:24px 30px;min-height:calc(100vh - 58px);background:var(--fx-plano);color:var(--fx-tinta);
+}
+
+/* ---- cartões do topo: 5 numa fileira, com tendência dos meses fechados ---- */
+:root body #page-fluxo[data-fxv2] .fx-kpi-row{display:grid;grid-template-columns:1.25fr repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
+:root body #page-fluxo[data-fxv2] .fx-tile{position:relative;background:var(--fx-card);border:1px solid var(--fx-borda);border-radius:12px;padding:12px 14px 10px;min-width:0;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-lbl{font-size:11.5px;font-weight:600;color:var(--fx-tinta3)}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-val{font-size:21px;font-weight:700;color:var(--fx-tinta);margin-top:3px;letter-spacing:-.01em;white-space:nowrap}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-val.pos{color:var(--fx-pos-tx)}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-val.neg{color:var(--fx-neg)}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-sub{display:block;font-size:11.5px;color:var(--fx-tinta2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-sub.up,
+:root body #page-fluxo[data-fxv2] .fx-tile .t-ok{color:var(--fx-ok-tx);font-weight:600}
+:root body #page-fluxo[data-fxv2] .fx-tile .t-sub.down{color:var(--fx-neg);font-weight:600}
+:root body #page-fluxo[data-fxv2] .fx-tile.hero{background:var(--fx-hero-bg);border-color:transparent}
+:root body #page-fluxo[data-fxv2] .fx-tile.hero.neg{background:var(--fx-hero-neg-bg)}
+:root body #page-fluxo[data-fxv2] .fx-tile.hero .t-lbl,
+:root body #page-fluxo[data-fxv2] .fx-tile.hero .t-sub{color:rgba(255,255,255,.86)}
+:root body #page-fluxo[data-fxv2] .fx-tile.hero .t-val{color:#FFFFFF}
+:root body #page-fluxo[data-fxv2] .fx-spark{display:block;width:100%;height:28px;margin-top:8px;overflow:visible}
+:root body #page-fluxo[data-fxv2] .fx-spark polyline{fill:none;stroke:var(--fx-tinta3);stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+:root body #page-fluxo[data-fxv2] .fx-spark line.z{stroke:var(--fx-borda);stroke-width:1;vector-effect:non-scaling-stroke}
+:root body #page-fluxo[data-fxv2] .fx-spark circle.u{fill:var(--fx-mes);stroke:var(--fx-card);stroke-width:1.5;vector-effect:non-scaling-stroke}
+:root body #page-fluxo[data-fxv2] .fx-spark circle.n{fill:var(--fx-neg)}
+:root body #page-fluxo[data-fxv2] .fx-spark.claro polyline{stroke:rgba(255,255,255,.75)}
+:root body #page-fluxo[data-fxv2] .fx-spark.claro line.z{stroke:rgba(255,255,255,.28)}
+:root body #page-fluxo[data-fxv2] .fx-spark.claro circle.u{stroke:var(--fx-hero-bg)}
+:root body #page-fluxo[data-fxv2] .fx-spark.claro circle.n{fill:#FFB3C0}
+:root body #page-fluxo[data-fxv2] .fx-spark-vazio{color:var(--fx-tinta3)}
+/* "para onde vai a receita": faixa fina; legenda pinta igual à barra (antes a sobra era laranja na barra e verde na legenda) */
+:root body #page-fluxo[data-fxv2] .fx-comp{grid-column:1 / -1;display:flex;align-items:center;gap:18px;background:var(--fx-card);border:1px solid var(--fx-borda);border-radius:12px;padding:9px 14px;min-width:0}
+:root body #page-fluxo[data-fxv2] .fx-comp-tit{font-size:11.5px;font-weight:600;color:var(--fx-tinta3);white-space:nowrap}
+:root body #page-fluxo[data-fxv2] .fx-comp .fx-comp-bar{flex:1;min-width:120px;height:9px;margin:0;background:var(--fx-card2)}
+:root body #page-fluxo[data-fxv2] .fx-comp-bar i{box-shadow:inset -2px 0 0 var(--fx-card)}
+:root body #page-fluxo[data-fxv2] .fx-comp-legend{flex:none;display:flex;gap:6px 16px;flex-wrap:wrap;font-size:11.5px;color:var(--fx-tinta2)}
+:root body #page-fluxo[data-fxv2] .fx-comp-legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+:root body #page-fluxo[data-fxv2] .fx-comp-legend b{color:var(--fx-tinta);font-weight:700}
+:root body #page-fluxo[data-fxv2] .fx-comp-dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+:root body #page-fluxo[data-fxv2] .fx-comp-dot.c-cv{background:var(--fx-comp-cv)}
+:root body #page-fluxo[data-fxv2] .fx-comp-dot.c-df{background:var(--fx-comp-df)}
+:root body #page-fluxo[data-fxv2] .fx-comp-dot.c-inv{background:var(--fx-comp-inv)}
+:root body #page-fluxo[data-fxv2] .fx-comp-dot.c-sobra{background:var(--fx-comp-sobra)}
+@media (max-width:1100px){
+  :root body #page-fluxo[data-fxv2] .fx-kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  :root body #page-fluxo[data-fxv2] .fx-tile.hero{grid-column:1 / -1}
+  :root body #page-fluxo[data-fxv2] .fx-comp{flex-wrap:wrap}
+  :root body #page-fluxo[data-fxv2] .fx-comp .fx-comp-bar{flex-basis:100%;order:2}
+  :root body #page-fluxo[data-fxv2] .fx-comp-legend{order:3}
+}
+@media (max-width:520px){ :root body #page-fluxo[data-fxv2] .fx-kpi-row{grid-template-columns:1fr} }
+
+/* ---- análise da IA numa linha (abre com "Ver tudo") e alertas ---- */
+:root body #page-fluxo[data-fxv2] .fx-ia-auto{background:var(--fx-card);border:1px solid var(--fx-borda);padding:9px 14px 9px 18px;margin-bottom:10px}
+:root body #page-fluxo[data-fxv2] .fx-ia-auto::before{background:var(--fx-ia-barra)}
+:root body #page-fluxo[data-fxv2] .fx-ia-head{margin-bottom:3px}
+:root body #page-fluxo[data-fxv2] .fx-ia-tit,
+:root body #page-fluxo[data-fxv2] .fx-ia-txt b,
+:root body #page-fluxo[data-fxv2] .fx-ia-txt strong{color:var(--fx-acento-tx)}
+:root body #page-fluxo[data-fxv2] .fx-ia-txt{color:var(--fx-tinta);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;line-height:1.5;white-space:normal}
+:root body #page-fluxo[data-fxv2] .fx-ia-auto.aberta .fx-ia-txt{display:block;-webkit-line-clamp:unset;white-space:pre-line}
+:root body #page-fluxo[data-fxv2] .fx-ia-btn{color:var(--fx-acento-tx);background:var(--fx-acento-bg);border-color:transparent}
+:root body #page-fluxo[data-fxv2] .fx-alert-strip{margin-bottom:10px;gap:6px}
+:root body #page-fluxo[data-fxv2] .fx-alert-chip{border:none;font-size:11.5px;padding:5px 11px}
+:root body #page-fluxo[data-fxv2] .fx-alert-chip.good{background:var(--fx-ok-bg);color:var(--fx-ok-tx)}
+:root body #page-fluxo[data-fxv2] .fx-alert-chip.warn{background:var(--fx-warn-bg);color:var(--fx-warn-tx)}
+:root body #page-fluxo[data-fxv2] .fx-alert-chip.bad{background:var(--fx-bad-bg);color:var(--fx-bad-tx)}
+
+/* ---- gráfico atrás do botão "Gráfico" ---- */
+:root body #page-fluxo[data-fxv2] .fx-chart-card{display:none;background:var(--fx-card);border-color:var(--fx-borda);box-shadow:0 1px 2px rgba(0,0,0,.04);margin-bottom:12px}
+:root body #page-fluxo[data-fxv2].fx-graf-aberto .fx-chart-card{display:block}
+:root body #page-fluxo[data-fxv2].fx-graf-aberto .fx-btn-graf{background:var(--fx-acento-bg);color:var(--fx-acento-tx);border-color:transparent}
+
+/* ---- barra de filtros enxuta ---- */
+:root body #page-fluxo[data-fxv2] #fluxo-modo-desc{display:none}
+:root body #page-fluxo[data-fxv2] > div:has(> #f-ano){gap:8px!important;margin-bottom:12px!important}
+:root body #page-fluxo[data-fxv2] > div:has(> #f-ano) > *{flex:none}
+:root body #page-fluxo[data-fxv2] .main-tabs{background:var(--fx-card);border-color:var(--fx-borda)}
+:root body #page-fluxo[data-fxv2] .main-tab{color:var(--fx-tinta2);padding:6px 11px;font-size:12px;white-space:nowrap}
+:root body #page-fluxo[data-fxv2] .main-tab.active{background:var(--fx-acento);color:var(--fx-acento-sobre)}
+:root body #page-fluxo[data-fxv2] select{background:var(--fx-card);border-color:var(--fx-borda);color:var(--fx-tinta)}
+:root body #page-fluxo[data-fxv2] select#f-ano,
+:root body #page-fluxo[data-fxv2] select#f-mes,
+:root body #page-fluxo[data-fxv2] select#fx-sel-ind{padding:6px 9px;font-size:12px}
+:root body #page-fluxo[data-fxv2] label:has(#fx-chk-proj){padding:6px 9px!important;font-size:11.5px!important;white-space:nowrap}
+:root body #page-fluxo[data-fxv2] .btn.fx-ia{background:var(--fx-acento);color:var(--fx-acento-sobre)}
+:root body #page-fluxo[data-fxv2] .btn:not(.fx-ia){background:var(--fx-card);border-color:var(--fx-borda);color:var(--fx-tinta2)}
+:root body #page-fluxo[data-fxv2] .btn.fx-btn-ico{min-width:32px;height:30px;padding:0 8px!important;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+:root body #page-fluxo[data-fxv2] .btn.fx-btn-ico.sim{font-size:15px;font-weight:500}
+
+/* ---- tabela DRE: planilha (rola por dentro; meses, Total, % e tendência à vista) ---- */
+:root body #page-fluxo[data-fxv2] .dre-wrap{background:var(--fx-card);border-color:var(--fx-borda);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+:root body #page-fluxo[data-fxv2] .dre-scroll{max-height:calc(100vh - 150px);overflow:auto}
+:root body #page-fluxo[data-fxv2] table.dre{table-layout:fixed;width:100%;min-width:0}
+:root body #page-fluxo[data-fxv2][data-fxview="mensal"] table.dre{min-width:1210px}
+:root body #page-fluxo[data-fxv2][data-fxview="diario"] table.dre{min-width:2150px}
+:root body #page-fluxo[data-fxv2][data-fxcomp="1"][data-fxview="mensal"] table.dre{min-width:1820px}
+:root body #page-fluxo[data-fxv2][data-fxcomp="1"][data-fxview="semanal"] table.dre{min-width:1150px}
+:root body #page-fluxo[data-fxv2][data-fxcomp="1"][data-fxview="diario"] table.dre{min-width:3700px}
+:root body #page-fluxo[data-fxv2][data-fxview] .dre th:first-child,
+:root body #page-fluxo[data-fxv2][data-fxview] .dre td:first-child{width:292px;min-width:292px}
+:root body #page-fluxo[data-fxv2] .dre :is(th,td):is(.fx-col-tot,.fx-col-pct,.fx-col-spark){box-sizing:border-box}
+:root body #page-fluxo[data-fxv2] .dre th.fx-col-tot,:root body #page-fluxo[data-fxv2] .dre td.fx-col-tot{width:84px}
+:root body #page-fluxo[data-fxv2] .dre th.fx-col-pct,:root body #page-fluxo[data-fxv2] .dre td.fx-col-pct{width:60px}
+:root body #page-fluxo[data-fxv2] .dre th.fx-col-spark,:root body #page-fluxo[data-fxv2] .dre td.fx-col-spark{width:104px}
+:root body #page-fluxo[data-fxv2] .dre th.fx-col-spark{text-align:center}
+/* cabeçalho fixo dentro da tabela (2 linhas no Real × Previsto) */
+:root body #page-fluxo[data-fxv2] .dre thead th{position:sticky;top:0;z-index:6;background-color:var(--fx-th-bg);color:var(--fx-th-tx);border-bottom:1px solid var(--fx-borda);padding:9px 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em}
+:root body #page-fluxo[data-fxv2] .dre thead tr:first-child th{height:38px;box-sizing:border-box}
+:root body #page-fluxo[data-fxv2] .dre thead tr:nth-child(2) th{top:38px}
+:root body #page-fluxo[data-fxv2] .dre thead th:first-child{left:0;z-index:9;padding-left:13px}
+:root body #page-fluxo[data-fxv2] .dre thead th.fx-mesatual{background-color:var(--fx-mes-th-bg);color:var(--fx-mes-th-tx)}
+/* Total, % e tendência presos à direita quando a tabela passa da largura */
+:root body #page-fluxo[data-fxv2][data-fxcomp="0"] .dre :is(th,td).fx-col-spark{position:sticky;right:0;z-index:2}
+:root body #page-fluxo[data-fxv2][data-fxcomp="0"] .dre :is(th,td).fx-col-pct{position:sticky;right:104px;z-index:2}
+:root body #page-fluxo[data-fxv2][data-fxcomp="0"] .dre :is(th,td).fx-col-tot{position:sticky;right:164px;z-index:2;border-left:2px solid var(--fx-borda);box-shadow:-6px 0 8px -6px rgba(0,0,0,.25)}
+:root body #page-fluxo[data-fxv2][data-fxcomp="0"] .dre thead :is(th.fx-col-spark,th.fx-col-pct,th.fx-col-tot){z-index:8}
+/* números: R$ mil com 1 casa, fonte proporcional com algarismos alinhados */
+:root body #page-fluxo[data-fxv2] .dre .cv{font-family:'DM Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums;font-weight:600;padding:6px 8px;font-size:13px}
+:root body #page-fluxo[data-fxv2] .dre tr.dn2 .cv{font-weight:500}
+:root body #page-fluxo[data-fxv2] .dre td.cn{padding-top:6px;padding-bottom:6px;font-size:13px}
+:root body #page-fluxo[data-fxv2][data-fxview="diario"] .dre .cv{font-size:12px;padding:6px 5px}
+:root body #page-fluxo[data-fxv2] .fx-unid{font-size:10px;font-weight:600;color:var(--fx-tinta3);margin-left:6px;text-transform:none;letter-spacing:0}
+:root body #page-fluxo[data-fxv2] .dre td.fx-col-pct{color:var(--fx-tinta2);font-weight:600}
+:root body #page-fluxo[data-fxv2] .dre td.fx-col-spark{padding:3px 10px}
+:root body #page-fluxo[data-fxv2] .dre td.fx-col-spark .fx-spark{margin:0;height:24px}
+/* % (AV) e variação (AH) na mesma linha do valor, quando escolhidos em "Célula" */
+:root body #page-fluxo[data-fxv2] .dre .cv .fx-avs{display:inline-block;min-width:38px;margin:0 0 0 7px;font-size:10.5px;font-weight:600;text-align:right;color:var(--fx-tinta3);opacity:1}
+:root body #page-fluxo[data-fxv2] .dre .cv .fx-avs.up{color:var(--fx-pos-tx)}
+:root body #page-fluxo[data-fxv2] .dre .cv .fx-avs.down{color:var(--fx-neg)}
+:root body #page-fluxo[data-fxv2] .dre td{border-bottom:1px solid var(--fx-linha)}
+:root body #page-fluxo[data-fxv2] .dre .cv.pos{color:var(--fx-tinta)}
+:root body #page-fluxo[data-fxv2] .dre .cv.neg{color:var(--fx-neg)}
+/* zero sem transparência: a opacidade pegava a célula toda e desbotava as faixas */
+:root body #page-fluxo[data-fxv2] .dre .cv.zero{color:var(--fx-tinta3);opacity:1}
+/* nome da conta: célula de tabela (o fundo vai até o pé da linha) e nome que quebra fica alinhado */
+:root body #page-fluxo[data-fxv2] .dre td.cn{display:table-cell;vertical-align:middle}
+:root body #page-fluxo[data-fxv2] .dre td.cn .dre-toggle-btn{vertical-align:middle;margin-top:-2px}
+:root body #page-fluxo[data-fxv2] .dre td.cn .cn-txt{display:inline-block;vertical-align:middle;max-width:calc(100% - 22px)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn2 td.cn .cn-txt,
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-conta td.cn .cn-txt{max-width:100%}
+:root body #page-fluxo[data-fxv2] .dre-toggle-btn{background:color-mix(in srgb,currentColor 14%,transparent);color:inherit}
+/* grupos: faixa clara com barra índigo à esquerda */
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td,
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td:first-child{background-color:var(--fx-g0-bg);color:var(--fx-g0-tx);border-top:1px solid var(--fx-borda);letter-spacing:.05em}
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td:first-child{box-shadow:inset 4px 0 0 var(--fx-g0-barra),2px 0 6px -2px rgba(0,0,0,.12)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td.cv.pos{color:var(--fx-g0-num)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td.cv.neg{color:var(--fx-g0-neg)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td.cv.zero,
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td.cv .fx-avs{color:var(--fx-g0-avs)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn0 td.fx-col-pct{color:var(--fx-g0-num)}
+/* subgrupos e contas */
+:root body #page-fluxo[data-fxv2] .dre tr.dn1 td,
+:root body #page-fluxo[data-fxv2] .dre tr.dn1 td:first-child{background-color:var(--fx-g1-bg);color:var(--fx-g1-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn1r td,
+:root body #page-fluxo[data-fxv2] .dre tr.dn1r td:first-child{background-color:var(--fx-g1r-bg);color:var(--fx-g1r-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn1 .cn,
+:root body #page-fluxo[data-fxv2] .dre tr.dn1r .cn{font-weight:700}
+:root body #page-fluxo[data-fxv2] .dre tr.dn1r td.cv.pos{color:var(--fx-g1r-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn2 td,
+:root body #page-fluxo[data-fxv2] .dre tr.dn2 td:first-child{background-color:var(--fx-g2-bg);color:var(--fx-g2-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dn2:hover td,
+:root body #page-fluxo[data-fxv2] .dre tr.dn2:hover td:first-child{background-color:var(--fx-g2-hover)}
+/* margem, lucro operacional (faixas âmbar claras) e resultado (a única faixa cheia) */
+:root body #page-fluxo[data-fxv2] .dre tr.dmargem td,
+:root body #page-fluxo[data-fxv2] .dre tr.dmargem td:first-child{background-color:var(--fx-mc-bg);color:var(--fx-mc-tx);border-top:2px solid var(--fx-mc-borda)}
+:root body #page-fluxo[data-fxv2] .dre tr.dmargem td.cv.pos,
+:root body #page-fluxo[data-fxv2] .dre tr.dmargem td.fx-col-pct{color:var(--fx-mc-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td,
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td:first-child{background-color:var(--fx-lo-bg);color:var(--fx-lo-tx);border-top:2px solid var(--fx-lo-borda)}
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td.cv,
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td.cv.pos,
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td.cv.zero,
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td.fx-col-pct{color:var(--fx-lo-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td.cv .fx-avs,
+:root body #page-fluxo[data-fxv2] .dre tr.dlucrop td.cv.zero{color:var(--fx-lo-avs)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td,
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td:first-child{background-color:var(--fx-rs-bg);color:var(--fx-rs-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td:first-child{box-shadow:inset 4px 0 0 var(--fx-mes),2px 0 6px -2px rgba(0,0,0,.18)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.cv,
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.cv.pos,
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.fx-col-pct{color:var(--fx-rs-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.cv .fx-avs,
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.cv.zero{color:var(--fx-rs-avs)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.fx-col-spark .fx-spark polyline{stroke:rgba(255,255,255,.8)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.fx-col-spark .fx-spark circle.n{fill:#FFB3C0}
+/* negativo de margem/lucro/resultado: pílula vermelha compacta */
+:root body #page-fluxo[data-fxv2] .dre .fx-negbox{background:var(--fx-negbox);box-shadow:none;border-radius:5px;padding:1px 6px;font-size:12.5px}
+:root body #page-fluxo[data-fxv2] .dre td.cv .fx-negbox,
+:root body #page-fluxo[data-fxv2] .dre td.cv .fx-negbox .fx-avs{color:#FFFFFF!important}
+/* caixa (abaixo do resultado) */
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-saldo td,
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-saldo td:first-child{background-color:var(--fx-cx-bg);color:var(--fx-cx-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-saldo td.cv.pos{color:var(--fx-cx-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-conta td,
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-conta td:first-child{background-color:var(--fx-card);color:var(--fx-tinta2)}
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-acerto td,
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-acerto td:first-child{background-color:var(--fx-warn-bg);color:var(--fx-warn-tx);border-top:2px solid var(--fx-warn-tx)}
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-acerto.ok td,
+:root body #page-fluxo[data-fxv2] .dre tr.dcx-acerto.ok td:first-child{background-color:var(--fx-ok-bg);color:var(--fx-ok-tx);border-top-color:var(--fx-ok-tx)}
+/* mês atual: tinta âmbar por cima de qualquer faixa + contorno */
+:root body #page-fluxo[data-fxv2] .dre td.fx-mesatual{background-image:linear-gradient(var(--fx-mes-tint),var(--fx-mes-tint));box-shadow:inset 2px 0 0 var(--fx-mes),inset -2px 0 0 var(--fx-mes)}
+:root body #page-fluxo[data-fxv2] .dre tr.dresult td.fx-mesatual{background-image:linear-gradient(rgba(255,255,255,.08),rgba(255,255,255,.08))}
+:root body #page-fluxo[data-fxv2] .dre td.fx-cv-cell:hover{background-image:linear-gradient(var(--fx-hover),var(--fx-hover));box-shadow:inset 0 0 0 2px var(--fx-mes)}
+
+/* "Ocultar valores" também nesta página (antes os números do fluxo ficavam à mostra) */
+body.valores-ocultos #page-fluxo[data-fxv2] :is(.fx-tile .t-val,.fx-tile .t-sub,.fx-spark,.fx-comp-legend b,.fx-ia-txt,.fx-alert-chip,.fx-chart-wrap,.dre td.cv,.dre td.fx-col-spark){filter:blur(7px);user-select:none}
 .cn{padding:8px 10px;font-size:11.5px}.cn.i1{padding-left:22px}.cn.i2{padding-left:36px;font-size:10.5px;color:var(--text3)}
 .cv{padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:10.5px;white-space:nowrap}
 .cv.pos{color:var(--accent)}.cv.neg{color:var(--danger)}.cv.zero{color:var(--text3)}
@@ -5026,13 +5286,14 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
     </div>
 
     <!-- ====== FLUXO DE CAIXA ====== -->
-    <div class="page" id="page-fluxo">
+    <div class="page" id="page-fluxo" data-fxv2>
       <div class="fx-kpi-row" id="fx-kpi-row"></div>
       <div class="fx-ia-auto" id="fx-ia-auto" style="display:none">
         <div class="fx-ia-head">
           <span class="fx-ia-tit">🧠 ANÁLISE INTELIGENTE DO FLUXO</span>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="fx-ia-meta" id="fx-ia-auto-meta"></span>
+            <button class="fx-ia-btn" id="fx-ia-mais" onclick="fxIaExpandir(this)" aria-expanded="false" title="Mostrar a análise inteira">Ver tudo</button>
             <button class="fx-ia-btn" onclick="fxAnaliseAuto(true)" title="Gerar uma nova análise agora">↻ Atualizar</button>
           </div>
         </div>
@@ -5062,18 +5323,19 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
           <button class="main-tab" id="fm-comparar" onclick="setFluxoModo('comparar')">🆚 Real × Previsto</button>
         </div>
         <div id="fluxo-modo-desc" style="font-size:11px;color:var(--text3);padding:4px 10px;background:var(--surface2);border-radius:7px;border:1px solid var(--border)">Exibindo apenas lançamentos confirmados (Pago / Recebido)</div>
-        <select id="fx-sel-ind" onchange="renderFluxo()">
+        <select id="fx-sel-ind" onchange="renderFluxo()" title="O que aparece ao lado de cada valor">
+          <option value="off">Célula: só valor</option>
           <option value="av">Célula: AV%</option>
           <option value="ah">Célula: AH% (vs anterior)</option>
-          <option value="off">Célula: só valor</option>
         </select>
         <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--text2);cursor:pointer;user-select:none;padding:7px 11px;border:1px solid var(--border);border-radius:9px;background:var(--surface)"><input type="checkbox" id="fx-chk-proj" onchange="renderFluxo()"> 📈 Projetar ano</label>
         <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap">
           <button class="btn fx-ia" onclick="fxAbrirIA()" style="font-size:11px;padding:5px 10px">👔 Gerente IA</button>
-          <button class="btn" onclick="fxAbrirPDF()" style="font-size:11px;padding:5px 10px">📄 PDF</button>
-          <button class="btn" id="btn-dre-expand" onclick="dreExpandAll()" style="font-size:11px;padding:5px 10px" title="Expandir todas as subcategorias">⊞ Expandir</button>
-          <button class="btn" id="btn-dre-collapse" onclick="dreCollapseAll()" style="font-size:11px;padding:5px 10px" title="Recolher todas as subcategorias">⊟ Recolher</button>
-          <button class="btn" onclick="exportarDreCSV()" style="font-size:11px;padding:5px 10px">↓ CSV</button>
+          <button class="btn fx-btn-graf" id="fx-btn-graf" onclick="fxGraficoToggle()" aria-pressed="false" style="font-size:11px;padding:5px 10px" title="Mostrar ou esconder o gráfico Receita × Saídas × Resultado">📊 Gráfico</button>
+          <button class="btn fx-btn-ico" onclick="fxAbrirPDF()" title="Exportar PDF" aria-label="Exportar PDF">PDF</button>
+          <button class="btn fx-btn-ico sim" id="btn-dre-expand" onclick="dreExpandAll()" title="Expandir todas as subcategorias" aria-label="Expandir todas as subcategorias">⊞</button>
+          <button class="btn fx-btn-ico sim" id="btn-dre-collapse" onclick="dreCollapseAll()" title="Recolher todas as subcategorias" aria-label="Recolher todas as subcategorias">⊟</button>
+          <button class="btn fx-btn-ico" onclick="exportarDreCSV()" title="Exportar CSV" aria-label="Exportar CSV">CSV</button>
         </div>
       </div>
       <div class="dre-wrap">
@@ -9531,6 +9793,92 @@ function dreCollapseAll(){
 // ---- helpers de formatação vivos (não mexem em brl/brlN existentes) ----
 function fxBRLk(v){ const a=Math.abs(v||0); const s=(v<0?'-':''); return s+(a>=1000?'R$ '+(a/1000).toFixed(1).replace('.',',')+'k':'R$ '+a.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})); }
 function fxNum(v){ return parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+// ---- visual de out/2026 (#page-fluxo[data-fxv2]): números em R$ mil, % com vírgula, tendência ----
+function fxPctL(x){ return (x||0).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'; }
+function fxMil(v,casas=1){ const k=(v||0)/1000; return (k<0?'−':'')+'R$ '+Math.abs(k).toLocaleString('pt-BR',{minimumFractionDigits:casas,maximumFractionDigits:casas})+' mil'; }
+// célula da DRE em R$ mil com 1 casa ("22,2"); abaixo de R$ 50 vira "0,0"
+function fxNumMil(v){
+  const k=(v||0)/1000;
+  if(Math.abs(k)<0.05) return '0,0';
+  return (k<0?'−':'')+Math.abs(k).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+}
+// o valor exato (com centavos) fica no title; .val-monetario some junto com o "Ocultar"
+function fxCelMil(v){ return `<span class="val-monetario" title="R$ ${fxNum(v)}">${fxNumMil(v)}</span>`; }
+// mini-gráfico da tendência dos períodos FECHADOS (o corrente, pela metade, pareceria queda);
+// escala do menor ao maior valor; ponto âmbar = último período fechado, vermelho = negativo.
+// w×h na proporção de onde ele aparece (célula 84×24, cartão 260×28), senão o ponto vira elipse
+function fxSpark(arr, n, cls='', w=84, h=24){
+  const vals=(arr||[]).slice(0,n).map(v=>v||0);
+  if(vals.length<2 || !vals.some(v=>v)) return '<span class="fx-spark-vazio">—</span>';
+  const p=3, mn=Math.min(...vals), mx=Math.max(...vals), sp=(mx-mn)||1;
+  const x=i=>p+i*(w-2*p)/(vals.length-1), y=v=>h-p-(v-mn)/sp*(h-2*p);
+  const pts=vals.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+  const zero = (mn<0 && mx>0) ? `<line class="z" x1="${p}" x2="${w-p}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}"/>` : '';
+  const neg = vals.map((v,i)=>v<0?`<circle class="n" cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.3"/>`:'').join('');
+  const li=vals.length-1;
+  return `<svg class="fx-spark ${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${zero}<polyline points="${pts}"/>${neg}<circle class="u" cx="${x(li).toFixed(1)}" cy="${y(vals[li]).toFixed(1)}" r="2.8"/></svg>`;
+}
+// cartões do topo: resultado, receita, saídas, margem e caixa (ou investimentos) + "para onde vai a receita"
+function fxKpiTiles(k){
+  const M=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const pct=(a,b)=> b ? fxPctL(a/b*100) : '—';
+  const n=k.n, ult=Math.max(0,n-1), sp=(arr,cls='')=>fxSpark(arr,n,cls,260,28);
+  // melhor período com a mesma regra do alerta "Melhor mês" (conta o período corrente)
+  const resT=(k.d.resultado||[]), res=resT.slice(0,Math.min(resT.length,n+1));
+  const mx=res.length?Math.max(...res):0, iMx=res.indexOf(mx);
+  const melhor = (!res.length||mx<=0) ? '' : (k.granular ? `melhor dia: ${iMx+1}` : `melhor mês: ${M[iMx]}`);
+  let subRec='';
+  if(!k.granular && n>=2 && k.d.rec?.[0]){
+    const c=(k.d.rec[ult]/k.d.rec[0]-1)*100;
+    subRec=`<span class="t-sub ${c>=0?'up':'down'}">${c>=0?'▲':'▼'} ${fxPctL(Math.abs(c))} de jan a ${M[ult]}</span>`;
+  } else {
+    const dias=(k.d.rec||[]).filter(v=>v>0).length;
+    subRec=`<span class="t-sub">${dias?'média de '+fxMil(k.totRec/dias)+' por dia com entrada':'&nbsp;'}</span>`;
+  }
+  const cx=k.cxKpi;
+  const quinto = cx
+    ? `<div class="fx-tile"><div class="t-lbl">Caixa no período</div>
+        <div class="t-val ${cx.geracao>=0?'pos':'neg'}">${cx.geracao>=0?'+':''}${fxMil(cx.geracao)}</div>
+        <div class="t-sub"${cx.conciliado?'':' title="Diferença entre a variação do saldo bancário e o resultado do DRE — veja a linha ACERTO DE CAIXA"'}>saldo ${fxMil(cx.saldoFim)} · ${cx.conciliado?'<span class="t-ok">✓ conciliado</span>':'⚠️ acerto de '+fxMil(cx.acerto)}</div></div>`
+    : `<div class="fx-tile"><div class="t-lbl">Investimentos</div><div class="t-val">${fxMil(k.totInv)}</div><div class="t-sub">${pct(k.totInv,k.totRec)} da receita</div>${sp(k.d.inv)}</div>`;
+  return `<div class="fx-tile hero${k.totRes<0?' neg':''}"><div class="t-lbl">Resultado líquido · ${k.heroLbl}${k.modoReal==='previsto'?' (previsto)':''}</div>
+      <div class="t-val">${fxMil(k.totRes,2)}</div><div class="t-sub">${pct(k.totRes,k.totRec)} da receita${melhor?' · '+melhor:''}</div>${sp(k.d.resultado,'claro')}</div>
+    <div class="fx-tile"><div class="t-lbl">Receita</div><div class="t-val">${fxMil(k.totRec)}</div>${subRec}${sp(k.d.rec)}</div>
+    <div class="fx-tile"><div class="t-lbl">Saídas</div><div class="t-val">${fxMil(k.totDo)}</div><div class="t-sub">${pct(k.totDo,k.totRec)} da receita</div>${sp(k.d.desp_op)}</div>
+    <div class="fx-tile"><div class="t-lbl">Margem de contribuição</div><div class="t-val">${fxMil(k.totMc)}</div><div class="t-sub">${pct(k.totMc,k.totRec)} da receita</div>${sp(k.d.mc)}</div>
+    ${quinto}
+    <div class="fx-comp">
+      <div class="fx-comp-tit">Para onde vai a receita</div>
+      <div class="fx-comp-bar"><i class="c-cv" style="width:${k.pCv}%"></i><i class="c-do" style="width:${k.pDf}%"></i><i class="c-inv" style="width:${k.pInv}%"></i><i class="c-res" style="width:${k.pRes}%"></i></div>
+      <div class="fx-comp-legend">
+        <span><i class="fx-comp-dot c-cv"></i>Custos variáveis <b>${fxPctL(k.pCv)}</b></span>
+        <span><i class="fx-comp-dot c-df"></i>Despesas fixas <b>${fxPctL(k.pDf)}</b></span>
+        <span><i class="fx-comp-dot c-inv"></i>Investimentos <b>${fxPctL(k.pInv)}</b></span>
+        <span><i class="fx-comp-dot c-sobra"></i>Sobra <b>${fxPctL(k.pRes)}</b></span>
+      </div></div>`;
+}
+// análise da IA numa linha; "Ver tudo" abre o texto inteiro
+function fxIaExpandir(btn){
+  const box=document.getElementById('fx-ia-auto'); if(!box) return;
+  const ab=box.classList.toggle('aberta');
+  if(btn){ btn.textContent=ab?'Recolher':'Ver tudo'; btn.setAttribute('aria-expanded', ab?'true':'false'); }
+}
+// gráfico atrás do botão "Gráfico" — a escolha fica lembrada neste navegador
+const FX_GRAF_CHAVE='movi_fx_grafico';
+function fxGraficoAplicar(){
+  let ab=false; try{ ab=localStorage.getItem(FX_GRAF_CHAVE)==='1'; }catch(e){}
+  const pg=document.getElementById('page-fluxo'); if(!pg) return;
+  pg.classList.toggle('fx-graf-aberto', ab);
+  document.getElementById('fx-btn-graf')?.setAttribute('aria-pressed', ab?'true':'false');
+}
+function fxGraficoToggle(){
+  const pg=document.getElementById('page-fluxo'); if(!pg) return;
+  const ab=!pg.classList.contains('fx-graf-aberto');
+  try{ localStorage.setItem(FX_GRAF_CHAVE, ab?'1':'0'); }catch(e){}
+  pg.classList.toggle('fx-graf-aberto', ab);
+  document.getElementById('fx-btn-graf')?.setAttribute('aria-pressed', ab?'true':'false');
+  if(ab && _fxChart) requestAnimationFrame(()=>{ try{ _fxChart.resize(); }catch(e){} });
+}
 function fxPct(v,ref){ return ref?((v/ref-1)*100):null; }
 
 // ---- descendentes de um id no DRE_STRUCT (para agregações e drill-down) ----
@@ -9718,7 +10066,9 @@ function fxCalcAlertas(ano){
   DRE_STRUCT.filter(l=>l.n>0 && !['margem','lucrop','resultado'].includes(l.t)).forEach(l=>{
     const serie=(d[l.id]||[]).slice(0,nReal);
     if(!serie.some(v=>v>0)) return;
-    const isDespCusto = !DRE_STRUCT.find(g=>g.id===l.parent0 && g.t==='rec') && (l.parent0!=='rec');
+    // grupo pelo prefixo do id (rec_, cv_, df_, inv_, nop_): o DRE_STRUCT não traz o pai, e o teste
+    // antigo (l.parent0, sempre vazio aqui) dava "custo" para tudo — até receita virava "acima da média"
+    const isDespCusto = ['cv','df','inv'].includes(String(l.id).split('_')[0]);
     serie.forEach((v,i)=>{
       const outros=serie.filter((_,j)=>j!==i);
       const media=outros.reduce((a,b)=>a+b,0)/(outros.length||1);
@@ -9744,20 +10094,25 @@ function fxRenderChart(d, projIdx, labels){
   const res = Array.from({length:n},(_,i)=>d['resultado']?.[i]||0);
   const seg = c=>projIdx&&projIdx.has(c.p1DataIndex)?[5,4]:undefined;
   if(_fxChart) _fxChart.destroy();
+  // cores do visual novo (tokens da página); sem elas, as de antes
+  const _cs=getComputedStyle(document.getElementById('page-fluxo')), _v=(n,f)=>(_cs.getPropertyValue(n).trim()||f);
+  const _rgba=(h,a)=>{ if(!/^#[0-9a-f]{6}$/i.test(h)) return h; const x=parseInt(h.slice(1),16); return `rgba(${x>>16&255},${x>>8&255},${x&255},${a})`; };
+  const C={rec:_v('--fx-c-rec','#10B981'), sai:_v('--fx-c-sai','#F43F5E'), res:_v('--fx-c-res',chartColors().azul), grade:_v('--fx-c-grade','rgba(0,0,0,.05)'), eixo:_v('--fx-c-eixo','#8A8799'), tinta2:_v('--fx-tinta2','#4A4A63'), card:_v('--fx-card','#FFFFFF')};
   _fxChart=new Chart(ctx,{type:'bar',
     data:{labels:lbl,datasets:[
-      {label:'Receita',data:rec,backgroundColor:lbl.map((_,i)=>projIdx&&projIdx.has(i)?'rgba(16,185,129,.3)':'rgba(16,185,129,.85)'),borderRadius:4,barPercentage:.6,categoryPercentage:.72},
-      {label:'Saídas',data:saidas,backgroundColor:lbl.map((_,i)=>projIdx&&projIdx.has(i)?'rgba(225,29,72,.25)':'rgba(244,63,94,.7)'),borderRadius:4,barPercentage:.6,categoryPercentage:.72},
-      {label:'Resultado',data:res,type:'line',borderColor:chartColors().azul,backgroundColor:chartColors().azul,borderWidth:2.5,pointRadius:n>16?0:3,tension:.35,segment:{borderDash:seg}},
+      {label:'Receita',data:rec,backgroundColor:lbl.map((_,i)=>projIdx&&projIdx.has(i)?_rgba(C.rec,.3):C.rec),borderRadius:4,barPercentage:.6,categoryPercentage:.72,maxBarThickness:24},
+      {label:'Saídas',data:saidas,backgroundColor:lbl.map((_,i)=>projIdx&&projIdx.has(i)?_rgba(C.sai,.3):C.sai),borderRadius:4,barPercentage:.6,categoryPercentage:.72,maxBarThickness:24},
+      {label:'Resultado',data:res,type:'line',borderColor:C.res,backgroundColor:C.res,borderWidth:2,pointRadius:n>16?0:4,pointBorderColor:C.card,pointBorderWidth:2,tension:.35,segment:{borderDash:seg}},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:10},padding:12}},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:10},padding:12,color:C.tinta2}},
         tooltip:{callbacks:{label:c=>c.dataset.label+': '+fxNum(c.raw)}}},
-      scales:{x:{grid:{display:false},ticks:{font:{size:9.5},maxTicksLimit:16}},
-        y:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{size:9.5},callback:v=>fxBRLk(v)}}}}});
+      scales:{x:{grid:{display:false},border:{color:C.grade},ticks:{font:{size:9.5},maxTicksLimit:16,color:C.eixo}},
+        y:{grid:{color:C.grade},border:{display:false},ticks:{font:{size:9.5},color:C.eixo,callback:v=>fxBRLk(v)}}}}});
 }
 
 function renderFluxo(){
+  fxGraficoAplicar();
   const ano = parseInt(document.getElementById('f-ano')?.value)||new Date().getFullYear();
   const view = fluxoView;
   const granular = (view==='semanal'||view==='diario');
@@ -9781,11 +10136,8 @@ function renderFluxo(){
 
   // ---- KPIs ----
   const heroRes = document.getElementById('fx-kpi-row');
-  const heroClass = totRes>=0?'pos':'neg';
   const MN=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const heroLbl = granular ? `${MN[_fxMesSel]}/${ano}` : String(ano);
-  const saidasTot = totDo; // desp_op já é cv + df + inv
-  const pctRec = (totRec+saidasTot)>0 ? totRec/(totRec+saidasTot)*100 : 50;
   // composição: custos variáveis, despesas fixas e investimentos sobre a receita
   const pCv = totRec?totCv/totRec*100:0, pDf=totRec?totDf/totRec*100:0, pInv=totRec?totInv/totRec*100:0;
   const pRes = Math.max(0,100-pCv-pDf-pInv);
@@ -9800,42 +10152,9 @@ function renderFluxo(){
     const acertoTot = cx.acerto.reduce((a,b)=>a+b,0);
     cxKpi = {geracao, acerto:acertoTot, saldoFim:cx.fim[n-1]||0, conciliado:Math.abs(acertoTot)<0.01};
   }
-  heroRes.innerHTML = `
-    <div class="fx-hero ${heroClass}">
-      <div class="fx-kh-lbl">📈 RESULTADO LÍQUIDO · ${heroLbl}${modoReal==='previsto'?' (PREVISTO)':''}</div>
-      <div class="fx-kh-num">${fxNum(totRes)}</div>
-      <div class="fx-kh-bar"><i class="b1" style="width:${pctRec}%"></i><i class="b2" style="width:${100-pctRec}%"></i></div>
-      <div class="fx-kh-leg"><span>Receita <b>${fxBRLk(totRec)}</b></span><span>Saídas <b>${fxBRLk(saidasTot)}</b></span></div>
-    </div>
-    <div class="fx-card verde">
-      <div class="fx-kc-num">${fxNum(totRec)}</div>
-      <div class="fx-kc-lbl">💵 Receita Total</div>
-      <div class="fx-kc-av">MC: ${totRec?(totMc/totRec*100).toFixed(1)+'%':'—'} · ${fxBRLk(totMc)}</div>
-    </div>
-    ${cxKpi ? `
-    <div class="fx-card caixa">
-      <div class="fx-kc-num" style="color:${cxKpi.geracao>=0?'#3C9D23':'#D00000'}">${cxKpi.geracao>=0?'+':''}${fxNum(cxKpi.geracao)}</div>
-      <div class="fx-kc-lbl">${cxKpi.geracao>=0?'💰 Gerou caixa no período':'🔥 Queimou caixa no período'}</div>
-      <div class="fx-kc-av">saldo final: ${fxBRLk(cxKpi.saldoFim)}</div>
-      ${cxKpi.conciliado
-        ? '<div class="fx-cx-alerta ok">✓ caixa conciliado</div>'
-        : `<div class="fx-cx-alerta" title="Diferença entre a variação do saldo bancário e o resultado do DRE — veja a linha ACERTO DE CAIXA">⚠️ acerto de ${fxBRLk(cxKpi.acerto)}</div>`}
-    </div>` : `
-    <div class="fx-card azul">
-      <div class="fx-kc-num" style="color:var(--accent)">${fxNum(totMc)}</div>
-      <div class="fx-kc-lbl">🧮 Margem de Contribuição</div>
-      <div class="fx-kc-av">AV: ${totRec?(totMc/totRec*100).toFixed(1)+'%':'—'}</div>
-    </div>`}
-    <div class="fx-card">
-      <div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--text2);margin-bottom:10px">PARA ONDE VAI A RECEITA</div>
-      <div class="fx-comp-bar"><i class="c-cv" style="width:${pCv}%"></i><i class="c-do" style="width:${pDf}%"></i><i class="c-inv" style="width:${pInv}%"></i><i class="c-res" style="width:${pRes}%"></i></div>
-      <div class="fx-comp-legend">
-        <div class="fx-comp-item"><span class="fx-comp-dot" style="background:#FF8C2E"></span><div><div class="n">${pCv.toFixed(1)}%</div><div class="l">Custos Variáveis</div></div></div>
-        <div class="fx-comp-item"><span class="fx-comp-dot" style="background:#D00000"></span><div><div class="n">${pDf.toFixed(1)}%</div><div class="l">Despesas Fixas</div></div></div>
-        <div class="fx-comp-item"><span class="fx-comp-dot" style="background:#004E98"></span><div><div class="n">${pInv.toFixed(1)}%</div><div class="l">Investimentos</div></div></div>
-        <div class="fx-comp-item"><span class="fx-comp-dot" style="background:var(--accent-fill)"></span><div><div class="n">${(totRec?totRes/totRec*100:0).toFixed(1)}%</div><div class="l">Sobra (resultado)</div></div></div>
-      </div>
-    </div>`;
+  // tendência só com períodos fechados: no ano/mês corrente, até o mês passado / até ontem
+  const _nSpark = granular ? ((ano===new Date().getFullYear() && _fxMesSel===new Date().getMonth()) ? new Date().getDate()-1 : d['rec'].length) : (ano===new Date().getFullYear() ? new Date().getMonth() : 12);
+  heroRes.innerHTML = fxKpiTiles({heroLbl,modoReal,granular,totRec,totMc,totInv,totDo,totRes,cxKpi,d,n:_nSpark,pCv,pDf,pInv,pRes});
 
   // ---- alertas (sempre calculados sobre a base mensal, independente da granularidade em tela) ----
   const alerts = fxCalcAlertas(ano);
@@ -9870,10 +10189,10 @@ function renderFluxo(){
   // cabeçalho
   const thead=document.getElementById('dre-thead-f');
   if(comparar){
-    thead.innerHTML = `<tr><th rowspan="2" style="text-align:left;min-width:240px;vertical-align:bottom">Conta</th>${cols.map(c=>`<th colspan="2" style="text-align:center${c.fds?';color:var(--laranja-txt)':''}" class="${c.atual?'fx-mesatual':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th colspan="2" style="text-align:center">Total</th></tr>
+    thead.innerHTML = `<tr><th rowspan="2" style="text-align:left;min-width:240px;vertical-align:bottom">Conta<span class="fx-unid">R$ mil</span></th>${cols.map(c=>`<th colspan="2" style="text-align:center${c.fds?';color:var(--laranja-txt)':''}" class="${c.atual?'fx-mesatual':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th colspan="2" style="text-align:center">Total</th></tr>
     <tr>${cols.map(()=>'<th class="fx-sub-r">Real</th><th class="fx-sub-p">Prev.</th>').join('')}<th class="fx-sub-r">Real</th><th class="fx-sub-p">Prev.</th></tr>`;
   } else {
-    thead.innerHTML = `<tr><th style="text-align:left;min-width:240px">Conta</th>${cols.map(c=>`<th class="${c.atual?'fx-mesatual':''}${c.fds?' fx-fds':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th>Total</th></tr>`;
+    thead.innerHTML = `<tr><th style="text-align:left;min-width:240px">Conta<span class="fx-unid">R$ mil</span></th>${cols.map(c=>`<th class="${c.atual?'fx-mesatual':''}${c.fds?' fx-fds':''}">${c.label}${c.atual?' ●':''}</th>`).join('')}<th class="fx-col-tot">Total</th><th class="fx-col-pct" title="Quanto o total da linha representa da receita do período">% rec.</th><th class="fx-col-spark" title="Tendência dos meses fechados">Tendência</th></tr>`;
   }
 
   const _resultTypes=new Set(['margem','lucrop','resultado']);
@@ -9890,7 +10209,7 @@ function renderFluxo(){
 
   function subInd(l,c,v){
     if(ind==='off'||!v) return '';
-    if(ind==='av'){ const av=totRec?(v/totRec*100).toFixed(1)+'%':'—'; return `<span class="fx-avs">${av}</span>`; }
+    if(ind==='av'){ const av=totRec?fxPctL(v/totRec*100):'—'; return `<span class="fx-avs">${av}</span>`; }
     if(ind==='ah'){
       if(view==='trimestral'||view==='anual') return '';
       const i=c.idx[0]; if(i===0) return '<span class="fx-avs">—</span>';
@@ -9908,7 +10227,7 @@ function renderFluxo(){
     const cls=v===0?'zero':(isNeg&&v>0)?'neg':'pos';
     const isProj = projIdx && view==='mensal' && !isPrev && c.idx.some(i=>projIdx.has(i));
     const negBox = (saldoTypes.has(l.t) && v<0);
-    const conteudo = negBox ? `<span class="fx-negbox">${fxNum(v)}${subInd(l,c,v)}</span>` : `${v?(isProj?'~':'')+fxNum(v):'—'}${subInd(l,c,v)}`;
+    const conteudo = negBox ? `<span class="fx-negbox">${fxCelMil(v)}${subInd(l,c,v)}</span>` : `${v?(isProj?'~':'')+fxCelMil(v):'—'}${subInd(l,c,v)}`;
     const clickable = v && !isPrev;
     const mesesArr = granular ? `[${_fxMesSel}]` : `[${c.idx.join(',')}]`;
     const diasArr = granular ? `[${c.idx.join(',')}]` : 'null';
@@ -9925,9 +10244,11 @@ function renderFluxo(){
     const totPrev = comparar && dPrev ? T(dPrev[l.id]) : null;
     const colsH = cols.map(c=> comparar ? celula(l,c,d,false)+celula(l,c,dPrev||{},true) : celula(l,c,d,false)).join('');
     const totCell = (saldoTypes.has(l.t) && tot<0)
-      ? `<td class="cv"><span class="fx-negbox">${fxNum(tot)}</span></td>`
-      : `<td class="cv ${tot===0?'zero':tot>=0?'pos':'neg'}">${tot?fxNum(tot):'—'}</td>`;
-    const totPrevCell = comparar ? `<td class="cv fx-prev-col">${totPrev?fxNum(totPrev):'—'}</td>` : '';
+      ? `<td class="cv fx-col-tot"><span class="fx-negbox">${fxCelMil(tot)}</span></td>`
+      : `<td class="cv fx-col-tot ${tot===0?'zero':tot>=0?'pos':'neg'}">${tot?fxCelMil(tot):'—'}</td>`;
+    const totPrevCell = comparar ? `<td class="cv fx-prev-col">${totPrev?fxCelMil(totPrev):'—'}</td>` : '';
+    // % da receita e tendência da linha (fora do Real × Previsto)
+    const extraCols = comparar ? '' : `<td class="cv fx-col-pct">${totRec&&tot?fxPctL(tot/totRec*100):'—'}</td><td class="fx-col-spark">${fxSpark(d[l.id],_nSpark)}</td>`;
     const canToggle=hasChildren.has(l.id);
     const isCollapsed=_dreCollapsed.has(l.id);
     const toggleBtn = canToggle
@@ -9935,7 +10256,7 @@ function renderFluxo(){
       : (l.n===0||l.n===1?'<span style="display:inline-block;width:21px;flex-shrink:0"></span>':'');
     const parentAttr = l.n===1 && l.parent0 ? ` data-parent="${l.parent0}" data-group="${l.id}"` : l.n===2 && l.parent1 ? ` data-parent="${l.parent1}"` : '';
     const hiddenCls = (l.n===1 && _dreCollapsed.has(l.parent0)) || (l.n===2 && (_dreCollapsed.has(l.parent1)||_dreCollapsed.has(l.parent0))) ? ' dre-sub-hidden' : '';
-    return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}${l.nome}</td>${colsH}${totCell}${totPrevCell}</tr>`;
+    return `<tr class="${rCls}${hiddenCls}"${parentAttr}><td class="cn${indent}">${toggleBtn}<span class="cn-txt">${l.nome}</span></td>${colsH}${totCell}${totPrevCell}${extraCols}</tr>`;
   }).join('');
 
   // ---- CONCILIAÇÃO DE CAIXA (abaixo do RESULTADO LÍQUIDO) ----
@@ -9957,17 +10278,17 @@ function renderFluxo(){
       const colsH = cols.map(c=>{
         const v = valCaixa(l, c.idx);
         const cls = v===0?'zero':v<0?'neg':'pos';
-        const cell = `<td class="cv ${cls}${c.atual?' fx-mesatual':''}${c.fds?' fx-fds':''}">${v?fxNum(v):'—'}</td>`;
+        const cell = `<td class="cv ${cls}${c.atual?' fx-mesatual':''}${c.fds?' fx-fds':''}">${v?fxCelMil(v):'—'}</td>`;
         return comparar ? cell+'<td class="cv fx-prev-col">—</td>' : cell;
       }).join('');
       const tot = valCaixa(l, todosIdx);
-      const totCell = `<td class="cv ${tot===0?'zero':tot<0?'neg':'pos'}">${tot?fxNum(tot):'—'}</td>`+(comparar?'<td class="cv fx-prev-col">—</td>':'');
+      const totCell = `<td class="cv fx-col-tot ${tot===0?'zero':tot<0?'neg':'pos'}">${tot?fxCelMil(tot):'—'}</td>`+(comparar?'<td class="cv fx-prev-col">—</td>':'<td class="cv fx-col-pct"></td><td class="fx-col-spark"></td>');
       // acerto zerado = conciliado ✓
       const acertoOk = l.id==='acerto_caixa' && Math.abs(tot)<0.01;
       const indent = l.n===1?' i1':'';
       const espaco = '<span style="display:inline-block;width:21px;flex-shrink:0"></span>';
       const sufixo = l.id==='acerto_caixa' ? (acertoOk?' ✓':' ⚠️') : '';
-      return `<tr class="${l.cls}${acertoOk?' ok':''}"><td class="cn${indent}">${l.n===0?espaco:''}${l.nome}${sufixo}</td>${colsH}${totCell}</tr>`;
+      return `<tr class="${l.cls}${acertoOk?' ok':''}"><td class="cn${indent}">${l.n===0?espaco:''}<span class="cn-txt">${l.nome}${sufixo}</span></td>${colsH}${totCell}</tr>`;
     }).join('');
   }
 
@@ -14151,8 +14472,10 @@ function ligarRolagemTopo(topoId, baseId){
   const medir = () => {
     const sobra = base.scrollWidth - base.clientWidth;
     topo.hidden = sobra <= 1;
-    dentro.style.width = base.scrollWidth + 'px';
-    if(!topo.hidden && Math.abs(topo.scrollLeft - base.scrollLeft) > 0.5) topo.scrollLeft = base.scrollLeft;
+    if(topo.hidden) return;
+    // a barra de cima rola o mesmo tanto que a tabela, mesmo quando a tabela tem barra vertical própria (fluxo)
+    dentro.style.width = (topo.clientWidth + sobra) + 'px';
+    if(Math.abs(topo.scrollLeft - base.scrollLeft) > 0.5) topo.scrollLeft = base.scrollLeft;
   };
   // só escreve quando difere: o eco da outra barra chega igual e para ali
   topo.addEventListener('scroll', () => { if(Math.abs(base.scrollLeft - topo.scrollLeft) > 0.5) base.scrollLeft = topo.scrollLeft; }, { passive: true });
