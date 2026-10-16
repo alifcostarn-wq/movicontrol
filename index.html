@@ -3014,15 +3014,31 @@ textarea.cp-form-input{resize:vertical}
    Atraso usa o fundo warn-bg: no laranja-bg o texto laranja ficava em 4,0:1. */
 #page-clientes{--cl-ok-bg:var(--accent2);--cl-ok:var(--accent);--cl-at-bg:var(--warn-bg);--cl-at:var(--laranja-txt);
   --cl-bl-bg:var(--danger-bg);--cl-bl:var(--danger);--cl-ng-bg:var(--info-bg);--cl-ng:var(--info);--cl-in-bg:var(--surface3);--cl-in:var(--text2)}
-.cl-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.cl-chips{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.cl-chips-g{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/* conexão: grupo à parte, à direita, separado por uma linha */
+.cl-chips-con{margin-left:auto;padding-left:14px;border-left:1px solid var(--border)}
 .cl-chip{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
 .cl-chip b{color:var(--text);font-weight:700}
 .cl-chip:hover{border-color:var(--text3)}
-.cl-chip.on{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}.cl-chip.on b{color:#fff}
+.cl-chip:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+/* escolhido na cor da própria situação — antes ficava tudo verde, e
+   "Negativados" escolhido parecia "ativo". Todos: neutro e forte. */
+.cl-chip.on{background:var(--text);border-color:var(--text);color:var(--surface);font-weight:700}.cl-chip.on b{color:inherit}
+.cl-chip.on.t-ok,.cl-chip.on.t-on{background:var(--cl-ok-bg);border-color:var(--cl-ok);color:var(--cl-ok);box-shadow:inset 0 0 0 1px var(--cl-ok)}
+.cl-chip.on.t-at{background:var(--cl-at-bg);border-color:var(--cl-at);color:var(--cl-at);box-shadow:inset 0 0 0 1px var(--cl-at)}
+.cl-chip.on.t-bl{background:var(--cl-bl-bg);border-color:var(--cl-bl);color:var(--cl-bl);box-shadow:inset 0 0 0 1px var(--cl-bl)}
+.cl-chip.on.t-ng{background:var(--cl-ng-bg);border-color:var(--cl-ng);color:var(--cl-ng);box-shadow:inset 0 0 0 1px var(--cl-ng)}
+.cl-chip.on.t-in,.cl-chip.on.t-off{background:var(--cl-in-bg);border-color:var(--cl-in);color:var(--cl-in);box-shadow:inset 0 0 0 1px var(--cl-in)}
+/* "Bloqueados" com um dos tipos escolhido: marcado de leve */
+.cl-chip.parcial.t-bl{border-color:var(--cl-bl);color:var(--cl-bl)}.cl-chip.parcial.t-bl b{color:inherit}
+.cl-chip-sub{display:inline-flex;gap:4px;align-items:center}
+.cl-chip.sub{height:28px;padding:0 10px;font-size:12px;border-style:dashed}
+.cl-chip.sub.on{border-style:solid}
 .cl-cdot{width:8px;height:8px;border-radius:50%;display:inline-block}
 .cl-cdot.ok{background:#3C9D23}.cl-cdot.on{background:#3C9D23;box-shadow:0 0 0 3px rgba(60,157,35,.2)}.cl-cdot.at{background:#FF8C2E}
 .cl-cdot.bl{background:#D00000}.cl-cdot.ng{background:#4DA3E8}.cl-cdot.in{background:var(--text3)}
-.cl-chip.on .cl-cdot{background:#fff;box-shadow:none}
+.cl-chip.on .cl-cdot{box-shadow:none}
 .cl-barra{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .cl-barra .search-wrap{flex:1;min-width:240px}
 .cl-barra .search-wrap input{width:100%!important}
@@ -13754,14 +13770,18 @@ function cadCamposBusca(i){
    • A ficha abre ao lado da tabela; faturas, conexão e comodato chegam ao vivo
    ════════════════════════════════════════════════════════ */
 const CLI_POR_PAG = 25;
-// [filtro, rótulo do chip, tom]
+// [filtro, rótulo do chip, tom] — situação do contrato, na ordem do ciclo do
+// cliente. "Bloqueados" junta manual e automático; os dois aparecem separados
+// ao escolher Bloqueados. Online/Offline é outro filtro (conexão), combinável.
 const CLI_CHIPS = [
-  ['Todos','Todos',''], ['Ativo','Ativos','ok'], ['__online','Online','on'],
-  ['Financeiro em Atraso','Em atraso','at'], ['Bloqueio Manual','Bloqueio manual','bl'],
-  ['Bloqueio Automático','Bloqueio automático','bl'], ['Negativado','Negativados','ng'],
-  ['Inativo','Inativos','in'], ['Cancelado','Cancelados','in'],
-  ['Pré-contrato','Pré-contrato','at'], ['Aguardando Assinatura','Ag. assinatura','at'],
+  ['Todos','Todos',''], ['Ativo','Ativos','ok'], ['Financeiro em Atraso','Em atraso','at'],
+  ['Bloqueados','Bloqueados','bl'], ['Aguardando Assinatura','Ag. assinatura','at'], ['Pré-contrato','Pré-contrato','at'],
+  ['Negativado','Negativados','ng'], ['Inativo','Inativos','in'], ['Cancelado','Cancelados','in'],
 ];
+const CLI_BLOQ = [['Bloqueio Manual','Manual'], ['Bloqueio Automático','Automático']];
+const cliCasaSit = (st, f) => f === 'Todos' || (f === 'Bloqueados' ? CLI_BLOQ.some(([k]) => k === st) : st === f);
+// conexão pelo login: sem login no IXC não é online nem offline
+const cliConDe = i => !i.logs.length ? 'sem' : i.online ? 'online' : 'offline';
 const CLI_TOM = {
   'Ativo':'ok', 'Financeiro em Atraso':'at', 'Aguardando Assinatura':'at', 'Pré-contrato':'at',
   'Bloqueio Manual':'bl', 'Bloqueio Automático':'bl', 'Negativado':'ng',
@@ -13893,6 +13913,41 @@ function _cliOnlineTxt(info){
   return fim ? 'offline · saiu '+_cliQuando(fim) : 'offline';
 }
 
+/* Botões de cima da lista: situação (um por vez) e conexão (online/offline,
+   combinável com a situação). O escolhido fica na cor da própria situação. */
+function cliChipsHtml(sit, con, conta, contaCon){
+  const n = v => (v||0).toLocaleString('pt-BR');
+  const pct = v => conta.Todos ? Math.round((v||0) * 100 / conta.Todos) : 0;
+  const de = v => `${n(v)} cliente${v === 1 ? '' : 's'}`;
+  const emBloq = sit === 'Bloqueados' || CLI_BLOQ.some(([k]) => k === sit);
+  const botao = (acao, k, rot, tom, qtd, estado, dica, extra = '') =>
+    `<button type="button" class="cl-chip${extra}${tom ? ' t-'+tom : ''}${estado === true ? ' on' : estado === 'parcial' ? ' parcial' : ''}" aria-pressed="${estado === true}" title="${_fxEsc(dica)}" onclick="${acao}('${k}')">`
+    + `${tom ? `<i class="cl-cdot ${tom === 'off' ? 'in' : tom}"></i>` : ''}${rot} <b>${n(qtd)}</b></button>`;
+  const sitHtml = CLI_CHIPS
+    .filter(([k]) => k === 'Todos' || k === 'Ativo' || conta[k] || k === sit || (k === 'Bloqueados' && emBloq))
+    .map(([k, rot, tom]) => {
+      const qtd = conta[k] || 0;
+      if(k === 'Todos') return botao('setCliStatusFiltro', k, rot, '', qtd, sit === k, de(qtd) + (con ? ' ' + con : ''));
+      if(k !== 'Bloqueados') return botao('setCliStatusFiltro', k, rot, tom, qtd, sit === k, `${de(qtd)} · ${pct(qtd)}% de ${n(conta.Todos)}`);
+      const partes = CLI_BLOQ.map(([b, r]) => `${n(conta[b])} ${r.toLowerCase()}`).join(', ');
+      let h = botao('setCliStatusFiltro', k, rot, tom, qtd, sit === k ? true : emBloq ? 'parcial' : false, `${de(qtd)} · ${pct(qtd)}% de ${n(conta.Todos)} (${partes})`);
+      if(emBloq) h += `<span class="cl-chip-sub" role="group" aria-label="Tipo de bloqueio">` + CLI_BLOQ.map(([b, r]) =>
+        botao('setCliStatusFiltro', b, r, 'bl', conta[b], sit === b, `${de(conta[b])} com bloqueio ${r.toLowerCase()}`, ' sub')).join('') + `</span>`;
+      return h;
+    }).join('');
+  const conHtml = [['online','Online','on'], ['offline','Offline','off']].map(([k, rot, tom]) =>
+    botao('setCliConexao', k, rot, tom, contaCon[k], con === k,
+      `${de(contaCon[k])} ${k} nesta situação${contaCon.sem ? ` (${n(contaCon.sem)} sem login no IXC)` : ''} · clique de novo para tirar`)).join('');
+  return `<div class="cl-chips-g" role="group" aria-label="Situação do contrato">${sitHtml}</div>`
+    + `<div class="cl-chips-g cl-chips-con" role="group" aria-label="Conexão">${conHtml}</div>`;
+}
+// conexão: clicar no escolhido de novo tira o filtro
+function setCliConexao(c){
+  window._cliConexao = window._cliConexao === c ? '' : c;
+  paginaAtual['clientes'] = 1;
+  renderClientes();
+}
+
 function cliBuscaMudou(){ paginaAtual['clientes'] = 1; renderClientes(); }
 function cliFiltroMudou(){ paginaAtual['clientes'] = 1; renderClientes(); }
 
@@ -13902,21 +13957,29 @@ function renderClientes(){
   const fCid = document.getElementById('cli-f-cidade')?.value || '';
   const fPlano = document.getElementById('cli-f-plano')?.value || '';
   const ordem = document.getElementById('cli-f-ordem')?.value || 'nome';
+  // "Online" era um botão de situação; agora é o filtro de conexão
+  if(window._cliStatusFiltro === '__online'){ window._cliStatusFiltro = 'Todos'; window._cliConexao = 'online'; }
   const statusFiltro = window._cliStatusFiltro || 'Ativo';
+  const conFiltro = window._cliConexao || '';
   carregarLocaisIXC();
 
   const todos = lista.map((c, idx) => ({ c, idx, i:_cliInfo(c) }));
   // contagens dos chips: valem para a busca e os filtros de cidade/plano
   const base = todos.filter(r => (!fCid || r.i.cidade === fCid) && (!fPlano || r.i.plano === fPlano)
     && (!busca || (cadCamposBusca(r.c)+' '+r.i.cidade+' '+r.i.plano+' '+r.i.logs.map(l=>l.login).join(' ')+' '+(r.c.ixcId||'')).toLowerCase().includes(busca)));
-  const conta = { 'Todos': base.length, '__online': 0 };
-  base.forEach(r => { conta[r.i.status] = (conta[r.i.status]||0) + 1; if(r.i.online) conta.__online++; });
-  const fil = base.filter(r => statusFiltro === 'Todos' ? true : statusFiltro === '__online' ? r.i.online : r.i.status === statusFiltro);
+  // cada grupo de botões conta respeitando o filtro do OUTRO: com "Offline"
+  // escolhido, cada situação mostra quantos offline tem — e vice-versa
+  const baseCon = base.filter(r => !conFiltro || cliConDe(r.i) === conFiltro);
+  const conta = { 'Todos': baseCon.length };
+  baseCon.forEach(r => { conta[r.i.status] = (conta[r.i.status]||0) + 1; });
+  conta.Bloqueados = CLI_BLOQ.reduce((s, [k]) => s + (conta[k]||0), 0);
+  const baseSit = base.filter(r => cliCasaSit(r.i.status, statusFiltro));
+  const contaCon = { online: 0, offline: 0, sem: 0 };
+  baseSit.forEach(r => { contaCon[cliConDe(r.i)]++; });
+  const fil = baseSit.filter(r => !conFiltro || cliConDe(r.i) === conFiltro);
 
   const chipsEl = document.getElementById('cli-filtros-status');
-  if(chipsEl) chipsEl.innerHTML = CLI_CHIPS
-    .filter(([k]) => ['Todos','Ativo','__online'].includes(k) || conta[k] || k === statusFiltro)
-    .map(([k, rot, tom]) => `<button type="button" class="cl-chip ${k===statusFiltro?'on':''}" onclick="setCliStatusFiltro('${k}')">${tom?`<i class="cl-cdot ${tom}"></i>`:''}${rot} <b>${(conta[k]||0).toLocaleString('pt-BR')}</b></button>`).join('');
+  if(chipsEl) chipsEl.innerHTML = cliChipsHtml(statusFiltro, conFiltro, conta, contaCon);
 
   // opções de cidade e plano: as que existem na base, mais frequentes primeiro
   const opcoes = (sel, campo, rotulo) => {
