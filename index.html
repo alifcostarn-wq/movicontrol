@@ -1187,6 +1187,12 @@ body.dark-mode #page-fluxo .dre tr.dcx-saldo td:first-child{background:rgba(37,9
 .fx-modal-body{padding:18px 22px;overflow-y:auto;flex:1}
 .fx-lanc-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;font-size:13.5px;transition:transform .13s,box-shadow .13s}
 .fx-lanc-item:hover{transform:translateX(3px);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+/* clicável: abre a ficha do título (ctxAbrirDetalhe) por cima do drill */
+.fx-lanc-item[data-fxlanc]{cursor:pointer}
+.fx-lanc-item[data-fxlanc]:hover{border-color:var(--info)}
+.fx-lanc-item[data-fxlanc]:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+.fx-lanc-seta{width:16px;height:16px;flex-shrink:0;margin-right:-4px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--text3)}
+.fx-lanc-item[data-fxlanc]:hover .fx-lanc-seta,.fx-lanc-item[data-fxlanc]:focus-visible .fx-lanc-seta{color:var(--text2)}
 .fx-lanc-desc{font-weight:600;font-size:13.5px;color:var(--text)}
 .fx-lanc-meta{font-size:11.5px;color:var(--text3);margin-top:2px}
 .fx-lanc-val{font-weight:800;font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -5073,7 +5079,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
     <div class="fx-modal-overlay" id="fx-m-drill" onclick="if(event.target===this)fxFechar('fx-m-drill')">
       <div class="fx-modal">
         <div class="fx-modal-header">
-          <div><div class="fx-modal-title" id="fx-drill-title">Lançamentos</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Somente visualização</div></div>
+          <div><div class="fx-modal-title" id="fx-drill-title">Lançamentos</div><div id="fx-drill-sub" style="font-size:12px;color:var(--text3);margin-top:2px">Somente visualização</div></div>
           <button class="fx-modal-x" onclick="fxFechar('fx-m-drill')" title="Fechar (Esc)">✕</button>
         </div>
         <div class="fx-modal-body">
@@ -6517,6 +6523,8 @@ body.dark-mode .ctx-atraso-d{background:#D00000}
 .ctx-id-link:hover{filter:brightness(1.2)}
 .ctxd-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:none;align-items:center;justify-content:center;padding:20px}
 .ctxd-overlay.open{display:flex}
+.ctxd-overlay.sobre-fx{z-index:9100} /* acima do drill do Fluxo (.fx-modal-overlay = 9000) */
+.ctxd-modal:focus{outline:none} /* recebe o foco ao abrir pelo Fluxo; o anel fica nos botões */
 .ctxd-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(860px,100%);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,.5)}
 .ctxd-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px}
 .ctxd-head .ctxd-kicker{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)}
@@ -9560,7 +9568,7 @@ function fxLancamentosDoId(rootId, modo, ano, meses, dias){
   const desc=fxDescendentes(rootId);
   const lc=gd('sf_lancamentos');
   const out=[];
-  lc.forEach(l=>{
+  lc.forEach((l,idx)=>{
     if(!l.data) return;
     const statusOk=l.status==='Recebido'||l.status==='Pago';
     const statusPrev=l.status==='A Receber'||l.status==='A Pagar';
@@ -9581,7 +9589,8 @@ function fxLancamentosDoId(rootId, modo, ano, meses, dias){
     if(!v) return;
     const eid=fxMapLancamentoId(l,mp,prefixFallbackMap,recFallbackId,despFallbackId,isRec);
     if(!desc.has(eid)) return;
-    out.push({desc:l.descricao||l.plano||'Lançamento',data:dataRef,status:l.status,valor:v,plano:l.plano||''});
+    // idx + id: o clique no drill abre a ficha do título (ctxAbrirDetalhe)
+    out.push({desc:l.descricao||l.plano||'Lançamento',data:dataRef,status:l.status,valor:v,plano:l.plano||'',idx,id:l.id??null});
   });
   return out.sort((a,b)=>(a.data<b.data?-1:1));
 }
@@ -9610,6 +9619,9 @@ function fxFechar(id){ document.getElementById(id).classList.remove('open'); }
 // Esc fecha qualquer modal do Fluxo que esteja aberto
 document.addEventListener('keydown', e=>{
   if(e.key!=='Escape') return;
+  // a ficha do título aberta por cima do drill sai primeiro (o Esc dela
+  // é registrado depois deste); o drill fica no próximo Esc
+  if(document.getElementById('ctxd-overlay')?.classList.contains('open')) return;
   document.querySelectorAll('.fx-modal-overlay.open').forEach(m=>m.classList.remove('open'));
 });
 
@@ -9641,14 +9653,39 @@ function fxAbrirDrill(rootId, nome, ano, meses, dias, lbl){
       <span><b>${lan.length}</b> lançamento${lan.length!==1?'s':''} ${rotulo}</span>
       <span style="font-size:16px;font-weight:800">${brlN(tot)}</span>
     </div>`;
-  document.getElementById('fx-drill-lista').innerHTML = lan.length ? lan.map(l=>{
+  _fxDrillLan = lan;
+  document.getElementById('fx-drill-sub').textContent = lan.length ? 'Clique num lançamento para ver os detalhes' : 'Somente visualização';
+  document.getElementById('fx-drill-lista').innerHTML = lan.length ? lan.map((l,i)=>{
     const ef = l.status==='Recebido'||l.status==='Pago';
-    return `<div class="fx-lanc-item">
-      <div style="min-width:0"><div class="fx-lanc-desc">${l.desc}</div><div class="fx-lanc-meta">${l.data.split('-').reverse().join('/')}${l.plano?' · '+l.plano:''}</div></div>
-      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span class="fx-lanc-st ${ef?'st-ef':'st-pd'}">${l.status}</span><span class="fx-lanc-val">${brlN(l.valor)}</span></div>
+    const dataBR = l.data.split('-').reverse().join('/');
+    return `<div class="fx-lanc-item" data-fxlanc="${i}" role="button" tabindex="0" onclick="fxVerLancamento(${i},this)" onkeydown="fxTeclaLanc(event,${i},this)" title="Ver os detalhes do lançamento" aria-label="${ctxEsc(`Ver detalhes: ${l.desc}, ${dataBR}, ${l.status}, ${brlTxt(l.valor)}`)}">
+      <div style="min-width:0"><div class="fx-lanc-desc">${ctxEsc(l.desc)}</div><div class="fx-lanc-meta">${dataBR}${l.plano?' · '+ctxEsc(l.plano):''}</div></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span class="fx-lanc-st ${ef?'st-ef':'st-pd'}">${l.status}</span><span class="fx-lanc-val">${brlN(l.valor)}</span><svg class="fx-lanc-seta" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></div>
     </div>`;
   }).join('') : '<div style="font-size:13.5px;color:var(--text3);text-align:center;padding:24px">Nenhum lançamento neste período.</div>';
   fxAbrir('fx-m-drill');
+}
+
+// Clique (ou Enter/Espaço) num lançamento do drill: abre a mesma ficha
+// "Detalhes do título" de Contas a Pagar/Receber, por cima desta janela.
+let _fxDrillLan = [];
+function fxVerLancamento(i, el){
+  const it=_fxDrillLan[i];
+  if(!it) return;
+  ctxAbrirDetalhe(it.idx, it.id);
+  const o=document.getElementById('ctxd-overlay');
+  if(!o || !o.classList.contains('open')) return;   // título sumiu: o aviso já saiu
+  o.classList.add('sobre-fx');
+  _ctxdDoFluxo=true; _ctxdVoltar=el||null;
+  // foco na própria janela (não no ✕): Enter segurado não a fecha sozinho
+  const m=document.getElementById('ctxd-modal');
+  if(m){ m.setAttribute('tabindex','-1'); try{ m.focus({preventScroll:true}); }catch(e){} }
+}
+function fxTeclaLanc(e, i, el){
+  if(e.key!=='Enter' && e.key!==' ') return;
+  e.preventDefault();
+  if(e.repeat) return;
+  fxVerLancamento(i, el);
 }
 
 // ---- projeção: preenche meses futuros com a média dos meses realizados ----
@@ -12092,14 +12129,20 @@ function ctxRenderMenuCols(){
    campos gravados no próprio lançamento.
    ============================================================ */
 let _ctxdIdx=null, _ctxdId=null;
+// aberta pelo drill do Fluxo de Caixa (fxVerLancamento): a ficha sobe acima
+// da janela do fluxo e, ao fechar, o foco volta ao lançamento clicado
+let _ctxdDoFluxo=false, _ctxdVoltar=null;
 
 function ctxEsc(s){
   return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function ctxFecharDetalhe(){
   const o=document.getElementById('ctxd-overlay');
-  if(o) o.classList.remove('open');
+  if(o) o.classList.remove('open','sobre-fx');
   _ctxdIdx=null; _ctxdId=null;
+  const volta=_ctxdDoFluxo?_ctxdVoltar:null;
+  _ctxdDoFluxo=false; _ctxdVoltar=null;
+  if(volta && volta.isConnected) try{ volta.focus({preventScroll:true}); }catch(e){}
 }
 // Histórico de pagamentos de um título: cada baixa parcial vinculada
 // (parcialDe) mais a quitação final, em ordem cronológica e com o
@@ -12308,7 +12351,12 @@ function ctxAbrirDetalhe(idx, id=null){
 function ctxDetAcao(acao){
   const idx=_ctxdIdx, id=_ctxdId;
   if(idx==null) return;
+  // vinda do Fluxo de Caixa: fecha também o drill — a janela da ação abriria
+  // por baixo dele, e a lista do drill ficaria velha depois da ação
+  const doFluxo=_ctxdDoFluxo;
+  _ctxdVoltar=null;
   ctxFecharDetalhe();
+  if(doFluxo && typeof fxFechar==='function') fxFechar('fx-m-drill');
   if(acao==='quitar')        abrirModalQuitar(idx,id);
   else if(acao==='receber')  abrirModalReceber(idx,id);
   else if(acao==='editar')   abrirModalLancamento(null,idx);
