@@ -988,6 +988,12 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
   box-shadow:2px 0 6px -2px rgba(0,0,0,.15);
 }
 #page-fluxo .dre th:first-child{z-index:4}
+/* barra de rolagem lateral EM CIMA da DRE (a mesma .cl-rolagem dos Clientes):
+   no Mensal a tabela passa de 1400px e os últimos meses ficavam fora da vista,
+   com a barra de baixo lá no fim das linhas. O "clip" recorta os cantos como
+   o "hidden" sem virar área de rolagem — é o que deixa a barra grudar no topo. */
+#page-fluxo .dre-wrap{overflow:clip}
+#page-fluxo .fx-rolagem{z-index:5} /* acima do "CONTA" fixo (th:first-child, z 4) */
 /* larguras da coluna de contas — sempre suficientes para os nomes dos grupos */
 #page-fluxo[data-fxview="anual"] .dre th:first-child,#page-fluxo[data-fxview="anual"] .dre td:first-child{width:340px;min-width:340px}
 #page-fluxo[data-fxview="trimestral"] .dre th:first-child,#page-fluxo[data-fxview="trimestral"] .dre td:first-child{width:320px;min-width:320px}
@@ -5071,7 +5077,8 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
         </div>
       </div>
       <div class="dre-wrap">
-        <div class="dre-scroll"><table class="dre"><thead id="dre-thead-f"></thead><tbody id="dre-tbody-f"></tbody></table></div>
+        <div class="cl-rolagem fx-rolagem" id="fx-rolagem" hidden aria-hidden="true"><div class="cl-rolagem-in"></div></div>
+        <div class="dre-scroll" id="fx-dre-scroll"><table class="dre"><thead id="dre-thead-f"></thead><tbody id="dre-tbody-f"></tbody></table></div>
       </div>
     </div>
 
@@ -9965,6 +9972,8 @@ function renderFluxo(){
   }
 
   document.getElementById('dre-tbody-f').innerHTML = linhasDre + linhasCaixa;
+  // os meses que passam da largura: barra de rolagem também em cima da DRE
+  ligarRolagemTopo('fx-rolagem', 'fx-dre-scroll');
 
   // análise automática da IA — assíncrona, não trava a tela.
   // Só no modo realizado (é o retrato do que de fato aconteceu).
@@ -14131,9 +14140,11 @@ function renderClientes(){
 
 /* Barra de rolagem em cima da tabela, andando junto com ela. Aparece só
    quando a tabela passa da largura (menu aberto, ficha ao lado, tela menor):
-   a largura de dentro acompanha a da tabela e as duas trocam a posição. */
-function cliLigarRolagemTopo(){
-  const topo = document.getElementById('cli-rolagem'), base = document.getElementById('cli-tscroll');
+   a largura de dentro acompanha a da tabela e as duas trocam a posição.
+   Usada nos Clientes e na DRE do Fluxo de Caixa. */
+function cliLigarRolagemTopo(){ ligarRolagemTopo('cli-rolagem', 'cli-tscroll'); }
+function ligarRolagemTopo(topoId, baseId){
+  const topo = document.getElementById(topoId), base = document.getElementById(baseId);
   if(!topo || !base || topo.dataset.ligada) return;
   topo.dataset.ligada = '1';
   const dentro = topo.firstElementChild, tabela = base.querySelector('table');
