@@ -2745,7 +2745,7 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
         { role: 'system', content: [
           'Você analisa um atendimento JÁ FINALIZADO da MoviOn (provedor de internet por fibra em Mossoró/RN) para ensinar o atendente virtual.',
           'Extraia SOMENTE conhecimento que vale para QUALQUER cliente e que foi dito ou confirmado pelo ATENDENTE (nunca o que só o cliente ou o bot disse).',
-          'Ignore: dados pessoais; valores, datas e vencimentos de um cliente específico; protocolos; endereços; combinados só daquele caso; saudações e despedidas; e o que já está em "JÁ NA BASE".',
+          'Ignore: dados pessoais; valores, datas e vencimentos de um cliente específico; protocolos; endereços; combinados só daquele caso; o que a equipe fez naquele atendimento ("verificamos sua conexão", "já corrigimos", "segue sua fatura"); saudações, despedidas e avisos de transferência; e o que já está em "JÁ NA BASE".',
           'Tipos: "fato" = informação geral da empresa (ex.: prazo de liberação depois do pagamento, formas de pagamento aceitas, horário de atendimento).',
           '"exemplo" = pergunta comum de cliente (titulo) e, em conteudo, a RESPOSTA PRONTA PARA MANDAR ao cliente, falando com ele ("você"), do jeito que o atendente respondeu mas servindo a qualquer cliente, em tom natural e simpático de WhatsApp (nada de "Informamos que", "Prezado") — nunca uma descrição como "o atendente envia…"; "setor" = o setor que cuida disso quando depende de uma pessoa, senão null.',
           'Em "prova", copie a frase do ATENDENTE, como está na conversa, que mostra isso. Sem uma frase do atendente que prove, não inclua o item.',
@@ -2836,15 +2836,27 @@ async function marcarUsoDaBase(e, base, msgs) {
 const IA_CURADORIA = { porLote: 6, esperaMin: 30, vizinhos: 4, maxVizinhos: 20, reservaMin: 15, tentativas: 3, prazoGroqMs: 20000, podarDias: 45, podarMinLidos: 150 };
 
 const PROMPT_CURADORIA = [
-  'Você cuida da base de conhecimento do atendente virtual da MoviOn (provedor de internet por fibra em Mossoró/RN). O atendente virtual responde clientes no WhatsApp usando só o fluxo do bot e essa base, então ela deve ter apenas o que é correto, útil no dia a dia e vale para QUALQUER cliente.',
-  'Para cada item de PARA DECIDIR, escolha uma decisão:',
-  '- "manter": informação geral e útil para atender clientes, que a base e o fluxo ainda não têm.',
+  'Você cuida da base de conhecimento do atendente virtual da MoviOn (provedor de internet por fibra em Mossoró/RN). O atendente virtual responde clientes no WhatsApp usando só o fluxo do bot e essa base. O que entra na base vira resposta para QUALQUER cliente: só pode ficar o que é correto, geral e útil.',
+  'O atendente virtual NÃO faz nada no sistema: não consulta cadastro nem conexão, não envia fatura, boleto nem Pix, não abre chamado, não desbloqueia, não corrige a rede. Quando o cliente precisa disso, ele passa para o setor certo.',
+  'Para cada item de PARA DECIDIR, responda três perguntas (true ou false) e depois decida:',
+  '- "de_um_cliente": traz algo de UM cliente ou de UM atendimento? (valor ou vencimento de uma fatura, "seu pagamento", "verificamos sua conexão e já corrigimos", protocolo, data, nome, endereço, combinado daquele caso)',
+  '- "para_o_atendente": descreve só o trabalho interno da equipe ("o setor X informa…", "o atendente registra…", "você pode pedir ao cliente…"), sem nada que ajude o atendente virtual a responder o cliente ou a saber para qual setor passar? Em "exemplo", é true também quando o conteúdo não é uma mensagem pronta falando com o cliente.',
+  '- "promete_o_que_nao_faz": faz o atendente virtual prometer ou fazer o que ele não faz (enviar fatura, verificar a conexão, abrir chamado, corrigir a rede), ou ensina um passo técnico que a equipe não passa aos clientes (ex.: entrar na configuração do roteador)?',
+  'Decisão:',
+  '- "manter": as três respostas são false e a base e o fluxo ainda não têm isso.',
   '- "repetido": outro item do MESMO tipo (de NA BASE ou da própria lista PARA DECIDIR) já diz tudo o que importa deste, mesmo com outras palavras. Em "de", o id desse outro item. Se dois itens da lista dizem a mesma coisa, mantenha o mais completo e marque o outro como repetido dele.',
-  '- "descartar": não serve para o atendente virtual. Por exemplo: dado de um cliente (valor ou vencimento de uma fatura, data, protocolo, nome, endereço); combinado só daquele atendimento; saudação, despedida ou aviso de transferência; descrição do trabalho interno da equipe ("o setor X informa…", "o atendente registra…") sem nada que o cliente precise saber; orientação vaga ou duvidosa; o que contradiz o fluxo, as regras ou a base; o que o fluxo do bot já diz.',
-  'Em "exemplo", o conteúdo tem de ser uma resposta pronta para mandar ao cliente, falando com ele. Instrução para o atendente ("peça ao cliente…", "o atendente envia…") é descartar.',
-  'Responda APENAS com JSON, uma decisão para cada id de PARA DECIDIR: {"decisoes":[{"id":1,"decisao":"manter"},{"id":2,"decisao":"repetido","de":7},{"id":3,"decisao":"descartar","motivo":"valor da fatura de um cliente"}]}',
+  '- "descartar": alguma resposta é true; ou o item é vago, não ajuda no dia a dia, contradiz o fluxo, as regras ou a base; ou o fluxo do bot já diz isso.',
+  'Responda APENAS com JSON, um objeto para cada id de PARA DECIDIR: {"decisoes":[{"id":1,"de_um_cliente":false,"para_o_atendente":false,"promete_o_que_nao_faz":false,"decisao":"manter"},{"id":2,"de_um_cliente":false,"para_o_atendente":false,"promete_o_que_nao_faz":false,"decisao":"repetido","de":7},{"id":3,"de_um_cliente":true,"para_o_atendente":false,"promete_o_que_nao_faz":false,"decisao":"descartar","motivo":"valor da fatura de um cliente"}]}',
   'O motivo é curto (até 8 palavras), em português.',
 ].join('\n');
+
+/* As três perguntas valem mais que a decisão: se a IA viu o problema e mesmo
+   assim mandou manter, o item sai (com o motivo da pergunta). */
+const CURADORIA_CHECAGENS = {
+  de_um_cliente: 'é de um cliente ou de um atendimento só',
+  para_o_atendente: 'é trabalho interno, não resposta ao cliente',
+  promete_o_que_nao_faz: 'promete o que o atendente virtual não faz',
+};
 
 const textoCurto = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 function linhaCuradoria(x, max) {
@@ -2859,10 +2871,14 @@ function decisoesDaCuradoria(bruto) {
   if (!m) return null;
   let j; try { j = JSON.parse(m[0]); } catch { return null; }
   if (!Array.isArray(j && j.decisoes)) return null;
-  return j.decisoes.map(d => ({
-    id: Number(d && d.id), decisao: String((d && d.decisao) || '').toLowerCase().trim(), de: Number(d && d.de) || null,
-    motivo: textoCurto(d && d.motivo, 120) || null,
-  })).filter(d => d.id && ['manter', 'repetido', 'descartar'].includes(d.decisao));
+  return j.decisoes.map(d => {
+    const r = { id: Number(d && d.id), decisao: String((d && d.decisao) || '').toLowerCase().trim(), de: Number(d && d.de) || null,
+      motivo: textoCurto(d && d.motivo, 120) || null };
+    const problema = Object.keys(CURADORIA_CHECAGENS).find(k => d && (d[k] === true || d[k] === 'true'));
+    if (problema && r.decisao !== 'descartar') { r.decisao = 'descartar'; r.motivo = CURADORIA_CHECAGENS[problema]; }
+    else if (problema && !r.motivo) r.motivo = CURADORIA_CHECAGENS[problema];
+    return r;
+  }).filter(d => d.id && ['manter', 'repetido', 'descartar'].includes(d.decisao));
 }
 
 /* O lote da vez: primeiro o que acabou de ser aprendido; sem nada novo, o que
@@ -2912,15 +2928,16 @@ async function curarBaseIA(e, cfg, inicioCiclo = Date.now(), { jaChamouGroq = fa
   const res = { lote: reservado.length, aprendidos: 0, mantidos: 0, repetidos: 0, descartados: 0 };
   const salvar = (id, body) => sb(e, `atend_ia_base?id=eq.${id}`, { method: 'PATCH', prefer: 'return=minimal',
     body: { revisado_por: 'ia', revisado_em: agora, updated_at: agora, ...body } });
-  const manter = async it => {
-    if (it.status === 'sugerido') { await salvar(it.id, { status: 'aprovado', decisao: 'aprendido', motivo: null, usado_em: agora }); res.aprendidos++; }
-    else { await salvar(it.id, { decisao: 'mantido', motivo: null }); res.mantidos++; }
+  const manter = async (it, motivo = null) => {
+    if (it.status === 'sugerido') { await salvar(it.id, { status: 'aprovado', decisao: 'aprendido', motivo, usado_em: agora }); res.aprendidos++; }
+    else { await salvar(it.id, { decisao: 'mantido', motivo }); res.mantidos++; }
   };
   // quem já falhou demais fica (a régua do uso tira depois, se não servir):
   // a Groq não gasta para sempre com o mesmo item
   const lote = [];
   for (const it of reservado) {
-    if ((it.tentativas || 0) >= IA_CURADORIA.tentativas) await manter(it); else lote.push(it);
+    if ((it.tentativas || 0) >= IA_CURADORIA.tentativas) await manter(it, 'a IA não conseguiu analisar: fica até a régua do uso decidir');
+    else lote.push(it);
   }
   if (!lote.length) return { ...out, ...res };
 
@@ -3001,9 +3018,23 @@ async function curarBaseIA(e, cfg, inicioCiclo = Date.now(), { jaChamouGroq = fa
       final.set(d.id, 'descartado'); trocadoPor.set(d.id, x.id); res.repetidos++;
     }
   }
-  // sem decisão que dê para usar (a IA pulou o item ou apontou um repetido que
-  // não existe): fica, e a régua do uso tira depois se não servir
-  for (const it of lote) if (!final.has(it.id)) await manter(it);
+  // repetido de um item que não está na lista: a IA achou que é repetido,
+  // então sai (melhor que deixar um repetido valendo)
+  for (const d of dec.values()) {
+    if (d.decisao !== 'repetido' || final.has(d.id)) continue;
+    const alvo = porId.get(d.de);
+    if (alvo && doLote.has(alvo.id) && !final.has(alvo.id)) continue;   // o outro ficou sem decisão: decide junto, na próxima
+    await salvar(d.id, { status: 'descartado', decisao: 'repetido', motivo: 'repete outro item da base' });
+    final.set(d.id, 'descartado'); res.repetidos++;
+  }
+  // a IA pulou o item: conta como uma tentativa dele e volta no próximo lote
+  // (depois de 3, fica, e a régua do uso tira se não servir)
+  for (const it of lote) {
+    if (final.has(it.id)) continue;
+    await sb(e, `atend_ia_base?id=eq.${it.id}`, { method: 'PATCH', prefer: 'return=minimal',
+      body: { tentativas: (it.tentativas || 0) + 1, revisado_em: new Date(Date.now() - IA_CURADORIA.reservaMin * 60000).toISOString() } }).catch(() => {});
+    res.sem_decisao = (res.sem_decisao || 0) + 1;
+  }
   return { ...out, ...res };
 }
 
