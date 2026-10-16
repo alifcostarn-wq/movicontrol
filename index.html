@@ -3027,6 +3027,23 @@ textarea.cp-form-input{resize:vertical}
 .cl-barra .search-wrap{flex:1;min-width:240px}
 .cl-barra .search-wrap input{width:100%!important}
 .cl-sel{height:34px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:0 10px;font:inherit;font-size:12.5px;max-width:230px}
+/* Barra de rolagem lateral EM CIMA da tabela. Com o menu aberto (1366px) a
+   tabela passa da largura e a coluna de ações some; a barra de baixo existe,
+   mas fica depois das 25 linhas, fora da vista. Esta anda junto com a tabela
+   e fica presa logo abaixo do topo (58px) enquanto a lista rola. O "clip"
+   recorta os cantos como o "hidden", mas não vira área de rolagem própria —
+   é o que deixa a barra grudar no topo da página. */
+#page-clientes .table-wrap{overflow:clip}
+.cl-rolagem{position:sticky;top:58px;z-index:4;overflow-x:auto;overflow-y:hidden;min-height:12px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.cl-rolagem[hidden]{display:none}
+.cl-rolagem-in{height:1px}
+.cl-rolagem::-webkit-scrollbar{height:12px}
+.cl-rolagem::-webkit-scrollbar-track{background:var(--surface2)}
+.cl-rolagem::-webkit-scrollbar-thumb{background:var(--text3);border-radius:6px;border:2px solid var(--surface2)}
+.cl-rolagem::-webkit-scrollbar-thumb:hover{background:var(--text2)}
+@supports not selector(::-webkit-scrollbar){ .cl-rolagem{scrollbar-width:thin;scrollbar-color:var(--text3) var(--surface2)} }
+/* no toque, a tabela já desliza com o dedo; a barra seria só uma faixa vazia */
+@media (hover:none) and (pointer:coarse){ .cl-rolagem{display:none} }
 .cl-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
 .cl-wrap.com-ficha{grid-template-columns:minmax(0,1fr) 480px}
 .cl-wrap.com-ficha .cl-col-local,.cl-wrap.com-ficha .cl-col-wa{display:none}
@@ -5699,7 +5716,8 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
       </div>
       <div class="cl-wrap" id="cli-wrap">
       <div class="table-wrap" style="min-width:0">
-        <div class="table-scroll"><table class="t cl-t"><thead><tr><th>Cliente</th><th>Plano</th><th>Situação</th><th class="cl-col-local">Local</th><th class="cl-col-wa">WhatsApp</th><th style="text-align:right">Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
+        <div class="cl-rolagem" id="cli-rolagem" hidden aria-hidden="true"><div class="cl-rolagem-in"></div></div>
+        <div class="table-scroll" id="cli-tscroll"><table class="t cl-t"><thead><tr><th>Cliente</th><th>Plano</th><th>Situação</th><th class="cl-col-local">Local</th><th class="cl-col-wa">WhatsApp</th><th style="text-align:right">Ações</th></tr></thead><tbody id="cli-tbody"></tbody></table></div>
         <div id="cli-empty" class="empty-state" style="display:none"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="empty-title">Nenhum cliente cadastrado</div><div class="empty-sub">Clique em "+ Novo Cliente" para começar.</div><button class="btn btn-primary" onclick="abrirModalCadastro('clientes')">+ Novo Cliente</button></div>
         <div class="paginacao"><span class="pag-info" id="cli-pinfo">0 clientes</span><div class="pag-btns" id="cli-pbtn"></div></div>
       </div>
@@ -13961,6 +13979,31 @@ function renderClientes(){
     pi.textContent = fil.length ? `Mostrando ${de}–${ate} de ${fil.length.toLocaleString('pt-BR')} cliente${fil.length!==1?'s':''}` : '0 clientes';
   }
   if(_cliFichaIdx != null) cliRenderFicha();
+  cliLigarRolagemTopo();
+}
+
+/* Barra de rolagem em cima da tabela, andando junto com ela. Aparece só
+   quando a tabela passa da largura (menu aberto, ficha ao lado, tela menor):
+   a largura de dentro acompanha a da tabela e as duas trocam a posição. */
+function cliLigarRolagemTopo(){
+  const topo = document.getElementById('cli-rolagem'), base = document.getElementById('cli-tscroll');
+  if(!topo || !base || topo.dataset.ligada) return;
+  topo.dataset.ligada = '1';
+  const dentro = topo.firstElementChild, tabela = base.querySelector('table');
+  const medir = () => {
+    const sobra = base.scrollWidth - base.clientWidth;
+    topo.hidden = sobra <= 1;
+    dentro.style.width = base.scrollWidth + 'px';
+    if(!topo.hidden && Math.abs(topo.scrollLeft - base.scrollLeft) > 0.5) topo.scrollLeft = base.scrollLeft;
+  };
+  // só escreve quando difere: o eco da outra barra chega igual e para ali
+  topo.addEventListener('scroll', () => { if(Math.abs(base.scrollLeft - topo.scrollLeft) > 0.5) base.scrollLeft = topo.scrollLeft; }, { passive: true });
+  base.addEventListener('scroll', () => { if(Math.abs(topo.scrollLeft - base.scrollLeft) > 0.5) topo.scrollLeft = base.scrollLeft; }, { passive: true });
+  if(typeof ResizeObserver === 'function'){
+    const ro = new ResizeObserver(medir);
+    ro.observe(base); if(tabela) ro.observe(tabela);
+  } else window.addEventListener('resize', medir);
+  medir();
 }
 
 /* ---------- FICHA AO LADO ---------- */
