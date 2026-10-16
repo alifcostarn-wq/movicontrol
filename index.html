@@ -25799,6 +25799,8 @@ function ifNormFatura(r){
   const valor=_numIXC(r.valor), recebido=_pagoIXC(r);
   const f={
     id:String(r.id||''), idCliente:String(r.id_cliente||''),
+    // '' = avulsa (fora de contrato): cliente com 2 contratos tem 2 faturas no mês
+    idContrato:(c=>c&&c!=='0'?c:'')(String(r.id_contrato||'').trim()),
     venc, emissao:String(r.data_emissao||'').slice(0,10),
     pgto: pgtoOk?pgto:null, credito:String(r.credito_data||'').slice(0,10)||null,
     valor, recebido, st,
@@ -27237,7 +27239,7 @@ async function ifCobCarregar(forcar){
     grupos:e.grupos,dias_semana:e.dias_semana,observacao:e.observacao,
     anexar_boleto:e.anexar_boleto,anexar_pix:e.anexar_pix}));
   window.IF_COB.log=(l.envios||[]).map(x=>({fatId:x.fatura_id,etapaId:x.etapa_id,
-    etapaNome:x.etapa_nome,cliente:x.cliente_nome,ixcId:x.cliente_ixc_id,fone:x.contato_fone,
+    etapaNome:x.etapa_nome,cliente:x.cliente_nome,ixcId:x.cliente_ixc_id,contrato:x.contrato_ixc_id,fone:x.contato_fone,
     canal:x.canal,quando:x.enviado_em,valor:x.valor,status:x.status,erro:x.erro,
     // o que de fato foi junto: sem isto "enviado" não dizia se o boleto saiu
     boleto:x.anexo_boleto,pix:x.anexo_pix,anexoErro:x.anexo_erro}));
@@ -27258,9 +27260,23 @@ function ifCobLogAdd(item){ (window.IF_COB.log=window.IF_COB.log||[]).unshift(it
 function ifFoneNorm(v){ let d=String(v||'').replace(/\D/g,''); if(!d)return''; if(d.length===10||d.length===11)d='55'+d; return d; }
 function ifTpl(tpl, pf, fat, dias){
   const venc=fat.venc?fat.venc.split('-').reverse().join('/'):'—';
-  return tpl.replace(/{nome}/g,pf.nome).replace(/{primeiro_nome}/g,pf.nome.split(' ')[0])
+  // mais de um contrato com fatura em aberto: a mensagem diz de qual é (o
+  // cliente recebe uma por contrato e sem isso acha que é repetida)
+  const ctrs=new Set((pf.fats||[]).filter(f=>f.tipo==='vencida'||f.tipo==='aberta').map(f=>f.idContrato||''));
+  const varios=ctrs.size>1, usa=/{contrato}/.test(tpl);
+  const rot=(varios||usa)?ifRotuloContrato(fat.idContrato):'';
+  let t=tpl.replace(/{nome}/g,pf.nome).replace(/{primeiro_nome}/g,pf.nome.split(' ')[0])
     .replace(/{valor}/g,'R$ '+fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2}))
-    .replace(/{vencimento}/g,venc).replace(/{dias}/g,String(Math.max(0,dias)));
+    .replace(/{vencimento}/g,venc).replace(/{dias}/g,String(Math.max(0,dias)))
+    .replace(/{contrato}/g,rot);
+  if(varios&&!usa) t+=`\n\n📄 ${fat.idContrato?'Contrato ':'Fatura '}${rot}`;
+  return t;
+}
+/* "nº 2151 (30MB)" — o mesmo texto que a régua automática usa */
+function ifRotuloContrato(ctr){
+  if(!ctr) return 'avulsa (fora dos contratos)';
+  const c=(gd('sf_clientes_contratos')||[]).find(x=>String(x.ixcId)===String(ctr));
+  return `nº ${ctr}${c&&c.plano?` (${String(c.plano).trim()})`:''}`;
 }
 
 // Monta a fila de ações: para cada fatura aberta/vencida, a etapa mais avançada
@@ -27331,14 +27347,24 @@ function ifFilaCobranca(trilhaAlvo){
   const optout=new Set((COB_state.optout||[]).map(o=>String(o.contato_fone)));
   const agora=new Date();
 
-  // Quantas mensagens cada cliente já recebeu e quando foi a última.
+  // Quantas mensagens cada CONTRATO já recebeu e quando foi a última.
   // Cobrar demais a mesma pessoa queima o número e o relacionamento — as duas
-  // travas abaixo (cooldown e teto mensal) são a proteção contra isso.
+  // travas abaixo (cooldown e teto mensal) são a proteção contra isso. Valem
+  // por contrato: cliente com 2 contratos tem 2 faturas, e a cobrança de uma
+  // não pode travar a outra (a régua automática faz igual).
+  const ctrPorFat={}, ctrsCli={};
+  ifPerfisFiltrados().forEach(pf=>(pf.fats||[]).forEach(f=>{ ctrPorFat[f.id]=f.idContrato||'';
+    (ctrsCli[String(pf.ixcId)]=ctrsCli[String(pf.ixcId)]||new Set()).add(f.idContrato||''); }));
   const ult={}, noMes={};
   const ini30=new Date(agora.getTime()-30*864e5);
   log.forEach(x=>{
-    const k=String(x.ixcId||x.fone||x.cliente||'');
-    if(!k) return;
+    const cli=String(x.ixcId||x.fone||x.cliente||'');
+    if(!cli) return;
+    // de qual contrato: o envio diz; nos antigos, a fatura diz; cliente de um contrato só, é dele
+    const um=ctrsCli[cli]&&ctrsCli[cli].size===1?[...ctrsCli[cli]][0]:undefined;
+    const ctr=x.contrato!=null?String(x.contrato):(String(x.fatId) in ctrPorFat?ctrPorFat[String(x.fatId)]:um);
+    if(ctr===undefined) return;
+    const k=cli+'#'+ctr;
     const q=new Date(x.quando);
     if(!ult[k]||q>ult[k]) ult[k]=q;
     if(q>=ini30) noMes[k]=(noMes[k]||0)+1;
@@ -27363,7 +27389,7 @@ function ifFilaCobranca(trilhaAlvo){
 
       // Motivo do impedimento fica VISÍVEL na fila em vez de a linha sumir:
       // operador precisa saber por que aquele cliente não está sendo cobrado.
-      const chave=String(pf.ixcId||pf.fone||'');
+      const chave=String(pf.ixcId||pf.fone||'')+'#'+(f.idContrato||'');
       const fone=ifFoneNorm(pf.fone||'');
       let bloqueio=null;
       if(cfg.pausar_tudo) bloqueio='Cobrança pausada na configuração';
@@ -27546,9 +27572,11 @@ async function ifCobRegistrar(key, ixcId, fatId, etapaId, canal){
       fone:ifFoneNorm(pf?.fone||''), texto:(window._ifFilaMsgs||{})[key]||'',
       fatura_id:String(fatId), etapa_id:String(etapaId), etapa_nome:etapa?.nome,
       cliente_ixc_id:String(ixcId), cliente_nome:pf?.nome, canal:canal||'manual',
+      contrato_ixc_id:((pf?.fats||[]).find(f=>String(f.id)===String(fatId))||{}).idContrato??null,
       somente_registrar:true});
   }catch(e){ console.error('[cobrança] registro:',e.message); showToast('Registrado só nesta tela: '+e.message,true); }
-  ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf?.nome||ixcId, canal, quando:new Date().toISOString()});
+  ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf?.nome||ixcId, ixcId:String(ixcId), canal, quando:new Date().toISOString(),
+    contrato:((pf?.fats||[]).find(f=>String(f.id)===String(fatId))||{}).idContrato??null});
 }
 async function ifCobEnviar(key, ixcId, fatId, etapaId, btn){
   const pf=IF_state.porId[ixcId]; if(!pf)return;
@@ -27564,10 +27592,10 @@ async function ifCobEnviar(key, ixcId, fatId, etapaId, btn){
     const r=await ifCobAPI('cobranca.enviar',{
       fone, texto:msg,
       fatura_id:String(fatId), etapa_id:String(etapaId), etapa_nome:etapa?.nome,
-      cliente_ixc_id:String(ixcId), cliente_nome:pf.nome,
+      cliente_ixc_id:String(ixcId), cliente_nome:pf.nome, contrato_ixc_id:fat?fat.idContrato:null,
       valor:fat?.valor??null, vencimento:fat?.venc??null, canal:'whatsapp',
       anexar_boleto:etapa?.anexar_boleto===true, anexar_pix:etapa?.anexar_pix===true});
-    ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf.nome, canal:'whatsapp',
+    ifCobLogAdd({fatId, etapaId, etapaNome:etapa?.nome, cliente:pf.nome, ixcId:String(ixcId), contrato:fat?fat.idContrato:null, canal:'whatsapp',
       quando:new Date().toISOString(), boleto:r.boleto, pix:r.pix, anexoErro:r.anexo_erro});
     const linha=btn.closest('tr,.hb-item'); if(linha) linha.style.opacity='.35';
     if(r.duplicado){
@@ -28020,7 +28048,7 @@ function cobRenderRegua(){
         <div class="if-painel-tit">📏 Etapas da régua</div>
         <div class="if-cli-sub" style="margin-bottom:10px">
           Dias negativos = antes do vencimento · D0 = no dia · positivos = após.
-          Variáveis: <code>{nome}</code> <code>{primeiro_nome}</code> <code>{valor}</code> <code>{vencimento}</code> <code>{dias}</code>
+          Variáveis: <code>{nome}</code> <code>{primeiro_nome}</code> <code>{valor}</code> <code>{vencimento}</code> <code>{dias}</code> <code>{contrato}</code>
         </div>
         <div id="cob-etapas">${COB_ORDEM.map(k=>[k,COB_TRILHAS[k]]).map(([k,v])=>`
           <div class="cob-trilha-sec" style="--tc:${v.cor}">
@@ -28355,12 +28383,12 @@ async function cobEnviarLote(trilha){
       const r=await ifCobAPI('cobranca.enviar',{
         fone:ifFoneNorm(it.pf.fone), texto:it.msg,
         fatura_id:String(it.fat.id), etapa_id:String(it.etapa.id), etapa_nome:it.etapa.nome,
-        cliente_ixc_id:String(it.pf.ixcId), cliente_nome:it.pf.nome,
+        cliente_ixc_id:String(it.pf.ixcId), cliente_nome:it.pf.nome, contrato_ixc_id:it.fat.idContrato??null,
         valor:fat?.valor??null, vencimento:fat?.venc??null, canal:'lote',
         anexar_boleto:it.etapa.anexar_boleto===true, anexar_pix:it.etapa.anexar_pix===true});
       if(r.duplicado) dup++; else ok++;
       ifCobLogAdd({fatId:it.fat.id,etapaId:it.etapa.id,etapaNome:it.etapa.nome,
-        cliente:it.pf.nome,ixcId:String(it.pf.ixcId),canal:'lote',quando:new Date().toISOString()});
+        cliente:it.pf.nome,ixcId:String(it.pf.ixcId),contrato:it.fat.idContrato??null,canal:'lote',quando:new Date().toISOString()});
     }catch(e){ err++; console.error('[lote]',it.pf.nome,e.message); }
     pintar(i+1);
     if(i<lote.length-1 && !window._cobParar) await new Promise(r=>setTimeout(r,seg*1000));
@@ -28877,7 +28905,7 @@ async function negAviso(i){
   try{
     await ifCobAPI('cobranca.enviar',{fone,texto:msg,
       fatura_id:String(x.geradora.id),etapa_id:String(etapa.id),etapa_nome:etapa.nome,
-      cliente_ixc_id:String(x.pf.ixcId),cliente_nome:x.pf.nome,valor:x.geradora.valor,
+      cliente_ixc_id:String(x.pf.ixcId),cliente_nome:x.pf.nome,valor:x.geradora.valor,contrato_ixc_id:x.geradora.idContrato??null,
       vencimento:x.geradora.venc,canal:'negativacao',
       anexar_boleto:etapa.anexar_boleto===true,anexar_pix:etapa.anexar_pix===true});
     await ifCobAPI('cobranca.negativacao.salvar',{

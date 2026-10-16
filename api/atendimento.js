@@ -4783,6 +4783,8 @@ async function entregarCobranca(e, o) {
   const registro = {
     fatura_id: String(o.faturaId), etapa_id: String(o.etapaId), etapa_nome: o.etapaNome || null,
     cliente_ixc_id: o.ixcId || null, cliente_nome: nome, contato_fone: o.fone,
+    // '' = fatura avulsa (sem contrato); null = não informado
+    contrato_ixc_id: o.contratoId != null ? String(o.contratoId) : null,
     conversa_id: c ? c.id : null,
     canal: o.somenteRegistrar ? (o.canal || 'manual') : (o.canal || 'whatsapp'),
     valor: o.valor != null ? Number(o.valor) : null, vencimento: o.vencimento || null,
@@ -5979,7 +5981,16 @@ function cobTexto(tpl, p, fat, dias) {
     .replace(/{primeiro_nome}/g, nome.split(' ')[0])
     .replace(/{valor}/g, 'R$ ' + Number(fat.valor || 0).toFixed(2).replace('.', ','))
     .replace(/{vencimento}/g, venc)
-    .replace(/{dias}/g, String(Math.abs(dias)));
+    .replace(/{dias}/g, String(Math.abs(dias)))
+    .replace(/{contrato}/g, fat.contrato_rotulo || '');
+}
+
+/* Fatura → contrato do IXC ('' = avulsa, fora de contrato). */
+const contratoDaFatura = f => { const c = String((f && f.id_contrato) || '').trim(); return c && c !== '0' ? c : ''; };
+/* "nº 2151 (30MB)" — o que a mensagem diz quando o cliente tem mais de um. */
+function rotuloContrato(ctr, plano) {
+  if (!ctr) return 'avulsa (fora dos contratos)';
+  return `nº ${ctr}${plano ? ` (${String(plano).trim()})` : ''}`;
 }
 
 async function cobrancaAutomatica(e) {
@@ -6057,6 +6068,30 @@ async function cobrancaAutomatica(e) {
     if (!porCliente.has(k)) porCliente.set(k, []);
     porCliente.get(k).push(f);
   }
+  // ...e por CONTRATO. Cliente com 2 contratos tem 2 faturas, e cada uma segue
+  // a régua dela. Antes o cliente era uma coisa só: saía o lembrete do 1º
+  // contrato e o intervalo entre mensagens travava o do 2º por 3 dias — que
+  // perdia o lembrete e o aviso do vencimento.
+  const porContrato = new Map();          // "cliente#contrato" → { cliente, contrato, abertas }
+  for (const [cli, lista] of porCliente) {
+    for (const f of lista) {
+      const k = cli + '#' + contratoDaFatura(f);
+      if (!porContrato.has(k)) porContrato.set(k, { cliente: cli, contrato: contratoDaFatura(f), abertas: [] });
+      porContrato.get(k).abertas.push(f);
+    }
+  }
+  const nContratos = new Map();           // cliente → quantos contratos têm fatura na janela
+  for (const g of porContrato.values()) nContratos.set(g.cliente, (nContratos.get(g.cliente) || 0) + 1);
+  // o nome do plano, para a mensagem dizer de qual contrato é a fatura
+  const usaRotulo = regua.some(et => /{contrato}/.test(String(et.tpl || '')));
+  const ctrsRotulo = [...new Set([...porContrato.values()]
+    .filter(g => g.contrato && (usaRotulo || nContratos.get(g.cliente) > 1)).map(g => g.contrato))].filter(x => /^\d+$/.test(x));
+  const planoDoCtr = new Map();
+  if (ctrsRotulo.length) {
+    try {
+      for (const x of (await sb(e, `clientes_contratos?ixc_id=in.(${ctrsRotulo.join(',')})&select=ixc_id,plano`)) || []) planoDoCtr.set(String(x.ixc_id), x.plano);
+    } catch (err) { console.error('[cobranca auto] planos:', err.message); }
+  }
 
   // telefone: o espelho do MoviOne tem WhatsApp de 1.915 dos 1.921 clientes,
   // e ler daqui evita uma ida ao IXC por cliente
@@ -6114,13 +6149,24 @@ async function cobrancaAutomatica(e) {
 
   // histórico recente: dedupe, cooldown e teto por cliente
   const desde90 = new Date(Date.now() - 90 * 864e5).toISOString();
-  const envs = (await sb(e, `atend_cobranca_envios?status=eq.enviado&enviado_em=gte.${desde90}&select=fatura_id,etapa_id,cliente_ixc_id,enviado_em`)) || [];
+  const envs = (await sb(e, `atend_cobranca_envios?status=eq.enviado&enviado_em=gte.${desde90}&select=fatura_id,etapa_id,cliente_ixc_id,contrato_ixc_id,enviado_em`)) || [];
   const feitas = new Set(envs.map(x => x.fatura_id + '|' + x.etapa_id));
-  const ult = {}, noMes = {};
+  // intervalo entre mensagens e limite do mês: POR CONTRATO. De qual contrato
+  // era cada envio: o registro diz (desde que passou a guardar); nos antigos,
+  // a fatura que ainda está aberta diz; se o cliente só tem um contrato com
+  // fatura agora, é dele. Sem como saber, não trava contrato nenhum.
+  const ctrPorFatura = new Map(faturasBase.map(f => [String(f.id), contratoDaFatura(f)]));
+  const unicoDoCliente = new Map([...porContrato.values()].filter(g => nContratos.get(g.cliente) === 1).map(g => [g.cliente, g.contrato]));
+  const ult = {}, noMes = {}, nCobCli = {};
   const ini30 = Date.now() - 30 * 864e5;
   envs.forEach(x => {
-    const k = String(x.cliente_ixc_id || '');
-    if (!k) return;
+    const cli = String(x.cliente_ixc_id || '');
+    if (!cli) return;
+    nCobCli[cli] = (nCobCli[cli] || 0) + 1;
+    const ctr = x.contrato_ixc_id != null ? String(x.contrato_ixc_id)
+      : ctrPorFatura.has(String(x.fatura_id)) ? ctrPorFatura.get(String(x.fatura_id)) : unicoDoCliente.get(cli);
+    if (ctr === undefined) return;
+    const k = cli + '#' + ctr;
     const q = new Date(x.enviado_em).getTime();
     if (!ult[k] || q > ult[k]) ult[k] = q;
     if (q >= ini30) noMes[k] = (noMes[k] || 0) + 1;
@@ -6134,7 +6180,8 @@ async function cobrancaAutomatica(e) {
   const prazo = Date.now() + COB_ORCAMENTO_MS;
   let faltouTempo = false;
 
-  for (const [chave, abertas] of porCliente) {
+  for (const [chave, grupo] of porContrato) {
+    const { cliente: cli, contrato: ctr, abertas } = grupo;
     if (restanteHoje <= 0) break;
     // acabou o tempo desta execução: para limpo e continua na próxima. As
     // travas de repetição (fatura+etapa, cooldown, teto do dia) garantem que
@@ -6144,10 +6191,10 @@ async function cobrancaAutomatica(e) {
     // envio por rodada, para sempre. Do segundo em diante, só continua se
     // couber a pausa — que é o que impede a rajada de queimar o número.
     if (enviados.length && Date.now() + intervalo > prazo) { faltouTempo = true; break; }
-    const p = porId.get(chave) || null;
+    const p = porId.get(cli) || null;
     // sem perfil não dá para saber que é cancelado; com perfil, respeita
     if (p && p.grupo === 'cancelado') continue;
-    const cad = cadPorIxc.get(chave) || null;
+    const cad = cadPorIxc.get(cli) || null;
     const fone = normalizarFone((p && p.fone) || (cad && (cad.whatsapp || cad.tel1)) || '');
     if (!fone) continue;
     if (cfg.respeitar_optout !== false && optout.has(fone)) continue;
@@ -6162,7 +6209,11 @@ async function cobrancaAutomatica(e) {
       || (abertas[0] && abertas[0].razao) || 'cliente';
     // o resto da máquina de decisão continua esperando um "perfil"; sem
     // retrato, entra um vazio — que é lido como "sem risco conhecido"
-    const perfil = p || { ixc_id: chave, nome: nomeCli, fone };
+    const perfil = p || { ixc_id: cli, nome: nomeCli, fone };
+    // mais de um contrato com fatura: a mensagem diz de qual é (senão o
+    // cliente recebe duas cobranças parecidas e acha que é repetida)
+    const varios = nContratos.get(cli) > 1;
+    const rotulo = (varios || usaRotulo) ? rotuloContrato(ctr, planoDoCtr.get(ctr)) : '';
 
     for (const f of abertas) {
       if (restanteHoje <= 0) break;
@@ -6173,9 +6224,10 @@ async function cobrancaAutomatica(e) {
       let trilha;
       if (perfil.grupo === 'negativado') trilha = 'negativacao';
       else if (dias > 0) {
-        const vencTot = abertas.filter(x => (cobDiasEntre(x.data_vencimento, hojeISO) || 0) > 0)
+        // negativação olha o CLIENTE: todos os contratos dele
+        const vencTot = (porCliente.get(cli) || []).filter(x => (cobDiasEntre(x.data_vencimento, hojeISO) || 0) > 0)
           .reduce((acc, x) => acc + valorEmAbertoIXC(x), 0);
-        const nCob = envs.filter(x => String(x.cliente_ixc_id) === chave).length;
+        const nCob = nCobCli[cli] || 0;
         const eleg = dias >= Number(cfg.neg_dias_min ?? 60)
           && vencTot >= Number(cfg.neg_valor_min ?? 50)
           && nCob >= Number(cfg.neg_min_cobrancas ?? 3);
@@ -6211,11 +6263,12 @@ async function cobrancaAutomatica(e) {
         console.log(`[cobranca auto] fatura ${f.id} (${nomeCli}): face ${fmtMoeda(face)}, em aberto ${fmtMoeda(aberto)} — cobrando o em aberto`,
           JSON.stringify(camposDeValorIXC(f)));
       }
-      const texto = cobTexto(etapa.tpl, perfil, { ...f, valor: aberto }, dias);
+      let texto = cobTexto(etapa.tpl, perfil, { ...f, valor: aberto, contrato_rotulo: rotulo }, dias);
+      if (varios && !/{contrato}/.test(String(etapa.tpl || ''))) texto += `\n\n📄 ${ctr ? 'Contrato ' : 'Fatura '}${rotulo}`;
       try {
         const rc = await entregarCobranca(e, {
           fone, texto, faturaId: String(f.id), etapaId: etapa.etapa_id, etapaNome: etapa.nome,
-          ixcId: chave, nome: nomeCli, valor: aberto, vencimento: f.data_vencimento,
+          ixcId: cli, contratoId: ctr, nome: nomeCli, valor: aberto, vencimento: f.data_vencimento,
           anexarBoleto: etapa.anexar_boleto === true, anexarPix: etapa.anexar_pix === true,
           canal: 'automatico', userId: null,
         });
@@ -6223,7 +6276,7 @@ async function cobrancaAutomatica(e) {
         // outra execução já tinha reservado esta etapa: nada saiu daqui, então
         // não gasta cota do dia nem a pausa entre mensagens
         if (rc && rc.duplicado) { duplicados++; break; }
-        enviados.push({ cliente: nomeCli, etapa: etapa.nome, trilha });
+        enviados.push({ cliente: nomeCli, contrato: ctr || null, etapa: etapa.nome, trilha });
         ult[chave] = Date.now();
         noMes[chave] = (noMes[chave] || 0) + 1;
         restanteHoje--;
@@ -6233,13 +6286,13 @@ async function cobrancaAutomatica(e) {
       } catch (err) {
         console.error('[cobranca auto]', err.message);
       }
-      break;                             // no máximo 1 cobrança por cliente por execução
+      break;                             // no máximo 1 cobrança por contrato por execução
     }
   }
   return { ok: true, auto: 'ok', enviados: enviados.length, detalhe: enviados.slice(0, 20),
            cobradas_pelo_saldo: parciais.slice(0, 20),
            orfas_liberadas: orfasLiberadas,
-           duplicados, clientes_na_janela: porCliente.size, retrato_dias: Math.round(idadeDias),
+           duplicados, clientes_na_janela: porCliente.size, contratos_na_janela: porContrato.size, retrato_dias: Math.round(idadeDias),
            retrato_velho: retratoVelho, continua: faltouTempo };
 }
 
@@ -9213,6 +9266,7 @@ export default async function handler(req, res) {
           const r = await entregarCobranca(e, {
             fone, texto, faturaId, etapaId, etapaNome: body.etapa_nome,
             ixcId: body.cliente_ixc_id ? String(body.cliente_ixc_id) : null,
+            contratoId: body.contrato_ixc_id != null ? String(body.contrato_ixc_id) : null,
             nome: String(body.cliente_nome || '').trim(),
             valor: body.valor, vencimento: body.vencimento, canal: body.canal,
             anexarBoleto: body.anexar_boleto === true, anexarPix: body.anexar_pix === true,
