@@ -29732,6 +29732,16 @@ a.asn-doc-acao-n:hover{text-decoration:underline}
 .asn-bt.wa{background:var(--accent-fill);color:#fff;border-color:var(--accent-fill)}
 .asn-bt:disabled{opacity:.7;cursor:wait}
 .asn-sem-pdf{font-size:11px;color:var(--text3)}
+/* assinado fora do MoviOn (gov.br, outra plataforma, papel) */
+.asn-bt-marcar{margin-left:6px}
+.asn-externa{font-size:11.5px;line-height:1.55;color:var(--text)}
+.asn-externa-q{color:var(--text2)}
+.asn-desfazer{margin-left:6px;font-family:inherit;font-size:11px;font-weight:700;background:none;border:0;padding:0;color:var(--info);text-decoration:underline;cursor:pointer}
+.asn-mc-arq{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-bottom:1px dashed var(--border)}
+.asn-mc-arq:last-child{border-bottom:none}
+.asn-mc-arq-n{flex:1 1 160px;min-width:0;font-size:12.5px;font-weight:600;color:var(--text)}
+.asn-mc-arq input[type=file]{font-size:11.5px;color:var(--text2);max-width:100%}
+.asn-marcar [hidden]{display:none !important}
 .asn-doc-check{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--border,#BBDCF6);border-radius:11px;margin-bottom:8px;cursor:pointer;background:var(--surface);color:var(--text)}
 .asn-doc-check.sel{border-color:var(--info);background:var(--info-bg)}
 .asn-doc-check input{width:17px;height:17px;flex-shrink:0}
@@ -30006,15 +30016,20 @@ async function asnCarregarLista(){
           <span class="asn-status ${l.status}">${l.status.toUpperCase()}</span>
         </div>
         ${asnDocsAcoes(l)}
-        ${l.status==='assinado' ? `
+        ${l.status==='assinado' ? (asnExterna(l) ? `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--info-bg)">
+            <div class="asn-externa">${asnExternaTexto(l)}
+              <button type="button" class="asn-desfazer" onclick="asnDesmarcarAssinado(${Number(l.id)})" title="Volta o lote para pendente (só a marcação manual se desfaz)">Desfazer</button></div>
+          </div>` : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--info-bg)">
             <div style="font-size:11.5px;color:var(--info)">
               Assinado em ${l.assinado_em ? new Date(l.assinado_em).toLocaleString('pt-BR') : ''}${l.dados_confirmados ? ' · Confirmado por: '+(l.dados_confirmados.nome||'')+' · CPF: '+(l.dados_confirmados.cpf||'') : ''}
               ${l.codigo_verificacao ? `<br><span style="color:var(--info);font-weight:700">Código: ${l.codigo_verificacao}</span>` : ''}${(l.geo_lat && l.geo_lng) ? ` · <a href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" style="color:var(--info)">📍 Localização</a>` : ''}
             </div>
-          </div>` : `
+          </div>`) : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--info-bg)">
             <button class="btn btn-sm" style="background:var(--accent-fill);color:#fff;border:none;font-size:11.5px;padding:8px 13px;border-radius:8px" onclick='asnMandarLinkAssinatura(${l.id})'>🔗 Mandar link para assinar</button>
+            <button type="button" class="btn btn-sm asn-bt asn-bt-marcar" onclick="asnMarcarAssinado(${Number(l.id)})" title="O cliente assinou fora do MoviOn: gov.br, outra plataforma ou no papel">✓ Marcar como assinado</button>
             ${l.link_ativo ? `<div style="font-size:11px;color:var(--info);margin-top:8px">${l.link_aberto_em
                 ? `Link enviado · <b>o cliente abriu</b> em ${new Date(l.link_aberto_em).toLocaleString('pt-BR')}`
                 : 'Link enviado · ainda não foi aberto'}</div>` : ''}
@@ -30023,6 +30038,105 @@ async function asnCarregarLista(){
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-primary" onclick="asnAbrirEnvio()">+ Documento</button>
     </div>`;
+}
+
+/* ── Assinado fora do sistema (gov.br, outra plataforma, papel) ──
+   Tem cliente que recebe o PDF e assina pelo gov.br ou por outra plataforma:
+   o lote ficava pendente para sempre. Aqui a equipe registra: onde, em que
+   dia e, se tiver, o PDF assinado de cada documento — que passa a ser o que
+   se baixa e se envia. Fica gravado quem marcou; dá para desfazer. */
+function asnExterna(l){ return !!(l && l.dados_confirmados && l.dados_confirmados.origem==='externa'); }
+function asnExternaTexto(l){
+  const d = l.dados_confirmados || {};
+  const onde = d.plataforma==='papel' ? 'no papel' : 'pelo '+escHtml(d.plataforma_nome||'gov.br');
+  const dia = d.data_informada ? d.data_informada.split('-').reverse().join('/') : (l.assinado_em ? new Date(l.assinado_em).toLocaleDateString('pt-BR') : '');
+  return `✅ <b>Assinado ${onde}</b> em ${dia} — fora do MoviOn (sem selfie nem certificado nosso)`
+    + `<br><span class="asn-externa-q">Marcado por ${escHtml(d.marcado_por_nome||'alguém da equipe')}${d.marcado_em?' em '+new Date(d.marcado_em).toLocaleString('pt-BR'):''}`
+    + `${d.pdfs_anexados?' · com o PDF assinado':' · sem o PDF assinado'}</span>`
+    + (d.observacao ? `<br><span class="asn-externa-q">Obs.: ${escHtml(d.observacao)}</span>` : '');
+}
+function asnMarcarAssinado(loteId){
+  const l = asnLotes.find(x=>Number(x.id)===Number(loteId)); if(!l) return;
+  const hoje = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const envio = new Date(new Date(l.criado_em).getTime() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const body = document.getElementById('asn-body');
+  body.innerHTML = `
+    <div class="asn-marcar" id="asn-marcar">
+      <div style="font-size:13.5px;font-weight:800;color:var(--text);margin-bottom:4px">✓ Marcar como assinado</div>
+      <div style="font-size:12px;color:var(--info);margin-bottom:12px">Lote de ${new Date(l.criado_em).toLocaleDateString('pt-BR')} · ${(l.documentos||[]).map(d=>escHtml(d.documento_nome||'Documento')).join(', ')}.
+        Use quando <b>${escHtml(asnCli.nome||'o cliente')}</b> assinou fora do MoviOn. Fica registrado quem marcou e quando.</div>
+      <label class="asn-lbl">Onde o cliente assinou?</label>
+      <div class="asn-radio-row" id="asn-mc-onde" role="radiogroup" aria-label="Onde o cliente assinou">
+        <button type="button" class="on" data-onde="govbr" role="radio" aria-checked="true">gov.br</button>
+        <button type="button" data-onde="outra" role="radio" aria-checked="false">Outra plataforma</button>
+        <button type="button" data-onde="papel" role="radio" aria-checked="false">No papel</button>
+      </div>
+      <div id="asn-mc-qual-w" hidden style="margin-top:8px"><label class="asn-lbl" for="asn-mc-qual">Qual plataforma?</label>
+        <input class="asn-inp" id="asn-mc-qual" maxlength="80" placeholder="Ex.: Clicksign, DocuSign, ZapSign…"></div>
+      <div style="margin-top:10px"><label class="asn-lbl" for="asn-mc-data">Data da assinatura</label>
+        <input class="asn-inp" type="date" id="asn-mc-data" value="${hoje}" min="${envio}" max="${hoje}" style="max-width:190px"></div>
+      <div style="margin-top:10px"><label class="asn-lbl">PDF assinado <span style="font-weight:500;color:var(--text3)">(opcional — passa a ser o que se baixa e se envia)</span></label>
+        ${(l.documentos||[]).map(d=>`<div class="asn-mc-arq">
+          <span class="asn-mc-arq-n">${escHtml(d.documento_nome||'Documento')}</span>
+          <input type="file" accept="application/pdf,.pdf" data-asnmcdoc="${Number(d.id)}" aria-label="PDF assinado de ${asnA(d.documento_nome||'Documento')}">
+        </div>`).join('')}</div>
+      <div style="margin-top:10px"><label class="asn-lbl" for="asn-mc-obs">Observação <span style="font-weight:500;color:var(--text3)">(opcional)</span></label>
+        <textarea class="asn-inp" id="asn-mc-obs" rows="2" maxlength="500" placeholder="Ex.: assinou pelo gov.br e mandou o PDF no WhatsApp"></textarea></div>
+      <div id="asn-mc-erro" class="asn-ctr-aviso" hidden style="margin-top:10px"></div>
+      <div style="display:flex;gap:10px;justify-content:space-between;margin-top:14px">
+        <button class="btn" type="button" onclick="asnCarregarLista()">← Voltar</button>
+        <button class="btn btn-primary" type="button" id="asn-mc-ok" onclick="asnConfirmarMarcacao(${Number(l.id)})">✓ Marcar como assinado</button>
+      </div>
+    </div>`;
+  body.querySelectorAll('#asn-mc-onde [data-onde]').forEach(bt=>bt.onclick=()=>{
+    body.querySelectorAll('#asn-mc-onde [data-onde]').forEach(x=>{ x.classList.toggle('on', x===bt); x.setAttribute('aria-checked', x===bt?'true':'false'); });
+    const outra = bt.dataset.onde==='outra';
+    document.getElementById('asn-mc-qual-w').hidden = !outra;
+    if(outra) document.getElementById('asn-mc-qual').focus();
+  });
+}
+function asnLerPdf(arq){
+  return new Promise((ok, falha)=>{
+    const fr = new FileReader();
+    fr.onload = ()=>ok(String(fr.result).replace(/^data:[^;]*;base64,/, ''));
+    fr.onerror = ()=>falha(new Error('Não consegui ler o arquivo '+arq.name));
+    fr.readAsDataURL(arq);
+  });
+}
+async function asnConfirmarMarcacao(loteId){
+  const caixa = document.getElementById('asn-marcar'); if(!caixa) return;
+  const erro = document.getElementById('asn-mc-erro');
+  const falhar = m=>{ erro.textContent = m; erro.hidden = false; };
+  erro.hidden = true;
+  const onde = (caixa.querySelector('#asn-mc-onde .on')||{}).dataset?.onde || 'govbr';
+  const qual = (document.getElementById('asn-mc-qual').value||'').trim();
+  if(onde==='outra' && !qual){ falhar('Diga qual plataforma o cliente usou.'); document.getElementById('asn-mc-qual').focus(); return; }
+  const data = document.getElementById('asn-mc-data').value;
+  const inp = document.getElementById('asn-mc-data');
+  if(!data || (inp.max && data > inp.max) || (inp.min && data < inp.min)){ falhar('Escolha uma data entre o envio do documento e hoje.'); return; }
+  const arquivos = [];
+  let total = 0;
+  for(const f of caixa.querySelectorAll('[data-asnmcdoc]')){
+    const arq = f.files && f.files[0]; if(!arq) continue;
+    if(!/\.pdf$/i.test(arq.name) && arq.type!=='application/pdf'){ falhar(`"${arq.name}" não é um PDF.`); return; }
+    total += arq.size;
+    if(arq.size > 2.8*1024*1024){ falhar(`"${arq.name}" passa de 2,8 MB. Reduza o PDF ou marque sem ele.`); return; }
+    if(total > 2.8*1024*1024){ falhar('Os PDFs juntos passam de 2,8 MB. Marque com um de cada vez ou sem eles.'); return; }
+    arquivos.push({ contrato_id: Number(f.dataset.asnmcdoc), pdf_base64: await asnLerPdf(arq) });
+  }
+  const bt = document.getElementById('asn-mc-ok'); bt.disabled = true; bt.textContent = 'Marcando…';
+  const r = await asnProxy('marcar_assinado', { lote_id: loteId, plataforma: onde, plataforma_nome: qual,
+    data, observacao: document.getElementById('asn-mc-obs').value, arquivos });
+  if(!r.ok){ bt.disabled = false; bt.textContent = '✓ Marcar como assinado'; falhar(r.error || 'Não deu para marcar.'); return; }
+  showToast('✅ Marcado como assinado');
+  asnCarregarLista();
+}
+async function asnDesmarcarAssinado(loteId){
+  if(!confirm('Desfazer a marcação de assinado?\n\nO lote volta para pendente e o PDF assinado anexado deixa de ser o do documento.')) return;
+  const r = await asnProxy('desmarcar_assinado', { lote_id: loteId });
+  if(!r.ok){ showToast('Falha: '+(r.error||'não deu para desfazer'), true); return; }
+  showToast('Marcação desfeita: o lote voltou para pendente');
+  asnCarregarLista();
 }
 
 /* ── Link de assinatura por WhatsApp ──────────────────────────

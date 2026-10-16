@@ -549,7 +549,7 @@ function soNomeDeLugar(v) {
     // de assinatura do MoviControl — mesma tabela, mesmo PDF, mesmo certificado,
     // mesmo bucket — porque um contrato assinado não pode depender de por qual
     // tela da casa ele foi gerado.
-    const perfil = await sb(`perfis?id=eq.${userId}&select=perfil,atendimento`);
+    const perfil = await sb(`perfis?id=eq.${userId}&select=perfil,atendimento,nome`);
     const p0 = perfil.data?.[0];
     const ehGestor = !!p0 && ['admin', 'operador'].includes(p0.perfil);
     if (!perfil.ok || !p0) return res.status(403).json({ ok: false, error: 'Perfil não encontrado' });
@@ -792,6 +792,109 @@ function soNomeDeLugar(v) {
         reaproveitado: !!lote.link_token,
         aberto_em: lote.link_aberto_em || null,
       });
+    }
+
+    /* ASSINADO FORA DO SISTEMA. Tem cliente que recebe o PDF e assina pelo
+       gov.br, por outra plataforma ou no papel — o lote ficava "pendente"
+       para sempre, e a cobrança de assinatura seguia atrás de quem já tinha
+       assinado. Aqui a equipe registra isso: onde foi assinado, em que dia,
+       quem marcou e, se tiver, o PDF assinado de cada documento (que passa a
+       ser o que se baixa e se envia). Não é a assinatura do sistema — não há
+       selfie nem certificado nosso — e a tela diz isso; o registro de quem
+       marcou é o que sustenta a marcação. */
+    const PLATAFORMAS = { govbr: 'gov.br', outra: 'outra plataforma', papel: 'papel' };
+    const PDF_EXTERNO_MAX = Math.round(2.8 * 1024 * 1024);
+    if (action === 'marcar_assinado') {
+      const b = req.body || {};
+      const loteId = Number(b.lote_id);
+      if (!loteId) return res.status(400).json({ ok: false, error: 'lote_id obrigatório' });
+      const plataforma = String(b.plataforma || '');
+      if (!PLATAFORMAS[plataforma]) return res.status(400).json({ ok: false, error: 'Escolha onde o cliente assinou (gov.br, outra plataforma ou papel).' });
+      const plataformaNome = String(b.plataforma_nome || '').trim().slice(0, 80);
+      if (plataforma === 'outra' && !plataformaNome) return res.status(400).json({ ok: false, error: 'Diga qual plataforma o cliente usou.' });
+      const lr = await sb(`assinatura_lotes?id=eq.${loteId}&select=id,cliente_id,status,criado_em`);
+      if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
+      const lote = lr.data[0];
+      if (lote.status === 'assinado') return res.status(400).json({ ok: false, error: 'Este lote já está assinado.' });
+
+      // a data que o cliente assinou: hoje, ou um dia entre o envio e hoje
+      const agora = new Date();
+      const hojeLocal = agora.toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
+      const dia = String(b.data || hojeLocal).slice(0, 10);
+      const envio = new Date(lote.criado_em).toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia > hojeLocal) return res.status(400).json({ ok: false, error: 'Data da assinatura inválida (não pode ser depois de hoje).' });
+      if (dia < envio) return res.status(400).json({ ok: false, error: 'A data da assinatura não pode ser antes do envio do documento.' });
+      const assinadoEm = dia === hojeLocal ? agora.toISOString() : new Date(dia + 'T12:00:00-03:00').toISOString();
+
+      const docs = await sb(`contratos_assinatura?lote_id=eq.${loteId}&select=id,documento_nome,documento_url`);
+      if (!docs.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar os documentos' });
+      const meus = new Map((docs.data || []).map(d => [String(d.id), d]));
+
+      // os PDFs assinados que vieram: confere tudo ANTES de gravar qualquer coisa
+      const arquivos = Array.isArray(b.arquivos) ? b.arquivos : [];
+      const subir = [];
+      for (const a of arquivos) {
+        const doc = meus.get(String(a && a.contrato_id));
+        if (!doc) return res.status(400).json({ ok: false, error: 'Um dos PDFs não é de um documento deste lote.' });
+        const buf = Buffer.from(String(a.pdf_base64 || ''), 'base64');
+        if (buf.length < 5 || buf.subarray(0, 5).toString('latin1') !== '%PDF-') {
+          return res.status(400).json({ ok: false, error: `O arquivo de "${doc.documento_nome || 'documento'}" não é um PDF.` });
+        }
+        if (buf.length > PDF_EXTERNO_MAX) {
+          return res.status(413).json({ ok: false, error: `O PDF de "${doc.documento_nome || 'documento'}" passa de 2,8 MB.` });
+        }
+        subir.push({ doc, buf });
+      }
+      const enviados = new Map();
+      for (const { doc, buf } of subir) {
+        const key = `assinaturas/contratos-assinados/${lote.cliente_id}/${loteId}_${doc.id}_externo_${Date.now()}.pdf`;
+        const up = await r2Upload(key, buf, 'application/pdf');
+        if (!up.ok) return res.status(500).json({ ok: false, error: 'Não consegui guardar o PDF assinado: ' + up.error });
+        enviados.set(String(doc.id), { key, hash: crypto.createHash('sha256').update(buf).digest('hex') });
+      }
+      const registro = {
+        origem: 'externa', plataforma, plataforma_nome: plataforma === 'outra' ? plataformaNome : PLATAFORMAS[plataforma],
+        observacao: String(b.observacao || '').trim().slice(0, 500) || null, data_informada: dia,
+        marcado_por: userId, marcado_por_nome: p0.nome || null, marcado_em: agora.toISOString(),
+        pdfs_anexados: enviados.size,
+      };
+      // o lote primeiro, e só se ainda estiver pendente: se o cliente assinou
+      // pelo link neste meio-tempo, os documentos dele não são tocados. O link
+      // de assinatura, se houve, morre aqui — não há mais o que assinar.
+      const up = await sb(`assinatura_lotes?id=eq.${loteId}&status=eq.pendente`, { method: 'PATCH', body: JSON.stringify({
+        status: 'assinado', assinado_em: assinadoEm, dados_confirmados: registro, link_expira_em: agora.toISOString(),
+      }) });
+      if (!up.ok) return res.status(500).json({ ok: false, error: 'Falha ao marcar o lote' });
+      if (!Array.isArray(up.data) || !up.data.length) return res.status(409).json({ ok: false, error: 'Este lote acabou de ser assinado por outro caminho.' });
+      for (const d of (docs.data || [])) {
+        const env = enviados.get(String(d.id));
+        await sb(`contratos_assinatura?id=eq.${d.id}`, { method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify({
+          status: 'assinado', assinado_em: assinadoEm, atualizado_em: agora.toISOString(),
+          ...(env ? { documento_assinado_url: env.key, hash_assinado: env.hash } : {}),
+        }) });
+      }
+      return res.status(200).json({ ok: true, assinado_em: assinadoEm, registro });
+    }
+
+    /* Desfaz a marcação acima (só ela: assinatura feita pelo cliente no
+       sistema, com selfie e certificado, não se desfaz por aqui). */
+    if (action === 'desmarcar_assinado') {
+      const loteId = Number(req.body?.lote_id);
+      if (!loteId) return res.status(400).json({ ok: false, error: 'lote_id obrigatório' });
+      const lr = await sb(`assinatura_lotes?id=eq.${loteId}&select=id,status,dados_confirmados`);
+      if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
+      const lote = lr.data[0];
+      if (lote.status !== 'assinado' || lote.dados_confirmados?.origem !== 'externa') {
+        return res.status(400).json({ ok: false, error: 'Só dá para desfazer o que foi marcado como assinado fora do sistema.' });
+      }
+      await sb(`contratos_assinatura?lote_id=eq.${loteId}`, { method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify({
+        status: 'pendente', assinado_em: null, documento_assinado_url: null, hash_assinado: null, atualizado_em: new Date().toISOString(),
+      }) });
+      const up = await sb(`assinatura_lotes?id=eq.${loteId}`, { method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify({
+        status: 'pendente', assinado_em: null, dados_confirmados: null,
+      }) });
+      if (!up.ok) return res.status(500).json({ ok: false, error: 'Falha ao desfazer' });
+      return res.status(200).json({ ok: true });
     }
 
     if (action === 'upload_pdf') {

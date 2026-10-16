@@ -2344,6 +2344,21 @@ body.flow-full .flow-field textarea{min-height:200px;}
   padding-top:6px;border-top:1px solid var(--line);}
 .asn-cod{font-family:'JetBrains Mono',monospace;font-weight:800;color:var(--green-deep);}
 .asn-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+/* assinado fora do MoviTalk (gov.br, outra plataforma, papel) */
+.asn-desfazer{margin-left:6px;font-family:inherit;font-size:10.5px;font-weight:700;background:none;border:0;padding:0;
+  color:var(--green-deep);text-decoration:underline;cursor:pointer;}
+.mc-form [hidden]{display:none !important;}
+.mc-form .flow-field input,.mc-form .flow-field textarea{background:var(--card);}
+.mc-form .flow-field textarea{min-height:58px;}
+.mc-opc{font-weight:500;color:var(--text-low);}
+.mc-onde{display:flex;gap:6px;flex-wrap:wrap;}
+.mc-onde button{flex:1 1 110px;font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 10px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--line);background:var(--card);color:var(--text-mid);}
+.mc-onde button.on{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);box-shadow:inset 0 0 0 1px var(--green);}
+.mc-arq{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px dashed var(--line);}
+.mc-arq:last-child{border-bottom:0;}
+.mc-arq-n{flex:1 1 150px;min-width:0;font-size:12.5px;font-weight:600;color:var(--text);}
+.mc-form .mc-arq input[type=file]{width:auto;max-width:100%;border:0;padding:0;font-size:11.5px;color:var(--text-mid);background:transparent;}
 /* "ele recebeu?" é a pergunta que o atendente faz depois de mandar o link.
    O rastro fica embaixo dos botões, na largura toda, em vez de virar mais
    um botão que ninguém precisa apertar. */
@@ -5456,7 +5471,9 @@ function blocoAssinatura(c){
         ${d.documento_url ? `<button class="fin-copy" data-asnbaixar="${d.id}" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ PDF</button>
           <button class="fin-copy" data-asnpdf="${d.id}" title="${d.assinado_final?'Enviar este PDF assinado na conversa':'Enviar o PDF na conversa para o cliente ler (ainda sem assinatura)'}">📲 enviar</button>` : ''}
       </div>`).join('')}
-      ${l.status==='assinado' ? `<div class="asn-meta">
+      ${l.status==='assinado' && asnExterna(l) ? `<div class="asn-meta">${asnExternaTexto(l)}
+        <button class="asn-desfazer" data-asndesmarcar="${l.id}" title="Volta o lote para pendente (só a marcação manual se desfaz)">Desfazer</button>
+      </div>` : l.status==='assinado' ? `<div class="asn-meta">
         Assinado em ${l.assinado_em?dataHora(l.assinado_em):'—'}${l.dados_confirmados&&l.dados_confirmados.nome?' por '+esc(l.dados_confirmados.nome):''}
         ${l.dados_confirmados&&l.dados_confirmados.origem==='link_whatsapp'?' · pelo link do WhatsApp':''}
         ${l.codigo_verificacao?`<br>Código: <span class="asn-cod">${esc(l.codigo_verificacao)}</span>`:''}
@@ -5465,6 +5482,7 @@ function blocoAssinatura(c){
         <button class="vinc-btn solid" data-asnlink="${l.id}">🔗 Mandar link para assinar</button>
         <button class="vinc-btn" data-asnsolink="${l.id}" title="Manda só o endereço, sem a mensagem de explicação">🔗 Só o link, sem texto</button>
         <button class="vinc-btn" data-asnavisar="${l.id}">📱 Avisar pelo MoviApp</button>
+        <button class="vinc-btn" data-asnmarcar="${l.id}" title="O cliente assinou fora do MoviTalk: gov.br, outra plataforma ou no papel">✓ Marcar como assinado</button>
         ${l.link_ativo ? `<div class="asn-link-st">${l.link_aberto_em
             ? `🔗 Link enviado · <b>o cliente abriu</b> em ${dataHora(l.link_aberto_em)}`
             : `🔗 Link enviado · ainda não foi aberto`}</div>` : ''}
@@ -5473,6 +5491,97 @@ function blocoAssinatura(c){
   }).join('') : '<div class="asn-vazio">Nenhum documento enviado para assinatura ainda.</div>';
 
   return corpo + `<button class="vinc-btn solid" id="asnNovo" style="width:100%;margin-top:7px;">✍️ Enviar documentos para assinar</button>`;
+}
+
+/* ===== ASSINADO FORA DO SISTEMA (gov.br, outra plataforma, papel) =====
+   Tem cliente que recebe o PDF e assina pelo gov.br ou por outra plataforma:
+   o lote ficava pendente para sempre. Aqui a equipe registra onde, em que dia
+   e, se tiver, o PDF assinado de cada documento — que passa a ser o que se
+   baixa e se envia. Fica gravado quem marcou; dá para desfazer. */
+function asnExterna(l){ return !!(l && l.dados_confirmados && l.dados_confirmados.origem==='externa'); }
+function asnExternaTexto(l){
+  const d = l.dados_confirmados || {};
+  const onde = d.plataforma==='papel' ? 'no papel' : 'pelo '+esc(d.plataforma_nome||'gov.br');
+  const dia = d.data_informada ? d.data_informada.split('-').reverse().join('/') : (l.assinado_em ? dataCurta(l.assinado_em) : '');
+  return `✅ <b>Assinado ${onde}</b> em ${dia}, fora do MoviTalk (sem selfie nem certificado nosso)`
+    + `<br>Marcado por ${esc(d.marcado_por_nome||'alguém da equipe')}${d.marcado_em?' em '+dataHora(d.marcado_em):''}`
+    + `${d.pdfs_anexados?' · com o PDF assinado':' · sem o PDF assinado'}`
+    + (d.observacao ? `<br>Obs.: ${esc(d.observacao)}` : '');
+}
+function asnHojeLocal(dt){ const d = dt ? new Date(dt) : new Date(); return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+function asnMarcarAssinado(lote, nomeCli, depois){
+  const docs = lote.documentos || [];
+  const hoje = asnHojeLocal(), envio = asnHojeLocal(lote.criado_em);
+  const ov = document.createElement('div');
+  ov.className = 'tr-overlay';
+  ov.innerHTML = `<div class="pn-modal mc-form" style="width:min(500px,100%)" role="dialog" aria-modal="true" aria-labelledby="mcTit">
+    <div class="pn-head"><h3 id="mcTit">✓ Marcar como assinado</h3><button class="pn-x" type="button" aria-label="Fechar">✕</button></div>
+    <div class="pn-body">
+      <div class="fz-desc" style="margin-bottom:12px">${docs.length} documento${docs.length===1?'':'s'} de ${dataCurta(lote.criado_em)}: ${docs.map(d=>esc(d.documento_nome||'documento')).join(', ')}.
+        Use quando <b>${esc(nomeCli||'o cliente')}</b> assinou fora do MoviTalk. Fica registrado quem marcou e quando.</div>
+      <div class="flow-field"><label id="mcOndeL">Onde o cliente assinou?</label>
+        <div class="mc-onde" role="radiogroup" aria-labelledby="mcOndeL">
+          <button type="button" class="on" data-onde="govbr" role="radio" aria-checked="true">gov.br</button>
+          <button type="button" data-onde="outra" role="radio" aria-checked="false">Outra plataforma</button>
+          <button type="button" data-onde="papel" role="radio" aria-checked="false">No papel</button>
+        </div></div>
+      <div class="flow-field" id="mcQualW" hidden><label for="mcQual">Qual plataforma?</label>
+        <input id="mcQual" maxlength="80" placeholder="Ex.: Clicksign, DocuSign, ZapSign…"></div>
+      <div class="flow-field"><label for="mcData">Data da assinatura</label>
+        <input type="date" id="mcData" value="${hoje}" min="${envio}" max="${hoje}" style="max-width:190px"></div>
+      <div class="flow-field"><label>PDF assinado <span class="mc-opc">(opcional: passa a ser o que se baixa e se envia)</span></label>
+        ${docs.map(d=>`<div class="mc-arq"><span class="mc-arq-n">${esc(d.documento_nome||'documento')}</span>
+          <input type="file" accept="application/pdf,.pdf" data-mcdoc="${d.id}" aria-label="PDF assinado de ${esc(d.documento_nome||'documento')}"></div>`).join('')}</div>
+      <div class="flow-field"><label for="mcObs">Observação <span class="mc-opc">(opcional)</span></label>
+        <textarea id="mcObs" rows="2" maxlength="500" placeholder="Ex.: assinou pelo gov.br e mandou o PDF no WhatsApp"></textarea></div>
+      <div class="ms-erro" id="mcErro" hidden></div>
+    </div>
+    <div class="fz-foot"><button class="fbtn" type="button" id="mcCanc">Cancelar</button><button class="fbtn solid" type="button" id="mcOk">✓ Marcar como assinado</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const fechar = ()=>{ ov.remove(); document.removeEventListener('keydown', esc_); };
+  const esc_ = ev=>{ if(ev.key==='Escape') fechar(); };
+  document.addEventListener('keydown', esc_);
+  ov.onclick = ev=>{ if(ev.target===ov) fechar(); };
+  ov.querySelector('.pn-x').onclick = fechar; ov.querySelector('#mcCanc').onclick = fechar;
+  ov.querySelectorAll('[data-onde]').forEach(bt=>bt.onclick=()=>{
+    ov.querySelectorAll('[data-onde]').forEach(x=>{ x.classList.toggle('on', x===bt); x.setAttribute('aria-checked', x===bt?'true':'false'); });
+    ov.querySelector('#mcQualW').hidden = bt.dataset.onde!=='outra';
+    if(bt.dataset.onde==='outra') ov.querySelector('#mcQual').focus();
+  });
+  const erro = ov.querySelector('#mcErro');
+  const falhar = m=>{ erro.textContent = m; erro.hidden = false; };
+  ov.querySelector('#mcOk').onclick = async()=>{
+    erro.hidden = true;
+    const onde = ov.querySelector('[data-onde].on').dataset.onde;
+    const qual = ov.querySelector('#mcQual').value.trim();
+    if(onde==='outra' && !qual){ falhar('Diga qual plataforma o cliente usou.'); ov.querySelector('#mcQual').focus(); return; }
+    const data = ov.querySelector('#mcData').value;
+    if(!data || data > hoje || data < envio){ falhar('Escolha uma data entre o envio do documento e hoje.'); return; }
+    const arquivos = []; let total = 0;
+    for(const f of ov.querySelectorAll('[data-mcdoc]')){
+      const arq = f.files && f.files[0]; if(!arq) continue;
+      if(!/\.pdf$/i.test(arq.name) && arq.type!=='application/pdf'){ falhar(`"${arq.name}" não é um PDF.`); return; }
+      total += arq.size;
+      if(arq.size > 2.8*1024*1024){ falhar(`"${arq.name}" passa de 2,8 MB. Reduza o PDF ou marque sem ele.`); return; }
+      if(total > 2.8*1024*1024){ falhar('Os PDFs juntos passam de 2,8 MB. Marque com um de cada vez ou sem eles.'); return; }
+      const b64 = await new Promise((ok, ruim)=>{ const fr = new FileReader(); fr.onload = ()=>ok(String(fr.result).replace(/^data:[^;]*;base64,/, '')); fr.onerror = ()=>ruim(new Error('Não consegui ler '+arq.name)); fr.readAsDataURL(arq); });
+      arquivos.push({ contrato_id: Number(f.dataset.mcdoc), pdf_base64: b64 });
+    }
+    const bt = ov.querySelector('#mcOk'); bt.disabled = true; bt.textContent = 'Marcando…';
+    try{
+      await asnChamar('marcar_assinado', { lote_id: lote.id, plataforma: onde, plataforma_nome: qual, data,
+        observacao: ov.querySelector('#mcObs').value, arquivos });
+      fechar(); toast('✅ Marcado como assinado');
+      if(depois) depois();
+    }catch(err){ bt.disabled = false; bt.textContent = '✓ Marcar como assinado'; falhar(err.message); }
+  };
+  ov.querySelector('[data-onde].on').focus();
+}
+async function asnDesmarcarAssinado(loteId, depois){
+  if(!confirm('Desfazer a marcação de assinado?\n\nO lote volta para pendente e o PDF assinado anexado deixa de ser o do documento.')) return;
+  try{ await asnChamar('desmarcar_assinado', { lote_id: loteId }); toast('Marcação desfeita: o lote voltou para pendente'); if(depois) depois(); }
+  catch(err){ toast('Falha: '+err.message); }
 }
 
 function dataCurta(iso){
@@ -10195,6 +10304,12 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     }
     catch(err){ el.disabled=false; el.textContent='🔗 Só o link, sem texto'; toast('Falha: '+err.message); }
   });
+  document.querySelectorAll('[data-asnmarcar]').forEach(el=>el.onclick=()=>{
+    const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnmarcar);
+    if(lote) asnMarcarAssinado(lote, (c.clienteVinculado&&c.clienteVinculado.nome)||c.nome, ()=>{ c._asnCarregado=false; c.asn=null; openModal(c.id); });
+  });
+  document.querySelectorAll('[data-asndesmarcar]').forEach(el=>el.onclick=()=>
+    asnDesmarcarAssinado(+el.dataset.asndesmarcar, ()=>{ c._asnCarregado=false; c.asn=null; openModal(c.id); }));
   document.querySelectorAll('[data-asnavisar]').forEach(el=>el.onclick=async()=>{
     const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnavisar);
     if(!lote) return;
@@ -10897,7 +11012,7 @@ function ctrPintar(el){
             <div class="ctr-nome">${esc(l.cliente_nome || quem)}</div>
             <div class="ctr-sub">
               ${l.cliente_cnpj?esc(l.cliente_cnpj)+' · ':''}${l.cliente_ixc_id?'IXC #'+esc(String(l.cliente_ixc_id))+' · ':''}enviado em ${dataCurta(l.criado_em)}
-              ${l.assinado_em?`<br>✅ Assinado em ${dataHora(l.assinado_em)}${(l.dados_confirmados&&l.dados_confirmados.nome)?' por '+esc(l.dados_confirmados.nome):''}`:''}
+              ${l.assinado_em && asnExterna(l) ? `<br>${asnExternaTexto(l)}` : l.assinado_em?`<br>✅ Assinado em ${dataHora(l.assinado_em)}${(l.dados_confirmados&&l.dados_confirmados.nome)?' por '+esc(l.dados_confirmados.nome):''}`:''}
               ${l.codigo_verificacao?`<br>Código: <span class="asn-cod">${esc(l.codigo_verificacao)}</span>`:''}
               ${pend?`<br>${l.link_aberto_em?`🔗 O cliente abriu o link em ${dataHora(l.link_aberto_em)}, mas não assinou`:(l.link_enviado_em?`🔗 Link enviado em ${dataHora(l.link_enviado_em)} · ainda não foi aberto`:'Link ainda não enviado')}`:''}
             </div>
@@ -10911,6 +11026,8 @@ function ctrPintar(el){
           </div>
           <div class="ctr-lado">
             <span class="asn-st ${esc(l.status)}">${esc(l.status)}</span>
+            ${pend?`<button class="ctr-ver" data-ctrmarcar="${l.id}" title="O cliente assinou fora do MoviTalk: gov.br, outra plataforma ou no papel">✓ marcar como assinado</button>`:''}
+            ${!pend && asnExterna(l)?`<button class="ctr-ver" data-ctrdesmarcar="${l.id}" title="Volta o lote para pendente">↺ desfazer</button>`:''}
             ${l.selfie_url?`<button class="ctr-ver" data-ctrselfie="${l.id}">🤳 selfie</button>`:''}
             ${(l.geo_lat&&l.geo_lng)?`<a class="ctr-ver" href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" rel="noopener">📍 local</a>`:''}
           </div>
@@ -10951,6 +11068,12 @@ function ctrPintar(el){
       }, 400);
     };
   }
+  const recarregarCtr = async()=>{ await ctrCarregar(); ctrPintar(el); };
+  el.querySelectorAll('[data-ctrmarcar]').forEach(b=>b.onclick=()=>{
+    const l = CTR.lotes.find(x=>String(x.id)===b.dataset.ctrmarcar);
+    if(l) asnMarcarAssinado(l, l.cliente_nome, recarregarCtr);
+  });
+  el.querySelectorAll('[data-ctrdesmarcar]').forEach(b=>b.onclick=()=>asnDesmarcarAssinado(+b.dataset.ctrdesmarcar, recarregarCtr));
   el.querySelectorAll('[data-ctrver]').forEach(b=>b.onclick=()=>{
     let doc = null;
     for(const l of CTR.lotes) for(const d of (l.documentos||[]))
