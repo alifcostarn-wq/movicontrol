@@ -996,6 +996,10 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
 /* a tabela anda arrastando com o mouse (sem barras de rolagem); roda e touchpad continuam valendo */
 #page-fluxo #fx-dre-scroll{cursor:grab;scrollbar-width:none;overscroll-behavior-x:contain}
 #page-fluxo #fx-dre-scroll::-webkit-scrollbar{display:none}
+/* tela cheia: o fluxo por cima do menu e do topo (abaixo das janelas do fluxo, 9000, e da ficha, 9100) */
+:root body #page-fluxo[data-fxv2].fx-max{position:fixed;inset:0;z-index:800;margin:0;padding:16px 22px;min-height:0;overflow:auto;background:var(--fx-plano,var(--bg))}
+body.fx-max-on{overflow:hidden}
+:root body #page-fluxo[data-fxv2].fx-max .btn.fx-btn-max{background:var(--fx-acento-bg);color:var(--fx-acento-tx);border-color:transparent}
 #page-fluxo #fx-dre-scroll.arrastando,#page-fluxo #fx-dre-scroll.arrastando *{cursor:grabbing!important;user-select:none}
 /* larguras da coluna de contas — sempre suficientes para os nomes dos grupos */
 #page-fluxo[data-fxview="anual"] .dre th:first-child,#page-fluxo[data-fxview="anual"] .dre td:first-child{width:340px;min-width:340px}
@@ -5352,6 +5356,7 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
         <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap">
           <button class="btn fx-ia" onclick="fxAbrirIA()" style="font-size:11px;padding:5px 10px">👔 Gerente IA</button>
           <button class="btn fx-btn-graf" id="fx-btn-graf" onclick="fxGraficoToggle()" aria-pressed="false" style="font-size:11px;padding:5px 10px" title="Mostrar ou esconder o gráfico Receita × Saídas × Resultado">📊 Gráfico</button>
+          <button class="btn fx-btn-max" id="fx-btn-max" onclick="fxMaximizar()" aria-pressed="false" style="font-size:11px;padding:5px 10px" title="Mostrar o fluxo de caixa na tela inteira">⛶ Tela cheia</button>
           <button class="btn fx-btn-ico" onclick="fxAbrirPDF()" title="Exportar PDF" aria-label="Exportar PDF">PDF</button>
           <button class="btn fx-btn-ico sim" id="btn-dre-expand" onclick="dreExpandAll()" title="Expandir todas as subcategorias" aria-label="Expandir todas as subcategorias">⊞</button>
           <button class="btn fx-btn-ico sim" id="btn-dre-collapse" onclick="dreCollapseAll()" title="Recolher todas as subcategorias" aria-label="Recolher todas as subcategorias">⊟</button>
@@ -10035,7 +10040,32 @@ document.addEventListener('keydown', e=>{
   // a ficha do título aberta por cima do drill sai primeiro (o Esc dela
   // é registrado depois deste); o drill fica no próximo Esc
   if(document.getElementById('ctxd-overlay')?.classList.contains('open')) return;
-  document.querySelectorAll('.fx-modal-overlay.open').forEach(m=>m.classList.remove('open'));
+  const abertos=document.querySelectorAll('.fx-modal-overlay.open');
+  abertos.forEach(m=>m.classList.remove('open'));
+  // sem janela aberta, o Esc sai da tela cheia (quando o navegador não entrou no modo tela cheia dele)
+  if(!abertos.length && document.getElementById('page-fluxo')?.classList.contains('fx-max')) fxMaximizar(false);
+});
+
+// Tela cheia: o fluxo cobre o menu e o topo do sistema e o navegador entra em tela cheia
+// (a página toda, não só o fluxo, para a ficha do lançamento continuar abrindo por cima)
+function fxMaximizar(ligar){
+  const pg=document.getElementById('page-fluxo'); if(!pg) return;
+  const on = ligar ?? !pg.classList.contains('fx-max');
+  pg.classList.toggle('fx-max', on);
+  document.body.classList.toggle('fx-max-on', on);
+  const bt=document.getElementById('fx-btn-max');
+  if(bt){ bt.setAttribute('aria-pressed', on?'true':'false'); bt.innerHTML = on ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
+    bt.title = on ? 'Voltar ao tamanho normal (Esc)' : 'Mostrar o fluxo de caixa na tela inteira'; }
+  try{
+    if(on && !document.fullscreenElement) document.documentElement.requestFullscreen?.()?.catch?.(()=>{});
+    if(!on && document.fullscreenElement) document.exitFullscreen?.()?.catch?.(()=>{});
+  }catch(e){}
+  if(on) pg.scrollTop=0;
+  requestAnimationFrame(()=>{ fxFixarDireita(); try{ _fxChart?.resize(); }catch(e){} });
+}
+// Esc do navegador (ou F11) sai da tela cheia dele: o fluxo volta junto
+document.addEventListener('fullscreenchange', ()=>{
+  if(!document.fullscreenElement && document.getElementById('page-fluxo')?.classList.contains('fx-max')) fxMaximizar(false);
 });
 
 let _fxDrillCtx = null; // {dre_id, ano, mes(1-based)}
