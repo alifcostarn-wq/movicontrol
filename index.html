@@ -993,7 +993,10 @@ body.dark-mode #page-tesouraria .ts-tbl tr.hoje td{background:rgba(5,150,105,.15
    com a barra de baixo lá no fim das linhas. O "clip" recorta os cantos como
    o "hidden" sem virar área de rolagem — é o que deixa a barra grudar no topo. */
 #page-fluxo .dre-wrap{overflow:clip}
-#page-fluxo .fx-rolagem{z-index:5} /* acima do "CONTA" fixo (th:first-child, z 4) */
+/* a tabela anda arrastando com o mouse (sem barras de rolagem); roda e touchpad continuam valendo */
+#page-fluxo #fx-dre-scroll{cursor:grab;scrollbar-width:none;overscroll-behavior-x:contain}
+#page-fluxo #fx-dre-scroll::-webkit-scrollbar{display:none}
+#page-fluxo #fx-dre-scroll.arrastando,#page-fluxo #fx-dre-scroll.arrastando *{cursor:grabbing!important;user-select:none}
 /* larguras da coluna de contas — sempre suficientes para os nomes dos grupos */
 #page-fluxo[data-fxview="anual"] .dre th:first-child,#page-fluxo[data-fxview="anual"] .dre td:first-child{width:340px;min-width:340px}
 #page-fluxo[data-fxview="trimestral"] .dre th:first-child,#page-fluxo[data-fxview="trimestral"] .dre td:first-child{width:320px;min-width:320px}
@@ -5356,7 +5359,6 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
         </div>
       </div>
       <div class="dre-wrap">
-        <div class="cl-rolagem fx-rolagem" id="fx-rolagem" hidden aria-hidden="true"><div class="cl-rolagem-in"></div></div>
         <div class="dre-scroll" id="fx-dre-scroll"><table class="dre"><thead id="dre-thead-f"></thead><tbody id="dre-tbody-f"></tbody></table></div>
       </div>
     </div>
@@ -9816,6 +9818,39 @@ function fxPctL(x){ return (x||0).toLocaleString('pt-BR',{minimumFractionDigits:
 function fxRS(v){ let n=+(v||0); if(Math.abs(n)<0.005) n=0; return (n<0?'−':'')+'R$ '+fxNum(Math.abs(n)); }
 // célula da DRE; .val-monetario some junto com o "Ocultar"
 function fxCel(v){ return `<span class="val-monetario">${fxRS(v)}</span>`; }
+// Arrastar com o mouse rola a tabela (para os lados e para cima/baixo). Só começa depois
+// de 5px, então o clique simples num valor continua abrindo os lançamentos; um arraste que
+// termina em cima de um valor não abre nada. No toque o navegador já rola sozinho.
+function fxLigarArraste(base){
+  if(!base || base.dataset.arraste) return;
+  base.dataset.arraste='1';
+  let ini=null, arrastou=false;
+  base.addEventListener('pointerdown', e=>{
+    if(e.pointerType!=='mouse' || e.button!==0 || e.target.closest('button,a,input,select,textarea')) return;
+    ini={x:e.clientX, y:e.clientY, sl:base.scrollLeft, st:base.scrollTop, id:e.pointerId}; arrastou=false;
+  });
+  base.addEventListener('pointermove', e=>{
+    if(!ini || e.pointerId!==ini.id) return;
+    const dx=e.clientX-ini.x, dy=e.clientY-ini.y;
+    if(!arrastou){
+      if(Math.hypot(dx,dy)<5) return;
+      arrastou=true; base.classList.add('arrastando');
+      try{ base.setPointerCapture(e.pointerId); }catch(_){}
+    }
+    base.scrollLeft=ini.sl-dx; base.scrollTop=ini.st-dy;
+    e.preventDefault();
+  });
+  const soltar=e=>{
+    if(!ini || (e && e.pointerId!==ini.id)) return;
+    ini=null; base.classList.remove('arrastando');
+    if(arrastou) setTimeout(()=>{ arrastou=false; }, 0);   // o click que vem logo depois é engolido
+  };
+  base.addEventListener('pointerup', soltar);
+  base.addEventListener('pointercancel', soltar);
+  base.addEventListener('lostpointercapture', soltar);
+  base.addEventListener('click', e=>{ if(arrastou){ e.stopPropagation(); e.preventDefault(); } }, true);
+  base.addEventListener('dragstart', e=>e.preventDefault());
+}
 // Total, % rec. e Tendência ficam presos à direita: a distância de cada um até a borda
 // é a largura real das colunas à direita dele (a tabela se ajusta aos valores)
 function fxFixarDireita(){
@@ -10316,8 +10351,8 @@ function renderFluxo(){
   }
 
   document.getElementById('dre-tbody-f').innerHTML = linhasDre + linhasCaixa;
-  // os meses que passam da largura: barra de rolagem também em cima da DRE
-  ligarRolagemTopo('fx-rolagem', 'fx-dre-scroll');
+  // os meses que passam da largura: arrastar a tabela com o mouse
+  fxLigarArraste(document.getElementById('fx-dre-scroll'));
   fxFixarDireita(); document.fonts?.ready?.then(fxFixarDireita);
 
   // análise automática da IA — assíncrona, não trava a tela.
