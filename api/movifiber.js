@@ -32,7 +32,18 @@
 //   - "inc-resolver" / "inc-reabrir" / "inc-excluir" / "inc-avisos".
 //     O MoviTalk le esses incidentes e responde sozinho quem reclamar.
 //   - "debug-schema"       -> 1 registro cru de cada fonte (descobrir colunas).
+//   - "monitor-cto"        -> MONITOR DE CTO (chamado pelo pg_cron do Supabase a
+//                             cada 3 min, com o token de monitor_cto_config).
+//   - "monitor-status" / "monitor-salvar" / "monitor-testar" / "monitor-verificar"
+//                             -> tela do monitor no MoviFiber (usuario logado).
+//     O monitor usa tambem EVOLUTION_URL / EVOLUTION_APIKEY / EVOLUTION_INSTANCE
+//     (as mesmas do MoviTalk) para mandar o alerta no WhatsApp.
 // ============================================================================
+import crypto from 'crypto';
+
+// o monitor de CTO le todos os logins do IXC e pode tentar o WhatsApp 3 vezes:
+// 60s evita que a verificacao seja cortada no meio quando algum dos dois demora
+export const config = { maxDuration: 60 };
 
 const IXC_URL = (process.env.IXC_URL || 'https://netmaisconnect.com.br').replace(/\/$/, '').replace(/\/adm\.php$/, '');
 
@@ -67,6 +78,11 @@ export default async function handler(req, res) {
   const b = req.body || {};
   const acao = b.acao || 'clientes-movione';
   try {
+    // ---- monitor de CTO: quem chama e o agendador do banco, nao uma pessoa ----
+    if (acao === 'monitor-cto') {
+      if (!(await monitorTokenConfere(req))) return res.status(401).json({ erro: 'token do monitor invalido' });
+      return res.status(200).json(await monitorCto({}));
+    }
     // ---- quem esta chamando? ----
     // O login protege a tela, mas sem esta checagem qualquer um com a URL do proxy
     // leria clientes e projetos. Com MOVIFIBER_EXIGE_LOGIN=1 o acesso passa a exigir
@@ -93,6 +109,17 @@ export default async function handler(req, res) {
     if (acao === 'campo-retorno')     return res.status(200).json(await campoRetorno(b.projetos || []));
     if (acao === 'cat-carregar')      return res.status(200).json(await catCarregar());
     if (acao === 'cat-salvar')        return res.status(200).json(await catSalvar(b.dados));
+
+    // ---- tela do monitor de CTO (sempre com usuario identificado) ----
+    if (['monitor-status', 'monitor-salvar', 'monitor-testar', 'monitor-verificar'].includes(acao)) {
+      if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'faca login no MoviFiber' });
+      if (acao === 'monitor-status')    return res.status(200).json(await monitorStatus());
+      if (acao === 'monitor-verificar') return res.status(200).json(await monitorCto({ simular: true }));
+      const admin = await monitorEhAdmin(quem.usuario);
+      if (!admin) return res.status(403).json({ erro: 'so administrador muda o monitor de CTO' });
+      if (acao === 'monitor-salvar')    return res.status(200).json(await monitorSalvar(b.config || {}, quem.usuario));
+      if (acao === 'monitor-testar')    return res.status(200).json(await monitorTestar(quem.usuario));
+    }
 
     // ---- instabilidades (o que o MoviTalk responde sozinho ao cliente) ----
     // Leitura segue a regra geral do proxy; ESCRITA exige usuario identificado
@@ -810,7 +837,20 @@ async function incSalvar(inc, usuario) {
   const poligono = (Array.isArray(inc.poligono) ? inc.poligono : [])
     .filter(p => Array.isArray(p) && p.length >= 2).map(p => [+p[0], +p[1]]).slice(0, 5000);
 
-  const afetados = await incResolverAfetados({
+  // Instabilidade criada pelo MONITOR DE CTO: as caixas dela vem do IXC
+  // ("ixc:12"), que o vinculo do MoviFiber nao conhece. Editar o texto ou a
+  // previsao no painel nao pode zerar a lista de clientes — enquanto as caixas
+  // forem as mesmas, a lista que o monitor gravou continua valendo.
+  let afetados = null;
+  if (inc.id) {
+    const existente = ((await monSb(`${SB_INC}?id=eq.${encodeURIComponent(String(inc.id))}`
+      + `&select=origem,caixas,clientes_ids,clientes_ixc,afetados`).catch(() => [])) || [])[0];
+    const chaves = l => JSON.stringify((l || []).map(c => String(c && c.id != null ? c.id : c)).sort());
+    if (existente && existente.origem === 'monitor' && escopo === 'caixas' && chaves(existente.caixas) === chaves(caixas)) {
+      afetados = { ids: existente.clientes_ids || [], ixc: existente.clientes_ixc || [], total: existente.afetados || 0, clientes: [], bairros: [] };
+    }
+  }
+  if (!afetados) afetados = await incResolverAfetados({
     escopo, projeto_id: inc.projeto_id, projeto_nome: inc.projeto_nome, caixas, poligono
   });
 
@@ -900,4 +940,451 @@ async function incAvisos(id) {
     { headers: sbHeaders() });
   if (!r.ok) throw incErroTabela(r.status, await r.text());
   return { ok: true, avisos: await r.json() };
+}
+
+// ============================================================================
+// MONITOR DE CTO — a rede avisando o dono antes de o cliente ligar
+// ----------------------------------------------------------------------------
+// A cada 3 minutos o pg_cron do Supabase faz POST {acao:"monitor-cto"} com o
+// token guardado em monitor_cto_config (gerado no banco; ninguem precisa ver).
+// Aqui o monitor olha os logins do IXC caixa por caixa:
+//
+//   CAIU = nenhum login da caixa esta online AGORA, pelo menos `min_clientes`
+//          cairam nos ultimos `recentes_min` minutos e todas essas quedas
+//          aconteceram dentro de `janela_min` minutos ("de uma vez so").
+//
+// Login que ja estava fora havia horas (cliente viajando, ONU desligada) nao
+// conta nem a favor nem contra: o que importa e quem estava online e caiu
+// junto. Queda gradual, um cliente de cada vez, nao e falha de caixa.
+//
+// Quando cai, manda UM WhatsApp para os numeros configurados com as caixas
+// atingidas. A resposta ("1" ativa, "2" ignora) chega pelo webhook do MoviTalk
+// (api/atendimento.js), que cria a instabilidade igual a marcacao manual.
+// Depois, quando a maioria volta, o proprio monitor encerra o aviso sozinho.
+//
+// De onde vem a caixa de cada cliente:
+//   1. IXC: radusuarios.id_caixa_ftth (a CTO cadastrada no login);
+//   2. MoviFiber/Campo: ftth_cliente_instalacao, para quem nao tem caixa no IXC.
+// ============================================================================
+const SB_MON_CFG = 'monitor_cto_config';
+const SB_MON_ALE = 'monitor_cto_alertas';
+const MON_TZ = process.env.TZ_ISP || 'America/Fortaleza';
+const MON_IXC_OFFSET = process.env.IXC_TZ_OFFSET || '-03:00';   // horario que o IXC grava
+const MON_PENDENTE_H = 6;            // alerta sem resposta vence depois disso
+const MON_CAIXAS_CANDIDATAS = ['rad_caixa_ftth', 'caixa_ftth', 'ftth_caixa'];
+let _monNomesCaixa = { em: 0, mapa: new Map(), tabela: null };
+
+async function monSb(path, opts = {}) {
+  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${path}`, {
+    method: opts.method || 'GET',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: opts.prefer || 'return=representation' },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body)
+  });
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${txt.slice(0, 300)}`);
+  try { return txt ? JSON.parse(txt) : null; } catch { return null; }
+}
+
+async function monitorConfig() {
+  const r = await monSb(`${SB_MON_CFG}?id=eq.1&select=*`);
+  return (r && r[0]) || null;
+}
+
+/* O token vem do proprio banco (o job do pg_cron le a mesma linha). Comparacao
+   em tempo constante: o endpoint e publico e responde a qualquer um. */
+async function monitorTokenConfere(req) {
+  const recebido = String(req.headers['x-monitor-token'] || '');
+  if (recebido.length < 20) return false;
+  let cfg;
+  try { cfg = await monitorConfig(); } catch { return false; }
+  const esperado = Buffer.from(String((cfg && cfg.token) || ''));
+  const veio = Buffer.from(recebido);          // compara em bytes: acento muda o tamanho
+  if (!esperado.length || esperado.length !== veio.length) return false;
+  return crypto.timingSafeEqual(veio, esperado);
+}
+
+async function monitorEhAdmin(usuario) {
+  if (!usuario || !usuario.id) return false;
+  try {
+    const r = await monSb(`perfis?id=eq.${encodeURIComponent(usuario.id)}&select=perfil`);
+    return !!(r && r[0] && r[0].perfil === 'admin');
+  } catch { return false; }
+}
+
+// "2026-10-18 14:32:10" (hora local do IXC) -> ms. Data zerada = nunca conectou.
+function monIxcData(s) {
+  const t = String(s || '').trim();
+  if (!t || /^0000/.test(t)) return null;
+  const ms = Date.parse(t.replace(' ', 'T') + MON_IXC_OFFSET);
+  return isNaN(ms) ? null : ms;
+}
+function monHora(ms) {
+  return new Date(ms).toLocaleTimeString('pt-BR', { timeZone: MON_TZ, hour: '2-digit', minute: '2-digit' });
+}
+function monDataHora(ms) {
+  return new Date(ms).toLocaleString('pt-BR', { timeZone: MON_TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+}
+function monFone(v) {
+  const d = String(v || '').replace(/\D/g, '');
+  if (!d) return '';
+  return d.startsWith('55') ? d : '55' + d;
+}
+
+/* Nome da caixa no IXC. O nome da tabela muda entre versoes do IXC; testa as
+   candidatas uma vez e guarda qual respondeu. Sem nome, vira "CTO #12". */
+async function monNomesCaixasIxc(ids) {
+  if (Date.now() - _monNomesCaixa.em > 3600e3) _monNomesCaixa = { em: Date.now(), mapa: new Map(), tabela: _monNomesCaixa.tabela || null };
+  const faltam = ids.filter(id => !_monNomesCaixa.mapa.has(id));
+  // '' = nenhuma tabela de caixas respondeu nesta hora: nao insiste a cada passada
+  if (!faltam.length || _monNomesCaixa.tabela === '') return _monNomesCaixa.mapa;
+  const tabelas = _monNomesCaixa.tabela ? [_monNomesCaixa.tabela] : MON_CAIXAS_CANDIDATAS;
+  let achou = false;
+  for (const tb of tabelas) {
+    try {
+      const regs = [];
+      for (let i = 0; i < faltam.length; i += 400) {
+        regs.push(...await ixcListarTudo(tb, { qtype: `${tb}.id`, query: faltam.slice(i, i + 400).join(','), oper: 'IN', sortname: `${tb}.id`, sortorder: 'asc' }));
+      }
+      for (const c of regs) {
+        const nome = String(c.descricao || c.nome || c.identificacao || c.caixa || '').trim();
+        if (nome) _monNomesCaixa.mapa.set(String(c.id), nome);
+      }
+      _monNomesCaixa.tabela = tb; achou = true;
+      break;
+    } catch { /* tabela inexistente nesta versao: tenta a proxima */ }
+  }
+  if (!achou) _monNomesCaixa.tabela = '';
+  // quem nao veio com nome nao e consultado de novo nesta hora
+  for (const id of faltam) if (!_monNomesCaixa.mapa.has(id)) _monNomesCaixa.mapa.set(id, null);
+  return _monNomesCaixa.mapa;
+}
+
+/* Todos os logins monitorados, agrupados por caixa. */
+async function monColetar() {
+  const R = IXC_TB_RAD;
+  // 1) logins com CTO cadastrada no IXC
+  const comCaixa = await ixcListarTudo(R, {
+    qtype: `${R}.id_caixa_ftth`, query: '0', oper: '>', sortname: `${R}.id`, sortorder: 'asc'
+  });
+  // 2) clientes do MoviOne (nome, bairro, ativo) — uma leitura so
+  const clientes = await sbGetAll(`${process.env.SUPABASE_URL}/rest/v1/${SB_CLIENTES}`
+    + `?select=${SB_ID},${SB_NOME},nome,${SB_IXCID},bairro,ativo&${SB_IXCID}=not.is.null`);
+  const porIxc = new Map();
+  for (const c of clientes) porIxc.set(String(c[SB_IXCID]).trim(), c);
+
+  const grupos = new Map();
+  const logins = new Map();          // id do login -> estado (para conferir a volta)
+  const juntar = (chave, nome, projeto, u) => {
+    if (String(u.ativo || 'S').toUpperCase() !== 'S') return;            // login desativado no IXC
+    const cliIxc = String(u[R_CLIENTE] || '').trim();
+    const cli = porIxc.get(cliIxc) || null;
+    if (cli && cli.ativo === false) return;                                 // cliente cancelado
+    const l = {
+      login_id: String(u[R_ID]), cli_ixc: cliIxc || null,
+      cliente_id: cli ? cli[SB_ID] : null,
+      nome: cli ? (cli[SB_NOME] || cli.nome || null) : null,
+      bairro: cli ? (cli.bairro || null) : null,
+      online: String(u[R_ONLINE] || '').toUpperCase() === 'S',
+      fim: monIxcData(u.ultima_conexao_final),
+      motivo: String(u.motivo_desconexao || '').trim() || null,
+    };
+    logins.set(l.login_id, l);
+    if (!grupos.has(chave)) grupos.set(chave, { chave, nome, projeto, logins: [] });
+    const g = grupos.get(chave);
+    if (!g.logins.some(x => x.login_id === l.login_id)) g.logins.push(l);
+  };
+
+  const idsCaixaIxc = [...new Set(comCaixa.map(u => String(u.id_caixa_ftth || '').trim()).filter(v => v && v !== '0'))];
+  const nomes = await monNomesCaixasIxc(idsCaixaIxc).catch(() => new Map());
+  const cobertos = new Set();
+  for (const u of comCaixa) {
+    const cx = String(u.id_caixa_ftth || '').trim();
+    if (!cx || cx === '0') continue;
+    cobertos.add(String(u[R_CLIENTE] || '').trim());
+    juntar('ixc:' + cx, nomes.get(cx) || ('CTO #' + cx), null, u);
+  }
+
+  // 3) quem so tem a caixa no MoviFiber/Campo
+  let vinculos = [];
+  try {
+    vinculos = await sbGetAll(`${process.env.SUPABASE_URL}/rest/v1/${SB_INSTAL}`
+      + `?select=projeto_ftth,caixa_id,caixa_nome,${SB_CLIENTES}!${SB_INSTAL}_cliente_id_fkey(${SB_IXCID})&caixa_id=not.is.null&order=id.asc`);
+  } catch { vinculos = []; }
+  const mf = new Map();    // ixc do cliente -> vinculo
+  for (const v of vinculos) {
+    const c = Array.isArray(v[SB_CLIENTES]) ? v[SB_CLIENTES][0] : v[SB_CLIENTES];
+    const ixcId = c && c[SB_IXCID] != null ? String(c[SB_IXCID]).trim() : '';
+    if (ixcId && !cobertos.has(ixcId)) mf.set(ixcId, v);
+  }
+  if (mf.size) {
+    const ids = [...mf.keys()];
+    for (let i = 0; i < ids.length; i += 400) {
+      const regs = await ixcListarTudo(R, {
+        qtype: `${R}.${R_CLIENTE}`, query: ids.slice(i, i + 400).join(','), oper: 'IN', sortname: `${R}.${R_ID}`, sortorder: 'asc'
+      }).catch(() => []);
+      for (const u of regs) {
+        const v = mf.get(String(u[R_CLIENTE] || '').trim());
+        if (v) juntar('mf:' + v.caixa_id, v.caixa_nome || ('Caixa ' + v.caixa_id), v.projeto_ftth || null, u);
+      }
+    }
+  }
+  const ativosMoviOne = clientes.filter(c => c.ativo === true).length;
+  const comCaixaAtivos = new Set([...logins.values()].map(l => l.cli_ixc).filter(Boolean)).size;
+  return { grupos: [...grupos.values()], logins, cobertura: { clientes_ativos: ativosMoviOne, clientes_com_caixa: comCaixaAtivos, logins: logins.size } };
+}
+
+/* A regra de "caiu de uma vez". Devolve null quando a caixa esta bem. */
+function monAvaliarCaixa(g, cfg, agora) {
+  const mon = g.logins;
+  const online = mon.filter(l => l.online);
+  const lim = agora - cfg.recentes_min * 60e3;
+  const recentes = mon.filter(l => !l.online && l.fim && l.fim >= lim && l.fim <= agora + 120e3);
+  const estado = { total: mon.length, online: online.length, recentes: recentes.length };
+  if (mon.length < cfg.min_clientes) return { ...estado, monitorada: false, caiu: false };
+  if (online.length > 0 || recentes.length < cfg.min_clientes) return { ...estado, monitorada: true, caiu: false };
+  const ts = recentes.map(l => l.fim).sort((a, b) => a - b);
+  const espalhou = ts[ts.length - 1] - ts[0];
+  if (espalhou > cfg.janela_min * 60e3) return { ...estado, monitorada: true, caiu: false, gradual: true };
+  const motivos = {};
+  for (const l of recentes) { const m = l.motivo || 'sem motivo'; motivos[m] = (motivos[m] || 0) + 1; }
+  return { ...estado, monitorada: true, caiu: true, primeira: ts[0], ultima: ts[ts.length - 1], motivos };
+}
+
+function monBairros(logins) {
+  const conta = new Map();
+  for (const l of logins) { const b = String(l.bairro || '').trim(); if (b) conta.set(b, (conta.get(b) || 0) + 1); }
+  return [...conta.entries()].map(([nome, qtd]) => ({ nome, qtd })).sort((a, b) => b.qtd - a.qtd).slice(0, 5);
+}
+
+async function monWaEnviar(fone, texto) {
+  const url = (process.env.EVOLUTION_URL || '').replace(/\/$/, '');
+  const key = process.env.EVOLUTION_APIKEY || '', inst = process.env.EVOLUTION_INSTANCE || '';
+  if (!url || !key || !inst) throw new Error('WhatsApp (Evolution) nao configurado na Vercel');
+  let ultimo = null;
+  for (let i = 1; i <= 3; i++) {
+    try {
+      const r = await fetch(`${url}/message/sendText/${inst}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: key },
+        body: JSON.stringify({ number: monFone(fone), text: texto })
+      });
+      const txt = await r.text();
+      if (r.ok) { let d = {}; try { d = JSON.parse(txt); } catch {} return d?.key?.id || d?.data?.key?.id || d?.messageId || d?.id || null; }
+      ultimo = `Evolution ${r.status}: ${txt.slice(0, 200)}`;
+    } catch (err) { ultimo = err.message; }
+    await new Promise(r2 => setTimeout(r2, i * 2000));
+  }
+  throw new Error(ultimo || 'falha no envio');
+}
+async function monAvisarDonos(cfg, texto) {
+  const fones = (cfg.fones || []).map(monFone).filter(f => f.length >= 12);
+  const ids = [], para = [], erros = [];
+  for (const f of fones) {
+    try { const id = await monWaEnviar(f, texto); if (id) ids.push(id); para.push(f); }
+    catch (err) { erros.push(`${f}: ${err.message}`); }
+  }
+  return { ids, para, erros, semNumero: !fones.length };
+}
+
+function monTextoAlerta(novos, cfg) {
+  const linhas = novos.map(a => {
+    const regiao = (a.bairros || []).slice(0, 2).map(b => b.nome).join(', ');
+    const motivo = Object.entries(a.motivos || {}).sort((x, y) => y[1] - x[1])[0];
+    const min = Math.max(1, Math.round((a.ultima - a.primeira) / 60e3));
+    return `📦 *${a.caixa_nome}*${a.projeto_nome ? ' · ' + a.projeto_nome : ''}${regiao ? ' — ' + regiao : ''}  _(${a.codigo})_\n`
+      + `   ${a.caidos} de ${a.caidos} clientes online caíram às ${monHora(a.primeira)}`
+      + `${a.ultima - a.primeira >= 60e3 ? ` (em ${min} min)` : ' (juntos)'}`
+      + `${a.total_logins > a.caidos ? ` · ${a.total_logins} na caixa` : ''}`
+      + `${motivo ? `\n   motivo: ${motivo[0]}` : ''}`;
+  });
+  const varias = novos.length > 1;
+  return `🚨 *Monitor de CTO — MoviFiber*\n\n`
+    + `${varias ? `${novos.length} caixas ficaram` : 'Uma caixa ficou'} totalmente off-line:\n\n`
+    + linhas.join('\n\n')
+    + `\n\nResponda:\n*1* — ativar o aviso de região off-line para ${varias ? 'essas caixas' : 'esses clientes'}\n*2* — ignorar`
+    + (varias ? `\n(para só uma: *1 ${novos[0].codigo}*)` : '')
+    + `\n\nPrevisão que vai no aviso: ${cfg.previsao_horas ? cfg.previsao_horas + 'h' : 'sem previsão'} (para mudar: *1 2h*)`;
+}
+
+/* O ciclo. `simular` so devolve a situacao das caixas, sem gravar nem avisar. */
+async function monitorCto({ simular = false } = {}) {
+  const cfg = await monitorConfig();
+  if (!cfg) throw new Error('rode a migration do monitor de CTO (tabela monitor_cto_config)');
+  if (!simular && !cfg.ativo) return { ok: true, desligado: true };
+
+  const agora = Date.now();
+  if (!simular) {
+    // trava contra duas passadas ao mesmo tempo (cron atrasado + manual)
+    const limite = new Date(agora - 90e3).toISOString();
+    const pego = await monSb(`${SB_MON_CFG}?id=eq.1&or=(ultima_execucao.is.null,ultima_execucao.lt.${limite})`, {
+      method: 'PATCH', body: { ultima_execucao: new Date(agora).toISOString() }
+    });
+    if (!pego || !pego.length) return { ok: true, pulado: 'outra verificacao em andamento' };
+  }
+
+  const res = { ok: true, em: new Date(agora).toISOString(), novos: [], normalizados: [], erros: [] };
+  let dados;
+  try { dados = await monColetar(); }
+  catch (err) {
+    res.ok = false; res.erros.push('IXC: ' + err.message);
+    if (!simular) await monSb(`${SB_MON_CFG}?id=eq.1`, { method: 'PATCH', prefer: 'return=minimal', body: { ultimo_resultado: res } }).catch(() => {});
+    return res;
+  }
+
+  const situacao = [];
+  const caidas = [];
+  for (const g of dados.grupos) {
+    const av = monAvaliarCaixa(g, cfg, agora);
+    situacao.push({ chave: g.chave, nome: g.nome, projeto: g.projeto, total: av.total, online: av.online, recentes: av.recentes, monitorada: av.monitorada, caiu: av.caiu, gradual: !!av.gradual });
+    if (av.caiu) caidas.push({ g, av });
+  }
+  situacao.sort((a, b) => (b.caiu - a.caiu) || ((a.online / (a.total || 1)) - (b.online / (b.total || 1))) || (b.total - a.total));
+  res.cobertura = { ...dados.cobertura, caixas: dados.grupos.length, monitoradas: situacao.filter(s => s.monitorada).length };
+  res.caidas = caidas.map(c => c.g.nome);
+  if (simular) return { ...res, situacao };
+
+  // ---- alertas que ja existem: nao repetir, e conferir quem voltou ----
+  const desde = new Date(agora - 24 * 3600e3).toISOString();
+  const abertos = await monSb(`${SB_MON_ALE}?select=*&or=(status.in.(pendente,ativado),detectado_em.gte.${desde})&order=detectado_em.desc&limit=300`).catch(() => []) || [];
+
+  // instabilidades ativas (manuais ou do monitor): se a caixa ja esta dentro de uma, nao alerta
+  const incAtivos = await monSb(`${SB_INC}?status=eq.ativo&select=id,clientes_ixc,origem,protocolo`).catch(() => []) || [];
+
+  const novos = [];
+  for (const { g, av } of caidas) {
+    const mesmaQueda = abertos.find(a => a.caixa_chave === g.chave
+      && (['pendente', 'ativado'].includes(a.status) || new Date(a.detectado_em).getTime() >= av.primeira - 60e3));
+    if (mesmaQueda) continue;
+    const ixcs = g.logins.map(l => l.cli_ixc).filter(Boolean);
+    const jaMarcada = incAtivos.some(i => {
+      const lista = new Set((i.clientes_ixc || []).map(String));
+      const dentro = ixcs.filter(x => lista.has(String(x))).length;
+      return ixcs.length && dentro / ixcs.length >= 0.5;
+    });
+    if (jaMarcada) continue;
+    const caidosIds = new Set(g.logins.filter(l => !l.online && l.fim && l.fim >= av.primeira).map(l => l.login_id));
+    novos.push({
+      caixa_chave: g.chave, caixa_nome: g.nome, projeto_nome: g.projeto,
+      total_logins: av.total, caidos: av.recentes,
+      clientes: g.logins.map(l => ({ login_id: l.login_id, cli_ixc: l.cli_ixc, id: l.cliente_id, nome: l.nome, bairro: l.bairro, caiu: caidosIds.has(l.login_id) })),
+      bairros: monBairros(g.logins), motivos: av.motivos,
+      primeira_queda: new Date(av.primeira).toISOString(), ultima_queda: new Date(av.ultima).toISOString(),
+      primeira: av.primeira, ultima: av.ultima,
+    });
+  }
+
+  if (novos.length) {
+    const lote = 'L' + agora.toString(36).toUpperCase();
+    const gravados = await monSb(SB_MON_ALE, {
+      method: 'POST',
+      body: novos.map(n => ({
+        codigo: 'C?', lote, caixa_chave: n.caixa_chave, caixa_nome: n.caixa_nome, projeto_nome: n.projeto_nome,
+        total_logins: n.total_logins, caidos: n.caidos, clientes: n.clientes, bairros: n.bairros, motivos: n.motivos,
+        primeira_queda: n.primeira_queda, ultima_queda: n.ultima_queda, status: 'pendente'
+      }))
+    });
+    // codigo curto e legivel para responder ("1 C17")
+    for (let i = 0; i < (gravados || []).length; i++) {
+      const codigo = 'C' + gravados[i].id;
+      novos[i].id = gravados[i].id; novos[i].codigo = codigo;
+      await monSb(`${SB_MON_ALE}?id=eq.${gravados[i].id}`, { method: 'PATCH', prefer: 'return=minimal', body: { codigo } }).catch(() => {});
+    }
+    const envio = await monAvisarDonos(cfg, monTextoAlerta(novos, cfg));
+    const patch = envio.para.length
+      ? { wa_msg_ids: envio.ids, enviado_para: envio.para, erro_envio: envio.erros.join(' | ') || null }
+      : { status: 'falhou', erro_envio: envio.semNumero ? 'nenhum numero de WhatsApp configurado' : envio.erros.join(' | ') };
+    const ids = novos.map(n => n.id).filter(Boolean);
+    if (ids.length) await monSb(`${SB_MON_ALE}?id=in.(${ids.join(',')})`, { method: 'PATCH', prefer: 'return=minimal', body: patch }).catch(err => res.erros.push(err.message));
+    if (envio.erros.length) res.erros.push(...envio.erros);
+    res.novos = novos.map(n => ({ id: n.id, codigo: n.codigo, caixa: n.caixa_nome, caidos: n.caidos }));
+  }
+
+  // ---- volta: pendente que voltou sozinha, ou aviso ativo que pode encerrar ----
+  const estadoLogin = id => dados.logins.get(String(id));
+  for (const a of abertos.filter(x => ['pendente', 'ativado'].includes(x.status))) {
+    const afetados = (a.clientes || []).filter(c => c.caiu);
+    const base = afetados.length ? afetados : (a.clientes || []);
+    const voltaram = base.filter(c => estadoLogin(c.login_id)?.online).length;
+    const pct = base.length ? voltaram / base.length * 100 : 0;
+    const voltou = base.length > 0 && pct >= cfg.retorno_pct;
+
+    if (a.status === 'pendente') {
+      if (voltou) {
+        await monSb(`${SB_MON_ALE}?id=eq.${a.id}&status=eq.pendente`, { method: 'PATCH', prefer: 'return=minimal',
+          body: { status: 'normalizado', normalizado_em: new Date(agora).toISOString(), voltaram } }).catch(() => {});
+        res.normalizados.push(a.codigo);
+        await monAvisarDonos(cfg, `✅ *${a.caixa_nome}* voltou sozinha (${voltaram} de ${base.length} online). `
+          + `O alerta ${a.codigo} foi cancelado — não precisa responder.`).catch(() => {});
+      } else if (agora - new Date(a.detectado_em).getTime() > MON_PENDENTE_H * 3600e3) {
+        await monSb(`${SB_MON_ALE}?id=eq.${a.id}&status=eq.pendente`, { method: 'PATCH', prefer: 'return=minimal', body: { status: 'expirado' } }).catch(() => {});
+      }
+      continue;
+    }
+
+    // ativado
+    const inc = a.incidente_id ? (await monSb(`${SB_INC}?id=eq.${a.incidente_id}&select=id,status,protocolo`).catch(() => []) || [])[0] : null;
+    if (!inc || inc.status !== 'ativo') {
+      // encerrado a mao no MoviFiber: so fecha o alerta
+      await monSb(`${SB_MON_ALE}?id=eq.${a.id}`, { method: 'PATCH', prefer: 'return=minimal',
+        body: { status: 'normalizado', normalizado_em: new Date(agora).toISOString(), voltaram } }).catch(() => {});
+      continue;
+    }
+    if (voltou && cfg.auto_normalizar) {
+      const quando = new Date(agora).toISOString();
+      await monSb(`${SB_INC}?id=eq.${inc.id}&status=eq.ativo`, { method: 'PATCH', prefer: 'return=minimal',
+        body: { status: 'resolvido', resolvido_em: quando, resolvido_por: 'Monitor de CTO', atualizado_em: quando } }).catch(err => res.erros.push(err.message));
+      await monSb(`${SB_MON_ALE}?id=eq.${a.id}`, { method: 'PATCH', prefer: 'return=minimal',
+        body: { status: 'normalizado', normalizado_em: quando, voltaram } }).catch(() => {});
+      res.normalizados.push(a.codigo);
+      await monAvisarDonos(cfg, `✅ *${a.caixa_nome}* normalizou: ${voltaram} de ${base.length} clientes online de novo.\n`
+        + `Encerrei o aviso ${inc.protocolo || ''} — quem escrever agora segue o atendimento normal.`).catch(() => {});
+    }
+  }
+
+  res.situacao_resumo = situacao.slice(0, 40);
+  await monSb(`${SB_MON_CFG}?id=eq.1`, { method: 'PATCH', prefer: 'return=minimal', body: { ultimo_resultado: res } }).catch(() => {});
+  return res;
+}
+
+async function monitorStatus() {
+  const cfg = await monitorConfig();
+  if (!cfg) throw new Error('rode a migration do monitor de CTO (tabela monitor_cto_config)');
+  const { token, ...semToken } = cfg;
+  const alertas = await monSb(`${SB_MON_ALE}?select=id,codigo,lote,caixa_chave,caixa_nome,projeto_nome,total_logins,caidos,bairros,motivos,primeira_queda,detectado_em,status,respondido_em,respondido_por,incidente_id,normalizado_em,voltaram,erro_envio&order=detectado_em.desc&limit=40`).catch(() => []);
+  return { ok: true, config: semToken, alertas: alertas || [], whatsapp_ok: !!(process.env.EVOLUTION_URL && process.env.EVOLUTION_APIKEY && process.env.EVOLUTION_INSTANCE) };
+}
+
+async function monitorSalvar(c, usuario) {
+  const inteiro = (v, min, max, pad) => { const n = parseInt(v, 10); return isFinite(n) ? Math.min(max, Math.max(min, n)) : pad; };
+  const fones = [...new Set((Array.isArray(c.fones) ? c.fones : String(c.fones || '').split(/[\n,;]+/))
+    .map(monFone).filter(f => f.length >= 12 && f.length <= 13))].slice(0, 5);
+  if (c.ativo === true && !fones.length) throw new Error('informe pelo menos um WhatsApp para receber os alertas');
+  const body = {
+    ativo: c.ativo === true,
+    fones,
+    min_clientes: inteiro(c.min_clientes, 2, 50, 3),
+    janela_min: inteiro(c.janela_min, 2, 60, 10),
+    recentes_min: inteiro(c.recentes_min, 5, 180, 30),
+    previsao_horas: inteiro(c.previsao_horas, 0, 72, 4),
+    gatilho: c.gatilho === 'reclamacao' ? 'reclamacao' : 'qualquer',
+    encerrar: c.encerrar !== false,
+    auto_normalizar: c.auto_normalizar !== false,
+    retorno_pct: inteiro(c.retorno_pct, 50, 100, 80),
+    atualizado_em: new Date().toISOString(),
+    atualizado_por: usuario ? (usuario.nome || usuario.email || null) : null
+  };
+  const r = await monSb(`${SB_MON_CFG}?id=eq.1`, { method: 'PATCH', body });
+  const { token, ...semToken } = (r && r[0]) || body;
+  return { ok: true, config: semToken };
+}
+
+async function monitorTestar(usuario) {
+  const cfg = await monitorConfig();
+  if (!cfg || !(cfg.fones || []).length) throw new Error('salve um WhatsApp antes de testar');
+  const quem = usuario ? (usuario.nome || usuario.email || '') : '';
+  const envio = await monAvisarDonos(cfg, `🧪 *Teste do Monitor de CTO — MoviFiber*\n\n`
+    + `Se esta mensagem chegou, os alertas de CTO off-line vão chegar aqui.\n`
+    + `Quando chegar um alerta de verdade, responda *1* para ativar o aviso aos clientes ou *2* para ignorar.\n\n`
+    + `Para ver as caixas em alerta a qualquer hora, mande *status*.${quem ? `\n\n(teste enviado por ${quem})` : ''}`);
+  if (!envio.para.length) throw new Error(envio.erros.join(' | ') || 'não consegui enviar');
+  return { ok: true, enviado_para: envio.para, erros: envio.erros };
 }

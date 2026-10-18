@@ -918,6 +918,33 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
 .ins-cx input{width:auto;margin:0}
 .ins-cx small{color:var(--text-dim);font-family:'DM Mono',monospace;font-size:10.5px;margin-left:auto}
 .ins-previa{font-size:12.5px;color:var(--text-dim);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+/* ============ MONITOR DE CTO (alerta no WhatsApp do dono) ============ */
+.mon-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.mon-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mon-h h3{margin:0;font-size:14.5px;font-weight:700;flex:1;min-width:min(180px,100%)}
+.mon-st{font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px;text-transform:uppercase}
+.mon-st.on{background:var(--accent-glow);color:var(--accent)}
+.mon-st.off{background:var(--surface2);color:var(--text-dim)}
+.mon-res{font-size:12px;color:var(--text-dim);margin-top:7px;line-height:1.65;overflow-wrap:anywhere}
+.mon-res b{color:var(--text)}
+.mon-al{display:flex;flex-direction:column;gap:6px;margin-top:11px}
+.mon-al-i{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--bg)}
+.mon-al-i .q{flex:1;min-width:min(160px,100%);overflow-wrap:anywhere}
+.mon-al-i .q b{color:var(--text)}
+.mon-al-i small{color:var(--text-dim);font-family:'DM Mono',monospace;font-size:10.5px}
+.mon-s{font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;max-width:100%;text-transform:uppercase;letter-spacing:.4px;background:var(--surface2);color:var(--text-dim)}
+.mon-s.pendente{background:rgba(212,160,39,.18);color:var(--warn)}
+.mon-s.ativado{background:rgba(216,38,30,.16);color:var(--danger)}
+.mon-s.normalizado{background:var(--accent-glow);color:var(--accent)}
+.mon-s.falhou{background:rgba(216,38,30,.16);color:var(--danger)}
+.mon-sit{max-height:300px;overflow:auto;margin-top:10px;border:1px solid var(--border);border-radius:10px}
+.mon-sit table{width:100%;border-collapse:collapse;font-size:12px}
+.mon-sit th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:7px 9px;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim)}
+.mon-sit td{padding:6px 9px;border-top:1px solid var(--border)}
+.mon-sit tr.caiu td{color:var(--danger);font-weight:700}
+.mon-chk{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;padding:7px 2px;cursor:pointer}
+.mon-chk input{width:auto;margin:2px 0 0}
+.mon-chk small{display:block;color:var(--text-dim);font-size:11px;margin-top:2px}
 /* faixa que aparece sobre o mapa enquanto se desenha a área de uma instabilidade */
 #ins-desenho{position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:1400;display:none;
   gap:14px;align-items:center;flex-wrap:wrap;max-width:min(92vw,760px);
@@ -1018,6 +1045,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <div><h1>🔴 Instabilidades</h1><p>Marque a região que está fora do ar. Quem reclamar no WhatsApp recebe o aviso na hora, pelo MoviTalk.</p></div>
         <button class="btn" onclick="abrirIncidente()">+ Marcar instabilidade</button>
       </div>
+      <div id="mon-body"></div>
       <div id="instab-body"></div>
     </div>
     <!-- CADASTROS -->
@@ -1155,6 +1183,15 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div class="md-head"><b id="inc-titulo">🔴 Marcar instabilidade</b><button class="x" onclick="fecharModal('md-incidente')">✕</button></div>
     <div class="md-body" id="inc-body"></div>
     <div class="md-foot" id="inc-foot"></div>
+  </div>
+</div>
+
+<!-- ================= MODAL: MONITOR DE CTO ================= -->
+<div class="modal-bg" id="md-monitor">
+  <div class="modal" style="max-width:640px">
+    <div class="md-head"><b>📡 Monitor de CTO</b><button class="x" onclick="fecharModal('md-monitor')">✕</button></div>
+    <div class="md-body" id="mon-form"></div>
+    <div class="md-foot" id="mon-foot"></div>
   </div>
 </div>
 
@@ -9679,15 +9716,149 @@ function _insDesde(iso){
 }
 function _insEscopoTxt(i){
   if(i.escopo==='area')  return 'Área '+(i.area_nome||'?')+(i.projeto_nome?' · '+i.projeto_nome:'');
-  if(i.escopo==='caixas')return (i.caixas||[]).length+' caixa(s)'+(i.projeto_nome?' · '+i.projeto_nome:'');
+  if(i.escopo==='caixas'){
+    const cx=i.caixas||[];
+    return (cx.length&&cx.length<=2?cx.map(c=>c.nome||c.id).join(', '):cx.length+' caixa(s)')
+      +(i.area_nome?' · '+i.area_nome:'')+(i.projeto_nome?' · '+i.projeto_nome:'');
+  }
   return 'Projeto inteiro'+(i.projeto_nome?' · '+i.projeto_nome:'');
 }
 
 async function initInstab(){
   const b=document.getElementById('instab-body');
   if(b&&!_insLista.length)b.innerHTML='<div class="vazio">Carregando…</div>';
+  recarregarMonitor();
   await recarregarInstab(true);
 }
+/* ═══════════ MONITOR DE CTO ════════════════════════════════════════════════
+   A cada 3 minutos o servidor olha os logins do IXC caixa por caixa. Quando
+   todos os clientes online de uma CTO caem juntos, manda um WhatsApp para os
+   números daqui. Respondendo "1", o MoviTalk ativa a instabilidade da caixa —
+   a mesma que se marca à mão nesta página — e o aviso sai sozinho quando a
+   maioria volta. */
+let _mon=null, _monSit=null;
+const MON_ST={pendente:'aguardando resposta',ativado:'aviso ativo',ignorado:'ignorado',expirado:'sem resposta',normalizado:'normalizou',falhou:'não enviou'};
+async function recarregarMonitor(){
+  try{_mon=await nuvemCall({acao:'monitor-status'})}
+  catch(e){_mon={erro:e.message}}
+  renderMonitor();
+}
+function _monQuando(iso){if(!iso)return '—';const d=new Date(iso);return d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')}
+function _monFone(f){const d=String(f||'').replace(/\D/g,'').replace(/^55/,'');return d.length>=10?'('+d.slice(0,2)+') '+d.slice(2,-4)+'-'+d.slice(-4):f}
+function renderMonitor(){
+  const b=document.getElementById('mon-body'); if(!b)return;
+  if(!_mon){b.innerHTML='';return}
+  if(_mon.erro){
+    b.innerHTML='<div class="mon-card"><div class="mon-h"><h3>📡 Monitor de CTO</h3></div>'
+      +'<div class="mon-res" style="color:var(--danger)">'+_esc(_mon.erro)+'</div></div>';
+    return;
+  }
+  const c=_mon.config||{}, r=c.ultimo_resultado||null, adm=USUARIO&&USUARIO.perfil==='admin';
+  const cob=r&&r.cobertura;
+  const linhaRes=!c.ativo
+    ? 'Desligado. Ligue para receber no WhatsApp quando todos os clientes de uma CTO caírem juntos.'
+    : (r?('Última verificação <b>'+_monQuando(r.em)+'</b>'
+        +(cob?' · <b>'+cob.monitoradas+'</b> CTOs vigiadas (com '+(c.min_clientes||3)+'+ clientes) · <b>'+cob.clientes_com_caixa+'</b> de '+cob.clientes_ativos+' clientes com CTO conhecida':'')
+        +(r.erros&&r.erros.length?'<br><span style="color:var(--danger)">⚠️ '+_esc(r.erros.slice(0,2).join(' | '))+'</span>':''))
+      :'Ligado — a primeira verificação sai em até 3 minutos.')
+      +'<br>Alertas vão para: <b>'+((c.fones||[]).map(_monFone).join(', ')||'—')+'</b>';
+  const al=(_mon.alertas||[]).slice(0,6);
+  b.innerHTML='<div class="mon-card">'
+    +'<div class="mon-h"><h3>📡 Monitor de CTO</h3>'
+      +'<span class="mon-st '+(c.ativo?'on':'off')+'">'+(c.ativo?'ligado':'desligado')+'</span>'
+      +'<button class="btn ghost sm" onclick="verificarMonitor()" title="Ver agora como estão as caixas (não manda alerta)">🔎 Situação agora</button>'
+      +(adm?'<button class="btn sm" onclick="abrirMonitorConfig()">⚙️ Configurar</button>':'')
+    +'</div>'
+    +'<div class="mon-res">'+linhaRes+'</div>'
+    +(al.length?'<div class="mon-al">'+al.map(a=>'<div class="mon-al-i">'
+        +'<span class="mon-s '+_esc(a.status)+'">'+_esc(MON_ST[a.status]||a.status)+'</span>'
+        +'<span class="q"><b>'+_esc(a.caixa_nome||a.caixa_chave)+'</b> · '+(a.caidos||0)+' caíram'
+          +((a.bairros||[]).length?' · '+_esc(a.bairros.slice(0,2).map(x=>x.nome).join(', ')):'')
+          +(a.erro_envio&&a.status==='falhou'?' · <span style="color:var(--danger)">'+_esc(a.erro_envio)+'</span>':'')+'</span>'
+        +'<small>'+_esc(a.codigo||'')+' · '+_monQuando(a.detectado_em)+'</small></div>').join('')+'</div>':'')
+    +'<div id="mon-sit"></div>'
+  +'</div>';
+  if(_monSit)renderMonitorSituacao();
+}
+async function verificarMonitor(){
+  const el=document.getElementById('mon-sit'); if(el)el.innerHTML='<div class="mon-res">Consultando o IXC…</div>';
+  try{_monSit=await nuvemCall({acao:'monitor-verificar'})}
+  catch(e){_monSit={erro:e.message}}
+  renderMonitorSituacao();
+}
+function renderMonitorSituacao(){
+  const el=document.getElementById('mon-sit'); if(!el||!_monSit)return;
+  if(_monSit.erro||(_monSit.erros&&_monSit.erros.length&&!(_monSit.situacao||[]).length)){
+    el.innerHTML='<div class="mon-res" style="color:var(--danger)">⚠️ '+_esc(_monSit.erro||_monSit.erros.join(' | '))+'</div>';return;
+  }
+  const sit=_monSit.situacao||[], cob=_monSit.cobertura||{};
+  if(!sit.length){el.innerHTML='<div class="mon-res">Nenhum cliente com CTO no IXC nem no MoviFiber. Cadastre a caixa no login do cliente (IXC) ou vincule pelo app de campo.</div>';return}
+  el.innerHTML='<div class="mon-res" style="margin-top:10px">Agora: <b>'+(cob.caixas||0)+'</b> caixas com clientes, <b>'+(cob.monitoradas||0)+'</b> vigiadas · '
+      +(sit.some(x=>x.caiu)?'<b style="color:var(--danger)">'+sit.filter(x=>x.caiu).length+' fora do ar</b>':'nenhuma fora do ar ✅')+'</div>'
+    +'<div class="mon-sit"><table><thead><tr><th>Caixa</th><th>Clientes</th><th>Online</th><th>Caíram (recente)</th><th></th></tr></thead><tbody>'
+    +sit.map(x=>'<tr class="'+(x.caiu?'caiu':'')+'"><td>'+_esc(x.nome)+(x.projeto?' <small style="color:var(--text-dim)">'+_esc(x.projeto)+'</small>':'')+'</td>'
+      +'<td>'+x.total+'</td><td>'+x.online+'</td><td>'+x.recentes+'</td>'
+      +'<td>'+(x.caiu?'🔴 caiu':(!x.monitorada?'<small style="color:var(--text-dim)">poucos clientes</small>':(x.gradual?'<small>quedas espalhadas</small>':'')))+'</td></tr>').join('')
+    +'</tbody></table></div>';
+}
+function abrirMonitorConfig(){
+  const c=(_mon&&_mon.config)||{};
+  const f=document.getElementById('mon-form'), ft=document.getElementById('mon-foot');
+  const num=(id,v,min,max,suf)=>'<input id="'+id+'" type="number" min="'+min+'" max="'+max+'" value="'+_esc(v)+'" style="width:100%">'+(suf?'<div class="ins-dica">'+suf+'</div>':'');
+  f.innerHTML=(_mon&&_mon.whatsapp_ok===false?'<div class="info-box" style="border-left:3px solid var(--warn)">O WhatsApp (Evolution) não está configurado no servidor — o alerta não sai até isso ser resolvido.</div>':'')
+    +'<label class="mon-chk"><input type="checkbox" id="mon-ativo" '+(c.ativo?'checked':'')+'><span><b>Monitor ligado</b><small>Verifica as caixas a cada 3 minutos.</small></span></label>'
+    +'<div class="campo"><label>WhatsApp que recebe o alerta</label>'
+      +'<textarea id="mon-fones" rows="2" class="ins-msg" style="min-height:58px" placeholder="(84) 99999-0000 — um número por linha">'+_esc((c.fones||[]).map(_monFone).join('\n'))+'</textarea>'
+      +'<div class="ins-dica">É esse número que responde <b>1</b> (ativar o aviso) ou <b>2</b> (ignorar). Até 5 números.</div></div>'
+    +'<div class="linha2">'
+      +'<div class="campo"><label>Mínimo de clientes</label>'+num('mon-min',c.min_clientes??3,2,50,'Caixa com menos clientes que isso não gera alerta.')+'</div>'
+      +'<div class="campo"><label>De uma vez só (min)</label>'+num('mon-janela',c.janela_min??10,2,60,'Todas as quedas dentro desse intervalo.')+'</div>'
+    +'</div>'
+    +'<div class="linha2">'
+      +'<div class="campo"><label>Previsão no aviso (h)</label>'+num('mon-prev',c.previsao_horas??4,0,72,'0 = "sem previsão fechada". Dá para mudar na resposta: <b>1 2h</b>.')+'</div>'
+      +'<div class="campo"><label>Encerrar ao voltar (%)</label>'+num('mon-ret',c.retorno_pct??80,50,100,'Dos clientes que caíram.')+'</div>'
+    +'</div>'
+    +'<div class="campo"><label>O que o MoviTalk faz com quem escrever</label>'
+      +'<select id="mon-gatilho"><option value="qualquer" '+(c.gatilho!=='reclamacao'?'selected':'')+'>Trava a conversa no aviso até normalizar</option>'
+      +'<option value="reclamacao" '+(c.gatilho==='reclamacao'?'selected':'')+'>Só responde quem reclamar da conexão</option></select></div>'
+    +'<label class="mon-chk"><input type="checkbox" id="mon-encerrar" '+(c.encerrar!==false?'checked':'')+'><span>Encerrar o atendimento após o aviso<small>Igual à marcação manual: o cliente recebe o aviso e o card não ocupa atendente.</small></span></label>'
+    +'<label class="mon-chk"><input type="checkbox" id="mon-auto" '+(c.auto_normalizar!==false?'checked':'')+'><span>Encerrar o aviso sozinho quando a caixa voltar<small>Você recebe um WhatsApp avisando que normalizou.</small></span></label>'
+    +'<div class="info-box" style="margin-top:8px">Como o monitor decide: nenhum cliente da caixa está online <b>agora</b> e as quedas aconteceram juntas nos últimos 30 minutos. Cliente que já estava desligado há horas não conta. A caixa de cada cliente vem do <b>login no IXC</b> (campo Caixa FTTH) ou do vínculo feito no app de campo.</div>'
+    +'<div id="mon-erro" class="info-box" style="display:none;border-left:3px solid var(--danger);color:var(--text)"></div>';
+  ft.innerHTML='<button class="btn ghost" onclick="testarMonitor()" id="mon-btn-teste">🧪 Enviar teste</button>'
+    +'<span style="flex:1"></span><button class="btn ghost" onclick="fecharModal(\'md-monitor\')">Cancelar</button>'
+    +'<button class="btn" id="mon-btn-salvar" onclick="salvarMonitor()">💾 Salvar</button>';
+  abrirModal('md-monitor');
+}
+function _monErro(t){const e=document.getElementById('mon-erro');if(!e)return;e.style.display=t?'':'none';e.innerHTML=t?'⚠️ '+_esc(t):''}
+async function salvarMonitor(){
+  const v=id=>document.getElementById(id);
+  const cfg={ativo:v('mon-ativo').checked,fones:v('mon-fones').value.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean),
+    min_clientes:+v('mon-min').value,janela_min:+v('mon-janela').value,previsao_horas:+v('mon-prev').value,
+    retorno_pct:+v('mon-ret').value,gatilho:v('mon-gatilho').value,encerrar:v('mon-encerrar').checked,auto_normalizar:v('mon-auto').checked};
+  const bt=v('mon-btn-salvar');bt.disabled=true;
+  try{const d=await nuvemCall({acao:'monitor-salvar',config:cfg});
+    _mon=Object.assign(_mon||{},{config:Object.assign({},(_mon&&_mon.config)||{},d.config)});
+    _monErro(null);fecharModal('md-monitor');renderMonitor();
+    toast(cfg.ativo?'Monitor de CTO ligado':'Monitor salvo (desligado)');
+  }catch(e){_monErro(e.message);toast('Não salvou: '+e.message,true)}
+  finally{bt.disabled=false}
+}
+async function testarMonitor(){
+  const bt=document.getElementById('mon-btn-teste');bt.disabled=true;
+  try{await salvarSilencioso();const d=await nuvemCall({acao:'monitor-testar'});_monErro(null);toast('Teste enviado para '+d.enviado_para.map(_monFone).join(', '))}
+  catch(e){_monErro(e.message);toast('Teste: '+e.message,true)}
+  finally{bt.disabled=false}
+}
+// o teste usa os números da tela, mesmo antes de clicar em Salvar
+async function salvarSilencioso(){
+  const v=id=>document.getElementById(id);
+  const fones=v('mon-fones').value.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean);
+  const atual=(_mon&&_mon.config)||{};
+  const d=await nuvemCall({acao:'monitor-salvar',config:Object.assign({},atual,{fones,ativo:!!atual.ativo})});
+  _mon=Object.assign(_mon||{},{config:Object.assign({},atual,d.config)});
+}
+
 async function recarregarInstab(silencioso){
   try{
     const d=await nuvemCall({acao:'inc-listar',status:'todos',limite:80});
@@ -9742,6 +9913,7 @@ function renderInstab(){
     return '<div class="ins-card '+(ativo?'':'ok')+' '+_esc(i.tipo||'')+'">'
       +'<div class="ins-h"><span class="ins-pulso"></span>'
         +'<span class="ins-nome">'+_esc(i.titulo||'Instabilidade')+'</span>'
+        +(i.origem==='monitor'?'<span class="ins-badge" title="Ativada pela resposta ao alerta do Monitor de CTO">📡 monitor</span>':'')
         +'<span class="ins-badge">'+_esc(i.protocolo||'')+'</span></div>'
       +'<div class="ins-meta">'
         +t.icone+' <b>'+t.rotulo+'</b><br>'

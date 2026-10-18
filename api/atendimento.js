@@ -2140,6 +2140,204 @@ async function instabilidadeDoIxcId(e, ixcId) {
   };
 }
 
+// ============================================================================
+// MONITOR DE CTO — a resposta do dono ao alerta
+// ----------------------------------------------------------------------------
+// O MoviFiber (api/movifiber.js, a cada 3 min pelo pg_cron) manda um WhatsApp
+// quando todos os clientes online de uma caixa caem juntos. A resposta chega
+// aqui, pelo webhook:
+//   "1" / "sim" / "ativar"  -> cria a instabilidade (igual à marcação manual
+//                              no MoviFiber) para os clientes da caixa;
+//   "1 2h"                  -> idem, com previsão de 2 horas;
+//   "1 C17"                 -> só o alerta C17 (quando vieram várias caixas);
+//   "2" / "não" / "ignorar" -> ignora;
+//   "status"                -> o que está em alerta agora.
+// Só vale para os números cadastrados no monitor, e "1"/"2" só são comando
+// quando há alerta pendente (ou quando a mensagem cita o alerta) — fora disso
+// o número segue falando com o atendimento normalmente.
+// ============================================================================
+const MON_CFG_MS = 30000;
+const MON_JANELA_H = 6;
+let _monCfgCache = { em: 0, cfg: null };
+
+async function monitorCtoConfig(e) {
+  if (Date.now() - _monCfgCache.em < MON_CFG_MS) return _monCfgCache.cfg;
+  let cfg = null;
+  try { cfg = await sbUm(e, 'monitor_cto_config?id=eq.1&select=ativo,fones,previsao_horas,gatilho,encerrar,retorno_pct,auto_normalizar'); }
+  catch { cfg = null; }
+  _monCfgCache = { em: Date.now(), cfg };
+  return cfg;
+}
+
+function comandoMonitorCto(texto) {
+  const t = normalizarTxt(texto).replace(/[!.?]+$/g, '').replace(/\s+/g, ' ').trim();
+  if (t.length > 40) return null;
+  let m;
+  if ((m = t.match(/^(1|sim|s|ativar|ativa|ativo|ative|confirmo|confirmar|pode ativar)(?:\s+(.*))?$/))) return { acao: 'ativar', resto: m[2] || '' };
+  if ((m = t.match(/^(2|nao|n|ignorar|ignora|ignore)(?:\s+(.*))?$/))) return { acao: 'ignorar', resto: m[2] || '' };
+  if (/^(status|ctos?|monitor|alertas?)$/.test(t)) return { acao: 'status', resto: '' };
+  return null;
+}
+
+// "2h", "2 horas", "90min" -> horas; "c17" -> código do alerta
+function lerRestoMonitor(resto) {
+  const r = { horas: null, codigo: null };
+  const cod = String(resto || '').match(/\bc\s?(\d{1,9})\b/i);
+  if (cod) r.codigo = 'C' + cod[1];
+  const h = String(resto || '').match(/\b(\d{1,2})(?:[.,](\d))?\s*(h|hs|hr|hrs|hora|horas)\b/i);
+  const mi = String(resto || '').match(/\b(\d{2,3})\s*(min|minutos?)\b/i);
+  if (h) r.horas = Number(h[1]) + (h[2] ? Number(h[2]) / 10 : 0);
+  else if (mi) r.horas = Number(mi[1]) / 60;
+  return r;
+}
+
+const MODELO_AVISO_QUEDA =
+  'Olá {{cliente}}! 👋\n\n'
+  + 'Identificamos uma *instabilidade na nossa rede* que afeta a região *{{regiao}}*. '
+  + 'Nossa equipe técnica já está no local trabalhando na correção.\n\n'
+  + '⏱️ Previsão de normalização: *{{previsao}}*\n'
+  + '📄 Protocolo: *{{protocolo}}*\n\n'
+  + 'Não é preciso abrir chamado nem reiniciar seus equipamentos — assim que o serviço for '
+  + 'restabelecido, sua conexão volta sozinha.\n\nObrigado pela compreensão! 💚';
+
+function protocoloIncidente() {
+  return 'INC-' + Date.now().toString(36).toUpperCase().slice(-5)
+    + Math.random().toString(36).slice(2, 4).toUpperCase();
+}
+
+/* Cria a instabilidade de UMA caixa a partir do alerta — os mesmos campos que
+   a marcação manual do MoviFiber grava, para o bot do MoviTalk tratar igual. */
+async function ativarAlertaCto(e, alerta, cfg, { horas, fone }) {
+  const clientes = Array.isArray(alerta.clientes) ? alerta.clientes : [];
+  const ids = [...new Set(clientes.map(c => c.id).filter(v => v != null && /^\d+$/.test(String(v))).map(Number))];
+  const ixc = [...new Set(clientes.map(c => c.cli_ixc).filter(Boolean).map(String))];
+  const bairros = (Array.isArray(alerta.bairros) ? alerta.bairros : []).map(b => b.nome).filter(Boolean);
+  const regiao = bairros.slice(0, 2).join(' e ') || alerta.caixa_nome || 'sua região';
+  const h = horas != null ? horas : Number(cfg.previsao_horas || 0);
+  const agora = new Date();
+  const row = {
+    protocolo: protocoloIncidente(),
+    titulo: `Queda na ${alerta.caixa_nome || 'caixa'} (monitor)`,
+    tipo: 'queda', escopo: 'caixas',
+    projeto_id: null, projeto_nome: alerta.projeto_nome || null,
+    area_nome: regiao, poligono: [],
+    caixas: [{ id: alerta.caixa_chave, nome: alerta.caixa_nome || alerta.caixa_chave }],
+    mensagem: MODELO_AVISO_QUEDA,
+    gatilho: cfg.gatilho === 'reclamacao' ? 'reclamacao' : 'qualquer',
+    encerrar: cfg.encerrar !== false,
+    previsao: h > 0 ? new Date(agora.getTime() + h * 3600e3).toISOString() : null,
+    status: 'ativo',
+    clientes_ids: ids, clientes_ixc: ixc, afetados: Math.max(ids.length, ixc.length),
+    criado_em: agora.toISOString(), atualizado_em: agora.toISOString(),
+    criado_por: `Monitor de CTO (WhatsApp ${fone})`,
+    origem: 'monitor', monitor_alerta_id: alerta.id,
+  };
+  // reserva o alerta ANTES de criar a instabilidade: duas respostas quase juntas
+  // (ou a Evolution repetindo a entrega) não podem abrir duas instabilidades
+  const reservado = await sb(e, `monitor_cto_alertas?id=eq.${alerta.id}&status=eq.pendente`, {
+    method: 'PATCH',
+    body: { status: 'ativado', respondido_em: agora.toISOString(), respondido_por: fone },
+  });
+  if (!Array.isArray(reservado) || !reservado.length) throw new Error('alerta já respondido');
+  let inc;
+  try {
+    inc = await sbUm(e, 'movifiber_incidentes', { method: 'POST', body: row });
+  } catch (err) {
+    await sb(e, `monitor_cto_alertas?id=eq.${alerta.id}`, {
+      method: 'PATCH', prefer: 'return=minimal', body: { status: 'pendente', respondido_em: null, respondido_por: null },
+    }).catch(() => {});
+    throw err;
+  }
+  await sb(e, `monitor_cto_alertas?id=eq.${alerta.id}`, {
+    method: 'PATCH', prefer: 'return=minimal', body: { incidente_id: inc.id },
+  }).catch(err => console.error('[monitor-cto] vínculo do incidente:', err.message));
+  return { inc, regiao, previsao: row.previsao };
+}
+
+async function respostaMonitorCto(e, { fone, texto, waId, citado }) {
+  const cmd = comandoMonitorCto(texto);
+  if (!cmd) return null;
+  const cfg = await monitorCtoConfig(e);
+  if (!cfg || !Array.isArray(cfg.fones) || !cfg.fones.length) return null;
+  const meus = new Set(variantesFone(fone));
+  const doDono = cfg.fones.some(f => variantesFone(f).some(v => meus.has(v)));
+  if (!doDono) return null;
+
+  // a Evolution às vezes entrega a mesma mensagem duas vezes
+  if (waId) {
+    const ja = await sbUm(e, `monitor_cto_alertas?resposta_wa_id=eq.${encodeURIComponent(waId)}&select=id&limit=1`).catch(() => null);
+    if (ja) return { ignorado: 'resposta repetida' };
+  }
+
+  if (cmd.acao === 'status') {
+    const vivos = await sb(e, 'monitor_cto_alertas?status=in.(pendente,ativado)&select=codigo,caixa_nome,caidos,status,detectado_em&order=detectado_em.desc&limit=15').catch(() => []) || [];
+    const corpo = vivos.length
+      ? '📡 *Monitor de CTO — agora*\n\n' + vivos.map(a => `${a.status === 'ativado' ? '🔴 aviso ativo' : '⏳ aguardando resposta'} · *${a.caixa_nome}* (${a.caidos} caídos) _${a.codigo}_`).join('\n')
+      : `📡 *Monitor de CTO*\n\nNenhuma caixa em alerta agora. ✅${cfg.ativo ? '' : '\n⚠️ O monitor está DESLIGADO no MoviFiber.'}`;
+    await waEnviar(e, fone, corpo).catch(err => console.error('[monitor-cto] status:', err.message));
+    return { acao: 'status', alertas: vivos.length };
+  }
+
+  const resto = lerRestoMonitor(cmd.resto);
+  const desde = new Date(Date.now() - MON_JANELA_H * 3600e3).toISOString();
+  let pendentes = await sb(e, `monitor_cto_alertas?status=eq.pendente&detectado_em=gte.${desde}&select=*&order=detectado_em.desc&limit=50`).catch(() => []) || [];
+  // 1) citou o alerta: vale o alerta citado
+  if (citado) {
+    const doCitado = pendentes.filter(a => (a.wa_msg_ids || []).includes(citado));
+    if (doCitado.length) pendentes = doCitado;
+    else {
+      const tratado = await sbUm(e, `monitor_cto_alertas?wa_msg_ids=cs.${encodeURIComponent(JSON.stringify([citado]))}&select=codigo,status&limit=1`).catch(() => null);
+      if (!tratado) return null;     // citou outra coisa: conversa normal
+      await waEnviar(e, fone, `ℹ️ O alerta ${tratado.codigo} já foi tratado (${tratado.status}).`).catch(() => {});
+      return { acao: cmd.acao, ignorado: 'alerta já tratado' };
+    }
+  } else if (resto.codigo) {
+    pendentes = pendentes.filter(a => String(a.codigo).toUpperCase() === resto.codigo.toUpperCase());
+  } else if (pendentes.length) {
+    // 2) sem citar: o último lote enviado
+    const lote = pendentes[0].lote;
+    pendentes = pendentes.filter(a => a.lote === lote);
+  }
+  if (!pendentes.length) return null;   // "1" sem alerta pendente: é conversa normal
+
+  const agora = new Date().toISOString();
+  if (cmd.acao === 'ignorar') {
+    const ids = pendentes.map(a => a.id).join(',');
+    await sb(e, `monitor_cto_alertas?id=in.(${ids})&status=eq.pendente`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { status: 'ignorado', respondido_em: agora, respondido_por: fone, resposta_wa_id: waId },
+    });
+    await waEnviar(e, fone, `👍 Ok, ignorei: ${pendentes.map(a => `*${a.caixa_nome}*`).join(', ')}. `
+      + 'Nenhum aviso foi ativado para os clientes.').catch(() => {});
+    return { acao: 'ignorar', alertas: pendentes.map(a => a.codigo) };
+  }
+
+  // ativar
+  const feitos = [], falhas = [];
+  for (const a of pendentes) {
+    try { feitos.push({ a, ...(await ativarAlertaCto(e, a, cfg, { horas: resto.horas, fone })) }); }
+    catch (err) { falhas.push(`${a.caixa_nome}: ${err.message}`); console.error('[monitor-cto] ativar:', err.message); }
+  }
+  if (feitos.length) {
+    await sb(e, `monitor_cto_alertas?id=eq.${feitos[0].a.id}`, {
+      method: 'PATCH', prefer: 'return=minimal', body: { resposta_wa_id: waId },
+    }).catch(() => {});
+    _incCache = { em: 0, dados: [] };    // o bot passa a enxergar a queda na hora
+  }
+  const linhas = feitos.map(f => `🔴 *${f.a.caixa_nome}* — ${f.regiao}\n`
+    + `   👥 ${f.inc.afetados} clientes · 📄 ${f.inc.protocolo}`
+    + (f.previsao ? ` · ⏱️ previsão ${fmtDataHoraLocal(f.previsao)}` : ''));
+  const corpo = (feitos.length
+    ? `✅ *Aviso de região off-line ativado*\n\n${linhas.join('\n\n')}\n\n`
+      + `${cfg.gatilho === 'reclamacao' ? 'Quem reclamar da conexão' : 'Quem dessas caixas escrever'} no WhatsApp recebe o aviso na hora.`
+      + (cfg.auto_normalizar !== false ? ` Encerro sozinho quando ${cfg.retorno_pct || 80}% voltarem.` : '')
+      + '\nPara mudar a previsão ou encerrar antes: MoviFiber › Instabilidades.'
+    : '⚠️ Não consegui ativar o aviso.')
+    + (falhas.length ? `\n\n⚠️ Falhou: ${falhas.join(' | ')}` : '');
+  await waEnviar(e, fone, corpo).catch(err => console.error('[monitor-cto] confirmação:', err.message));
+  return { acao: 'ativar', ativados: feitos.map(f => f.inc.protocolo), falhas };
+}
+
 const CONECTORES = {
 
   // PORTEIRO: se o número JÁ está vinculado a um cadastro (vínculo feito à mão
@@ -4367,6 +4565,19 @@ async function tratarWebhookInterno(e, body) {
   if (waId) {
     const jaTem = await sbUm(e, `atend_mensagens?wa_id=eq.${encodeURIComponent(waId)}&select=id&limit=1`);
     if (jaTem) return { ok: true, ignorado: 'duplicada' };
+  }
+
+  // ---- resposta do dono a um alerta do MONITOR DE CTO (MoviFiber) ----
+  // Vem antes da conversa de propósito: "1" do dono é comando, não atendimento,
+  // e não pode abrir card no Kanban nem rodar o menu do bot.
+  if (tipo === 'texto' && texto) {
+    try {
+      const citado = msg.extendedTextMessage?.contextInfo?.stanzaId || null;
+      const mon = await respostaMonitorCto(e, { fone, texto, waId, citado });
+      if (mon) return { ok: true, monitor_cto: mon };
+    } catch (err) {
+      console.error('[monitor-cto] resposta:', err.message);
+    }
   }
 
   // acha ou cria a conversa. Uma por telefone, para sempre — igual ao Evotrix:
