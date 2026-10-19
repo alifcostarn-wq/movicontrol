@@ -275,6 +275,7 @@ async function waEnviar(e, fone, texto, opts = {}) {
     throw new Error('Evolution API não configurada (EVOLUTION_URL / EVOLUTION_APIKEY / EVOLUTION_INSTANCE).');
   }
   const numero = normalizarFone(fone);
+  await exigirNaoBloqueado(e, numero);
   const corpo = { number: numero, text: texto };
   if (opts.quoted && opts.quoted.wa_id) {
     corpo.quoted = {
@@ -293,6 +294,175 @@ async function waEnviar(e, fone, texto, opts = {}) {
 // O id que o WhatsApp devolve é o que permite CITAR essa mensagem depois.
 function idDaEvolution(resp) {
   return resp?.key?.id || resp?.data?.key?.id || resp?.messageId || resp?.id || null;
+}
+
+// ============================================================================
+// BLOQUEIO DE CONTATO (spam)
+// ----------------------------------------------------------------------------
+// Número bloqueado não entra: a mensagem dele não abre card, não acorda o bot,
+// não toca bipe e não reabre a conversa — só conta a tentativa. E nada sai
+// para ele (resposta do atendente, régua, campanha, aviso) até desbloquear.
+// A lista mora em atend_bloqueios, que só o servidor escreve; a conversa ganha
+// bloqueado_em para o painel mostrar o estado sem consultar outra tabela.
+// Opcionalmente o número é bloqueado também no próprio WhatsApp (Evolution
+// chat/updateBlockStatus): aí ele nem consegue mandar a mensagem.
+// ============================================================================
+async function contatoBloqueado(e, fone) {
+  const vs = variantesFone(fone).filter(v => /^\d{10,15}$/.test(v));
+  if (!vs.length) return null;
+  try {
+    return await sbUm(e, `atend_bloqueios?fone=in.(${vs.join(',')})&select=id,fone,tentativas&limit=1`);
+  } catch (err) {
+    // tabela ausente ou banco lento: o bloqueio nunca pode derrubar o atendimento
+    console.error('[bloqueio] consulta:', err.message);
+    return null;
+  }
+}
+
+async function exigirNaoBloqueado(e, fone) {
+  if (await contatoBloqueado(e, fone)) {
+    throw new Error('Este número está bloqueado no MoviTalk. Desbloqueie o contato para enviar mensagens a ele.');
+  }
+}
+
+// o que o bloqueado tentou mandar, em uma linha: a lista mostra quem insiste
+function previaBloqueada(msg) {
+  const t = String(msg.conversation || msg.extendedTextMessage?.text || msg.imageMessage?.caption
+    || msg.videoMessage?.caption || msg.documentMessage?.caption || '').replace(/\s+/g, ' ').trim();
+  if (t) return t.slice(0, 200);
+  if (msg.imageMessage) return '[imagem]';
+  if (msg.audioMessage) return '[áudio]';
+  if (msg.videoMessage) return '[vídeo]';
+  if (msg.documentMessage) return '[documento]';
+  if (msg.stickerMessage) return '[figurinha]';
+  if (msg.reactionMessage) return '[reação]';
+  if (msg.locationMessage || msg.liveLocationMessage) return '[localização]';
+  return '[mensagem]';
+}
+
+async function registrarTentativaBloqueada(e, b, msg) {
+  await sb(e, `atend_bloqueios?id=eq.${b.id}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { tentativas: (Number(b.tentativas) || 0) + 1, ultima_tentativa: new Date().toISOString(), ultimo_texto: previaBloqueada(msg || {}) },
+  }).catch(err => console.error('[bloqueio] tentativa:', err.message));
+}
+
+// Bloqueia também no WhatsApp. A Evolution confere se o número existe e acha a
+// forma certa dele (com ou sem o 9), então manda-se o número como está.
+async function bloqueioNoWhatsApp(e, fone, status) {
+  if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) return { ok: false, erro: 'Evolution API não configurada' };
+  try {
+    await evoPost(e, 'chat/updateBlockStatus', { number: normalizarFone(fone), status }, 20000, 2);
+    return { ok: true, erro: null };
+  } catch (err) {
+    return { ok: false, erro: String(err.message || err).slice(0, 300) };
+  }
+}
+
+async function notaNaConversa(e, ids, user, texto) {
+  for (const id of ids.slice(0, 5)) {
+    await sb(e, 'atend_mensagens', {
+      method: 'POST', prefer: 'return=minimal',
+      body: { conversa_id: id, direcao: 'sys', autor_id: user.id, autor_nome: user.nome || null, conteudo: texto },
+    }).catch(err => console.error('[bloqueio] nota:', err.message));
+  }
+}
+
+/* Bloqueia pelo número da conversa (qualquer atendente que veja a conversa)
+   ou por um número digitado (só admin: ele fecharia conversas de qualquer
+   setor). Fecha as conversas desse número em silêncio, para o bot e cancela o
+   que estava agendado — bloqueado não recebe nada. */
+async function bloquearContato(e, user, body) {
+  let conversa = null, fone = '';
+  if (body.conversa_id) {
+    const r = await conversaDoUsuario(e, user, body.conversa_id, 'id,setor,contato_fone,contato_nome');
+    if (r.erro) return r;
+    conversa = r.c; fone = normalizarFone(conversa.contato_fone);
+  } else {
+    if (!user.admin) return { erro: 403, msg: 'Só administrador bloqueia um número digitado. Bloqueie pela conversa (menu ⋯).' };
+    fone = normalizarFone(body.fone);
+  }
+  if (!/^\d{12,15}$/.test(fone)) return { erro: 400, msg: 'Telefone inválido — use DDD e número.' };
+  const vs = variantesFone(fone);
+  if (!conversa) {
+    conversa = await sbUm(e, `atend_conversas?contato_fone=in.(${vs.join(',')})&deleted_at=is.null`
+      + `&select=id,contato_fone,contato_nome&order=ultima_msg_em.desc.nullslast&limit=1`).catch(() => null);
+  }
+  const agora = new Date().toISOString();
+  const motivo = String(body.motivo || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null;
+  const quem = user.nome || user.email || 'atendente';
+
+  // 1) a lista que a entrada de mensagens consulta — vale a partir daqui
+  const salvo = await sbUm(e, 'atend_bloqueios?on_conflict=fone', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: {
+      fone, contato_nome: (conversa && conversa.contato_nome) || null, conversa_id: (conversa && conversa.id) || null,
+      motivo, bloqueado_por: user.id, bloqueado_por_nome: quem, created_at: agora,
+      whatsapp_bloqueado: false, whatsapp_erro: null,
+    },
+  });
+
+  // 2) no próprio WhatsApp (padrão): aí ele nem consegue mandar
+  let whatsapp = { pedido: body.whatsapp !== false, ok: false, erro: null };
+  if (whatsapp.pedido) {
+    whatsapp = { pedido: true, ...(await bloqueioNoWhatsApp(e, fone, 'block')) };
+    await sb(e, `atend_bloqueios?fone=eq.${fone}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { whatsapp_bloqueado: whatsapp.ok, whatsapp_erro: whatsapp.erro },
+    }).catch(() => {});
+  }
+
+  // 3) as conversas desse número saem da frente, sem mandar nada para ele
+  const fechadas = await sb(e, `atend_conversas?contato_fone=in.(${vs.join(',')})&select=id`, {
+    method: 'PATCH',
+    body: {
+      coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, aguardando_desde: null,
+      aviso_inatividade_em: null, bloqueado_em: agora, updated_by: user.id,
+    },
+  }) || [];
+  const ids = fechadas.map(c => c.id);
+
+  // 4) nada sai para ele: bot parado e agendamentos cancelados
+  await sb(e, `atend_sessoes?contato_fone=in.(${vs.join(',')})`, { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {});
+  let agendamentos = 0;
+  if (ids.length) {
+    const cancelados = await sb(e, `atend_agendamentos?conversa_id=in.(${ids.join(',')})&enviado_em=is.null&select=id`, { method: 'DELETE' }).catch(() => []);
+    agendamentos = (cancelados || []).length;
+  }
+
+  await notaNaConversa(e, ids, user, `🚫 Contato bloqueado por ${quem}${motivo ? ' — ' + motivo : ''}`
+    + (whatsapp.ok ? ' · bloqueado também no WhatsApp' : '')
+    + (agendamentos ? ` · ${agendamentos} agendamento(s) cancelado(s)` : ''));
+  return { bloqueio: { ...salvo, whatsapp_bloqueado: whatsapp.ok, whatsapp_erro: whatsapp.erro }, whatsapp, conversas: ids, agendamentos };
+}
+
+async function desbloquearContato(e, user, body) {
+  let fone = '';
+  if (body.conversa_id) {
+    const r = await conversaDoUsuario(e, user, body.conversa_id, 'id,setor,contato_fone');
+    if (r.erro) return r;
+    fone = normalizarFone(r.c.contato_fone);
+  } else if (body.id) {
+    const b = await sbUm(e, `atend_bloqueios?id=eq.${Number(body.id)}&select=fone`);
+    if (!b) return { erro: 404, msg: 'Esse bloqueio não existe mais.' };
+    fone = b.fone;
+  } else {
+    fone = normalizarFone(body.fone);
+  }
+  if (!fone) return { erro: 400, msg: 'Telefone obrigatório.' };
+  const vs = variantesFone(fone);
+  const removidos = await sb(e, `atend_bloqueios?fone=in.(${vs.join(',')})`, { method: 'DELETE' }) || [];
+  // só desfaz no WhatsApp o que foi feito lá
+  const lado = removidos.find(b => b.whatsapp_bloqueado);
+  const whatsapp = lado ? { pedido: true, ...(await bloqueioNoWhatsApp(e, lado.fone, 'unblock')) } : { pedido: false, ok: false, erro: null };
+  const convs = await sb(e, `atend_conversas?contato_fone=in.(${vs.join(',')})&bloqueado_em=not.is.null&select=id`, {
+    method: 'PATCH', body: { bloqueado_em: null, updated_by: user.id },
+  }) || [];
+  const ids = convs.map(c => c.id);
+  await notaNaConversa(e, ids, user, `✅ Contato desbloqueado por ${user.nome || user.email || 'atendente'}`
+    + (whatsapp.ok ? ' · desbloqueado também no WhatsApp' : ''));
+  return { desbloqueado: removidos.length > 0, whatsapp, conversas: ids };
 }
 
 // ============================================================================
@@ -324,6 +494,7 @@ async function waEnviarMidia(e, fone, { base64, tipo = 'document', mimetype, nom
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
   const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!limpo) throw new Error('Arquivo vazio.');
+  await exigirNaoBloqueado(e, fone);
   return evoPost(e, 'message/sendMedia', {
     number: normalizarFone(fone),
     mediatype: tipo,                        // 'document' | 'image' | 'video'
@@ -342,6 +513,7 @@ async function waEnviarAudio(e, fone, base64) {
   if (!e.EVO_URL || !e.EVO_KEY || !e.EVO_INST) throw new Error('Evolution API não configurada.');
   const limpo = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
   if (!limpo) throw new Error('Áudio vazio.');
+  await exigirNaoBloqueado(e, fone);
 
   // a rota aceita apenas number e audio; campo extra é recusado
   return evoPost(e, 'message/sendWhatsAppAudio',
@@ -4523,6 +4695,15 @@ async function tratarWebhookInterno(e, body) {
   const fone = normalizarFone(key.remoteJid || d.from || d.number);
   if (!fone || String(key.remoteJid || '').includes('@g.us')) {
     return { ok: true, ignorado: 'grupo ou remetente inválido' };
+  }
+
+  // ---- contato bloqueado (spam) ------------------------------------------
+  // Antes de tudo que abre card, acorda o bot, toca bipe ou responde: a
+  // mensagem nem é guardada, só conta a tentativa para a lista de bloqueados.
+  const bloqueio = await contatoBloqueado(e, fone);
+  if (bloqueio) {
+    await registrarTentativaBloqueada(e, bloqueio, d.message || {});
+    return { ok: true, ignorado: 'contato bloqueado' };
   }
 
   const msg = d.message || {};
@@ -10510,6 +10691,7 @@ export default async function handler(req, res) {
         if (!novo && !minhas.length) return res.status(200).json({ ok: true, reacao: null, sem_mudanca: true });
 
         const numero = normalizarFone(acesso.c.contato_fone);
+        await exigirNaoBloqueado(e, numero);
         const key = { remoteJid: `${numero}@s.whatsapp.net`, fromMe: m.direcao !== 'in', id: m.wa_id };
         let resp;
         try {
@@ -10928,6 +11110,31 @@ export default async function handler(req, res) {
           ok: true, pesquisa: pesquisaEnviada, silencioso,
           pesquisa_travada: !pesquisaEnviada && !!travadaAte, pesquisa_ultima: travadaAte || null,
         });
+      }
+
+      // ===== Bloqueio de contato (spam) =====
+      case 'contatos.bloqueados': {
+        let lista;
+        try { lista = await sb(e, 'atend_bloqueios?select=*&order=created_at.desc&limit=500'); }
+        catch (err) {
+          if (/atend_bloqueios/.test(err.message) && /exist|42P01|PGRST205/i.test(err.message)) {
+            return res.status(500).json({ ok: false, error: 'Falta criar a tabela atend_bloqueios no banco.' });
+          }
+          throw err;
+        }
+        return res.status(200).json({ ok: true, bloqueados: lista || [], pode_bloquear_numero: !!user.admin });
+      }
+
+      case 'contatos.bloquear': {
+        const r = await bloquearContato(e, user, body);
+        if (r.erro) return res.status(r.erro).json({ ok: false, error: r.msg });
+        return res.status(200).json({ ok: true, ...r });
+      }
+
+      case 'contatos.desbloquear': {
+        const r = await desbloquearContato(e, user, body);
+        if (r.erro) return res.status(r.erro).json({ ok: false, error: r.msg });
+        return res.status(200).json({ ok: true, ...r });
       }
 
       // devolve o controle para o bot

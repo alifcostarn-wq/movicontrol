@@ -2415,6 +2415,45 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .mac-item:hover{background:var(--bg);}
 .mac-item small{display:block;font-size:10.5px;color:var(--text-low);font-weight:400;margin-top:2px;}
 .mac-item.fim{color:var(--green-deep);font-weight:700;}
+/* bloquear fica separado das ações de atendimento: é outra natureza de decisão */
+.mac-sep{height:1px;background:var(--line);margin:5px 6px;}
+.mac-item.perigo{color:var(--red);font-weight:700;}
+/* vermelho fechado nos dois temas: o --red do escuro é claro demais para texto branco (2,5:1) */
+.fbtn.danger.solid{background:#c42020;color:#fff;border-color:#c42020;}
+.fbtn.danger.solid:hover{background:#c42020;color:#fff;filter:brightness(.92);}
+body.dark-mode .fbtn.danger.solid{background:#b91c1c;border-color:#b91c1c;}
+/* ---- contato bloqueado (spam) ---- */
+.m-bloq{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 14px 14px;padding:12px 14px;
+  border-radius:12px;background:var(--red-tint);border:1px solid var(--red-line);color:var(--text);font-size:12.5px;line-height:1.5;}
+.m-bloq .mbq-t{flex:1;min-width:min(220px,100%);}
+.m-bloq .mbq-t b{color:var(--red-txt);}
+.m-bloq small{display:block;color:var(--text-mid);font-size:11.5px;margin-top:2px;}
+/* a barra de digitação continua no DOM (a fiação do modal conta com ela), só some */
+.m-composer.bloq{display:none;}
+.bq-check{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1.5px solid var(--line);border-radius:11px;
+  cursor:pointer;background:var(--card);margin-top:12px;font-size:12.5px;line-height:1.45;}
+.bq-check input{margin-top:2px;accent-color:var(--red);flex-shrink:0;}
+.bq-check small{display:block;color:var(--text-mid);font-size:11.5px;margin-top:2px;}
+.bq-efeitos{margin:0;padding-left:18px;font-size:12px;color:var(--text-mid);line-height:1.65;}
+.bq-efeitos b{color:var(--text);}
+.bq-lista{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+.bq-item{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;background:var(--card);}
+.bq-item .bq-ico{font-size:18px;line-height:1.2;}
+.bq-meio{flex:1;min-width:min(240px,100%);font-size:12px;color:var(--text-mid);line-height:1.6;overflow-wrap:anywhere;}
+.bq-nome{font-size:13.5px;font-weight:800;color:var(--text);}
+.bq-nome span{font-weight:600;color:var(--text-mid);font-size:12px;margin-left:6px;}
+.bq-tent{margin-top:4px;}
+.bq-tent q{color:var(--text);font-style:italic;}
+.bq-wa{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:4px;
+  background:var(--chip);color:var(--text-mid);}
+.bq-wa.on{background:var(--red-soft);color:var(--red-txt);}
+.bq-novo{border:1px dashed var(--line);border-radius:12px;padding:12px 14px;margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.bq-novo input[type=text]{flex:1;min-width:min(170px,100%);border:1px solid var(--line);border-radius:9px;padding:9px 12px;
+  font-family:inherit;font-size:12.5px;outline:none;background:var(--card);color:var(--text);}
+.bq-novo input[type=text]:focus{border-color:var(--green);}
+@media (max-width:860px){.bq-novo input[type=text]{font-size:16px;min-height:44px;}.bq-novo .fbtn{min-height:44px;}}
+.bq-novo label{font-size:12px;color:var(--text-mid);display:flex;gap:6px;align-items:center;}
 /* --- cadastro do IXC --- */
 .cix-box{border:1px solid var(--line);border-radius:12px;padding:15px 17px;margin-top:12px;background:var(--card);}
 .cix-t{font-weight:800;font-size:13.5px;margin-bottom:6px;}
@@ -3710,6 +3749,12 @@ const api = {
   async devolverBot(c){
     await chamar('conversas.devolver_bot', { conversa_id:c.id });
   },
+  async bloquear(c, op){
+    return await chamar('contatos.bloquear', { conversa_id:c.id, motivo:op.motivo||null, whatsapp: op.whatsapp!==false }, 40000);
+  },
+  async desbloquear(c){
+    return await chamar('contatos.desbloquear', { conversa_id:c.id }, 40000);
+  },
   async buscarClientes(termo, fone){
     const j = await chamar('clientes.buscar', { termo, ...(fone?{fone}:{}) });
     // `sincronizou` só vem quando a busca local não achou nada e o servidor
@@ -3821,6 +3866,8 @@ function mapearConversa(c){
     atendenteId: c.atendente_id||null,
     setor: c.setor||null, preview: c.ultima_msg||'', botAtivo: c.bot_ativo,
     asnPendente: !!c.asn_pendente,
+    // contato bloqueado (spam): as mensagens dele não entram e nada sai para ele
+    bloqueadoEm: c.bloqueado_em || null,
     filaDesde: c.fila_desde||null, assumidoEm: c.assumido_em||null,
     avatarUrl: c.avatar_url||null, avatarEm: c.avatar_em||null,
     cliente:{
@@ -5040,6 +5087,7 @@ function esperaClasse(c){
 function cardHTML(c,col){
   const [cls,lbl]=statusBadge(col);
   const flags=[];
+  if(c.bloqueadoEm) flags.push('<span class="cc-tag risk" title="Contato bloqueado: as mensagens deste número não entram no MoviTalk">🚫 CONTATO BLOQUEADO</span>');
   if(c.cliente.bloqueado) flags.push('<span class="cc-tag risk">BLOQUEADO</span>');
   else if(c.cliente.atraso>0) flags.push(`<span class="cc-tag risk">ATRASADO ${c.cliente.atraso}D</span>`);
   if(c.cliente.recorrente) flags.push(`<span class="cc-tag warn">${esc(c.cliente.recorrente.toUpperCase())}</span>`);
@@ -8384,6 +8432,125 @@ const ST_VIDEO_MAX = 2.6 * 1024 * 1024;
    atendimento em que perguntar a nota é fora de hora: cliente irritado que
    acabou de ser desbloqueado, conversa que virou reclamação, teste da equipe.
    Devolve { mensagem, pesquisa } ou null se cancelar. */
+/* ═══════════ BLOQUEAR CONTATO (spam) ═══════════════════════════════════════
+   O servidor descarta tudo o que chega do número bloqueado (não abre card,
+   não acorda o bot, não bipa) e recusa qualquer envio para ele. Aqui ficam o
+   diálogo, o desbloqueio e a lista em Configurações › Bloqueados. */
+function foneBR(f){
+  const d=String(f||'').replace(/\D/g,'');
+  const m=d.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : (d ? '+'+d : '');
+}
+function perguntarBloqueio(c){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='tr-overlay';
+    ov.innerHTML=`<div class="pn-modal" style="width:min(500px,100%);">
+      <div class="pn-head"><h3>🚫 Bloquear contato</h3><button class="pn-x" id="bqX">✕</button></div>
+      <div class="pn-body">
+        <div style="font-size:13.5px;font-weight:800;margin-bottom:2px">${esc(c.nome)}</div>
+        <div style="font-size:12px;color:var(--text-mid);margin-bottom:12px">${esc(foneBR(c.fone)||c.fone)}</div>
+        <ul class="bq-efeitos">
+          <li>As mensagens deste número <b>não entram mais</b>: não abrem card, não acionam o bot e não tocam aviso.</li>
+          <li>A conversa vai para <b>Resolvidos</b> sem mandar nada para ele.</li>
+          <li><b>Nada é enviado</b> para este número (resposta, cobrança, campanha, aviso) enquanto estiver bloqueado.</li>
+        </ul>
+        <label class="bq-check"><input type="checkbox" id="bqWa" checked>
+          <span><b>Bloquear também no WhatsApp</b>
+          <small>Ele nem consegue mandar mensagem para a empresa. Desbloquear aqui desfaz lá também.</small></span></label>
+        <div class="flow-field" style="margin-top:12px;margin-bottom:4px">
+          <label for="bqMotivo">Motivo <span style="font-weight:600;color:var(--text-low)">(opcional)</span></label>
+          <input id="bqMotivo" type="text" maxlength="200" list="bqMotivos" placeholder="spam, golpe, propaganda…">
+          <datalist id="bqMotivos"><option value="Spam"><option value="Golpe"><option value="Propaganda"><option value="Mensagens ofensivas"></datalist>
+        </div>
+      </div>
+      <div class="fz-foot">
+        <button class="fbtn" id="bqCancel">Cancelar</button>
+        <button class="fbtn danger solid" id="bqOk">🚫 Bloquear</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const fechar=v=>{ ov.remove(); document.removeEventListener('keydown', tecla); resolve(v); };
+    const tecla=ev=>{ if(ev.key==='Escape') fechar(null); };
+    document.addEventListener('keydown', tecla);
+    ov.querySelector('#bqX').onclick=()=>fechar(null);
+    ov.querySelector('#bqCancel').onclick=()=>fechar(null);
+    ov.onclick=ev=>{ if(ev.target===ov) fechar(null); };
+    ov.querySelector('#bqOk').onclick=()=>fechar({
+      motivo: ov.querySelector('#bqMotivo').value.trim(),
+      whatsapp: ov.querySelector('#bqWa').checked,
+    });
+    ov.querySelector('#bqMotivo').focus();
+  });
+}
+async function desbloquearDaConversa(c){
+  if(!confirm('Desbloquear '+c.nome+'?\n\nAs mensagens deste número voltam a chegar no MoviTalk e ele pode receber mensagens de novo.')) return;
+  try{
+    const r=await api.desbloquear(c);
+    c.bloqueadoEm=null;
+    if(modalId===c.id) openModal(c.id);
+    renderAll();
+    toast('Contato desbloqueado'+(r.whatsapp&&r.whatsapp.ok?' (também no WhatsApp)':''));
+  }catch(err){ toast('Falha: '+err.message); }
+}
+async function renderBloqueados(body){
+  body.innerHTML=`<div class="vsub">Números bloqueados não entram no MoviTalk: a mensagem não abre conversa, não aciona o bot e não toca aviso. E nada é enviado para eles até desbloquear. Para bloquear, abra a conversa e use o menu <b>⋯ › Bloquear contato</b>.</div>
+    <div id="bqLista"><div class="pn-load">Carregando…</div></div>`;
+  const alvo=$('#bqLista');
+  let j;
+  try{ j=await chamar('contatos.bloqueados',{}); }
+  catch(e){ alvo.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
+  if(!body.isConnected) return;
+  const lista=j.bloqueados||[];
+  const itens=lista.map(b=>{
+    const tent=Number(b.tentativas)||0;
+    return `<div class="bq-item">
+      <span class="bq-ico">🚫</span>
+      <div class="bq-meio">
+        <div class="bq-nome">${esc(b.contato_nome||foneBR(b.fone)||b.fone)}${b.contato_nome?`<span>${esc(foneBR(b.fone)||b.fone)}</span>`:''}</div>
+        <div>bloqueado em ${esc(fmtQuandoISO(b.created_at))}${b.bloqueado_por_nome?' por '+esc(b.bloqueado_por_nome):''}${b.motivo?' · '+esc(b.motivo):''}
+          ${b.whatsapp_bloqueado?'<span class="bq-wa on">também no WhatsApp</span>':`<span class="bq-wa" title="${esc(b.whatsapp_erro||'')}">${b.whatsapp_erro?'só no MoviTalk (o WhatsApp recusou)':'só no MoviTalk'}</span>`}</div>
+        <div class="bq-tent">${tent
+          ? `${tent} ${tent===1?'tentativa barrada':'tentativas barradas'}${b.ultima_tentativa?' · última em '+esc(fmtQuandoISO(b.ultima_tentativa)):''}${b.ultimo_texto?`: <q>${esc(String(b.ultimo_texto).slice(0,120))}</q>`:''}`
+          : 'nenhuma mensagem desde o bloqueio'}</div>
+      </div>
+      <button class="fbtn" data-desbloq="${b.id}">Desbloquear</button>
+    </div>`;
+  }).join('');
+  alvo.innerHTML=(lista.length
+      ? `<div class="bq-lista">${itens}</div>`
+      : `<div class="lista-vazia" style="margin-top:14px">Nenhum contato bloqueado.</div>`)
+    + (j.pode_bloquear_numero ? `<div class="bq-novo">
+        <input type="text" id="bqFone" placeholder="Bloquear um número: (84) 99999-0000" inputmode="tel">
+        <input type="text" id="bqMot" placeholder="motivo (opcional)" style="flex:0 1 180px">
+        <label><input type="checkbox" id="bqWa2" checked> também no WhatsApp</label>
+        <button class="fbtn danger solid" id="bqAdd">🚫 Bloquear</button></div>` : '');
+  alvo.querySelectorAll('[data-desbloq]').forEach(bt=>bt.onclick=async()=>{
+    const b=lista.find(x=>String(x.id)===bt.dataset.desbloq);
+    if(!b || !confirm('Desbloquear '+(b.contato_nome||foneBR(b.fone))+'?\n\nAs mensagens deste número voltam a chegar no MoviTalk.')) return;
+    bt.disabled=true;
+    try{
+      const r=await chamar('contatos.desbloquear',{ id:b.id }, 40000);
+      toast('Contato desbloqueado'+(r.whatsapp&&r.whatsapp.ok?' (também no WhatsApp)':''));
+      await recarregarConversas().catch(()=>{});
+      renderBloqueados(body);
+    }catch(e){ bt.disabled=false; toast('Falha: '+e.message); }
+  });
+  const add=$('#bqAdd');
+  if(add) add.onclick=async()=>{
+    const fone=$('#bqFone').value.trim();
+    if(fone.replace(/\D/g,'').length<10){ toast('Informe o número com DDD'); return; }
+    add.disabled=true;
+    try{
+      const r=await chamar('contatos.bloquear',{ fone, motivo:$('#bqMot').value.trim()||null, whatsapp:$('#bqWa2').checked }, 40000);
+      const wa=r.whatsapp||{};
+      toast(wa.pedido&&!wa.ok?'Bloqueado no MoviTalk. No WhatsApp não deu: '+(wa.erro||'erro'):'Número bloqueado');
+      await recarregarConversas().catch(()=>{});
+      renderBloqueados(body);
+    }catch(e){ add.disabled=false; toast('Falha: '+e.message); }
+  };
+}
+
 function perguntarFinalizar(c){
   return new Promise(resolve=>{
     const ov=document.createElement('div');
@@ -9438,6 +9605,10 @@ function restaurarComposer(vivo){
 function abrirMenuAcoes(c, ancora){
   document.querySelectorAll('.mac-pop').forEach(p=>p.remove());
   const itens = [];
+  // contato bloqueado: a única coisa que faz sentido é desfazer o bloqueio
+  if(c.bloqueadoEm){
+    itens.push(`<button class="mac-item" id="mDesbloquear">✅ <span>Desbloquear contato<small>as mensagens dele voltam a chegar</small></span></button>`);
+  } else {
   itens.push(`<button class="mac-item" id="mTransferir">🔄 <span>Transferir de setor</span></button>`);
   // Assumir NÃO entra aqui: ele está no cabeçalho quando o bot está ligado.
   // Dois botões com o mesmo id fariam o segundo nunca receber o clique.
@@ -9448,6 +9619,9 @@ function abrirMenuAcoes(c, ancora){
   }
   if(c.col!=='resolvidos')
     itens.push(`<button class="mac-item fim" id="mFinalizar">✅ <span>Finalizar atendimento</span></button>`);
+  itens.push(`<div class="mac-sep"></div>`);
+  itens.push(`<button class="mac-item perigo" id="mBloquear">🚫 <span>Bloquear contato<small>spam: este número para de chegar aqui</small></span></button>`);
+  }
 
   const pop = document.createElement('div');
   pop.className = 'mac-pop';
@@ -9633,7 +9807,7 @@ function openModal(id){
            quatro botões que quase nunca são usados ao mesmo tempo. Foram para
            o menu ⋯. Fica só "Assumir", que com o bot ligado é a porta para
            qualquer outra coisa: sem assumir, o atendente não fala. -->
-      ${c.botAtivo!==false ? `<button class="m-acao solid" id="mAssumir">Assumir</button>` : ''}
+      ${c.botAtivo!==false && !c.bloqueadoEm ? `<button class="m-acao solid" id="mAssumir">Assumir</button>` : ''}
       <button class="m-close" id="mBuscar" title="Buscar nesta conversa (Ctrl+F)">🔍</button>
       <button class="m-close" id="mAcoes" title="Mais ações desta conversa" aria-haspopup="true">⋯</button>
       <button class="ficha-toggle" id="fichaAbrir" title="Mostrar dados do cliente">‹</button>
@@ -9711,7 +9885,11 @@ function openModal(id){
       }).join(''); })()}
     </div>
     <div id="mReplyBar"></div>
-    <div class="m-composer">
+    ${c.bloqueadoEm ? `<div class="m-bloq" id="mBloqFaixa">
+      <span class="mbq-t">🚫 <b>Contato bloqueado</b> desde ${esc(fmtQuandoISO(c.bloqueadoEm))}
+        <small>As mensagens deste número não entram no MoviTalk e nada é enviado para ele.</small></span>
+      <button class="fbtn" id="mDesbloq2" type="button">Desbloquear</button></div>` : ''}
+    <div class="m-composer${c.bloqueadoEm?' bloq':''}">
       <!-- os três recursos saem de baixo de um botão só: lado a lado eles
            empurravam o campo de texto, que é onde o atendente passa o tempo -->
       <div class="mais-wrap">
@@ -10459,8 +10637,27 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
         else toast('Atendimento finalizado');
       }catch(err){ bFim.disabled=false; toast('Falha: '+err.message); }
     };
+
+    const bBloq=$('#mBloquear');
+    if(bBloq) bBloq.onclick=async()=>{
+      const op=await perguntarBloqueio(c);
+      if(!op) return;
+      try{
+        const r=await api.bloquear(c, op);
+        c.bloqueadoEm=new Date().toISOString(); c.col='resolvidos'; c.botAtivo=true; c.unread=0;
+        closeModal(); renderAll();
+        const wa=r.whatsapp||{};
+        toast(wa.pedido && !wa.ok
+          ? 'Bloqueado no MoviTalk. No WhatsApp não deu: '+(wa.erro||'erro')
+          : 'Contato bloqueado'+(wa.ok?' aqui e no WhatsApp':'')+' — as mensagens dele não chegam mais');
+      }catch(err){ toast('Falha: '+err.message); }
+    };
+    const bDesbl=$('#mDesbloquear');
+    if(bDesbl) bDesbl.onclick=()=>desbloquearDaConversa(c);
   }
   ligarBotoesAcao();
+  const bDesbl2=$('#mDesbloq2');
+  if(bDesbl2) bDesbl2.onclick=()=>desbloquearDaConversa(c);
 
   // o menu ⋯ cria os botões na hora; religar logo depois é o que faz eles
   // funcionarem no primeiro clique, sem precisar reabrir
@@ -10898,6 +11095,7 @@ function renderConversasTela(a){
     const dia = cvDia(c.ultimaEm);
     if(dia !== ultimoDia){ sep = `<div class="cv-dia">${esc(dia)}</div>`; ultimoDia = dia; }
     const flags = [];
+    if(c.bloqueadoEm) flags.push('<span class="cc-tag risk" title="Contato bloqueado: as mensagens deste número não entram no MoviTalk">🚫 CONTATO BLOQUEADO</span>');
     if(c.cliente.bloqueado) flags.push('<span class="cc-tag risk">BLOQUEADO</span>');
     else if(c.cliente.atraso>0) flags.push(`<span class="cc-tag risk">ATRASADO ${c.cliente.atraso}D</span>`);
     if(c.cliente.lead) flags.push('<span class="cc-tag">lead</span>');
@@ -11131,6 +11329,7 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='iabase'?'on':''}" data-tab="iabase">🤖 IA</div>`:''}
         <div class="cfg-tab ${configTab==='atalhos'?'on':''}" data-tab="atalhos">⚡ Atalhos</div>
         <div class="cfg-tab ${configTab==='etiquetas'?'on':''}" data-tab="etiquetas">🏷️ Etiquetas</div>
+        <div class="cfg-tab ${configTab==='bloqueados'?'on':''}" data-tab="bloqueados">🚫 Bloqueados</div>
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='tempos'?'on':''}" data-tab="tempos">⏱ Tempos do atendimento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='horarios'?'on':''}" data-tab="horarios">🕐 Horário de funcionamento</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='equipe'?'on':''}" data-tab="equipe">👥 Equipe e setores</div>`:''}
@@ -11167,6 +11366,7 @@ function renderAux(){
     }
     else if(configTab==='atalhos'){ renderAtalhos(body, true); }
     else if(configTab==='etiquetas'){ renderEtiquetas(body, true); }
+    else if(configTab==='bloqueados'){ renderBloqueados(body); }
     else if(configTab==='tempos' && USUARIO&&USUARIO.admin){ renderTempos(body); }
     else if(configTab==='iabase' && USUARIO&&USUARIO.admin){ renderBaseIA(body); }
     else if(configTab==='horarios' && USUARIO&&USUARIO.admin){ renderHorarios(body); }
