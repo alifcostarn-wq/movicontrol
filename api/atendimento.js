@@ -1196,6 +1196,154 @@ async function faturasDoCliente(e, ixcId, rp = 100) {
   return regs.slice().sort((a, b) => emMs(a) - emMs(b));
 }
 
+/* ===== NOTA FISCAL DA FATURA =====
+   Nomes conferidos no conector oficial do IXC (n8n-nodes-ixcprovedor): a
+   fatura (fn_areceber) aponta para a nota emitida em id_nota_gerada — e em
+   _opc2.._opc4 quando o contrato emite mais de um documento (ex.: NFCom do
+   SCM e NFS-e do SVA) — ou em id_nf_gerada / id_nf_opcional2..4; id_saida é a
+   venda que originou o título. A nota é uma venda (vd_saida) com numero_nf, e
+   o PDF sai de imprimir_nota { id, base64 }. Venda sem número ou cancelada não
+   é nota disponível: muita empresa só emite a nota depois do pagamento. */
+const NF_CAMPOS_FATURA = ['id_nota_gerada', 'id_nota_gerada_opc2', 'id_nota_gerada_opc3', 'id_nota_gerada_opc4',
+  'id_nf_gerada', 'id_nf_opcional2', 'id_nf_opcional3', 'id_nf_opcional4', 'id_saida'];
+
+function idsNotaDaFatura(f) {
+  const ids = [];
+  for (const k of NF_CAMPOS_FATURA) {
+    const v = String((f && f[k]) ?? '').trim();
+    if (/^\d+$/.test(v) && Number(v) > 0 && !ids.includes(v)) ids.push(v);
+  }
+  return ids;
+}
+
+// cancelada = data_cancelamento preenchida. O status da venda não entra: o
+// significado das letras dele nesse formulário não está documentado, e ler
+// "C" como cancelada esconderia todas as notas se ali ele quiser dizer outra coisa
+function notaEmitida(v) {
+  const numero = String(v.numero_nf ?? '').trim();
+  const cancelada = String(v.data_cancelamento ?? '').trim();
+  return !!numero && numero !== '0' && (!cancelada || /^0000/.test(cancelada));
+}
+
+function resumoNota(v) {
+  return {
+    id: String(v.id),
+    numero: String(v.numero_nf).trim(),
+    serie: String(v.serie ?? '').trim() || null,
+    modelo: String(v.modelo_nf ?? '').trim() || null,
+    emissao: fmtDataBR(parseDataIXC(v.data_emissao)),
+    valor: numeroIXC(v.valor_total),
+  };
+}
+
+/* As notas disponíveis de várias faturas numa consulta só ao IXC. O erro é o
+   motivo que o IXC deu (ex.: usuário da API sem permissão em "Venda"), para a
+   tela dizer o que liberar em vez de fingir que não há nota. */
+async function notasDasFaturas(e, faturas) {
+  const porFatura = new Map();
+  const ids = new Map((faturas || []).map(f => [String(f.id), idsNotaDaFatura(f)]));
+  const todos = [...new Set([...ids.values()].flat())];
+  if (!todos.length) return { porFatura, erro: null };
+  const vendas = new Map();
+  try {
+    for (let i = 0; i < todos.length; i += 200) {
+      const d = await ixc(e, 'vd_saida', {
+        qtype: 'vd_saida.id', query: todos.slice(i, i + 200).join(','), oper: 'IN',
+        rp: '1000', sortname: 'vd_saida.id', sortorder: 'asc',
+      });
+      if (d && d.type === 'error') throw new Error(d.message || 'o IXC recusou a consulta das notas');
+      for (const v of (d && d.registros) || []) vendas.set(String(v.id), v);
+    }
+  } catch (err) {
+    return { porFatura, erro: String(err.message || err).slice(0, 200) };
+  }
+  for (const [fid, lista] of ids) {
+    const notas = lista.map(id => vendas.get(id)).filter(v => v && notaEmitida(v)).map(resumoNota);
+    if (notas.length) porFatura.set(fid, notas);
+  }
+  return { porFatura, erro: null };
+}
+
+// as notas de UMA fatura, conferindo que ela é do cliente da conversa:
+// nota fiscal tem nome, documento e endereço de quem paga
+async function notasDaFatura(e, faturaId, clienteIxc) {
+  if (!clienteIxc) return { notas: [], erro: 'vincule o cadastro do cliente a esta conversa antes' };
+  const d = await ixc(e, 'fn_areceber', { qtype: 'fn_areceber.id', query: String(faturaId), oper: '=', rp: '1' });
+  const f = ((d && d.registros) || [])[0];
+  if (!f) return { notas: [], erro: 'fatura não encontrada no IXC' };
+  if (String(f.id_cliente) !== String(clienteIxc)) return { notas: [], erro: 'esta fatura não é do cliente desta conversa' };
+  const r = await notasDasFaturas(e, [f]);
+  return { notas: r.porFatura.get(String(f.id)) || [], erro: r.erro };
+}
+
+// NFS-e de prefeitura às vezes vem só como link, sem PDF
+function acharLinkNota(obj, prof = 0) {
+  if (!obj || prof > 6) return null;
+  if (typeof obj === 'string') return /^https?:\/\/\S+$/i.test(obj.trim()) ? obj.trim() : null;
+  if (Array.isArray(obj)) {
+    for (const it of obj) { const r = acharLinkNota(it, prof + 1); if (r) return r; }
+    return null;
+  }
+  if (typeof obj === 'object') {
+    for (const v of Object.values(obj)) { const r = acharLinkNota(v, prof + 1); if (r) return r; }
+  }
+  return null;
+}
+
+async function arquivoDaNota(e, nota) {
+  const r = await ixc(e, 'imprimir_nota', { id: String(nota.id), base64: 'S' }, 'listar');
+  if (r && r.type === 'error') return { erro: String(r.message || 'o IXC recusou a impressão da nota') };
+  const b64 = String(acharBase64(r) || '').replace(/\s+/g, '');
+  // só sai o que for PDF de verdade: "%PDF" em base64 começa com JVBER
+  if (b64.startsWith('JVBER')) return { base64: b64 };
+  const link = acharLinkNota(r);
+  if (link) return { link };
+  return { erro: 'o IXC não devolveu o PDF desta nota' };
+}
+
+function rotuloNota(n) {
+  return `Nota fiscal nº ${n.numero}${n.serie ? ` (série ${n.serie})` : ''}`;
+}
+
+/* Manda as notas da fatura pelo WhatsApp (o PDF; ou o link, quando o IXC só
+   tem o link). Devolve o que saiu e o que não deu — nunca derruba o envio da
+   cobrança que veio antes. */
+async function enviarNotasFiscais(e, conversaId, fone, notas, autorId) {
+  const enviadas = [], falhas = [];
+  for (const n of notas.slice(0, 4)) {
+    try {
+      const arq = await arquivoDaNota(e, n);
+      if (!arq.base64 && !arq.link) { falhas.push(`nº ${n.numero}: ${arq.erro}`); continue; }
+      let env, conteudo, tipo = 'texto', copia = null;
+      if (arq.base64) {
+        env = await waEnviarMidia(e, fone, {
+          base64: arq.base64, tipo: 'document', mimetype: 'application/pdf',
+          nomeArquivo: `nota-fiscal-${n.numero}.pdf`, legenda: `${rotuloNota(n)} 🧾`,
+        });
+        conteudo = `🧾 ${rotuloNota(n)} enviada em PDF`; tipo = 'documento';
+        copia = await guardarSaida(e, conversaId, idDaEvolution(env), arq.base64, 'application/pdf');
+      } else {
+        conteudo = `🧾 ${rotuloNota(n)}:\n${arq.link}`;
+        env = await waEnviar(e, fone, conteudo);
+      }
+      await sb(e, 'atend_mensagens', {
+        method: 'POST', prefer: 'return=minimal',
+        body: { conversa_id: conversaId, direcao: 'out', conteudo, autor_id: autorId, tipo, wa_id: idDaEvolution(env), status: 'enviado', midia_url: copia },
+      });
+      enviadas.push(n.numero);
+    } catch (err) {
+      falhas.push(`nº ${n.numero}: ${String(err.message || err).slice(0, 160)}`);
+    }
+  }
+  return { enviadas, falhas };
+}
+
+// Configurações › Integrações: a 2ª via do bot leva a nota junto (padrão: sim)
+async function nfComFaturaLigada(e) {
+  const cfg = await sbUm(e, 'atend_config?id=eq.1&select=dados').catch(() => null);
+  return !cfg || !cfg.dados || cfg.dados.nf_com_fatura !== false;
+}
+
 /* Dia de vencimento do cliente, tirado dos boletos: o dia mais comum entre os
    6 mais recentes (cancelado não conta). Mais comum, e não o último, porque
    boleto de fevereiro com vencimento 30 sai dia 28. Com o contrato informado
@@ -2668,6 +2816,24 @@ const CONECTORES = {
     if (f.linha_digitavel) {
       mensagens.push({ texto: 'Código de barras 🧾' });
       mensagens.push({ texto: String(f.linha_digitavel) });
+    }
+
+    // 5) a nota fiscal desta fatura, quando já emitida no IXC
+    if (await nfComFaturaLigada(e)) {
+      try {
+        const nf = await notasDasFaturas(e, [f]);
+        for (const n of (nf.porFatura.get(String(f.id)) || []).slice(0, 4)) {
+          const arq = await arquivoDaNota(e, n);
+          if (arq.base64) {
+            mensagens.push({
+              texto: `${rotuloNota(n)} 🧾`, rotulo: `🧾 ${rotuloNota(n)}`,
+              midia: { base64: arq.base64, tipo: 'document', mimetype: 'application/pdf', nomeArquivo: `nota-fiscal-${n.numero}.pdf` },
+            });
+          } else if (arq.link) {
+            mensagens.push({ texto: `🧾 ${rotuloNota(n)}:\n${arq.link}` });
+          }
+        }
+      } catch (err) { console.error('[atendimento] nota fiscal:', err.message); }
     }
 
 
@@ -8836,8 +9002,10 @@ export default async function handler(req, res) {
         }
         const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
         const todas = await faturasDoCliente(e, ixcId, 100);
-        const itens = todas
-          .filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()))
+        const emAberto = todas.filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
+        // a nota é uma consulta a mais no IXC: só o painel de envio pede
+        const nf = body.com_notas === true ? await notasDasFaturas(e, emAberto) : null;
+        const itens = emAberto
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
             const atraso = venc ? Math.max(0, diasCorridos(venc, hoje)) : 0;
@@ -8850,20 +9018,22 @@ export default async function handler(req, res) {
               tem_linha: !!pick(f, 'linha_digitavel'),
               linha_digitavel: pick(f, 'linha_digitavel'),
               link: pick(f, 'gateway_link'),
+              ...(nf ? { notas: nf.porFatura.get(String(f.id)) || [] } : {}),
             };
           });
         // o Termo de Adesão usa: dia de vencimento pelos boletos (pagos também)
         const ctrId = String(body.ixc_contrato_id || '').replace(/\D/g, '');
-        return res.status(200).json({ ok: true, faturas: itens, dia_vencimento: diaVencimentoDosBoletos(todas, ctrId || null) });
+        return res.status(200).json({ ok: true, faturas: itens, dia_vencimento: diaVencimentoDosBoletos(todas, ctrId || null),
+          ...(nf ? { notas_erro: nf.erro } : {}) });
       }
 
       // envia a cobrança escolhida ao cliente: PDF, Pix ou código de barras
       case 'fatura.enviar': {
         const id = Number(body.conversa_id);
         const faturaId = String(body.fatura_id || '').trim();
-        const tipo = String(body.tipo || '').trim();          // pdf | pix | barras
+        const tipo = String(body.tipo || '').trim();          // pdf | pix | barras | nota
         if (!id || !faturaId) return res.status(400).json({ ok: false, error: 'conversa_id e fatura_id obrigatórios.' });
-        if (!['pdf', 'pix', 'barras'].includes(tipo)) return res.status(400).json({ ok: false, error: 'tipo inválido.' });
+        if (!['pdf', 'pix', 'barras', 'nota'].includes(tipo)) return res.status(400).json({ ok: false, error: 'tipo inválido.' });
 
         const c = await sbUm(e, `atend_conversas?id=eq.${id}&select=*`);
         if (!c) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
@@ -8877,6 +9047,19 @@ export default async function handler(req, res) {
             body: { conversa_id: id, direcao: 'out', conteudo, autor_id: user.id, tipo: tipoMsg, status: 'enviado' },
           });
         };
+
+        // a nota fiscal: sozinha (tipo "nota") ou junto da cobrança (com_nota)
+        let nfDaFatura = null;
+        if (tipo === 'nota' || body.com_nota === true) {
+          // falha ao achar a nota nunca segura a cobrança que vai junto
+          try { nfDaFatura = await notasDaFatura(e, faturaId, c.cliente_ixc_id); }
+          catch (err) { nfDaFatura = { notas: [], erro: String(err.message || err).slice(0, 200) }; }
+          if (tipo === 'nota' && !nfDaFatura.notas.length) {
+            return res.status(200).json({ ok: false, error: nfDaFatura.erro
+              ? 'Não consegui a nota fiscal no IXC: ' + nfDaFatura.erro
+              : 'Esta fatura ainda não tem nota fiscal emitida no IXC.' });
+          }
+        }
 
         if (tipo === 'pdf') {
           const r = await ixc(e, 'get_boleto', {
@@ -8932,10 +9115,20 @@ export default async function handler(req, res) {
           });
         }
 
+        let nota = null;
+        if (nfDaFatura) {
+          nota = nfDaFatura.notas.length
+            ? await enviarNotasFiscais(e, id, c.contato_fone, nfDaFatura.notas, user.id)
+            : { enviadas: [], falhas: [], motivo: nfDaFatura.erro || 'sem nota emitida' };
+          if (tipo === 'nota' && !nota.enviadas.length) {
+            return res.status(200).json({ ok: false, error: 'A nota fiscal não saiu: ' + nota.falhas.join(' | ') });
+          }
+        }
+
         await sb(e, `atend_conversas?id=eq.${id}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body: {
-            ultima_msg: 'Você: cobrança enviada', ultima_msg_em: new Date().toISOString(),
+            ultima_msg: tipo === 'nota' ? 'Você: nota fiscal enviada' : 'Você: cobrança enviada', ultima_msg_em: new Date().toISOString(),
             bot_ativo: false, atendente_id: c.atendente_id || user.id,
             assumido_em: c.assumido_em || new Date().toISOString(),
             assumido_por: c.assumido_por || user.id,
@@ -8944,7 +9137,7 @@ export default async function handler(req, res) {
             updated_by: user.id,
           },
         });
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true, nota });
       }
 
       // resumo estratégico do contrato — só para o atendente ver, não envia nada
@@ -9019,8 +9212,9 @@ export default async function handler(req, res) {
           sortname: 'fn_areceber.data_vencimento', sortorder: 'desc',
         });
         const brutos = d.registros || [];
-        const pagas = brutos
-          .filter(f => String(f.status || '').toUpperCase() === 'R')
+        const pagasBrutas = brutos.filter(f => String(f.status || '').toUpperCase() === 'R').slice(0, 24);
+        const nf = body.com_notas === true ? await notasDasFaturas(e, pagasBrutas) : null;
+        const pagas = pagasBrutas
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
             // nomes confirmados nesta instalação: o IXC inverte a ordem
@@ -9039,9 +9233,9 @@ export default async function handler(req, res) {
               // atraso real: só conta se pagou depois do vencimento
               atraso: (venc && pag) ? Math.max(0, diasCorridos(venc, pag)) : null,
               forma: pick(f, 'tipo_recebimento', 'forma_recebimento'),
+              ...(nf ? { notas: nf.porFatura.get(String(f.id)) || [] } : {}),
             };
-          })
-          .slice(0, 24);
+          });
 
         const comAtraso = pagas.filter(p => p.atraso !== null);
         // Se NENHUM pagamento teve data reconhecida, o nome do campo nesta
@@ -9063,6 +9257,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           ok: true,
           pagamentos: pagas,
+          ...(nf ? { notas_erro: nf.erro } : {}),
           diagnostico,
           resumo: {
             total_pago: pagas.reduce((s, p) => s + p.valor_pago, 0),

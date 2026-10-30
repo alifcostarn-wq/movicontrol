@@ -735,7 +735,21 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .fv-tag.ok{background:var(--green-soft);color:var(--green-deep);}
 .fv-tag.venc{background:var(--red-soft);color:var(--red);}
 .fv-sub{font-size:11.5px;color:var(--text-low);margin-top:3px;}
-.fv-envios{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+.fv-envios{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px;}
+@media (max-width:520px){.fv-envios{grid-template-columns:repeat(2,1fr);}}
+/* nota fiscal da fatura (IXC) */
+.fv-nf{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;
+  background:var(--blue-soft);color:var(--blue-txt);white-space:nowrap;}
+.fv-nfchk{display:flex;align-items:center;gap:9px;margin-top:12px;padding:10px 12px;border:1.5px solid var(--line);
+  border-radius:10px;font-size:12.5px;cursor:pointer;background:var(--card);line-height:1.4;}
+.fv-nfchk input{accent-color:var(--green);width:auto;margin:0;flex-shrink:0;}
+.fv-nfchk small{display:block;color:var(--text-mid);font-size:11px;}
+.fv-nferro{font-size:11.5px;color:var(--amber-txt);background:var(--orange-soft);border-radius:9px;padding:8px 11px;margin-top:10px;line-height:1.5;}
+.ex-nf{font-family:inherit;font-size:11px;font-weight:800;padding:4px 9px;border-radius:7px;border:1px solid var(--line);
+  background:var(--card);color:var(--text);cursor:pointer;white-space:nowrap;}
+.ex-nf:hover{border-color:var(--green);color:var(--green-deep);}
+.ex-nf:disabled{opacity:.55;cursor:progress;}
+.ex-semnf{color:var(--text-low);}
 .fv-btn{font-family:inherit;font-size:12px;font-weight:800;padding:12px 8px;border-radius:10px;
   border:1.5px solid var(--line);background:var(--card);cursor:pointer;color:var(--text);line-height:1.4;}
 .fv-btn:hover{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);}
@@ -6152,21 +6166,34 @@ function abrirPainelAcao(c, qual){
   const body=ov.querySelector('#pnBody');
 
   const acao={faturas:'cliente.faturas',contrato:'cliente.contrato',extrato:'cliente.extrato'}[qual];
-  chamar(acao,{cliente_ixc_id:c.clienteVinculado.id})
+  // faturas e extrato trazem também a nota fiscal de cada uma (quando já emitida)
+  chamar(acao,{cliente_ixc_id:c.clienteVinculado.id, ...(qual!=='contrato'?{com_notas:true}:{})})
     .then(j=>{
       if(qual==='faturas') pintarFaturas(c,body,j,fechar);
       else if(qual==='contrato') body.innerHTML=htmlContrato(j);
-      else body.innerHTML=htmlExtrato(j);
+      else pintarExtrato(c,body,j,fechar);
     })
     .catch(err=>{ body.innerHTML=`<div class="ms-erro">Falha: ${esc(err.message)}</div>`; });
 }
 
+/* A nota fiscal da fatura (quando já emitida no IXC) aparece como um selo na
+   fatura, e o envio de qualquer forma de pagamento leva a nota junto se a
+   caixa estiver marcada. "Só a nota fiscal" manda a nota sem cobrança. */
+const nfNumeros = ns => (ns||[]).map(n=>'nº '+n.numero).join(', ');
+function toastNota(r, base){
+  const n=r&&r.nota;
+  if(!n) return toast(base);
+  if(n.enviadas&&n.enviadas.length && !(n.falhas&&n.falhas.length)) return toast(base+' + nota fiscal');
+  if(n.enviadas&&n.enviadas.length) return toast(base+'. Uma das notas não saiu: '+n.falhas.join(' | '));
+  toast(base+'. A nota fiscal não saiu: '+((n.falhas&&n.falhas.join(' | '))||n.motivo||'sem nota emitida'));
+}
 function pintarFaturas(c, body, j, fechar){
   const fs=j.faturas||[];
   if(!fs.length){ body.innerHTML=`<div class="pn-load">✅ Nenhuma fatura em aberto — cliente em dia.</div>`; return; }
-  let sel=fs[0].id;
+  let sel=fs[0].id, comNota=true;
   const desenhar=()=>{
     const f=fs.find(x=>String(x.id)===String(sel));
+    const temNota=!!(f&&f.notas&&f.notas.length);
     body.innerHTML=`
       ${fs.map(x=>`
         <div class="fv-item ${x.vencida?'venc':''} ${String(x.id)===String(sel)?'sel':''}" data-fat="${x.id}">
@@ -6174,35 +6201,66 @@ function pintarFaturas(c, body, j, fechar){
             <span class="fv-val">${fmtR$(x.valor)}</span>
             <span class="fv-tag ${x.vencida?'venc':'ok'}">${x.vencida?`${x.atraso}D EM ATRASO`:'A VENCER'}</span>
           </div>
-          <div class="fv-sub">Vence ${esc(x.vencimento||'—')}${x.documento?` · doc ${esc(String(x.documento))}`:''}</div>
+          <div class="fv-sub">Vence ${esc(x.vencimento||'—')}${x.documento?` · doc ${esc(String(x.documento))}`:''}${x.notas&&x.notas.length?`<span class="fv-nf" title="Nota fiscal emitida no IXC">🧾 NF ${esc(nfNumeros(x.notas))}</span>`:''}</div>
         </div>`).join('')}
       <div class="fv-envios">
         <button class="fv-btn" data-env="pdf">📄<br>PDF da fatura</button>
         <button class="fv-btn" data-env="pix">💠<br>Pix + QR Code</button>
         <button class="fv-btn" data-env="barras" ${f&&f.tem_linha?'':'disabled'}>🧾<br>Código de barras</button>
+        <button class="fv-btn" data-env="nota" ${temNota?'':'disabled'} title="${temNota?'Manda só a nota fiscal, sem cobrança':'Esta fatura ainda não tem nota fiscal emitida no IXC'}">📑<br>Só a nota fiscal</button>
       </div>
+      ${temNota?`<label class="fv-nfchk"><input type="checkbox" id="fvComNota" ${comNota?'checked':''}>
+        <span><b>Enviar também a nota fiscal</b><small>${esc(nfNumeros(f.notas))} vai junto com o PDF, o Pix ou o código de barras.</small></span></label>`:''}
+      ${j.notas_erro?`<div class="fv-nferro">Não consegui consultar as notas fiscais no IXC (${esc(j.notas_erro)}). A fatura sai normalmente.</div>`:''}
       <div class="fv-aviso">${f&&!f.tem_linha?'Esta fatura não tem linha digitável no IXC.':'Será enviado ao WhatsApp do cliente.'}</div>`;
 
     body.querySelectorAll('[data-fat]').forEach(el=>el.onclick=()=>{ sel=el.dataset.fat; desenhar(); });
+    const ck=body.querySelector('#fvComNota');
+    if(ck) ck.onchange=()=>{ comNota=ck.checked; };
     body.querySelectorAll('[data-env]').forEach(btn=>btn.onclick=async()=>{
       const f2=fs.find(x=>String(x.id)===String(sel));
+      const tipo=btn.dataset.env;
+      const juntoNota=tipo!=='nota' && comNota && !!(f2.notas&&f2.notas.length);
       body.querySelectorAll('[data-env]').forEach(b=>b.disabled=true);
       btn.innerHTML='Enviando…';
       try{
         const r=await chamar('fatura.enviar',{
-          conversa_id:c.id, fatura_id:f2.id, tipo:btn.dataset.env,
+          conversa_id:c.id, fatura_id:f2.id, tipo,
           linha_digitavel:f2.linha_digitavel||null,
-        });
+          ...(juntoNota?{com_nota:true}:{}),
+        }, 60000);
         if(r.ok===false){ toast(r.error||'Não foi possível enviar'); desenhar(); return; }
         fechar();
         c._msgsCarregadas=false;
         await api.carregarMensagens(c);
         openModal(c.id); renderAll();
-        toast('Enviado ao cliente');
+        if(tipo==='nota') toast('Nota fiscal enviada ao cliente');
+        else toastNota(r, 'Enviado ao cliente');
       }catch(err){ toast('Falha: '+err.message); desenhar(); }
     });
   };
   desenhar();
+}
+
+/* Extrato: as faturas pagas, com a nota de cada uma para enviar — é depois do
+   pagamento que muita empresa emite a nota, e é dela que o cliente costuma
+   pedir ("me manda a nota do mês passado"). */
+function pintarExtrato(c, body, j, fechar){
+  body.innerHTML=htmlExtrato(j);
+  body.querySelectorAll('[data-envnota]').forEach(bt=>bt.onclick=async()=>{
+    const todos=body.querySelectorAll('[data-envnota]');
+    todos.forEach(b=>b.disabled=true);
+    const antes=bt.innerHTML; bt.innerHTML='Enviando…';
+    try{
+      const r=await chamar('fatura.enviar',{ conversa_id:c.id, fatura_id:bt.dataset.envnota, tipo:'nota' }, 60000);
+      if(r.ok===false){ toast(r.error||'Não foi possível enviar'); todos.forEach(b=>b.disabled=false); bt.innerHTML=antes; return; }
+      fechar();
+      c._msgsCarregadas=false;
+      await api.carregarMensagens(c);
+      openModal(c.id); renderAll();
+      toast('Nota fiscal enviada ao cliente');
+    }catch(err){ toast('Falha: '+err.message); todos.forEach(b=>b.disabled=false); bt.innerHTML=antes; }
+  });
 }
 
 function htmlContrato(j){
@@ -6256,14 +6314,18 @@ function htmlExtrato(j){
       <div class="ex-r"><div class="n" style="color:${r.em_atraso?'var(--red)':'var(--green-deep)'}">${r.em_atraso||0}</div><div class="l">Pagas em atraso</div></div>
       <div class="ex-r"><div class="n" style="color:${r.atraso_medio>5?'var(--amber-txt)':'var(--green-deep)'}">${r.atraso_medio||0}d</div><div class="l">Atraso médio</div></div>
     </div>
+    ${j.notas_erro?`<div class="fv-nferro" style="margin:0 0 12px">Não consegui consultar as notas fiscais no IXC (${esc(j.notas_erro)}).</div>`:''}
     <div class="ex-wrap"><table class="ex-tab">
-      <thead><tr><th>Emissão</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Atraso</th></tr></thead>
+      <thead><tr><th>Emissão</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Atraso</th><th>Nota fiscal</th></tr></thead>
       <tbody>${ps.map(p=>`<tr>
         <td>${esc(p.emissao||'—')}</td>
         <td>${esc(p.vencimento||'—')}</td>
         <td>${esc(p.pagamento||'—')}</td>
         <td><b>${fmtR$(p.valor_pago)}</b></td>
         <td class="${p.atraso>0?'ex-atraso':'ex-ok'}">${p.atraso==null?'—':(p.atraso>0?p.atraso+'d':'em dia')}</td>
+        <td>${p.notas&&p.notas.length
+          ?`<button class="ex-nf" data-envnota="${esc(String(p.id))}" title="Enviar a nota fiscal ao WhatsApp do cliente">🧾 ${esc(nfNumeros(p.notas))} · enviar</button>`
+          :'<span class="ex-semnf" title="Sem nota fiscal emitida no IXC">—</span>'}</td>
       </tr>`).join('')}</tbody>
     </table></div>`;
 }
@@ -11415,7 +11477,8 @@ async function renderIntegracoes(body){
       <div class="wa-status-row mid" id="waStatusRow"><span class="wa-status-dot"></span>Verificando conexão…</div>
       <div id="waBody"></div>
     </div>
-    <div class="cp-box" id="iaAudio" style="margin-top:16px"><div class="pn-load">Carregando…</div></div>`;
+    <div class="cp-box" id="iaAudio" style="margin-top:16px"><div class="pn-load">Carregando…</div></div>
+    <div class="cp-box" id="nfCfg"><div class="pn-load">Carregando…</div></div>`;
   pintarTranscricaoCfg();
   await atualizarStatusWA();
 }
@@ -11426,7 +11489,11 @@ async function pintarTranscricaoCfg(){
   const box=$('#iaAudio'); if(!box) return;
   let cfg={};
   try{ cfg=(await chamar('atendconfig.obter',{})).config||{}; }
-  catch(e){ box.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`; return; }
+  catch(e){
+    box.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`;
+    const nf=$('#nfCfg'); if(nf) nf.innerHTML=`<div class="ms-erro">Falha: ${esc(e.message)}</div>`;
+    return;
+  }
   const ligado=cfg.transcrever_audio!==false;
   box.innerHTML=`
     <label class="cob-check"><input type="checkbox" id="iaAudioOn" ${ligado?'checked':''} ${USUARIO&&USUARIO.admin?'':'disabled'}>
@@ -11441,6 +11508,29 @@ async function pintarTranscricaoCfg(){
   if(ck) ck.onchange=async()=>{
     ck.disabled=true;
     try{ await chamar('atendconfig.salvar',{ config:{ transcrever_audio: ck.checked } }); toast(ck.checked?'Transcrição ligada':'Transcrição desligada'); }
+    catch(e){ ck.checked=!ck.checked; toast('Falha: '+e.message); }
+    ck.disabled=false;
+  };
+  pintarNfCfg(cfg);
+}
+
+/* Nota fiscal na 2ª via do bot: quando o cliente pede a fatura, a nota dela
+   vai junto se já estiver emitida no IXC. Ligado de fábrica. */
+function pintarNfCfg(cfg){
+  const box=$('#nfCfg'); if(!box) return;
+  const ligado=(cfg||{}).nf_com_fatura!==false;
+  box.innerHTML=`
+    <label class="cob-check"><input type="checkbox" id="nfCfgOn" ${ligado?'checked':''} ${USUARIO&&USUARIO.admin?'':'disabled'}>
+      <b>🧾 Mandar a nota fiscal junto com a 2ª via</b></label>
+    <div class="tp-nota">
+      Quando o cliente pede a fatura pelo bot, a nota fiscal dela vai junto (em PDF), se já estiver
+      emitida no IXC. Sem nota emitida, sai só a fatura, como antes. No atendimento, o painel
+      <b>📄 Enviar fatura</b> tem a caixa “Enviar também a nota fiscal” e o extrato tem o botão de cada nota.
+    </div>`;
+  const ck=$('#nfCfgOn');
+  if(ck) ck.onchange=async()=>{
+    ck.disabled=true;
+    try{ await chamar('atendconfig.salvar',{ config:{ nf_com_fatura: ck.checked } }); toast(ck.checked?'A 2ª via do bot leva a nota fiscal':'A 2ª via do bot sai sem a nota fiscal'); }
     catch(e){ ck.checked=!ck.checked; toast('Falha: '+e.message); }
     ck.disabled=false;
   };
