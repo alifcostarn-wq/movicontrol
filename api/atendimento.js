@@ -1238,6 +1238,23 @@ function resumoNota(v) {
 
 const idIXC = v => { const s = String(v ?? '').trim(); return /^\d+$/.test(s) && Number(s) > 0 ? s : null; };
 
+/* O IXC filtra a listagem por um operador só (=, !=, >, >=, <, <=, L, NL —
+   o conector oficial não tem IN). Lista de ids vira uma consulta por id, cinco
+   de cada vez, com teto: aqui são sempre poucas (as faturas de um cliente). */
+async function ixcPorIds(e, tabela, ids, max = 20) {
+  const lista = [...new Set((ids || []).map(String).filter(id => idIXC(id)))].slice(0, max);
+  const out = [];
+  for (let i = 0; i < lista.length; i += 5) {
+    const lote = await Promise.all(lista.slice(i, i + 5).map(id =>
+      ixc(e, tabela, { qtype: `${tabela}.id`, query: id, oper: '=', rp: '1' })));
+    for (const d of lote) {
+      if (d && d.type === 'error') throw new Error(d.message || `o IXC recusou a consulta em ${tabela}`);
+      out.push(...((d && d.registros) || []));
+    }
+  }
+  return out;
+}
+
 // as vendas (notas) do cliente, as mais novas primeiro
 async function vendasDoCliente(e, ixcId, rp = 60) {
   const d = await ixc(e, 'vd_saida', {
@@ -1258,15 +1275,7 @@ async function completarComFichaFiscal(e, vendas) {
   if (!lista.length) return { erro: null, fichas: [] };
   const fichas = [];
   try {
-    const ids = [...new Set(lista.map(v => String(v.id)))];
-    for (let i = 0; i < ids.length; i += 200) {
-      const d = await ixc(e, 'vd_saida_nfe', {
-        qtype: 'vd_saida_nfe.id', query: ids.slice(i, i + 200).join(','), oper: 'IN',
-        rp: '1000', sortname: 'vd_saida_nfe.id', sortorder: 'asc',
-      });
-      if (d && d.type === 'error') throw new Error(d.message || 'o IXC recusou a consulta da emissão das notas');
-      fichas.push(...((d && d.registros) || []));
-    }
+    fichas.push(...await ixcPorIds(e, 'vd_saida_nfe', lista.map(v => v.id), 12));
   } catch (err) {
     return { erro: String(err.message || err).slice(0, 200), fichas };
   }
@@ -1302,14 +1311,7 @@ async function notasDasFaturas(e, faturas, { vendasCliente = null } = {}) {
   const vendas = new Map((vendasCliente || []).map(v => [String(v.id), v]));
   const faltam = [...new Set([...ids.values()].flat())].filter(id => !vendas.has(id));
   try {
-    for (let i = 0; i < faltam.length; i += 200) {
-      const d = await ixc(e, 'vd_saida', {
-        qtype: 'vd_saida.id', query: faltam.slice(i, i + 200).join(','), oper: 'IN',
-        rp: '1000', sortname: 'vd_saida.id', sortorder: 'asc',
-      });
-      if (d && d.type === 'error') throw new Error(d.message || 'o IXC recusou a consulta das notas');
-      for (const v of (d && d.registros) || []) vendas.set(String(v.id), v);
-    }
+    for (const v of await ixcPorIds(e, 'vd_saida', faltam)) vendas.set(String(v.id), v);
   } catch (err) {
     return { porFatura, erro: String(err.message || err).slice(0, 200) };
   }
@@ -1357,15 +1359,49 @@ const NF_DIAG_VENDA = ['id', 'id_cliente', 'numero_nf', 'documento', 'serie', 'm
   'nfse_status', 'nfse_lote', 'origem', 'impresso', 'filial_id'];
 async function guardarDiagNotas(e, ixcId, { faturas = [], vendas = null, erro = null, fichas = null, erroFicha = null } = {}) {
   try {
+    // no máximo um retrato a cada 10 minutos por cliente: a parte de baixo
+    // consulta o IXC várias vezes e pede uma impressão
+    const ult = await sbUm(e, `atend_nf_diag?cliente_ixc_id=eq.${encodeURIComponent(String(ixcId))}&select=criado_em`).catch(() => null);
+    if (ult && Date.now() - new Date(ult.criado_em).getTime() < 10 * 60e3) return;
+    const so = (r, campos) => Object.fromEntries(campos.map(k => [k, r[k] ?? null]));
     // o tipo de documento das vendas diz se ele gera nota e de qual modelo
     let tipos = [], erroTipo = null;
     const idsTipo = [...new Set((vendas || []).map(v => idIXC(v.id_tipo_documento)).filter(Boolean))];
     if (idsTipo.length) {
+      try { tipos = (await ixcPorIds(e, 'tipo_documento', idsTipo, 5)).map(t => so(t, NF_DIAG_TIPO)); }
+      catch (err2) { erroTipo = String(err2.message || err2).slice(0, 200); }
+    }
+    // como uma nota emitida aparece NESTE IXC (de qualquer cliente: só
+    // números, modelo, datas e valores) e como é a ficha fiscal mais recente
+    const amostra = {};
+    try {
+      const d = await ixc(e, 'vd_saida', { qtype: 'vd_saida.numero_nf', query: '0', oper: '>', rp: '3', sortname: 'vd_saida.id', sortorder: 'desc' });
+      amostra.vendas_com_numero_total = d && d.total;
+      amostra.vendas_com_numero = ((d && d.registros) || []).map(v => { const o = so(v, NF_DIAG_VENDA); delete o.id_cliente; return o; });
+      const tiposAmostra = [...new Set(amostra.vendas_com_numero.map(v => idIXC(v.id_tipo_documento)).filter(Boolean))];
+      amostra.tipos_das_amostras = (await ixcPorIds(e, 'tipo_documento', tiposAmostra, 3)).map(t => so(t, NF_DIAG_TIPO));
+    } catch (err3) { amostra.erro_vendas = String(err3.message || err3).slice(0, 200); }
+    try {
+      const d = await ixc(e, 'vd_saida_nfe', { qtype: 'vd_saida_nfe.id', query: '0', oper: '>', rp: '2', sortname: 'vd_saida_nfe.id', sortorder: 'desc' });
+      if (d && d.type === 'error') throw new Error(d.message || 'recusado');
+      const regs = (d && d.registros) || [];
+      amostra.fichas_total = d && d.total;
+      amostra.ficha_campos = regs[0] ? Object.keys(regs[0]) : [];
+      amostra.fichas_recentes = regs.map(f => ({ ...so(f, NF_DIAG_FICHA), chave_nfcom_preenchida: !!String(f.chave_acesso_nfcom ?? '').trim() }));
+    } catch (err4) { amostra.erro_fichas = String(err4.message || err4).slice(0, 200); }
+    // o que o IXC devolve ao pedir a impressão da venda mais nova do cliente
+    const alvo = (vendas || [])[0];
+    if (alvo) {
       try {
-        const d = await ixc(e, 'tipo_documento', { qtype: 'tipo_documento.id', query: idsTipo.join(','), oper: 'IN', rp: '50' });
-        if (d && d.type === 'error') throw new Error(d.message || 'recusado');
-        tipos = ((d && d.registros) || []).map(t => Object.fromEntries(NF_DIAG_TIPO.map(k => [k, t[k] ?? null])));
-      } catch (err2) { erroTipo = String(err2.message || err2).slice(0, 200); }
+        const r = await ixc(e, 'imprimir_nota', { id: String(alvo.id), base64: 'S' }, 'listar');
+        const b64 = String(acharBase64(r) || '').replace(/\s+/g, '');
+        amostra.impressao = {
+          venda: alvo.id, erro: r && r.type === 'error' ? String(r.message || '').slice(0, 200) : null,
+          pdf: b64.startsWith('JVBER'), base64_tamanho: b64.length, link: !!acharLinkNota(r),
+          chaves: r && typeof r === 'object' ? Object.keys(r).slice(0, 15) : typeof r,
+          inicio_texto: r && r.raw ? String(r.raw).slice(0, 60) : null,
+        };
+      } catch (err5) { amostra.impressao = { venda: alvo.id, excecao: String(err5.message || err5).slice(0, 200) }; }
     }
     const fic = (fichas || []).slice(0, 10).map(f => ({
       ...Object.fromEntries(NF_DIAG_FICHA.map(k => [k, f[k] ?? null])),
@@ -1386,7 +1422,7 @@ async function guardarDiagNotas(e, ixcId, { faturas = [], vendas = null, erro = 
         faturas: fat, vendas: ven, vendas_lidas: vendas ? vendas.length : null,
         campos_venda: vendas && vendas[0] ? Object.keys(vendas[0]) : [], erro,
         fichas: fic, campos_ficha: fichas && fichas[0] ? Object.keys(fichas[0]) : [], erro_ficha: erroFicha,
-        tipos_documento: tipos, erro_tipo: erroTipo,
+        tipos_documento: tipos, erro_tipo: erroTipo, amostra,
       } },
     });
   } catch (err) { console.error('[nf-diag]', err.message); }
