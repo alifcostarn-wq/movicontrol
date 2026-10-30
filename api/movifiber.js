@@ -536,12 +536,39 @@ async function ixcListarTudo(tabela, body) {
     });
     if (!r.ok) throw new Error(`IXC ${tabela} HTTP ` + r.status);
     const d = await r.json();
+    // o IXC responde 200 com {type:'error'} (tabela inexistente, sem permissao)
+    if (d && d.type === 'error') throw new Error(`IXC ${tabela}: ` + String(d.message || 'recusado').slice(0, 160));
     const regs = d.registros || [];
     out.push(...regs);
     if (out.length >= parseInt(d.total || '0', 10) || regs.length === 0) break;
     if (++page > 60) break;
   }
   return out;
+}
+/* O IXC nao tem o operador IN (so =, !=, >, >=, <, <=, L e NL) e, quando
+   recebe um, devolve vazio sem erro. Poucos valores: um '=' por valor
+   (uma consulta que falhe nao derruba as outras; so da erro se todas
+   falharem, como numa tabela inexistente); muitos: le a tabela inteira e
+   filtra aqui. */
+async function ixcListarPorCampo(tabela, campo, valores, umAUm = 30) {
+  const alvo = [...new Set((valores || []).map(v => String(v ?? '').trim()).filter(v => v && v !== '0'))];
+  if (!alvo.length) return [];
+  if (alvo.length <= umAUm) {
+    const out = []; let deram = 0, erro = null;
+    for (let i = 0; i < alvo.length; i += 6) {
+      const lotes = await Promise.allSettled(alvo.slice(i, i + 6).map(v => ixcListarTudo(tabela, {
+        qtype: `${tabela}.${campo}`, query: v, oper: '=', sortname: `${tabela}.id`, sortorder: 'asc'
+      })));
+      for (const l of lotes) {
+        if (l.status === 'fulfilled') { deram++; out.push(...l.value); } else erro = erro || l.reason;
+      }
+    }
+    if (!deram && erro) throw erro;
+    return out;
+  }
+  const quer = new Set(alvo);
+  const todos = await ixcListarTudo(tabela, { qtype: `${tabela}.id`, query: '0', oper: '>', sortname: `${tabela}.id`, sortorder: 'asc' });
+  return todos.filter(r => quer.has(String(r[campo] ?? '').trim()));
 }
 function primeiroCampo(reg, candidatos) {
   for (const k of candidatos) if (reg[k] != null && reg[k] !== '') return reg[k];
@@ -551,31 +578,17 @@ async function ixcStatus(ixcIds) {
   const ids = [...new Set((ixcIds || []).map(String).filter(Boolean))];
   if (!ids.length) return { status: {}, total: 0 };
   // 1) radusuarios por id_cliente -> online + login id
-  const rad = [];
-  for (let i = 0; i < ids.length; i += 400) {
-    const lote = ids.slice(i, i + 400).join(',');
-    const regs = await ixcListarTudo(IXC_TB_RAD, {
-      qtype: `${IXC_TB_RAD}.${R_CLIENTE}`, query: lote, oper: 'IN',
-      sortname: `${IXC_TB_RAD}.${R_ID}`, sortorder: 'asc'
-    }).catch(() => []);
-    rad.push(...regs);
-  }
+  const rad = await ixcListarPorCampo(IXC_TB_RAD, R_CLIENTE, ids).catch(() => []);
   // 2) potencia ONU por id_login
   const loginIds = [...new Set(rad.map(u => u[R_ID]).filter(Boolean))].map(String);
   const potMap = new Map();
-  for (let i = 0; i < loginIds.length; i += 400) {
-    const lote = loginIds.slice(i, i + 400).join(',');
-    const regs = await ixcListarTudo(IXC_TB_FIBRA, {
-      qtype: `${IXC_TB_FIBRA}.${F_LOGIN}`, query: lote, oper: 'IN',
-      sortname: `${IXC_TB_FIBRA}.id`, sortorder: 'asc'
-    }).catch(() => []);
-    for (const f of regs) {
-      potMap.set(String(f[F_LOGIN]), {
-        rx: numOrNull(primeiroCampo(f, F_RX_CANDIDATOS)),
-        tx: numOrNull(primeiroCampo(f, F_TX_CANDIDATOS)),
-        onu: primeiroCampo(f, F_ONU_CANDIDATOS)
-      });
-    }
+  const fibras = await ixcListarPorCampo(IXC_TB_FIBRA, F_LOGIN, loginIds).catch(() => []);
+  for (const f of fibras) {
+    potMap.set(String(f[F_LOGIN]), {
+      rx: numOrNull(primeiroCampo(f, F_RX_CANDIDATOS)),
+      tx: numOrNull(primeiroCampo(f, F_TX_CANDIDATOS)),
+      onu: primeiroCampo(f, F_ONU_CANDIDATOS)
+    });
   }
   // 3) monta por id_cliente IXC
   const status = {};
@@ -1041,10 +1054,7 @@ async function monNomesCaixasIxc(ids) {
   let achou = false;
   for (const tb of tabelas) {
     try {
-      const regs = [];
-      for (let i = 0; i < faltam.length; i += 400) {
-        regs.push(...await ixcListarTudo(tb, { qtype: `${tb}.id`, query: faltam.slice(i, i + 400).join(','), oper: 'IN', sortname: `${tb}.id`, sortorder: 'asc' }));
-      }
+      const regs = await ixcListarPorCampo(tb, 'id', faltam);
       for (const c of regs) {
         const nome = String(c.descricao || c.nome || c.identificacao || c.caixa || '').trim();
         if (nome) _monNomesCaixa.mapa.set(String(c.id), nome);
@@ -1117,15 +1127,10 @@ async function monColetar() {
     if (ixcId && !cobertos.has(ixcId)) mf.set(ixcId, v);
   }
   if (mf.size) {
-    const ids = [...mf.keys()];
-    for (let i = 0; i < ids.length; i += 400) {
-      const regs = await ixcListarTudo(R, {
-        qtype: `${R}.${R_CLIENTE}`, query: ids.slice(i, i + 400).join(','), oper: 'IN', sortname: `${R}.${R_ID}`, sortorder: 'asc'
-      }).catch(() => []);
-      for (const u of regs) {
-        const v = mf.get(String(u[R_CLIENTE] || '').trim());
-        if (v) juntar('mf:' + v.caixa_id, v.caixa_nome || ('Caixa ' + v.caixa_id), v.projeto_ftth || null, u);
-      }
+    const regs = await ixcListarPorCampo(R, R_CLIENTE, [...mf.keys()]).catch(() => []);
+    for (const u of regs) {
+      const v = mf.get(String(u[R_CLIENTE] || '').trim());
+      if (v) juntar('mf:' + v.caixa_id, v.caixa_nome || ('Caixa ' + v.caixa_id), v.projeto_ftth || null, u);
     }
   }
   const ativosMoviOne = clientes.filter(c => c.ativo === true).length;

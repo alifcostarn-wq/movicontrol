@@ -1726,7 +1726,9 @@ async function sinalClientesCTO(silencioso){
       const sig=$('csig-'+c.cliente_id), dot=$('cdot-'+c.cliente_id);
       const rx=_n(st.rx);
       if(sig) sig.innerHTML = rx!=null ? `<span class="pot-${_potCls(rx)}">${rx.toFixed(1)} dBm</span>` : '—';
-      if(dot){ if(st.online===true) dot.className='cli-dot on'; else if(st.online===false){ dot.className='cli-dot off'; off++; } }
+      // o IXC manda online 'S'/'N'
+      const on = st.online===true||st.online==='S', fora = st.online===false||st.online==='N';
+      if(dot){ if(on) dot.className='cli-dot on'; else if(fora){ dot.className='cli-dot off'; off++; } }
     });
     if(!silencioso) toast(off ? `${off} cliente(s) offline nesta caixa` : 'Todos online nesta caixa');
     else if(off) toast(`⚠️ ${off} cliente(s) offline nesta caixa`, 3200);
