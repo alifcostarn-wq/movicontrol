@@ -750,6 +750,12 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .ex-nf:hover{border-color:var(--green);color:var(--green-deep);}
 .ex-nf:disabled{opacity:.55;cursor:progress;}
 .ex-semnf{color:var(--text-low);}
+.nfc{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
+.nfc-t{font-size:11px;font-weight:800;color:var(--text-low);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;}
+.nfc-i{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
+  margin-bottom:7px;background:var(--card);font-size:12px;}
+.nfc-i .q{flex:1;min-width:min(180px,100%);color:var(--text-mid);}
+.nfc-i .q b{color:var(--text);}
 .fv-btn{font-family:inherit;font-size:12px;font-weight:800;padding:12px 8px;border-radius:10px;
   border:1.5px solid var(--line);background:var(--card);cursor:pointer;color:var(--text);line-height:1.4;}
 .fv-btn:hover{border-color:var(--green);background:var(--green-soft);color:var(--green-deep);}
@@ -6187,9 +6193,38 @@ function toastNota(r, base){
   if(n.enviadas&&n.enviadas.length) return toast(base+'. Uma das notas não saiu: '+n.falhas.join(' | '));
   toast(base+'. A nota fiscal não saiu: '+((n.falhas&&n.falhas.join(' | '))||n.motivo||'sem nota emitida'));
 }
+/* As notas emitidas para o cliente (as mais novas do IXC), cada uma com
+   o botão de enviar — vale quando a fatura não aponta para a nota. */
+function htmlNotasCliente(j){
+  const ns=j.notas_cliente||[];
+  if(!ns.length) return '';
+  return `<div class="nfc"><div class="nfc-t">🧾 Notas fiscais emitidas para este cliente</div>
+    ${ns.map(n=>`<div class="nfc-i"><span class="q"><b>NF nº ${esc(n.numero)}</b>${n.serie?` · série ${esc(n.serie)}`:''}${n.emissao?` · emitida ${esc(n.emissao)}`:''}${n.valor?` · ${fmtR$(n.valor)}`:''}</span>
+      <button class="ex-nf" data-envnf="${esc(String(n.id))}" title="Enviar esta nota fiscal ao WhatsApp do cliente">🧾 Enviar</button></div>`).join('')}</div>`;
+}
+function ligarNotasCliente(c, body, fechar){
+  body.querySelectorAll('[data-envnf]').forEach(bt=>bt.onclick=async()=>{
+    const todos=body.querySelectorAll('[data-envnf],[data-envnota],[data-env]');
+    todos.forEach(b=>b.disabled=true);
+    const antes=bt.innerHTML; bt.innerHTML='Enviando…';
+    try{
+      const r=await chamar('nota.enviar',{ conversa_id:c.id, nota_id:bt.dataset.envnf }, 60000);
+      if(r.ok===false){ toast(r.error||'Não foi possível enviar'); todos.forEach(b=>b.disabled=false); bt.innerHTML=antes; return; }
+      fechar();
+      c._msgsCarregadas=false;
+      await api.carregarMensagens(c);
+      openModal(c.id); renderAll();
+      toast('Nota fiscal enviada ao cliente');
+    }catch(err){ toast('Falha: '+err.message); todos.forEach(b=>b.disabled=false); bt.innerHTML=antes; }
+  });
+}
 function pintarFaturas(c, body, j, fechar){
   const fs=j.faturas||[];
-  if(!fs.length){ body.innerHTML=`<div class="pn-load">✅ Nenhuma fatura em aberto — cliente em dia.</div>`; return; }
+  if(!fs.length){
+    body.innerHTML=`<div class="pn-load">✅ Nenhuma fatura em aberto — cliente em dia.</div>${htmlNotasCliente(j)}`;
+    ligarNotasCliente(c, body, fechar);
+    return;
+  }
   let sel=fs[0].id, comNota=true;
   const desenhar=()=>{
     const f=fs.find(x=>String(x.id)===String(sel));
@@ -6212,9 +6247,11 @@ function pintarFaturas(c, body, j, fechar){
       ${temNota?`<label class="fv-nfchk"><input type="checkbox" id="fvComNota" ${comNota?'checked':''}>
         <span><b>Enviar também a nota fiscal</b><small>${esc(nfNumeros(f.notas))} vai junto com o PDF, o Pix ou o código de barras.</small></span></label>`:''}
       ${j.notas_erro?`<div class="fv-nferro">Não consegui consultar as notas fiscais no IXC (${esc(j.notas_erro)}). A fatura sai normalmente.</div>`:''}
-      <div class="fv-aviso">${f&&!f.tem_linha?'Esta fatura não tem linha digitável no IXC.':'Será enviado ao WhatsApp do cliente.'}</div>`;
+      <div class="fv-aviso">${f&&!f.tem_linha?'Esta fatura não tem linha digitável no IXC.':'Será enviado ao WhatsApp do cliente.'}</div>
+      ${htmlNotasCliente(j)}`;
 
     body.querySelectorAll('[data-fat]').forEach(el=>el.onclick=()=>{ sel=el.dataset.fat; desenhar(); });
+    ligarNotasCliente(c, body, fechar);
     const ck=body.querySelector('#fvComNota');
     if(ck) ck.onchange=()=>{ comNota=ck.checked; };
     body.querySelectorAll('[data-env]').forEach(btn=>btn.onclick=async()=>{
@@ -6246,7 +6283,8 @@ function pintarFaturas(c, body, j, fechar){
    pagamento que muita empresa emite a nota, e é dela que o cliente costuma
    pedir ("me manda a nota do mês passado"). */
 function pintarExtrato(c, body, j, fechar){
-  body.innerHTML=htmlExtrato(j);
+  body.innerHTML=htmlExtrato(j)+htmlNotasCliente(j);
+  ligarNotasCliente(c, body, fechar);
   body.querySelectorAll('[data-envnota]').forEach(bt=>bt.onclick=async()=>{
     const todos=body.querySelectorAll('[data-envnota]');
     todos.forEach(b=>b.disabled=true);

@@ -1236,19 +1236,41 @@ function resumoNota(v) {
   };
 }
 
-/* As notas disponíveis de várias faturas numa consulta só ao IXC. O erro é o
-   motivo que o IXC deu (ex.: usuário da API sem permissão em "Venda"), para a
-   tela dizer o que liberar em vez de fingir que não há nota. */
-async function notasDasFaturas(e, faturas) {
+const idIXC = v => { const s = String(v ?? '').trim(); return /^\d+$/.test(s) && Number(s) > 0 ? s : null; };
+
+// as vendas (notas) do cliente, as mais novas primeiro
+async function vendasDoCliente(e, ixcId, rp = 60) {
+  const d = await ixc(e, 'vd_saida', {
+    qtype: 'vd_saida.id_cliente', query: String(ixcId), oper: '=', rp: String(rp),
+    sortname: 'vd_saida.id', sortorder: 'desc',
+  });
+  if (d && d.type === 'error') throw new Error(d.message || 'o IXC recusou a consulta das notas');
+  return (d && d.registros) || [];
+}
+
+// as notas emitidas para o cliente, para o atendente escolher qual mandar
+// quando a fatura não aponta para a nota
+function notasEmitidasDoCliente(vendas, max = 8) {
+  return (vendas || []).filter(notaEmitida)
+    .sort((a, b) => Number(b.id) - Number(a.id)).slice(0, max).map(resumoNota);
+}
+
+/* As notas disponíveis de várias faturas numa consulta só ao IXC. Primeiro a
+   ligação gravada na fatura (id_nota_gerada etc.); sem ela, a nota do cliente
+   que nasceu no mesmo lote de geração da fatura (fn_areceber
+   id_lote_geracao_financeiro_fatura = vd_saida id_lote_geracao_fatura ou
+   id_lote_geracao_financeiro), conferindo o contrato quando os dois têm. O
+   erro é o motivo que o IXC deu (ex.: usuário da API sem permissão em
+   "Venda"), para a tela dizer o que liberar em vez de fingir que não há nota. */
+async function notasDasFaturas(e, faturas, { vendasCliente = null } = {}) {
   const porFatura = new Map();
   const ids = new Map((faturas || []).map(f => [String(f.id), idsNotaDaFatura(f)]));
-  const todos = [...new Set([...ids.values()].flat())];
-  if (!todos.length) return { porFatura, erro: null };
-  const vendas = new Map();
+  const vendas = new Map((vendasCliente || []).map(v => [String(v.id), v]));
+  const faltam = [...new Set([...ids.values()].flat())].filter(id => !vendas.has(id));
   try {
-    for (let i = 0; i < todos.length; i += 200) {
+    for (let i = 0; i < faltam.length; i += 200) {
       const d = await ixc(e, 'vd_saida', {
-        qtype: 'vd_saida.id', query: todos.slice(i, i + 200).join(','), oper: 'IN',
+        qtype: 'vd_saida.id', query: faltam.slice(i, i + 200).join(','), oper: 'IN',
         rp: '1000', sortname: 'vd_saida.id', sortorder: 'asc',
       });
       if (d && d.type === 'error') throw new Error(d.message || 'o IXC recusou a consulta das notas');
@@ -1257,9 +1279,18 @@ async function notasDasFaturas(e, faturas) {
   } catch (err) {
     return { porFatura, erro: String(err.message || err).slice(0, 200) };
   }
-  for (const [fid, lista] of ids) {
-    const notas = lista.map(id => vendas.get(id)).filter(v => v && notaEmitida(v)).map(resumoNota);
-    if (notas.length) porFatura.set(fid, notas);
+  const doCliente = vendasCliente || [];
+  for (const f of faturas || []) {
+    const fid = String(f.id);
+    let notas = (ids.get(fid) || []).map(id => vendas.get(id)).filter(v => v && notaEmitida(v));
+    const lote = idIXC(f.id_lote_geracao_financeiro_fatura);
+    if (!notas.length && lote) {
+      const ctr = idIXC(f.id_contrato);
+      notas = doCliente.filter(v => notaEmitida(v)
+        && (idIXC(v.id_lote_geracao_fatura) === lote || idIXC(v.id_lote_geracao_financeiro) === lote)
+        && (!ctr || !idIXC(v.id_contrato) || idIXC(v.id_contrato) === ctr));
+    }
+    if (notas.length) porFatura.set(fid, notas.map(resumoNota));
   }
   return { porFatura, erro: null };
 }
@@ -1272,8 +1303,38 @@ async function notasDaFatura(e, faturaId, clienteIxc) {
   const f = ((d && d.registros) || [])[0];
   if (!f) return { notas: [], erro: 'fatura não encontrada no IXC' };
   if (String(f.id_cliente) !== String(clienteIxc)) return { notas: [], erro: 'esta fatura não é do cliente desta conversa' };
-  const r = await notasDasFaturas(e, [f]);
+  const vendasCliente = await vendasDoCliente(e, clienteIxc).catch(() => null);
+  const r = await notasDasFaturas(e, [f], { vendasCliente });
   return { notas: r.porFatura.get(String(f.id)) || [], erro: r.erro };
+}
+
+/* Quando nenhuma fatura acha a nota, guarda (por cliente) o formato do que o
+   IXC devolveu: só ids, datas, números, valores e situação — nada de nome,
+   documento ou endereço. É o que mostra qual campo liga a nota à fatura
+   NESTA instalação. Temporário: sai quando a ligação estiver confirmada. */
+const NF_DIAG_VENDA = ['id', 'id_cliente', 'numero_nf', 'documento', 'serie', 'modelo_nf', 'id_tipo_documento', 'status',
+  'data_emissao', 'data_saida', 'data_cancelamento', 'valor_total', 'id_contrato', 'id_contrato_avulso',
+  'id_lote_geracao_fatura', 'id_lote_geracao_financeiro', 'id_geracao_lote', 'numeracao_lote_ixc',
+  'nfse_status', 'nfse_lote', 'origem', 'impresso', 'filial_id'];
+async function guardarDiagNotas(e, ixcId, { faturas = [], vendas = null, erro = null } = {}) {
+  try {
+    const fat = (faturas || []).slice(-8).map(f => {
+      const o = { id: f.id, status: f.status, data_emissao: f.data_emissao, data_vencimento: f.data_vencimento,
+        id_contrato: f.id_contrato, valor: f.valor, documento: f.documento };
+      for (const [k, v] of Object.entries(f)) {
+        if (/nota|nf|saida|lote|fiscal|data_inicial|data_final/i.test(k) && String(v ?? '').trim() && String(v).trim() !== '0') o[k] = v;
+      }
+      return o;
+    });
+    const ven = (vendas || []).slice(0, 10).map(v => Object.fromEntries(NF_DIAG_VENDA.map(k => [k, v[k] ?? null])));
+    await sb(e, 'atend_nf_diag?on_conflict=cliente_ixc_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: { cliente_ixc_id: String(ixcId), criado_em: new Date().toISOString(), dados: {
+        faturas: fat, vendas: ven, vendas_lidas: vendas ? vendas.length : null,
+        campos_venda: vendas && vendas[0] ? Object.keys(vendas[0]) : [], erro,
+      } },
+    });
+  } catch (err) { console.error('[nf-diag]', err.message); }
 }
 
 // NFS-e de prefeitura às vezes vem só como link, sem PDF
@@ -2821,7 +2882,8 @@ const CONECTORES = {
     // 5) a nota fiscal desta fatura, quando já emitida no IXC
     if (await nfComFaturaLigada(e)) {
       try {
-        const nf = await notasDasFaturas(e, [f]);
+        const vendasCliente = await vendasDoCliente(e, id).catch(() => null);
+        const nf = await notasDasFaturas(e, [f], { vendasCliente });
         for (const n of (nf.porFatura.get(String(f.id)) || []).slice(0, 4)) {
           const arq = await arquivoDaNota(e, n);
           if (arq.base64) {
@@ -9004,7 +9066,13 @@ export default async function handler(req, res) {
         const todas = await faturasDoCliente(e, ixcId, 100);
         const emAberto = todas.filter(f => !['R', 'C'].includes(String(f.status || '').toUpperCase()));
         // a nota é uma consulta a mais no IXC: só o painel de envio pede
-        const nf = body.com_notas === true ? await notasDasFaturas(e, emAberto) : null;
+        let nf = null, vendasCli = null, erroVendas = null;
+        if (body.com_notas === true) {
+          try { vendasCli = await vendasDoCliente(e, ixcId); } catch (err) { erroVendas = String(err.message || err).slice(0, 200); }
+          nf = await notasDasFaturas(e, emAberto, { vendasCliente: vendasCli });
+          if (!nf.erro && erroVendas) nf.erro = erroVendas;
+          if (!nf.porFatura.size) await guardarDiagNotas(e, ixcId, { faturas: todas, vendas: vendasCli, erro: nf.erro });
+        }
         const itens = emAberto
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
@@ -9024,7 +9092,7 @@ export default async function handler(req, res) {
         // o Termo de Adesão usa: dia de vencimento pelos boletos (pagos também)
         const ctrId = String(body.ixc_contrato_id || '').replace(/\D/g, '');
         return res.status(200).json({ ok: true, faturas: itens, dia_vencimento: diaVencimentoDosBoletos(todas, ctrId || null),
-          ...(nf ? { notas_erro: nf.erro } : {}) });
+          ...(nf ? { notas_erro: nf.erro, notas_cliente: notasEmitidasDoCliente(vendasCli) } : {}) });
       }
 
       // envia a cobrança escolhida ao cliente: PDF, Pix ou código de barras
@@ -9140,6 +9208,37 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, nota });
       }
 
+      // manda uma nota escolhida na lista de notas do cliente (vd_saida)
+      case 'nota.enviar': {
+        const id = Number(body.conversa_id);
+        const notaId = idIXC(body.nota_id);
+        if (!id || !notaId) return res.status(400).json({ ok: false, error: 'conversa_id e nota_id obrigatórios.' });
+        const acesso = await conversaDoUsuario(e, user, id, 'id,setor,contato_fone,cliente_ixc_id,atendente_id,assumido_em,assumido_por,coluna');
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        const c = acesso.c;
+        if (!c.cliente_ixc_id) return res.status(200).json({ ok: false, error: 'Vincule o cadastro do cliente a esta conversa antes.' });
+        const d = await ixc(e, 'vd_saida', { qtype: 'vd_saida.id', query: notaId, oper: '=', rp: '1' });
+        const v = ((d && d.registros) || [])[0];
+        if (!v || String(v.id_cliente) !== String(c.cliente_ixc_id)) {
+          return res.status(200).json({ ok: false, error: 'Esta nota não é do cliente desta conversa.' });
+        }
+        if (!notaEmitida(v)) return res.status(200).json({ ok: false, error: 'Esta venda não tem nota fiscal emitida (ou a nota foi cancelada).' });
+        const r = await enviarNotasFiscais(e, id, c.contato_fone, [resumoNota(v)], user.id);
+        if (!r.enviadas.length) return res.status(200).json({ ok: false, error: 'A nota fiscal não saiu: ' + r.falhas.join(' | ') });
+        await sb(e, `atend_conversas?id=eq.${id}`, {
+          method: 'PATCH', prefer: 'return=minimal',
+          body: {
+            ultima_msg: 'Você: nota fiscal enviada', ultima_msg_em: new Date().toISOString(),
+            bot_ativo: false, atendente_id: c.atendente_id || user.id,
+            assumido_em: c.assumido_em || new Date().toISOString(), assumido_por: c.assumido_por || user.id,
+            setor: c.setor || user.setor || null,
+            coluna: (c.coluna === 'novos' || c.coluna === 'fila') ? 'atendimento' : c.coluna,
+            updated_by: user.id,
+          },
+        });
+        return res.status(200).json({ ok: true, nota: r });
+      }
+
       // resumo estratégico do contrato — só para o atendente ver, não envia nada
       case 'cliente.contrato': {
         const ixcId = String(body.cliente_ixc_id || '').trim();
@@ -9213,7 +9312,13 @@ export default async function handler(req, res) {
         });
         const brutos = d.registros || [];
         const pagasBrutas = brutos.filter(f => String(f.status || '').toUpperCase() === 'R').slice(0, 24);
-        const nf = body.com_notas === true ? await notasDasFaturas(e, pagasBrutas) : null;
+        let nf = null, vendasCli = null, erroVendas = null;
+        if (body.com_notas === true) {
+          try { vendasCli = await vendasDoCliente(e, ixcId); } catch (err) { erroVendas = String(err.message || err).slice(0, 200); }
+          nf = await notasDasFaturas(e, pagasBrutas, { vendasCliente: vendasCli });
+          if (!nf.erro && erroVendas) nf.erro = erroVendas;
+          if (!nf.porFatura.size) await guardarDiagNotas(e, ixcId, { faturas: brutos.slice(0, 8).reverse(), vendas: vendasCli, erro: nf.erro });
+        }
         const pagas = pagasBrutas
           .map(f => {
             const venc = parseDataIXC(f.data_vencimento);
@@ -9257,7 +9362,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           ok: true,
           pagamentos: pagas,
-          ...(nf ? { notas_erro: nf.erro } : {}),
+          ...(nf ? { notas_erro: nf.erro, notas_cliente: notasEmitidasDoCliente(vendasCli) } : {}),
           diagnostico,
           resumo: {
             total_pago: pagas.reduce((s, p) => s + p.valor_pago, 0),
