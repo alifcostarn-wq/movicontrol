@@ -1248,6 +1248,40 @@ async function vendasDoCliente(e, ixcId, rp = 60) {
   return (d && d.registros) || [];
 }
 
+/* A ficha fiscal da venda (aba "Emissão NFE", vd_saida_nfe, mesmo id da
+   venda) guarda número, série, modelo e chave da nota emitida. No IXC desta
+   empresa a venda fica com numero_nf vazio ou "0" e o número vive na ficha:
+   sem ela, nota emitida passava por venda sem nota. Falha aqui não derruba
+   nada — a venda segue como estava. */
+async function completarComFichaFiscal(e, vendas) {
+  const lista = (vendas || []).filter(v => v && !notaEmitida(v) && idIXC(v.id));
+  if (!lista.length) return { erro: null, fichas: [] };
+  const fichas = [];
+  try {
+    const ids = [...new Set(lista.map(v => String(v.id)))];
+    for (let i = 0; i < ids.length; i += 200) {
+      const d = await ixc(e, 'vd_saida_nfe', {
+        qtype: 'vd_saida_nfe.id', query: ids.slice(i, i + 200).join(','), oper: 'IN',
+        rp: '1000', sortname: 'vd_saida_nfe.id', sortorder: 'asc',
+      });
+      if (d && d.type === 'error') throw new Error(d.message || 'o IXC recusou a consulta da emissão das notas');
+      fichas.push(...((d && d.registros) || []));
+    }
+  } catch (err) {
+    return { erro: String(err.message || err).slice(0, 200), fichas };
+  }
+  const porId = new Map(fichas.map(f => [String(f.id), f]));
+  for (const v of lista) {
+    const f = porId.get(String(v.id));
+    const num = String((f && f.numero_nf) ?? '').trim();
+    if (!num || num === '0') continue;
+    v.numero_nf = num;
+    if (!String(v.serie ?? '').trim()) v.serie = f.serie;
+    if (!String(v.modelo_nf ?? '').trim()) v.modelo_nf = f.modelo_nf;
+  }
+  return { erro: null, fichas };
+}
+
 // as notas emitidas para o cliente, para o atendente escolher qual mandar
 // quando a fatura não aponta para a nota
 function notasEmitidasDoCliente(vendas, max = 8) {
@@ -1279,6 +1313,7 @@ async function notasDasFaturas(e, faturas, { vendasCliente = null } = {}) {
   } catch (err) {
     return { porFatura, erro: String(err.message || err).slice(0, 200) };
   }
+  const ficha = await completarComFichaFiscal(e, [...vendas.values()]);
   const doCliente = vendasCliente || [];
   for (const f of faturas || []) {
     const fid = String(f.id);
@@ -1292,7 +1327,7 @@ async function notasDasFaturas(e, faturas, { vendasCliente = null } = {}) {
     }
     if (notas.length) porFatura.set(fid, notas.map(resumoNota));
   }
-  return { porFatura, erro: null };
+  return { porFatura, erro: null, fichas: ficha.fichas, erroFicha: ficha.erro };
 }
 
 // as notas de UMA fatura, conferindo que ela é do cliente da conversa:
@@ -1312,12 +1347,30 @@ async function notasDaFatura(e, faturaId, clienteIxc) {
    IXC devolveu: só ids, datas, números, valores e situação — nada de nome,
    documento ou endereço. É o que mostra qual campo liga a nota à fatura
    NESTA instalação. Temporário: sai quando a ligação estiver confirmada. */
-const NF_DIAG_VENDA = ['id', 'id_cliente', 'numero_nf', 'documento', 'serie', 'modelo_nf', 'id_tipo_documento', 'status',
+const NF_DIAG_FICHA = ['id', 'numero_nf', 'serie', 'modelo_nf', 'finalidade_nfe', 'tpemis_nfe', 'tpimp_nfe',
+  'status_ajuste_nf', 'status_substituicao_nf', 'nf_gerada_ajuste', 'nf_gerada_substituicao', 'mod_nf_substituida'];
+const NF_DIAG_TIPO = ['id', 'tipo_documento', 'codigo', 'tipo', 'gera_fiscal', 'modelo_nf', 'serie_nf', 'gera_servicos_nf',
+  'gera_telefonia', 'gera_internet', 'gera_sva', 'gera_servicos', 'modelo_impressao_nota', 'finalidade_nfe_tipo_doc'];
+const NF_DIAG_VENDA = ['id', 'id_cliente', 'numero_nf', 'documento', 'serie', 'modelo_nf', 'id_tipo_documento', 'status', 'ids_areceber',
   'data_emissao', 'data_saida', 'data_cancelamento', 'valor_total', 'id_contrato', 'id_contrato_avulso',
   'id_lote_geracao_fatura', 'id_lote_geracao_financeiro', 'id_geracao_lote', 'numeracao_lote_ixc',
   'nfse_status', 'nfse_lote', 'origem', 'impresso', 'filial_id'];
-async function guardarDiagNotas(e, ixcId, { faturas = [], vendas = null, erro = null } = {}) {
+async function guardarDiagNotas(e, ixcId, { faturas = [], vendas = null, erro = null, fichas = null, erroFicha = null } = {}) {
   try {
+    // o tipo de documento das vendas diz se ele gera nota e de qual modelo
+    let tipos = [], erroTipo = null;
+    const idsTipo = [...new Set((vendas || []).map(v => idIXC(v.id_tipo_documento)).filter(Boolean))];
+    if (idsTipo.length) {
+      try {
+        const d = await ixc(e, 'tipo_documento', { qtype: 'tipo_documento.id', query: idsTipo.join(','), oper: 'IN', rp: '50' });
+        if (d && d.type === 'error') throw new Error(d.message || 'recusado');
+        tipos = ((d && d.registros) || []).map(t => Object.fromEntries(NF_DIAG_TIPO.map(k => [k, t[k] ?? null])));
+      } catch (err2) { erroTipo = String(err2.message || err2).slice(0, 200); }
+    }
+    const fic = (fichas || []).slice(0, 10).map(f => ({
+      ...Object.fromEntries(NF_DIAG_FICHA.map(k => [k, f[k] ?? null])),
+      chave_nfcom_preenchida: !!String(f.chave_acesso_nfcom ?? '').trim(),
+    }));
     const fat = (faturas || []).slice(-8).map(f => {
       const o = { id: f.id, status: f.status, data_emissao: f.data_emissao, data_vencimento: f.data_vencimento,
         id_contrato: f.id_contrato, valor: f.valor, documento: f.documento };
@@ -1332,6 +1385,8 @@ async function guardarDiagNotas(e, ixcId, { faturas = [], vendas = null, erro = 
       body: { cliente_ixc_id: String(ixcId), criado_em: new Date().toISOString(), dados: {
         faturas: fat, vendas: ven, vendas_lidas: vendas ? vendas.length : null,
         campos_venda: vendas && vendas[0] ? Object.keys(vendas[0]) : [], erro,
+        fichas: fic, campos_ficha: fichas && fichas[0] ? Object.keys(fichas[0]) : [], erro_ficha: erroFicha,
+        tipos_documento: tipos, erro_tipo: erroTipo,
       } },
     });
   } catch (err) { console.error('[nf-diag]', err.message); }
@@ -9071,7 +9126,7 @@ export default async function handler(req, res) {
           try { vendasCli = await vendasDoCliente(e, ixcId); } catch (err) { erroVendas = String(err.message || err).slice(0, 200); }
           nf = await notasDasFaturas(e, emAberto, { vendasCliente: vendasCli });
           if (!nf.erro && erroVendas) nf.erro = erroVendas;
-          if (!nf.porFatura.size) await guardarDiagNotas(e, ixcId, { faturas: todas, vendas: vendasCli, erro: nf.erro });
+          if (!nf.porFatura.size) await guardarDiagNotas(e, ixcId, { faturas: todas, vendas: vendasCli, erro: nf.erro, fichas: nf.fichas, erroFicha: nf.erroFicha });
         }
         const itens = emAberto
           .map(f => {
@@ -9222,6 +9277,7 @@ export default async function handler(req, res) {
         if (!v || String(v.id_cliente) !== String(c.cliente_ixc_id)) {
           return res.status(200).json({ ok: false, error: 'Esta nota não é do cliente desta conversa.' });
         }
+        await completarComFichaFiscal(e, [v]);
         if (!notaEmitida(v)) return res.status(200).json({ ok: false, error: 'Esta venda não tem nota fiscal emitida (ou a nota foi cancelada).' });
         const r = await enviarNotasFiscais(e, id, c.contato_fone, [resumoNota(v)], user.id);
         if (!r.enviadas.length) return res.status(200).json({ ok: false, error: 'A nota fiscal não saiu: ' + r.falhas.join(' | ') });
@@ -9317,7 +9373,7 @@ export default async function handler(req, res) {
           try { vendasCli = await vendasDoCliente(e, ixcId); } catch (err) { erroVendas = String(err.message || err).slice(0, 200); }
           nf = await notasDasFaturas(e, pagasBrutas, { vendasCliente: vendasCli });
           if (!nf.erro && erroVendas) nf.erro = erroVendas;
-          if (!nf.porFatura.size) await guardarDiagNotas(e, ixcId, { faturas: brutos.slice(0, 8).reverse(), vendas: vendasCli, erro: nf.erro });
+          if (!nf.porFatura.size) await guardarDiagNotas(e, ixcId, { faturas: brutos.slice(0, 8).reverse(), vendas: vendasCli, erro: nf.erro, fichas: nf.fichas, erroFicha: nf.erroFicha });
         }
         const pagas = pagasBrutas
           .map(f => {
