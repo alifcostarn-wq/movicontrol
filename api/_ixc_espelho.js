@@ -317,6 +317,29 @@ export async function sincronizarTudoDoIxc(io) {
   if (!planosOk && contratosOk) avisos.push('sem os planos de venda: contratos e logins ficam para a próxima rodada');
   const planos = planosDoIxc(pla.regs);
 
+  // Cidade e UF vêm do IXC como número ("1161", "25") e o banco troca pelo
+  // nome ao gravar (gatilho normalizar_cidade_ixc). A linha já sai com o
+  // nome, como o banco a guardaria — senão toda rodada pareceria ter mudado
+  // a cidade de todo mundo e regravaria a base inteira.
+  const ehNumero = v => /^\d+$/.test(String(v || '').trim());
+  const cidades = new Map(), siglas = new Map();
+  const idsCidade = [...new Set(cli.regs.map(r => String(r.cidade || '').trim()).filter(ehNumero))];
+  for (let i = 0; i < idsCidade.length; i += 150) {
+    const lote = idsCidade.slice(i, i + 150);
+    for (const c of await io.sbTudo(`ixc_cidades?select=ixc_id,nome,uf&ixc_id=in.(${lote.join(',')})&order=ixc_id.asc`)) cidades.set(String(c.ixc_id), c);
+  }
+  if (cli.regs.some(r => ehNumero(r.uf))) {
+    for (const u of await io.sbTudo('ixc_ufs?select=ixc_id,sigla&order=ixc_id.asc')) siglas.set(String(u.ixc_id), u.sigla);
+  }
+  const cidadeComoNoBanco = linha => {
+    if (ehNumero(linha.cidade) && cidades.has(linha.cidade)) {
+      const c = cidades.get(linha.cidade);
+      linha.cidade = c.nome;
+      if (c.uf && (!linha.uf || ehNumero(linha.uf))) linha.uf = c.uf;
+    }
+    if (ehNumero(linha.uf) && siglas.get(linha.uf)) linha.uf = siglas.get(linha.uf);
+  };
+
   const porIxc = linhas => new Map(linhas.map(l => [String(l.ixc_id), l]));
   const cliAtual = porIxc(cliDb), ctrAtual = porIxc(ctrDb), logAtual = porIxc(logDb);
   const idCliente = new Map(cliDb.map(c => [String(c.ixc_id), c.id]));
@@ -347,6 +370,7 @@ export async function sincronizarTudoDoIxc(io) {
   for (const r of cli.regs) {
     const linha = linhaClienteDoIxc(r);
     if (!linha.ixc_id) continue;
+    cidadeComoNoBanco(linha);
     if (contratosOk) linha.status_contrato = agregarStatusCliente(situacaoDe.get(linha.ixc_id) || []);
     const atual = cliAtual.get(linha.ixc_id);
     if (!atual) { novosCli++; linhasCli.push(linha); }
