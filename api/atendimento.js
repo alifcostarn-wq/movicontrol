@@ -51,6 +51,7 @@ import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
 import { groqChat, groqTranscrever, groqModelos, groqModelosAudio } from './_groq.js';
+import { linhaClienteDoIxc, linhaContratoDoIxc } from './_ixc_espelho.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -6946,119 +6947,8 @@ const SYNC_IXC_BUSCA_MS = 30 * 1000;   // piso quando a busca não achou nada
 const SYNC_IXC_RP = 200;      // registros por página pedidos ao IXC
 const SYNC_IXC_PAGINAS = 5;   // teto: 1000 novos por rodada já é muita coisa
 
-function ixcNumero(v) {
-  if (v == null || v === '') return null;
-  const n = Number(String(v).replace(',', '.'));
-  return Number.isFinite(n) && n !== 0 ? n : null;
-}
-
-// Só passa adiante data de verdade: um valor estranho numa coluna date
-// derrubaria a gravação do lote inteiro.
-function ixcData(v) {
-  const t = String(v || '').trim();
-  return /^\d{4}-\d{2}-\d{2}/.test(t) && !t.startsWith('0000') ? t.slice(0, 10) : null;
-}
-
-/* 'ativo' do cliente no IXC vem como S/N. Mesma tradução do MoviOne — os dois
-   escrevem na mesma coluna, não podem discordar do significado. */
-function ixcStatusCliente(ativo) {
-  if (!ativo) return 'I';
-  const v = String(ativo).toUpperCase();
-  if (v === 'S' || v === '1' || v === 'TRUE') return 'A';
-  if (v === 'N' || v === '0' || v === 'FALSE') return 'I';
-  return v;
-}
-
-/* Mesmo mapeamento campo a campo que o MoviOne usa no sync completo. Se os
-   dois divergirem, o mesmo cliente passa a ter cadastros diferentes conforme
-   quem o trouxe — por isso as duas listas andam juntas. */
-function linhaClienteDoIxc(r) {
-  const nome = r.fantasia || r.razao || '';
-  return {
-    ixc_id: String(r.id || ''),
-    origem: 'ixc',
-    ixc_status: ixcStatusCliente(r.ativo),
-    ixc_login: r.login || null,
-    nome,
-    razao: r.razao || null,
-    nome_social: r.fantasia || null,
-    cnpj: r.cnpj_cpf || null,
-    ie: r.ie || null,
-    tipo_pessoa: r.tipo_pessoa || null,
-    contato: r.contato || null,
-    tel1: r.telefone_celular || r.telefone || null,
-    tel2: r.telefone || null,
-    whatsapp: r.whatsapp || r.telefone_celular || null,
-    tel_residencial: r.fone1 || r.telefone || null,
-    tel_comercial: r.fone2 || r.telefone_comercial || null,
-    email: r.email || null,
-    website: r.url || null,
-    endereco: r.endereco || null,
-    numero: r.numero || null,
-    complemento: r.complemento || null,
-    bairro: r.bairro || null,
-    cep: r.cep || null,
-    cep_full: r.cep || null,
-    cidade: r.cidade || null,
-    uf: r.uf || null,
-    referencia: r.referencia || null,
-    data_nasc: ixcData(r.data_nascimento),
-    genero: r.sexo === 'M' ? 'Masculino' : r.sexo === 'F' ? 'Feminino' : null,
-    estado_civil: r.estado_civil || null,
-    nacionalidade: r.nacionalidade || null,
-    naturalidade: r.naturalidade || null,
-    profissao: r.profissao || null,
-    rg_emissor: r.orgao_emissor || null,
-    moradia: r.tipo_moradia || null,
-    obs: r.obs || null,
-    ativo: r.ativo === 'S',
-    data_cadastro_ixc: ixcData(r.data_cadastro || r.data_cad || r.data_criacao),
-    // datacad NÃO vai no corpo de propósito. No PostgREST, coluna ausente do
-    // corpo fica fora do ON CONFLICT DO UPDATE — então reenviar um cliente
-    // nunca reescreve a data de cadastro dele. Linha nova o banco preenche
-    // sozinho (default current_date). Latitude e longitude ficam de fora pelo
-    // mesmo motivo: a coordenada que o técnico capturou em campo é melhor que
-    // a do IXC e não pode ser apagada por uma cópia.
-  };
-}
-
-/* A velocidade não vem em campo próprio: está escrita no nome do plano
-   ("PROMOÇÃO 500MEGA"). Mesma leitura do MoviOne. */
-function velocidadeDoPlano(nome) {
-  const m = String(nome || '').match(/(\d+)\s*(g(?:iga)?|m(?:ega|b(?:ps?)?)?)/i);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return m[2].toLowerCase().startsWith('g') ? n * 1000 : n;
-}
-
-function linhaContratoDoIxc(r, clienteIdLocal) {
-  // 'contrato' é a descrição do plano no IXC (a mesma que o painel do
-  // atendente já mostra); sem ela o plano ficava só o número do plano de venda
-  const plano = r.descricao_aux_plano_venda || r.contrato || r.descricao_aux || r.descricao || String(r.id_vd_contrato || '');
-  return {
-    ixc_id: String(r.id || ''),
-    ixc_cliente_id: String(r.id_cliente || ''),
-    cliente_id: clienteIdLocal || null,
-    tipo: r.tipo || null,
-    plano,
-    id_plano_venda: String(r.id_vd_contrato || '') || null,
-    velocidade_mbps: velocidadeDoPlano(plano),
-    descricao: r.descricao || null,
-    status_contrato: r.status || null,
-    status_acesso: r.status_internet || r.status_acesso || null,
-    valor: ixcNumero(r.valor_servico || r.valor || r.mensalidade),
-    data_ativacao: ixcData(r.data_ativacao),
-    data_renovacao: ixcData(r.data_renovacao),
-    // o campo do IXC é pago_ate_data — lendo só pago_ate, ficava vazio
-    pago_ate: ixcData(r.pago_ate_data || r.pago_ate),
-    data_expiracao: ixcData(r.data_expiracao),
-    // o Termo de Adesão usa (nomes conferidos no catálogo ixc_campos)
-    fidelidade_meses: parseInt(r.fidelidade, 10) || null,
-    id_carteira_cobranca: String(r.id_carteira_cobranca || '') || null,
-    cartao_recorrente: !!String(r.credit_card_recorrente_bandeira_cartao || '').trim(),
-    taxa_instalacao: r.taxa_instalacao == null || r.taxa_instalacao === '' || !Number.isFinite(Number(r.taxa_instalacao)) ? null : Number(r.taxa_instalacao),
-  };
-}
+/* O mapeamento campo a campo (cliente e contrato) é o mesmo da cópia
+   completa que roda no servidor e no navegador: mora em _ixc_espelho.js. */
 
 /* Consulta `in.(...)` vira URL, e URL tem tamanho máximo. Numa primeira
    rodada grande seriam centenas de ids numa linha só — o PostgREST recusaria
