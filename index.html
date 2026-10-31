@@ -4044,24 +4044,38 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 
     <!-- ====== CONFIGURAÇÕES ====== -->
     <div class="page" id="page-config">
-      <div class="table-wrap" id="cfg-ixc-card" style="margin-bottom:16px">
-        <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:600">Integração com o IXC</div>
-          <div class="td-muted" style="font-size:12px;margin-top:4px">Sincronização automática dos clientes, contratos e logins, e a conexão com o IXC Soft.</div>
+      <div class="table-wrap cfg-card">
+        <div class="cfg-abas" role="tablist" aria-label="Configurações" onkeydown="cfgAbaTecla(event)">
+          <button type="button" class="cfg-aba" role="tab" id="cfg-aba-sync" data-aba="sync" aria-controls="cfg-painel-sync" aria-selected="true" onclick="cfgAba('sync')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Sincronização automática</button>
+          <button type="button" class="cfg-aba" role="tab" id="cfg-aba-ixc" data-aba="ixc" aria-controls="cfg-painel-ixc" aria-selected="false" tabindex="-1" onclick="cfgAba('ixc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Conexão com o IXC</button>
+          <button type="button" class="cfg-aba" role="tab" id="cfg-aba-backup" data-aba="backup" aria-controls="cfg-painel-backup" aria-selected="false" tabindex="-1" onclick="cfgAba('backup')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Backup de dados</button>
         </div>
-        <div style="padding:18px"><div id="cfg-ixc"><div class="td-muted" style="font-size:12px">⏳ Carregando…</div></div></div>
-      </div>
-      <div class="table-wrap">
-        <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:600">Backup de dados</div>
-          <div class="td-muted" style="font-size:12px;margin-top:4px">Baixe um arquivo JSON com todos os dados do sistema (lançamentos, clientes, fornecedores, bancos, movimentações, metas e plano de contas).</div>
-        </div>
-        <div style="padding:18px">
-          <button class="btn btn-primary" onclick="baixarBackupCompleto()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Baixar backup completo (JSON)
-          </button>
-        </div>
+        <section class="cfg-painel" role="tabpanel" id="cfg-painel-sync" aria-labelledby="cfg-aba-sync" tabindex="0">
+          <div class="cfg-painel-cab">
+            <div class="cfg-painel-tit">Sincronização automática com o IXC</div>
+            <div class="cfg-painel-sub">O servidor confere o IXC sozinho e atualiza clientes, contratos e logins no MoviOne — sem precisar abrir a aba Clientes, mesmo com o MoviOne fechado.</div>
+          </div>
+          <div class="cfg-painel-corpo"><div id="ixa-box"><div id="ixa-corpo"><div class="ixa-estado">⏳ Carregando…</div></div></div></div>
+        </section>
+        <section class="cfg-painel" role="tabpanel" id="cfg-painel-ixc" aria-labelledby="cfg-aba-ixc" tabindex="0" hidden>
+          <div class="cfg-painel-cab">
+            <div class="cfg-painel-tit">Conexão com o IXC</div>
+            <div class="cfg-painel-sub">Endereço, usuário e token que o MoviOne usa para falar com o IXC Soft pelo navegador.</div>
+          </div>
+          <div class="cfg-painel-corpo"><div id="cfg-ixc"><div class="ixa-estado">⏳ Carregando…</div></div></div>
+        </section>
+        <section class="cfg-painel" role="tabpanel" id="cfg-painel-backup" aria-labelledby="cfg-aba-backup" tabindex="0" hidden>
+          <div class="cfg-painel-cab">
+            <div class="cfg-painel-tit">Backup de dados</div>
+            <div class="cfg-painel-sub">Baixe um arquivo JSON com todos os dados do sistema (lançamentos, clientes, fornecedores, bancos, movimentações, metas e plano de contas).</div>
+          </div>
+          <div class="cfg-painel-corpo">
+            <button class="btn btn-primary" onclick="baixarBackupCompleto()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Baixar backup completo (JSON)
+            </button>
+          </div>
+        </section>
       </div>
     </div>
 
@@ -8353,7 +8367,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjusteBanco(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjusteBanco(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
-  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,acessos:()=>acsAbrir('movione'),'cp-acessos':()=>acsAbrir('movitec'),'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-estoque-bi':()=>estBiAbrir(false),'cp-movimentacoes':renderMovimentacoes,'cp-requisicoes':cmpAbrirReqEstoque,compras:cmpAbrir,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false),config:renderConfigIXC};
+  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,acessos:()=>acsAbrir('movione'),'cp-acessos':()=>acsAbrir('movitec'),'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-estoque-bi':()=>estBiAbrir(false),'cp-movimentacoes':renderMovimentacoes,'cp-requisicoes':cmpAbrirReqEstoque,compras:cmpAbrir,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false),config:renderConfig};
   renders[page]?.();
   // Auto-sync IXC ao abrir a aba clientes (se configurado)
   if(page==='clientes' && typeof autoSyncIXC==='function') autoSyncIXC();
@@ -24874,9 +24888,47 @@ function setCliStatusFiltro(s){
   renderCadastro('clientes');
 }
 
-/* Integração com o IXC — mora em Configurações (antes era uma janela aberta
-   pela aba Clientes). Primeiro a sincronização automática, que é o que se
-   usa no dia a dia; embaixo a conexão. */
+/* CONFIGURAÇÕES — uma aba por função: sincronização automática, conexão
+   com o IXC e backup. A aba aberta fica lembrada neste navegador. */
+const CFG_ABAS = ['sync', 'ixc', 'backup'];
+const CFG_ABA_KEY = 'movi_cfg_aba';
+let _cfgAbaPedida = null;
+
+function renderConfig(){
+  let aba = _cfgAbaPedida; _cfgAbaPedida = null;
+  if(!aba){ try{ aba = localStorage.getItem(CFG_ABA_KEY); }catch(e){ aba = null; } }
+  cfgAba(CFG_ABAS.includes(aba) ? aba : 'sync');
+}
+
+function cfgAba(nome, foco){
+  if(!CFG_ABAS.includes(nome)) nome = 'sync';
+  for(const a of CFG_ABAS){
+    const bt = document.getElementById('cfg-aba-' + a), pn = document.getElementById('cfg-painel-' + a);
+    if(!bt || !pn) continue;
+    const sel = a === nome;
+    bt.setAttribute('aria-selected', sel ? 'true' : 'false');
+    bt.tabIndex = sel ? 0 : -1;
+    bt.classList.toggle('ativa', sel);
+    pn.hidden = !sel;
+  }
+  try{ localStorage.setItem(CFG_ABA_KEY, nome); }catch(e){}
+  if(foco) document.getElementById('cfg-aba-' + nome)?.focus();
+  if(nome === 'sync') ixaCarregarStatus(true).then(st => ixaRenderSecao(st)).catch(e => ixaRenderSecao(null, e.message));
+  else if(nome === 'ixc') renderConfigIXC();
+}
+
+// setas, Home e End andam entre as abas (como toda lista de abas)
+function cfgAbaTecla(ev){
+  const i = CFG_ABAS.indexOf(ev.target && ev.target.dataset ? ev.target.dataset.aba : '');
+  if(i < 0) return;
+  const j = ev.key === 'ArrowRight' ? (i + 1) % CFG_ABAS.length
+          : ev.key === 'ArrowLeft'  ? (i - 1 + CFG_ABAS.length) % CFG_ABAS.length
+          : ev.key === 'Home' ? 0 : ev.key === 'End' ? CFG_ABAS.length - 1 : null;
+  if(j == null) return;
+  ev.preventDefault();
+  cfgAba(CFG_ABAS[j], true);
+}
+
 async function renderConfigIXC(){
   const alvo = document.getElementById('cfg-ixc'); if(!alvo) return;
   const cfg = await getIXCConfig();
@@ -24884,12 +24936,6 @@ async function renderConfigIXC(){
   const lastSync = localStorage.getItem(IXC_LAST_SYNC_KEY);
   const lastSyncTxt = lastSync ? new Date(parseInt(lastSync)).toLocaleString('pt-BR') : 'Nunca';
   alvo.innerHTML = `
-    <div class="ixa-box" id="ixa-box">
-      <div class="ixa-tit">🔄 Sincronização automática</div>
-      <div class="ixa-sub">O servidor confere o IXC sozinho e atualiza clientes, contratos e logins no MoviOne — sem precisar abrir a aba Clientes, mesmo com o MoviOne fechado.</div>
-      <div id="ixa-corpo"><div class="ixa-estado">⏳ Carregando…</div></div>
-    </div>
-    <div class="cfg-ixc-tit">Conexão com o IXC</div>
     <div style="background:rgba(55,138,221,0.08);border-left:3px solid #4DA3E8;padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--text2)">
       ℹ A conexão é salva no banco (Supabase) e também em cache local neste navegador. É por ela que o navegador puxa cadastro, login, status do contrato e contato dos clientes do IXC.
     </div>
@@ -24917,7 +24963,7 @@ async function renderConfigIXC(){
         <input type="checkbox" id="ixc-auto-sync" ${cfg.autoSync!==false?'checked':''}>
         <span>Ao abrir a aba Clientes, sincronizar por este navegador</span>
       </label>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Com a sincronização automática (acima) em dia, a aba só relê o que o servidor já gravou.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Com a sincronização automática ligada e em dia, a aba Clientes só relê o que o servidor já gravou.</div>
     </div>
     <div class="form-group">
       <label class="form-label" for="ixc-rp">Limite por sincronização</label>
@@ -24931,17 +24977,16 @@ async function renderConfigIXC(){
       <button class="btn" onclick="testarIXC()">🔌 Testar conexão</button>
       <button class="btn btn-primary" onclick="salvarIXCConfig()">Salvar conexão</button>
     </div>`;
-  ixaCarregarStatus(true).then(st => ixaRenderSecao(st)).catch(e => ixaRenderSecao(null, e.message));
 }
 
-// leva até a integração em Configurações (quem não vê Configurações recebe o aviso)
+// leva até a conexão com o IXC em Configurações (quem não vê Configurações recebe o aviso)
 function abrirConfigIXC(){
   const nav = document.getElementById('nav-config');
   if(!nav || getComputedStyle(nav).display === 'none'){
     showToast('A integração com o IXC é configurada em Configurações, pelo administrador.', true); return;
   }
+  _cfgAbaPedida = 'ixc';
   navTo('config', nav);
-  setTimeout(() => document.getElementById('cfg-ixc-card')?.scrollIntoView({ behavior:'smooth', block:'start' }), 150);
 }
 
 function salvarIXCConfig(){
@@ -25598,7 +25643,7 @@ async function _ixcTabelasApoio(cfg){
    SINCRONIZAÇÃO AUTOMÁTICA COM O IXC (no servidor: api/ixc-sync.js)
    O servidor confere o IXC sozinho, no intervalo escolhido, e grava
    clientes, contratos e logins — sem ninguém precisar abrir a aba
-   Clientes. Aqui fica a seção dela em Configurações › Integração com o IXC.
+   Clientes. Aqui fica a aba dela em Configurações › Sincronização automática.
    ============================================================ */
 const IXA_API = '/api/ixc-sync';
 const IXA_ROTULOS = {15:'15 minutos',30:'30 minutos',60:'1 hora',120:'2 horas',360:'6 horas',720:'12 horas',1440:'24 horas'};
@@ -25623,9 +25668,18 @@ let _ixaStatus = null, _ixaStatusEm = 0, _ixaRecarregadoEm = 0;
     .ixa-ok{color:var(--accent-txt)} .ixa-erro{color:var(--danger-txt)} .ixa-aviso{color:var(--laranja-txt)} .ixa-info{color:var(--info)}
     .ixa-acoes{margin-top:10px}
     .ixa-nota{font-size:11.5px;color:var(--text3);margin-top:8px}
-    #cfg-ixc{max-width:760px}
-    #cfg-ixc .ixa-box{margin-top:0}
-    .cfg-ixc-tit{font-size:13px;font-weight:700;color:var(--text);margin:20px 0 10px}
+    .cfg-abas{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);overflow-x:auto;padding:0 8px;scrollbar-width:thin}
+    .cfg-aba{appearance:none;background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:12px 16px;font:inherit;font-size:13px;color:var(--text2);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:7px}
+    .cfg-aba svg{width:15px;height:15px;flex-shrink:0}
+    .cfg-aba:hover{color:var(--text)}
+    .cfg-aba.ativa{color:var(--accent-txt);border-bottom-color:var(--accent-txt);font-weight:600}
+    .cfg-aba:focus-visible{outline:2px solid var(--info);outline-offset:-3px;border-radius:6px}
+    .cfg-painel[hidden]{display:none}
+    .cfg-painel:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
+    .cfg-painel-cab{padding:14px 18px;border-bottom:1px solid var(--border)}
+    .cfg-painel-tit{font-size:13px;font-weight:600;color:var(--text)}
+    .cfg-painel-sub{font-size:12px;margin-top:4px;color:var(--text2);line-height:1.45}
+    .cfg-painel-corpo{padding:18px;max-width:760px}
     .cfg-ixc-acoes{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px}
   `;
   document.head.appendChild(st);
