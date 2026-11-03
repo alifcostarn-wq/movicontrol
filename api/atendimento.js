@@ -369,6 +369,44 @@ async function notaNaConversa(e, ids, user, texto) {
   }
 }
 
+/* ===== Nota de fim de atendimento =====
+   Quem abria uma conversa resolvida via a despedida — ou nada, quando ela foi
+   encerrada em silêncio — e não tinha como saber que o atendimento acabou,
+   quem encerrou nem o que o cliente recebeu. A nota fica só no painel:
+   direção 'sys' nunca sai para o WhatsApp. A primeira linha é o título da
+   faixa e a segunda o detalhe; `origem: 'encerramento'` é o que o painel usa
+   para desenhar a faixa de fim de atendimento. Falhar aqui não desfaz nada:
+   a conversa já foi encerrada, só fica sem a anotação. Devolve o texto
+   gravado (null se não gravou): o painel mostra a faixa na hora, sem esperar
+   a thread recarregar. */
+async function notaEncerramento(e, conversaId, titulo, detalhe, autor = null) {
+  if (!conversaId) return null;
+  const conteudo = [titulo, detalhe].filter(Boolean).join('\n').slice(0, 400);
+  try {
+    await sb(e, 'atend_mensagens', {
+      method: 'POST', prefer: 'return=minimal',
+      body: {
+        conversa_id: conversaId, direcao: 'sys', origem: 'encerramento',
+        autor_id: (autor && autor.id) || null, autor_nome: (autor && autor.nome) || null,
+        conteudo,
+      },
+    });
+    return conteudo;
+  } catch (err) {
+    console.error('[atendimento] nota de encerramento:', err.message);
+    return null;
+  }
+}
+
+// "pesquisa de satisfação enviada ao cliente", "mensagem do atendente e
+// pesquisa de satisfação enviadas ao cliente" — todos os itens são femininos
+function enviadoAoCliente(itens, inicioDeFrase = false) {
+  if (!itens.length) return '';
+  const lista = itens.length === 1 ? itens[0] : `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`;
+  const frase = `${lista} ${itens.length === 1 ? 'enviada' : 'enviadas'} ao cliente`;
+  return inicioDeFrase ? frase.charAt(0).toUpperCase() + frase.slice(1) : frase;
+}
+
 /* Bloqueia pelo número da conversa (qualquer atendente que veja a conversa)
    ou por um número digitado (só admin: ele fecharia conversas de qualquer
    setor). Fecha as conversas desse número em silêncio, para o bot e cancela o
@@ -3284,7 +3322,10 @@ async function aprenderComConversas(e, cfg, inicioCiclo = Date.now()) {
   for (const c of cands) {
     if (lidas >= IA_APRENDER.conversasPorCiclo || examinadas >= IA_APRENDER.examinadas) break;
     if (Date.now() - inicioCiclo > IA_APRENDER.tempoMaxCicloMs) break;
-    const ult = await sbUm(e, `atend_mensagens?conversa_id=eq.${c.id}&select=id&order=id.desc&limit=1`);
+    // nota interna (fim de atendimento, bloqueio) não é conversa nova: sem o
+    // filtro, a nota gravada logo depois de uma leitura faria reler a conversa
+    // e marcá-la como "pulada", por cima do registro do que se aprendeu nela
+    const ult = await sbUm(e, `atend_mensagens?conversa_id=eq.${c.id}&direcao=neq.sys&select=id&order=id.desc&limit=1`);
     if (!ult) continue;
     const antes = lidos.has(c.id) ? lidos.get(c.id) : null;
     if (antes !== null && ult.id <= antes) continue;
@@ -4153,6 +4194,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
           out.patch.bot_ativo = true;
           out.patch.nao_lidas = 0;
           out.limparSessao = true;
+          out.encerramento = { titulo: '🤖 Atendimento encerrado pelo bot',
+            motivo: 'A IA entendeu que o cliente se despediu ou pediu para encerrar', enviado: ['despedida'] };
           return out;
         }
         if (r.acao === 'ignorar') {
@@ -4160,6 +4203,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
           out.patch.coluna = 'resolvidos';
           out.patch.bot_ativo = true;
           out.limparSessao = true;
+          out.encerramento = { titulo: '🤖 Conversa arquivada pelo bot',
+            motivo: 'A IA identificou propaganda ou mensagem automática', enviado: [] };
           return out;
         }
         out.enviar.push({ texto: r.texto, node: no.id });
@@ -4233,7 +4278,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
         // trava mensal: uma pesquisa por cliente por janela (padrão 30 dias)
         const naJanela = (no.pesquisa !== false && !jaAvaliou && pesquisaLiberada)
           ? await pesquisaLiberada() : true;
-        if (no.pesquisa !== false && !jaAvaliou && naJanela) {
+        const vaiPesquisa = no.pesquisa !== false && !jaAvaliou && naJanela;
+        if (vaiPesquisa) {
           out.enviar.push({ texto: TEXTO_PESQUISA, node: no.id });
           out.sessao = {
             node_atual: null,
@@ -4248,6 +4294,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
         } else {
           out.limparSessao = true;
         }
+        out.encerramento = { titulo: '🤖 Atendimento concluído pelo bot', motivo: 'Fim do fluxo automático',
+          enviado: [...(t.trim() ? ['mensagem de encerramento'] : []), ...(vaiPesquisa ? ['pesquisa de satisfação'] : [])] };
         return out;
       }
 
@@ -4285,6 +4333,7 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
 // APLICA O RESULTADO: grava no banco e dispara no WhatsApp
 // ============================================================================
 async function aplicarResultado(e, conversa, out) {
+  let falhas = 0;   // para a nota de fim de atendimento não dizer "enviada" do que não saiu
   // 1. mensagens
   for (let i = 0; i < out.enviar.length; i++) {
     const m = out.enviar[i];
@@ -4300,7 +4349,7 @@ async function aplicarResultado(e, conversa, out) {
       } else {
         env = await waEnviar(e, conversa.contato_fone, m.texto);
       }
-    } catch (err) { erro = err.message; console.error('[atendimento] envio falhou:', err.message); }
+    } catch (err) { erro = err.message; falhas++; console.error('[atendimento] envio falhou:', err.message); }
     // cópia do anexo para o painel poder mostrar o que o bot mandou — só quando
     // o envio deu certo, para não guardar arquivo de mensagem que não saiu
     const copia = (m.midia && !erro)
@@ -4348,6 +4397,16 @@ async function aplicarResultado(e, conversa, out) {
     await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal', body: {
       conversa_id: conversa.id, direcao: 'sys', origem: 'recado', autor_nome: 'IA',
       conteudo: String(out.recado).slice(0, 300) } }).catch(err => console.error('[atendimento] recado da IA:', err.message));
+  }
+
+  // fim de atendimento pelo bot: a nota fecha a conversa no painel, depois do
+  // que o cliente recebeu (ver notaEncerramento)
+  if (out.encerramento && conversa.id) {
+    const f = out.encerramento;
+    const envio = falhas ? '⚠ o envio ao cliente falhou'
+      : (f.enviado && f.enviado.length) ? enviadoAoCliente(f.enviado)
+      : !out.enviar.length ? 'nada foi enviado ao cliente' : '';
+    await notaEncerramento(e, conversa.id, f.titulo, [f.motivo, envio].filter(Boolean).join(' · '));
   }
 
   // 3. sessão
@@ -5161,13 +5220,16 @@ async function tratarWebhookInterno(e, body) {
   if (texto && pedeEncerrar(texto) && !conversa.atendente_id
       && (conversa.coluna === 'fila' || conversa.coluna === 'novos')
       && !(sessaoValida && sessaoValida.aguardando === 'rating_humano')) {
+    let despediu = false;
     try {
       const env = await waEnviar(e, fone, TEXTO_ENCERRAMENTO);
+      despediu = true;
       await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
         body: { conversa_id: conversa.id, direcao: 'bot', conteudo: TEXTO_ENCERRAMENTO, wa_id: idDaEvolution(env), status: 'enviado' } });
     } catch (err) { console.error('[atendimento] encerrar a pedido:', err.message); }
-    await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
-      body: { conversa_id: conversa.id, direcao: 'sys', conteudo: 'O cliente pediu para encerrar o atendimento' } });
+    await notaEncerramento(e, conversa.id, '🙋 Atendimento encerrado a pedido do cliente',
+      (conversa.coluna === 'fila' ? 'Ele pediu para encerrar enquanto esperava na fila' : 'Ele pediu para encerrar enquanto falava com o bot')
+      + (despediu ? ' · despedida automática enviada' : ' · ⚠ a despedida não saiu'));
     await sb(e, `atend_conversas?id=eq.${conversa.id}`, { method: 'PATCH', prefer: 'return=minimal',
       body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, ultima_msg: TEXTO_ENCERRAMENTO.slice(0, 200), ultima_msg_em: new Date().toISOString() } });
     await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
@@ -7376,8 +7438,11 @@ async function tratarCron(e) {
       `&select=id,contato_fone&limit=40`);
     for (const c of (alvos || [])) {
       if (esperandoNota(c)) continue;
+      // nota interna (transferência, fim de atendimento) não é a última
+      // palavra de ninguém: só a equipe vê. Contá-la fazia o cliente que
+      // falou por último parecer ter ficado sem responder
       const ult = await sbUm(e,
-        `atend_mensagens?conversa_id=eq.${c.id}&tipo=neq.reacao&select=direcao&order=created_at.desc&limit=1`);
+        `atend_mensagens?conversa_id=eq.${c.id}&tipo=neq.reacao&direcao=neq.sys&select=direcao&order=created_at.desc&limit=1`);
       if (!ult || ult.direcao === 'in') continue;   // bola está com a gente
       await sb(e, `atend_conversas?id=eq.${c.id}`, {
         method: 'PATCH', prefer: 'return=minimal',
@@ -7439,13 +7504,18 @@ async function tratarCron(e) {
         },
       });
       if (!meu || !meu.length) continue;
+      let despediu = false;
       try {
         const env = await waEnviar(e, c.contato_fone, txt);
+        despediu = true;
         await sb(e, 'atend_mensagens', {
           method: 'POST', prefer: 'return=minimal',
           body: { conversa_id: c.id, direcao: 'bot', conteudo: txt, wa_id: idDaEvolution(env), status: 'enviado' },
         });
       } catch (err) { console.error('[inatividade encerra]', err.message); }
+      await notaEncerramento(e, c.id, '⏱️ Atendimento encerrado por inatividade',
+        `O cliente não respondeu ao aviso de inatividade em ${min} min`
+        + (despediu ? ' · despedida automática enviada' : ' · ⚠ a despedida não saiu'));
       await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
         { method: 'DELETE', prefer: 'return=minimal' });
       encerradasHumano++;
@@ -7489,7 +7559,7 @@ async function tratarCron(e) {
   for (const c of (paradas || [])) {
     if (esperandoNota(c)) continue;
     const ult = await sbUm(e,
-      `atend_mensagens?conversa_id=eq.${c.id}&tipo=neq.reacao&select=direcao&order=created_at.desc&limit=1`);
+      `atend_mensagens?conversa_id=eq.${c.id}&tipo=neq.reacao&direcao=neq.sys&select=direcao&order=created_at.desc&limit=1`);
 
     // A última palavra foi do cliente: quem está devendo resposta somos nós.
     // Encerrar aqui seria mandar embora quem está esperando. Vai para a fila,
@@ -7518,15 +7588,24 @@ async function tratarCron(e) {
 
     // Nada estava pendente: arquiva sem dizer nada. Silêncio é melhor que uma
     // despedida que não corresponde a conversa nenhuma.
-    if (!comSessao.has(String(c.contato_fone))) { encerradasMudas++; continue; }
+    if (!comSessao.has(String(c.contato_fone))) {
+      await notaEncerramento(e, c.id, '🤖 Conversa encerrada automaticamente',
+        `Parada com o bot há mais de ${minutos} min, sem pergunta pendente · nada foi enviado ao cliente`);
+      encerradasMudas++;
+      continue;
+    }
 
     const despedida = 'Como não tivemos retorno, vou encerrar este atendimento por aqui. 👋\n' +
       'Se precisar, é só mandar outra mensagem que começamos de novo. A MoviOn agradece! 💚';
-    try { await waEnviar(e, c.contato_fone, despedida); } catch (err) { console.error('[atendimento]', err.message); }
+    let despediu = false;
+    try { await waEnviar(e, c.contato_fone, despedida); despediu = true; } catch (err) { console.error('[atendimento]', err.message); }
     await sb(e, 'atend_mensagens', {
       method: 'POST', prefer: 'return=minimal',
       body: { conversa_id: c.id, direcao: 'bot', conteudo: despedida },
     });
+    await notaEncerramento(e, c.id, '⏱️ Atendimento encerrado por inatividade',
+      `O cliente não respondeu ao bot em ${minutos} min`
+      + (despediu ? ' · despedida automática enviada' : ' · ⚠ a despedida não saiu'));
     await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
       { method: 'DELETE', prefer: 'return=minimal' });
     encerradas++;
@@ -8750,7 +8829,7 @@ export default async function handler(req, res) {
       case 'conversas.atualizar': {
         const id = Number(body.id);
         if (!id) return res.status(400).json({ ok: false, error: 'id obrigatório' });
-        const atual = await sbUm(e, `atend_conversas?id=eq.${id}&select=setor`);
+        const atual = await sbUm(e, `atend_conversas?id=eq.${id}&select=setor,coluna`);
         if (!atual) return res.status(404).json({ ok: false, error: 'Conversa não encontrada.' });
         if (!user.admin && user.setor && atual.setor && atual.setor !== user.setor) {
           return res.status(403).json({ ok: false, error: 'Conversa de outro setor.' });
@@ -8762,6 +8841,12 @@ export default async function handler(req, res) {
         const patch = { updated_by: user.id };
         for (const k of permitido) if (k in body) patch[k] = body[k];
         const r = await sbUm(e, `atend_conversas?id=eq.${id}`, { method: 'PATCH', body: patch });
+        // mover para Resolvidos pela etapa (o seletor do celular) também
+        // encerra: fica a mesma nota do "Finalizar atendimento"
+        if (patch.coluna === 'resolvidos' && atual.coluna !== 'resolvidos') {
+          await notaEncerramento(e, id, `✅ Atendimento finalizado por ${user.nome || 'um atendente'}`,
+            'Movido direto para Resolvidos · nada foi enviado ao cliente', user);
+        }
         return res.status(200).json({ ok: true, conversa: r });
       }
 
@@ -11180,10 +11265,13 @@ export default async function handler(req, res) {
         // ou o cliente pediu para não receber mais nada. Nesses casos um
         // "obrigado pelo contato" automático é ruído, não cortesia.
         const silencioso = body.silencioso === true;
+        // o que realmente saiu para o cliente, para a nota interna do fim
+        let mensagemEnviada = false, despedidaEnviada = false;
 
         if (!silencioso && body.mensagem) {
           try {
             const env = await waEnviar(e, c.contato_fone, String(body.mensagem));
+            mensagemEnviada = true;
             await sb(e, 'atend_mensagens', {
               method: 'POST', prefer: 'return=minimal',
               body: { conversa_id: id, direcao: 'out', conteudo: String(body.mensagem), autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
@@ -11264,11 +11352,36 @@ export default async function handler(req, res) {
         if (!pesquisaEnviada && despedir) {
           try {
             const env = await waEnviar(e, c.contato_fone, TEXTO_ENCERRAMENTO);
+            despedidaEnviada = true;
             await sb(e, 'atend_mensagens', {
               method: 'POST', prefer: 'return=minimal',
               body: { conversa_id: id, direcao: 'out', conteudo: TEXTO_ENCERRAMENTO, autor_id: user.id, wa_id: idDaEvolution(env), status: 'enviado' },
             });
           } catch (err) { console.error('[atendimento]', err.message); }
+        }
+
+        // nota interna depois das mensagens de saída: no painel ela fecha a
+        // conversa, logo abaixo do que o cliente recebeu
+        let nota = null;
+        {
+          const itens = [];
+          if (mensagemEnviada) itens.push('mensagem do atendente');
+          if (pesquisaEnviada) itens.push('pesquisa de satisfação');
+          if (despedidaEnviada) itens.push('despedida');
+          let detalhe;
+          if (silencioso) detalhe = 'Em silêncio: nada foi enviado ao cliente';
+          else if (itens.length) detalhe = enviadoAoCliente(itens, true);
+          else if (c.rating && !String(body.mensagem || '').trim()) detalhe = 'Nada foi enviado: o cliente já tinha avaliado este atendimento';
+          else detalhe = '⚠ O envio falhou: o cliente não recebeu a mensagem de encerramento';
+          if (!silencioso && !pesquisaEnviada) {
+            if (travadaAte) {
+              const d = new Date(travadaAte);
+              detalhe += ` · pesquisa não repetida: cliente já perguntado${isNaN(d) ? ' neste mês' : ' em ' + d.toLocaleDateString('pt-BR', { timeZone: TZ_ISP })}`;
+            } else if (body.pesquisa === false && !c.rating) {
+              detalhe += ' · sem pesquisa de satisfação';
+            }
+          }
+          nota = await notaEncerramento(e, id, `✅ Atendimento finalizado por ${user.nome || 'um atendente'}`, detalhe, user);
         }
 
         // se estamos esperando a nota, a sessão precisa sobreviver
@@ -11278,6 +11391,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           ok: true, pesquisa: pesquisaEnviada, silencioso,
           pesquisa_travada: !pesquisaEnviada && !!travadaAte, pesquisa_ultima: travadaAte || null,
+          nota,
         });
       }
 
