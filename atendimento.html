@@ -346,7 +346,9 @@ body.dark-mode #menuDica{background:#334155;border-color:rgba(255,255,255,.18);}
 .modal{
   background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
   box-shadow:var(--shadow);height:100%;min-height:0;display:none;
-  grid-template-columns:1fr 330px;overflow:hidden;
+  /* o painel do cliente cresce com a tela (370px num notebook de 1366):
+     a barra de assuntos come 58px e o conteúdo não pode voltar a apertar */
+  grid-template-columns:1fr clamp(340px, 28vw, 400px);overflow:hidden;
   transition:grid-template-columns .18s ease;
 }
 .modal.aberto{display:grid;}
@@ -401,6 +403,11 @@ body.dark-mode #menuDica{background:#334155;border-color:rgba(255,255,255,.18);}
   padding:14px 16px;margin:0 0 16px;}
 /* recolher e expandir não fazem sentido aqui: o Fechar fica no topo */
 .modal.ficha-cheia .ficha-x{display:none;}
+/* na tela cheia não há abas: todos os assuntos aparecem, em colunas */
+.modal.ficha-cheia .ms-wrap,.modal.ficha-cheia .ms-conteudo{display:block;}
+.modal.ficha-cheia .ms-topo,.modal.ficha-cheia .ms-trilho{display:none;}
+.modal.ficha-cheia .fc-corpo{overflow:visible;}
+.modal.ficha-cheia .ms-aba{display:contents;}
 /* no celular o painel já ocupa a tela inteira (aba Cliente) */
 @media(max-width:900px){ .ficha-x.ficha-exp{display:none;} }
 .m-chat{position:relative;}
@@ -1744,7 +1751,50 @@ body.dark-mode{--meter-ok:#4ade80;--meter-ok-track:#12382a;--meter-warn:#fbbf24;
   .etapa.destaque.alerta.on{animation:none;}
 }
 
-.m-side{overflow-y:auto;padding:18px 16px;background:var(--card);}
+/* ===== Painel do cliente: um assunto por vez =====
+   Conteúdo à esquerda (rola sozinho) e a barra de assuntos fixa à direita,
+   com ícone, nome e aviso numérico. Tudo continua no DOM — só a aba aberta
+   aparece; na tela cheia todas voltam a aparecer, lado a lado. */
+.m-side{overflow:hidden;padding:0;background:var(--card);display:flex;flex-direction:column;min-height:0;}
+.ms-wrap{display:flex;flex:1;min-height:0;}
+.ms-conteudo{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;}
+.ms-topo{display:flex;align-items:center;gap:4px;padding:9px 10px 8px 16px;border-bottom:1px solid var(--line);flex:none;}
+/* título em cima e o resumo embaixo: na mesma linha o resumo era cortado ("R$ 209,60 em ab…") */
+.ms-tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.ms-tn{font-size:15px;font-weight:800;color:var(--text);white-space:nowrap;}
+.ms-ts{font-size:11px;font-weight:600;color:var(--text-mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ms-ts.r{color:var(--red);} .ms-ts.o{color:var(--amber-txt);} .ms-ts:empty{display:none;}
+.ms-topo .ficha-x{float:none;margin:0;}
+.fc-corpo{flex:1;min-height:0;overflow-y:auto;padding:14px 16px 18px;}
+.ms-aba{display:none;}
+.ms-aba.on{display:block;}
+.ms-trilho{width:62px;flex:none;border-left:1px solid var(--line);background:var(--card-2);display:flex;flex-direction:column;
+  align-items:center;gap:3px;padding:8px 0;overflow-y:auto;}
+.ms-tr{position:relative;width:56px;padding:7px 0 6px;border:0;border-radius:10px;background:transparent;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--text-low);font-family:inherit;}
+.ms-tr svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.ms-trn{font-size:9.5px;font-weight:700;line-height:1;white-space:nowrap;}
+.ms-tr:hover{background:var(--chip);color:var(--text);}
+.ms-tr.on{background:var(--green-soft);color:var(--green-deep);}
+.ms-tr.on::before{content:'';position:absolute;right:-4px;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--green-fill);}
+.ms-tr:focus-visible{outline:2px solid var(--green);outline-offset:1px;}
+.ms-cnt{position:absolute;top:1px;right:4px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;border:2px solid var(--card-2);
+  font-size:8.5px;font-weight:800;color:#fff;display:inline-flex;align-items:center;justify-content:center;line-height:1;}
+.ms-cnt.r{background:var(--red-fill);} .ms-cnt.o{background:var(--orange-fill);} .ms-cnt.b{background:var(--blue-fill);}
+/* o que pede ação, na aba Cliente: cada linha leva à aba do assunto */
+.ms-pend{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font-family:inherit;cursor:pointer;
+  border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 10px;margin-top:6px;color:var(--text);}
+.ms-pend .pi{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;}
+.ms-pend .pi svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.ms-pend .grow{flex:1;min-width:0;display:flex;flex-direction:column;}
+.ms-pend .pt{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ms-pend .pd{font-size:10.5px;color:var(--text-mid);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ms-pend .seta{font-size:17px;font-weight:700;color:var(--text-low);flex:none;}
+.ms-pend.r{border-color:var(--red-line);background:var(--red-tint);} .ms-pend.r .pi{background:var(--red-soft);color:var(--red);}
+.ms-pend.o{border-color:var(--amber-line);background:var(--amber-tint);} .ms-pend.o .pi{background:var(--amber-soft);color:var(--amber-txt);}
+.ms-pend.b{border-color:var(--blue-line);background:var(--blue-soft);} .ms-pend.b .pi{background:var(--card);color:var(--blue-txt);}
+.ms-pend:hover{filter:brightness(.98);}
+.ms-ok{font-size:12px;font-weight:600;color:var(--green-deep);background:var(--green-soft);border-radius:10px;padding:9px 11px;line-height:1.45;}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
 /* O painel do cliente mostra tudo aberto: o atendente quer bater o olho e ver
@@ -2883,8 +2933,16 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   }
   .m-chat{border-right:none;}
   .m-chat.oculto{display:none;}
-  .m-side{display:none;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));}
-  .m-side.visivel{display:block;}
+  .m-side{display:none;padding:0;}
+  .m-side.visivel{display:flex;}
+  /* no celular a barra de assuntos vai para cima, deitada */
+  .ms-wrap{flex-direction:column;}
+  .ms-trilho{order:-1;width:auto;flex-direction:row;justify-content:space-around;border-left:none;
+    border-bottom:1px solid var(--line);padding:4px 6px;overflow-x:auto;overflow-y:hidden;}
+  .ms-tr{width:auto;min-width:50px;flex:1;min-height:46px;}
+  .ms-trn{font-size:10px;}
+  .ms-tr.on::before{right:9px;left:9px;top:auto;bottom:-4px;width:auto;height:3px;}
+  .fc-corpo{padding:14px 14px calc(14px + env(safe-area-inset-bottom));}
   .m-abas{
     display:flex;align-items:stretch;gap:4px;padding:calc(6px + env(safe-area-inset-top)) 8px 0;
     border-bottom:1px solid var(--line);background:var(--card);
@@ -3079,7 +3137,7 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
 @media (max-width:1020px) and (orientation:landscape) and (max-height:560px){
   .painel-lista{grid-template-columns:270px 1fr;}
   .modal{grid-template-columns:1fr 290px;grid-template-rows:auto 1fr;}
-  .m-side{display:block;}
+  .m-side{display:flex;}
   .m-chat.oculto{display:flex;}
   /* deitado cabem conversa e cadastro juntos, então as abas não servem — mas
      o botão de voltar tem de ficar: sem ele o atendimento também vira beco
@@ -3933,7 +3991,7 @@ function mapearConversa(c){
     avatarUrl: c.avatar_url||null, avatarEm: c.avatar_em||null,
     cliente:{
       plano: snap.plano||'—', desde: snap.desde||'—',
-      contrato: snap.contrato || (c.cliente_ixc_id?'Ativo':'Lead'),
+      contrato: snap.contrato || (c.cliente_ixc_id?'Ativo':'Lead'), acesso: snap.acesso || null,
       financeiro: snap.financeiro||'—', bloqueado: !!snap.bloqueado,
       atraso: snap.atraso||0, faturas: snap.faturas||0, valor: snap.valor||0,
       vencimento: snap.vencimento, previsaoBloqueio: snap.previsaoBloqueio,
@@ -9947,9 +10005,18 @@ function openModal(id){
     ?`<div class="pill bad"><div class="pl">Financeiro</div><div class="pv">${finLive?finLive.vencidas+' vencida'+(finLive.vencidas>1?'s':''):'Atrasado'}</div></div>`
     :`<div class="pill ok"><div class="pl">Financeiro</div><div class="pv">Em dia</div></div>`);
   const pillBloq = cl.lead?'':(estaBloq?`<div class="pill bad"><div class="pl">Bloqueio</div><div class="pv">Sim</div></div>`:`<div class="pill ok"><div class="pl">Bloqueio</div><div class="pv">Não</div></div>`);
-  const pillCont = `<div class="pill ${cl.contrato==='Ativo'?'ok':(cl.lead?'ok':'warn')}"><div class="pl">Contrato</div><div class="pv">${esc(cl.contrato)}</div></div>`;
+  const contratoTxt = situacaoContrato(c);
+  const pillCont = `<div class="pill ${contratoTxt==='Ativo'?'ok':(cl.lead?'ok':'warn')}"><div class="pl">Contrato</div><div class="pv">${esc(contratoTxt)}</div></div>`;
 
   const meusAg = state.agendamentos.filter(a=>a.convId===c.id);
+
+  // abas do painel do cliente: a lista (com os avisos) e a que está aberta.
+  // Conversa nova abre na aba Cliente, onde fica o resumo do que está pendente
+  if(trocouConversa) abaFicha = 'cliente';
+  const abasDaFicha = abasFicha(c, cl);
+  const abaAtualFicha = abasDaFicha.find(a=>a.id===abaFicha) || abasDaFicha[0];
+  abaFicha = abaAtualFicha.id;
+  _abasFichaAtual = abasDaFicha;
 
   // pega o player vivo ANTES de trocar o HTML — depois disso o nó antigo já foi
   const _midiaViva = preservarMidiaTocando();
@@ -9960,7 +10027,7 @@ function openModal(id){
   const _rolagem = trocouConversa ? null : lerRolagem($('#mThread'));
   // e até onde o painel do cliente estava rolado: em tela cheia, cada mensagem
   // que chega remonta o painel, e voltar ao topo no meio da leitura irrita
-  const _rolFicha = trocouConversa ? 0 : (($('#modal .m-side')||{}).scrollTop || 0);
+  const _rolFicha = trocouConversa ? 0 : ((rolanteFicha()||{}).scrollTop || 0);
   if(trocouConversa) novasAbaixo = null;
 
   $('#modal').innerHTML=`
@@ -10115,12 +10182,18 @@ function openModal(id){
       </div>
       <button class="fc-sair" id="fichaSairCheia" type="button" title="Voltar para a conversa (Esc)">✕ Fechar</button>
     </div>
-    <div class="fc-corpo">
-    <div class="ms-sec">
-      <h3>Cadastro do cliente
-        <button class="ficha-x" id="fichaRecolher" title="Recolher painel do cliente">›</button>
+    <div class="ms-wrap">
+    <div class="ms-conteudo">
+      <!-- título da aba aberta, com o resumo dela, e os botões do painel -->
+      <div class="ms-topo">
+        <div class="ms-tt"><span class="ms-tn" id="msTitulo">${esc(abaAtualFicha.nome)}</span><span class="ms-ts ${abaAtualFicha.subCor||''}" id="msResumo">${esc(abaAtualFicha.sub||'')}</span></div>
         <button class="ficha-x ficha-exp" id="fichaExpandir" type="button" title="Expandir em tela cheia" aria-label="Expandir dados do cliente em tela cheia"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
-      </h3>
+        <button class="ficha-x" id="fichaRecolher" title="Recolher painel do cliente">›</button>
+      </div>
+    <div class="fc-corpo">
+    <div class="ms-aba" data-aba="cliente">
+    <div class="ms-sec">
+      <h3>Cadastro do cliente</h3>
       ${c.clienteVinculado ? `
         <div class="vinc-box">
           <div class="vinc-nome">${esc(c.clienteVinculado.nome||c.nome)}</div>
@@ -10149,40 +10222,50 @@ function openModal(id){
     <div class="ms-sec"><div class="pills">${pillCont}${pillFin}${pillBloq}</div></div>
     ${cl.lead?'':`
     <div class="ms-sec">
+      <h3>O que precisa de atenção</h3>
+      ${pendenciasCliente(c)}
+      <button class="vinc-btn" id="mRecarregarPainel" style="width:100%;margin-top:9px;">🔄 Atualizar dados do IXC</button>
+    </div>`}
+    </div>
+    ${cl.lead?'':`
+    <div class="ms-aba" data-aba="financeiro">
+    <!-- as ações vêm primeiro: com as faturas abertas, "Enviar fatura" ficava
+         abaixo da dobra e o atendente precisava rolar para o que mais usa -->
+    <div class="ms-sec">
+      <h3>Ações do financeiro</h3>
+      <div class="acts">
+        <div class="act hi" data-painel="faturas">📄 Enviar fatura</div>
+        <div class="act" data-painel="extrato">📊 Extrato</div>
+      </div>
+    </div>
+    <div class="ms-sec">
       <h3>Financeiro <span class="ms-tag live" id="finTag">${c.painel?'ao vivo':'…'}</span></h3>
       ${blocoFinanceiro(c)}
     </div>
+    </div>
+    <div class="ms-aba" data-aba="conexao">
     <div class="ms-sec">
       <h3>Conexão do cliente <span class="ms-tag live">PPPoE</span></h3>
       ${blocoConexao(c)}
     </div>
+    </div>
+    <div class="ms-aba" data-aba="suporte">
     <div class="ms-sec">
-      <h3>Ações rápidas</h3>
-      <div class="acts">
-        <div class="act hi" data-painel="faturas">📄 Enviar fatura</div>
-        <div class="act" data-painel="contrato">📑 Ver contrato</div>
-        <div class="act" data-painel="extrato">📊 Extrato</div>
-      </div>
-      <button class="vinc-btn" id="mRecarregarPainel" style="width:100%;margin-top:7px;">🔄 Atualizar dados do IXC</button>
+      <h3>Suporte · últimos 30 dias</h3>
+      ${blocoChamados(c)}
+    </div>
+    </div>
+    <div class="ms-aba" data-aba="contrato">
+    <div class="ms-sec">
+      <h3>Contrato</h3>
+      <div class="acts"><div class="act hi" data-painel="contrato">📑 Ver contrato</div></div>
     </div>
     <div class="ms-sec">
       <h3>Assinatura eletrônica <span class="ms-tag live">MoviApp</span></h3>
       ${blocoAssinatura(c)}
     </div>
-    <div class="ms-sec">
-      <h3>Suporte · últimos 30 dias</h3>
-      ${blocoChamados(c)}
     </div>`}
-    <div class="ms-sec">
-      <h3>Mensagens agendadas</h3>
-      ${meusAg.map(ag=>`<div class="sched-item"><div><div class="sc-txt">${esc(ag.texto)}</div><div class="sc-time">${esc(ag.quando)}</div></div><span class="sc-cancel" data-agcancel="${ag.id}">✕</span></div>`).join('')||'<div class="sched-empty">Nenhuma agendada para esta conversa.</div>'}
-    </div>
-    <div class="ms-sec">
-      <h3>Etiquetas</h3>
-      <div class="tagrow">
-        ${state.tags.map(t=>`<span class="cc-tag ${c.tags.includes(t)?'':''}" data-tg="${esc(t)}" style="${c.tags.includes(t)?'background:var(--green-soft);color:var(--green-deep);':''}">${esc(t)}</span>`).join('')}
-      </div>
-    </div>
+    <div class="ms-aba" data-aba="atendimento">
     <div class="ms-sec">
       <h3>Situação do atendimento</h3>
       <select class="transf" id="mColuna">${COLS.map(k=>`<option value="${k.id}" ${k.id===c.col?'selected':''}>${k.nome}</option>`).join('')}</select>
@@ -10196,6 +10279,16 @@ function openModal(id){
       <select class="transf" id="mTransf">${ATENDENTES.map(a=>`<option ${a===c.atendente?'selected':''}>${a}</option>`).join('')}</select>
     </div>
     <div class="ms-sec">
+      <h3>Etiquetas</h3>
+      <div class="tagrow">
+        ${state.tags.map(t=>`<span class="cc-tag ${c.tags.includes(t)?'':''}" data-tg="${esc(t)}" style="${c.tags.includes(t)?'background:var(--green-soft);color:var(--green-deep);':''}">${esc(t)}</span>`).join('')}
+      </div>
+    </div>
+    <div class="ms-sec">
+      <h3>Mensagens agendadas</h3>
+      ${meusAg.map(ag=>`<div class="sched-item"><div><div class="sc-txt">${esc(ag.texto)}</div><div class="sc-time">${esc(ag.quando)}</div></div><span class="sc-cancel" data-agcancel="${ag.id}">✕</span></div>`).join('')||'<div class="sched-empty">Nenhuma agendada para esta conversa.</div>'}
+    </div>
+    <div class="ms-sec">
       <h3>Notas internas</h3>
       <textarea class="notas" id="mNotas" placeholder="Visível só para a equipe...">${esc(c.notas)}</textarea>
     </div>
@@ -10203,6 +10296,12 @@ function openModal(id){
       <h3>Automação</h3>
       <div class="ia-note">Fase atual: <b>menu + palavras-chave</b>.<br>Ponto de extensão reservado para <b>IA</b> — entrará como fallback sem alterar este fluxo.</div>
     </div>
+    </div>
+    </div>
+    </div>
+    <nav class="ms-trilho" aria-label="Assuntos do cliente">
+      ${abasDaFicha.map(a=>`<button type="button" class="ms-tr${a.id===abaAtualFicha.id?' on':''}" data-abaficha="${a.id}" title="${esc(a.nome)}" aria-pressed="${a.id===abaAtualFicha.id}">${ICO_FICHA[a.id]}<span class="ms-trn">${esc(a.curto)}</span>${a.badge?`<span class="ms-cnt ${a.badge.cor}">${esc(String(a.badge.n))}</span>`:''}</button>`).join('')}
+    </nav>
     </div>
   </div>`;
 
@@ -10213,7 +10312,8 @@ function openModal(id){
   // a que está aberta — senão volta a aparecer a cada troca
   $('#modal').classList.toggle('sem-ficha', fichaRecolhida);
   aplicarFicha();
-  if(_rolFicha){ const lado=$('#modal .m-side'); if(lado) lado.scrollTop=_rolFicha; }
+  aplicarAbaFicha();
+  if(_rolFicha){ const r=rolanteFicha(); if(r) r.scrollTop=_rolFicha; }
   const pe=$('#painelEspera'); if(pe) pe.style.display='none';
   if(window.innerWidth<=900) $('#overlay').classList.add('open');
   const bBusca=$('#mBuscar'); if(bBusca) bBusca.onclick=btAbrir;
@@ -10233,6 +10333,8 @@ function openModal(id){
   const bAbr=$('#fichaAbrir');    if(bAbr) bAbr.onclick=()=>alternarFicha(false);
   const bExp=$('#fichaExpandir'); if(bExp) bExp.onclick=ev=>{ ev.stopPropagation(); fichaTelaCheia(true); };
   const bSai=$('#fichaSairCheia'); if(bSai) bSai.onclick=()=>fichaTelaCheia(false);
+  // barra de assuntos e as linhas de "o que precisa de atenção"
+  document.querySelectorAll('#modal [data-abaficha]').forEach(el=>el.onclick=()=>trocarAbaFicha(el.dataset.abaficha));
   // devolve o player que já estava tocando para a árvore nova, no lugar do
   // elemento recém-criado: o áudio do cliente não para quando chega mensagem
   restaurarMidiaTocando(_midiaViva);
@@ -11055,7 +11157,9 @@ function alternarFicha(v){ fichaRecolhida = v; aplicarFicha(); }
 function fichaTelaCheia(v){
   fichaCheia = !!v;
   aplicarFicha();
-  const lado=$('#modal .m-side'); if(lado) lado.scrollTop=0;
+  // as duas camadas que rolam (o painel inteiro na tela cheia, só o conteúdo
+  // da aba no normal) voltam ao topo na troca de modo
+  ['#modal .m-side','#modal .fc-corpo'].forEach(s=>{ const r=$(s); if(r) r.scrollTop=0; });
   // o foco vai para onde a pessoa vai querer clicar em seguida
   const alvo=$(fichaCheia ? '#fichaSairCheia' : '#fichaExpandir');
   if(alvo) try{ alvo.focus({ preventScroll:true }); }catch{}
@@ -11067,6 +11171,162 @@ document.addEventListener('keydown', e=>{
   if(document.querySelector('.tr-overlay, .ctr-visor, .midia-lightbox, .mac-pop')) return;
   fichaTelaCheia(false);
 });
+
+/* ===== Abas do painel do cliente =====
+   Um assunto por vez, escolhido na barra de ícones (com nome embaixo, para
+   identificar de relance). O aviso no ícone diz onde há algo pedindo ação.
+   A aba Cliente abre por padrão em cada conversa nova: é onde fica o resumo
+   do que está pendente. */
+let abaFicha = 'cliente';
+let _abasFichaAtual = [];
+const _svgF = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICO_FICHA = {
+  cliente: _svgF('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+  financeiro: _svgF('<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'),
+  conexao: _svgF('<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>'),
+  suporte: _svgF('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
+  contrato: _svgF('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'),
+  atendimento: _svgF('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+};
+// Situação do contrato pela mesma regra do MoviOne (calcStatusContrato:
+// status do contrato + status de acesso). O cadastro guarda as siglas do IXC
+// e a tela mostrava a sigla crua — "A" num quadro laranja, como se fosse alerta.
+function rotuloContrato(sc, sa){
+  const s = String(sc==null?'':sc).trim();
+  if(s.length > 3) return s;                       // já vem por extenso ("Ativo", "Lead")
+  const k = s.toUpperCase(), a = String(sa||'').trim().toUpperCase();
+  if(['D','DS','C','EC'].includes(k)) return 'Cancelado';
+  if(k==='N') return 'Negativado';
+  if(k==='I') return 'Inativo';
+  if(['P','PC','CM','AB'].includes(k)) return 'Pré-contrato';
+  if(k==='A' || k==='AT'){
+    if(['CM','S','SU','B','D','DM'].includes(a)) return 'Bloqueio manual';
+    if(a==='CA' || a==='BL') return 'Bloqueio automático';
+    if(a==='FA') return 'Financeiro em atraso';
+    if(a==='AA') return 'Aguardando assinatura';
+    return 'Ativo';
+  }
+  if(k==='S') return 'Ativo';
+  return s || '—';
+}
+// ao vivo (IXC) quando já chegou; até lá, o que ficou gravado ao vincular.
+// Com mais de um contrato vale o ativo — o cancelado antigo não é a situação
+function situacaoContrato(c){
+  const cl = c.cliente || {};
+  const itens = (c.painel && c.painel.contratos && c.painel.contratos.itens) || [];
+  const k = itens.find(x=>x.status==='A' || x.status==='AT') || itens[itens.length-1];
+  return k ? rotuloContrato(k.status, k.status_internet) : rotuloContrato(cl.contrato, cl.acesso);
+}
+const plural = (n, um, varios) => `${n} ${n===1?um:varios}`;
+function loginsDaFicha(p){ return (p && p.conexao && p.conexao.logins) || []; }
+function pendAssinatura(c){ return c.asn ? (c.asn.lotes||[]).filter(l=>l.status==='pendente').length : 0; }
+
+/* A lista das abas, com o resumo que vai no título e o aviso do ícone. */
+function abasFicha(c, cl){
+  const p = c.painel || null;
+  const abas = [{ id:'cliente', nome:'Cliente', curto:'Cliente', sub: c.clienteVinculado ? 'cadastro no IXC' : 'sem cadastro vinculado' }];
+  if(!cl.lead){
+    const f = p && p.financeiro;
+    abas.push({ id:'financeiro', nome:'Financeiro', curto:'Financeiro',
+      sub: c.painelErro ? 'IXC indisponível' : !p ? 'consultando o IXC…' : !f ? '' : !f.faturas ? 'em dia'
+        : `${f.vencidas ? plural(f.vencidas,'vencida','vencidas')+' · ' : ''}${fmtR$(f.valor_aberto)} em aberto`,
+      subCor: f && f.vencidas ? 'r' : '', badge: f && f.vencidas ? { n:f.vencidas, cor:'r' } : null });
+    const logins = loginsDaFicha(p);
+    const off = logins.filter(l=>!l.online && l.ativo!==false).length;
+    const q = Math.max(0, ...logins.map(l=>Number(l.quedas_hoje)||0));
+    const inst = p && p.instabilidade;
+    abas.push({ id:'conexao', nome:'Conexão', curto:'Conexão',
+      sub: !p ? 'consultando…' : inst ? 'queda na região' : !logins.length ? 'sem login PPPoE'
+        : off ? (off===logins.length ? 'offline' : `${off} offline`) : `online${q ? ' · '+plural(q,'queda hoje','quedas hoje') : ''}`,
+      subCor: (inst || off) ? 'r' : (q > 3 ? 'o' : ''),
+      badge: (inst || off) ? { n:'!', cor:'r' } : (q > 3 ? { n:q, cor:'o' } : null) });
+    const ch = p && p.chamados;
+    abas.push({ id:'suporte', nome:'Suporte', curto:'Suporte',
+      sub: !ch ? '' : `${ch.abertos ? plural(ch.abertos,'aberto','abertos')+' · ' : ''}${ch.total30} em 30 dias`,
+      badge: ch && ch.abertos ? { n:ch.abertos, cor:'b' } : null });
+    const pa = pendAssinatura(c);
+    abas.push({ id:'contrato', nome:'Contrato e assinatura', curto:'Contrato',
+      sub: `${situacaoContrato(c)}${pa ? ' · '+plural(pa,'assinatura pendente','assinaturas pendentes') : ''}`,
+      badge: pa ? { n:pa, cor:'o' } : null });
+  }
+  const col = COLS.find(k=>k.id===c.col);
+  abas.push({ id:'atendimento', nome:'Atendimento', curto:'Atend.', sub: `${col?col.nome:''}${c.setor?' · '+c.setor:''}` });
+  return abas;
+}
+
+/* O que pede ação neste cliente, numa lista curta — a primeira coisa que o
+   atendente vê ao abrir a conversa. Cada linha leva à aba do assunto. */
+function pendenciasCliente(c){
+  const p = c.painel;
+  if(c.painelErro) return `<div class="ms-erro">Não consegui ler os dados no IXC.<br><b>${esc(c.painelErro)}</b></div>`;
+  if(!p) return `<div class="ms-load">Consultando o IXC…</div>`;
+  const itens = [];
+  const add = (cor, aba, titulo, sub) => itens.push({ cor, aba, titulo, sub });
+  const inst = p.instabilidade;
+  if(inst){
+    const rot = {queda:'Queda total',lentidao:'Lentidão / oscilação',manutencao:'Manutenção programada',rompimento:'Rompimento de fibra'}[inst.tipo] || 'Instabilidade';
+    const prev = inst.previsao ? new Date(inst.previsao).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    add('r', 'conexao', `${rot} na região`, prev ? 'previsão de normalização '+prev : 'sem previsão fechada');
+  }
+  const f = p.financeiro;
+  if(f && f.vencidas){
+    const venc = (f.itens||[]).filter(i=>i.vencida);
+    add('r', 'financeiro', f.vencidas===1 ? `Fatura vencida há ${plural(Number(f.atraso)||0,'dia','dias')}` : `${f.vencidas} faturas vencidas`,
+      `${fmtR$(f.valor_vencido)}${venc[0] && venc[0].vencimento ? ' · venceu '+venc[0].vencimento : ''}`);
+  }
+  if(p.contratos && p.contratos.bloqueado) add('r', 'financeiro', 'Internet bloqueada', 'contrato com bloqueio no IXC');
+  const logins = loginsDaFicha(p);
+  const off = logins.filter(l=>!l.online && l.ativo!==false);
+  if(off.length){
+    const l = off[0];
+    add('r', 'conexao', off.length===1 ? `Offline${l.ultima_queda ? ' desde '+l.ultima_queda : ''}` : `${off.length} logins offline`,
+      l.motivo_ultima_queda ? l.motivo_ultima_queda.rotulo : (l.login || ''));
+  } else {
+    const q = Math.max(0, ...logins.map(l=>Number(l.quedas_hoje)||0));
+    if(q > 3){
+      const l = logins.find(x=>(Number(x.quedas_hoje)||0)===q);
+      const m = l && l.motivo_ultima_queda;
+      add('o', 'conexao', plural(q,'queda hoje','quedas hoje'), m ? m.rotulo+(m.origem==='rede'?' · lado da rede':m.origem==='cliente'?' · lado do cliente':'') : 'instabilidade no enlace');
+    }
+  }
+  const ch = p.chamados;
+  if(ch && ch.abertos){
+    const a = (ch.itens||[]).find(s=>s.aberto);
+    add('b', 'suporte', ch.abertos===1 && a ? `${a.origem==='os'?'O.S.':'Chamado'} #${a.id} aberto` : plural(ch.abertos,'chamado aberto','chamados abertos'),
+      a ? [a.etapa, a.tecnico].filter(Boolean).join(' · ') : '');
+  }
+  const pa = pendAssinatura(c);
+  if(pa) add('o', 'contrato', pa===1 ? 'Assinatura pendente' : `${pa} assinaturas pendentes`, 'documento enviado e ainda não assinado');
+  if(!itens.length) return `<div class="ms-ok">✅ Nada pendente: financeiro em dia, conexão estável e nenhum chamado aberto.</div>`;
+  return itens.map(i=>`<button type="button" class="ms-pend ${i.cor}" data-abaficha="${i.aba}">
+    <span class="pi">${ICO_FICHA[i.aba]}</span>
+    <span class="grow"><span class="pt">${esc(i.titulo)}</span>${i.sub?`<span class="pd">${esc(i.sub)}</span>`:''}</span>
+    <span class="seta" aria-hidden="true">›</span></button>`).join('');
+}
+
+// quem rola: na tela cheia o painel inteiro, no normal só o conteúdo da aba
+function rolanteFicha(){ return fichaCheia ? $('#modal .m-side') : $('#modal .fc-corpo'); }
+function aplicarAbaFicha(){
+  const m=$('#modal'); if(!m) return;
+  m.querySelectorAll('.ms-aba').forEach(p=>p.classList.toggle('on', p.dataset.aba===abaFicha));
+  m.querySelectorAll('.ms-tr').forEach(b=>{ const on=b.dataset.abaficha===abaFicha; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on?'true':'false'); });
+  const a=_abasFichaAtual.find(x=>x.id===abaFicha);
+  const t=$('#msTitulo'), s=$('#msResumo');
+  if(a && t) t.textContent=a.nome;
+  if(a && s){ s.textContent=a.sub||''; s.className='ms-ts '+(a.subCor||''); }
+}
+function trocarAbaFicha(id){
+  if(!_abasFichaAtual.some(a=>a.id===id)) return;
+  abaFicha=id;
+  aplicarAbaFicha();
+  if(fichaCheia){
+    // na tela cheia tudo está à vista: leva até o assunto
+    const alvo=$(`#modal .ms-aba[data-aba="${id}"] .ms-sec`);
+    if(alvo) try{ alvo.scrollIntoView({ block:'start', behavior:'smooth' }); }catch{}
+    return;
+  }
+  const r=rolanteFicha(); if(r) r.scrollTop=0;
+}
 
 // Ctrl+F com conversa aberta busca DENTRO dela, não na página
 document.addEventListener('keydown', e=>{
