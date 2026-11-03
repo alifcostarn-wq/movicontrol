@@ -2571,6 +2571,210 @@ body.dark-mode .hub-ico{color:color-mix(in srgb,var(--c) 55%,#fff)}
 #page-config.active{display:block}
 #page-cp-chamados,#page-cp-os,#page-cp-tecnicos,#page-cp-estoque,#page-cp-movimentacoes{display:none}
 #page-cp-chamados.active,#page-cp-os.active,#page-cp-tecnicos.active,#page-cp-estoque.active,#page-cp-movimentacoes.active{display:block}
+/* ===== Central de Chamados: chamado + OS num caso só, por setor e prazo ===== */
+#page-cp-central{display:none}
+#page-cp-central.active{display:block}
+.cen{display:flex;flex-direction:column;gap:9px;font-family:'DM Sans',sans-serif;color:var(--text)}
+.cen *{box-sizing:border-box}
+.cen[hidden]{display:none}
+.cen-setores{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cen-set{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:10px;border:1px solid var(--surface3);background:var(--surface);
+  font:700 12.5px 'DM Sans',sans-serif;color:var(--text2);white-space:nowrap;cursor:pointer}
+.cen-set:hover{border-color:var(--border)}
+.cen-set .q{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--surface2);color:var(--text2)}
+.cen-set.on{border-color:var(--text);box-shadow:inset 0 -3px 0 var(--text);color:var(--text)}
+.cen-ic{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;flex:none;background:var(--surface2)}
+.cen-set .alerta{font-size:10.5px;font-weight:800;color:var(--danger-txt)}
+.cen-cfg-bt{margin-left:auto;font:700 12px 'DM Sans',sans-serif;color:var(--info);background:none;border:0;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:6px 4px}
+.cen-cfg-bt:hover{text-decoration:underline}
+.cen-topo{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cen-chips{display:flex;gap:6px;flex-wrap:wrap}
+.cen-chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
+  font:600 12px 'DM Sans',sans-serif;color:var(--text2);cursor:pointer;white-space:nowrap}
+.cen-chip b{font-size:12.5px;font-weight:700;color:var(--text)}
+.cen-chip.on{background:var(--text);border-color:var(--text);color:var(--surface)}
+.cen-chip.on b{color:var(--surface)}
+.cen-chip .d{width:8px;height:8px;border-radius:50%;flex:none}
+.cen-busca{flex:1;min-width:150px;max-width:250px;height:32px;border:1px solid var(--border);border-radius:9px;background:var(--surface);display:flex;align-items:center;gap:7px;padding:0 10px}
+.cen-busca svg{width:14px;height:14px;color:var(--text3);flex:none}
+.cen-busca input{border:0;outline:0;background:transparent;font:500 12.5px 'DM Sans',sans-serif;color:var(--text);width:100%;min-width:0;padding:0}
+.cen-busca input::placeholder{color:var(--text3)}
+.cen-busca:focus-within{border-color:var(--info);box-shadow:0 0 0 3px var(--info-bg)}
+.cen-tecs{display:flex;align-items:center}
+.cen-av{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:700 10.5px 'DM Sans',sans-serif;color:#fff;flex:none;border:2px solid var(--surface)}
+.cen-tecs .cen-av{margin-left:-6px;cursor:pointer;padding:0}
+.cen-tecs .cen-av:first-child{margin-left:0}
+.cen-tecs .cen-av.on{box-shadow:0 0 0 2px var(--text);position:relative;z-index:1}
+.cen-vivo{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text3);white-space:nowrap}
+.cen-vivo i{width:8px;height:8px;border-radius:50%;background:var(--c-verde);box-shadow:0 0 0 3px rgba(60,157,35,.18)}
+.cen-novo{height:32px;padding:0 13px;border-radius:9px;border:0;background:var(--accent-fill);color:#fff;font:700 12.5px 'DM Sans',sans-serif;white-space:nowrap;margin-left:auto;cursor:pointer}
+.cen-lp{display:grid;grid-template-columns:minmax(0,1fr) 352px;gap:10px;align-items:start}
+.cen-lista,.cen-painel{background:var(--surface);border:1px solid var(--surface3);border-radius:12px;max-height:calc(100vh - 196px);min-height:250px;overflow-y:auto}
+.cen-painel{padding:14px 15px}
+.cen-grupo{padding:8px 14px 6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);background:var(--surface2);
+  border-top:1px solid var(--surface3);display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:1}
+.cen-grupo:first-child{border-top:0}
+.cen-grupo .n{background:var(--surface);border:1px solid var(--surface3);border-radius:999px;padding:0 7px;font-size:10.5px;color:var(--text2);letter-spacing:0}
+.cen-lin{display:grid;grid-template-columns:10px minmax(0,1fr) auto 152px auto;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid var(--surface3);cursor:pointer}
+.cen-grupo + .cen-lin{border-top:0}
+.cen-lin:hover{background:var(--surface2)}
+.cen-lin.sel{background:var(--info-bg);box-shadow:inset 3px 0 0 var(--info)}
+.cen-lin:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
+.cen-lin .dot{width:9px;height:9px;border-radius:50%}
+.cen-lin .tx{min-width:0}
+.cen-lin .a{display:flex;gap:7px;align-items:baseline;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden}
+.cen-lin .a .id{font-family:'DM Mono',monospace;font-size:10.5px;font-weight:500;color:var(--text3);flex:none}
+.cen-lin .a .nm{overflow:hidden;text-overflow:ellipsis}
+.cen-lin .b{display:flex;gap:6px;align-items:center;margin-top:3px;min-width:0;white-space:nowrap;overflow:hidden}
+.cen-lin .b .d{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis}
+.cen-lin .tec{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);font-weight:600;min-width:0}
+.cen-lin .tec .cen-av{width:22px;height:22px;font-size:9.5px;border:0}
+.cen-lin .tec .sem{color:var(--danger-txt);font-weight:700}
+.cen-lin .tec .et{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cen-cmt{font-size:10.5px;font-weight:700;color:var(--text3);flex:none}
+.cen-tag{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap;flex:none;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;background:var(--surface2);color:var(--text2)}
+.cen-tag i{font-style:normal}
+.cen-tag.sem{border:1px dashed var(--border)}
+.cen-tag.sup,.cen-ic.sup{background:#E3EEFA;color:#0B4A8A}
+.cen-tag.ins,.cen-ic.ins{background:#E7F4E2;color:#256B14}
+.cen-tag.rede,.cen-ic.rede{background:#FFEBDB;color:#8A3F00}
+.cen-tag.fin,.cen-ic.fin{background:#EFE6FA;color:#5A2A9C}
+.cen-tag.com,.cen-ic.com{background:#DFF3F1;color:#11645C}
+.cen-prazo{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;white-space:nowrap;background:var(--surface2);color:var(--text2)}
+.cen-prazo.perto{background:var(--warn-bg);color:var(--laranja-txt)}
+.cen-prazo.atraso{background:var(--danger-fill);color:#fff}
+.cen-prazo.feito{background:var(--accent2);color:var(--accent-txt)}
+.cen-prazo.reag{background:#EFE6FA;color:#5A2A9C}
+.cen-reinc{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;color:var(--danger-txt);white-space:nowrap;flex:none}
+.cen-btn{height:28px;padding:0 10px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:700 11.5px 'DM Sans',sans-serif;
+  display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer}
+.cen-btn:hover{border-color:var(--text3)}
+.cen-btn.p{background:#004E98;border-color:#004E98;color:#fff}
+.cen-btn.v{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
+.cen-btn:disabled{opacity:.6;cursor:default}
+.cen-lk{background:none;border:0;padding:0 2px;font:700 11px 'DM Sans',sans-serif;color:var(--info);cursor:pointer;text-transform:none;letter-spacing:0}
+.cen-lk:hover{text-decoration:underline}
+.cen-vazio{padding:40px 20px;text-align:center;color:var(--text3);font-size:13px;line-height:1.5}
+.cen-painel .cab .t{font-size:14.5px;font-weight:800;line-height:1.25;word-break:break-word}
+.cen-painel .cab .s{font-size:11.5px;color:var(--text3);margin-top:3px}
+.cen-painel .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center}
+.cen-painel .tags .cen-tag{white-space:normal;text-align:left}
+.cen-painel .bl{margin-top:13px;font-size:12px;line-height:1.45;color:var(--text2)}
+.cen-painel .bl b{color:var(--text)}
+.cen-painel .bl .r{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px;display:flex;align-items:center;gap:6px}
+.cen-painel .acs{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.cen-barra{height:6px;border-radius:3px;background:var(--surface3);overflow:hidden;margin-top:6px}
+.cen-barra i{display:block;height:100%;border-radius:3px;background:var(--c-verde)}
+.cen-barra.perto i{background:var(--c-laranja)}
+.cen-barra.atraso i{background:var(--danger)}
+.cen-alerta{background:var(--danger-bg);border:1px solid #F2B8B8;color:var(--danger-txt);border-radius:9px;padding:7px 9px;font-size:11.5px}
+.cen-painel .bl .cen-alerta b{color:var(--danger-txt)}
+.cen-ant{margin:4px 0 0;padding-left:16px}
+.cen-ant li{margin-top:2px}
+.cen-ant .cen-lk{color:var(--danger-txt);text-decoration:underline}
+.cen-desc{background:var(--surface2);border:1px solid var(--surface3);border-radius:9px;padding:8px 10px;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.cen-dados{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 9px;margin:7px 0 0;font-size:11.5px}
+.cen-dados dt{color:var(--text3)}
+.cen-dados dd{margin:0;color:var(--text);word-break:break-word}
+.cen-tl{list-style:none;margin:4px 0 0;padding:0}
+.cen-tl li{position:relative;padding:0 0 9px 20px;font-size:11.5px;color:var(--text2)}
+.cen-tl li::before{content:'';position:absolute;left:4px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--c-verde)}
+.cen-tl li::after{content:'';position:absolute;left:8px;top:14px;bottom:-1px;width:1.5px;background:var(--surface3)}
+.cen-tl li:last-child::after{display:none}
+.cen-tl li.agora::before{background:var(--c-laranja);box-shadow:0 0 0 4px rgba(255,140,46,.22)}
+.cen-tl li .q{color:var(--text3);font-size:10.5px;margin-left:4px}
+.cen-com{background:var(--surface2);border:1px solid var(--surface3);border-radius:9px;padding:7px 9px;font-size:11.5px;color:var(--text2);margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.cen-com .h{font-size:10.5px;color:var(--text3);margin-left:4px}
+.cen-txt{display:block;width:100%;border:1px solid var(--border);border-radius:9px;padding:7px 10px;font:500 12px 'DM Sans',sans-serif;color:var(--text);background:var(--surface);
+  resize:vertical;min-height:56px;margin-top:7px}
+.cen-txt::placeholder{color:var(--text3)}
+.cen-txt:focus,.cen-sel:focus,.cen-in:focus{outline:0;border-color:var(--info);box-shadow:0 0 0 3px var(--info-bg)}
+.cen-sel{width:100%;border:1px solid var(--border);border-radius:8px;padding:6px 9px;font:600 12px 'DM Sans',sans-serif;background:var(--surface);color:var(--text)}
+.cen-linha{display:flex;gap:6px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.cen-erro{color:var(--danger-txt);font-size:11.5px;font-weight:700;margin-top:6px}
+.cen-nota{font-size:11px;color:var(--text3);line-height:1.4}
+.cen-prio{font-size:10.5px;font-weight:700;white-space:nowrap}
+.cen-prio.alta{color:var(--danger-txt)}
+.cen-prio.media{color:var(--laranja-txt)}
+.cen-prio.baixa{color:var(--azul-txt)}
+.cen-st{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;background:var(--surface2);color:var(--text2)}
+.cen-st::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.cen-st.acao{background:var(--info-bg);color:var(--info)}
+.cen-st.campo{background:var(--warn-bg);color:var(--laranja-txt)}
+.cen-st.reag{background:#EFE6FA;color:#5A2A9C}
+.cen-st.feito{background:var(--accent2);color:var(--accent-txt)}
+/* configuração de setores e assuntos */
+.cen-cfg-topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cen-cfg-topo .t{font-size:13.5px;font-weight:800}
+.cen-cfg-topo .s{font-size:11.5px;color:var(--text3)}
+.cen-conf{display:grid;grid-template-columns:240px minmax(0,1fr) 300px;gap:10px;align-items:start}
+.cen-box{background:var(--surface);border:1px solid var(--surface3);border-radius:12px;overflow:hidden}
+.cen-box h4{margin:0;padding:10px 13px;font-size:12px;font-weight:800;border-bottom:1px solid var(--surface3);display:flex;align-items:center;gap:8px;color:var(--text)}
+.cen-box .rola{max-height:calc(100vh - 236px);overflow-y:auto}
+.cen-sitem{display:flex;align-items:center;gap:9px;padding:8px 13px;border:0;border-top:1px solid var(--surface3);font:700 12.5px 'DM Sans',sans-serif;cursor:pointer;width:100%;
+  background:none;text-align:left;color:var(--text)}
+.cen-sitem:first-child{border-top:0}
+.cen-sitem:hover{background:var(--surface2)}
+.cen-sitem.on{background:var(--info-bg);box-shadow:inset 3px 0 0 var(--info)}
+.cen-sitem.vazio{color:var(--text3)}
+.cen-sitem .cen-ic{width:26px;height:26px;border-radius:8px;font-size:13px}
+.cen-sitem .s{font-size:10.5px;font-weight:600;color:var(--text3);margin-top:1px}
+.cen-tb{width:100%;border-collapse:collapse;font-size:11.5px}
+.cen-tb th{text-align:left;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text3);padding:7px 10px;background:var(--surface2);
+  border-bottom:1px solid var(--surface3);position:sticky;top:0;z-index:1}
+.cen-tb td{padding:7px 10px;border-bottom:1px solid var(--surface3);color:var(--text2);vertical-align:middle}
+.cen-tb td b{color:var(--text)}
+.cen-tb tbody tr{cursor:pointer}
+.cen-tb tbody tr:hover td{background:var(--surface2)}
+.cen-tb tbody tr.sel td{background:var(--info-bg)}
+.cen-tb tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
+.cen-fora{font-size:10px;font-weight:700;color:var(--text3);margin-left:5px}
+.cen-vis{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.cen-vis.s{background:var(--warn-bg);color:var(--laranja-txt)}
+.cen-vis.n{background:var(--surface2);color:var(--text2)}
+.cen-ed{padding:11px 13px;display:flex;flex-direction:column;gap:11px}
+.cen-ed .rot{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:4px}
+.cen-ed .nome{font-size:13px;font-weight:800;color:var(--text)}
+.cen-in{width:100%;border:1px solid var(--border);border-radius:8px;padding:6px 9px;font:600 12px 'DM Sans',sans-serif;background:var(--surface);color:var(--text)}
+.cen-in:disabled,.cen-sel:disabled{opacity:.7}
+.cen-seg{display:flex;gap:4px}
+.cen-seg button{flex:1;text-align:center;font:700 11px 'DM Sans',sans-serif;padding:6px 0;border-radius:7px;border:1px solid var(--surface3);color:var(--text2);background:var(--surface);cursor:pointer}
+.cen-seg button.on{background:var(--info-bg);border-color:var(--info);color:var(--info)}
+.cen-seg button:disabled{cursor:default}
+.cen-ck{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text);cursor:pointer}
+.cen-ck input{width:15px;height:15px;accent-color:var(--info);flex:none}
+.cen-ed .bts{display:flex;gap:6px;flex-wrap:wrap}
+/* janela de chamado: setor e assunto */
+.ch-ass-setores{display:flex;gap:5px;flex-wrap:wrap}
+.ch-ass-setores button{font:700 11.5px 'DM Sans',sans-serif;padding:5px 10px;border-radius:999px;border:1px solid var(--surface3);color:var(--text2);background:var(--surface);cursor:pointer;white-space:nowrap}
+.ch-ass-setores button.on{background:var(--text);color:var(--surface);border-color:var(--text)}
+.ch-ass-lista{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}
+.ch-ass-lista button{border:1px solid var(--surface3);border-radius:9px;padding:6px 9px;font:700 12px 'DM Sans',sans-serif;text-align:left;background:var(--surface);color:var(--text);cursor:pointer}
+.ch-ass-lista button .s{display:block;font-size:10.5px;font-weight:600;color:var(--text3);margin-top:1px}
+.ch-ass-lista button.on{border-color:var(--info);background:var(--info-bg);box-shadow:inset 0 0 0 1px var(--info)}
+.ch-ass-info{font-size:11.5px;color:var(--text2);margin-top:7px;line-height:1.45}
+.ch-ass-info b{color:var(--text)}
+.ch-ass-info .reinc{display:block;margin-top:5px;color:var(--danger-txt);font-weight:700}
+.ch-ass-info .erro{display:block;margin-top:5px;color:var(--danger-txt);font-weight:700}
+@media (max-width:1180px){ .cen-lp{grid-template-columns:minmax(0,1fr) 300px} .cen-conf{grid-template-columns:200px minmax(0,1fr) 260px} }
+@media (max-width:980px){ .cen-lp,.cen-conf{grid-template-columns:minmax(0,1fr)} .cen-painel,.cen-lista,.cen-box .rola{max-height:none} .cen-set{max-width:100%} .cen-set>span:not(.q):not(.alerta):not(.cen-ic){overflow:hidden;text-overflow:ellipsis} }
+@media (max-width:640px){ .ch-ass-lista{grid-template-columns:1fr} .cen-novo{margin-left:0} }
+/* lista estreita (notebook menor): técnico e botão descem para uma 2ª linha */
+.cen-lista{container-type:inline-size}
+@container (max-width:600px){
+  .cen-lin{grid-template-columns:10px minmax(0,1fr) auto;grid-template-areas:"dot tx prazo" ". tec acao";row-gap:5px}
+  .cen-lin>.dot{grid-area:dot} .cen-lin>.tx{grid-area:tx} .cen-lin>.cen-prazo{grid-area:prazo} .cen-lin>.tec{grid-area:tec}
+  .cen-lin>.cen-btn,.cen-lin>.cen-vaz{grid-area:acao;justify-self:end}
+}
+body.dark-mode .cen-tag.sup,body.dark-mode .cen-ic.sup{background:#16304D;color:#9CC6F0}
+body.dark-mode .cen-tag.ins,body.dark-mode .cen-ic.ins{background:#1C3618;color:#9BD88A}
+body.dark-mode .cen-tag.rede,body.dark-mode .cen-ic.rede{background:#3D2410;color:#F3B37A}
+body.dark-mode .cen-tag.fin,body.dark-mode .cen-ic.fin{background:#2B2140;color:#C9B2EE}
+body.dark-mode .cen-tag.com,body.dark-mode .cen-ic.com{background:#12302D;color:#8FD6CC}
+body.dark-mode .cen-prazo.reag,body.dark-mode .cen-st.reag{background:#2B2140;color:#C9B2EE}
+body.dark-mode .cen-alerta{border-color:#6B2B2B}
+body.dark-mode .cen-btn.p{background:#2F6FB5;border-color:#2F6FB5}
 
 /* ---------- Permissões por perfil ---------- */
 /* Visualizador: somente leitura - sem criar/editar/excluir */
@@ -3914,6 +4118,11 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
     </div>
     <button class="nav-section" data-group="campo" onclick="navToggleGroup(this)">Campo<svg class="nav-sec-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg></button>
     <div class="nav-group" id="nav-group-campo">
+    <button class="nav-item" data-page="cp-central" data-tooltip="Central de Chamados" onclick="navTo('cp-central',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+      <span class="nav-label">Central de Chamados</span>
+      <span class="nav-badge" id="badge-cp-central" style="display:none">0</span>
+    </button>
     <button class="nav-item" data-page="cp-chamados" data-tooltip="Chamados" onclick="navTo('cp-chamados',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
       <span class="nav-label">Chamados</span>
@@ -4092,6 +4301,26 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
           <div style="text-align:center;color:var(--muted);padding:24px">Carregando modelos...</div>
         </div>
       </div>
+    </div>
+
+    <!-- ====== CAMPO: CENTRAL DE CHAMADOS ====== -->
+    <div class="page" id="page-cp-central">
+      <div class="cen" id="cen-raiz">
+        <div class="cen-setores" id="cen-setores" role="toolbar" aria-label="Setores"></div>
+        <div class="cen-topo">
+          <div class="cen-chips" id="cen-chips" role="toolbar" aria-label="Filtros rápidos"></div>
+          <label class="cen-busca"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/></svg>
+            <input id="cen-busca" type="search" placeholder="Cliente, protocolo, assunto…" aria-label="Buscar chamado" autocomplete="off" oninput="cenBuscar(this.value)"></label>
+          <div class="cen-tecs" id="cen-tecs" role="toolbar" aria-label="Técnicos"></div>
+          <span class="cen-vivo" title="A lista atualiza sozinha"><i></i>ao vivo</span>
+          <button type="button" class="cen-novo perm-edit" onclick="cenNovoChamado()">+ Novo chamado</button>
+        </div>
+        <div class="cen-lp">
+          <div class="cen-lista" id="cen-lista" aria-label="Chamados"></div>
+          <aside class="cen-painel" id="cen-painel" aria-label="Detalhes do chamado" aria-live="polite"></aside>
+        </div>
+      </div>
+      <div class="cen" id="cen-config" hidden></div>
     </div>
 
     <div class="page" id="page-cp-chamados">
@@ -4501,6 +4730,15 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
                 ✕ Desvincular
               </button>
             </div>
+          </div>
+
+          <!-- Central de Chamados: setor e assunto (o prazo e a prioridade saem do assunto) -->
+          <div class="form-group full" id="ch-ass-bloco" style="margin-bottom:12px">
+            <span class="form-label" id="ch-ass-rot">Setor e assunto<span>*</span></span>
+            <input type="hidden" id="ch-assunto-id">
+            <div class="ch-ass-setores" id="ch-setores" role="toolbar" aria-labelledby="ch-ass-rot"></div>
+            <div class="ch-ass-lista" id="ch-assuntos" role="group" aria-labelledby="ch-ass-rot"></div>
+            <div class="ch-ass-info" id="ch-ass-info" aria-live="polite"></div>
           </div>
 
           <div class="form-grid">
@@ -8099,7 +8337,7 @@ function _reRenderAtual(){
     planejamento:renderPlan, analises:renderAnalises, cobranca:renderCobrancaModulo,
     clientes:()=>renderCadastro('clientes'), fornecedores:()=>renderCadastro('fornecedores'),
     plano:renderPlano, bancos:renderBancos, usuarios:renderUsuarios,
-    'cp-chamados':renderChamados, 'cp-os':renderOS, 'cp-tecnicos':renderTecnicos,
+    'cp-central':renderCentral, 'cp-chamados':renderChamados, 'cp-os':renderOS, 'cp-tecnicos':renderTecnicos,
     'cp-estoque':renderEstoque, 'cp-movimentacoes':renderMovimentacoes,
     'cp-estoque-bi':()=>estBiAbrir(false),
     compras:()=>cmpRenderAtual(), 'cp-requisicoes':()=>cmpRenderReq('estoque')
@@ -8138,6 +8376,9 @@ async function _recarregarTabela(table){
 // Aplica as tabelas marcadas (debounced) e re-renderiza a tela atual
 function _rtFlush(){
   const tabelas = [..._rtDirty]; _rtDirty.clear();
+  // comentário da Central de Chamados: só o painel do chamado e a contagem mudam
+  const iCmt = tabelas.indexOf('campo_chamados_comentarios');
+  if(iCmt >= 0){ tabelas.splice(iCmt, 1); try{ cenComentariosMudaram(); }catch(e){ console.warn('rt comentários', e); } if(!tabelas.length) return; }
   const temCampo = tabelas.some(t=>t.startsWith('campo_'));
   const temCompras = tabelas.some(t=>t.startsWith('compras_'));
   if(tabelas.some(t=>/^campo_(estoque_mov|comodato|os_equipamentos)$/.test(t))) _ebi.velho = true;
@@ -8157,7 +8398,7 @@ function _rtMarcar(table){
 function iniciarRealtime(){
   try{ if(_rtChannel){ sbClient.removeChannel(_rtChannel); _rtChannel=null; } }catch(e){}
   const tabelasSync  = [...new Set(Object.values(_SYNC_MAP).map(m=>m.table))];
-  const tabelasCampo = ['campo_os','campo_chamados','campo_tecnicos','campo_estoque','campo_estoque_saldo','campo_estoque_mov','campo_comodato'];
+  const tabelasCampo = ['campo_os','campo_chamados','campo_tecnicos','campo_estoque','campo_estoque_saldo','campo_estoque_mov','campo_comodato','campo_chamados_comentarios'];
   const tabelasExtra = ['metas','plano'];
   const tabelasCompras = ['compras_orcamentos','compras_requisicoes','compras_pedidos','compras_entradas'];
   const todas = [...new Set([...tabelasSync, ...tabelasCampo, ...tabelasExtra, ...tabelasCompras])];
@@ -8270,6 +8511,7 @@ const PAGE_META={
   intel:{title:'Inteligência Financeira',sub:'Score, previsão de inadimplência, segmentação e insights — motor analítico explicável'},
   config:{title:'Configurações',sub:'Integração com o IXC, backup e preferências do sistema'},
   'modelos-doc':{title:'Documentos',sub:'Biblioteca de modelos de contratos e termos para assinatura eletrônica'},
+  'cp-central':{title:'Central de Chamados',sub:'Chamados e ordens de serviço num lugar só, por setor e prazo'},
   'cp-chamados':{title:'Chamados',sub:'Gerenciar e distribuir chamados de suporte'},
   'cp-os':{title:'Ordens de Serviço',sub:'Controle de OS por técnico'},
   'cp-tecnicos':{title:'Técnicos',sub:'Cadastro e gestão de técnicos de campo'},
@@ -8367,7 +8609,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjusteBanco(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjusteBanco(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
-  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,acessos:()=>acsAbrir('movione'),'cp-acessos':()=>acsAbrir('movitec'),'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-estoque-bi':()=>estBiAbrir(false),'cp-movimentacoes':renderMovimentacoes,'cp-requisicoes':cmpAbrirReqEstoque,compras:cmpAbrir,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false),config:renderConfig};
+  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,acessos:()=>acsAbrir('movione'),'cp-acessos':()=>acsAbrir('movitec'),'cp-central':renderCentral,'cp-chamados':renderChamados,'cp-os':renderOS,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-estoque-bi':()=>estBiAbrir(false),'cp-movimentacoes':renderMovimentacoes,'cp-requisicoes':cmpAbrirReqEstoque,compras:cmpAbrir,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false),config:renderConfig};
   renders[page]?.();
   // Auto-sync IXC ao abrir a aba clientes (se configurado)
   if(page==='clientes' && typeof autoSyncIXC==='function') autoSyncIXC();
@@ -19133,7 +19375,7 @@ const HUB_ICO={
 const HUB_APPS=[
   { id:'movione',    nome:'MoviOne',    desc:'Financeiro, cobrança, clientes e campo',     cor:'#5056E0', ico:'grade',    logo:'/movione-icon.svg', abre:'painel' },
   { id:'movitalk',   nome:'MoviTalk',   desc:'Atendimento pelo WhatsApp',                  cor:'#00A859', ico:'chat',     logo:'/movitalk-icon.svg', url:'/atendimento.html', pode:u=>u.perfil==='admin'||u.atendimento },
-  { id:'movitec',    nome:'moviTec',    desc:'Chamados e ordens de serviço dos técnicos',  cor:'#004E98', ico:'chave',    logo:'/movitec-icon.svg', abre:'cp-chamados' },
+  { id:'movitec',    nome:'moviTec',    desc:'Chamados e ordens de serviço dos técnicos',  cor:'#004E98', ico:'chave',    logo:'/movitec-icon.svg', abre:'cp-central' },
   { id:'movifiber',  nome:'MoviFiber',  desc:'Projetos e viabilidade FTTH',                cor:'#3C9D23', ico:'antena',   logo:'/movifiber-icon.svg', url:'/movifiber.html', pode:u=>u.perfil==='admin'||u.movifiber, semSelo:true },
   { id:'roteadores', nome:'Roteadores', desc:'Equipamentos dos clientes (TR-069)',         cor:'#FF8C2E', ico:'roteador', abre:'roteadores', pode:u=>u.perfil==='admin'||u.roteadores },
   { id:'moviapp',    nome:'MoviApp',    desc:'App do assinante (abre como o cliente vê)',   cor:'#7B4FC7', ico:'celular',  url:'/moviapp.html' },
@@ -19675,7 +19917,7 @@ function hbChFocoDesc(){ hubBalaoPosicionar(); setTimeout(()=>document.getElemen
 function hbChPreencherJanela(){
   const s=(id,x)=>{ const e=document.getElementById(id); if(e) e.value=x; };
   popularSelectsTecnicosCampo();
-  s('ch-id',''); s('ch-cliente-id','');
+  s('ch-id',''); s('ch-cliente-id',''); s('ch-assunto-id',''); _chAss.novo=false;
   window._chamadoClienteAtual=null;
   if(_hbCh.cli) preencherClienteChamado(_hbCh.cli);
   else{ s('ch-cliente',_hbCh.livre||_hbCh.busca.trim()); ['ch-endereco','ch-telefone','ch-login-cliente','ch-localizacao'].forEach(id=>s(id,'')); }
@@ -19696,7 +19938,7 @@ async function hbChSalvar(){
   const tec=(_cpTecnicos||[]).find(t=>String(t.id)===String(_hbCh.tec));
   hbCorpo().innerHTML=`<div class="hb-feito"><div class="ok">✓</div><h4>Chamado registrado</h4>
     <p>${hbEsc(nome)} · prioridade ${{baixa:'baixa',media:'média',alta:'alta'}[_hbCh.prio]||'média'} · ${tec?'com '+hbEsc(tec.nome):'na fila, sem técnico'}</p>
-    <div class="hb-acoes"><button type="button" class="hb-btn" onclick="hubBalao('chamado',null,{})">Abrir outro</button><button type="button" class="hb-btn2" onclick="hubFechar('cp-chamados')">Ver chamados</button></div></div>`;
+    <div class="hb-acoes"><button type="button" class="hb-btn" onclick="hubBalao('chamado',null,{})">Abrir outro</button><button type="button" class="hb-btn2" onclick="hubFechar('cp-central')">Ver chamados</button></div></div>`;
   hubBalaoPosicionar();
 }
 function hbChMais(){
@@ -20415,6 +20657,7 @@ function atualizarBadgesCampo(){
   const alertas = princ ? _cpEstoque.filter(p=>cpSaldo(p.id,princ.id) <= (p.qtd_minima||0)).length : 0;
   const bdEst = document.getElementById('badge-cp-estoque');
   if(bdEst){ bdEst.style.display = alertas>0?'':'none'; navAlerta(bdEst, alertas>0); }
+  try{ cenAtualizarBadge(); }catch(e){ console.warn('selo central', e); }
   _hubCampoPronto = true;
   hubSeloCampo();
 }
@@ -20429,6 +20672,913 @@ function popularSelectsTecnicosCampo(){
       : selId==='ch-tecnico' ? '<option value="">Sem técnico</option>'
       : '<option value="">Selecione…</option>';
     sel.innerHTML = primeiro + ativos.map(t=>`<option value="${t.id}" ${t.id==val?'selected':''}>${t.nome}</option>`).join('');
+  });
+}
+
+// ============================================================
+// CENTRAL DE CHAMADOS — chamado e OS do mesmo problema num caso só,
+// separados por setor e ordenados pelo prazo.
+// Setores e assuntos vêm do IXC (ixc_setores / ixc_assuntos). O que o MoviOne
+// decide por assunto (setor, prazo, prioridade, se gera OS, se aparece) fica em
+// central_assuntos; o valor que vale sai da visão central_assuntos_efetivo.
+// O prazo do chamado é fixado pelo banco na abertura, a partir do assunto
+// (gatilho campo_chamados_assunto_prazo) — aqui só se lê campo_chamados.prazo_em.
+// ============================================================
+const CEN = {
+  setor:'', filtro:'', tec:null, busca:'', sel:null, selAuto:true, vista:'lista',
+  assuntos:null, setores:null, cfgErro:null, _cfgP:null, porChave:new Map(),
+  cmt:new Map(), cmtCont:new Map(), hist:new Map(), detSig:new Map(), rascunho:new Map(),
+  form:null, enviandoCmt:false, ocupado:false, _cntChave:'', _painelKey:null, _buscaT:null,
+  cfgSetor:null, cfgAssunto:null, cfgRasc:null, cfgSalvando:false,
+};
+const CEN_H = 36e5, CEN_DIA = 864e5;
+
+function cenEsc(s){ return String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// nomes do IXC vêm em maiúsculas e sem acento: "SUPORTE TECNICO EXTERNO" → "Suporte Técnico Externo"
+const _CEN_MIN = new Set(['de','da','do','das','dos','e','em','a','ao','na','no','via','para','com','sem','por','ou']);
+const _CEN_AC = { TECNICO:'Técnico', TECNICA:'Técnica', OPTICA:'Óptica', RADIO:'Rádio', ANALISE:'Análise', SERVICO:'Serviço', SERVICOS:'Serviços',
+  MANUTENCAO:'Manutenção', INSTALACAO:'Instalação', TRANSFERENCIA:'Transferência', ATUALIZACAO:'Atualização', NEGATIVACAO:'Negativação',
+  SOLICITACAO:'Solicitação', FUSAO:'Fusão', LANCAMENTO:'Lançamento', GERENCIA:'Gerência', COBRANCA:'Cobrança', ASSISTENCIA:'Assistência' };
+function cenNome(t){
+  return String(t||'').trim().toLowerCase().split(/\s+/).filter(Boolean)
+    .map((w,i)=>_CEN_AC[w.toUpperCase()] || (i>0 && _CEN_MIN.has(w) ? w : w.charAt(0).toUpperCase()+w.slice(1))).join(' ');
+}
+function cenNormNome(n){ return String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
+function cenDur(min){
+  min = Math.abs(Math.round(min));
+  if(min < 60) return min+' min';
+  if(min < 1440){ const h=Math.floor(min/60), m=min%60; return h+'h'+(m?String(m).padStart(2,'0'):''); }
+  const d=Math.floor(min/1440), h=Math.floor((min%1440)/60);
+  return d+' dia'+(d>1?'s':'')+(h?' '+h+'h':'');
+}
+function cenHoras(h){
+  h = Number(h);
+  if(!(h > 0)) return 'sem prazo';
+  if(h < 1) return Math.round(h*60)+' min';
+  if(h >= 48 && h % 24 === 0) return (h/24)+' dias';
+  return (Number.isInteger(h) ? h : String(Math.round(h*10)/10).replace('.',','))+'h';
+}
+function cenHora(ms){
+  if(!ms || isNaN(ms)) return '—';
+  const d = new Date(ms), hoje = new Date();
+  const dia = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dd = Math.round((dia(d) - dia(hoje)) / CEN_DIA);
+  const hh = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  if(dd === 0) return 'hoje às '+hh;
+  if(dd === 1) return 'amanhã às '+hh;
+  if(dd === -1) return 'ontem às '+hh;
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' às '+hh;
+}
+const cenRotPrio = p => ({ alta:'Alta', baixa:'Baixa' }[p] || 'Média');
+const cenCorPrio = p => ({ alta:'var(--danger)', baixa:'var(--c-azul-claro)' }[p] || 'var(--c-laranja)');
+const cenNumOS = n => 'OS #'+String(n||0).padStart(4,'0');
+const CEN_ORIGEM = { movitalk:'pelo MoviTalk', bot:'pelo robô do WhatsApp', moviapp:'pelo MoviApp', movione:'pelo MoviOne', movitec:'pelo moviTec' };
+
+// ---------- setores e assuntos ----------
+async function cenCarregarCfg(forcar){
+  if(CEN.assuntos && !forcar) return;
+  if(CEN._cfgP) return CEN._cfgP;
+  CEN._cfgP = (async()=>{
+    const [a, s] = await Promise.all([
+      sbClient.from('central_assuntos_efetivo')
+        .select('assunto_id,assunto,ativo_ixc,setor_id,setor_id_ixc,tipo,finalidade,gera_os,prazo_horas,prazo_horas_ixc,prioridade,na_central,setor_proprio,prazo_proprio,atualizado_em,atualizado_por')
+        .order('assunto'),
+      sbClient.from('ixc_setores').select('id,setor,ativo').order('setor'),
+    ]);
+    if(a.error) throw a.error;
+    if(s.error) throw s.error;
+    const num = v => v == null ? null : Number(v);
+    CEN.assuntos = (a.data||[]).map(x=>({ ...x, assunto_id:String(x.assunto_id), setor_id:x.setor_id?String(x.setor_id):null,
+      setor_id_ixc:x.setor_id_ixc?String(x.setor_id_ixc):null, prazo_horas:num(x.prazo_horas), prazo_horas_ixc:num(x.prazo_horas_ixc) }));
+    CEN.setores = (s.data||[]).map(x=>({ ...x, id:String(x.id) }));
+    CEN.cfgErro = null;
+  })().finally(()=>{ CEN._cfgP = null; });
+  return CEN._cfgP;
+}
+function cenAssunto(id){ return id != null && CEN.assuntos ? CEN.assuntos.find(a=>a.assunto_id===String(id)) || null : null; }
+function cenSetor(id){ return id != null && CEN.setores ? CEN.setores.find(s=>s.id===String(id)) || null : null; }
+function cenSetorNome(id){ const s = cenSetor(id); return s ? cenNome(s.setor) : (id ? 'Setor '+id : 'Sem setor'); }
+function cenSetorVisual(nome){
+  const n = cenNormNome(nome);
+  if(/INFRA|REDE|TORRE/.test(n)) return { cls:'rede', ic:'🌐' };
+  if(/AGENDA/.test(n)) return { cls:'ins', ic:'📅' };
+  if(/RETIRADA/.test(n)) return { cls:'ins', ic:'📦' };
+  if(/INSTALA/.test(n)) return { cls:'ins', ic:'📡' };
+  if(/SUPORTE|ASSIST|TECNIC/.test(n)) return { cls:'sup', ic:'🛠️' };
+  if(/COBRAN|CONTAS|FINANC|RECEBER|PAGAR/.test(n)) return { cls:'fin', ic:'💰' };
+  if(/VENDA|COMERC/.test(n)) return { cls:'com', ic:'🤝' };
+  if(/ATENDIMENTO/.test(n)) return { cls:'com', ic:'💬' };
+  if(/COMPRA/.test(n)) return { cls:'adm', ic:'🛒' };
+  return { cls:'adm', ic:'🏢' };
+}
+
+// ---------- cliente do chamado ----------
+// O chamado guarda o id do IXC; os antigos (e as OS) guardam o id interno de
+// clientes. Quando os dois números existem, o nome do chamado desempata.
+let _cpCliIdx = { ref:null, n:-1, porId:new Map(), porIxc:new Map() };
+function cpIdxClientes(){
+  const l = gd('sf_clientes') || [];
+  if(_cpCliIdx.ref !== l || _cpCliIdx.n !== l.length){
+    const porId = new Map(), porIxc = new Map();
+    l.forEach(x=>{ if(x.id != null) porId.set(String(x.id), x); if(x.ixcId != null && x.ixcId !== '') porIxc.set(String(x.ixcId), x); });
+    _cpCliIdx = { ref:l, n:l.length, porId, porIxc };
+  }
+  return _cpCliIdx;
+}
+function cpClienteDoChamado(c){
+  if(!c || c.cliente_id == null || c.cliente_id === '') return null;
+  const { porId, porIxc } = cpIdxClientes();
+  const id = String(c.cliente_id), nome = cenNormNome(c.cliente);
+  const a = porIxc.get(id), b = porId.get(id);
+  if(a && b && a !== b) return (cenNormNome(b.nome) === nome && cenNormNome(a.nome) !== nome) ? b : a;
+  return a || b || null;
+}
+// a OS usa o id interno do cadastro (comodato e mapa do moviTec leem assim)
+function cpClienteIdDaOS(c){ const cli = cpClienteDoChamado(c); return cli ? String(cli.id) : (c && c.cliente_id ? String(c.cliente_id) : null); }
+function cenChaveCliente(c){
+  const cli = cpClienteDoChamado(c);
+  if(cli) return 'cli:'+cli.id;
+  const n = cenNormNome(c && c.cliente);
+  return n ? 'nm:'+n : 'ch:'+(c && c.id);
+}
+
+// ---------- casos ----------
+function cenCaso(c, os, agora){
+  const k = { key: c ? 'c'+c.id : 'o'+os.id, ch:c || null, os:os || null };
+  k.cliente = (c && c.cliente) || (os && os.cliente) || '—';
+  k.descricao = (c && c.descricao) || (os && os.descricao) || '';
+  k.criado = Date.parse((c && c.created_at) || (os && os.created_at) || '') || agora;
+  k.assunto = c && c.assunto_id ? cenAssunto(c.assunto_id) : null;
+  k.setorId = (c && c.setor_id) ? String(c.setor_id) : (k.assunto && k.assunto.setor_id) || null;
+  k.prazo = c && c.prazo_em ? Date.parse(c.prazo_em) || null : null;
+  k.prio = (c && c.prioridade) || (os && os.prioridade) || 'media';
+  const stC = String((c && c.status) || ''), stO = String((os && os.status) || '');
+  let etapa = 'acao', fim = null;
+  if(os && ['finalizada','concluida'].includes(stO)){ etapa = 'feito'; fim = Date.parse(os.finalizado_em || (c && c.concluido_em) || '') || null; }
+  else if(stC === 'concluido'){ etapa = 'feito'; fim = Date.parse(c.concluido_em || '') || null; }
+  else if(stC === 'cancelado' || stO === 'cancelada') etapa = 'cancelado';
+  else if(stC === 'reagendado' || stO === 'reagendada') etapa = 'reag';
+  else if(os) etapa = ['executando','andamento'].includes(stO) ? 'cliente' : stO === 'assumida' ? 'caminho' : (os.tecnico_id ? 'tecnico' : 'acao');
+  else if(stC === 'andamento') etapa = 'atendendo';
+  else if(c && c.tecnico_id) etapa = 'tecnico';
+  k.etapa = etapa; k.fim = fim;
+  k.feito = etapa === 'feito';
+  k.aberto = etapa !== 'feito' && etapa !== 'cancelado';
+  k.resp = os && os.tecnico_id ? { id:os.tecnico_id, nome:os.tecnico_nome || 'Técnico' }
+    : c && c.tecnico_id ? { id:c.tecnico_id, nome:c.tecnico_nome || 'Técnico' }
+    : c && c.responsavel_nome ? { id:null, nome:c.responsavel_nome, escritorio:true } : null;
+  k.reagPara = (c && c.reagendado_para) || (os && os.reagendado_para) || null;
+  k.anteriores = [];
+  return k;
+}
+function cenCasos(){
+  const agora = Date.now();
+  const osId = new Map(), osCh = new Map();
+  (_cpOS||[]).forEach(o=>{ osId.set(Number(o.id), o); if(o.chamado_id) osCh.set(Number(o.chamado_id), o); });
+  const usadas = new Set(), casos = [];
+  (_cpChamados||[]).forEach(c=>{
+    const os = (c.os_id && osId.get(Number(c.os_id))) || osCh.get(Number(c.id)) || null;
+    if(os) usadas.add(Number(os.id));
+    casos.push(cenCaso(c, os, agora));
+  });
+  (_cpOS||[]).forEach(o=>{ if(!usadas.has(Number(o.id))) casos.push(cenCaso(null, o, agora)); });
+  // voltou: outro chamado do mesmo cliente nos 30 dias antes deste
+  const porCli = new Map();
+  (_cpChamados||[]).forEach(c=>{
+    if(c.status === 'cancelado') return;
+    const ch = cenChaveCliente(c);
+    if(!porCli.has(ch)) porCli.set(ch, []);
+    porCli.get(ch).push(c);
+  });
+  casos.forEach(k=>{
+    if(!k.ch) return;
+    const l = porCli.get(cenChaveCliente(k.ch)) || [];
+    k.anteriores = l.filter(c=>{ const t = Date.parse(c.created_at) || 0; return c.id !== k.ch.id && t < k.criado && k.criado - t <= 30*CEN_DIA; })
+      .sort((a,b)=>(Date.parse(b.created_at)||0) - (Date.parse(a.created_at)||0));
+  });
+  return casos;
+}
+function cenHojeIni(){ const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); }
+const cenAtrasado = (k, agora) => k.aberto && k.etapa !== 'reag' && !!k.prazo && k.prazo < agora;
+const cenVence2h = (k, agora) => k.aberto && k.etapa !== 'reag' && !!k.prazo && k.prazo >= agora && k.prazo - agora < 2*CEN_H;
+function cenPassa(k, agora, comChip){
+  if(CEN.setor === 'sem' ? !!k.setorId : (CEN.setor && k.setorId !== CEN.setor)) return false;
+  if(CEN.tec != null && !(k.resp && k.resp.id != null && String(k.resp.id) === String(CEN.tec))) return false;
+  if(CEN.busca){
+    const q = cenNormNome(CEN.busca).replace(/^#/, '');
+    const c = k.ch, os = k.os;
+    const alvo = cenNormNome([k.cliente, k.descricao, c ? '#'+c.id+' '+c.id : '', os ? cenNumOS(os.numero)+' '+os.numero : '',
+      k.assunto ? k.assunto.assunto : '', (c && c.telefone) || (os && os.telefone) || '', (c && c.login_cliente) || (os && os.login_cliente) || ''].join(' '));
+    if(!alvo.includes(q)) return false;
+  }
+  if(comChip){
+    const f = CEN.filtro;
+    if(f === 'acao' && !(k.aberto && k.etapa === 'acao')) return false;
+    if(f === 'vence' && !cenVence2h(k, agora)) return false;
+    if(f === 'voltou' && !(k.aberto && k.anteriores.length)) return false;
+    if(f === 'campo' && !['caminho','cliente'].includes(k.etapa)) return false;
+  }
+  return true;
+}
+
+// ---------- tela ----------
+async function renderCentral(){
+  const raiz = document.getElementById('page-cp-central');
+  if(!raiz) return;
+  cenLigar();
+  if(!CEN.assuntos && !CEN.cfgErro){
+    const l = document.getElementById('cen-lista');
+    if(l && !l.innerHTML) l.innerHTML = '<div class="cen-vazio">Carregando setores e assuntos…</div>';
+    try{ await cenCarregarCfg(); }catch(e){ CEN.cfgErro = (e && e.message) || String(e); }
+  }
+  if(CEN.vista === 'config'){ cenRenderConfig(); return; }
+  document.getElementById('cen-config').hidden = true;
+  document.getElementById('cen-raiz').hidden = false;
+  const agora = Date.now();
+  const casos = cenCasos();
+  CEN.porChave = new Map(casos.map(k=>[k.key, k]));
+  const ini = cenHojeIni();
+  const base = casos.filter(k=>k.aberto || (k.feito && k.fim && k.fim >= ini));
+  cenRenderTopo(base, agora);
+  const semChip = base.filter(k=>cenPassa(k, agora, false));
+  cenRenderChips(semChip, agora);
+  cenRenderTecs();
+  const L = semChip.filter(k=>cenPassa(k, agora, true));
+  if(!CEN.sel || !CEN.porChave.has(CEN.sel) || (CEN.selAuto && !L.some(k=>k.key === CEN.sel))){
+    const prim = cenOrdenados(L, agora)[0];
+    CEN.sel = prim ? prim.key : null; CEN.selAuto = true;
+  }
+  cenRenderLista(L, agora);
+  cenCarregarContagens(L);
+  cenAtualizarDetalhe();
+}
+function cenRenderTopo(base, agora){
+  const el = document.getElementById('cen-setores'); if(!el) return;
+  const porSetor = new Map();
+  base.forEach(k=>{
+    const id = k.setorId || 'sem';
+    if(!porSetor.has(id)) porSetor.set(id, { q:0, at:0 });
+    const o = porSetor.get(id);
+    if(k.aberto){ o.q++; if(cenAtrasado(k, agora)) o.at++; }
+  });
+  if(CEN.setor && !porSetor.has(CEN.setor)) CEN.setor = '';
+  const ids = [...porSetor.keys()].filter(x=>x !== 'sem').sort((a,b)=>cenSetorNome(a).localeCompare(cenSetorNome(b),'pt-BR'));
+  if(porSetor.has('sem')) ids.push('sem');
+  const abertos = base.filter(k=>k.aberto);
+  const btn = (id, nome, vis, q, at) => `<button type="button" class="cen-set${CEN.setor===id?' on':''}" data-setor="${cenEsc(id)}" aria-pressed="${CEN.setor===id}">${vis?`<span class="cen-ic ${vis.cls}" aria-hidden="true">${vis.ic}</span>`:''}${cenEsc(nome)}<span class="q">${q}</span>${at?`<span class="alerta">${at} atrasado${at>1?'s':''}</span>`:''}</button>`;
+  let h = btn('', 'Todos', null, abertos.length, abertos.filter(k=>cenAtrasado(k, agora)).length);
+  ids.forEach(id=>{
+    const o = porSetor.get(id);
+    h += id === 'sem' ? btn('sem', 'Sem assunto', { cls:'adm', ic:'❔' }, o.q, o.at) : btn(id, cenSetorNome(id), cenSetorVisual(cenSetor(id) && cenSetor(id).setor), o.q, o.at);
+  });
+  h += `<button type="button" class="cen-cfg-bt" data-acao="config">⚙ Setores e assuntos</button>`;
+  el.innerHTML = h;
+}
+function cenRenderChips(lista, agora){
+  const el = document.getElementById('cen-chips'); if(!el) return;
+  const ab = lista.filter(k=>k.aberto);
+  const defs = [
+    ['acao', 'Precisa de ação', ab.filter(k=>k.etapa === 'acao').length, 'var(--info)'],
+    ['vence', 'Vence em 2h', ab.filter(k=>cenVence2h(k, agora)).length, 'var(--c-laranja)'],
+    ['voltou', 'Voltaram', ab.filter(k=>k.anteriores.length).length, 'var(--danger)'],
+    ['campo', 'Em campo', ab.filter(k=>['caminho','cliente'].includes(k.etapa)).length, 'var(--c-verde)'],
+  ];
+  el.innerHTML = defs.map(([id, n, q, cor])=>`<button type="button" class="cen-chip${CEN.filtro===id?' on':''}" data-filtro="${id}" aria-pressed="${CEN.filtro===id}"><span class="d" style="background:${cor}" aria-hidden="true"></span>${n} <b>${q}</b></button>`).join('');
+}
+function cenCorTec(id){ const i = (_cpTecnicos||[]).findIndex(t=>String(t.id) === String(id)); return i < 0 ? '#67677D' : cpCor(i); }
+function cenRenderTecs(){
+  const el = document.getElementById('cen-tecs'); if(!el) return;
+  const ativos = (_cpTecnicos||[]).filter(t=>t.status === 'ativo');
+  if(CEN.tec != null && !ativos.some(t=>String(t.id) === String(CEN.tec))) CEN.tec = null;
+  el.innerHTML = ativos.map(t=>{ const on = String(CEN.tec) === String(t.id);
+    return `<button type="button" class="cen-av${on?' on':''}" data-tec="${cenEsc(t.id)}" style="background:${cenCorTec(t.id)}" title="${cenEsc(t.nome)}${on?' — mostrar todos':' — só os chamados dele'}" aria-label="${cenEsc(t.nome)}" aria-pressed="${on}">${cenEsc(cpIniciais(t.nome))}</button>`; }).join('');
+}
+function cenGrupos(L, agora){
+  const ab = L.filter(k=>k.aberto);
+  return [
+    ['atraso', '⚠️ Atrasados', ab.filter(k=>cenAtrasado(k, agora)).sort((a,b)=>a.prazo - b.prazo)],
+    ['vence', '⏰ Vencem em até 2h', ab.filter(k=>cenVence2h(k, agora)).sort((a,b)=>a.prazo - b.prazo)],
+    ['prazo', 'No prazo', ab.filter(k=>k.etapa !== 'reag' && k.prazo && k.prazo - agora >= 2*CEN_H).sort((a,b)=>a.prazo - b.prazo)],
+    ['sem', 'Sem prazo definido', ab.filter(k=>k.etapa !== 'reag' && !k.prazo).sort((a,b)=>a.criado - b.criado)],
+    ['reag', '📅 Reagendados', ab.filter(k=>k.etapa === 'reag').sort((a,b)=>String(a.reagPara||'9').localeCompare(String(b.reagPara||'9')))],
+    ['feito', '✅ Concluídos hoje', L.filter(k=>k.feito).sort((a,b)=>(b.fim||0) - (a.fim||0))],
+  ];
+}
+function cenOrdenados(L, agora){ return cenGrupos(L, agora).flatMap(g=>g[2]); }
+function cenRenderLista(L, agora){
+  const el = document.getElementById('cen-lista'); if(!el) return;
+  const rol = el.scrollTop;
+  const h = cenGrupos(L, agora).filter(g=>g[2].length)
+    .map(([id, t, l])=>`<div class="cen-grupo" data-grupo="${id}">${t}<span class="n">${l.length}</span></div>${l.map(k=>cenLinha(k, agora)).join('')}`).join('');
+  const filtrando = CEN.busca || CEN.filtro || CEN.setor || CEN.tec != null;
+  el.innerHTML = h || `<div class="cen-vazio">${CEN.cfgErro ? 'Não consegui carregar os assuntos: '+cenEsc(CEN.cfgErro)+'<br>' : ''}${filtrando ? 'Nenhum chamado com esses filtros.' : 'Nenhum chamado em aberto agora. 🎉'}</div>`;
+  el.scrollTop = rol;
+}
+function cenLinha(k, agora){
+  const ids = [k.ch ? '#'+k.ch.id : '', k.os ? cenNumOS(k.os.numero) : ''].filter(Boolean).join(' · ');
+  const n = k.ch ? CEN.cmtCont.get(k.ch.id) || 0 : 0;
+  const sel = CEN.sel === k.key;
+  return `<div class="cen-lin${sel?' sel':''}" role="button" tabindex="0" data-caso="${k.key}" aria-pressed="${sel}">
+    <span class="dot" style="background:${cenCorPrio(k.prio)}" title="Prioridade ${cenRotPrio(k.prio)}"></span>
+    <div class="tx"><div class="a"><span class="id">${ids}</span><span class="nm">${cenEsc(k.cliente)}</span>${n?`<span class="cen-cmt" title="${n} comentário${n>1?'s':''} da equipe">💬 ${n}</span>`:''}</div>
+      <div class="b">${cenTag(k)}${k.aberto && k.anteriores.length ? '<span class="cen-reinc" title="Outro chamado deste cliente nos últimos 30 dias">↺ voltou</span>' : ''}<span class="d">${cenEsc(k.descricao)}</span></div></div>
+    ${cenChipPrazo(k, agora)}${cenEstado(k, agora)}${cenAcaoLinha(k)}</div>`;
+}
+function cenTag(k, completa){
+  if(!k.assunto) return `<span class="cen-tag sem">Sem assunto</span>`;
+  const st = cenSetor(k.setorId), vis = cenSetorVisual(st && st.setor);
+  const nome = cenNome(k.assunto.assunto);
+  return `<span class="cen-tag ${vis.cls}" title="${cenEsc(cenSetorNome(k.setorId))} › ${cenEsc(nome)}"><i aria-hidden="true">${vis.ic}</i>${completa && k.setorId ? cenEsc(cenSetorNome(k.setorId))+' › ' : ''}${cenEsc(nome)}</span>`;
+}
+function cenChipPrazo(k, agora){
+  if(k.feito){
+    if(!k.prazo || !k.fim) return `<span class="cen-prazo feito">✓ concluído</span>`;
+    const d = (k.fim - k.prazo) / 6e4;
+    return d <= 0 ? `<span class="cen-prazo feito">✓ no prazo</span>` : `<span class="cen-prazo perto">estourou ${cenDur(d)}</span>`;
+  }
+  if(k.etapa === 'cancelado') return `<span class="cen-prazo">cancelado</span>`;
+  if(k.etapa === 'reag') return `<span class="cen-prazo reag">📅 ${k.reagPara ? 'volta '+cpFmtData(k.reagPara).slice(0,5) : 'sem data'}</span>`;
+  if(!k.prazo) return `<span class="cen-prazo" title="Aberto ${cenHora(k.criado)}">aberto há ${cenDur((agora - k.criado)/6e4)}</span>`;
+  const r = (k.prazo - agora) / 6e4;
+  if(r < 0) return `<span class="cen-prazo atraso">⚠ atrasado ${cenDur(r)}</span>`;
+  if(r < 120) return `<span class="cen-prazo perto">⏰ vence em ${cenDur(r)}</span>`;
+  return `<span class="cen-prazo">vence em ${cenDur(r)}</span>`;
+}
+function cenTxtEtapa(k, agora){
+  const os = k.os;
+  const desde = iso => iso ? ' '+cenDur((agora - (Date.parse(iso)||agora))/6e4) : '';
+  return ({
+    acao: k.assunto && !k.assunto.gera_os ? 'sem responsável' : 'sem técnico',
+    tecnico: os ? 'vai assumir' : 'técnico definido',
+    caminho: 'a caminho'+desde(os && os.assumido_em),
+    cliente: 'no cliente'+desde(os && os.executando_em),
+    atendendo: 'atendendo', reag: 'reagendado', feito: 'concluído', cancelado: 'cancelado',
+  })[k.etapa] || '';
+}
+function cenAv(r){ return `<span class="cen-av" style="background:${r.escritorio ? '#67677D' : cenCorTec(r.id)}" aria-hidden="true">${cenEsc(cpIniciais(r.nome))}</span>`; }
+function cenEstado(k, agora){
+  const tx = cenTxtEtapa(k, agora);
+  if(!k.resp) return `<div class="tec"><span class="${k.etapa === 'acao' ? 'sem' : 'et'}">${tx}</span></div>`;
+  return `<div class="tec" title="${cenEsc(k.resp.nome)}">${cenAv(k.resp)}<span class="et">${cenEsc(String(k.resp.nome).split(' ')[0])} · ${tx}</span></div>`;
+}
+function cenAcaoLinha(k){
+  if(k.etapa === 'acao' && k.ch && !k.os){
+    if(k.assunto && !k.assunto.gera_os) return `<button type="button" class="cen-btn p perm-edit" data-acao="assumir" data-caso="${k.key}">Assumir</button>`;
+    return `<button type="button" class="cen-btn p perm-edit" data-acao="os" data-caso="${k.key}">Abrir OS ›</button>`;
+  }
+  if(k.etapa === 'acao' && k.os) return `<button type="button" class="cen-btn p perm-edit" data-acao="veros" data-caso="${k.key}">Escolher técnico</button>`;
+  if(k.etapa === 'cliente' && k.os) return `<button type="button" class="cen-btn v perm-edit" data-acao="finalizar" data-caso="${k.key}">✓ Finalizar</button>`;
+  if(k.feito && k.os) return `<button type="button" class="cen-btn" data-acao="relatorio" data-caso="${k.key}">Relatório</button>`;
+  return '<span class="cen-vaz"></span>';
+}
+
+// ---------- painel do caso ----------
+function cenAtualizarDetalhe(){
+  const k = CEN.sel ? CEN.porChave.get(CEN.sel) : null;
+  cenRenderPainel();
+  if(!k || !k.ch) return;
+  // recarrega a linha do tempo quando o chamado (ou a OS dele) mudou
+  const sig = [k.ch.status, k.ch.assunto_id, k.os && k.os.status, k.os && k.os.id].join('|');
+  if(!CEN.cmt.has(k.ch.id) || CEN.detSig.get(k.ch.id) !== sig){
+    CEN.detSig.set(k.ch.id, sig);
+    cenCarregarDetalhes(k.ch.id).then(()=>{ if(CEN.sel === k.key) cenRenderPainel(); });
+  }
+}
+async function cenCarregarDetalhes(chId){
+  const [c, h] = await Promise.all([
+    sbClient.from('campo_chamados_comentarios').select('id,chamado_id,autor_nome,texto,origem,criado_em').eq('chamado_id', chId).order('criado_em'),
+    sbClient.from('campo_chamados_historico').select('status,registrado_em').eq('chamado_id', chId).order('registrado_em'),
+  ]);
+  CEN.cmt.set(chId, c.error ? (CEN.cmt.get(chId) || []) : (c.data || []));
+  CEN.hist.set(chId, h.error ? (CEN.hist.get(chId) || []) : (h.data || []));
+  CEN.cmtCont.set(chId, (CEN.cmt.get(chId) || []).length);
+}
+async function cenCarregarContagens(L){
+  const ids = [...new Set(L.filter(k=>k.ch).map(k=>k.ch.id))].sort((a,b)=>a-b);
+  const chave = ids.join(',');
+  if(!ids.length || chave === CEN._cntChave) return;
+  CEN._cntChave = chave;
+  const { data, error } = await sbClient.from('campo_chamados_comentarios').select('chamado_id').in('chamado_id', ids);
+  if(error){ CEN._cntChave = ''; return; }
+  const m = new Map(); (data || []).forEach(r=>m.set(r.chamado_id, (m.get(r.chamado_id) || 0) + 1));
+  let mudou = false;
+  ids.forEach(id=>{ const n = m.get(id) || 0; if(CEN.cmtCont.get(id) !== n){ CEN.cmtCont.set(id, n); mudou = true; } });
+  if(mudou && document.getElementById('page-cp-central')?.classList.contains('active') && CEN.vista === 'lista') cenRedesenharLista();
+}
+function cenRedesenharLista(){
+  const agora = Date.now();
+  const base = [...CEN.porChave.values()].filter(k=>k.aberto || (k.feito && k.fim && k.fim >= cenHojeIni()));
+  cenRenderLista(base.filter(k=>cenPassa(k, agora, true)), agora);
+}
+// guarda o que está sendo digitado, o cursor e a rolagem ao remontar
+function cenPreservar(el, montar, mesmaRolagem){
+  const ae = document.activeElement;
+  const foco = ae && el.contains(ae) && ae.id ? { id:ae.id, ini:ae.selectionStart, fim:ae.selectionEnd } : null;
+  const rol = el.scrollTop;
+  montar();
+  if(mesmaRolagem) el.scrollTop = rol;
+  if(foco){
+    const alvo = document.getElementById(foco.id);
+    if(alvo && !alvo.disabled) try{ alvo.focus({ preventScroll:true }); if(foco.ini != null && alvo.setSelectionRange) alvo.setSelectionRange(foco.ini, foco.fim); }catch(_){}
+  }
+}
+function cenRenderPainel(){
+  const el = document.getElementById('cen-painel'); if(!el) return;
+  const k = CEN.sel ? CEN.porChave.get(CEN.sel) : null;
+  const mesmo = CEN._painelKey === (k && k.key);
+  CEN._painelKey = k ? k.key : null;
+  cenPreservar(el, ()=>{ el.innerHTML = k ? cenPainelHTML(k) : `<div class="cen-vazio">Escolha um chamado na lista para ver o prazo, a linha do tempo e os comentários da equipe.</div>`; }, mesmo);
+}
+function cenPainelHTML(k){
+  const agora = Date.now(), c = k.ch, os = k.os;
+  const ids = [c ? 'Chamado #'+c.id : '', os ? cenNumOS(os.numero) : ''].filter(Boolean).join(' · ');
+  const origem = c && CEN_ORIGEM[c.origem] ? ' '+CEN_ORIGEM[c.origem] : '';
+  const stCls = { acao:'acao', caminho:'campo', cliente:'campo', reag:'reag', feito:'feito' }[k.etapa] || '';
+  const stTx = { acao:'Precisa de ação', tecnico:'Com técnico', caminho:'Técnico a caminho', cliente:'Técnico no cliente', atendendo:'Em atendimento', reag:'Reagendado', feito:'Concluído', cancelado:'Cancelado' }[k.etapa] || '';
+  return `<div class="cab"><div class="t">${cenEsc(k.cliente)}</div><div class="s">${ids} · aberto ${cenHora(k.criado)}${cenEsc(origem)}</div></div>
+    <div class="tags">${cenTag(k, true)}<span class="cen-prio ${cenEsc(k.prio)}">● ${cenRotPrio(k.prio)}</span><span class="cen-st ${stCls}">${stTx}${k.resp ? ' · '+cenEsc(String(k.resp.nome).split(' ')[0]) : ''}</span></div>
+    ${cenBlocoAcoes(k)}${cenBlocoPrazo(k, agora)}${cenBlocoReinc(k)}${cenBlocoDescricao(k)}${cenBlocoTempo(k)}${cenBlocoComentarios(k)}`;
+}
+function cenBlocoAcoes(k){
+  const c = k.ch, os = k.os, b = [];
+  const visita = k.assunto ? !!k.assunto.gera_os : true;
+  if(k.aberto){
+    if(c && !os && visita) b.push(`<button type="button" class="cen-btn p perm-edit" data-acao="os" data-caso="${k.key}">🛵 Abrir OS</button>`);
+    if(c && !os && !visita && !c.responsavel_nome) b.push(`<button type="button" class="cen-btn p perm-edit" data-acao="assumir" data-caso="${k.key}">✋ Assumir</button>`);
+    if(os && k.etapa === 'cliente') b.push(`<button type="button" class="cen-btn v perm-edit" data-acao="finalizar" data-caso="${k.key}">✓ Finalizar OS</button>`);
+    if(c && !os) b.push(`<button type="button" class="cen-btn v perm-edit" data-acao="concluir" data-caso="${k.key}">✓ Concluir</button>`);
+  }
+  if(os) b.push(`<button type="button" class="cen-btn" data-acao="${k.feito ? 'relatorio' : 'veros'}" data-caso="${k.key}">${k.feito ? '📋 Relatório' : 'Ver '+cenNumOS(os.numero)}</button>`);
+  if(c) b.push(`<button type="button" class="cen-btn perm-edit" data-acao="editar" data-caso="${k.key}">Editar chamado</button>`);
+  const f = CEN.form && CEN.form.key === k.key && CEN.form.tipo === 'concluir' ? CEN.form : null;
+  const form = f ? `<div class="bl"><label class="r" for="cen-concluir-txt">Como foi resolvido?</label>
+      <textarea class="cen-txt" id="cen-concluir-txt" maxlength="500" placeholder="Ex.: negociado em 2 parcelas, boleto enviado no WhatsApp" ${CEN.ocupado?'disabled':''}>${cenEsc(f.texto || '')}</textarea>
+      ${f.erro ? `<div class="cen-erro" role="alert">${cenEsc(f.erro)}</div>` : ''}
+      <div class="cen-linha"><button type="button" class="cen-btn v perm-edit" data-acao="confirmarconcluir" data-caso="${k.key}" ${CEN.ocupado?'disabled':''}>${CEN.ocupado ? 'Salvando…' : 'Concluir chamado'}</button>
+      <button type="button" class="cen-btn" data-acao="cancelarform" data-caso="${k.key}" ${CEN.ocupado?'disabled':''}>Cancelar</button></div></div>` : '';
+  return b.length ? `<div class="acs">${b.join('')}</div>${form}` : form;
+}
+function cenOpcoesAssunto(sel){
+  const vis = (CEN.assuntos || []).filter(a=>a.na_central || a.assunto_id === String(sel));
+  const grupos = new Map();
+  vis.forEach(a=>{ const g = a.setor_id ? cenSetorNome(a.setor_id) : 'Sem setor'; if(!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(a); });
+  const ord = [...grupos.keys()].sort((x,y)=>x === 'Sem setor' ? 1 : y === 'Sem setor' ? -1 : x.localeCompare(y,'pt-BR'));
+  return '<option value="">Escolha o assunto…</option>' + ord.map(g=>`<optgroup label="${cenEsc(g)}">${grupos.get(g)
+    .sort((a,b)=>a.assunto.localeCompare(b.assunto,'pt-BR'))
+    .map(a=>`<option value="${cenEsc(a.assunto_id)}" ${String(sel) === a.assunto_id ? 'selected' : ''}>${cenEsc(cenNome(a.assunto))} · ${cenHoras(a.prazo_horas)}</option>`).join('')}</optgroup>`).join('');
+}
+function cenFormAssunto(k){
+  const f = CEN.form && CEN.form.tipo === 'assunto' && CEN.form.key === k.key ? CEN.form : null;
+  const v = f ? f.valor : (k.ch.assunto_id || '');
+  return `<div class="cen-linha"><select class="cen-sel" id="cen-ass-sel" aria-label="Assunto do chamado" ${CEN.ocupado?'disabled':''}>${cenOpcoesAssunto(v)}</select></div>
+    <div class="cen-linha"><button type="button" class="cen-btn p perm-edit" data-acao="salvarassunto" data-caso="${k.key}" ${CEN.ocupado?'disabled':''}>${CEN.ocupado ? 'Salvando…' : 'Salvar assunto'}</button>${k.ch.assunto_id ? `<button type="button" class="cen-btn" data-acao="cancelarform" data-caso="${k.key}">Cancelar</button>` : ''}</div>
+    ${f && f.erro ? `<div class="cen-erro" role="alert">${cenEsc(f.erro)}</div>` : ''}`;
+}
+function cenBlocoPrazo(k, agora){
+  const c = k.ch, os = k.os;
+  const trocando = CEN.form && CEN.form.tipo === 'assunto' && CEN.form.key === k.key;
+  if(k.etapa === 'reag'){
+    const mot = (os && os.reagendado_motivo) || (c && c.reagendado_motivo), turno = os && os.reagendado_turno;
+    return `<div class="bl"><div class="r">Reagendado</div>${k.reagPara ? 'Volta em <b>'+cpFmtData(k.reagPara)+'</b>'+(turno ? ' ('+cenEsc(turno)+')' : '') : 'Sem data definida'}${mot ? ' · '+cenEsc(mot) : ''}</div>`;
+  }
+  if(!k.prazo){
+    if(!c) return '';
+    if(k.feito || k.etapa === 'cancelado') return k.assunto ? '' : `<div class="bl"><div class="r">Prazo</div>Chamado sem assunto, sem prazo.</div>`;
+    return `<div class="bl"><div class="r">Prazo</div>${k.assunto ? 'Este assunto não tem prazo no IXC nem no MoviOne.' : 'Sem assunto, sem prazo. Escolha o assunto: o chamado ganha setor e prazo (contado de quando foi aberto).'}${!k.assunto || trocando ? cenFormAssunto(k) : ''}</div>`;
+  }
+  const total = Math.max(1, k.prazo - k.criado), ref = k.feito ? (k.fim || agora) : agora;
+  const usado = Math.min(100, Math.max(0, Math.round((ref - k.criado) / total * 100)));
+  const r = (k.prazo - agora) / 6e4;
+  const cls = k.feito ? (k.fim && k.fim > k.prazo ? 'atraso' : '') : r < 0 ? 'atraso' : r < 120 ? 'perto' : '';
+  const linha = k.feito
+    ? (k.fim ? (k.fim <= k.prazo ? `Concluído <b>${cenDur((k.prazo - k.fim)/6e4)}</b> antes do prazo` : `Concluído <b>${cenDur((k.fim - k.prazo)/6e4)}</b> depois do prazo`) : 'Concluído')
+    : r < 0 ? `venceu <b>${cenHora(k.prazo)}</b> · atrasado ${cenDur(r)}` : `vence <b>${cenHora(k.prazo)}</b> · faltam ${cenDur(r)}`;
+  const trocar = c && k.aberto && !trocando ? ` <button type="button" class="cen-lk perm-edit" data-acao="trocarassunto" data-caso="${k.key}">trocar assunto</button>` : '';
+  return `<div class="bl"><div class="r">Prazo do assunto · ${cenHoras(total / CEN_H)}${trocar}</div>${linha}<div class="cen-barra ${cls}" role="img" aria-label="${usado}% do prazo usado"><i style="width:${usado}%"></i></div>${trocando ? cenFormAssunto(k) : ''}</div>`;
+}
+function cenBlocoReinc(k){
+  if(!k.anteriores || !k.anteriores.length) return '';
+  const osPorId = new Map((_cpOS||[]).map(o=>[Number(o.id), o]));
+  const itens = k.anteriores.slice(0, 3).map(c=>{
+    const a = cenAssunto(c.assunto_id), os = c.os_id ? osPorId.get(Number(c.os_id)) : null;
+    const tec = (os && os.tecnico_nome) || c.tecnico_nome;
+    const oque = a ? cenNome(a.assunto) : String(c.descricao || 'chamado').slice(0, 60);
+    return `<li>${cpFmtData(c.created_at).slice(0,5)} · ${cenEsc(oque)}${tec ? ' · '+cenEsc(String(tec).split(' ')[0]) : ''} <button type="button" class="cen-lk" data-acao="irpara" data-caso="c${c.id}">ver</button></li>`;
+  }).join('');
+  return `<div class="bl"><div class="cen-alerta" role="note"><b>↺ ${k.anteriores.length + 1}º chamado deste cliente em 30 dias.</b><ul class="cen-ant">${itens}</ul></div></div>`;
+}
+function cenBlocoDescricao(k){
+  const c = k.ch, os = k.os;
+  const tel = (c && c.telefone) || (os && os.telefone), end = (c && c.endereco) || (os && os.endereco);
+  const ref = c && c.localizacao, login = (c && c.login_cliente) || (os && os.login_cliente);
+  const sol = c && c.solucao_tecnica;
+  const dados = [tel ? `<dt>Telefone</dt><dd>${cenEsc(tel)}</dd>` : '', end ? `<dt>Endereço</dt><dd>${cenEsc(end)}</dd>` : '',
+    ref ? `<dt>Referência</dt><dd>${cenEsc(ref)}</dd>` : '', login ? `<dt>Login</dt><dd style="font-family:'DM Mono',monospace">${cenEsc(login)}</dd>` : '',
+    sol ? `<dt>Solução</dt><dd>${cenEsc(sol)}</dd>` : ''].join('');
+  return `<div class="bl"><div class="r">O que aconteceu</div><div class="cen-desc">${cenEsc(k.descricao || '—')}</div>${dados ? `<dl class="cen-dados">${dados}</dl>` : ''}</div>`;
+}
+function cenBlocoTempo(k){
+  const c = k.ch, os = k.os, ev = [];
+  const add = (t, grupo, html, pri = 1) => { if(t && !isNaN(t)) ev.push({ t, grupo, html, pri }); };
+  add(k.criado, 'abertura', `<b>Aberto</b>${c && CEN_ORIGEM[c.origem] ? ' '+CEN_ORIGEM[c.origem] : ''}`);
+  const rot = { atribuido:['tec','Técnico definido'], aberto:['os','Virou OS'], transferido:['os','Virou visita técnica'], andamento:['and','Em atendimento'],
+    reagendado:['reag','Reagendado'], concluido:['fim','Concluído'], cancelado:['canc','Cancelado'] };
+  (c ? CEN.hist.get(c.id) || [] : []).forEach(h=>{ const r = rot[h.status]; if(r) add(Date.parse(h.registrado_em), r[0], `<b>${r[1]}</b>`); });
+  if(os){
+    add(Date.parse(os.created_at), 'os', `<b>${cenNumOS(os.numero)} criada</b>${os.tecnico_nome ? ' para '+cenEsc(String(os.tecnico_nome).split(' ')[0]) : ''}`, 2);
+    add(Date.parse(os.assumido_em), 'cam', '<b>Técnico a caminho</b>', 2);
+    add(Date.parse(os.executando_em), 'cli', '<b>Técnico no cliente</b>', 2);
+    add(Date.parse(os.reagendado_em), 'reag', `<b>Reagendado</b>${os.reagendado_motivo ? ' · '+cenEsc(os.reagendado_motivo) : ''}`, 2);
+    add(Date.parse(os.finalizado_em), 'fim', '<b>OS finalizada</b>', 2);
+  }
+  if(c && c.concluido_em && !(c && CEN.hist.get(c.id) || []).some(h=>h.status === 'concluido') && !(os && os.finalizado_em)) add(Date.parse(c.concluido_em), 'fim', '<b>Concluído</b>');
+  ev.sort((a,b)=>a.t - b.t);
+  // o mesmo passo registrado em dois lugares (chamado e OS) aparece uma vez só
+  const lista = [];
+  ev.forEach(e=>{
+    const j = lista.findIndex(v=>v.grupo === e.grupo && Math.abs(v.t - e.t) < 10*6e4);
+    if(j < 0) lista.push(e); else if(e.pri > lista[j].pri) lista[j] = e;
+  });
+  if(!lista.length) return '';
+  const carregando = c && !CEN.hist.has(c.id);
+  return `<div class="bl"><div class="r">Linha do tempo</div><ul class="cen-tl">${lista.map((e,i)=>`<li class="${k.aberto && i === lista.length - 1 ? 'agora' : ''}">${e.html}<span class="q">${cenHora(e.t)}</span></li>`).join('')}</ul>${carregando ? '<div class="cen-nota">Carregando etapas…</div>' : ''}</div>`;
+}
+function cenBlocoComentarios(k){
+  if(!k.ch) return `<div class="bl"><div class="r">Comentários da equipe</div><div class="cen-nota">Esta OS foi aberta sem chamado. Os comentários ficam nos chamados.</div></div>`;
+  const l = CEN.cmt.get(k.ch.id);
+  const origem = { movitalk:'MoviTalk · ', movitec:'moviTec · ' };
+  const lista = !l ? '<div class="cen-nota">Carregando…</div>'
+    : !l.length ? '<div class="cen-nota">Nenhum comentário ainda. Escreva o que a equipe precisa saber — o cliente não vê.</div>'
+    : l.map(x=>`<div class="cen-com"><b>${cenEsc(x.autor_nome)}</b><span class="h">${origem[x.origem] || ''}${cenHora(Date.parse(x.criado_em))}</span>\n${cenEsc(x.texto)}</div>`).join('');
+  return `<div class="bl"><div class="r">Comentários da equipe${l && l.length ? ' · '+l.length : ''}</div>${lista}
+    <textarea class="cen-txt perm-edit" id="cen-cmt-txt" data-ch="${k.ch.id}" maxlength="2000" placeholder="Comentário para a equipe (o cliente não vê)…" aria-label="Comentário para a equipe" ${CEN.enviandoCmt ? 'disabled' : ''}>${cenEsc(CEN.rascunho.get(k.ch.id) || '')}</textarea>
+    <div class="cen-linha perm-edit"><button type="button" class="cen-btn p" data-acao="comentar" data-caso="${k.key}" ${CEN.enviandoCmt ? 'disabled' : ''}>${CEN.enviandoCmt ? 'Salvando…' : 'Comentar'}</button><span class="cen-nota">Ctrl+Enter envia</span></div></div>`;
+}
+
+// ---------- ações ----------
+function cenSelecionar(key){
+  if(!CEN.porChave.has(key)) return;
+  if(CEN.sel !== key) CEN.form = null;
+  CEN.sel = key; CEN.selAuto = false;
+  document.querySelectorAll('#cen-lista .cen-lin').forEach(x=>{ const on = x.dataset.caso === key; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  cenAtualizarDetalhe();
+}
+async function cenRecarregar(){ await carregarCampo(); renderCentral(); }
+async function cenAcao(acao, key){
+  const k = key ? CEN.porChave.get(key) : null;
+  if(acao === 'config'){ CEN.vista = 'config'; CEN.cfgRasc = null; renderCentral(); return; }
+  if(acao === 'voltar'){ CEN.vista = 'lista'; renderCentral(); document.getElementById('page-sub').textContent = (PAGE_META['cp-central']||{}).sub || ''; return; }
+  if(acao === 'irpara'){
+    if(CEN.porChave.has(key)){ CEN.form = null; CEN.sel = key; CEN.selAuto = false; renderCentral(); }
+    return;
+  }
+  if(!k) return;
+  if(acao === 'os') return abrirModalSelecionarTecnico(k.ch.id);
+  if(acao === 'editar') return abrirModalChamado(k.ch.id);
+  if(acao === 'veros') return abrirModalOS(k.os.id);
+  if(acao === 'relatorio') return verRelatorioOS(k.os.id);
+  if(acao === 'finalizar'){ abrirModalOS(k.os.id); setTimeout(()=>abrirModalFinalizarOS(), 200); return; }
+  if(acao === 'trocarassunto'){ CEN.form = { tipo:'assunto', key:k.key, valor:k.ch.assunto_id || '' }; cenRenderPainel(); setTimeout(()=>document.getElementById('cen-ass-sel')?.focus(), 0); return; }
+  if(acao === 'cancelarform'){ CEN.form = null; cenRenderPainel(); return; }
+  if(acao === 'salvarassunto') return cenSalvarAssunto(k);
+  if(acao === 'assumir') return cenAssumir(k);
+  if(acao === 'concluir'){
+    // técnico: a janela de fechamento de sempre (solução, sinal e velocidade)
+    if(!k.assunto || k.assunto.gera_os) return abrirModalFechamentoChamado({ id:k.ch.id });
+    CEN.form = { tipo:'concluir', key:k.key, texto:'' }; cenRenderPainel(); setTimeout(()=>document.getElementById('cen-concluir-txt')?.focus(), 0); return;
+  }
+  if(acao === 'confirmarconcluir') return cenConcluir(k);
+  if(acao === 'comentar') return cenComentar(k);
+}
+async function cenSalvarAssunto(k){
+  const sel = document.getElementById('cen-ass-sel');
+  const v = sel ? sel.value : (CEN.form && CEN.form.valor) || '';
+  if(!v){ CEN.form = { tipo:'assunto', key:k.key, valor:'', erro:'Escolha o assunto.' }; cenRenderPainel(); return; }
+  if(String(v) === String(k.ch.assunto_id || '')){ CEN.form = null; cenRenderPainel(); return; }
+  CEN.ocupado = true; CEN.form = { tipo:'assunto', key:k.key, valor:v }; cenRenderPainel();
+  const { error } = await sbClient.from('campo_chamados').update({ assunto_id:v }).eq('id', k.ch.id);
+  CEN.ocupado = false;
+  if(error){ CEN.form.erro = 'Não consegui salvar: '+error.message; cenRenderPainel(); return; }
+  CEN.form = null;
+  await cenRecarregar();
+  showToast('Assunto salvo. Setor e prazo atualizados.');
+}
+async function cenAssumir(k){
+  if(CEN.ocupado) return;
+  const u = window._usuario || {};
+  CEN.ocupado = true;
+  const { error } = await sbClient.from('campo_chamados').update({ responsavel_id:u.id || null, responsavel_nome:u.nome || 'Equipe', status:'andamento' }).eq('id', k.ch.id);
+  CEN.ocupado = false;
+  if(error){ showToast('Erro: '+error.message, true); return; }
+  try{ await sbClient.from('campo_chamados_historico').insert({ chamado_id:k.ch.id, status:'andamento' }); }catch(_){}
+  CEN.sel = k.key; CEN.selAuto = false;
+  await cenRecarregar();
+  showToast('Chamado com você agora.');
+}
+async function cenConcluir(k){
+  const ta = document.getElementById('cen-concluir-txt');
+  const texto = String(ta ? ta.value : (CEN.form && CEN.form.texto) || '').trim();
+  if(texto.length < 3){ CEN.form = { tipo:'concluir', key:k.key, texto, erro:'Conte em poucas palavras como foi resolvido.' }; cenRenderPainel(); document.getElementById('cen-concluir-txt')?.focus(); return; }
+  CEN.ocupado = true; CEN.form = { tipo:'concluir', key:k.key, texto }; cenRenderPainel();
+  const { error } = await sbClient.from('campo_chamados').update({ status:'concluido', concluido_em:new Date().toISOString(), solucao_tecnica:texto.slice(0, 500) }).eq('id', k.ch.id);
+  if(error){ CEN.ocupado = false; CEN.form.erro = 'Não consegui concluir: '+error.message; cenRenderPainel(); return; }
+  try{ await sbClient.from('campo_chamados_historico').insert({ chamado_id:k.ch.id, status:'concluido' }); }catch(_){}
+  try{ await sbClient.from('campo_chamados_comentarios').insert({ chamado_id:k.ch.id, autor_nome:(window._usuario||{}).nome || 'Equipe', texto:('✅ Concluído: '+texto).slice(0, 2000), origem:'movione' }); }catch(_){}
+  CEN.ocupado = false; CEN.form = null; CEN.detSig.delete(k.ch.id);
+  await cenRecarregar();
+  showToast('Chamado concluído.');
+}
+async function cenComentar(k){
+  if(CEN.enviandoCmt || !k.ch) return;
+  const ta = document.getElementById('cen-cmt-txt');
+  const texto = String(ta ? ta.value : CEN.rascunho.get(k.ch.id) || '').trim();
+  if(!texto){ ta && ta.focus(); return; }
+  CEN.rascunho.set(k.ch.id, texto);
+  CEN.enviandoCmt = true; cenRenderPainel();
+  const { data, error } = await sbClient.from('campo_chamados_comentarios')
+    .insert({ chamado_id:k.ch.id, autor_nome:(window._usuario||{}).nome || 'Equipe', texto:texto.slice(0, 2000), origem:'movione' })
+    .select('id,chamado_id,autor_nome,texto,origem,criado_em').single();
+  CEN.enviandoCmt = false;
+  if(error){ showToast('Não consegui salvar o comentário: '+error.message, true); cenRenderPainel(); document.getElementById('cen-cmt-txt')?.focus(); return; }
+  CEN.rascunho.delete(k.ch.id);
+  const l = CEN.cmt.get(k.ch.id) || [];
+  if(!l.some(x=>x.id === data.id)) l.push(data);
+  CEN.cmt.set(k.ch.id, l); CEN.cmtCont.set(k.ch.id, l.length); CEN._cntChave = '';
+  cenRenderPainel();
+  document.getElementById('cen-cmt-txt')?.focus();
+  if(CEN.vista === 'lista') cenRedesenharLista();
+}
+// comentário novo de outra pessoa (Realtime): só o painel e a contagem mudam
+function cenComentariosMudaram(){
+  CEN._cntChave = '';
+  const k = CEN.sel ? CEN.porChave.get(CEN.sel) : null;
+  if(!document.getElementById('page-cp-central')?.classList.contains('active') || CEN.vista !== 'lista') return;
+  if(k && k.ch) cenCarregarDetalhes(k.ch.id).then(()=>{ if(CEN.sel === k.key) cenRenderPainel(); cenRedesenharLista(); });
+  cenCarregarContagens([...CEN.porChave.values()].filter(x=>x.aberto || (x.feito && x.fim && x.fim >= cenHojeIni())));
+}
+function cenBuscar(v){
+  clearTimeout(CEN._buscaT);
+  CEN._buscaT = setTimeout(()=>{ CEN.busca = String(v || '').trim(); CEN.selAuto = true; renderCentral(); }, 160);
+}
+function cenNovoChamado(){
+  abrirModalChamado();
+  // a aba de setor escolhida já vem marcada no novo chamado
+  if(CEN.setor && CEN.setor !== 'sem'){ _chAss.setor = CEN.setor; chAssRender(); }
+}
+function cenAtualizarBadge(){
+  const bd = document.getElementById('badge-cp-central'); if(!bd) return;
+  const agora = Date.now();
+  const casos = cenCasos().filter(k=>k.aberto);
+  const atras = casos.filter(k=>cenAtrasado(k, agora)).length, acao = casos.filter(k=>k.etapa === 'acao').length;
+  const n = atras || acao;
+  bd.style.display = n > 0 ? '' : 'none';
+  bd.textContent = n;
+  bd.title = atras ? `${atras} atrasado${atras>1?'s':''}` : `${acao} precisando de ação`;
+  bd.classList.toggle('warn', !atras && acao > 0);
+  navAlerta(bd, atras > 0);
+}
+
+// ---------- eventos ----------
+function cenLigar(){
+  const raiz = document.getElementById('page-cp-central');
+  if(!raiz || raiz._cenLigado) return;
+  raiz._cenLigado = true;
+  raiz.addEventListener('click', ev=>{
+    const t = ev.target;
+    const set = t.closest('[data-setor]');
+    if(set){ CEN.setor = set.dataset.setor; CEN.selAuto = true; renderCentral(); return; }
+    const fil = t.closest('[data-filtro]');
+    if(fil){ CEN.filtro = CEN.filtro === fil.dataset.filtro ? '' : fil.dataset.filtro; CEN.selAuto = true; renderCentral(); return; }
+    const tec = t.closest('[data-tec]');
+    if(tec){ CEN.tec = String(CEN.tec) === tec.dataset.tec ? null : tec.dataset.tec; CEN.selAuto = true; renderCentral(); return; }
+    if(cenCfgClique(t)) return;
+    const ac = t.closest('[data-acao]');
+    if(ac){ if(!ac.disabled) cenAcao(ac.dataset.acao, ac.dataset.caso); return; }
+    const lin = t.closest('.cen-lin[data-caso]');
+    if(lin) cenSelecionar(lin.dataset.caso);
+  });
+  raiz.addEventListener('keydown', ev=>{
+    const t = ev.target;
+    if(t.id === 'cen-cmt-txt' && ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); const k = CEN.porChave.get(CEN.sel); if(k) cenComentar(k); return; }
+    if(t.id === 'cen-concluir-txt' && ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); const k = CEN.porChave.get(CEN.sel); if(k) cenConcluir(k); return; }
+    const lin = t.classList && t.classList.contains('cen-lin') ? t : null;
+    if(lin && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); cenSelecionar(lin.dataset.caso); return; }
+    if(lin && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')){
+      ev.preventDefault();
+      const todas = [...raiz.querySelectorAll('#cen-lista .cen-lin')], i = todas.indexOf(lin);
+      const prox = todas[i + (ev.key === 'ArrowDown' ? 1 : -1)];
+      if(prox){ prox.focus(); cenSelecionar(prox.dataset.caso); }
+      return;
+    }
+    const tr = t.closest && t.closest('tr[data-cfgass]');
+    if(tr && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); tr.click(); }
+  });
+  raiz.addEventListener('input', ev=>{
+    const t = ev.target;
+    if(t.id === 'cen-cmt-txt') CEN.rascunho.set(Number(t.dataset.ch), t.value);
+    else if(t.id === 'cen-concluir-txt' && CEN.form){ CEN.form.texto = t.value; if(CEN.form.erro){ CEN.form.erro = ''; t.parentElement.querySelector('.cen-erro')?.remove(); } }
+    else if(t.id === 'cen-cfg-prazo' && CEN.cfgRasc){ CEN.cfgRasc.prazo = t.value; CEN.cfgRasc.erro = ''; t.closest('.cen-ed')?.querySelector('.cen-erro')?.remove(); }
+  });
+  raiz.addEventListener('change', ev=>{
+    const t = ev.target;
+    if(t.id === 'cen-ass-sel'){ const k = CEN.porChave.get(CEN.sel); if(k){ CEN.form = { tipo:'assunto', key:k.key, valor:t.value }; } }
+    else cenCfgMudou(t);
+  });
+}
+
+// ---------- configuração: setores e assuntos ----------
+const cenAdmin = () => (window._usuario || {}).perfil === 'admin';
+function cenRascDe(a){
+  return { id:a.assunto_id, setor:a.setor_proprio ? (a.setor_id || '') : '', usarIxc:!a.prazo_proprio, prazo:a.prazo_proprio ? String(a.prazo_horas).replace('.',',') : '',
+    prioridade:a.prioridade || 'media', gera_os:!!a.gera_os, na_central:!!a.na_central, erro:'' };
+}
+function cenCfgAssuntosDo(setorId){
+  const ativos = new Set((CEN.setores || []).filter(s=>s.ativo !== false).map(s=>s.id));
+  return (CEN.assuntos || []).filter(a=>a.ativo_ixc).filter(a=>setorId === 'sem' ? !a.setor_id || !ativos.has(a.setor_id) : a.setor_id === setorId)
+    .sort((x,y)=>(y.na_central - x.na_central) || x.assunto.localeCompare(y.assunto,'pt-BR'));
+}
+function cenRenderConfig(){
+  const el = document.getElementById('cen-config'); if(!el) return;
+  document.getElementById('cen-raiz').hidden = true; el.hidden = false;
+  document.getElementById('page-sub').textContent = 'Setores e assuntos do IXC: prazo, prioridade e se o chamado gera OS';
+  const topo = `<div class="cen-cfg-topo"><button type="button" class="cen-btn" data-acao="voltar">← Voltar para a Central</button>
+    <div><div class="t">Setores e assuntos</div><div class="s">Os nomes vêm do IXC. O assunto define o setor, o prazo, a prioridade e se o chamado vira visita (OS).</div></div></div>`;
+  if(CEN.cfgErro || !CEN.assuntos){ el.innerHTML = topo + `<div class="cen-box"><div class="cen-vazio">${CEN.cfgErro ? 'Não consegui carregar os assuntos: '+cenEsc(CEN.cfgErro) : 'Carregando…'}</div></div>`; return; }
+  const setores = (CEN.setores || []).filter(s=>s.ativo !== false);
+  const cont = id => cenCfgAssuntosDo(id);
+  if(!CEN.cfgSetor || (CEN.cfgSetor !== 'sem' && !setores.some(s=>s.id === CEN.cfgSetor))){
+    const p = [...setores].sort((a,b)=>cenNome(a.setor).localeCompare(cenNome(b.setor),'pt-BR')).find(s=>cont(s.id).length);
+    CEN.cfgSetor = p ? p.id : 'sem';
+  }
+  const ord = [...setores].sort((a,b)=>((cont(b.id).length > 0) - (cont(a.id).length > 0)) || cenNome(a.setor).localeCompare(cenNome(b.setor),'pt-BR'));
+  const item = (id, nome, vis, l) => { const nc = l.filter(a=>a.na_central), vi = nc.filter(a=>a.gera_os).length;
+    return `<button type="button" class="cen-sitem${CEN.cfgSetor === id ? ' on' : ''}${l.length ? '' : ' vazio'}" data-cfgsetor="${cenEsc(id)}" aria-pressed="${CEN.cfgSetor === id}"><span class="cen-ic ${vis.cls}" aria-hidden="true">${vis.ic}</span><span><span>${cenEsc(nome)}</span><span class="s" style="display:block">${l.length ? `${nc.length} na Central · ${vi} com visita` : 'nenhum assunto'}</span></span></button>`; };
+  let lista = ord.map(s=>item(s.id, cenNome(s.setor), cenSetorVisual(s.setor), cont(s.id))).join('');
+  const semL = cont('sem');
+  if(semL.length) lista += item('sem', 'Sem setor', { cls:'adm', ic:'❔' }, semL);
+  const doSetor = cont(CEN.cfgSetor);
+  if(!CEN.cfgAssunto || !doSetor.some(a=>a.assunto_id === CEN.cfgAssunto)){ CEN.cfgAssunto = doSetor[0] ? doSetor[0].assunto_id : null; CEN.cfgRasc = null; }
+  const nomeSetor = CEN.cfgSetor === 'sem' ? 'Sem setor' : cenSetorNome(CEN.cfgSetor);
+  const linhas = doSetor.map(a=>`<tr class="${a.assunto_id === CEN.cfgAssunto ? 'sel' : ''}" data-cfgass="${cenEsc(a.assunto_id)}" tabindex="0" aria-selected="${a.assunto_id === CEN.cfgAssunto}">
+      <td><b>${cenEsc(cenNome(a.assunto))}</b>${a.na_central ? '' : '<span class="cen-fora">fora da Central</span>'}</td>
+      <td>${cenHoras(a.prazo_horas)}${a.prazo_proprio ? '' : ' <span class="cen-fora">IXC</span>'}</td>
+      <td><span class="cen-prio ${cenEsc(a.prioridade)}">● ${cenRotPrio(a.prioridade)}</span></td>
+      <td><span class="cen-vis ${a.gera_os ? 's' : 'n'}">${a.gera_os ? '🛵 gera OS' : '💻 escritório'}</span></td></tr>`).join('');
+  const tabela = doSetor.length ? `<table class="cen-tb"><thead><tr><th>Assunto</th><th>Prazo</th><th>Prioridade</th><th>Visita</th></tr></thead><tbody>${linhas}</tbody></table>`
+    : `<div class="cen-vazio">Nenhum assunto neste setor.<br>Para trazer um assunto para cá, abra-o no setor onde está e troque o setor.</div>`;
+  const a = cenAssunto(CEN.cfgAssunto);
+  el.innerHTML = topo + `<div class="cen-conf">
+    <div class="cen-box"><h4>Setores do IXC</h4><div class="rola">${lista}</div></div>
+    <div class="cen-box"><h4>${cenEsc(nomeSetor)} · ${doSetor.length} assunto${doSetor.length === 1 ? '' : 's'}</h4><div class="rola">${tabela}</div></div>
+    <div class="cen-box"><h4>Editar assunto</h4>${a ? cenEditorHTML(a) : '<div class="cen-vazio">Escolha um assunto.</div>'}</div></div>`;
+}
+function cenEditorHTML(a){
+  if(!CEN.cfgRasc || CEN.cfgRasc.id !== a.assunto_id) CEN.cfgRasc = cenRascDe(a);
+  const r = CEN.cfgRasc, adm = cenAdmin(), dis = !adm || CEN.cfgSalvando ? 'disabled' : '';
+  const setores = (CEN.setores || []).filter(s=>s.ativo !== false).sort((x,y)=>cenNome(x.setor).localeCompare(cenNome(y.setor),'pt-BR'));
+  const ixcSetor = a.setor_id_ixc ? cenSetorNome(a.setor_id_ixc) : null;
+  const optSetor = `<option value="">${ixcSetor ? 'Como no IXC ('+cenEsc(ixcSetor)+')' : 'Sem setor'}</option>` + setores.map(s=>`<option value="${cenEsc(s.id)}" ${r.setor === s.id ? 'selected' : ''}>${cenEsc(cenNome(s.setor))}</option>`).join('');
+  const prazoIxc = a.prazo_horas_ixc ? cenHoras(a.prazo_horas_ixc) : null;
+  const mudou = JSON.stringify({ ...r, erro:'' }) !== JSON.stringify({ ...cenRascDe(a), erro:'' });
+  return `<div class="cen-ed">
+    <div><span class="rot">Assunto (nome do IXC)</span><div class="nome">${cenEsc(cenNome(a.assunto))}</div>
+      <div class="cen-nota">${a.tipo === 'E' ? 'Assunto de estrutura (sem cliente) no IXC' : a.tipo === 'C' ? 'Assunto de cliente no IXC' : 'Assunto de cliente e estrutura no IXC'}${a.atualizado_por ? ' · ajustado por '+cenEsc(a.atualizado_por) : ''}</div></div>
+    <div><label class="rot" for="cen-cfg-setor-sel">Setor</label><select class="cen-sel" id="cen-cfg-setor-sel" ${dis}>${optSetor}</select></div>
+    <div><span class="rot">Prazo (SLA)</span>
+      <label class="cen-ck"><input type="checkbox" id="cen-cfg-usarixc" ${r.usarIxc ? 'checked' : ''} ${dis}>${prazoIxc ? 'Usar o prazo do IXC ('+prazoIxc+')' : 'Sem prazo no IXC'}</label>
+      ${r.usarIxc ? '' : `<div class="cen-linha" style="margin-top:6px"><input class="cen-in" id="cen-cfg-prazo" inputmode="decimal" style="width:90px" value="${cenEsc(r.prazo)}" aria-label="Prazo em horas" ${dis}><span class="cen-nota">horas (48 = 2 dias)</span></div>`}</div>
+    <div><span class="rot" id="cen-cfg-prio-rot">Prioridade</span><div class="cen-seg" role="radiogroup" aria-labelledby="cen-cfg-prio-rot">${[['baixa','Baixa'],['media','Média'],['alta','Alta']].map(([k2,n])=>`<button type="button" role="radio" aria-checked="${r.prioridade === k2}" class="${r.prioridade === k2 ? 'on' : ''}" data-cfgprio="${k2}" ${dis}>${n}</button>`).join('')}</div></div>
+    <div><span class="rot" id="cen-cfg-vis-rot">Precisa de visita?</span><div class="cen-seg" role="radiogroup" aria-labelledby="cen-cfg-vis-rot">
+      <button type="button" role="radio" aria-checked="${r.gera_os}" class="${r.gera_os ? 'on' : ''}" data-cfgvis="1" ${dis}>Sim · gera OS</button>
+      <button type="button" role="radio" aria-checked="${!r.gera_os}" class="${!r.gera_os ? 'on' : ''}" data-cfgvis="0" ${dis}>Não · escritório</button></div></div>
+    <label class="cen-ck"><input type="checkbox" id="cen-cfg-central" ${r.na_central ? 'checked' : ''} ${dis}>Aparece na Central e no MoviTalk</label>
+    ${r.erro ? `<div class="cen-erro" role="alert">${cenEsc(r.erro)}</div>` : ''}
+    ${adm ? `<div class="bts"><button type="button" class="cen-btn v" data-acao="cfgsalvar" ${CEN.cfgSalvando || !mudou ? 'disabled' : ''}>${CEN.cfgSalvando ? 'Salvando…' : 'Salvar'}</button>${mudou ? '<button type="button" class="cen-btn" data-acao="cfgdesfazer">Desfazer</button>' : ''}</div>
+      <div class="cen-nota">Vale para os chamados abertos daqui em diante. Os que já estão abertos mantêm o prazo de quando foram registrados.</div>`
+      : '<div class="cen-nota">Só administradores mudam esta configuração.</div>'}
+  </div>`;
+}
+function cenCfgClique(t){
+  const cs = t.closest('[data-cfgsetor]');
+  if(cs){ CEN.cfgSetor = cs.dataset.cfgsetor; CEN.cfgAssunto = null; CEN.cfgRasc = null; cenRenderConfig(); return true; }
+  const ca = t.closest('tr[data-cfgass]');
+  if(ca){ if(CEN.cfgAssunto !== ca.dataset.cfgass){ CEN.cfgAssunto = ca.dataset.cfgass; CEN.cfgRasc = null; } cenRedesenharConfig(); return true; }
+  const pr = t.closest('[data-cfgprio]');
+  if(pr && CEN.cfgRasc && !pr.disabled){ CEN.cfgRasc.prioridade = pr.dataset.cfgprio; cenRedesenharConfig(); return true; }
+  const vi = t.closest('[data-cfgvis]');
+  if(vi && CEN.cfgRasc && !vi.disabled){ CEN.cfgRasc.gera_os = vi.dataset.cfgvis === '1'; cenRedesenharConfig(); return true; }
+  const ac = t.closest('[data-acao="cfgsalvar"],[data-acao="cfgdesfazer"]');
+  if(ac){ if(!ac.disabled){ if(ac.dataset.acao === 'cfgsalvar') cenSalvarCfg(); else { CEN.cfgRasc = null; cenRedesenharConfig(); } } return true; }
+  return false;
+}
+function cenRedesenharConfig(){ const el = document.getElementById('cen-config'); if(el) cenPreservar(el, cenRenderConfig, true); }
+function cenCfgMudou(t){
+  const r = CEN.cfgRasc; if(!r) return;
+  if(t.id === 'cen-cfg-setor-sel') r.setor = t.value;
+  else if(t.id === 'cen-cfg-usarixc'){ r.usarIxc = t.checked; if(!t.checked && !r.prazo){ const a = cenAssunto(r.id); r.prazo = a && a.prazo_horas ? String(a.prazo_horas).replace('.',',') : ''; } r.erro = ''; }
+  else if(t.id === 'cen-cfg-central') r.na_central = t.checked;
+  else return;
+  cenRedesenharConfig();
+  if(t.id === 'cen-cfg-usarixc' && !t.checked) setTimeout(()=>document.getElementById('cen-cfg-prazo')?.focus(), 0);
+}
+async function cenSalvarCfg(){
+  const r = CEN.cfgRasc; if(!r || !cenAdmin() || CEN.cfgSalvando) return;
+  let prazo = null;
+  if(!r.usarIxc){
+    const n = Number(String(r.prazo).replace(',', '.'));
+    if(!(n >= 0.5 && n <= 2160)){ r.erro = 'Informe o prazo em horas, entre 0,5 e 2160 (90 dias).'; cenRedesenharConfig(); document.getElementById('cen-cfg-prazo')?.focus(); return; }
+    prazo = Math.round(n * 10) / 10;
+  }
+  CEN.cfgSalvando = true; cenRedesenharConfig();
+  const linha = { assunto_id:r.id, setor_id:r.setor || null, prazo_horas:prazo, prioridade:r.prioridade, gera_os:r.gera_os, na_central:r.na_central,
+    atualizado_em:new Date().toISOString(), atualizado_por:(window._usuario || {}).nome || null };
+  const { error } = await sbClient.from('central_assuntos').upsert(linha, { onConflict:'assunto_id' });
+  if(error){ CEN.cfgSalvando = false; r.erro = 'Não consegui salvar: '+error.message; cenRedesenharConfig(); return; }
+  try{ await cenCarregarCfg(true); }catch(e){ CEN.cfgErro = e.message || String(e); }
+  CEN.cfgSalvando = false;
+  const a = cenAssunto(r.id);
+  CEN.cfgRasc = null;
+  if(a){ const ativos = new Set((CEN.setores || []).filter(s=>s.ativo !== false).map(s=>s.id)); CEN.cfgSetor = a.setor_id && ativos.has(a.setor_id) ? a.setor_id : 'sem'; CEN.cfgAssunto = a.assunto_id; }
+  cenRedesenharConfig();
+  showToast('Assunto salvo. Vale para os chamados novos.');
+}
+
+// ---------- janela de chamado: setor e assunto ----------
+// O assunto escolhido vai em campo_chamados.assunto_id; setor e prazo o banco calcula.
+let _chAss = { setor:null, assunto:null, criado:null, erro:'' };
+function chAssPreparar(c){
+  const a = c && c.assunto_id ? cenAssunto(c.assunto_id) : null;
+  _chAss = { setor:a ? (a.setor_id || 'sem') : null, assunto:c && c.assunto_id ? String(c.assunto_id) : null, criado:c ? Date.parse(c.created_at) || null : null, erro:'', novo:!c, chamadoId:c ? c.id : null };
+  if(!CEN.assuntos){
+    chAssRender();
+    cenCarregarCfg().then(()=>{ if(_chAss.assunto && !_chAss.setor){ const x = cenAssunto(_chAss.assunto); if(x) _chAss.setor = x.setor_id || 'sem'; } chAssRender(); })
+      .catch(()=>{ _chAss.falhou = true; chAssRender(); });
+    return;
+  }
+  chAssRender();
+}
+function chAssRender(){
+  const bloco = document.getElementById('ch-ass-bloco'); if(!bloco) return;
+  const elS = document.getElementById('ch-setores'), elA = document.getElementById('ch-assuntos'), elI = document.getElementById('ch-ass-info');
+  document.getElementById('ch-assunto-id').value = _chAss.assunto || '';
+  if(!CEN.assuntos){
+    elS.innerHTML = `<span class="cen-nota">${_chAss.falhou ? 'Não consegui carregar os assuntos agora. O chamado pode ser salvo sem assunto.' : 'Carregando assuntos…'}</span>`;
+    elA.innerHTML = ''; elI.innerHTML = ''; return;
+  }
+  const vis = CEN.assuntos.filter(a=>a.na_central || a.assunto_id === _chAss.assunto);
+  const chave = a => a.setor_id || 'sem';
+  const setores = [...new Set(vis.map(chave))].sort((x,y)=>x === 'sem' ? 1 : y === 'sem' ? -1 : cenSetorNome(x).localeCompare(cenSetorNome(y),'pt-BR'));
+  if(!_chAss.setor || !setores.includes(_chAss.setor)) _chAss.setor = setores[0] || null;
+  elS.innerHTML = setores.map(id=>{ const v = id === 'sem' ? { ic:'❔' } : cenSetorVisual(cenSetor(id) && cenSetor(id).setor);
+    return `<button type="button" data-chsetor="${cenEsc(id)}" class="${_chAss.setor === id ? 'on' : ''}" aria-pressed="${_chAss.setor === id}"><span aria-hidden="true">${v.ic}</span> ${cenEsc(id === 'sem' ? 'Sem setor' : cenSetorNome(id))}</button>`; }).join('');
+  elA.innerHTML = vis.filter(a=>chave(a) === _chAss.setor).sort((a,b)=>a.assunto.localeCompare(b.assunto,'pt-BR'))
+    .map(a=>`<button type="button" data-chass="${cenEsc(a.assunto_id)}" class="${_chAss.assunto === a.assunto_id ? 'on' : ''}" aria-pressed="${_chAss.assunto === a.assunto_id}">${cenEsc(cenNome(a.assunto))}<span class="s">${cenHoras(a.prazo_horas)} · ${a.gera_os ? 'visita (OS)' : 'escritório'}</span></button>`).join('');
+  elI.innerHTML = chAssInfoHTML();
+}
+function chAssInfoHTML(){
+  const a = cenAssunto(_chAss.assunto);
+  let h = a ? `Prazo <b>${cenHoras(a.prazo_horas)}</b>${a.prazo_horas ? ' · vence <b>'+cenHora((_chAss.criado || Date.now()) + a.prazo_horas*CEN_H)+'</b>' : ''} · prioridade <b>${cenRotPrio(a.prioridade)}</b> · ${a.gera_os ? '🛵 gera visita (OS)' : '💻 resolvido no escritório'}`
+    : 'Escolha o assunto: ele define o setor, o prazo e a prioridade do chamado.';
+  // o mesmo cliente com chamado nos últimos 30 dias
+  const cid = document.getElementById('ch-cliente-id')?.value || '', nome = document.getElementById('ch-cliente')?.value || '';
+  if(cid || nome.trim().length > 3){
+    const chave = cenChaveCliente({ cliente_id:cid, cliente:nome, id:'novo' });
+    const ref = _chAss.criado || Date.now();
+    const ant = (_cpChamados || []).filter(c=>c.id !== _chAss.chamadoId && c.status !== 'cancelado' && cenChaveCliente(c) === chave)
+      .filter(c=>{ const t = Date.parse(c.created_at) || 0; return t < ref && ref - t <= 30*CEN_DIA; })
+      .sort((x,y)=>(Date.parse(y.created_at)||0) - (Date.parse(x.created_at)||0));
+    if(ant.length){ const u = ant[0], ua = cenAssunto(u.assunto_id);
+      h += `<span class="reinc">↺ Atenção: ${ant.length === 1 ? 'outro chamado' : ant.length+' chamados'} deste cliente nos últimos 30 dias — o último em ${cpFmtData(u.created_at).slice(0,5)}${ua ? ' ('+cenEsc(cenNome(ua.assunto))+')' : ''}.</span>`; }
+  }
+  if(_chAss.erro) h += `<span class="erro" role="alert">${cenEsc(_chAss.erro)}</span>`;
+  return h;
+}
+function chAssEscolher(id){
+  const a = cenAssunto(id); if(!a) return;
+  _chAss.assunto = a.assunto_id; _chAss.setor = a.setor_id || 'sem'; _chAss.erro = '';
+  // a prioridade do assunto vira a sugestão (dá para mudar no campo Prioridade)
+  const p = document.getElementById('ch-prioridade'); if(p && a.prioridade) p.value = a.prioridade;
+  chAssRender();
+}
+// chamado novo pela janela precisa de assunto (o balão do início continua sem)
+function chAssValidar(){
+  const janela = document.getElementById('modal-chamado');
+  if(!janela || !janela.classList.contains('open') || !_chAss.novo || !CEN.assuntos || !CEN.assuntos.some(a=>a.na_central)) return true;
+  if(_chAss.assunto) return true;
+  _chAss.erro = 'Escolha o assunto do chamado.';
+  chAssRender();
+  document.querySelector('#ch-setores button.on, #ch-setores button')?.focus();
+  return false;
+}
+function chAssLigar(){
+  const bloco = document.getElementById('ch-ass-bloco');
+  if(!bloco || bloco._ligado) return;
+  bloco._ligado = true;
+  bloco.addEventListener('click', ev=>{
+    const s = ev.target.closest('[data-chsetor]');
+    if(s){ _chAss.setor = s.dataset.chsetor; chAssRender(); return; }
+    const a = ev.target.closest('[data-chass]');
+    if(a) chAssEscolher(a.dataset.chass);
   });
 }
 
@@ -20610,10 +21760,10 @@ function abrirModalChamado(id){
       document.getElementById('ch-status').value        = c.status||'novo';
       // Recarrega dados do cliente vinculado SEM sobrescrever o nome já salvo no chamado
       if(c.cliente_id){
-        const cli = gd('sf_clientes').find(x=>String(x.id)===String(c.cliente_id)||x.ixcId===c.cliente_id);
+        const cli = cpClienteDoChamado(c);
         if(cli){
           window._chamadoClienteAtual = cli;
-          document.getElementById('ch-cliente-id').value = cli.id||'';
+          document.getElementById('ch-cliente-id').value = cli.ixcId||cli.id||'';
           if(badge) badge.style.display='';
           // Preenche card de dados do cliente sem alterar o campo ch-cliente
           const logins = gd('sf_clientes_logins').filter(l=>(cli.id&&l.clienteId==cli.id)||(cli.ixcId&&l.ixcClienteId==cli.ixcId));
@@ -20644,6 +21794,8 @@ function abrirModalChamado(id){
     document.getElementById('ch-status').value='novo';
     btnAbrir.style.display='';
   }
+  chAssLigar();
+  chAssPreparar(id ? _cpChamados.find(x=>x.id==id) || null : null);
   abrirModal('modal-chamado');
 }
 
@@ -20651,6 +21803,8 @@ async function salvarChamado(){
   const cliente = document.getElementById('ch-cliente').value.trim();
   const descricao = document.getElementById('ch-descricao').value.trim();
   if(!cliente||!descricao){ showToast('Preencha cliente e descrição.', true); return false; }
+  if(!chAssValidar()) return false;
+  const assuntoId = document.getElementById('ch-assunto-id')?.value || null;
   const id = document.getElementById('ch-id').value;
   const tecId = document.getElementById('ch-tecnico').value || null;
   const tecNome = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome || '' : '';
@@ -20670,19 +21824,19 @@ async function salvarChamado(){
     fecharModal('modal-chamado');
     abrirModalFechamentoChamado({
       id, cliente, telefone, endereco, localizacao, login_cliente:loginCliente, senha_cliente:'',
-      descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome,
+      descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, assunto_id:assuntoId,
     });
     return;
   }
 
-  const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao, login_cliente:loginCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status };
+  const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao, login_cliente:loginCliente, descricao, prioridade, tecnico_id:tecId, tecnico_nome:tecNome, status, assunto_id:assuntoId };
 
   let chamadoId = id;
   let error;
   if(id){
     ({ error } = await sbClient.from('campo_chamados').update(obj).eq('id', id));
   } else {
-    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() }).select().single();
+    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje(), origem:'movione' }).select().single();
     error = insErr;
     if(data) chamadoId = data.id;
   }
@@ -20707,6 +21861,8 @@ async function abrirChamadoParaOS(){
   const cliente = document.getElementById('ch-cliente').value.trim();
   const descricao = document.getElementById('ch-descricao').value.trim();
   if(!cliente||!descricao){ showToast('Preencha o cliente e a descrição do problema.', true); return; }
+  if(!chAssValidar()) return;
+  const assuntoId = document.getElementById('ch-assunto-id')?.value || null;
 
   const tecId    = document.getElementById('ch-tecnico').value || null;
   const tecNome  = tecId ? (_cpTecnicos.find(t=>t.id==tecId)||{}).nome||'' : '';
@@ -20720,7 +21876,9 @@ async function abrirChamadoParaOS(){
 
   const obj = { cliente, cliente_id:clienteId, telefone, endereco, localizacao,
     login_cliente:loginCliente, descricao, prioridade,
-    tecnico_id:tecId, tecnico_nome:tecNome, status:'aberto' };
+    tecnico_id:tecId, tecnico_nome:tecNome, status:'aberto', assunto_id:assuntoId };
+  // a OS guarda o id interno do cadastro (comodato e mapa do moviTec leem assim)
+  const clienteIdOS = cpClienteIdDaOS({ cliente_id:clienteId, cliente });
 
   let chamadoExistente = id ? _cpChamados.find(x=>x.id==id) : null;
   let chamadoId = id;
@@ -20728,7 +21886,7 @@ async function abrirChamadoParaOS(){
   if(id){
     ({ error } = await sbClient.from('campo_chamados').update(obj).eq('id', id));
   } else {
-    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() }).select().single();
+    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje(), origem:'movione' }).select().single();
     error = insErr;
     if(data) chamadoId = data.id;
   }
@@ -20745,14 +21903,14 @@ async function abrirChamadoParaOS(){
 
   if(chamadoExistente && chamadoExistente.os_id){
     await sbClient.from('campo_os').update({
-      cliente, cliente_id:clienteId, telefone, endereco, descricao,
+      cliente, cliente_id:clienteIdOS, telefone, endereco, descricao,
       login_cliente:loginCliente, tecnico_id:tecId, tecnico_nome:tecNome,
       prioridade, obs: obsCompl,
     }).eq('id', chamadoExistente.os_id);
   } else if(chamadoId){
     const numeroOS = cpProximoNumOS();
     const { data: osData, error: osErr } = await sbClient.from('campo_os').insert({
-      numero: numeroOS, cliente, cliente_id:clienteId, telefone, endereco,
+      numero: numeroOS, cliente, cliente_id:clienteIdOS, telefone, endereco,
       login_cliente:loginCliente, descricao, tecnico_id:tecId, tecnico_nome:tecNome,
       prioridade, status:'aberta', data:cpHoje(), chamado_id:chamadoId, obs:obsCompl,
     }).select().single();
@@ -20829,7 +21987,7 @@ async function confirmarFechamentoChamado(){
   if(id){
     ({ error } = await sbClient.from('campo_chamados').update(obj).eq('id', id));
   } else {
-    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje() }).select().single();
+    const { data, error: insErr } = await sbClient.from('campo_chamados').insert({ ...obj, data: cpHoje(), origem:'movione' }).select().single();
     error = insErr;
     if(data) chamadoId = data.id;
   }
@@ -20861,6 +22019,7 @@ async function excluirChamado(id){
 }
 
 function renderChamados(){
+  if(document.getElementById('page-cp-central')?.classList.contains('active')) renderCentral();
   const tb = document.getElementById('tb-chamados');
   if(!tb) return;
   const busca = (document.getElementById('ch-search')?.value||'').toLowerCase();
@@ -20994,7 +22153,10 @@ async function confirmarAbrirOS(){
     // Busca senha do login PPPoE pelo cliente vinculado
     let senhaCliente = '';
     if(c.cliente_id){
-      const logins = gd('sf_clientes_logins').filter(l=>String(l.clienteId)===String(c.cliente_id)||String(l.ixcClienteId)===String(c.cliente_id));
+      const cliCh = cpClienteDoChamado(c);
+      const logins = gd('sf_clientes_logins').filter(l=>cliCh
+        ? ((l.clienteId!=null && String(l.clienteId)===String(cliCh.id)) || (cliCh.ixcId && String(l.ixcClienteId)===String(cliCh.ixcId)))
+        : (String(l.clienteId)===String(c.cliente_id)||String(l.ixcClienteId)===String(c.cliente_id)));
       senhaCliente = logins.find(l=>l.login===loginCliente)?.senha || logins[0]?.senha || '';
     }
     const obsCompl = [
@@ -21014,7 +22176,7 @@ async function confirmarAbrirOS(){
       const numeroOS = cpProximoNumOS();
       const { data: osData, error: osErr } = await sbClient.from('campo_os').insert({
         numero: numeroOS,
-        cliente: c.cliente, cliente_id: c.cliente_id,
+        cliente: c.cliente, cliente_id: cpClienteIdDaOS(c),
         telefone: c.telefone, endereco: c.endereco,
         login_cliente: loginCliente,
         senha_cliente: senhaCliente,
@@ -21039,13 +22201,16 @@ async function confirmarAbrirOS(){
     renderChamados();
     renderOS();
 
-    // Vai direto para a aba OS e abre a nova OS
     const osNum = _cpOS.find(o=>o.id==osId);
-    navTo('cp-os', document.querySelector('[data-page="cp-os"]'));
     showToast(`✅ OS #${String(osNum?.numero||0).padStart(4,'0')} criada para ${tecNome}!`);
-
-    // Abre a OS para visualizar
-    if(osId) setTimeout(()=>abrirModalOS(osId), 400);
+    // aberta pela Central: continua na Central, com o chamado selecionado
+    if(document.getElementById('page-cp-central')?.classList.contains('active')){
+      CEN.sel = 'c'+chamadoId; CEN.selAuto = false; renderCentral();
+    } else {
+      // Vai direto para a aba OS e abre a nova OS
+      navTo('cp-os', document.querySelector('[data-page="cp-os"]'));
+      if(osId) setTimeout(()=>abrirModalOS(osId), 400);
+    }
 
   } catch(e){
     showToast('Erro: '+e.message, true);
@@ -21510,6 +22675,7 @@ async function excluirOS(id){
 }
 
 function renderOS(){
+  if(document.getElementById('page-cp-central')?.classList.contains('active')) renderCentral();
   const tb = document.getElementById('tb-os');
   if(!tb) return;
   const busca = (document.getElementById('os-search')?.value||'').toLowerCase();
@@ -26396,7 +27562,8 @@ function preencherClienteChamado(cli){
 
   // Preenche input nome
   document.getElementById('ch-cliente').value = cli.nome || '';
-  document.getElementById('ch-cliente-id').value = cli.id || cli.ixcId || '';
+  // o chamado guarda o id do IXC (MoviTalk, MoviApp e a regra de acesso do cliente leem assim)
+  document.getElementById('ch-cliente-id').value = cli.ixcId || cli.id || '';
   document.getElementById('ch-cliente-dropdown').style.display = 'none';
 
   // Preenche campos do formulário
@@ -26423,6 +27590,7 @@ function preencherClienteChamado(cli){
 
   // Salva referência para diagnóstico
   window._chamadoClienteAtual = cli;
+  try{ chAssRender(); }catch(_){}
 }
 
 function preencherClienteOS(cli){
