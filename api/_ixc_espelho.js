@@ -461,5 +461,48 @@ export async function sincronizarApoioDoIxc(io) {
       ativo: c.ativo == null ? null : c.ativo === 'S', atualizado_em: agora,
     })), { conflito: 'id' });
   }
-  return { grupos: grupos.length, carteiras: carteiras.length };
+  // setores e assuntos de atendimento/OS (Central de Chamados)
+  const sa = await sincronizarSetoresAssuntos(io, agora);
+  return { grupos: grupos.length, carteiras: carteiras.length, ...sa };
+}
+
+/* Setores e assuntos de atendimento cadastrados no IXC — a base da Central de
+   Chamados (setor → assunto, com prazo e checklist definidos no MoviOne).
+   O nome da tabela de setores muda entre versões do IXC: as conhecidas são
+   lidas juntas (cada uma com o próprio prazo) e vale a primeira que trouxer
+   registros. O registro inteiro vai em `dados` para os campos próprios desta
+   instalação (setor do assunto, prioridade, prazo) poderem ser usados sem
+   outra rodada — menos qualquer campo com cara de senha, token ou chave. */
+const CAMPO_SENSIVEL = /senha|token|chave|secret|pass|hash|key|cert/i;
+function semSensivel(reg) {
+  const o = {};
+  for (const [k, v] of Object.entries(reg || {})) {
+    if (CAMPO_SENSIVEL.test(k) || v == null || typeof v === 'object') continue;
+    o[k] = typeof v === 'string' ? v.slice(0, 300) : v;
+  }
+  return o;
+}
+const simNao = v => v == null || v === '' ? null : ['S', 's', '1', 1, true, 'A'].includes(v);
+const TABELAS_SETOR = ['empresa_setor', 'su_oss_setor', 'setor'];
+
+export async function sincronizarSetoresAssuntos(io, agora = new Date().toISOString()) {
+  const ler = t => io.ixcTudo(t).then(regs => ({ t, regs }), err => ({ t, regs: [], erro: String(err.message || err).slice(0, 140) }));
+  const [ass, ...setores] = await Promise.all([ler('su_oss_assunto'), ...TABELAS_SETOR.map(ler)]);
+  const set = setores.find(s => s.regs.length) || { t: null, regs: [] };
+  const erros = [ass, ...setores].filter(x => x.erro && !(x !== ass && set.t)).map(x => `${x.t}: ${x.erro}`);
+  const setoresOk = set.regs.filter(s => s.id), assuntosOk = ass.regs.filter(a => a.id);
+  if (setoresOk.length) {
+    await io.sbUpsert('ixc_setores', setoresOk.map(s => ({
+      id: String(s.id), setor: s.setor || s.descricao || s.nome || null, ativo: simNao(s.ativo),
+      origem: set.t, dados: semSensivel(s), atualizado_em: agora,
+    })), { conflito: 'id' });
+  }
+  if (assuntosOk.length) {
+    await io.sbUpsert('ixc_assuntos', assuntosOk.map(a => ({
+      id: String(a.id), assunto: a.assunto || a.descricao || null, ativo: simNao(a.ativo),
+      setor_id: a.id_setor != null && a.id_setor !== '' && a.id_setor !== '0' ? String(a.id_setor) : (a.setor && /^\d+$/.test(String(a.setor)) && a.setor !== '0' ? String(a.setor) : null),
+      dados: semSensivel(a), atualizado_em: agora,
+    })), { conflito: 'id' });
+  }
+  return { setores: setoresOk.length, setores_tabela: set.t, assuntos: assuntosOk.length, ...(erros.length ? { erros_setor_assunto: erros } : {}) };
 }
