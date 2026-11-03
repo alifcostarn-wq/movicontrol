@@ -2744,6 +2744,84 @@ async function respostaMonitorCto(e, { fone, texto, waId, citado }) {
   return { acao: 'ativar', ativados: feitos.map(f => f.inc.protocolo), falhas };
 }
 
+/* ===== Chamado técnico no módulo de campo =====
+   O mesmo registro que o MoviOne grava ao abrir chamado e que o app do técnico
+   lê: campo_chamados + a primeira etapa em campo_chamados_historico (sem ela o
+   painel mostra "Sem etapa" e o app do técnico não avisa o cliente). Quem usa:
+   o bot (bloco "Abrir chamado") e o atendente (aba Suporte do painel). */
+const PRIORIDADES_CHAMADO = ['baixa', 'media', 'alta'];
+
+// Endereço, referência e login PPPoE para o técnico. Vêm do espelho do IXC
+// (clientes e clientes_logins, os mesmos que o MoviOne usa); o que faltar,
+// pergunta ao IXC. A senha do cliente nunca é lida: o MoviOne também grava o
+// chamado sem ela.
+async function dadosClienteChamado(e, ixcId) {
+  const out = { endereco: null, localizacao: null, login: null };
+  if (!ixcId) return out;
+  const id = encodeURIComponent(String(ixcId));
+  const [cli, logins] = await Promise.all([
+    sbUm(e, `clientes?ixc_id=eq.${id}&select=endereco,numero,complemento,bairro,cidade,uf,referencia&limit=1`).catch(() => null),
+    sb(e, `clientes_logins?ixc_cliente_id=eq.${id}&select=login,ativo&order=ativo.desc.nullslast&limit=5`).catch(() => []),
+  ]);
+  if (cli) {
+    out.endereco = [cli.endereco, cli.numero, cli.complemento, cli.bairro, cli.cidade, cli.uf]
+      .map(v => String(v ?? '').trim()).filter(Boolean).join(', ') || null;
+    out.localizacao = String(cli.referencia ?? '').trim() || null;
+  }
+  const l = (Array.isArray(logins) ? logins : []).find(x => x && String(x.login || '').trim());
+  if (l) out.login = String(l.login).trim();
+  if (!out.endereco) {
+    try {
+      const c = await ixc(e, 'cliente', { qtype: 'cliente.id', query: String(ixcId), oper: '=', rp: '1' });
+      const c0 = (c.registros || [])[0];
+      // "cidade" no IXC é o código da cidade: só entra o nome, quando vier
+      if (c0) out.endereco = [pick(c0, 'endereco', 'logradouro'), pick(c0, 'numero'),
+        pick(c0, 'bairro'), pick(c0, 'cidade_nome')].filter(Boolean).join(', ') || null;
+    } catch { /* segue sem endereço */ }
+  }
+  if (!out.login) {
+    try {
+      const r = await ixc(e, 'radusuarios', { qtype: 'radusuarios.id_cliente', query: String(ixcId), oper: '=', rp: '1' });
+      out.login = pick((r.registros || [])[0] || {}, 'login', 'usuario', 'username') || null;
+    } catch { /* segue sem login */ }
+  }
+  return out;
+}
+
+// Grava o chamado e a primeira etapa. Com técnico escolhido já nasce
+// "atribuído", como no MoviOne; sem técnico fica "novo", na fila.
+async function criarChamadoCampo(e, { nome, ixcId, telefone, descricao, prioridade = 'media', tecnico = null }) {
+  const dados = await dadosClienteChamado(e, ixcId);
+  const status = tecnico ? 'atribuido' : 'novo';
+  const r = await sb(e, 'campo_chamados', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: {
+      cliente: String(nome || 'Cliente WhatsApp').slice(0, 120),
+      cliente_id: ixcId ? String(ixcId) : null,
+      telefone: telefone || null,
+      endereco: dados.endereco,
+      localizacao: dados.localizacao,
+      login_cliente: dados.login,
+      descricao: String(descricao || '').slice(0, 500),
+      prioridade: PRIORIDADES_CHAMADO.includes(prioridade) ? prioridade : 'media',
+      tecnico_id: tecnico ? tecnico.id : null,
+      tecnico_nome: tecnico ? tecnico.nome : null,
+      status,
+      // dia daqui, não o do servidor (UTC): à noite o chamado caía no dia seguinte
+      data: diaEmMossoro(new Date()),
+    },
+  });
+  const criado = Array.isArray(r) ? r[0] : r;
+  const id = criado && criado.id ? criado.id : null;
+  if (id) {
+    await sb(e, 'campo_chamados_historico', {
+      method: 'POST', prefer: 'return=minimal', body: { chamado_id: id, status },
+    }).catch(err => console.error('[atendimento] historico do chamado:', err.message));
+  }
+  return { id, status, ...dados };
+}
+
 const CONECTORES = {
 
   // PORTEIRO: se o número JÁ está vinculado a um cadastro (vínculo feito à mão
@@ -2961,61 +3039,17 @@ const CONECTORES = {
     const ixcId = vars.cliente_id || conversa.cliente_ixc_id || null;
     const snap = conversa.cliente_snapshot || {};
     const nome = snap.nome || conversa.contato_nome || conversa.contato_fone || 'Cliente WhatsApp';
-
-    // endereço e login ajudam o técnico; se o IXC não responder, segue sem eles
-    let endereco = null, login = null;
-    if (ixcId) {
-      try {
-        const c = await ixc(e, 'cliente', { qtype: 'cliente.id', query: String(ixcId), oper: '=', rp: '1' });
-        const c0 = (c.registros || [])[0];
-        if (c0) {
-          endereco = [pick(c0, 'endereco', 'logradouro'), pick(c0, 'numero'),
-                      pick(c0, 'bairro'), pick(c0, 'cidade_nome', 'cidade')]
-                     .filter(Boolean).join(', ') || null;
-        }
-      } catch { /* segue sem endereço */ }
-      try {
-        const r = await ixc(e, 'radusuarios', { qtype: 'radusuarios.id_cliente', query: String(ixcId), oper: '=', rp: '1' });
-        login = pick((r.registros || [])[0] || {}, 'login', 'usuario', 'username');
-      } catch { /* segue sem login */ }
-    }
-
-    const hoje = new Date();
-    const dataBR = `${hoje.getFullYear()}-${pad2(hoje.getMonth() + 1)}-${pad2(hoje.getDate())}`;
-
-    let criado = null;
+    let criado;
     try {
-      const r = await sb(e, 'campo_chamados', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        body: {
-          cliente: String(nome).slice(0, 120),
-          cliente_id: ixcId ? String(ixcId) : null,
-          telefone: conversa.contato_fone || null,
-          endereco,
-          login_cliente: login,
-          descricao: `[Bot MoviTalk] ${vars.ultima_msg || 'Cliente solicitou atendimento técnico pelo WhatsApp.'}`.slice(0, 500),
-          prioridade: 'media',
-          status: 'novo',
-          data: dataBR,
-        },
+      criado = await criarChamadoCampo(e, {
+        nome, ixcId, telefone: conversa.contato_fone,
+        descricao: `[Bot MoviTalk] ${vars.ultima_msg || 'Cliente solicitou atendimento técnico pelo WhatsApp.'}`,
       });
-      criado = Array.isArray(r) ? r[0] : r;
     } catch (err) {
       console.error('[atendimento] abrir_chamado:', err.message);
       return { resultado: 'erro', anexoTexto: '' };
     }
-
-    const chamado = criado && criado.id ? criado.id : null;
-    if (chamado) {
-      // o módulo espera a trilha desde a criação: sem isso o painel mostra
-      // "Sem etapa" e o app do técnico não notifica o cliente
-      await sb(e, 'campo_chamados_historico', {
-        method: 'POST', prefer: 'return=minimal',
-        body: { chamado_id: chamado, status: 'novo' },
-      }).catch(err => console.error('[atendimento] historico:', err.message));
-    }
-
+    const chamado = criado.id;
     return {
       resultado: chamado ? 'ok' : 'erro',
       variaveis: { chamado_id: chamado },
@@ -8951,6 +8985,63 @@ export default async function handler(req, res) {
 
       // ===== Vínculo manual número ↔ cadastro do cliente =====
       // ===== Painel 360 do cliente — dados ao vivo do IXC =====
+      // ===== CHAMADO TÉCNICO pela aba Suporte do painel =====
+      // O atendente abre o chamado sem sair da conversa. Vai para o mesmo
+      // módulo de campo do MoviOne e do app do técnico (criarChamadoCampo).
+      case 'chamados.tecnicos': {
+        const tecs = await sb(e, 'campo_tecnicos?status=eq.ativo&select=id,nome&order=nome.asc&limit=200');
+        return res.status(200).json({ ok: true, tecnicos: (tecs || []).map(t => ({ id: t.id, nome: t.nome })) });
+      }
+
+      case 'chamados.abrir': {
+        const id = Number(body.conversa_id);
+        if (!id) return res.status(400).json({ ok: false, error: 'conversa_id obrigatório.' });
+        const acesso = await conversaDoUsuario(e, user, id, 'id,setor,contato_fone,contato_nome,cliente_ixc_id,cliente_snapshot');
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        const c = acesso.c;
+        // o painel lista os chamados pelo cadastro: sem ele o chamado sumiria da aba
+        if (!c.cliente_ixc_id) return res.status(400).json({ ok: false, error: 'Associe a conversa a um cadastro do IXC antes de abrir o chamado.' });
+        const descricao = String(body.descricao || '').trim();
+        if (descricao.length < 5) return res.status(400).json({ ok: false, error: 'Descreva o problema do cliente.' });
+        const prioridade = PRIORIDADES_CHAMADO.includes(body.prioridade) ? body.prioridade : 'media';
+        let tecnico = null;
+        if (body.tecnico_id) {
+          tecnico = await sbUm(e, `campo_tecnicos?id=eq.${Number(body.tecnico_id)}&status=eq.ativo&select=id,nome`);
+          if (!tecnico) return res.status(400).json({ ok: false, error: 'Técnico não encontrado ou inativo. Escolha outro.' });
+        }
+        const snap = c.cliente_snapshot || {};
+        let criado = null;
+        try {
+          criado = await criarChamadoCampo(e, {
+            nome: snap.nome || c.contato_nome || c.contato_fone, ixcId: c.cliente_ixc_id,
+            telefone: c.contato_fone, descricao, prioridade, tecnico,
+          });
+        } catch (err) {
+          console.error('[chamados.abrir]', err.message);
+        }
+        if (!criado || !criado.id) return res.status(502).json({ ok: false, error: 'Não consegui registrar o chamado. Tente de novo.' });
+        // a conversa fica ligada ao chamado, e a equipe vê na conversa quem abriu
+        const rotPrio = { baixa: 'baixa', media: 'média', alta: 'alta' }[prioridade];
+        await Promise.all([
+          sb(e, `atend_conversas?id=eq.${id}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: { chamado_id: String(criado.id), updated_by: user.id },
+          }).catch(err => console.error('[chamados.abrir] conversa:', err.message)),
+          sb(e, 'atend_mensagens', {
+            method: 'POST', prefer: 'return=minimal',
+            body: {
+              conversa_id: id, direcao: 'sys', autor_id: user.id, autor_nome: user.nome || null,
+              conteudo: `🛠️ ${user.nome || 'Atendente'} abriu o chamado técnico #${criado.id} · prioridade ${rotPrio} · `
+                + (tecnico ? `técnico ${tecnico.nome}` : 'na fila, sem técnico'),
+            },
+          }).catch(err => console.error('[chamados.abrir] nota:', err.message)),
+        ]);
+        return res.status(200).json({
+          ok: true,
+          chamado: { id: criado.id, status: criado.status, prioridade, tecnico_nome: tecnico ? tecnico.nome : null,
+            com_endereco: !!criado.endereco, com_login: !!criado.login },
+        });
+      }
+
       case 'cliente.painel': {
         const ixcId = String(body.cliente_ixc_id || '').trim();
         if (!ixcId) return res.status(400).json({ ok: false, error: 'cliente_ixc_id obrigatório.' });

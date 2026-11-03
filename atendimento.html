@@ -1765,6 +1765,12 @@ body.dark-mode{--meter-ok:#4ade80;--meter-ok-track:#12382a;--meter-warn:#fbbf24;
 .ms-ts{font-size:11px;font-weight:600;color:var(--text-mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ms-ts.r{color:var(--red);} .ms-ts.o{color:var(--amber-txt);} .ms-ts:empty{display:none;}
 .ms-topo .ficha-x{float:none;margin:0;}
+/* aba Cliente: sem o título "Cliente / cadastro no IXC" (o atendente já sabe
+   onde está); os botões vão para a linha do "Cadastro do cliente" */
+.m-side.ms-sem-topo .ms-topo{display:none;}
+.ms-h3-cad{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.ms-cad-bts{display:inline-flex;align-items:center;gap:4px;margin:-6px -4px -6px 0;}
+.ms-cad-bts .ficha-x{float:none;margin:0;}
 .fc-corpo{flex:1;min-height:0;overflow-y:auto;padding:14px 16px 18px;}
 .ms-aba{display:none;}
 .ms-aba.on{display:block;}
@@ -1795,6 +1801,24 @@ body.dark-mode{--meter-ok:#4ade80;--meter-ok-track:#12382a;--meter-warn:#fbbf24;
 .ms-pend.b{border-color:var(--blue-line);background:var(--blue-soft);} .ms-pend.b .pi{background:var(--card);color:var(--blue-txt);}
 .ms-pend:hover{filter:brightness(.98);}
 .ms-ok{font-size:12px;font-weight:600;color:var(--green-deep);background:var(--green-soft);border-radius:10px;padding:9px 11px;line-height:1.45;}
+/* abrir chamado técnico pela aba Suporte */
+.ch-abrir{font-family:inherit;width:100%;}
+.ch-novo{border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--card);display:flex;flex-direction:column;gap:7px;}
+.cn-rot{font-size:11px;font-weight:700;color:var(--text-mid);}
+.ch-novo textarea.notas{min-height:72px;}
+.cn-seg{display:flex;gap:6px;}
+.cn-seg button{flex:1;font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 0;border-radius:8px;border:1px solid var(--line);
+  background:var(--card);color:var(--text-mid);cursor:pointer;}
+.cn-seg button:hover{border-color:var(--line-2);color:var(--text);}
+.cn-seg button.on.baixa{background:var(--green-soft);border-color:var(--green-line);color:var(--green-deep);}
+.cn-seg button.on.media{background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber-txt);}
+.cn-seg button.on.alta{background:var(--red-soft);border-color:var(--red-line);color:var(--red);}
+.cn-seg button:focus-visible,.ch-abrir:focus-visible{outline:2px solid var(--green);outline-offset:1px;}
+.cn-nota{font-size:10.5px;color:var(--text-low);line-height:1.4;}
+.cno-acts{display:flex;gap:7px;flex-wrap:wrap;}
+.ch-novo-ok{border:1px solid var(--green-line);background:var(--green-soft);border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;gap:6px;}
+.cno-t{font-size:12.5px;font-weight:800;color:var(--green-deep);}
+.cno-d{font-size:11px;font-weight:600;color:var(--text-mid);line-height:1.4;}
 .ms-sec{margin-bottom:18px;}
 .ms-sec h3{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-low);margin-bottom:9px;}
 /* O painel do cliente mostra tudo aberto: o atendente quer bater o olho e ver
@@ -2941,6 +2965,8 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
     border-bottom:1px solid var(--line);padding:4px 6px;overflow-x:auto;overflow-y:hidden;}
   .ms-tr{width:auto;min-width:50px;flex:1;min-height:46px;}
   .ms-trn{font-size:10px;}
+  .ch-novo textarea.notas,.ch-novo select.transf{font-size:16px;}
+  .cn-seg button,.ch-novo .vinc-btn,.ch-novo-ok .vinc-btn,.ch-abrir{min-height:44px;}
   .ms-tr.on::before{right:9px;left:9px;top:auto;bottom:-4px;width:auto;height:3px;}
   .fc-corpo{padding:14px 14px calc(14px + env(safe-area-inset-bottom));}
   .m-abas{
@@ -10013,6 +10039,10 @@ function openModal(id){
   // abas do painel do cliente: a lista (com os avisos) e a que está aberta.
   // Conversa nova abre na aba Cliente, onde fica o resumo do que está pendente
   if(trocouConversa) abaFicha = 'cliente';
+  // no celular, quem estava no Cliente continua no Cliente quando chega
+  // mensagem (antes cada remonte voltava para a Conversa); conversa nova
+  // abre na Conversa
+  if(trocouConversa) abaCelular = 'chat';
   const abasDaFicha = abasFicha(c, cl);
   const abaAtualFicha = abasDaFicha.find(a=>a.id===abaFicha) || abasDaFicha[0];
   abaFicha = abaAtualFicha.id;
@@ -10023,6 +10053,14 @@ function openModal(id){
   // e o campo de texto vivo — só quando a conversa é a mesma: trocar de
   // conversa é o único caso em que o conteúdo do campo deve mesmo mudar
   const _campoVivo = trocouConversa ? null : preservarComposer();
+  // e o formulário de chamado em preenchimento na aba Suporte (mesmo motivo)
+  const _chVivo = trocouConversa ? null : preservarFormChamado();
+  // quem está digitando num campo do painel (chamado, notas) não pode ter o
+  // cursor puxado para a caixa de mensagem quando o modal remonta — o resto
+  // da frase iria parar na mensagem para o cliente
+  const _ae = document.activeElement;
+  const _focoNoPainel = !trocouConversa && !!(_ae && _ae.closest && _ae.closest('#modal .m-side')
+    && /^(INPUT|TEXTAREA|SELECT)$/.test(_ae.tagName));
   // e onde o leitor estava na thread — só vale na mesma conversa
   const _rolagem = trocouConversa ? null : lerRolagem($('#mThread'));
   // e até onde o painel do cliente estava rolado: em tela cheia, cada mensagem
@@ -10033,10 +10071,10 @@ function openModal(id){
   $('#modal').innerHTML=`
   <div class="m-abas only-mobile">
     <button class="m-voltar" id="mVoltar" aria-label="Voltar para a lista de conversas">‹</button>
-    <div class="m-aba on" data-aba="chat">💬 Conversa</div>
-    <div class="m-aba" data-aba="cliente">👤 Cliente</div>
+    <div class="m-aba${abaCelular==='chat'?' on':''}" data-aba="chat">💬 Conversa</div>
+    <div class="m-aba${abaCelular==='cliente'?' on':''}" data-aba="cliente">👤 Cliente</div>
   </div>
-  <div class="m-chat">
+  <div class="m-chat${abaCelular==='cliente'?' oculto':''}">
     <div class="m-head">
       ${avatarHTML(c)}
       <div class="m-hinfo">
@@ -10170,7 +10208,7 @@ function openModal(id){
       <button class="m-send" id="mSend"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
     </div>
   </div>
-  <div class="m-side">
+  <div class="m-side${abaCelular==='cliente'?' visivel':''}">
     <!-- só aparece em tela cheia: quem é o cliente e o caminho de volta -->
     <div class="fc-head">
       <div class="fc-tit">
@@ -10193,7 +10231,9 @@ function openModal(id){
     <div class="fc-corpo">
     <div class="ms-aba" data-aba="cliente">
     <div class="ms-sec">
-      <h3>Cadastro do cliente</h3>
+      <!-- na aba Cliente não há título de aba: o painel começa aqui, e os
+           botões de expandir e recolher moram nesta linha (aplicarAbaFicha) -->
+      <h3 class="ms-h3-cad"><span>Cadastro do cliente</span><span class="ms-cad-bts" id="msBotoesCad"></span></h3>
       ${c.clienteVinculado ? `
         <div class="vinc-box">
           <div class="vinc-nome">${esc(c.clienteVinculado.nome||c.nome)}</div>
@@ -10250,6 +10290,10 @@ function openModal(id){
     </div>
     </div>
     <div class="ms-aba" data-aba="suporte">
+    <div class="ms-sec">
+      <h3>Chamado técnico</h3>
+      ${formChamadoHTML(c)}
+    </div>
     <div class="ms-sec">
       <h3>Suporte · últimos 30 dias</h3>
       ${blocoChamados(c)}
@@ -10341,6 +10385,8 @@ function openModal(id){
   // devolve o MESMO campo de texto para a árvore nova, com o que o atendente
   // estava escrevendo dentro dele
   const _campoVoltou = restaurarComposer(_campoVivo);
+  restaurarFormChamado(_chVivo);
+  ligarFormChamado();
   const th=$('#mThread');
   if(!_rolagem || _rolagem.doFim < 80){ th.scrollTop=99999; novasAbaixo=null; }
   else{
@@ -10535,7 +10581,7 @@ function openModal(id){
     // ...a não ser que o visualizador de imagem esteja aberto por cima: lá o
     // teclado é dele, e puxar o foco para um campo escondido faria o atalho de
     // girar virar letra na mensagem
-    const focar = ()=>{ if(!document.querySelector('.midia-lightbox')) inp.focus(); };
+    const focar = ()=>{ if(!document.querySelector('.midia-lightbox') && !_focoNoPainel) inp.focus(); };
     // devolve o foco e o cursor exatamente onde estavam antes do re-render
     if(transplantado){
       // o mesmo nó voltou: a seleção volta inteira com ele, inclusive um
@@ -10835,6 +10881,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
   // abas mobile
   document.querySelectorAll('.m-aba').forEach(el=>el.onclick=()=>{
     const alvo=el.dataset.aba;
+    abaCelular=alvo;
     document.querySelectorAll('.m-aba').forEach(x=>x.classList.toggle('on',x===el));
     $('#modal').querySelector('.m-chat').classList.toggle('oculto',alvo!=='chat');
     $('#modal').querySelector('.m-side').classList.toggle('visivel',alvo==='cliente');
@@ -11178,6 +11225,7 @@ document.addEventListener('keydown', e=>{
    A aba Cliente abre por padrão em cada conversa nova: é onde fica o resumo
    do que está pendente. */
 let abaFicha = 'cliente';
+let abaCelular = 'chat';      // celular: 'chat' (Conversa) ou 'cliente'
 let _abasFichaAtual = [];
 const _svgF = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const ICO_FICHA = {
@@ -11314,6 +11362,14 @@ function aplicarAbaFicha(){
   const t=$('#msTitulo'), s=$('#msResumo');
   if(a && t) t.textContent=a.nome;
   if(a && s){ s.textContent=a.sub||''; s.className='ms-ts '+(a.subCor||''); }
+  // aba Cliente sem título: o painel começa em "Cadastro do cliente" e os
+  // botões de expandir/recolher passam para a linha desse título (o mesmo
+  // nó, com os cliques já ligados — só muda de lugar)
+  const semTopo = abaFicha==='cliente';
+  const lado=m.querySelector('.m-side'); if(lado) lado.classList.toggle('ms-sem-topo', semTopo);
+  const casa = semTopo ? m.querySelector('#msBotoesCad') : m.querySelector('.ms-topo');
+  if(casa) [m.querySelector('#fichaExpandir'), m.querySelector('#fichaRecolher')]
+    .forEach(b=>{ if(b && b.parentElement!==casa) casa.appendChild(b); });
 }
 function trocarAbaFicha(id){
   if(!_abasFichaAtual.some(a=>a.id===id)) return;
@@ -11326,6 +11382,176 @@ function trocarAbaFicha(id){
     return;
   }
   const r=rolanteFicha(); if(r) r.scrollTop=0;
+}
+
+/* ===== Abrir chamado técnico pela aba Suporte =====
+   O atendente registra o chamado sem sair da conversa nem da aba. Vai para o
+   módulo de campo — o mesmo do MoviOne e do app do técnico —, e o servidor
+   completa sozinho endereço, referência e login PPPoE do cadastro.
+   O que está sendo digitado fica guardado por conversa (CH_FORM) e o próprio
+   formulário é transplantado a cada remonte do modal, como o campo de
+   mensagem: chegar mensagem nova não apaga o texto nem tira o cursor. */
+const CH_FORM = new Map();
+let TECNICOS_CAMPO = null, _tecEm = 0, _tecBuscando = null, _tecErro = false;
+const ROT_PRIO = { baixa:'baixa', media:'média', alta:'alta' };
+function chEstado(id){
+  if(!CH_FORM.has(id)) CH_FORM.set(id, { aberto:false, desc:'', prio:'media', tec:'', enviando:false, erro:'', feito:null });
+  return CH_FORM.get(id);
+}
+function carregarTecnicos(){
+  if(TECNICOS_CAMPO && Date.now()-_tecEm < 10*60000) return Promise.resolve(TECNICOS_CAMPO);
+  if(_tecBuscando) return _tecBuscando;
+  _tecBuscando = chamar('chamados.tecnicos')
+    .then(r=>{ TECNICOS_CAMPO = r.tecnicos || []; _tecEm = Date.now(); _tecErro = false; return TECNICOS_CAMPO; })
+    .catch(err=>{ _tecErro = true; throw err; })
+    .finally(()=>{ _tecBuscando = null; });
+  return _tecBuscando;
+}
+function opcoesTecnicos(escolhido){
+  const lista = TECNICOS_CAMPO
+    ? TECNICOS_CAMPO.map(t=>`<option value="${esc(String(t.id))}" ${String(escolhido)===String(t.id)?'selected':''}>${esc(t.nome)}</option>`).join('')
+    : `<option value="" disabled>${_tecErro?'Não consegui carregar os técnicos':'Carregando técnicos…'}</option>`;
+  return `<option value="">Sem técnico (fica na fila)</option>${lista}`;
+}
+function formChamadoHTML(c){
+  const s = chEstado(c.id);
+  if(s.feito){
+    const f = s.feito;
+    const faltou = [f.com_endereco===false?'endereço':'', f.com_login===false?'login PPPoE':''].filter(Boolean);
+    return `<div class="ch-novo-ok" id="chForm" data-conv="${c.id}" data-modo="feito" role="status">
+      <div class="cno-t">✅ Chamado #${esc(String(f.id))} registrado</div>
+      <div class="cno-d">Prioridade ${esc(ROT_PRIO[f.prioridade]||'média')} · ${f.tecnico_nome?'técnico '+esc(f.tecnico_nome):'na fila, sem técnico'}${
+        faltou.length?`<br>⚠ Sem ${faltou.join(' e ')} no cadastro: confirme com o cliente e passe ao técnico.`:''}</div>
+      <div class="cno-acts">
+        <button type="button" class="vinc-btn solid" data-ch="protocolo">💬 Colocar o protocolo na mensagem</button>
+        <button type="button" class="vinc-btn" data-ch="outro">Abrir outro</button>
+      </div></div>`;
+  }
+  if(!s.aberto) return `<div id="chForm" data-conv="${c.id}" data-modo="fechado"><div class="acts">
+    <button type="button" class="act hi ch-abrir" data-ch="abrir">🛠️ Abrir chamado técnico</button></div></div>`;
+  return `<div class="ch-novo" id="chForm" data-conv="${c.id}" data-modo="aberto">
+    <label class="cn-rot" for="chDesc">O que está acontecendo?</label>
+    <textarea class="notas" id="chDesc" rows="3" maxlength="500" placeholder="Ex.: sem internet desde ontem, luz LOS vermelha" ${s.enviando?'disabled':''}>${esc(s.desc)}</textarea>
+    <div class="cn-rot" id="chPrioRot">Prioridade</div>
+    <div class="cn-seg" role="radiogroup" aria-labelledby="chPrioRot">${[['baixa','Baixa'],['media','Média'],['alta','Alta']].map(([k,n])=>
+      `<button type="button" role="radio" aria-checked="${s.prio===k}" class="${s.prio===k?'on '+k:''}" data-chprio="${k}" ${s.enviando?'disabled':''}>${n}</button>`).join('')}</div>
+    <label class="cn-rot" for="chTec">Técnico</label>
+    <select class="transf" id="chTec" ${s.enviando?'disabled':''}>${opcoesTecnicos(s.tec)}</select>
+    <div class="cn-nota">Vai junto o endereço, a referência e o login PPPoE do cadastro.</div>
+    ${s.erro?`<div class="ms-erro" role="alert">${esc(s.erro)}</div>`:''}
+    <div class="cno-acts">
+      <button type="button" class="vinc-btn solid" data-ch="registrar" ${s.enviando?'disabled':''}>${s.enviando?'Registrando…':'Registrar chamado'}</button>
+      <button type="button" class="vinc-btn" data-ch="cancelar" ${s.enviando?'disabled':''}>Cancelar</button>
+    </div>
+  </div>`;
+}
+// redesenha só o formulário (sem remontar o modal) e devolve o foco
+function redesenharFormChamado(conv, focar){
+  const c = state.conversas.find(x=>x.id===conv);
+  const f = document.getElementById('chForm');
+  if(!c || !f || Number(f.dataset.conv)!==conv) return;
+  f.outerHTML = formChamadoHTML(c);
+  ligarFormChamado();
+  const el = focar && document.querySelector('#chForm '+focar);
+  if(el) try{ el.focus({ preventScroll:true }); if(el.setSelectionRange) el.setSelectionRange(el.value.length, el.value.length); }catch{}
+}
+function abrirFormChamado(conv){
+  const s = chEstado(conv);
+  Object.assign(s, { aberto:true, feito:null, erro:'', enviando:false });
+  redesenharFormChamado(conv, '#chDesc');
+  carregarTecnicos()
+    .catch(()=>{})
+    .then(()=>{ const sel=document.querySelector('#chForm #chTec'); if(sel && Number(document.getElementById('chForm').dataset.conv)===conv) sel.innerHTML=opcoesTecnicos(chEstado(conv).tec); });
+}
+async function registrarChamado(conv){
+  const s = chEstado(conv);
+  if(s.enviando) return;
+  const f = document.getElementById('chForm');
+  if(f && Number(f.dataset.conv)===conv){
+    const d=f.querySelector('#chDesc'), t=f.querySelector('#chTec');
+    if(d) s.desc=d.value;
+    if(t) s.tec=t.value;
+  }
+  if(s.desc.trim().length < 5){ s.erro='Descreva o problema do cliente.'; redesenharFormChamado(conv, '#chDesc'); return; }
+  Object.assign(s, { enviando:true, erro:'' });
+  redesenharFormChamado(conv);
+  try{
+    const r = await chamar('chamados.abrir', { conversa_id: conv, descricao: s.desc.trim(), prioridade: s.prio, tecnico_id: s.tec ? Number(s.tec) : null });
+    CH_FORM.set(conv, { aberto:false, desc:'', prio:'media', tec:'', enviando:false, erro:'', feito: r.chamado });
+    toast(`Chamado #${r.chamado.id} registrado`);
+    // a lista da aba e o aviso no ícone passam a mostrar o chamado novo
+    const c = state.conversas.find(x=>x.id===conv);
+    if(c) api.carregarPainel(c).then(()=>{ if(modalId===conv) openModal(conv); }).catch(()=>{});
+  }catch(err){
+    Object.assign(s, { enviando:false, erro: err.message || 'Não consegui registrar o chamado. Tente de novo.' });
+  }
+  redesenharFormChamado(conv);
+}
+// o número do chamado vai para o campo de mensagem — o atendente revisa e envia
+function protocoloNaMensagem(conv){
+  const s = chEstado(conv), inp = document.getElementById('mInput');
+  if(!s.feito || !inp || modalId!==conv) return;
+  const txt = `Seu chamado técnico foi registrado. Protocolo: #${s.feito.id}.`;
+  inp.value = inp.value.trim() ? inp.value.replace(/\s+$/,'') + '\n' + txt : txt;
+  inp.dispatchEvent(new Event('input', { bubbles:true }));
+  // no celular a conversa fica na outra aba
+  const abaConversa = document.querySelector('#modal .m-aba[data-aba="chat"]');
+  if(abaConversa && abaConversa.offsetParent) abaConversa.click();
+  try{ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }catch{}
+}
+function ligarFormChamado(){
+  const f = document.getElementById('chForm');
+  if(!f || f._ligado) return;
+  f._ligado = true;
+  const conv = Number(f.dataset.conv);
+  f.addEventListener('click', ev=>{
+    const b = ev.target.closest('[data-ch],[data-chprio]');
+    if(!b || !f.contains(b) || b.disabled) return;
+    const s = chEstado(conv);
+    if(b.dataset.chprio){
+      s.prio = b.dataset.chprio;
+      f.querySelectorAll('[data-chprio]').forEach(x=>{
+        const on = x.dataset.chprio===s.prio;
+        x.className = on ? 'on '+x.dataset.chprio : '';
+        x.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      return;
+    }
+    const acao = b.dataset.ch;
+    if(acao==='abrir') abrirFormChamado(conv);
+    else if(acao==='cancelar'){ CH_FORM.delete(conv); redesenharFormChamado(conv, '[data-ch="abrir"]'); }
+    else if(acao==='registrar') registrarChamado(conv);
+    else if(acao==='outro'){ CH_FORM.delete(conv); abrirFormChamado(conv); }
+    else if(acao==='protocolo') protocoloNaMensagem(conv);
+  });
+  f.addEventListener('input', ev=>{
+    if(ev.target.id!=='chDesc') return;
+    const s = chEstado(conv);
+    s.desc = ev.target.value;
+    // voltou a escrever: o aviso de erro sai (sem redesenhar, para não tirar o cursor)
+    if(s.erro){ s.erro=''; const e=f.querySelector('.ms-erro'); if(e) e.remove(); }
+  });
+  f.addEventListener('change', ev=>{ if(ev.target.id==='chTec') chEstado(conv).tec = ev.target.value; });
+  // Ctrl+Enter na descrição registra
+  f.addEventListener('keydown', ev=>{
+    if(ev.target.id==='chDesc' && ev.key==='Enter' && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); registrarChamado(conv); }
+  });
+}
+// remonte do modal: o formulário em preenchimento volta inteiro, com o cursor
+function preservarFormChamado(){
+  const el = document.getElementById('chForm');
+  if(!el || el.dataset.modo!=='aberto') return null;
+  const a = document.activeElement, foco = a && el.contains(a) ? a : null;
+  let ini = null, fim = null;
+  try{ if(foco && foco.setSelectionRange){ ini = foco.selectionStart; fim = foco.selectionEnd; } }catch{}
+  return { el, foco, ini, fim };
+}
+function restaurarFormChamado(vivo){
+  if(!vivo) return;
+  const novo = document.getElementById('chForm');
+  if(!novo || !novo.parentNode || novo.dataset.modo!=='aberto' || novo.dataset.conv!==vivo.el.dataset.conv) return;
+  novo.parentNode.replaceChild(vivo.el, novo);
+  if(vivo.foco) try{ vivo.foco.focus({ preventScroll:true }); if(vivo.ini!=null) vivo.foco.setSelectionRange(vivo.ini, vivo.fim); }catch{}
 }
 
 // Ctrl+F com conversa aberta busca DENTRO dela, não na página
