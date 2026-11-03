@@ -11393,16 +11393,39 @@ function trocarAbaFicha(id){
    mensagem: chegar mensagem nova não apaga o texto nem tira o cursor. */
 const CH_FORM = new Map();
 let TECNICOS_CAMPO = null, _tecEm = 0, _tecBuscando = null, _tecErro = false;
+// assuntos da Central de Chamados (vêm do IXC, com setor e prazo do MoviOne)
+let ASSUNTOS_CAMPO = [];
 const ROT_PRIO = { baixa:'baixa', media:'média', alta:'alta' };
 function chEstado(id){
-  if(!CH_FORM.has(id)) CH_FORM.set(id, { aberto:false, desc:'', prio:'media', tec:'', enviando:false, erro:'', feito:null });
+  if(!CH_FORM.has(id)) CH_FORM.set(id, { aberto:false, ass:'', desc:'', prio:'media', tec:'', enviando:false, erro:'', feito:null });
   return CH_FORM.get(id);
+}
+// nomes do IXC vêm em maiúsculas e sem acento: "SUPORTE TECNICO EXTERNO" → "Suporte Técnico Externo"
+const _NB_MIN = new Set(['de','da','do','das','dos','e','em','a','ao','na','no','via','para','com','sem','por','ou']);
+const _NB_AC = { TECNICO:'Técnico', TECNICA:'Técnica', OPTICA:'Óptica', RADIO:'Rádio', ANALISE:'Análise', SERVICO:'Serviço', SERVICOS:'Serviços',
+  MANUTENCAO:'Manutenção', INSTALACAO:'Instalação', TRANSFERENCIA:'Transferência', ATUALIZACAO:'Atualização', NEGATIVACAO:'Negativação',
+  SOLICITACAO:'Solicitação', FUSAO:'Fusão', LANCAMENTO:'Lançamento', GERENCIA:'Gerência', COBRANCA:'Cobrança', ASSISTENCIA:'Assistência' };
+function nomeBonito(t){
+  return String(t||'').trim().toLowerCase().split(/\s+/).filter(Boolean)
+    .map((w,i)=>_NB_AC[w.toUpperCase()] || (i>0 && _NB_MIN.has(w) ? w : w.charAt(0).toUpperCase()+w.slice(1))).join(' ');
+}
+const durHoras = h => { h = Number(h); if(!(h>0)) return ''; return h < 1 ? Math.round(h*60)+' min' : h % 24 === 0 && h >= 48 ? (h/24)+' dias' : (Number.isInteger(h) ? h : h.toFixed(1).replace('.',','))+'h'; };
+function infoAssunto(a){
+  if(!a) return '';
+  return [a.prazo_horas ? 'prazo '+durHoras(a.prazo_horas) : 'sem prazo definido', a.gera_os ? 'gera visita do técnico' : 'resolvido no escritório', a.setor ? nomeBonito(a.setor) : 'sem setor'].join(' · ');
+}
+function opcoesAssuntos(escolhido){
+  const grupos = new Map();
+  ASSUNTOS_CAMPO.forEach(a=>{ const g = a.setor ? nomeBonito(a.setor) : 'Sem setor'; if(!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(a); });
+  const ord = [...grupos.keys()].sort((x,y)=> x==='Sem setor' ? 1 : y==='Sem setor' ? -1 : x.localeCompare(y,'pt-BR'));
+  return `<option value="">Escolha o assunto…</option>` + ord.map(g=>`<optgroup label="${esc(g)}">${grupos.get(g)
+    .map(a=>`<option value="${esc(a.id)}" ${String(escolhido)===a.id?'selected':''}>${esc(nomeBonito(a.nome))}</option>`).join('')}</optgroup>`).join('');
 }
 function carregarTecnicos(){
   if(TECNICOS_CAMPO && Date.now()-_tecEm < 10*60000) return Promise.resolve(TECNICOS_CAMPO);
   if(_tecBuscando) return _tecBuscando;
   _tecBuscando = chamar('chamados.tecnicos')
-    .then(r=>{ TECNICOS_CAMPO = r.tecnicos || []; _tecEm = Date.now(); _tecErro = false; return TECNICOS_CAMPO; })
+    .then(r=>{ TECNICOS_CAMPO = r.tecnicos || []; ASSUNTOS_CAMPO = Array.isArray(r.assuntos) ? r.assuntos : []; _tecEm = Date.now(); _tecErro = false; return TECNICOS_CAMPO; })
     .catch(err=>{ _tecErro = true; throw err; })
     .finally(()=>{ _tecBuscando = null; });
   return _tecBuscando;
@@ -11418,9 +11441,11 @@ function formChamadoHTML(c){
   if(s.feito){
     const f = s.feito;
     const faltou = [f.com_endereco===false?'endereço':'', f.com_login===false?'login PPPoE':''].filter(Boolean);
+    const vence = f.prazo_em ? new Date(f.prazo_em) : null;
     return `<div class="ch-novo-ok" id="chForm" data-conv="${c.id}" data-modo="feito" role="status">
       <div class="cno-t">✅ Chamado #${esc(String(f.id))} registrado</div>
-      <div class="cno-d">Prioridade ${esc(ROT_PRIO[f.prioridade]||'média')} · ${f.tecnico_nome?'técnico '+esc(f.tecnico_nome):'na fila, sem técnico'}${
+      <div class="cno-d">${f.assunto?esc(nomeBonito(f.assunto))+' · ':''}Prioridade ${esc(ROT_PRIO[f.prioridade]||'média')} · ${f.tecnico_nome?'técnico '+esc(f.tecnico_nome):'na fila, sem técnico'}${
+        vence && !isNaN(vence)?`<br>Prazo: até ${esc(vence.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))}`:''}${
         faltou.length?`<br>⚠ Sem ${faltou.join(' e ')} no cadastro: confirme com o cliente e passe ao técnico.`:''}</div>
       <div class="cno-acts">
         <button type="button" class="vinc-btn solid" data-ch="protocolo">💬 Colocar o protocolo na mensagem</button>
@@ -11429,7 +11454,11 @@ function formChamadoHTML(c){
   }
   if(!s.aberto) return `<div id="chForm" data-conv="${c.id}" data-modo="fechado"><div class="acts">
     <button type="button" class="act hi ch-abrir" data-ch="abrir">🛠️ Abrir chamado técnico</button></div></div>`;
+  const aSel = ASSUNTOS_CAMPO.find(a=>a.id===String(s.ass));
   return `<div class="ch-novo" id="chForm" data-conv="${c.id}" data-modo="aberto">
+    ${ASSUNTOS_CAMPO.length ? `<label class="cn-rot" for="chAss">Assunto</label>
+    <select class="transf" id="chAss" ${s.enviando?'disabled':''}>${opcoesAssuntos(s.ass)}</select>
+    <div class="cn-nota" id="chAssInfo">${aSel ? esc(infoAssunto(aSel)) : 'O assunto define o setor, o prazo e a prioridade.'}</div>` : ''}
     <label class="cn-rot" for="chDesc">O que está acontecendo?</label>
     <textarea class="notas" id="chDesc" rows="3" maxlength="500" placeholder="Ex.: sem internet desde ontem, luz LOS vermelha" ${s.enviando?'disabled':''}>${esc(s.desc)}</textarea>
     <div class="cn-rot" id="chPrioRot">Prioridade</div>
@@ -11459,25 +11488,34 @@ function abrirFormChamado(conv){
   const s = chEstado(conv);
   Object.assign(s, { aberto:true, feito:null, erro:'', enviando:false });
   redesenharFormChamado(conv, '#chDesc');
+  const tinhaAssuntos = ASSUNTOS_CAMPO.length > 0;
   carregarTecnicos()
     .catch(()=>{})
-    .then(()=>{ const sel=document.querySelector('#chForm #chTec'); if(sel && Number(document.getElementById('chForm').dataset.conv)===conv) sel.innerHTML=opcoesTecnicos(chEstado(conv).tec); });
+    .then(()=>{
+      const f = document.getElementById('chForm');
+      if(!f || Number(f.dataset.conv)!==conv) return;
+      // os assuntos chegaram agora: o formulário ganha o campo (o texto digitado fica no estado)
+      if(!tinhaAssuntos && ASSUNTOS_CAMPO.length){ const d=f.querySelector('#chDesc'); if(d) chEstado(conv).desc=d.value; redesenharFormChamado(conv, document.activeElement && f.contains(document.activeElement) && document.activeElement.id ? '#'+document.activeElement.id : '#chAss'); return; }
+      const sel=f.querySelector('#chTec'); if(sel) sel.innerHTML=opcoesTecnicos(chEstado(conv).tec);
+    });
 }
 async function registrarChamado(conv){
   const s = chEstado(conv);
   if(s.enviando) return;
   const f = document.getElementById('chForm');
   if(f && Number(f.dataset.conv)===conv){
-    const d=f.querySelector('#chDesc'), t=f.querySelector('#chTec');
+    const d=f.querySelector('#chDesc'), t=f.querySelector('#chTec'), a=f.querySelector('#chAss');
     if(d) s.desc=d.value;
     if(t) s.tec=t.value;
+    if(a) s.ass=a.value;
   }
+  if(ASSUNTOS_CAMPO.length && !s.ass){ s.erro='Escolha o assunto do chamado.'; redesenharFormChamado(conv, '#chAss'); return; }
   if(s.desc.trim().length < 5){ s.erro='Descreva o problema do cliente.'; redesenharFormChamado(conv, '#chDesc'); return; }
   Object.assign(s, { enviando:true, erro:'' });
   redesenharFormChamado(conv);
   try{
-    const r = await chamar('chamados.abrir', { conversa_id: conv, descricao: s.desc.trim(), prioridade: s.prio, tecnico_id: s.tec ? Number(s.tec) : null });
-    CH_FORM.set(conv, { aberto:false, desc:'', prio:'media', tec:'', enviando:false, erro:'', feito: r.chamado });
+    const r = await chamar('chamados.abrir', { conversa_id: conv, descricao: s.desc.trim(), prioridade: s.prio, tecnico_id: s.tec ? Number(s.tec) : null, assunto_id: s.ass || null });
+    CH_FORM.set(conv, { aberto:false, ass:'', desc:'', prio:'media', tec:'', enviando:false, erro:'', feito: r.chamado });
     toast(`Chamado #${r.chamado.id} registrado`);
     // a lista da aba e o aviso no ícone passam a mostrar o chamado novo
     const c = state.conversas.find(x=>x.id===conv);
@@ -11531,7 +11569,22 @@ function ligarFormChamado(){
     // voltou a escrever: o aviso de erro sai (sem redesenhar, para não tirar o cursor)
     if(s.erro){ s.erro=''; const e=f.querySelector('.ms-erro'); if(e) e.remove(); }
   });
-  f.addEventListener('change', ev=>{ if(ev.target.id==='chTec') chEstado(conv).tec = ev.target.value; });
+  f.addEventListener('change', ev=>{
+    const s = chEstado(conv);
+    if(ev.target.id==='chTec') s.tec = ev.target.value;
+    if(ev.target.id==='chAss'){
+      s.ass = ev.target.value;
+      const a = ASSUNTOS_CAMPO.find(x=>x.id===s.ass);
+      const info = f.querySelector('#chAssInfo');
+      if(info) info.textContent = a ? infoAssunto(a) : 'O assunto define o setor, o prazo e a prioridade.';
+      // a prioridade do assunto vira a sugestão (o atendente ainda pode mudar)
+      if(a && a.prioridade){
+        s.prio = a.prioridade;
+        f.querySelectorAll('[data-chprio]').forEach(x=>{ const on = x.dataset.chprio===s.prio; x.className = on ? 'on '+x.dataset.chprio : ''; x.setAttribute('aria-checked', on ? 'true' : 'false'); });
+      }
+      if(s.erro){ s.erro=''; const e=f.querySelector('.ms-erro'); if(e) e.remove(); }
+    }
+  });
   // Ctrl+Enter na descrição registra
   f.addEventListener('keydown', ev=>{
     if(ev.target.id==='chDesc' && ev.key==='Enter' && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); registrarChamado(conv); }

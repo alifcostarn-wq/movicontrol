@@ -2789,8 +2789,9 @@ async function dadosClienteChamado(e, ixcId) {
 }
 
 // Grava o chamado e a primeira etapa. Com técnico escolhido já nasce
-// "atribuído", como no MoviOne; sem técnico fica "novo", na fila.
-async function criarChamadoCampo(e, { nome, ixcId, telefone, descricao, prioridade = 'media', tecnico = null }) {
+// "atribuído", como no MoviOne; sem técnico fica "novo", na fila. Com assunto,
+// o banco preenche setor e prazo (gatilho campo_chamados_assunto_prazo).
+async function criarChamadoCampo(e, { nome, ixcId, telefone, descricao, prioridade = 'media', tecnico = null, assunto = null, origem = 'movitalk' }) {
   const dados = await dadosClienteChamado(e, ixcId);
   const status = tecnico ? 'atribuido' : 'novo';
   const r = await sb(e, 'campo_chamados', {
@@ -2808,6 +2809,8 @@ async function criarChamadoCampo(e, { nome, ixcId, telefone, descricao, priorida
       tecnico_id: tecnico ? tecnico.id : null,
       tecnico_nome: tecnico ? tecnico.nome : null,
       status,
+      assunto_id: assunto ? String(assunto.assunto_id) : null,
+      origem,
       // dia daqui, não o do servidor (UTC): à noite o chamado caía no dia seguinte
       data: diaEmMossoro(new Date()),
     },
@@ -2819,7 +2822,23 @@ async function criarChamadoCampo(e, { nome, ixcId, telefone, descricao, priorida
       method: 'POST', prefer: 'return=minimal', body: { chamado_id: id, status },
     }).catch(err => console.error('[atendimento] historico do chamado:', err.message));
   }
-  return { id, status, ...dados };
+  return { id, status, prazo_em: criado ? criado.prazo_em || null : null, ...dados };
+}
+
+// Assuntos que a equipe pode escolher ao abrir chamado (Central de Chamados):
+// os do IXC com o setor, o prazo e a prioridade decididos no MoviOne.
+async function assuntosDaCentral(e) {
+  const [ass, setores] = await Promise.all([
+    sb(e, 'central_assuntos_efetivo?na_central=is.true&select=assunto_id,assunto,setor_id,gera_os,prazo_horas,prioridade&order=assunto.asc&limit=300'),
+    sb(e, 'ixc_setores?select=id,setor&limit=300'),
+  ]);
+  const nomeSetor = new Map((setores || []).map(s => [String(s.id), String(s.setor || '').trim()]));
+  return (ass || []).map(a => ({
+    id: String(a.assunto_id), nome: a.assunto, setor_id: a.setor_id || null,
+    setor: a.setor_id ? nomeSetor.get(String(a.setor_id)) || null : null,
+    gera_os: !!a.gera_os, prazo_horas: a.prazo_horas == null ? null : Number(a.prazo_horas),
+    prioridade: PRIORIDADES_CHAMADO.includes(a.prioridade) ? a.prioridade : 'media',
+  }));
 }
 
 const CONECTORES = {
@@ -3042,7 +3061,7 @@ const CONECTORES = {
     let criado;
     try {
       criado = await criarChamadoCampo(e, {
-        nome, ixcId, telefone: conversa.contato_fone,
+        nome, ixcId, telefone: conversa.contato_fone, origem: 'bot',
         descricao: `[Bot MoviTalk] ${vars.ultima_msg || 'Cliente solicitou atendimento técnico pelo WhatsApp.'}`,
       });
     } catch (err) {
@@ -8989,8 +9008,12 @@ export default async function handler(req, res) {
       // O atendente abre o chamado sem sair da conversa. Vai para o mesmo
       // módulo de campo do MoviOne e do app do técnico (criarChamadoCampo).
       case 'chamados.tecnicos': {
-        const tecs = await sb(e, 'campo_tecnicos?status=eq.ativo&select=id,nome&order=nome.asc&limit=200');
-        return res.status(200).json({ ok: true, tecnicos: (tecs || []).map(t => ({ id: t.id, nome: t.nome })) });
+        const [tecs, assuntos] = await Promise.all([
+          sb(e, 'campo_tecnicos?status=eq.ativo&select=id,nome&order=nome.asc&limit=200'),
+          // sem a lista de assuntos o formulário segue funcionando como antes
+          assuntosDaCentral(e).catch(err => { console.error('[chamados.tecnicos] assuntos:', err.message); return []; }),
+        ]);
+        return res.status(200).json({ ok: true, tecnicos: (tecs || []).map(t => ({ id: t.id, nome: t.nome })), assuntos });
       }
 
       case 'chamados.abrir': {
@@ -9004,6 +9027,13 @@ export default async function handler(req, res) {
         const descricao = String(body.descricao || '').trim();
         if (descricao.length < 5) return res.status(400).json({ ok: false, error: 'Descreva o problema do cliente.' });
         const prioridade = PRIORIDADES_CHAMADO.includes(body.prioridade) ? body.prioridade : 'media';
+        let assunto = null;
+        if (body.assunto_id != null && String(body.assunto_id).trim() !== '') {
+          const aid = String(body.assunto_id).trim();
+          if (!/^\d{1,9}$/.test(aid)) return res.status(400).json({ ok: false, error: 'Assunto inválido.' });
+          assunto = await sbUm(e, `central_assuntos_efetivo?assunto_id=eq.${aid}&na_central=is.true&select=assunto_id,assunto`);
+          if (!assunto) return res.status(400).json({ ok: false, error: 'Assunto não encontrado ou fora da Central. Escolha outro.' });
+        }
         let tecnico = null;
         if (body.tecnico_id) {
           tecnico = await sbUm(e, `campo_tecnicos?id=eq.${Number(body.tecnico_id)}&status=eq.ativo&select=id,nome`);
@@ -9014,7 +9044,7 @@ export default async function handler(req, res) {
         try {
           criado = await criarChamadoCampo(e, {
             nome: snap.nome || c.contato_nome || c.contato_fone, ixcId: c.cliente_ixc_id,
-            telefone: c.contato_fone, descricao, prioridade, tecnico,
+            telefone: c.contato_fone, descricao, prioridade, tecnico, assunto, origem: 'movitalk',
           });
         } catch (err) {
           console.error('[chamados.abrir]', err.message);
@@ -9030,7 +9060,8 @@ export default async function handler(req, res) {
             method: 'POST', prefer: 'return=minimal',
             body: {
               conversa_id: id, direcao: 'sys', autor_id: user.id, autor_nome: user.nome || null,
-              conteudo: `🛠️ ${user.nome || 'Atendente'} abriu o chamado técnico #${criado.id} · prioridade ${rotPrio} · `
+              conteudo: `🛠️ ${user.nome || 'Atendente'} abriu o chamado técnico #${criado.id}`
+                + (assunto ? ` · ${assunto.assunto}` : '') + ` · prioridade ${rotPrio} · `
                 + (tecnico ? `técnico ${tecnico.nome}` : 'na fila, sem técnico'),
             },
           }).catch(err => console.error('[chamados.abrir] nota:', err.message)),
@@ -9038,6 +9069,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           ok: true,
           chamado: { id: criado.id, status: criado.status, prioridade, tecnico_nome: tecnico ? tecnico.nome : null,
+            assunto: assunto ? assunto.assunto : null, prazo_em: criado.prazo_em || null,
             com_endereco: !!criado.endereco, com_login: !!criado.login },
         });
       }
