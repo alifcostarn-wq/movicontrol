@@ -398,13 +398,18 @@ async function notaEncerramento(e, conversaId, titulo, detalhe, autor = null) {
   }
 }
 
-// "pesquisa de satisfação enviada ao cliente", "mensagem do atendente e
-// pesquisa de satisfação enviadas ao cliente" — todos os itens são femininos
-function enviadoAoCliente(itens, inicioDeFrase = false) {
+// O título diz QUEM finalizou: o atendente pelo nome, o fluxo do bot, a
+// inatividade ou o próprio cliente. É a pergunta de quem abre a conversa.
+const FIM_FLUXO = '🤖 Atendimento finalizado pelo fluxo';
+const FIM_INATIVIDADE = '⏱️ Atendimento finalizado por inatividade';
+const fimPorAtendente = user => `✅ Atendimento finalizado por ${(user && user.nome) || 'um atendente'}`;
+
+// "pesquisa enviada", "mensagem do atendente e pesquisa enviadas" — curto de
+// propósito: a faixa é para ler de relance. Todos os itens são femininos.
+function enviadas(itens) {
   if (!itens.length) return '';
   const lista = itens.length === 1 ? itens[0] : `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`;
-  const frase = `${lista} ${itens.length === 1 ? 'enviada' : 'enviadas'} ao cliente`;
-  return inicioDeFrase ? frase.charAt(0).toUpperCase() + frase.slice(1) : frase;
+  return `${lista} ${itens.length === 1 ? 'enviada' : 'enviadas'}`;
 }
 
 /* Bloqueia pelo número da conversa (qualquer atendente que veja a conversa)
@@ -4194,8 +4199,7 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
           out.patch.bot_ativo = true;
           out.patch.nao_lidas = 0;
           out.limparSessao = true;
-          out.encerramento = { titulo: '🤖 Atendimento encerrado pelo bot',
-            motivo: 'A IA entendeu que o cliente se despediu ou pediu para encerrar', enviado: ['despedida'] };
+          out.encerramento = { titulo: FIM_FLUXO, motivo: 'cliente se despediu', enviado: ['despedida'] };
           return out;
         }
         if (r.acao === 'ignorar') {
@@ -4203,8 +4207,7 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
           out.patch.coluna = 'resolvidos';
           out.patch.bot_ativo = true;
           out.limparSessao = true;
-          out.encerramento = { titulo: '🤖 Conversa arquivada pelo bot',
-            motivo: 'A IA identificou propaganda ou mensagem automática', enviado: [] };
+          out.encerramento = { titulo: FIM_FLUXO, motivo: 'propaganda ou mensagem automática', enviado: [] };
           return out;
         }
         out.enviar.push({ texto: r.texto, node: no.id });
@@ -4294,8 +4297,8 @@ async function rodarFluxo(e, { fluxo, sessao, conversa, texto, pesquisaLiberada,
         } else {
           out.limparSessao = true;
         }
-        out.encerramento = { titulo: '🤖 Atendimento concluído pelo bot', motivo: 'Fim do fluxo automático',
-          enviado: [...(t.trim() ? ['mensagem de encerramento'] : []), ...(vaiPesquisa ? ['pesquisa de satisfação'] : [])] };
+        out.encerramento = { titulo: FIM_FLUXO, motivo: '',
+          enviado: [...(t.trim() ? ['mensagem de encerramento'] : []), ...(vaiPesquisa ? ['pesquisa'] : [])] };
         return out;
       }
 
@@ -4403,9 +4406,9 @@ async function aplicarResultado(e, conversa, out) {
   // que o cliente recebeu (ver notaEncerramento)
   if (out.encerramento && conversa.id) {
     const f = out.encerramento;
-    const envio = falhas ? '⚠ o envio ao cliente falhou'
-      : (f.enviado && f.enviado.length) ? enviadoAoCliente(f.enviado)
-      : !out.enviar.length ? 'nada foi enviado ao cliente' : '';
+    const envio = falhas ? '⚠ envio ao cliente falhou'
+      : (f.enviado && f.enviado.length) ? enviadas(f.enviado)
+      : !out.enviar.length ? 'nada enviado' : '';
     await notaEncerramento(e, conversa.id, f.titulo, [f.motivo, envio].filter(Boolean).join(' · '));
   }
 
@@ -5227,9 +5230,9 @@ async function tratarWebhookInterno(e, body) {
       await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
         body: { conversa_id: conversa.id, direcao: 'bot', conteudo: TEXTO_ENCERRAMENTO, wa_id: idDaEvolution(env), status: 'enviado' } });
     } catch (err) { console.error('[atendimento] encerrar a pedido:', err.message); }
-    await notaEncerramento(e, conversa.id, '🙋 Atendimento encerrado a pedido do cliente',
-      (conversa.coluna === 'fila' ? 'Ele pediu para encerrar enquanto esperava na fila' : 'Ele pediu para encerrar enquanto falava com o bot')
-      + (despediu ? ' · despedida automática enviada' : ' · ⚠ a despedida não saiu'));
+    await notaEncerramento(e, conversa.id, '🙋 Atendimento finalizado a pedido do cliente',
+      (conversa.coluna === 'fila' ? 'pediu na fila' : 'pediu ao bot')
+      + (despediu ? ' · despedida enviada' : ' · ⚠ despedida não saiu'));
     await sb(e, `atend_conversas?id=eq.${conversa.id}`, { method: 'PATCH', prefer: 'return=minimal',
       body: { coluna: 'resolvidos', bot_ativo: true, nao_lidas: 0, ultima_msg: TEXTO_ENCERRAMENTO.slice(0, 200), ultima_msg_em: new Date().toISOString() } });
     await sb(e, `atend_sessoes?contato_fone=eq.${fone}`, { method: 'DELETE', prefer: 'return=minimal' });
@@ -7513,9 +7516,8 @@ async function tratarCron(e) {
           body: { conversa_id: c.id, direcao: 'bot', conteudo: txt, wa_id: idDaEvolution(env), status: 'enviado' },
         });
       } catch (err) { console.error('[inatividade encerra]', err.message); }
-      await notaEncerramento(e, c.id, '⏱️ Atendimento encerrado por inatividade',
-        `O cliente não respondeu ao aviso de inatividade em ${min} min`
-        + (despediu ? ' · despedida automática enviada' : ' · ⚠ a despedida não saiu'));
+      await notaEncerramento(e, c.id, FIM_INATIVIDADE,
+        `sem resposta ao aviso em ${min} min` + (despediu ? ' · despedida enviada' : ' · ⚠ despedida não saiu'));
       await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
         { method: 'DELETE', prefer: 'return=minimal' });
       encerradasHumano++;
@@ -7589,8 +7591,7 @@ async function tratarCron(e) {
     // Nada estava pendente: arquiva sem dizer nada. Silêncio é melhor que uma
     // despedida que não corresponde a conversa nenhuma.
     if (!comSessao.has(String(c.contato_fone))) {
-      await notaEncerramento(e, c.id, '🤖 Conversa encerrada automaticamente',
-        `Parada com o bot há mais de ${minutos} min, sem pergunta pendente · nada foi enviado ao cliente`);
+      await notaEncerramento(e, c.id, FIM_INATIVIDADE, `parada no bot há ${minutos} min, sem pendência · nada enviado`);
       encerradasMudas++;
       continue;
     }
@@ -7603,9 +7604,8 @@ async function tratarCron(e) {
       method: 'POST', prefer: 'return=minimal',
       body: { conversa_id: c.id, direcao: 'bot', conteudo: despedida },
     });
-    await notaEncerramento(e, c.id, '⏱️ Atendimento encerrado por inatividade',
-      `O cliente não respondeu ao bot em ${minutos} min`
-      + (despediu ? ' · despedida automática enviada' : ' · ⚠ a despedida não saiu'));
+    await notaEncerramento(e, c.id, FIM_INATIVIDADE,
+      `sem resposta ao bot em ${minutos} min` + (despediu ? ' · despedida enviada' : ' · ⚠ despedida não saiu'));
     await sb(e, `atend_sessoes?contato_fone=eq.${encodeURIComponent(c.contato_fone)}`,
       { method: 'DELETE', prefer: 'return=minimal' });
     encerradas++;
@@ -8844,8 +8844,7 @@ export default async function handler(req, res) {
         // mover para Resolvidos pela etapa (o seletor do celular) também
         // encerra: fica a mesma nota do "Finalizar atendimento"
         if (patch.coluna === 'resolvidos' && atual.coluna !== 'resolvidos') {
-          await notaEncerramento(e, id, `✅ Atendimento finalizado por ${user.nome || 'um atendente'}`,
-            'Movido direto para Resolvidos · nada foi enviado ao cliente', user);
+          await notaEncerramento(e, id, fimPorAtendente(user), 'movido para Resolvidos · nada enviado', user);
         }
         return res.status(200).json({ ok: true, conversa: r });
       }
@@ -11366,22 +11365,22 @@ export default async function handler(req, res) {
         {
           const itens = [];
           if (mensagemEnviada) itens.push('mensagem do atendente');
-          if (pesquisaEnviada) itens.push('pesquisa de satisfação');
+          if (pesquisaEnviada) itens.push('pesquisa');
           if (despedidaEnviada) itens.push('despedida');
           let detalhe;
-          if (silencioso) detalhe = 'Em silêncio: nada foi enviado ao cliente';
-          else if (itens.length) detalhe = enviadoAoCliente(itens, true);
-          else if (c.rating && !String(body.mensagem || '').trim()) detalhe = 'Nada foi enviado: o cliente já tinha avaliado este atendimento';
-          else detalhe = '⚠ O envio falhou: o cliente não recebeu a mensagem de encerramento';
+          if (silencioso) detalhe = 'em silêncio, nada enviado';
+          else if (itens.length) detalhe = enviadas(itens);
+          else if (c.rating && !String(body.mensagem || '').trim()) detalhe = 'nada enviado: cliente já tinha avaliado';
+          else detalhe = '⚠ envio ao cliente falhou';
           if (!silencioso && !pesquisaEnviada) {
             if (travadaAte) {
               const d = new Date(travadaAte);
-              detalhe += ` · pesquisa não repetida: cliente já perguntado${isNaN(d) ? ' neste mês' : ' em ' + d.toLocaleDateString('pt-BR', { timeZone: TZ_ISP })}`;
+              detalhe += ` · pesquisa não repetida (perguntado${isNaN(d) ? ' neste mês' : ' em ' + d.toLocaleDateString('pt-BR', { timeZone: TZ_ISP })})`;
             } else if (body.pesquisa === false && !c.rating) {
-              detalhe += ' · sem pesquisa de satisfação';
+              detalhe += ' · sem pesquisa';
             }
           }
-          nota = await notaEncerramento(e, id, `✅ Atendimento finalizado por ${user.nome || 'um atendente'}`, detalhe, user);
+          nota = await notaEncerramento(e, id, fimPorAtendente(user), detalhe, user);
         }
 
         // se estamos esperando a nota, a sessão precisa sobreviver
