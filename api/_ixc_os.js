@@ -298,10 +298,11 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, de
 // conta como fechada se o IXC mostrar o status F — um "sucesso" do IXC com a
 // OS ainda aberta é falha. Falhou: guarda o motivo (aparece no chamado) e
 // tenta de novo nas rodadas seguintes, até 3 vezes; depois, fechar à mão.
-// Modo 'teste': só as OS cuja descrição começa com TESTE.
+// Modo 'teste': só as OS cuja descrição começa com "teste".
 // ============================================================================
 export const FECHAR_TENTATIVAS = 3;
-export const ehOsDeTeste = descricao => /^\s*TESTE\b/.test(String(descricao || ''));
+// "TESTE ...", "teste", "testeste": basta começar com teste (maiúscula ou minúscula)
+export const ehOsDeTeste = descricao => /^\s*teste/i.test(String(descricao || ''));
 
 const numeroOuNada = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
 
