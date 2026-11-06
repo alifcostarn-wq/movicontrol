@@ -19,7 +19,7 @@
 // ============================================================================
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
-import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
+import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
 
 export const config = { maxDuration: 60 };
 
@@ -163,7 +163,7 @@ async function ixcListar(tabela, filtro, { paginas = 1, rp = 1000, prazo }) {
 
 /* Gravação no IXC (abrir OS, encaminhar, agendar, executar, fechar): vai sem o
    cabeçalho ixcsoft "listar". Erro do IXC volta como exceção, com a mensagem dele. */
-const ENDPOINT_GRAVAVEL = /^su_oss_chamado(_[a-z]+)?$/;
+const ENDPOINT_GRAVAVEL = /^su_oss_chamado(_[a-z]+){0,3}$/;       // só as ações da OS (ex.: su_oss_chamado_alterar_setor)
 async function ixcGravar(endpoint, corpo, prazo) {
   if (!ENDPOINT_GRAVAVEL.test(String(endpoint || ''))) throw new Error(`endereço do IXC não permitido: ${endpoint}`);
   const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
@@ -218,10 +218,10 @@ async function rodarOs(cfg, prazo) {
     if (modo === 'previa') {
       resultado = { ok: true, ...(await previaOsDoIxc(io, { setores: cfg.os_setores || [], agora: new Date(agora) })) };
     } else {
-      // técnicos do moviTec com cadastro no IXC: OS atribuída a eles lá vai direto
-      // para o celular, e o fechamento sai no nome de quem fez
+      // técnicos do moviTec com cadastro no IXC: a OS encaminhada a eles lá vai
+      // direto para o celular, e as ações deles saem no nome de quem fez
       const tecnicos = await sb('campo_tecnicos?ixc_funcionario_id=not.is.null&select=id,nome,status,ixc_funcionario_id').catch(() => []) || [];
-      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, desde: cfg.os_desde, tecnicos, agora: new Date(agora) });
+      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, tecnicos, agora: new Date(agora) });
       resultado = { ok: true, ...r };
       extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
       // colaboradores do IXC (só id, nome, ativo): o IXC exige um responsável para fechar a OS
@@ -234,9 +234,6 @@ async function rodarOs(cfg, prazo) {
           extra.os_funcionarios_em = new Date(agora).toISOString();
         } catch (err) { resultado.funcionarios_erro = semDadosDoCliente(err.message || err); }
       }
-      // chamados concluídos aqui → OS fechada no IXC ('teste': só descrição começando com "teste")
-      try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', responsavel: cfg.os_fechar_responsavel, tecnicos, agora: new Date(agora) }); }
-      catch (err) { resultado.fechamento = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
       // códigos que a equipe usa nas OS (filial, origem do endereço): das últimas 50, uma vez por dia
       let codigos = cfg.os_codigos || null;
       if (!codigos || !codigos.em || agora - Date.parse(codigos.em) > 24 * 3600e3) {
@@ -247,7 +244,11 @@ async function rodarOs(cfg, prazo) {
         } catch (err) { resultado.codigos_erro = semDadosDoCliente(err.message || err); }
       }
       // fila de gravações no IXC (abrir OS, encaminhar, agendar, executar, fechar)
-      try { resultado.acoes = await processarAcoesIxc(io, { agora: new Date(agora), codigos }); }
+      // (o técnico executa, reagenda, finaliza: o gatilho campo_os_para_ixc põe na fila)
+      try {
+        resultado.acoes = await processarAcoesIxc(io, { agora: new Date(agora), codigos, tecnicos,
+          responsavel: cfg.os_fechar_responsavel, fecharModo: cfg.os_fechar || 'desligado' });
+      }
       catch (err) { resultado.acoes = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
     }
   } catch (err) {
@@ -259,9 +260,9 @@ async function rodarOs(cfg, prazo) {
     method: 'PATCH', prefer: 'return=minimal',
     body: { os_resultado: resultado, os_em: new Date(agora).toISOString(), os_rodando_desde: null, ...extra },
   }).catch(err => console.error('[ixc-sync] gravar rodada das OS:', err.message));
-  const { ok, criados, atualizados, fechados, lidas, antigas_fora, para_tecnico, ms } = resultado;
-  const f = resultado.fechamento || {};
-  return { ok, modo, lidas, criados, para_tecnico, atualizados, fechados, antigas_fora, fechadas_no_ixc: f.fechadas, falhas_ao_fechar: f.falhas, ms };
+  const { ok, criados, atualizados, reatribuidas, retiradas, agendadas, lidas, ms } = resultado;
+  const a = resultado.acoes || {};
+  return { ok, modo, lidas, criados, atualizados, reatribuidas, retiradas, agendadas, acoes_feitas: a.feitas, acoes_falhas: a.falhas, ms };
 }
 
 async function lerConfig() {
@@ -405,9 +406,9 @@ export default async function handler(req, res) {
       }
       const novo = await sb('ixc_sync_config?id=eq.1', { method: 'PATCH', prefer: 'return=representation', body });
       if (b.os_fechar_responsavel) {
-        // quem não fechou só por falta do responsável volta a tentar já na próxima rodada
-        await sb(`campo_chamados?ixc_fechado_em=is.null&ixc_fechar_erro=like.${encodeURIComponent('Falta escolher o colaborador*')}`, {
-          method: 'PATCH', prefer: 'return=minimal', body: { ixc_fechar_erro: null },
+        // o que esperava na fila só por falta do responsável sai já na próxima rodada
+        await sb(`ixc_acoes?status=eq.pendente&erro=like.${encodeURIComponent('Falta escolher o colaborador*')}`, {
+          method: 'PATCH', prefer: 'return=minimal', body: { erro: null },
         }).catch(() => {});
       }
       return res.status(200).json(await comFuncionarios(statusDe((novo && novo[0]) || cfg, quem)));

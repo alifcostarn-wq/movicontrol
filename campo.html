@@ -709,7 +709,7 @@ body.dk .btn-red{background:#C42B27}  /* o vermelho do tema escuro é claro dema
       <div class="sheet-sub" id="reag-sub">—</div>
     </div>
     <div class="sheet-body">
-      <div class="alert warn">A OS sai da rota de hoje, o chamado volta ao admin marcado como <b>Reagendado</b> e o cliente é avisado no WhatsApp.</div>
+      <div class="alert warn">A OS sai da rota de hoje e o reagendamento vai para o IXC: com data, ela volta para você nesse dia; sem data, o escritório marca. O cliente é avisado no WhatsApp.</div>
       <label class="flabel">Motivo do reagendamento <span style="color:var(--red)">*</span></label>
       <div class="reagendar-opts" id="reag-opts">
         <button class="reagendar-opt" onclick="selMotivo(this,'cliente_ausente')">🚪 Cliente ausente / não atendeu</button>
@@ -2886,8 +2886,8 @@ async function confirmarReagendar(){
   const os = _reagOs, motivoCod = _reagMotivo, dataISO = _reagData;
   const avisar = $('reag-avisar') && $('reag-avisar').checked;
   try {
-    // uma chamada só: atualiza a OS, devolve o chamado ao admin como "reagendado"
-    // e grava o histórico — sem risco de ficar pela metade
+    // uma chamada só: atualiza a OS e grava o histórico — sem risco de ficar pela
+    // metade; a OS que veio do IXC leva o reagendamento para lá (gatilho do banco)
     const { data, error } = await sb.rpc('campo_reagendar_os', {
       p_os_id: os.id,
       p_motivo: motivoTexto,
@@ -2903,7 +2903,8 @@ async function confirmarReagendar(){
     _rotaState.paradas = _rotaState.paradas.filter(p=>p.id!==os.id);
     fecharReagendar();
     await atualizar(false, false);
-    toast(dataISO ? `📅 Reagendada para ${_dataBR(dataISO)} — chamado devolvido ao admin` : '📅 Reagendada — chamado devolvido ao admin', 3800);
+    const noIxc = !!os.ixc_os_id;
+    toast(dataISO ? `📅 Reagendada para ${_dataBR(dataISO)}${noIxc ? ' — o IXC já recebe' : ''}` : `📅 Reagendada${noIxc ? ' — o escritório marca o dia no IXC' : ''}`, 3800);
   } catch(e){
     toast('Erro ao reagendar: '+e.message);
   } finally {
