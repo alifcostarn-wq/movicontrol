@@ -19,7 +19,7 @@
 // ============================================================================
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
-import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc, linhaFuncionarioDoIxc } from './_ixc_os.js';
+import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc, linhaFuncionarioDoIxc, processarAcoesIxc } from './_ixc_os.js';
 
 export const config = { maxDuration: 60 };
 
@@ -161,31 +161,34 @@ async function ixcListar(tabela, filtro, { paginas = 1, rp = 1000, prazo }) {
   return { registros: regs, total: total || 0 };
 }
 
-/* Fecha uma OS no IXC (su_oss_chamado_fechar). É uma gravação: vai sem o
+/* Gravação no IXC (abrir OS, encaminhar, agendar, executar, fechar): vai sem o
    cabeçalho ixcsoft "listar". Erro do IXC volta como exceção, com a mensagem dele. */
-async function ixcFecharOs(corpo, prazo) {
+const ENDPOINT_GRAVAVEL = /^su_oss_chamado(_[a-z]+)?$/;
+async function ixcGravar(endpoint, corpo, prazo) {
+  if (!ENDPOINT_GRAVAVEL.test(String(endpoint || ''))) throw new Error(`endereço do IXC não permitido: ${endpoint}`);
   const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
   const resta = prazo - Date.now();
-  if (resta <= 1000) throw new Error('sem tempo nesta rodada para fechar no IXC');
+  if (resta <= 1000) throw new Error('sem tempo nesta rodada para gravar no IXC');
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), Math.min(resta, 20e3));
   let r;
   try {
-    r = await fetch(`${IXC_URL}/webservice/v1/su_oss_chamado_fechar`, {
+    r = await fetch(`${IXC_URL}/webservice/v1/${endpoint}`, {
       method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify(corpo),
     });
   } catch (err) {
-    throw new Error(err.name === 'AbortError' ? 'o IXC demorou demais para fechar a OS' : `IXC: ${err.message}`);
+    throw new Error(err.name === 'AbortError' ? 'o IXC demorou demais para responder' : `IXC: ${err.message}`);
   } finally { clearTimeout(timer); }
   const txt = await r.text();
   let d = null; try { d = JSON.parse(txt); } catch { d = null; }
   if (!r.ok) throw new Error(`IXC HTTP ${r.status}${d && d.message ? ': ' + String(d.message).slice(0, 200) : ''}`);
-  if (!d) throw new Error('IXC: resposta que não é JSON ao fechar a OS');
-  if (d.type === 'error') throw new Error(`IXC: ${String(d.message || 'recusou o fechamento').slice(0, 200)}`);
+  if (!d) throw new Error('IXC: resposta que não é JSON');
+  if (d.type === 'error') throw new Error(`IXC: ${String(d.message || 'recusou').slice(0, 200)}`);
   return d;
 }
+const ixcFecharOs = (corpo, prazo) => ixcGravar('su_oss_chamado_fechar', corpo, prazo);
 
 /* OS do IXC (ver _ixc_os.js), pela rodada própria do agendador ("os", a cada
    2 min — a cópia de clientes só chama o servidor de 30 em 30 min).
@@ -208,7 +211,8 @@ async function rodarOs(cfg, prazo) {
     method: 'PATCH', prefer: 'return=representation', body: { os_rodando_desde: new Date(agora).toISOString() },
   });
   if (!Array.isArray(pego) || !pego.length) return { ok: true, modo, pulado: 'outra rodada das OS em andamento' };
-  const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcFecharOs: c => ixcFecharOs(c, prazo), sb };
+  const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcFecharOs: c => ixcFecharOs(c, prazo),
+    ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), sb };
   let resultado, extra = {};
   try {
     if (modo === 'previa') {
@@ -233,6 +237,9 @@ async function rodarOs(cfg, prazo) {
       // chamados concluídos aqui → OS fechada no IXC ('teste': só descrição começando com "teste")
       try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', responsavel: cfg.os_fechar_responsavel, tecnicos, agora: new Date(agora) }); }
       catch (err) { resultado.fechamento = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
+      // fila de gravações no IXC (abrir OS, encaminhar, agendar, executar, fechar)
+      try { resultado.acoes = await processarAcoesIxc(io, { agora: new Date(agora) }); }
+      catch (err) { resultado.acoes = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
     }
   } catch (err) {
     resultado = { ok: false, modo, erro: semDadosDoCliente(err.message || err) };

@@ -11,7 +11,7 @@
 // nome, telefone ou endereço é guardado nesta fase, e campo com cara de senha,
 // token ou chave nem entra na contagem.
 // ============================================================================
-import { CAMPO_SENSIVEL, idValido, ixcData } from './_ixc_espelho.js';
+import { CAMPO_SENSIVEL, idValido, ixcData, ixcHora } from './_ixc_espelho.js';
 
 // status da OS no IXC (su_oss_chamado.status)
 export const STATUS_OS_IXC = {
@@ -447,6 +447,76 @@ export async function fecharOsNoIxc(io, { modo = 'desligado', responsavel = null
       r.fechadas++;
     } else {
       await marcar({ ixc_fechar_erro: textoIxc(erro).slice(0, 300), ixc_fechar_tentativas: (ch.ixc_fechar_tentativas || 0) + 1 });
+      r.falhas++; r.ultimo_erro = textoIxc(erro).slice(0, 200);
+    }
+  }
+  return r;
+}
+
+// ============================================================================
+// AÇÕES NO IXC (fila ixc_acoes)
+// ----------------------------------------------------------------------------
+// Toda gravação no IXC passa por aqui: abrir a OS, encaminhar ao técnico,
+// agendar, executar e finalizar. A rodada pega as pendentes em ordem, manda ao
+// IXC e RELÊ a OS: a ação só vale se o IXC mostrar o resultado esperado.
+// Recusa do IXC é falha na hora (o motivo fica gravado); falta de resposta
+// tenta de novo, até 3 vezes. `dados.corpo` são os campos da ação;
+// `dados.endpoint` troca o endereço (para testar variações sem publicar).
+// ============================================================================
+export const ACOES_IXC = {
+  abrir:      { endpoint: 'su_oss_chamado',            status: null },
+  encaminhar: { endpoint: 'su_oss_chamado_encaminhar', status: ['EN', 'AS'] },
+  agendar:    { endpoint: 'su_oss_chamado_agendar',    status: ['AG'] },
+  executar:   { endpoint: 'su_oss_chamado_executar',   status: ['EX'] },
+  fechar:     { endpoint: 'su_oss_chamado_fechar',     status: ['F'] },
+};
+const ACAO_TENTATIVAS = 3;
+
+export async function processarAcoesIxc(io, { agora = new Date(), max = 5 } = {}) {
+  const r = { feitas: 0, falhas: 0, adiadas: 0 };
+  const fila = await io.sb(`ixc_acoes?status=eq.pendente&select=id,acao,ixc_os_id,os_id,dados,tentativas&order=id.asc&limit=${max}`) || [];
+  for (const a of fila) {
+    const def = ACOES_IXC[a.acao];
+    const dados = a.dados || {};
+    const tentativas = (a.tentativas || 0) + 1;
+    const marcar = body => io.sb(`ixc_acoes?id=eq.${a.id}&status=eq.pendente`, { method: 'PATCH', prefer: 'return=minimal', body });
+    if (!def) { await marcar({ status: 'falhou', tentativas, erro: 'ação desconhecida' }); r.falhas++; continue; }
+    if (a.acao !== 'abrir' && !idValido(a.ixc_os_id)) { await marcar({ status: 'falhou', tentativas, erro: 'falta o número da OS no IXC' }); r.falhas++; continue; }
+    const corpo = a.acao === 'abrir' ? { ...(dados.corpo || {}) } : { id_chamado: String(a.ixc_os_id), ...(dados.corpo || {}) };
+    let d = null, erro = null, transitorio = false, osId = idValido(a.ixc_os_id);
+    try {
+      d = await io.ixcGravar(dados.endpoint || def.endpoint, corpo);
+      if (a.acao === 'abrir') {
+        osId = idValido(d && (d.id || d.id_chamado || d.registro));
+        if (!osId) erro = 'o IXC respondeu sem o número da OS';
+      }
+    } catch (err) {
+      erro = msg(err);
+      transitorio = /demorou|HTTP 5\d\d|ECONNRESET|fetch failed|socket/i.test(erro);
+    }
+    let rel = null;
+    if (!erro && osId) {
+      const v = await io.ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: String(osId), oper: '=' }, { paginas: 1, rp: 1 }).catch(() => null);
+      rel = (v && v.registros && v.registros[0]) || null;
+      const st = rel ? String(rel.status || '').toUpperCase() : null;
+      const tecOk = a.acao === 'encaminhar' && rel && idValido(rel.id_tecnico) && idValido(rel.id_tecnico) === idValido(corpo.id_tecnico);
+      if (!rel) erro = 'a OS não apareceu no IXC depois da ação';
+      else if (def.status && !def.status.includes(st) && !tecOk) erro = `o IXC respondeu, mas a OS ficou ${STATUS_OS_IXC[st] || st || 'sem status'}`;
+    }
+    // só códigos e o status relido: nada de dado de cliente
+    const resposta = {
+      tipo: (d && d.type) || null, mensagem: d && d.message ? textoIxc(d.message).slice(0, 300) : null, id: osId || null,
+      status: rel ? String(rel.status || '').toUpperCase() : null, id_tecnico: rel ? idValido(rel.id_tecnico) : null,
+      data_agenda: rel ? ixcHora(rel.data_agenda) : null, setor: rel ? idValido(rel.setor) : null,
+    };
+    if (!erro) {
+      await marcar({ status: 'feita', tentativas, ixc_os_id: osId ? String(osId) : null, resposta, erro: null, feita_em: agora.toISOString() });
+      r.feitas++;
+    } else if (transitorio && tentativas < ACAO_TENTATIVAS) {
+      await marcar({ tentativas, erro: textoIxc(erro).slice(0, 300), resposta });
+      r.adiadas++;
+    } else {
+      await marcar({ status: 'falhou', tentativas, erro: textoIxc(erro).slice(0, 300), resposta });
       r.falhas++; r.ultimo_erro = textoIxc(erro).slice(0, 200);
     }
   }
