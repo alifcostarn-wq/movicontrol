@@ -97,3 +97,194 @@ export async function previaOsDoIxc(io, { setores = [], dias = 60, agora = new D
   }
   return { modo: 'previa', em: agora.toISOString(), desde, setores_escolhidos: setores.map(String), consultas, ...resumoDasOs(regs, setores) };
 }
+
+// ============================================================================
+// IMPORTAÇÃO: OS do IXC → chamado na Central (os_modo = 'ativo')
+// ----------------------------------------------------------------------------
+// Entra a OS cujo ASSUNTO está marcado na Central como "🛵 gera OS" (e
+// aparece na Central) — a mesma configuração que a equipe já usa para dizer
+// o que precisa de visita. A OS chega sem técnico (os técnicos ainda não têm
+// cadastro de funcionário no IXC): cai em "Precisa de ação" para alguém
+// distribuir, e a partir daí segue o caminho de sempre (chamado → OS no
+// celular do técnico). Uma OS do IXC vira um chamado só (ixc_os_id).
+//   - nova e aberta no IXC: cria o chamado com cliente, telefone, endereço,
+//     login, assunto (prazo e setor saem do assunto, como na Central) e a
+//     descrição da OS. Nenhuma senha: os campos são escolhidos um a um;
+//   - mudou no IXC: guarda o status do IXC; descrição só enquanto o chamado
+//     ainda não foi distribuído;
+//   - fechada no IXC: o chamado fecha aqui, e a OS sai do celular do técnico
+//     se ele ainda não tinha começado (começou: termina normalmente).
+// ============================================================================
+export const PRIORIDADE_IXC = { B: 'baixa', N: 'media', M: 'media', A: 'alta', C: 'alta', U: 'alta' };
+const FOLGA_CURSOR_MS = 10 * 60e3;       // OS gravada no IXC durante a leitura anterior
+
+export function textoIxc(v) {
+  if (vazio(v)) return '';
+  return String(v)
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n').replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#0?39;/g, "'").replace(/&amp;/gi, '&')
+    .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{2,}/g, '\n').trim();
+}
+// hora do IXC (local, sem fuso) → ISO com o fuso daqui (-03:00, sem horário de verão)
+export function horaIxcIso(v) {
+  const t = String(v || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(t) || t.startsWith('0000')) return null;
+  const h = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?/.test(t) ? t.slice(0, 19).replace(' ', 'T') : t.slice(0, 10) + 'T00:00:00';
+  return (h.length === 16 ? h + ':00' : h) + '-03:00';
+}
+// data/hora no formato que o filtro do IXC entende, no horário daqui
+export function horaParaIxc(ms) {
+  return new Date(ms - 3 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+export function chamadoDaOs(os, { cliente = null, login = null, cidade = null, assuntoConhecido = false, campoAtual = null, agora = new Date() } = {}) {
+  const endOs = textoIxc(os.endereco);
+  const juntar = l => l.map(x => textoIxc(x)).filter(Boolean).join(', ');
+  const endereco = endOs
+    ? juntar([endOs, os.numero, os.complemento, os.bairro, cidade && cidade.nome, cidade && cidade.uf])
+    : cliente ? juntar([cliente.endereco, cliente.numero, cliente.complemento, cliente.bairro, cliente.cidade, cliente.uf]) : '';
+  const abertura = horaIxcIso(os.data_abertura);
+  const idCli = idValido(os.id_cliente);
+  return {
+    ixc_os_id: String(os.id),
+    ixc_status: String(os.status || '').trim().toUpperCase() || null,
+    ixc_atualizado_em: (campoAtual && horaIxcIso(os[campoAtual])) || abertura,
+    ixc_lido_em: agora.toISOString(),
+    origem: 'ixc',
+    status: 'novo',
+    cliente: (cliente && cliente.nome) || (idCli ? `Cliente IXC #${idCli}` : 'OS de estrutura (sem cliente)'),
+    cliente_id: idCli,
+    telefone: (cliente && (cliente.tel1 || cliente.whatsapp)) || null,
+    endereco: endereco || null,
+    localizacao: textoIxc(os.referencia) || (cliente && textoIxc(cliente.referencia)) || null,
+    login_cliente: (login && login.login) || (cliente && cliente.ixc_login) || null,
+    descricao: (textoIxc(os.mensagem) || `OS ${os.id} aberta no IXC`).slice(0, 4000),
+    prioridade: PRIORIDADE_IXC[String(os.prioridade || '').trim().toUpperCase()] || 'media',
+    assunto_id: idValido(os.id_assunto),
+    // com o assunto conhecido, o setor sai dele (gatilho do banco), como nos
+    // chamados abertos aqui; sem ele, fica o setor da OS no IXC
+    setor_id: assuntoConhecido ? null : idValido(os.setor),
+    data: (abertura || agora.toISOString()).slice(0, 10),
+    ...(abertura ? { created_at: abertura } : {}),
+  };
+}
+
+const lista = ids => [...new Set(ids.filter(Boolean).map(String))].map(x => encodeURIComponent(x)).join(',');
+
+/* `desde`: só vira chamado a OS aberta no IXC a partir daí (quando a importação
+   foi ligada). As que já estavam abertas antes — no IXC delas quase nenhuma é
+   fechada, e muitas já foram feitas pelo MoviOne — ficam de fora e só contam. */
+export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, desde = null, diasInicio = 60, agora = new Date() } = {}) {
+  const r = { modo: 'ativo', em: agora.toISOString() };
+  // 1) o que ler: o que mudou desde a última leitura (com folga) ou, na
+  //    primeira vez / IXC sem o campo de atualização, os últimos 60 dias.
+  //    campoAtual: null = ainda não sei; '' = o IXC recusou filtrar por ele
+  let campo = campoAtual, leitura = null;
+  if (cursor && campo && !isNaN(Date.parse(cursor))) {
+    try {
+      leitura = await io.ixcListar('su_oss_chamado', { qtype: `su_oss_chamado.${campo}`, query: horaParaIxc(Date.parse(cursor) - FOLGA_CURSOR_MS),
+        oper: '>=', sortname: `su_oss_chamado.${campo}`, sortorder: 'asc' }, { paginas: 6 });
+      r.leitura = 'mudou_desde';
+    } catch (err) {
+      r.aviso = `o IXC recusou o filtro por ${campo} (${msg(err)}): sigo lendo os últimos ${diasInicio} dias`;
+      campo = '';
+    }
+  }
+  if (!leitura) {
+    leitura = await io.ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.data_abertura',
+      query: horaParaIxc(agora.getTime() - diasInicio * 864e5).slice(0, 10), oper: '>=', sortorder: 'asc' }, { paginas: 6 });
+    r.leitura = 'periodo';
+    if (campo == null) campo = (leitura.registros[0] && CAMPOS_ATUALIZACAO.find(c => c in leitura.registros[0])) || null;
+  }
+  const { registros, total } = leitura;
+  r.campo = campo;
+  r.lidas = registros.length; r.total_ixc = total;
+
+  // 2) só assunto que gera visita (configuração da Central)
+  const assuntos = await io.sb('central_assuntos_efetivo?select=assunto_id,gera_os,na_central');
+  const conhecidos = new Set((assuntos || []).map(a => String(a.assunto_id)));
+  const deCampo = new Set((assuntos || []).filter(a => a.gera_os && a.na_central).map(a => String(a.assunto_id)));
+  const doCampo = registros.filter(o => o && o.id && deCampo.has(String(idValido(o.id_assunto))));
+  r.de_campo = doCampo.length;
+
+  // 3) o que já virou chamado
+  const ids = doCampo.map(o => String(o.id));
+  const existentes = ids.length
+    ? await io.sb(`campo_chamados?ixc_os_id=in.(${lista(ids)})&select=id,ixc_os_id,ixc_status,status,os_id,tecnico_id,descricao`) || []
+    : [];
+  const porOs = new Map(existentes.map(c => [String(c.ixc_os_id), c]));
+
+  // 4) novos (abertos no IXC): cliente, login e cidade do espelho — colunas
+  //    escolhidas, nada de senha
+  const corte = desde && !isNaN(Date.parse(desde)) ? Date.parse(desde) : null;
+  const abertaDepois = o => { if (!corte) return true; const h = horaIxcIso(o.data_abertura); return !!h && Date.parse(h) >= corte; };
+  const naoImportadas = doCampo.filter(o => !porOs.has(String(o.id)) && !osIxcFechada(o.status));
+  const novas = naoImportadas.filter(abertaDepois);
+  r.antigas_fora = naoImportadas.length - novas.length;
+  const [clientes, logins, cidades] = novas.length ? await Promise.all([
+    io.sb(`clientes?ixc_id=in.(${lista(novas.map(o => idValido(o.id_cliente)))})&select=ixc_id,nome,tel1,whatsapp,endereco,numero,complemento,bairro,cidade,uf,referencia,ixc_login`).catch(() => []),
+    io.sb(`clientes_logins?ixc_id=in.(${lista(novas.map(o => idValido(o.id_login)))})&select=ixc_id,login`).catch(() => []),
+    io.sb(`ixc_cidades?ixc_id=in.(${lista(novas.map(o => idValido(o.id_cidade)))})&select=ixc_id,nome,uf`).catch(() => []),
+  ]) : [[], [], []];
+  const por = (l, k) => new Map((l || []).map(x => [String(x[k]), x]));
+  const cli = por(clientes, 'ixc_id'), lg = por(logins, 'ixc_id'), cid = por(cidades, 'ixc_id');
+  const linhas = novas.map(o => chamadoDaOs(o, {
+    cliente: cli.get(String(idValido(o.id_cliente))) || null,
+    login: lg.get(String(idValido(o.id_login))) || null,
+    cidade: cid.get(String(idValido(o.id_cidade))) || null,
+    assuntoConhecido: conhecidos.has(String(idValido(o.id_assunto))),
+    campoAtual: campo || null, agora,
+  }));
+  r.criados = 0;
+  if (linhas.length) {
+    const feitos = await io.sb('campo_chamados?on_conflict=ixc_os_id&select=id,ixc_os_id', {
+      method: 'POST', body: linhas, prefer: 'resolution=ignore-duplicates,return=representation',
+    }) || [];
+    r.criados = feitos.length;
+    if (feitos.length) {
+      await io.sb('campo_chamados_historico', { method: 'POST', prefer: 'return=minimal',
+        body: feitos.map(f => ({ chamado_id: f.id, status: 'novo' })) }).catch(() => {});
+    }
+  }
+
+  // 5) os que já existem: status do IXC, descrição, fechamento
+  r.atualizados = 0; r.fechados = 0; r.os_retiradas = 0;
+  for (const o of doCampo) {
+    const c = porOs.get(String(o.id));
+    if (!c) continue;
+    const st = String(o.status || '').trim().toUpperCase() || null;
+    const mud = {};
+    if (st && st !== c.ixc_status) mud.ixc_status = st;
+    if (campo && horaIxcIso(o[campo])) mud.ixc_atualizado_em = horaIxcIso(o[campo]);
+    const desc = textoIxc(o.mensagem).slice(0, 4000);
+    if (c.status === 'novo' && !c.tecnico_id && !c.os_id && desc && desc !== c.descricao) mud.descricao = desc;
+    const fechou = osIxcFechada(st) && !['concluido', 'cancelado'].includes(String(c.status || ''));
+    if (fechou) {
+      mud.status = 'concluido';
+      mud.concluido_em = horaIxcIso(o.data_fechamento) || agora.toISOString();
+    }
+    if (!Object.keys(mud).length) continue;
+    mud.ixc_lido_em = agora.toISOString();
+    // só fecha se ninguém fechou entre a leitura e agora
+    const filtroC = fechou ? `&status=not.in.(concluido,cancelado)` : '';
+    const feito = await io.sb(`campo_chamados?id=eq.${c.id}${filtroC}&select=id`, { method: 'PATCH', body: mud, prefer: 'return=representation' }) || [];
+    if (!feito.length) continue;
+    r.atualizados++;
+    if (!fechou) continue;
+    r.fechados++;
+    await io.sb('campo_chamados_historico', { method: 'POST', prefer: 'return=minimal', body: { chamado_id: c.id, status: 'concluido' } }).catch(() => {});
+    // a OS sai do celular só se o técnico ainda não começou
+    if (c.os_id) {
+      const ret = await io.sb(`campo_os?id=eq.${Number(c.os_id)}&status=in.(aberta,reagendada)&select=id`, {
+        method: 'PATCH', prefer: 'return=representation', body: { status: 'cancelada', obs: 'OS fechada no IXC antes da visita.' },
+      }).catch(() => []) || [];
+      r.os_retiradas += ret.length;
+    }
+  }
+
+  // 6) próximo ponto de partida: a mudança mais recente que o IXC mostrou
+  let maior = cursor && !isNaN(Date.parse(cursor)) ? Date.parse(cursor) : 0;
+  if (campo) for (const o of registros) { const h = horaIxcIso(o[campo]); if (h && Date.parse(h) > maior) maior = Date.parse(h); }
+  r.cursor = maior ? new Date(maior).toISOString() : null;
+  return r;
+}

@@ -2647,6 +2647,13 @@ body.dark-mode .hub-ico{color:color-mix(in srgb,var(--c) 55%,#fff)}
 .cen-prazo.feito{background:var(--accent2);color:var(--accent-txt)}
 .cen-prazo.reag{background:#EFE6FA;color:#5A2A9C}
 .cen-reinc{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;color:var(--danger-txt);white-space:nowrap;flex:none}
+/* chamado que veio de uma OS do IXC */
+.cen-ixc{display:inline-block;padding:1px 6px;border-radius:6px;background:var(--info-bg);color:var(--info);font-size:9.5px;font-weight:800;letter-spacing:.02em;flex:none}
+/* configuração: OS do IXC entrando na Central */
+.cen-ixcos{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:12px;padding:12px 16px}
+.cen-ixcos .tx{flex:1;min-width:260px;display:flex;flex-direction:column;gap:3px}
+.cen-ixcos .t{font-weight:800;font-size:13px;display:flex;align-items:center;gap:8px;color:var(--text)}
+.cen-ixcos .bts{display:flex;gap:8px;align-items:center;flex:none}
 .cen-btn{height:28px;padding:0 10px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:700 11.5px 'DM Sans',sans-serif;
   display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer}
 .cen-btn:hover{border-color:var(--text3)}
@@ -20732,7 +20739,7 @@ function cenHora(ms){
 const cenRotPrio = p => ({ alta:'Alta', baixa:'Baixa' }[p] || 'Média');
 const cenCorPrio = p => ({ alta:'var(--danger)', baixa:'var(--c-azul-claro)' }[p] || 'var(--c-laranja)');
 const cenNumOS = n => 'OS #'+String(n||0).padStart(4,'0');
-const CEN_ORIGEM = { movitalk:'pelo MoviTalk', bot:'pelo robô do WhatsApp', moviapp:'pelo MoviApp', movione:'pelo MoviOne', movitec:'pelo moviTec' };
+const CEN_ORIGEM = { movitalk:'pelo MoviTalk', bot:'pelo robô do WhatsApp', moviapp:'pelo MoviApp', movione:'pelo MoviOne', movitec:'pelo moviTec', ixc:'pelo IXC' };
 
 // ---------- setores e assuntos ----------
 async function cenCarregarCfg(forcar){
@@ -20980,7 +20987,7 @@ function cenLinha(k, agora){
   const sel = CEN.sel === k.key;
   return `<div class="cen-lin${sel?' sel':''}" role="button" tabindex="0" data-caso="${k.key}" aria-pressed="${sel}">
     <span class="dot" style="background:${cenCorPrio(k.prio)}" title="Prioridade ${cenRotPrio(k.prio)}"></span>
-    <div class="tx"><div class="a"><span class="id">${ids}</span><span class="nm">${cenEsc(k.cliente)}</span>${n?`<span class="cen-cmt" title="${n} comentário${n>1?'s':''} da equipe">💬 ${n}</span>`:''}</div>
+    <div class="tx"><div class="a"><span class="id">${ids}</span>${k.ch && k.ch.ixc_os_id ? `<span class="cen-ixc" title="Veio do IXC: OS #${cenEsc(k.ch.ixc_os_id)}">IXC</span>` : ''}<span class="nm">${cenEsc(k.cliente)}</span>${n?`<span class="cen-cmt" title="${n} comentário${n>1?'s':''} da equipe">💬 ${n}</span>`:''}</div>
       <div class="b">${cenTag(k)}${k.aberto && k.anteriores.length ? '<span class="cen-reinc" title="Outro chamado deste cliente nos últimos 30 dias">↺ voltou</span>' : ''}<span class="d">${cenEsc(k.descricao)}</span></div></div>
     ${cenChipPrazo(k, agora)}${cenEstado(k, agora)}${cenAcaoLinha(k)}</div>`;
 }
@@ -21091,7 +21098,7 @@ function cenRenderPainel(){
 }
 function cenPainelHTML(k){
   const agora = Date.now(), c = k.ch, os = k.os;
-  const ids = [c ? 'Chamado #'+c.id : '', os ? cenNumOS(os.numero) : ''].filter(Boolean).join(' · ');
+  const ids = [c ? 'Chamado #'+c.id : '', c && c.ixc_os_id ? 'OS IXC #'+c.ixc_os_id : '', os ? cenNumOS(os.numero) : ''].filter(Boolean).join(' · ');
   const origem = c && CEN_ORIGEM[c.origem] ? ' '+CEN_ORIGEM[c.origem] : '';
   const stCls = { acao:'acao', caminho:'campo', cliente:'campo', reag:'reag', feito:'feito' }[k.etapa] || '';
   const stTx = { acao:'Precisa de ação', tecnico:'Com técnico', caminho:'Técnico a caminho', cliente:'Técnico no cliente', atendendo:'Em atendimento', reag:'Reagendado', feito:'Concluído', cancelado:'Cancelado' }[k.etapa] || '';
@@ -21427,7 +21434,7 @@ function cenRenderConfig(){
   const tabela = doSetor.length ? `<table class="cen-tb"><thead><tr><th>Assunto</th><th>Prazo</th><th>Prioridade</th><th>Visita</th></tr></thead><tbody>${linhas}</tbody></table>`
     : `<div class="cen-vazio">Nenhum assunto neste setor.<br>Para trazer um assunto para cá, abra-o no setor onde está e troque o setor.</div>`;
   const a = cenAssunto(CEN.cfgAssunto);
-  el.innerHTML = topo + `<div class="cen-conf">
+  el.innerHTML = topo + cenCartaoOsIxc() + `<div class="cen-conf">
     <div class="cen-box"><h4>Setores do IXC</h4><div class="rola">${lista}</div></div>
     <div class="cen-box"><h4>${cenEsc(nomeSetor)} · ${doSetor.length} assunto${doSetor.length === 1 ? '' : 's'}</h4><div class="rola">${tabela}</div></div>
     <div class="cen-box"><h4>Editar assunto</h4>${a ? cenEditorHTML(a) : '<div class="cen-vazio">Escolha um assunto.</div>'}</div></div>`;
@@ -21458,7 +21465,55 @@ function cenEditorHTML(a){
       : '<div class="cen-nota">Só administradores mudam esta configuração.</div>'}
   </div>`;
 }
+/* OS do IXC → Central (api/ixc-sync.js "os", a cada 2 min). A OS aberta no IXC
+   com assunto que gera visita entra em "Precisa de ação" para distribuir. */
+function cenCartaoOsIxc(){
+  if(!CEN.ixcOs && !CEN.ixcOsCarregando) cenCarregarOsIxc();
+  const x = CEN.ixcOs, adm = cenAdmin();
+  if(!x && /sem acesso/i.test(CEN.ixcOsErro || '')) return '';      // perfil sem acesso à integração: não mostra
+  if(!x) return `<div class="cen-box cen-ixcos"><div class="tx"><div class="t">OS do IXC</div><div class="cen-nota">${CEN.ixcOsErro ? 'Não consegui ler a configuração: '+cenEsc(CEN.ixcOsErro) : 'Carregando…'}</div></div></div>`;
+  const ligado = x.modo === 'ativo', r = x.res || {};
+  const hora = v => v ? new Date(v).toLocaleString('pt-BR',{ day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+  const vieram = (_cpChamados||[]).filter(c=>c.ixc_os_id).length;
+  const linhas = [];
+  if(ligado){
+    linhas.push(`Ligado desde ${hora(x.desde)}${x.em ? ' · última leitura '+hora(x.em) : ''} · ${vieram} chamado${vieram===1?'':'s'} vieram do IXC`);
+    if(r.antigas_fora) linhas.push(`${r.antigas_fora} OS que já estavam abertas no IXC antes de ligar ficaram de fora.`);
+    if(r.ok === false) linhas.push(`<span class="cen-erro" role="alert">A última leitura falhou: ${cenEsc(r.erro||'erro')}</span>`);
+    linhas.push('Por enquanto, quando o técnico finaliza, a OS ainda precisa ser fechada no IXC: o fechamento automático entra depois do teste com uma OS.');
+  } else {
+    linhas.push('Desligado. Ligando, a OS aberta no IXC com assunto que gera visita (🛵) passa a entrar aqui em até 2 minutos, em "Precisa de ação", para distribuir ao técnico. Só entram as abertas dali em diante.');
+  }
+  const bts = adm ? `<div class="bts"><button type="button" class="cen-btn${ligado ? '' : ' v'}" data-acao="ixcos" data-modo="${ligado ? 'previa' : 'ativo'}" ${CEN.ixcOsSalvando ? 'disabled' : ''}>${CEN.ixcOsSalvando ? 'Salvando…' : ligado ? 'Desligar' : 'Ligar'}</button></div>`
+    : '<div class="cen-nota">Só administradores ligam ou desligam.</div>';
+  return `<div class="cen-box cen-ixcos"><div class="tx"><div class="t">OS do IXC <span class="cen-st${ligado ? ' feito' : ''}">${ligado ? '● Ligado' : 'Desligado'}</span></div>
+    <div class="cen-nota">A OS aberta no IXC com assunto que gera visita entra na Central para distribuir ao técnico. Fechou ou cancelou no IXC, fecha aqui também.</div>
+    ${linhas.map(l=>`<div class="cen-nota">${l}</div>`).join('')}</div>${bts}</div>`;
+}
+async function cenCarregarOsIxc(){
+  CEN.ixcOsCarregando = true;
+  try{
+    const j = await ixaAPI('status');
+    const c = (j && j.config) || {};
+    CEN.ixcOs = { modo: c.os_modo || 'desligado', em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null };
+    CEN.ixcOsErro = null;
+  }catch(e){ CEN.ixcOsErro = e.message; }
+  finally{ CEN.ixcOsCarregando = false; }
+  if(!document.getElementById('cen-config')?.hidden) cenRedesenharConfig();
+}
+async function cenSalvarOsIxc(modo){
+  CEN.ixcOsSalvando = true; cenRedesenharConfig();
+  try{
+    const j = await ixaAPI('os_salvar', { os_modo: modo });
+    const c = (j && j.config) || {};
+    CEN.ixcOs = { modo: c.os_modo || modo, em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null };
+    showToast(modo === 'ativo' ? 'Ligado: as OS abertas no IXC a partir de agora entram na Central.' : 'Desligado: as OS do IXC param de entrar na Central.');
+  }catch(e){ showToast('Não consegui salvar: '+e.message, true); }
+  finally{ CEN.ixcOsSalvando = false; cenRedesenharConfig(); }
+}
 function cenCfgClique(t){
+  const io = t.closest('[data-acao="ixcos"]');
+  if(io){ if(!io.disabled) cenSalvarOsIxc(io.dataset.modo); return true; }
   const cs = t.closest('[data-cfgsetor]');
   if(cs){ CEN.cfgSetor = cs.dataset.cfgsetor; CEN.cfgAssunto = null; CEN.cfgRasc = null; cenRenderConfig(); return true; }
   const ca = t.closest('tr[data-cfgass]');

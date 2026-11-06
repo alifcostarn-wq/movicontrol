@@ -19,7 +19,7 @@
 // ============================================================================
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
-import { previaOsDoIxc } from './_ixc_os.js';
+import { previaOsDoIxc, importarOsDoIxc } from './_ixc_os.js';
 
 export const config = { maxDuration: 60 };
 
@@ -123,7 +123,7 @@ async function ixcTudo(tabela, prazo) {
 async function ixcListar(tabela, filtro, { paginas = 1, rp = 1000, prazo }) {
   const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
   const regs = [];
-  let total = null;
+  let total = null, primeiroAnterior = null;
   for (let pagina = 1; pagina <= paginas; pagina++) {
     const resta = prazo - Date.now();
     if (resta <= 500) throw new Error(`o IXC demorou demais para entregar ${tabela}`);
@@ -150,32 +150,55 @@ async function ixcListar(tabela, filtro, { paginas = 1, rp = 1000, prazo }) {
     if (d.type === 'error') throw new Error(`IXC ${tabela}: ${String(d.message || 'recusado').slice(0, 160)}`);
     const lote = Array.isArray(d.registros) ? d.registros : [];
     if (total == null) total = parseInt(d.total || '0', 10) || 0;
+    // o fim é pelo total que o IXC informa, não pelo tamanho da página: este
+    // IXC pode limitar a página a 500 quando pedimos 1000 (ver ixcTudo)
+    const primeiro = lote[0] ? String(lote[0].id) : null;
+    if (primeiro && primeiro === primeiroAnterior) break;      // IXC que ignora a página
+    primeiroAnterior = primeiro;
     regs.push(...lote);
-    if (lote.length < rp || regs.length >= total) break;
+    if (!lote.length || regs.length >= total) break;
   }
   return { registros: regs, total: total || 0 };
 }
 
-/* OS do IXC (ver _ixc_os.js). Por enquanto só a PRÉVIA: lê, conta e guarda os
-   números em ixc_sync_config.os_resultado — no máximo a cada 15 minutos. */
+/* OS do IXC (ver _ixc_os.js), pela rodada própria do agendador ("os", a cada
+   2 min — a cópia de clientes só chama o servidor de 30 em 30 min).
+   'previa': lê, conta e guarda os números (no máximo a cada 15 min);
+   'ativo' : traz para a Central as OS de assunto que gera visita. */
 const OS_PREVIA_CADA_MS = 15 * 60e3;
+const OS_TRAVA_MS = 2 * 60e3;          // rodada das OS mais velha que isso morreu
 async function rodarOs(cfg, prazo) {
+  const modo = cfg.os_modo || 'desligado';
+  if (modo === 'desligado') return { ok: true, modo };
   if (!process.env.IXC_USER || !process.env.IXC_TOKEN) return { ok: false, erro: 'IXC não configurado no servidor' };
-  if (cfg.os_modo !== 'previa') return { ok: true, modo: cfg.os_modo || 'desligado' };
   const agora = Date.now();
-  if (cfg.os_em && agora - Date.parse(cfg.os_em) < OS_PREVIA_CADA_MS) return { ok: true, pulado: 'prévia recente' };
-  const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }) };
-  let resultado;
+  if (modo === 'previa' && cfg.os_em && agora - Date.parse(cfg.os_em) < OS_PREVIA_CADA_MS) return { ok: true, modo, pulado: 'prévia recente' };
+  // uma rodada por vez: quem não conseguir marcar a linha não roda
+  const pego = await sb(`ixc_sync_config?id=eq.1&or=(os_rodando_desde.is.null,os_rodando_desde.lt.${new Date(agora - OS_TRAVA_MS).toISOString()})`, {
+    method: 'PATCH', prefer: 'return=representation', body: { os_rodando_desde: new Date(agora).toISOString() },
+  });
+  if (!Array.isArray(pego) || !pego.length) return { ok: true, modo, pulado: 'outra rodada das OS em andamento' };
+  const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), sb };
+  let resultado, extra = {};
   try {
-    resultado = { ok: true, ...(await previaOsDoIxc(io, { setores: cfg.os_setores || [], agora: new Date(agora) })) };
+    if (modo === 'previa') {
+      resultado = { ok: true, ...(await previaOsDoIxc(io, { setores: cfg.os_setores || [], agora: new Date(agora) })) };
+    } else {
+      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, desde: cfg.os_desde, agora: new Date(agora) });
+      resultado = { ok: true, ...r };
+      extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
+    }
   } catch (err) {
-    resultado = { ok: false, modo: 'previa', erro: String(err.message || err).slice(0, 300) };
+    resultado = { ok: false, modo, erro: String(err.message || err).slice(0, 300) };
+    console.error('[ixc-sync] OS:', resultado.erro);
   }
   resultado.ms = Date.now() - agora;
   await sb('ixc_sync_config?id=eq.1', {
-    method: 'PATCH', prefer: 'return=minimal', body: { os_resultado: resultado, os_em: new Date(agora).toISOString() },
-  }).catch(err => console.error('[ixc-sync] gravar prévia das OS:', err.message));
-  return { ok: resultado.ok, modo: 'previa', ms: resultado.ms };
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { os_resultado: resultado, os_em: new Date(agora).toISOString(), os_rodando_desde: null, ...extra },
+  }).catch(err => console.error('[ixc-sync] gravar rodada das OS:', err.message));
+  const { ok, criados, atualizados, fechados, lidas, antigas_fora, ms } = resultado;
+  return { ok, modo, lidas, criados, atualizados, fechados, antigas_fora, ms };
 }
 
 async function lerConfig() {
@@ -264,18 +287,12 @@ export default async function handler(req, res) {
   const acao = String(b.acao || '');
   try {
     // ---- o agendador do banco: sem pessoa, com o token da tabela ----
-    if (acao === 'rodar') {
+    if (acao === 'rodar' || acao === 'os') {
       let cfg = null;
       try { cfg = await lerConfig(); } catch { cfg = null; }
       if (!cfg || !tokenConfere(req.headers['x-sync-token'], cfg.token)) return res.status(401).json({ erro: 'token do agendador inválido' });
-      const inicio = Date.now();
-      const r = await rodar(cfg);
-      // OS do IXC: depois da cópia de clientes e só com tempo sobrando — na
-      // rodada em que a cópia completa roda (até ~55 s), as OS esperam a próxima
-      if (cfg.os_modo && cfg.os_modo !== 'desligado' && Date.now() - inicio < 30e3) {
-        r.os = await rodarOs(cfg, inicio + 52e3).catch(err => ({ ok: false, erro: String(err.message || err).slice(0, 200) }));
-      }
-      return res.status(200).json(r);
+      if (acao === 'os') return res.status(200).json(await rodarOs(cfg, Date.now() + 50e3));
+      return res.status(200).json(await rodar(cfg));
     }
 
     // ---- a tela do MoviOne ----
@@ -293,6 +310,19 @@ export default async function handler(req, res) {
       const novo = await sb('ixc_sync_config?id=eq.1', {
         method: 'PATCH', prefer: 'return=representation',
         body: { ativo: b.ativo === true, intervalo_min: intervalo, atualizado_em: new Date().toISOString(), atualizado_por: quem.nome },
+      });
+      return res.status(200).json(statusDe((novo && novo[0]) || cfg, quem));
+    }
+    // OS do IXC → Central: desligado / só contar (prévia) / trazendo (ativo)
+    if (acao === 'os_salvar') {
+      const modo = String(b.os_modo || '');
+      if (!['desligado', 'previa', 'ativo'].includes(modo)) return res.status(400).json({ erro: 'modo inválido' });
+      const novo = await sb('ixc_sync_config?id=eq.1', {
+        method: 'PATCH', prefer: 'return=representation',
+        // ao trocar de modo a próxima rodada já vale (sem esperar a prévia de 15 min);
+        // ligar a importação marca o "a partir de agora" (OS abertas antes ficam de fora)
+        body: { os_modo: modo, os_em: null, ...(modo === 'ativo' && cfg.os_modo !== 'ativo' ? { os_desde: new Date().toISOString() } : {}),
+          atualizado_em: new Date().toISOString(), atualizado_por: quem.nome },
       });
       return res.status(200).json(statusDe((novo && novo[0]) || cfg, quem));
     }
