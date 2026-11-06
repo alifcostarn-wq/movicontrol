@@ -164,6 +164,7 @@ export function chamadoDaOs(os, { cliente = null, login = null, cidade = null, a
     // com o assunto conhecido, o setor sai dele (gatilho do banco), como nos
     // chamados abertos aqui; sem ele, fica o setor da OS no IXC
     setor_id: assuntoConhecido ? null : idValido(os.setor),
+    ixc_tecnico_id: idValido(os.id_tecnico),
     data: (abertura || agora.toISOString()).slice(0, 10),
     ...(abertura ? { created_at: abertura } : {}),
   };
@@ -171,11 +172,48 @@ export function chamadoDaOs(os, { cliente = null, login = null, cidade = null, a
 
 const lista = ids => [...new Set(ids.filter(Boolean).map(String))].map(x => encodeURIComponent(x)).join(',');
 
+/* O colaborador do IXC é um técnico do moviTec: o chamado vira OS no celular
+   dele na hora, como o "Abrir OS" da Central faz. Leva o login do cliente,
+   nunca a senha. `proximoNumero` dá o número da OS (o maior + 1, como a tela). */
+async function osParaTecnico(io, ch, tec, proximoNumero, agora) {
+  let clienteId = ch.cliente_id || null;          // a OS guarda o id interno do cliente
+  if (ch.cliente_id) {
+    const c = await io.sb(`clientes?ixc_id=eq.${encodeURIComponent(ch.cliente_id)}&select=id&limit=1`).catch(() => []);
+    if (c && c[0] && c[0].id != null) clienteId = String(c[0].id);
+  }
+  const criada = await io.sb('campo_os?select=id', { method: 'POST', prefer: 'return=representation', body: {
+    numero: await proximoNumero(), cliente: ch.cliente, cliente_id: clienteId, telefone: ch.telefone || null,
+    endereco: ch.endereco || null, login_cliente: ch.login_cliente || null, descricao: ch.descricao,
+    tecnico_id: tec.id, tecnico_nome: tec.nome, prioridade: ch.prioridade || 'media', status: 'aberta',
+    data: horaParaIxc(agora.getTime()).slice(0, 10), chamado_id: ch.id,
+    obs: ch.localizacao ? `Referência: ${ch.localizacao}` : null,
+  } });
+  const osId = criada && criada[0] && criada[0].id;
+  if (!osId) return null;
+  // alguém distribuiu pela Central no meio: fica a dela, a criada aqui sai
+  const ok = await io.sb(`campo_chamados?id=eq.${ch.id}&os_id=is.null&select=id`, { method: 'PATCH', prefer: 'return=representation',
+    body: { os_id: osId, tecnico_id: tec.id, tecnico_nome: tec.nome, status: 'aberto' } }) || [];
+  if (!ok.length) { await io.sb(`campo_os?id=eq.${osId}`, { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {}); return null; }
+  await io.sb('campo_chamados_historico', { method: 'POST', prefer: 'return=minimal', body: { chamado_id: ch.id, status: 'aberto' } }).catch(() => {});
+  return osId;
+}
+
 /* `desde`: só vira chamado a OS aberta no IXC a partir daí (quando a importação
    foi ligada). As que já estavam abertas antes — no IXC delas quase nenhuma é
    fechada, e muitas já foram feitas pelo MoviOne — ficam de fora e só contam. */
-export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, desde = null, diasInicio = 60, agora = new Date() } = {}) {
+export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, desde = null, diasInicio = 60, tecnicos = [], agora = new Date() } = {}) {
   const r = { modo: 'ativo', em: agora.toISOString() };
+  // colaborador do IXC → técnico do moviTec (só os ativos recebem OS nova)
+  const tecDoIxc = new Map((tecnicos || []).filter(t => t && idValido(t.ixc_funcionario_id) && t.status !== 'inativo').map(t => [String(t.ixc_funcionario_id), t]));
+  let ultimoNumero = null;
+  const proximoNumero = async () => {
+    if (ultimoNumero == null) {
+      const l = await io.sb('campo_os?select=numero&numero=not.is.null&order=numero.desc&limit=1').catch(() => []);
+      ultimoNumero = (l && l[0] && parseInt(l[0].numero, 10)) || 0;
+    }
+    return ++ultimoNumero;
+  };
+  r.para_tecnico = 0;
   // 1) o que ler: o que mudou desde a última leitura (com folga) ou, na
   //    primeira vez / IXC sem o campo de atualização, os últimos 60 dias.
   //    campoAtual: null = ainda não sei; '' = o IXC recusou filtrar por ele
@@ -210,7 +248,7 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, de
   // 3) o que já virou chamado
   const ids = doCampo.map(o => String(o.id));
   const existentes = ids.length
-    ? await io.sb(`campo_chamados?ixc_os_id=in.(${lista(ids)})&select=id,ixc_os_id,ixc_status,status,os_id,tecnico_id,descricao`) || []
+    ? await io.sb(`campo_chamados?ixc_os_id=in.(${lista(ids)})&select=id,ixc_os_id,ixc_status,status,os_id,tecnico_id,descricao,ixc_tecnico_id,cliente,cliente_id,telefone,endereco,login_cliente,prioridade,localizacao`) || []
     : [];
   const porOs = new Map(existentes.map(c => [String(c.ixc_os_id), c]));
 
@@ -245,6 +283,12 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, de
       await io.sb('campo_chamados_historico', { method: 'POST', prefer: 'return=minimal',
         body: feitos.map(f => ({ chamado_id: f.id, status: 'novo' })) }).catch(() => {});
     }
+    // já veio com técnico no IXC: vai direto para o celular dele
+    for (const f of feitos) {
+      const linha = linhas.find(l => l.ixc_os_id === String(f.ixc_os_id));
+      const tec = linha && linha.ixc_tecnico_id && tecDoIxc.get(String(linha.ixc_tecnico_id));
+      if (tec && await osParaTecnico(io, { ...linha, id: f.id }, tec, proximoNumero, agora).catch(() => null)) r.para_tecnico++;
+    }
   }
 
   // 5) os que já existem: status do IXC, descrição, fechamento
@@ -263,6 +307,10 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, de
       mud.status = 'concluido';
       mud.concluido_em = horaIxcIso(o.data_fechamento) || agora.toISOString();
     }
+    // técnico trocado NO IXC (comparado com a última leitura, não com a Central)
+    const tecIxc = idValido(o.id_tecnico);
+    const trocouTec = tecIxc !== (idValido(c.ixc_tecnico_id) || null);
+    if (trocouTec) mud.ixc_tecnico_id = tecIxc;
     if (!Object.keys(mud).length) continue;
     mud.ixc_lido_em = agora.toISOString();
     // só fecha se ninguém fechou entre a leitura e agora
@@ -270,6 +318,22 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, de
     const feito = await io.sb(`campo_chamados?id=eq.${c.id}${filtroC}&select=id`, { method: 'PATCH', body: mud, prefer: 'return=representation' }) || [];
     if (!feito.length) continue;
     r.atualizados++;
+    const novoTec = trocouTec && tecIxc && tecDoIxc.get(String(tecIxc));
+    if (novoTec && !fechou && !['concluido', 'cancelado'].includes(String(c.status || ''))) {
+      if (!c.os_id && !c.tecnico_id) {
+        // ainda na Central esperando distribuição: vai para o celular de quem o IXC indicou
+        if (await osParaTecnico(io, c, novoTec, proximoNumero, agora).catch(() => null)) r.para_tecnico++;
+      } else if (c.os_id && String(c.tecnico_id) !== String(novoTec.id)) {
+        // já com outro técnico e a visita não começou: passa para o novo
+        const mudou = await io.sb(`campo_os?id=eq.${Number(c.os_id)}&status=in.(aberta,reagendada)&select=id`, {
+          method: 'PATCH', prefer: 'return=representation', body: { tecnico_id: novoTec.id, tecnico_nome: novoTec.nome },
+        }).catch(() => []) || [];
+        if (mudou.length) {
+          await io.sb(`campo_chamados?id=eq.${c.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { tecnico_id: novoTec.id, tecnico_nome: novoTec.nome } }).catch(() => {});
+          r.reatribuidas = (r.reatribuidas || 0) + 1;
+        }
+      }
+    }
     if (!fechou) continue;
     r.fechados++;
     await io.sb('campo_chamados_historico', { method: 'POST', prefer: 'return=minimal', body: { chamado_id: c.id, status: 'concluido' } }).catch(() => {});
@@ -338,23 +402,27 @@ export function linhaFuncionarioDoIxc(f, agora = new Date()) {
 // `responsavel`: id do colaborador do IXC que fecha a OS ("Colaborador
 // responsável" — o IXC não fecha sem ele; no su_oss_chamado é o id_tecnico)
 export const FALTA_RESPONSAVEL = 'Falta escolher o colaborador responsável no IXC (Central › Setores e assuntos › OS do IXC)';
-export async function fecharOsNoIxc(io, { modo = 'desligado', responsavel = null, agora = new Date() } = {}) {
+export async function fecharOsNoIxc(io, { modo = 'desligado', responsavel = null, tecnicos = [], agora = new Date() } = {}) {
   const r = { modo, fechadas: 0, ja_fechadas: 0, falhas: 0, fora_do_teste: 0, sem_responsavel: 0 };
+  // técnico do moviTec → colaborador do IXC: o fechamento sai no nome de quem fez
+  const ixcDoTec = new Map((tecnicos || []).filter(t => t && idValido(t.ixc_funcionario_id)).map(t => [String(t.id), String(t.ixc_funcionario_id)]));
   if (modo === 'desligado') return r;
   const pend = await io.sb('campo_chamados?ixc_os_id=not.is.null&status=eq.concluido&ixc_fechado_em=is.null'
-    + `&ixc_fechar_tentativas=lt.${FECHAR_TENTATIVAS}&select=id,ixc_os_id,ixc_status,descricao,os_id,tecnico_nome,solucao_tecnica,sinal_fibra_radio,teste_velocidade,concluido_em,created_at,ixc_fechar_tentativas,ixc_fechar_erro`
+    + `&ixc_fechar_tentativas=lt.${FECHAR_TENTATIVAS}&select=id,ixc_os_id,ixc_status,descricao,os_id,tecnico_id,tecnico_nome,solucao_tecnica,sinal_fibra_radio,teste_velocidade,concluido_em,created_at,ixc_fechar_tentativas,ixc_fechar_erro`
     + '&order=concluido_em.asc&limit=5') || [];
   for (const ch of pend) {
     const marcar = body => io.sb(`campo_chamados?id=eq.${ch.id}&ixc_fechado_em=is.null`, { method: 'PATCH', prefer: 'return=minimal', body });
     // já fechada no IXC (alguém fechou lá): nada a mandar
     if (osIxcFechada(ch.ixc_status)) { await marcar({ ixc_fechado_em: agora.toISOString(), ixc_fechar_erro: null }); r.ja_fechadas++; continue; }
     if (modo === 'teste' && !ehOsDeTeste(ch.descricao)) { r.fora_do_teste++; continue; }
+    const os = ch.os_id ? await io.sb(`campo_os?id=eq.${Number(ch.os_id)}&select=numero,tecnico_id,tecnico_nome,solucao,sinal_fibra,speedtest_down,speedtest_up,assumido_em,executando_em,finalizado_em`).then(l => (l || [])[0] || null).catch(() => null) : null;
+    const tecQueFez = (os && os.tecnico_id) || ch.tecnico_id;
+    const resp = (tecQueFez != null && ixcDoTec.get(String(tecQueFez))) || responsavel;
     // sem o responsável o IXC recusa: nem tenta (não gasta tentativa) e o chamado diz o que falta
-    if (!idValido(responsavel)) {
+    if (!idValido(resp)) {
       if (ch.ixc_fechar_erro !== FALTA_RESPONSAVEL) await marcar({ ixc_fechar_erro: FALTA_RESPONSAVEL });
       r.sem_responsavel++; continue;
     }
-    const os = ch.os_id ? await io.sb(`campo_os?id=eq.${Number(ch.os_id)}&select=numero,tecnico_nome,solucao,sinal_fibra,speedtest_down,speedtest_up,assumido_em,executando_em,finalizado_em`).then(l => (l || [])[0] || null).catch(() => null) : null;
     const fim = Date.parse((os && os.finalizado_em) || ch.concluido_em || '') || agora.getTime();
     const ini = Date.parse((os && (os.executando_em || os.assumido_em)) || '') || Math.min(fim, Date.parse(ch.created_at || '') || fim);
     const corpo = {
@@ -363,7 +431,7 @@ export async function fecharOsNoIxc(io, { modo = 'desligado', responsavel = null
       data_final: horaParaIxc(fim),
       mensagem: textoFechamento(ch, os),
       status: 'F',
-      id_tecnico: String(responsavel),      // "Colaborador responsável" (os técnicos ainda não têm cadastro no IXC)
+      id_tecnico: String(resp),      // "Colaborador responsável": o técnico que fez, ou o escolhido na Central
       gera_comissao: 'N',
     };
     let erro = null;

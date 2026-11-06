@@ -214,7 +214,10 @@ async function rodarOs(cfg, prazo) {
     if (modo === 'previa') {
       resultado = { ok: true, ...(await previaOsDoIxc(io, { setores: cfg.os_setores || [], agora: new Date(agora) })) };
     } else {
-      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, desde: cfg.os_desde, agora: new Date(agora) });
+      // técnicos do moviTec com cadastro no IXC: OS atribuída a eles lá vai direto
+      // para o celular, e o fechamento sai no nome de quem fez
+      const tecnicos = await sb('campo_tecnicos?ixc_funcionario_id=not.is.null&select=id,nome,status,ixc_funcionario_id').catch(() => []) || [];
+      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, desde: cfg.os_desde, tecnicos, agora: new Date(agora) });
       resultado = { ok: true, ...r };
       extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
       // colaboradores do IXC (só id, nome, ativo): o IXC exige um responsável para fechar a OS
@@ -228,7 +231,7 @@ async function rodarOs(cfg, prazo) {
         } catch (err) { resultado.funcionarios_erro = semDadosDoCliente(err.message || err); }
       }
       // chamados concluídos aqui → OS fechada no IXC ('teste': só descrição começando com "teste")
-      try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', responsavel: cfg.os_fechar_responsavel, agora: new Date(agora) }); }
+      try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', responsavel: cfg.os_fechar_responsavel, tecnicos, agora: new Date(agora) }); }
       catch (err) { resultado.fechamento = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
     }
   } catch (err) {
@@ -240,9 +243,9 @@ async function rodarOs(cfg, prazo) {
     method: 'PATCH', prefer: 'return=minimal',
     body: { os_resultado: resultado, os_em: new Date(agora).toISOString(), os_rodando_desde: null, ...extra },
   }).catch(err => console.error('[ixc-sync] gravar rodada das OS:', err.message));
-  const { ok, criados, atualizados, fechados, lidas, antigas_fora, ms } = resultado;
+  const { ok, criados, atualizados, fechados, lidas, antigas_fora, para_tecnico, ms } = resultado;
   const f = resultado.fechamento || {};
-  return { ok, modo, lidas, criados, atualizados, fechados, antigas_fora, fechadas_no_ixc: f.fechadas, falhas_ao_fechar: f.falhas, ms };
+  return { ok, modo, lidas, criados, para_tecnico, atualizados, fechados, antigas_fora, fechadas_no_ixc: f.fechadas, falhas_ao_fechar: f.falhas, ms };
 }
 
 async function lerConfig() {
@@ -345,8 +348,15 @@ export default async function handler(req, res) {
     if (!['admin', 'operador'].includes(quem.perfil)) return res.status(403).json({ erro: 'sem acesso à integração com o IXC' });
     const cfg = await lerConfig();
     if (!cfg) return res.status(500).json({ erro: 'falta criar a tabela ixc_sync_config no banco' });
-    const comFuncionarios = async st => ({ ...st,
-      funcionarios: await sb('ixc_funcionarios?ativo=eq.true&select=id,nome&order=nome.asc&limit=500').catch(() => []) || [] });
+    const comFuncionarios = async st => {
+      const [funcionarios, tecs] = await Promise.all([
+        sb('ixc_funcionarios?ativo=eq.true&select=id,nome&order=nome.asc&limit=500').catch(() => []),
+        sb('campo_tecnicos?select=nome,status,ixc_funcionario_id&order=nome.asc').catch(() => []),
+      ]);
+      const nomeIxc = new Map((funcionarios || []).map(f => [String(f.id), f.nome]));
+      return { ...st, funcionarios: funcionarios || [],
+        tecnicos_ixc: (tecs || []).filter(t => t.status !== 'inativo').map(t => ({ nome: t.nome, ixc: t.ixc_funcionario_id ? (nomeIxc.get(String(t.ixc_funcionario_id)) || `#${t.ixc_funcionario_id}`) : null })) };
+    };
     if (acao === 'status') return res.status(200).json(await comFuncionarios(statusDe(cfg, quem)));
     if (quem.perfil !== 'admin') return res.status(403).json({ erro: 'só o administrador muda a sincronização automática' });
 

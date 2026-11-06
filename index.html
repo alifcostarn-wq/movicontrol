@@ -21492,13 +21492,17 @@ function cenCartaoOsIxc(){
     linhas.push(x.fechar === 'ativo' ? 'Quando o técnico finaliza (ou o chamado é concluído aqui), a OS fecha no IXC em até 2 minutos.'
       : x.fechar === 'teste' ? 'Fechamento no IXC em teste: só fecha sozinha a OS cuja descrição no IXC começa com “teste”. As outras, feche no IXC depois da visita.'
       : 'Fechamento no IXC desligado: feche a OS no IXC depois da visita.');
+    const comIxc = (x.tecs || []).filter(t=>t.ixc), semIxc = (x.tecs || []).filter(t=>!t.ixc);
+    if(comIxc.length) linhas.push(`Técnicos com cadastro no IXC: ${comIxc.map(t=>`${cenEsc(t.nome)} (${cenEsc(t.ixc)})`).join(' · ')}. A OS atribuída a eles no IXC vai direto para o celular${x.fechar !== 'desligado' ? ', e o fechamento sai no nome de quem fez' : ''}.`);
+    if(comIxc.length && semIxc.length) linhas.push(`Sem cadastro no IXC: ${semIxc.map(t=>cenEsc(t.nome)).join(', ')}.`);
     if(x.fechar !== 'desligado'){
       const fs = x.funcionarios || [], atual = fs.find(f=>String(f.id) === String(x.resp));
+      const rotResp = comIxc.length ? 'Quando o técnico não tem cadastro no IXC, fecha no nome de:' : 'Responsável no IXC ao fechar:';
       if(adm){
-        linhas.push(`<label for="cen-ixc-resp">Responsável no IXC ao fechar:</label> <select class="cen-sel" id="cen-ixc-resp" style="width:auto;max-width:280px;display:inline-block" ${CEN.ixcOsSalvando ? 'disabled' : ''}>
+        linhas.push(`<label for="cen-ixc-resp">${rotResp}</label> <select class="cen-sel" id="cen-ixc-resp" style="width:auto;max-width:280px;display:inline-block" ${CEN.ixcOsSalvando ? 'disabled' : ''}>
           <option value="">${fs.length ? '— escolher —' : 'carregando a lista do IXC…'}</option>${fs.map(f=>`<option value="${cenEsc(f.id)}" ${String(f.id) === String(x.resp) ? 'selected' : ''}>${cenEsc(f.nome)}</option>`).join('')}</select>`);
-      } else linhas.push(`Responsável no IXC ao fechar: ${atual ? cenEsc(atual.nome) : 'não escolhido'}`);
-      if(!x.resp) linhas.push('<span class="cen-erro">O IXC só fecha a OS com um colaborador responsável. Enquanto os técnicos não têm cadastro lá, escolha quem aparece como responsável.</span>');
+      } else linhas.push(`${rotResp} ${atual ? cenEsc(atual.nome) : 'não escolhido'}`);
+      if(!x.resp) linhas.push(`<span class="cen-erro">O IXC só fecha a OS com um colaborador responsável. ${comIxc.length ? 'Escolha quem aparece quando o técnico que fez não tem cadastro lá.' : 'Enquanto os técnicos não têm cadastro lá, escolha quem aparece como responsável.'}</span>`);
     }
   } else {
     linhas.push('Desligado. Ligando, a OS aberta no IXC com assunto que gera visita (🛵) passa a entrar aqui em até 2 minutos, em "Precisa de ação", para distribuir ao técnico. Só entram as abertas dali em diante.');
@@ -21515,7 +21519,7 @@ async function cenCarregarOsIxc(){
     const j = await ixaAPI('status');
     const c = (j && j.config) || {};
     CEN.ixcOs = { modo: c.os_modo || 'desligado', em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null, fechar: c.os_fechar || 'desligado',
-      resp: c.os_fechar_responsavel || null, funcionarios: (j && j.funcionarios) || [] };
+      resp: c.os_fechar_responsavel || null, funcionarios: (j && j.funcionarios) || [], tecs: (j && j.tecnicos_ixc) || [] };
     CEN.ixcOsErro = null;
   }catch(e){ CEN.ixcOsErro = e.message; }
   finally{ CEN.ixcOsCarregando = false; }
@@ -21527,7 +21531,8 @@ async function cenSalvarRespIxc(id){
   try{
     const j = await ixaAPI('os_salvar', { os_fechar_responsavel: id || null });
     const c = (j && j.config) || {};
-    CEN.ixcOs = { ...(CEN.ixcOs||{}), resp: c.os_fechar_responsavel || null, funcionarios: (j && j.funcionarios) || (CEN.ixcOs && CEN.ixcOs.funcionarios) || [] };
+    CEN.ixcOs = { ...(CEN.ixcOs||{}), resp: c.os_fechar_responsavel || null, funcionarios: (j && j.funcionarios) || (CEN.ixcOs && CEN.ixcOs.funcionarios) || [],
+      tecs: (j && j.tecnicos_ixc) || (CEN.ixcOs && CEN.ixcOs.tecs) || [] };
     const nome = ((CEN.ixcOs.funcionarios||[]).find(f=>String(f.id) === String(id)) || {}).nome;
     showToast(id ? `${nome || 'Colaborador'} aparece como responsável quando a OS fechar no IXC.` : 'Responsável removido: o IXC não vai aceitar fechar as OS.');
   }catch(e){ showToast('Não consegui salvar: '+e.message, true); }
@@ -21539,7 +21544,8 @@ async function cenSalvarOsIxc(modo){
     const j = await ixaAPI('os_salvar', { os_modo: modo });
     const c = (j && j.config) || {};
     CEN.ixcOs = { modo: c.os_modo || modo, em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null, fechar: c.os_fechar || 'desligado',
-      resp: c.os_fechar_responsavel || null, funcionarios: (j && j.funcionarios) || (CEN.ixcOs && CEN.ixcOs.funcionarios) || [] };
+      resp: c.os_fechar_responsavel || null, funcionarios: (j && j.funcionarios) || (CEN.ixcOs && CEN.ixcOs.funcionarios) || [],
+      tecs: (j && j.tecnicos_ixc) || (CEN.ixcOs && CEN.ixcOs.tecs) || [] };
     showToast(modo === 'ativo' ? 'Ligado: as OS abertas no IXC a partir de agora entram na Central.' : 'Desligado: as OS do IXC param de entrar na Central.');
   }catch(e){ showToast('Não consegui salvar: '+e.message, true); }
   finally{ CEN.ixcOsSalvando = false; cenRedesenharConfig(); }
