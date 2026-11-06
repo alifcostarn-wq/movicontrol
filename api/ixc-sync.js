@@ -19,7 +19,7 @@
 // ============================================================================
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
-import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc, linhaFuncionarioDoIxc, processarAcoesIxc } from './_ixc_os.js';
+import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
 
 export const config = { maxDuration: 60 };
 
@@ -237,8 +237,17 @@ async function rodarOs(cfg, prazo) {
       // chamados concluídos aqui → OS fechada no IXC ('teste': só descrição começando com "teste")
       try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', responsavel: cfg.os_fechar_responsavel, tecnicos, agora: new Date(agora) }); }
       catch (err) { resultado.fechamento = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
+      // códigos que a equipe usa nas OS (filial, origem do endereço): das últimas 50, uma vez por dia
+      let codigos = cfg.os_codigos || null;
+      if (!codigos || !codigos.em || agora - Date.parse(codigos.em) > 24 * 3600e3) {
+        try {
+          const { registros } = await ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: '0', oper: '>', sortorder: 'desc' }, { paginas: 1, rp: 50, prazo });
+          codigos = { ...codigosDasOs(registros), em: new Date(agora).toISOString(), lidas: registros.length };
+          extra.os_codigos = codigos;
+        } catch (err) { resultado.codigos_erro = semDadosDoCliente(err.message || err); }
+      }
       // fila de gravações no IXC (abrir OS, encaminhar, agendar, executar, fechar)
-      try { resultado.acoes = await processarAcoesIxc(io, { agora: new Date(agora) }); }
+      try { resultado.acoes = await processarAcoesIxc(io, { agora: new Date(agora), codigos }); }
       catch (err) { resultado.acoes = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
     }
   } catch (err) {

@@ -472,7 +472,22 @@ export const ACOES_IXC = {
 };
 const ACAO_TENTATIVAS = 3;
 
-export async function processarAcoesIxc(io, { agora = new Date(), max = 5 } = {}) {
+/* Os códigos que a equipe usa ao abrir OS no IXC (filial, origem do endereço):
+   o IXC exige os dois e não há tela para escolher. Conta os das últimas OS —
+   só os códigos, nada de dado de cliente. */
+export const CAMPOS_CODIGO = ['id_filial', 'origem_endereco', 'origem_endereco_estrutura'];
+export function codigosDasOs(regs) {
+  const out = {};
+  for (const c of CAMPOS_CODIGO) out[c] = {};
+  for (const r of regs || []) for (const c of CAMPOS_CODIGO) {
+    const v = r && r[c] != null ? String(r[c]).trim() : '';
+    if (v && v.length <= 10) out[c][v] = (out[c][v] || 0) + 1;
+  }
+  return out;
+}
+export const maisComum = mapa => Object.entries(mapa || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+export async function processarAcoesIxc(io, { agora = new Date(), max = 5, codigos = null } = {}) {
   const r = { feitas: 0, falhas: 0, adiadas: 0 };
   const fila = await io.sb(`ixc_acoes?status=eq.pendente&select=id,acao,ixc_os_id,os_id,dados,tentativas&order=id.asc&limit=${max}`) || [];
   for (const a of fila) {
@@ -483,6 +498,10 @@ export async function processarAcoesIxc(io, { agora = new Date(), max = 5 } = {}
     if (!def) { await marcar({ status: 'falhou', tentativas, erro: 'ação desconhecida' }); r.falhas++; continue; }
     if (a.acao !== 'abrir' && !idValido(a.ixc_os_id)) { await marcar({ status: 'falhou', tentativas, erro: 'falta o número da OS no IXC' }); r.falhas++; continue; }
     const corpo = a.acao === 'abrir' ? { ...(dados.corpo || {}) } : { id_chamado: String(a.ixc_os_id), ...(dados.corpo || {}) };
+    if (a.acao === 'abrir' && codigos) {
+      // o IXC exige filial e origem do endereço: o que a equipe mais usa
+      for (const c of ['id_filial', 'origem_endereco']) if (corpo[c] == null || corpo[c] === '') { const v = maisComum(codigos[c]); if (v) corpo[c] = v; }
+    }
     let d = null, erro = null, transitorio = false, osId = idValido(a.ixc_os_id);
     try {
       d = await io.ixcGravar(dados.endpoint || def.endpoint, corpo);
