@@ -21104,7 +21104,7 @@ function cenPainelHTML(k){
   const stTx = { acao:'Precisa de ação', tecnico:'Com técnico', caminho:'Técnico a caminho', cliente:'Técnico no cliente', atendendo:'Em atendimento', reag:'Reagendado', feito:'Concluído', cancelado:'Cancelado' }[k.etapa] || '';
   return `<div class="cab"><div class="t">${cenEsc(k.cliente)}</div><div class="s">${ids} · aberto ${cenHora(k.criado)}${cenEsc(origem)}</div></div>
     <div class="tags">${cenTag(k, true)}<span class="cen-prio ${cenEsc(k.prio)}">● ${cenRotPrio(k.prio)}</span><span class="cen-st ${stCls}">${stTx}${k.resp ? ' · '+cenEsc(String(k.resp.nome).split(' ')[0]) : ''}</span></div>
-    ${cenBlocoAcoes(k)}${cenBlocoPrazo(k, agora)}${cenBlocoReinc(k)}${cenBlocoDescricao(k)}${cenBlocoTempo(k)}${cenBlocoComentarios(k)}`;
+    ${cenBlocoAcoes(k)}${cenBlocoIxc(k)}${cenBlocoPrazo(k, agora)}${cenBlocoReinc(k)}${cenBlocoDescricao(k)}${cenBlocoTempo(k)}${cenBlocoComentarios(k)}`;
 }
 function cenBlocoAcoes(k){
   const c = k.ch, os = k.os, b = [];
@@ -21184,6 +21184,14 @@ function cenBlocoDescricao(k){
     sol ? `<dt>Solução</dt><dd>${cenEsc(sol)}</dd>` : ''].join('');
   return `<div class="bl"><div class="r">O que aconteceu</div><div class="cen-desc">${cenEsc(k.descricao || '—')}</div>${dados ? `<dl class="cen-dados">${dados}</dl>` : ''}</div>`;
 }
+/* chamado do IXC concluído aqui que NÃO fechou no IXC: o motivo, e o que fazer */
+function cenBlocoIxc(k){
+  const c = k.ch;
+  if(!c || !c.ixc_os_id || c.ixc_fechado_em || !c.ixc_fechar_erro) return '';
+  const desistiu = (c.ixc_fechar_tentativas || 0) >= 3;
+  return `<div class="bl"><div class="cen-erro" role="alert">⚠ A OS #${cenEsc(c.ixc_os_id)} não fechou no IXC: ${cenEsc(c.ixc_fechar_erro)}.
+    ${desistiu ? 'Feche essa OS no IXC à mão.' : 'Vou tentar de novo nos próximos minutos.'}</div></div>`;
+}
 function cenBlocoTempo(k){
   const c = k.ch, os = k.os, ev = [];
   const add = (t, grupo, html, pri = 1) => { if(t && !isNaN(t)) ev.push({ t, grupo, html, pri }); };
@@ -21199,6 +21207,7 @@ function cenBlocoTempo(k){
     add(Date.parse(os.finalizado_em), 'fim', '<b>OS finalizada</b>', 2);
   }
   if(c && c.concluido_em && !(c && CEN.hist.get(c.id) || []).some(h=>h.status === 'concluido') && !(os && os.finalizado_em)) add(Date.parse(c.concluido_em), 'fim', '<b>Concluído</b>');
+  if(c && c.ixc_os_id && c.ixc_fechado_em) add(Date.parse(c.ixc_fechado_em), 'ixc', `<b>Fechada no IXC</b> · OS #${cenEsc(c.ixc_os_id)}`);
   ev.sort((a,b)=>a.t - b.t);
   // o mesmo passo registrado em dois lugares (chamado e OS) aparece uma vez só
   const lista = [];
@@ -21480,7 +21489,9 @@ function cenCartaoOsIxc(){
     linhas.push(`Ligado desde ${hora(x.desde)}${x.em ? ' · última leitura '+hora(x.em) : ''} · ${vieram} chamado${vieram===1?'':'s'} vieram do IXC`);
     if(r.antigas_fora) linhas.push(`${r.antigas_fora} OS que já estavam abertas no IXC antes de ligar ficaram de fora.`);
     if(r.ok === false) linhas.push(`<span class="cen-erro" role="alert">A última leitura falhou: ${cenEsc(r.erro||'erro')}</span>`);
-    linhas.push('Por enquanto, quando o técnico finaliza, a OS ainda precisa ser fechada no IXC: o fechamento automático entra depois do teste com uma OS.');
+    linhas.push(x.fechar === 'ativo' ? 'Quando o técnico finaliza (ou o chamado é concluído aqui), a OS fecha no IXC em até 2 minutos.'
+      : x.fechar === 'teste' ? 'Fechamento no IXC em teste: só fecha sozinha a OS cuja descrição no IXC começa com TESTE. As outras, feche no IXC depois da visita.'
+      : 'Fechamento no IXC desligado: feche a OS no IXC depois da visita.');
   } else {
     linhas.push('Desligado. Ligando, a OS aberta no IXC com assunto que gera visita (🛵) passa a entrar aqui em até 2 minutos, em "Precisa de ação", para distribuir ao técnico. Só entram as abertas dali em diante.');
   }
@@ -21495,7 +21506,7 @@ async function cenCarregarOsIxc(){
   try{
     const j = await ixaAPI('status');
     const c = (j && j.config) || {};
-    CEN.ixcOs = { modo: c.os_modo || 'desligado', em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null };
+    CEN.ixcOs = { modo: c.os_modo || 'desligado', em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null, fechar: c.os_fechar || 'desligado' };
     CEN.ixcOsErro = null;
   }catch(e){ CEN.ixcOsErro = e.message; }
   finally{ CEN.ixcOsCarregando = false; }
@@ -21506,7 +21517,7 @@ async function cenSalvarOsIxc(modo){
   try{
     const j = await ixaAPI('os_salvar', { os_modo: modo });
     const c = (j && j.config) || {};
-    CEN.ixcOs = { modo: c.os_modo || modo, em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null };
+    CEN.ixcOs = { modo: c.os_modo || modo, em: c.os_em || null, desde: c.os_desde || null, res: c.os_resultado || null, fechar: c.os_fechar || 'desligado' };
     showToast(modo === 'ativo' ? 'Ligado: as OS abertas no IXC a partir de agora entram na Central.' : 'Desligado: as OS do IXC param de entrar na Central.');
   }catch(e){ showToast('Não consegui salvar: '+e.message, true); }
   finally{ CEN.ixcOsSalvando = false; cenRedesenharConfig(); }

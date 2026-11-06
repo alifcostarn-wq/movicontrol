@@ -288,3 +288,83 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, de
   r.cursor = maior ? new Date(maior).toISOString() : null;
   return r;
 }
+
+// ============================================================================
+// FECHAMENTO: chamado do IXC concluído aqui → OS fechada no IXC
+// ----------------------------------------------------------------------------
+// O técnico finaliza no moviTec (ou alguém conclui o chamado na Central): o
+// chamado vira "concluido" e a rodada seguinte fecha a OS no IXC com a
+// solução, o sinal, a velocidade e os horários. Depois RELÊ a OS no IXC: só
+// conta como fechada se o IXC mostrar o status F — um "sucesso" do IXC com a
+// OS ainda aberta é falha. Falhou: guarda o motivo (aparece no chamado) e
+// tenta de novo nas rodadas seguintes, até 3 vezes; depois, fechar à mão.
+// Modo 'teste': só as OS cuja descrição começa com TESTE.
+// ============================================================================
+export const FECHAR_TENTATIVAS = 3;
+export const ehOsDeTeste = descricao => /^\s*TESTE\b/.test(String(descricao || ''));
+
+const numeroOuNada = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
+
+/* O texto que fica na OS do IXC. Nada de senha, nada de dado que já não esteja
+   lá: técnico, solução, medições e onde estão as fotos. */
+export function textoFechamento(ch, os) {
+  const l = [];
+  if (os) {
+    l.push('Finalizada pelo moviTec' + (os.tecnico_nome ? ` — técnico ${os.tecnico_nome}` : '') + '.');
+    if (textoIxc(os.solucao)) l.push('Solução: ' + textoIxc(os.solucao));
+    const med = [];
+    if (textoIxc(os.sinal_fibra)) med.push('sinal ' + textoIxc(os.sinal_fibra));
+    const d = numeroOuNada(os.speedtest_down), u = numeroOuNada(os.speedtest_up);
+    if (d || u) med.push(`velocidade ${d ?? '—'}/${u ?? '—'} Mbps`);
+    if (med.length) l.push('Medição: ' + med.join(' · ') + '.');
+    l.push(`Fotos e assinatura no MoviOne${os.numero ? ` (OS ${os.numero})` : ''}.`);
+  } else {
+    l.push('Concluída no MoviOne' + (ch.tecnico_nome ? ` — ${ch.tecnico_nome}` : '') + '.');
+    if (textoIxc(ch.solucao_tecnica)) l.push('Solução: ' + textoIxc(ch.solucao_tecnica));
+    const med = [textoIxc(ch.sinal_fibra_radio) && 'sinal ' + textoIxc(ch.sinal_fibra_radio), textoIxc(ch.teste_velocidade) && 'velocidade ' + textoIxc(ch.teste_velocidade)].filter(Boolean);
+    if (med.length) l.push('Medição: ' + med.join(' · ') + '.');
+  }
+  return l.join('\n').slice(0, 3000);
+}
+
+export async function fecharOsNoIxc(io, { modo = 'desligado', agora = new Date() } = {}) {
+  const r = { modo, fechadas: 0, ja_fechadas: 0, falhas: 0, fora_do_teste: 0 };
+  if (modo === 'desligado') return r;
+  const pend = await io.sb('campo_chamados?ixc_os_id=not.is.null&status=eq.concluido&ixc_fechado_em=is.null'
+    + `&ixc_fechar_tentativas=lt.${FECHAR_TENTATIVAS}&select=id,ixc_os_id,ixc_status,descricao,os_id,tecnico_nome,solucao_tecnica,sinal_fibra_radio,teste_velocidade,concluido_em,created_at,ixc_fechar_tentativas`
+    + '&order=concluido_em.asc&limit=5') || [];
+  for (const ch of pend) {
+    const marcar = body => io.sb(`campo_chamados?id=eq.${ch.id}&ixc_fechado_em=is.null`, { method: 'PATCH', prefer: 'return=minimal', body });
+    // já fechada no IXC (alguém fechou lá): nada a mandar
+    if (osIxcFechada(ch.ixc_status)) { await marcar({ ixc_fechado_em: agora.toISOString(), ixc_fechar_erro: null }); r.ja_fechadas++; continue; }
+    if (modo === 'teste' && !ehOsDeTeste(ch.descricao)) { r.fora_do_teste++; continue; }
+    const os = ch.os_id ? await io.sb(`campo_os?id=eq.${Number(ch.os_id)}&select=numero,tecnico_nome,solucao,sinal_fibra,speedtest_down,speedtest_up,assumido_em,executando_em,finalizado_em`).then(l => (l || [])[0] || null).catch(() => null) : null;
+    const fim = Date.parse((os && os.finalizado_em) || ch.concluido_em || '') || agora.getTime();
+    const ini = Date.parse((os && (os.executando_em || os.assumido_em)) || '') || Math.min(fim, Date.parse(ch.created_at || '') || fim);
+    const corpo = {
+      id_chamado: String(ch.ixc_os_id),
+      data_inicio: horaParaIxc(Math.min(ini, fim)),
+      data_final: horaParaIxc(fim),
+      mensagem: textoFechamento(ch, os),
+      status: 'F',
+      id_tecnico: '',          // os técnicos ainda não têm cadastro de funcionário no IXC
+      gera_comissao: 'N',
+    };
+    let erro = null;
+    try {
+      await io.ixcFecharOs(corpo);
+      // confere no próprio IXC: só vale se a OS aparecer finalizada
+      const volta = await io.ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: String(ch.ixc_os_id), oper: '=' }, { paginas: 1, rp: 1 });
+      const st = volta.registros[0] && String(volta.registros[0].status || '').toUpperCase();
+      if (!osIxcFechada(st)) erro = `o IXC respondeu, mas a OS continua ${STATUS_OS_IXC[st] || st || 'aberta'}`;
+    } catch (err) { erro = msg(err); }
+    if (!erro) {
+      await marcar({ ixc_fechado_em: agora.toISOString(), ixc_status: 'F', ixc_fechar_erro: null });
+      r.fechadas++;
+    } else {
+      await marcar({ ixc_fechar_erro: textoIxc(erro).slice(0, 300), ixc_fechar_tentativas: (ch.ixc_fechar_tentativas || 0) + 1 });
+      r.falhas++; r.ultimo_erro = textoIxc(erro).slice(0, 200);
+    }
+  }
+  return r;
+}
