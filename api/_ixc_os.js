@@ -328,17 +328,32 @@ export function textoFechamento(ch, os) {
   return l.join('\n').slice(0, 3000);
 }
 
-export async function fecharOsNoIxc(io, { modo = 'desligado', agora = new Date() } = {}) {
-  const r = { modo, fechadas: 0, ja_fechadas: 0, falhas: 0, fora_do_teste: 0 };
+/* Colaborador do IXC (tabela funcionarios): só id, nome e se está ativo —
+   CPF, e-mail, senha e o resto ficam no IXC. */
+export function linhaFuncionarioDoIxc(f, agora = new Date()) {
+  const nome = textoIxc(f.funcionario || f.nome || f.apelido || '');
+  return { id: String(f.id), nome: nome || `Colaborador #${f.id}`, ativo: !['N', 'n', '0', 'false'].includes(String(f.ativo ?? 'S')), atualizado_em: agora.toISOString() };
+}
+
+// `responsavel`: id do colaborador do IXC que fecha a OS ("Colaborador
+// responsável" — o IXC não fecha sem ele; no su_oss_chamado é o id_tecnico)
+export const FALTA_RESPONSAVEL = 'Falta escolher o colaborador responsável no IXC (Central › Setores e assuntos › OS do IXC)';
+export async function fecharOsNoIxc(io, { modo = 'desligado', responsavel = null, agora = new Date() } = {}) {
+  const r = { modo, fechadas: 0, ja_fechadas: 0, falhas: 0, fora_do_teste: 0, sem_responsavel: 0 };
   if (modo === 'desligado') return r;
   const pend = await io.sb('campo_chamados?ixc_os_id=not.is.null&status=eq.concluido&ixc_fechado_em=is.null'
-    + `&ixc_fechar_tentativas=lt.${FECHAR_TENTATIVAS}&select=id,ixc_os_id,ixc_status,descricao,os_id,tecnico_nome,solucao_tecnica,sinal_fibra_radio,teste_velocidade,concluido_em,created_at,ixc_fechar_tentativas`
+    + `&ixc_fechar_tentativas=lt.${FECHAR_TENTATIVAS}&select=id,ixc_os_id,ixc_status,descricao,os_id,tecnico_nome,solucao_tecnica,sinal_fibra_radio,teste_velocidade,concluido_em,created_at,ixc_fechar_tentativas,ixc_fechar_erro`
     + '&order=concluido_em.asc&limit=5') || [];
   for (const ch of pend) {
     const marcar = body => io.sb(`campo_chamados?id=eq.${ch.id}&ixc_fechado_em=is.null`, { method: 'PATCH', prefer: 'return=minimal', body });
     // já fechada no IXC (alguém fechou lá): nada a mandar
     if (osIxcFechada(ch.ixc_status)) { await marcar({ ixc_fechado_em: agora.toISOString(), ixc_fechar_erro: null }); r.ja_fechadas++; continue; }
     if (modo === 'teste' && !ehOsDeTeste(ch.descricao)) { r.fora_do_teste++; continue; }
+    // sem o responsável o IXC recusa: nem tenta (não gasta tentativa) e o chamado diz o que falta
+    if (!idValido(responsavel)) {
+      if (ch.ixc_fechar_erro !== FALTA_RESPONSAVEL) await marcar({ ixc_fechar_erro: FALTA_RESPONSAVEL });
+      r.sem_responsavel++; continue;
+    }
     const os = ch.os_id ? await io.sb(`campo_os?id=eq.${Number(ch.os_id)}&select=numero,tecnico_nome,solucao,sinal_fibra,speedtest_down,speedtest_up,assumido_em,executando_em,finalizado_em`).then(l => (l || [])[0] || null).catch(() => null) : null;
     const fim = Date.parse((os && os.finalizado_em) || ch.concluido_em || '') || agora.getTime();
     const ini = Date.parse((os && (os.executando_em || os.assumido_em)) || '') || Math.min(fim, Date.parse(ch.created_at || '') || fim);
@@ -348,7 +363,7 @@ export async function fecharOsNoIxc(io, { modo = 'desligado', agora = new Date()
       data_final: horaParaIxc(fim),
       mensagem: textoFechamento(ch, os),
       status: 'F',
-      id_tecnico: '',          // os técnicos ainda não têm cadastro de funcionário no IXC
+      id_tecnico: String(responsavel),      // "Colaborador responsável" (os técnicos ainda não têm cadastro no IXC)
       gera_comissao: 'N',
     };
     let erro = null;

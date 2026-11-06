@@ -19,7 +19,7 @@
 // ============================================================================
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
-import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc } from './_ixc_os.js';
+import { previaOsDoIxc, importarOsDoIxc, fecharOsNoIxc, linhaFuncionarioDoIxc } from './_ixc_os.js';
 
 export const config = { maxDuration: 60 };
 
@@ -193,6 +193,7 @@ async function ixcFecharOs(corpo, prazo) {
    'ativo' : traz para a Central as OS de assunto que gera visita. */
 const OS_PREVIA_CADA_MS = 15 * 60e3;
 const OS_TRAVA_MS = 2 * 60e3;          // rodada das OS mais velha que isso morreu
+const FUNCIONARIOS_CADA_MS = 6 * 3600e3;  // lista de colaboradores do IXC (responsável no fechamento)
 // o erro do banco traz a linha recusada inteira ("details": nome, telefone,
 // endereço do cliente) — o resultado aparece na tela: fica só o código e a regra
 const semDadosDoCliente = m => String(m || '').replace(/"details":"(?:[^"\\]|\\.)*"/g, '"details":"(omitido)"').slice(0, 300);
@@ -216,8 +217,18 @@ async function rodarOs(cfg, prazo) {
       const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, desde: cfg.os_desde, agora: new Date(agora) });
       resultado = { ok: true, ...r };
       extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
-      // chamados concluídos aqui → OS fechada no IXC ('teste': só descrição TESTE…)
-      try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', agora: new Date(agora) }); }
+      // colaboradores do IXC (só id, nome, ativo): o IXC exige um responsável para fechar a OS
+      if (!cfg.os_funcionarios_em || agora - Date.parse(cfg.os_funcionarios_em) > FUNCIONARIOS_CADA_MS) {
+        try {
+          const { registros } = await ixcListar('funcionarios', { qtype: 'funcionarios.id', query: '0', oper: '>', sortorder: 'asc' }, { paginas: 4, prazo });
+          const linhas = registros.filter(f => f && f.id).map(f => linhaFuncionarioDoIxc(f, new Date(agora)));
+          if (linhas.length) await sbUpsert('ixc_funcionarios', linhas, { conflito: 'id' });
+          resultado.funcionarios = linhas.length;
+          extra.os_funcionarios_em = new Date(agora).toISOString();
+        } catch (err) { resultado.funcionarios_erro = semDadosDoCliente(err.message || err); }
+      }
+      // chamados concluídos aqui → OS fechada no IXC ('teste': só descrição começando com "teste")
+      try { resultado.fechamento = await fecharOsNoIxc(io, { modo: cfg.os_fechar || 'desligado', responsavel: cfg.os_fechar_responsavel, agora: new Date(agora) }); }
       catch (err) { resultado.fechamento = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
     }
   } catch (err) {
@@ -334,7 +345,9 @@ export default async function handler(req, res) {
     if (!['admin', 'operador'].includes(quem.perfil)) return res.status(403).json({ erro: 'sem acesso à integração com o IXC' });
     const cfg = await lerConfig();
     if (!cfg) return res.status(500).json({ erro: 'falta criar a tabela ixc_sync_config no banco' });
-    if (acao === 'status') return res.status(200).json(statusDe(cfg, quem));
+    const comFuncionarios = async st => ({ ...st,
+      funcionarios: await sb('ixc_funcionarios?ativo=eq.true&select=id,nome&order=nome.asc&limit=500').catch(() => []) || [] });
+    if (acao === 'status') return res.status(200).json(await comFuncionarios(statusDe(cfg, quem)));
     if (quem.perfil !== 'admin') return res.status(403).json({ erro: 'só o administrador muda a sincronização automática' });
 
     if (acao === 'salvar') {
@@ -348,16 +361,30 @@ export default async function handler(req, res) {
     }
     // OS do IXC → Central: desligado / só contar (prévia) / trazendo (ativo)
     if (acao === 'os_salvar') {
-      const modo = String(b.os_modo || '');
-      if (!['desligado', 'previa', 'ativo'].includes(modo)) return res.status(400).json({ erro: 'modo inválido' });
-      const novo = await sb('ixc_sync_config?id=eq.1', {
-        method: 'PATCH', prefer: 'return=representation',
+      const body = { atualizado_em: new Date().toISOString(), atualizado_por: quem.nome };
+      if (b.os_modo !== undefined) {
+        const modo = String(b.os_modo || '');
+        if (!['desligado', 'previa', 'ativo'].includes(modo)) return res.status(400).json({ erro: 'modo inválido' });
         // ao trocar de modo a próxima rodada já vale (sem esperar a prévia de 15 min);
         // ligar a importação marca o "a partir de agora" (OS abertas antes ficam de fora)
-        body: { os_modo: modo, os_em: null, ...(modo === 'ativo' && cfg.os_modo !== 'ativo' ? { os_desde: new Date().toISOString() } : {}),
-          atualizado_em: new Date().toISOString(), atualizado_por: quem.nome },
-      });
-      return res.status(200).json(statusDe((novo && novo[0]) || cfg, quem));
+        Object.assign(body, { os_modo: modo, os_em: null, ...(modo === 'ativo' && cfg.os_modo !== 'ativo' ? { os_desde: new Date().toISOString() } : {}) });
+      }
+      if (b.os_fechar_responsavel !== undefined) {
+        const resp = b.os_fechar_responsavel == null || b.os_fechar_responsavel === '' ? null : String(b.os_fechar_responsavel);
+        if (resp) {
+          const existe = await sb(`ixc_funcionarios?id=eq.${encodeURIComponent(resp)}&ativo=eq.true&select=id`).catch(() => []);
+          if (!Array.isArray(existe) || !existe.length) return res.status(400).json({ erro: 'colaborador não encontrado no IXC' });
+        }
+        body.os_fechar_responsavel = resp;
+      }
+      const novo = await sb('ixc_sync_config?id=eq.1', { method: 'PATCH', prefer: 'return=representation', body });
+      if (b.os_fechar_responsavel) {
+        // quem não fechou só por falta do responsável volta a tentar já na próxima rodada
+        await sb(`campo_chamados?ixc_fechado_em=is.null&ixc_fechar_erro=like.${encodeURIComponent('Falta escolher o colaborador*')}`, {
+          method: 'PATCH', prefer: 'return=minimal', body: { ixc_fechar_erro: null },
+        }).catch(() => {});
+      }
+      return res.status(200).json(await comFuncionarios(statusDe((novo && novo[0]) || cfg, quem)));
     }
     if (acao === 'agora') {
       const r = await rodar(cfg, { manual: quem.nome });
