@@ -8484,6 +8484,35 @@ async function conversaDoUsuario(e, user, id, select = 'id,setor,contato_fone') 
   return { c };
 }
 
+/* Raio-x do webhook: que tipo de aviso a Evolution mandou e o que fizemos com
+   ele. Guarda o último de cada tipo e a contagem (atend_whatsapp_eventos) —
+   nunca o texto da mensagem, o número de ninguém ou a apikey que vem no corpo.
+   É o que responde "o WhatsApp está mandando as mensagens para cá?". */
+function raioXWebhook(body) {
+  const evento = String(body.event || body.type || '').toLowerCase() || 'sem_evento';
+  const bruto = body.data || body.message || body;
+  const d = (Array.isArray(bruto) ? bruto[0] : bruto) || {};
+  const key = d.key || {};
+  const jid = String(key.remoteJid || d.remoteJid || '');
+  const tipoJid = jid.endsWith('@lid') ? 'lid' : jid.endsWith('@g.us') ? 'grupo'
+    : jid.includes('broadcast') ? 'broadcast' : jid.endsWith('@s.whatsapp.net') ? 'numero' : (jid ? 'outro' : 'sem_jid');
+  const msg = d.message && typeof d.message === 'object' ? d.message : {};
+  const st = d.status || (d.update && d.update.status) || null;
+  return {
+    tipo: `${evento}:${tipoJid}${key.fromMe ? ':meu' : ''}`,
+    detalhe: {
+      evento, jid: tipoJid, fromMe: !!key.fromMe,
+      conteudo: Object.keys(msg).filter(k => k !== 'messageContextInfo').slice(0, 4),
+      alt: !!(key.remoteJidAlt || key.senderPn || d.senderPn || key.participantAlt),
+      status: st == null ? null : String(st).slice(0, 20), lote: Array.isArray(bruto) ? bruto.length : 1,
+    },
+  };
+}
+async function marcarEvento(e, tipo, detalhe = null) {
+  try { await sb(e, 'rpc/atend_marcar_evento', { method: 'POST', prefer: 'return=minimal', body: { p_tipo: tipo, p_detalhe: detalhe } }); }
+  catch (err) { console.error('[raio-x]', err.message); }
+}
+
 export default async function handler(req, res) {
   const inicioReq = Date.now();   // o prazo da Vercel conta daqui
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -8501,14 +8530,23 @@ export default async function handler(req, res) {
   try {
     // ---- rotas sem login de usuário -------------------------------------
     if (acao === 'webhook') {
+      const rx = raioXWebhook(body);
       if (!segredoConfere(e, req, body)) {
+        await marcarEvento(e, 'secret_invalido', { evento: rx.detalhe.evento });
         return res.status(401).json({ ok: false, error: 'Secret do webhook inválido.' });
       }
+      console.log('[webhook]', rx.tipo, JSON.stringify(rx.detalhe));
       // status (da empresa ou de contatos) não é conversa: não passa pelo bot
       // nem pega carona na varredura — chegam dezenas por publicação
       const st = statusDoWebhook(body);
-      if (st) return res.status(200).json(await confirmarStatusPublicado(e, st));
-      const r = await tratarWebhook(e, body);
+      if (st) { await marcarEvento(e, rx.tipo, rx.detalhe); return res.status(200).json(await confirmarStatusPublicado(e, st)); }
+      let r;
+      try { r = await tratarWebhook(e, body); }
+      catch (err) { await marcarEvento(e, 'erro:' + rx.tipo, { ...rx.detalhe, erro: String(err.message).slice(0, 200) }); throw err; }
+      await Promise.all([
+        marcarEvento(e, rx.tipo, rx.detalhe),
+        marcarEvento(e, 'resultado:' + String((r && (r.ignorado || r.motivo)) || 'processado').slice(0, 50), { evento: rx.detalhe.evento, jid: rx.detalhe.jid }),
+      ]);
       // carona no tráfego real: cada mensagem que chega também faz o ciclo de
       // inatividade andar. Nunca deixa a entrada de mensagem quebrar por isso.
       try { await talvezVarrer(e); } catch (err) { console.error('[inatividade]', err.message); }
