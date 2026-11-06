@@ -167,6 +167,9 @@ async function ixcListar(tabela, filtro, { paginas = 1, rp = 1000, prazo }) {
    'ativo' : traz para a Central as OS de assunto que gera visita. */
 const OS_PREVIA_CADA_MS = 15 * 60e3;
 const OS_TRAVA_MS = 2 * 60e3;          // rodada das OS mais velha que isso morreu
+// o erro do banco traz a linha recusada inteira ("details": nome, telefone,
+// endereço do cliente) — o resultado aparece na tela: fica só o código e a regra
+const semDadosDoCliente = m => String(m || '').replace(/"details":"(?:[^"\\]|\\.)*"/g, '"details":"(omitido)"').slice(0, 300);
 async function rodarOs(cfg, prazo) {
   const modo = cfg.os_modo || 'desligado';
   if (modo === 'desligado') return { ok: true, modo };
@@ -189,7 +192,7 @@ async function rodarOs(cfg, prazo) {
       extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
     }
   } catch (err) {
-    resultado = { ok: false, modo, erro: String(err.message || err).slice(0, 300) };
+    resultado = { ok: false, modo, erro: semDadosDoCliente(err.message || err) };
     console.error('[ixc-sync] OS:', resultado.erro);
   }
   resultado.ms = Date.now() - agora;
