@@ -19,6 +19,7 @@
 // ============================================================================
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
+import { previaOsDoIxc } from './_ixc_os.js';
 
 export const config = { maxDuration: 60 };
 
@@ -115,6 +116,68 @@ async function ixcTudo(tabela, prazo) {
   return [...porId.values()];
 }
 
+/* Leitura FILTRADA do IXC (o ixcTudo acima baixa a tabela inteira — para OS,
+   que acumulam anos, seria pesado demais). `filtro` = qtype/query/oper e,
+   opcional, grid_param e ordem. Com rp: 1 serve para contar (o IXC devolve o
+   total do filtro em toda resposta). */
+async function ixcListar(tabela, filtro, { paginas = 1, rp = 1000, prazo }) {
+  const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
+  const regs = [];
+  let total = null;
+  for (let pagina = 1; pagina <= paginas; pagina++) {
+    const resta = prazo - Date.now();
+    if (resta <= 500) throw new Error(`o IXC demorou demais para entregar ${tabela}`);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), resta);
+    let r;
+    try {
+      r = await fetch(`${IXC_URL}/webservice/v1/${tabela}`, {
+        method: 'POST', signal: ctl.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: auth, ixcsoft: 'listar' },
+        body: JSON.stringify({
+          qtype: filtro.qtype, query: String(filtro.query ?? ''), oper: filtro.oper || '=',
+          page: String(pagina), rp: String(rp),
+          sortname: filtro.sortname || `${tabela}.id`, sortorder: filtro.sortorder || 'desc',
+          ...(filtro.grid_param ? { grid_param: filtro.grid_param } : {}),
+        }),
+      });
+    } catch (err) {
+      throw new Error(err.name === 'AbortError' ? `o IXC demorou demais para entregar ${tabela}` : `IXC ${tabela}: ${err.message}`);
+    } finally { clearTimeout(timer); }
+    if (!r.ok) throw new Error(`IXC ${tabela} HTTP ${r.status}`);
+    const d = await r.json().catch(() => null);
+    if (!d) throw new Error(`IXC ${tabela}: resposta que não é JSON`);
+    if (d.type === 'error') throw new Error(`IXC ${tabela}: ${String(d.message || 'recusado').slice(0, 160)}`);
+    const lote = Array.isArray(d.registros) ? d.registros : [];
+    if (total == null) total = parseInt(d.total || '0', 10) || 0;
+    regs.push(...lote);
+    if (lote.length < rp || regs.length >= total) break;
+  }
+  return { registros: regs, total: total || 0 };
+}
+
+/* OS do IXC (ver _ixc_os.js). Por enquanto só a PRÉVIA: lê, conta e guarda os
+   números em ixc_sync_config.os_resultado — no máximo a cada 15 minutos. */
+const OS_PREVIA_CADA_MS = 15 * 60e3;
+async function rodarOs(cfg, prazo) {
+  if (!process.env.IXC_USER || !process.env.IXC_TOKEN) return { ok: false, erro: 'IXC não configurado no servidor' };
+  if (cfg.os_modo !== 'previa') return { ok: true, modo: cfg.os_modo || 'desligado' };
+  const agora = Date.now();
+  if (cfg.os_em && agora - Date.parse(cfg.os_em) < OS_PREVIA_CADA_MS) return { ok: true, pulado: 'prévia recente' };
+  const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }) };
+  let resultado;
+  try {
+    resultado = { ok: true, ...(await previaOsDoIxc(io, { setores: cfg.os_setores || [], agora: new Date(agora) })) };
+  } catch (err) {
+    resultado = { ok: false, modo: 'previa', erro: String(err.message || err).slice(0, 300) };
+  }
+  resultado.ms = Date.now() - agora;
+  await sb('ixc_sync_config?id=eq.1', {
+    method: 'PATCH', prefer: 'return=minimal', body: { os_resultado: resultado, os_em: new Date(agora).toISOString() },
+  }).catch(err => console.error('[ixc-sync] gravar prévia das OS:', err.message));
+  return { ok: resultado.ok, modo: 'previa', ms: resultado.ms };
+}
+
 async function lerConfig() {
   const r = await sb('ixc_sync_config?id=eq.1&select=*');
   return (r && r[0]) || null;
@@ -205,7 +268,14 @@ export default async function handler(req, res) {
       let cfg = null;
       try { cfg = await lerConfig(); } catch { cfg = null; }
       if (!cfg || !tokenConfere(req.headers['x-sync-token'], cfg.token)) return res.status(401).json({ erro: 'token do agendador inválido' });
-      return res.status(200).json(await rodar(cfg));
+      const inicio = Date.now();
+      const r = await rodar(cfg);
+      // OS do IXC: depois da cópia de clientes e só com tempo sobrando — na
+      // rodada em que a cópia completa roda (até ~55 s), as OS esperam a próxima
+      if (cfg.os_modo && cfg.os_modo !== 'desligado' && Date.now() - inicio < 30e3) {
+        r.os = await rodarOs(cfg, inicio + 52e3).catch(err => ({ ok: false, erro: String(err.message || err).slice(0, 200) }));
+      }
+      return res.status(200).json(r);
     }
 
     // ---- a tela do MoviOne ----

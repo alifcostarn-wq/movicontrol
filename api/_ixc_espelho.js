@@ -474,7 +474,7 @@ export async function sincronizarApoioDoIxc(io) {
    instalação (setor do assunto, prioridade, prazo) poderem ser usados sem
    outra rodada — menos qualquer campo com cara de senha, token ou chave. */
 // chat do Telegram do setor também fica de fora: é endereço de envio, não dado da Central
-const CAMPO_SENSIVEL = /senha|token|chave|secret|pass|hash|key|cert|telegram|chatid/i;
+export const CAMPO_SENSIVEL = /senha|token|chave|secret|pass|hash|key|cert|telegram|chatid/i;
 function semSensivel(reg) {
   const o = {};
   for (const [k, v] of Object.entries(reg || {})) {
@@ -486,7 +486,7 @@ function semSensivel(reg) {
 const simNao = v => v == null || v === '' ? null : ['S', 's', '1', 1, true, 'A'].includes(v);
 // setor do assunto: no IXC o campo é setor_su_oss_chamado ("0" ou vazio = sem setor);
 // id_setor/setor ficam para versões que usam outro nome
-const idValido = v => v != null && /^\d+$/.test(String(v)) && String(v) !== '0' ? String(v) : null;
+export const idValido = v => v != null && /^\d+$/.test(String(v)) && String(v) !== '0' ? String(v) : null;
 const setorDoAssunto = a => idValido(a.setor_su_oss_chamado) || idValido(a.id_setor) || idValido(a.setor);
 const TABELAS_SETOR = ['empresa_setor', 'su_oss_setor', 'setor'];
 
