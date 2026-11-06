@@ -1112,6 +1112,19 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
   white-space:nowrap;flex-shrink:0;
 }
 .vt-off:hover{filter:brightness(.94);}
+/* WhatsApp que parou de confirmar entregas: conectado, mas sem receber nada
+   (foi assim em 05–06/11). Vermelho como a queda, porque o efeito é o mesmo */
+.ws-off{
+  display:inline-flex;align-items:center;gap:7px;background:var(--red-fill);color:#fff;
+  font-size:11.5px;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;
+  white-space:nowrap;flex-shrink:0;animation:waPisca 2s ease-in-out infinite;
+}
+/* mensagem que não saiu: fica na conversa, com o motivo e o reenviar */
+.mb-falha{margin-top:6px;padding:6px 9px;border-radius:8px;background:var(--red-soft);color:var(--red);
+  font-size:11.5px;font-weight:700;line-height:1.45;}
+.mb-falha button{margin-left:6px;border:1px solid var(--red);background:var(--card);color:var(--red);border-radius:7px;
+  font-family:inherit;font-size:11.5px;font-weight:800;padding:2px 10px;cursor:pointer;}
+.mb-falha button:disabled{opacity:.6;cursor:default;}
 .emo-pop{
   position:absolute;bottom:calc(100% + 8px);left:0;width:min(400px,92vw);
   background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-lg);
@@ -2918,10 +2931,10 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .search-box input{font-size:16px;}   /* 16px evita o zoom automático do iOS */
   .header.busca-on #btnBuscaMob{background:var(--green-soft);border-color:var(--green);color:var(--green-deep);}
   /* avisos ficam com a linha inteira: são estado do sistema, não decoração */
-  #filaAviso,#waAviso,#vistoAviso,#versaoAviso{order:10;flex:1 0 100%;}
-  #filaAviso:empty,#waAviso:empty,#vistoAviso:empty,#versaoAviso:empty{display:none;}
+  #filaAviso,#waAviso,#saudeAviso,#vistoAviso,#versaoAviso{order:10;flex:1 0 100%;}
+  #filaAviso:empty,#waAviso:empty,#saudeAviso:empty,#vistoAviso:empty,#versaoAviso:empty{display:none;}
   #waAviso .wa-chip,#vistoAviso .wa-chip,
-  #filaAviso > *,#waAviso > *,#vistoAviso > *,#versaoAviso > *{width:100%;justify-content:center;}
+  #filaAviso > *,#waAviso > *,#saudeAviso > *,#vistoAviso > *,#versaoAviso > *{width:100%;justify-content:center;}
 
   .content{padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));}
 
@@ -3193,7 +3206,7 @@ body.dark-mode .asn-selo{animation-name:asnPiscaEscuro;}
   .header.cab-c2 #btnNovo{font-size:0;gap:0;}
   .header.cab-c2 #btnNovo::before{content:'＋ Novo';font-size:13.5px;}
   .header.cab-c3{flex-wrap:wrap;row-gap:8px;}
-  .header.cab-c3 #filaAviso,.header.cab-c3 #waAviso,.header.cab-c3 #vistoAviso,.header.cab-c3 #versaoAviso{order:10;}
+  .header.cab-c3 #filaAviso,.header.cab-c3 #waAviso,.header.cab-c3 #saudeAviso,.header.cab-c3 #vistoAviso,.header.cab-c3 #versaoAviso{order:10;}
   /* com quebra de linha os itens param de encolher: a busca passa a ocupar o
      que sobra da primeira linha, para o "＋ Novo" não descer junto dos avisos */
   .header.cab-c3 .h-spacer{display:none;}
@@ -3495,6 +3508,7 @@ try{var _t=localStorage.getItem('movitalk_tema');if(_t==='dark'||(!_t&&window.ma
       </button>
       <span id="filaAviso"></span>
       <span id="waAviso"></span>
+      <span id="saudeAviso"></span>
       <span id="vistoAviso"></span>
       <span id="versaoAviso"></span>
       <button class="btn" id="btnSom" title="Alerta sonoro de mensagem nova"></button>
@@ -3775,7 +3789,7 @@ const api = {
     catch(err){ toast('Falha ao salvar: '+err.message); await recarregarConversas(); }
   },
   async enviarMensagem(c, texto, respondeA){
-    await chamar('mensagens.enviar', { conversa_id:c.id, texto, responde_a: respondeA||null });
+    return await chamar('mensagens.enviar', { conversa_id:c.id, texto, responde_a: respondeA||null });
   },
   async enviarMidia(c, arq, legenda){
     const base64 = await lerArquivo(arq);
@@ -3796,8 +3810,11 @@ const api = {
      elas continuam na tela: só a parte nova é trocada. */
   async carregarMensagens(c){
     const id = c.id;
+    const seqInicio = _seqAviso;
     const j = await chamar('mensagens.listar', { conversa_id:id });
     const novas = (j.mensagens||[]).map(mapearMensagem);
+    // aviso que chegou durante a leitura pode não estar nela (ver _avisosMsg)
+    for(const m of novas){ const a = m.id!=null && _avisosMsg.get(m.id); if(a && a.seq > seqInicio) mesclarAvisoMsg(m, a.row); }
     // Durante o await, o realtime pode ter recriado a lista de conversas e
     // trocado este objeto. Escrever só no `c` original faria a thread nova
     // cair num objeto órfão — e o modal seguiria mostrando a versão antiga.
@@ -4228,6 +4245,49 @@ async function carregarTudo(){
    direto no Supabase, sem passar pela Vercel. */
 let _canalAtend = null, _religarTimer = null, _religarTentativas = 0;
 
+/* UPDATE de mensagem (risquinho, apagada, editada, transcrição, falha).
+   A mensagem do atendente entra no banco ANTES de ir para o WhatsApp
+   ("enviando"): o INSERT manda recarregar a thread e o "enviado" chega logo
+   depois — muitas vezes antes de a leitura voltar. Essa leitura, feita antes
+   dele, devolveria o relógio numa mensagem que já saiu. Por isso cada aviso
+   fica guardado, e o recarregamento reaplica o que chegou depois de começar. */
+const _avisosMsg = new Map(); let _seqAviso = 0;
+function mesclarAvisoMsg(m, row){
+  let mudou = false;
+  if(row.excluido_em && !m.excluidoEm){
+    m.excluidoEm = row.excluido_em;
+    m.excluidoPor = row.excluido_por_nome || null;
+    mudou = true;
+  }
+  // texto corrigido — pelo cliente no celular dele, ou por outro
+  // administrador noutro painel. Numa mensagem apagada o texto não volta:
+  // ele continua no banco para auditoria, mas não é para aparecer aqui.
+  if(!m.excluidoEm && row.conteudo!=null && row.conteudo!==m.x){
+    m.textoOriginal = m.textoOriginal || row.conteudo_original || m.x;
+    m.x = row.conteudo;
+    m.editadoEm = row.editado_em || new Date().toISOString();
+    m.editadoPor = row.editado_por_nome || null;
+    mudou = true;
+  }
+  if(row.status && m.status!==row.status){ m.status = row.status; mudou = true; }
+  if(row.erro!==undefined && (row.erro||null)!==(m.erro||null)){ m.erro = row.erro || null; mudou = true; }
+  // o id do WhatsApp chega depois do INSERT: é ele que libera reagir/editar/apagar
+  if(row.wa_id!==undefined && !!row.wa_id!==!!m.temWa){ m.temWa = !!row.wa_id; mudou = true; }
+  if(row.transcricao!==undefined && !m.excluidoEm && row.transcricao!==m.transcricao){ m.transcricao = row.transcricao; mudou = true; }
+  return mudou;
+}
+function aplicarAvisoMensagem(row){
+  if(!row || row.id==null) return;
+  _avisosMsg.delete(row.id);
+  _avisosMsg.set(row.id, { seq: ++_seqAviso, row });
+  if(_avisosMsg.size > 300) _avisosMsg.delete(_avisosMsg.keys().next().value);
+  const c = state.conversas.find(x=>x.id===row.conversa_id);
+  if(!c || !c.msgs) return;
+  const m = c.msgs.find(x=>x.id===row.id);
+  if(!m || !mesclarAvisoMsg(m, row)) return;
+  if(modalId===c.id) openModal(c.id);
+}
+
 function ligarRealtime(){
   const sb = _sb(); if(!sb) return;
   clearTimeout(_religarTimer);
@@ -4263,32 +4323,7 @@ function ligarRealtime(){
     // congelado no estado do momento em que a thread foi carregada. Apagar uma
     // mensagem também chega por aqui — e precisa chegar, senão o painel de
     // quem não apagou continuaria mostrando o texto que já saiu do WhatsApp.
-    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'atend_mensagens' }, (p)=>{
-      const c = state.conversas.find(x=>x.id===p.new.conversa_id);
-      if(!c || !c.msgs) return;
-      const m = c.msgs.find(x=>x.id===p.new.id);
-      if(!m) return;
-      let mudou = false;
-      if(p.new.excluido_em && !m.excluidoEm){
-        m.excluidoEm = p.new.excluido_em;
-        m.excluidoPor = p.new.excluido_por_nome || null;
-        mudou = true;
-      }
-      // texto corrigido — pelo cliente no celular dele, ou por outro
-      // administrador noutro painel. Numa mensagem apagada o texto não volta:
-      // ele continua no banco para auditoria, mas não é para aparecer aqui.
-      if(!m.excluidoEm && p.new.conteudo!=null && p.new.conteudo!==m.x){
-        m.textoOriginal = m.textoOriginal || p.new.conteudo_original || m.x;
-        m.x = p.new.conteudo;
-        m.editadoEm = p.new.editado_em || new Date().toISOString();
-        m.editadoPor = p.new.editado_por_nome || null;
-        mudou = true;
-      }
-      if(p.new.status && m.status!==p.new.status){ m.status = p.new.status; mudou = true; }
-      if(p.new.transcricao!==undefined && !m.excluidoEm && p.new.transcricao!==m.transcricao){ m.transcricao = p.new.transcricao; mudou = true; }
-      if(!mudou) return;
-      if(modalId===c.id) openModal(c.id);
-    })
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'atend_mensagens' }, (p)=>aplicarAvisoMensagem(p.new))
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'atend_chat_interno' }, (p)=>{
       if(zumbidoParaMim(p.new)){
         const de = (EQUIPE.find(x=>x.id===p.new.autor_id)||{}).nome;
@@ -4856,6 +4891,7 @@ async function entrar(session){
     // em segundo plano: se o WhatsApp não estiver mandando os vistos, o aviso
     // com o conserto aparece no cabeçalho. Não bloqueia a entrada no painel.
     checarConfigVistos().catch(()=>{});
+    ligarSaudeWA();
     ligarCicloInatividade();
     // tarefas e programadas: a barra lateral mostra o contador de pendentes,
     // então precisam estar carregadas antes de alguém abrir o Chat Interno
@@ -6494,14 +6530,22 @@ function htmlExtrato(j){
 }
 
 /* ===== RISQUINHOS DE ENTREGA/LEITURA (só em mensagens que saíram) ===== */
+/* "enviando" há mais de 2 minutos sem aviso nenhum: o servidor caiu no meio
+   do envio (estourou o tempo da Vercel) e não chegou a marcar nada. O eco do
+   WhatsApp ainda pode confirmar; até lá, o atendente vê e pode reenviar. */
+function enviandoHaMuito(m){
+  const t = Date.parse(m.criadoEm||'');
+  return !!t && Date.now() - t > 120000;
+}
 function checkHTML(m){
   if(m.t==='in'||m.t==='sys') return '';
   const st=m.status||'enviado';
-  const rotulo={pendente:'Enviando…',enviado:'Enviado',entregue:'Entregue no aparelho',lido:'Lido pelo cliente',erro:'Falha no envio'}[st]||'Enviado';
-  if(st==='erro') return `<span class="ck erro" title="${rotulo}">⚠</span>`;
+  const rotulo={pendente:'Enviando…',enviando:'Enviando…',enviado:'Enviado',entregue:'Entregue no aparelho',lido:'Lido pelo cliente',erro:'Não enviada'}[st]||'Enviado';
+  if(st==='erro') return `<span class="ck erro" title="${esc('Não enviada'+(m.erro?': '+m.erro:''))}">⚠</span>`;
   // um risquinho = saiu daqui; dois = chegou no aparelho; dois azuis = leu
   const duplo = st==='entregue'||st==='lido';
-  return `<span class="ck ${st}" title="${rotulo}"><svg viewBox="0 0 18 12">
+  const cls = st==='enviando' ? 'pendente' : st;
+  return `<span class="ck ${cls}" title="${esc(st==='enviando'&&m.erro?m.erro:rotulo)}"><svg viewBox="0 0 18 12">
     <path d="M1 6.5l3.2 3.2L10.5 2.5"/>${duplo?'<path d="M7.5 9.7L13.8 2.5"/>':''}
   </svg></span>`;
 }
@@ -6629,7 +6673,7 @@ function mapearMensagem(m){
     tipo: m.tipo || 'texto', link: m.midia_link || null,
     local: m.localizacao || null,
     respondeA: m.responde_a || null, quoteTexto: m.quote_texto || null, quoteDirecao: m.quote_direcao || null,
-    status: m.status || null,
+    status: m.status || null, erro: m.erro || null,
     // sem o id do WhatsApp não há como reagir (nem editar, nem apagar) lá
     temWa: !!m.wa_id,
     // quem falou, quando não foi o painel: hoje o técnico, pelo MoviTec
@@ -10157,7 +10201,12 @@ function openModal(id){
             m.quoteTexto?`<div class="mb-quote" ${m.respondeA?`data-irpara="${m.respondeA}"`:''}>
               <div class="qa">${m.quoteDirecao==='in'?esc(c.nome):'Você'}</div>
               <div class="qt">${esc(semFormato(m.quoteTexto)).replace(/\n/g,' ')}</div></div>`:''
-          }${m.tipo==='localizacao'?'':fmtWA(esc(m.x)).replace(/\n/g,'<br>')}${midiaHTML(m)}<div class="mb-foot">${(()=>{
+          }${m.tipo==='localizacao'?'':fmtWA(esc(m.x)).replace(/\n/g,'<br>')}${midiaHTML(m)}${
+            m.t==='out' && (m.status==='erro' || (m.status==='enviando' && (m.erro || enviandoHaMuito(m))))
+              ? `<div class="mb-falha" role="alert">${m.status==='erro'?'⚠ Não enviada':'⏳ Sem confirmação do WhatsApp'}${
+                  m.erro?' — '+esc(m.erro):(m.status==='enviando'?' — Confira no celular se chegou antes de reenviar.':'')}${
+                  m.id?` <button type="button" data-reenviar="${m.id}">Reenviar</button>`:''}</div>` : ''
+          }<div class="mb-foot">${(()=>{
             /* Os três eram pastilhas separadas com rótulo: numa bolha larga
                viravam uma faixa de 230px atravessando o rodapé. Agora são um
                bloco só, de ícones, com a explicação no title — o que a bolha
@@ -10166,11 +10215,14 @@ function openModal(id){
             if(m.id && m.temWa && !m.excluidoEm)
               acoes.push(`<button data-reagir="${m.id}" title="Reagir com emoji" aria-haspopup="true">😊</button>`);
             if(m.id) acoes.push(`<button data-responder="${m.id}" title="Responder esta mensagem">↩</button>`);
-            if((USUARIO.admin || USUARIO.podeEditar) && podeEditar(m))
+            // editar e apagar acontecem NO WhatsApp: sem o id de lá (mensagem que
+            // não saiu ou ainda está saindo) o servidor recusa — o botão só
+            // aparece quando o id chega
+            if((USUARIO.admin || USUARIO.podeEditar) && podeEditar(m) && m.temWa)
               acoes.push(`<button data-editar="${m.id}" title="Editar: corrigir o texto no WhatsApp do cliente (o WhatsApp dá 15 minutos)">✏️</button>`);
             if(m.id && USUARIO.admin && m.t==='out' && m.x && (!m.tipo || m.tipo==='texto'))
               acoes.push(`<button data-ensinar="${m.id}" title="Ensinar à IA: salvar esta resposta como exemplo">📚</button>`);
-            if(m.id && (USUARIO.admin || USUARIO.podeApagar) && (m.t==='out'||m.t==='bot'))
+            if(m.id && m.temWa && (USUARIO.admin || USUARIO.podeApagar) && (m.t==='out'||m.t==='bot'))
               acoes.push(`<button class="x" data-apagar="${m.id}" title="Apagar esta mensagem para todos, no WhatsApp e aqui">🗑</button>`);
             return acoes.length?`<div class="mb-acoes">${acoes.join('')}</div>`:'';
           })()}<span class="tm">${m.editadoEm?`<span class="mb-edit" title="${m.textoOriginal?'Antes: '+esc(m.textoOriginal.slice(0,300)):'Mensagem editada'}">editada</span> `:''}${esc(m.h||'')}${checkHTML(m)}</span></div>${seloReacoes(reac.porMsg.get(m.id), c)}</div>`);
@@ -10618,6 +10670,17 @@ function openModal(id){
      propósito: um campo desenhado dentro da conversa seria destruído no
      primeiro remonte por mensagem nova, que é o defeito que a barra de
      digitação teve. A caixa do navegador é imune a isso. */
+  document.querySelectorAll('[data-reenviar]').forEach(el=>el.onclick=async ev=>{
+    ev.stopPropagation();
+    if(el.disabled) return;
+    el.disabled=true; el.textContent='Reenviando…';
+    try{
+      const j=await chamar('mensagens.reenviar',{ mensagem_id:Number(el.dataset.reenviar) });
+      toast(j.pendente?'Reenviada — esperando a confirmação do WhatsApp':'Mensagem reenviada');
+    }catch(err){ toast('Não enviada: '+err.message); }
+    try{ c._msgsCarregadas=false; await api.carregarMensagens(c); }catch{}
+    if(modalId===c.id) openModal(c.id);
+  });
   document.querySelectorAll('[data-editar]').forEach(el=>el.onclick=async ev=>{
     ev.stopPropagation();
     const m=(c.msgs||[]).find(x=>String(x.id)===el.dataset.editar);
@@ -10788,7 +10851,42 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     guardarRascunho(c.id,{ digitando:true });   // cursor segue no campo
     respondendoA=null;
     rolarThreadAoFim(); openModal(c.id); renderAll();
-    api.enviarMensagem(c,v,citada?citada.id:null).catch(err=>toast('Falha ao enviar: '+err.message));
+    api.enviarMensagem(c,v,citada?citada.id:null)
+      .then(async j=>{
+        if(j && j.mensagem_id && !j.pendente){
+          // saiu: a própria resposta tira o relógio, sem esperar o tempo real.
+          // A bolha que a tela pôs ao enviar (ainda sem id) ganha o id, para o
+          // "entregue/lido" achá-la mesmo se o tempo real perder o INSERT
+          const atual = state.conversas.find(x=>x.id===c.id) || c;
+          const lista = atual.msgs||[];
+          const m = lista.find(x=>x.id===j.mensagem_id)
+            || [...lista].reverse().find(x=>!x.id && x.t==='out' && x.x===v && x.status==='pendente');
+          if(m){
+            let mudou = false;
+            if(!m.id){ m.id = j.mensagem_id; mudou = true; }
+            if(m.status==='enviando' || m.status==='pendente'){ m.status='enviado'; m.erro=null; mudou = true; }
+            const a = _avisosMsg.get(m.id);
+            if(a && mesclarAvisoMsg(m, a.row)) mudou = true;
+            if(mudou && modalId===atual.id) openModal(atual.id);
+          }
+        }
+        if(!j || !j.pendente) return;
+        toast('O WhatsApp demorou para confirmar. A mensagem fica marcada até a confirmação chegar.');
+        // traz a marca "sem confirmação" sem depender do aviso ao vivo
+        try{ c._msgsCarregadas=false; await api.carregarMensagens(c); }catch{}
+        if(modalId===c.id) openModal(c.id);
+      })
+      .catch(async err=>{
+        toast('Não enviada: '+err.message);
+        // a mensagem continua na conversa, marcada como não enviada: o
+        // servidor já a gravou assim (com o botão de reenviar). Se a falha foi
+        // antes de chegar ao servidor (sem internet), fica a marca local
+        try{ c._msgsCarregadas=false; await api.carregarMensagens(c); }catch{}
+        const atual = state.conversas.find(x=>x.id===c.id) || c;
+        if(!(atual.msgs||[]).some(m=>m.t==='out' && (m.status==='erro'||m.status==='enviando') && m.x===v))
+          (atual.msgs||(atual.msgs=[])).push({t:'out',x:v,h:new Date().toTimeString().slice(0,5),status:'erro',erro:err.message});
+        if(modalId===c.id) openModal(c.id);
+      });
   };
   $('#mSend').onclick=send;
   // Enter envia; Shift+Enter (ou Ctrl/Cmd+Enter) quebra linha
@@ -14036,6 +14134,40 @@ function renderAvisoWA(){
   };
 }
 
+/* WhatsApp que parou de confirmar entregas. Em 05–06/11 a sessão ficou
+   "conectada", mas sem receber: as mensagens dos clientes e o "entregue/lido"
+   pararam de chegar por 16 horas e nada na tela avisava. O servidor conta as
+   mensagens das últimas 2 horas sem NENHUMA confirmação (whatsapp.saude). */
+let _saudeWA = null, _saudeTimer = null;
+async function checarSaudeWA(){
+  if(document.hidden) return;
+  try{ _saudeWA = await chamar('whatsapp.saude', {}); }catch{ return; }
+  renderAvisoSaude();
+}
+function renderAvisoSaude(){
+  const el=$('#saudeAviso'); if(!el) return;
+  const conectado = state.whatsapp==='open' || state.whatsapp==='desconhecido' || !state.whatsapp;
+  // desconectado de vez já tem o aviso vermelho dele
+  if(!_saudeWA || !_saudeWA.alerta || !conectado){ el.innerHTML=''; return; }
+  const desde = _saudeWA.desde ? new Date(_saudeWA.desde).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+  const admin = !!(USUARIO && USUARIO.admin);
+  el.innerHTML=`<span class="ws-off" role="alert" title="${esc(`${_saudeWA.sem_confirmacao} mensagens enviadas${desde?' desde '+desde:''} sem nenhuma confirmação de entrega. Quando isso acontece, as mensagens dos clientes também podem não estar chegando. `
+    +(admin?'Clique para abrir Integrações: desconecte e conecte o número de novo.':'Avise o administrador para reconectar o número em Integrações.'))}">
+    <span class="wa-off-dot"></span>WhatsApp sem confirmar entregas${desde?' desde '+esc(desde):''}</span>`;
+  const b=el.querySelector('.ws-off');
+  if(b && admin) b.onclick=()=>{
+    view='config'; configTab='integracoes';
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active', x.dataset.view==='config'));
+    renderAll();
+  };
+}
+function ligarSaudeWA(){
+  clearInterval(_saudeTimer);
+  checarSaudeWA();
+  _saudeTimer = setInterval(checarSaudeWA, 120000);
+  if(!ligarSaudeWA.ouvindo){ ligarSaudeWA.ouvindo = true; document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checarSaudeWA(); }); }
+}
+
 /* Aviso de vistos desligados, no cabeçalho.
    O conserto morava só em Configurações → Integrações e ninguém o encontrava:
    quem sente o problema está na conversa, não nas configurações. Aqui o próprio
@@ -14088,7 +14220,7 @@ function renderSomBotao(){
           : 'Alerta sonoro ligado — clique com o botão direito para ajustar';
 }
 
-function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoFila(); renderAvisoWA(); renderAvisoVistos(); renderSomBotao(); atualizarTituloAlerta(); }
+function renderAll(){ renderKpis(); renderFilterbar(); if(view==='kanban') renderBoard(); renderAux(); renderAvisoFila(); renderAvisoWA(); renderAvisoSaude(); renderAvisoVistos(); renderSomBotao(); atualizarTituloAlerta(); }
 
 /* painel de ajuste: tipo de toque, volume e teste */
 function abrirAjusteSom(){

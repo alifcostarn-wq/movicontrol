@@ -105,6 +105,19 @@ function normalizarFone(v) {
   return d.startsWith('55') ? d : '55' + d;
 }
 
+/* O WhatsApp está trocando o endereço dos contatos por um identificador
+   (xxxx@lid) que não é telefone. A Evolution manda o número de verdade ao lado
+   (remoteJidAlt / senderPn): é por ele que a conversa é achada e respondida. */
+function foneDoAviso(d) {
+  const key = (d && d.key) || {};
+  const jid = String(key.remoteJid || '');
+  if (jid.endsWith('@lid')) {
+    const alt = key.remoteJidAlt || key.senderPn || (d && d.senderPn) || '';
+    if (alt && !String(alt).endsWith('@lid')) return normalizarFone(alt);
+  }
+  return normalizarFone(key.remoteJid || (d && (d.from || d.number)) || '');
+}
+
 // O Brasil tem o problema do 9º dígito: gera as duas formas para busca
 function variantesFone(fone) {
   const f = normalizarFone(fone);
@@ -290,6 +303,98 @@ async function waEnviar(e, fone, texto, opts = {}) {
   }
   // Evolution v2. Em v1 o corpo é { number, textMessage: { text } }.
   return evoPost(e, 'message/sendText', corpo);
+}
+
+/* O texto de uma mensagem do WhatsApp, onde quer que ele venha. */
+function textoDaMensagem(msg) {
+  msg = msg || {};
+  return String(msg.conversation || msg.extendedTextMessage?.text || msg.imageMessage?.caption
+    || msg.videoMessage?.caption || msg.documentMessage?.caption || '').trim();
+}
+
+/* Eco do WhatsApp para uma mensagem que SAIU daqui (send.message, ou upsert
+   com fromMe). Se a mensagem já tem o id do WhatsApp, nada a fazer. Se não
+   tem, é a que ficou "enviando" (o envio estourou o prazo aqui, mas chegou)
+   ou "não enviada": o eco prova que saiu, e ela ganha o id e o risquinho. */
+async function confirmarEcoProprio(e, body) {
+  const bruto = body.data || body.message || body;
+  const d = (Array.isArray(bruto) ? bruto[0] : bruto) || {};
+  const key = d.key || {};
+  const waId = key.id || null;
+  const jid = String(key.remoteJid || '');
+  if (!waId || !jid || jid.includes('@g.us') || jid.includes('broadcast')) return { ok: true, ignorado: 'mensagem própria' };
+  const ja = await sbUm(e, `atend_mensagens?wa_id=eq.${encodeURIComponent(waId)}&select=id&limit=1`).catch(() => null);
+  if (ja) return { ok: true, ignorado: 'mensagem própria' };
+  const fone = foneDoAviso(d), texto = textoDaMensagem(d.message);
+  if (!fone || !texto) return { ok: true, ignorado: 'mensagem própria' };
+  const conversa = await conversaPorFone(e, fone, 'id').catch(() => null);
+  if (!conversa) return { ok: true, ignorado: 'mensagem própria' };
+  const desde = new Date(Date.now() - 30 * 60000).toISOString();
+  const pend = await sb(e, `atend_mensagens?conversa_id=eq.${conversa.id}&direcao=in.(out,bot)&status=in.(enviando,erro)`
+    + `&wa_id=is.null&created_at=gt.${encodeURIComponent(desde)}&select=id,conteudo&order=created_at.asc&limit=20`).catch(() => []);
+  const iguais = (pend || []).filter(m => String(m.conteudo || '').trim() === texto);
+  // duas pendentes com o mesmo texto ("ok", "ok"): não há como saber de qual é
+  // o eco. Melhor deixar as duas como estão do que pôr o id na errada — a
+  // resposta do próprio envio dá o id certo a cada uma
+  if (iguais.length !== 1) return { ok: true, ignorado: 'mensagem própria' };
+  const alvo = iguais[0];
+  await sb(e, `atend_mensagens?id=eq.${alvo.id}&wa_id=is.null`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { wa_id: waId, status: 'enviado', erro: null, status_em: new Date().toISOString() },
+  });
+  return { ok: true, confirmada: alvo.id };
+}
+
+/* O motivo da recusa em português de atendente: a Evolution devolve JSON cru. */
+function motivoDoEnvio(txt) {
+  const t = String(txt || '');
+  if (/"exists"\s*:\s*false/i.test(t)) return 'Este número não tem WhatsApp (ou está escrito errado).';
+  if (/bloqueado no MoviTalk/i.test(t)) return t;
+  if (/^Evolution (\d+)/.test(t)) return `O WhatsApp recusou a mensagem (${t.match(/^Evolution (\d+)/)[1]}). Tente de novo; se repetir, confira a conexão em Integrações.`;
+  return t.slice(0, 300);
+}
+
+/* Manda uma mensagem que JÁ está na conversa (status "enviando").
+   - deu certo: ganha o id do WhatsApp e vira "enviado" (se o eco ou o ACK não
+     chegaram antes);
+   - prazo estourado: não é falha certa — o WhatsApp pode ter recebido e o eco
+     confirma depois. Fica "enviando", com o aviso para conferir;
+   - recusada (desconectado, número inválido, bloqueado): vira "não enviada",
+     com o motivo, e o atendente reenvia com um clique. */
+async function enviarMensagemGravada(e, linha, fone, texto, opts = {}) {
+  let env = null, falha = null;
+  try { env = await waEnviar(e, fone, texto, opts); } catch (err) { falha = err; }
+  const agora = new Date().toISOString();
+  if (!falha) {
+    const waId = idDaEvolution(env);
+    const corpo = { wa_id: waId, status: 'enviado', erro: null, status_em: agora };
+    const feito = await sb(e, `atend_mensagens?id=eq.${linha.id}&status=in.(enviando,erro)`, { method: 'PATCH', body: corpo })
+      .catch(err => { console.error('[envio] confirmar:', err.message); return null; });
+    if (feito === null && waId) {
+      // o id já está noutra linha (o id do WhatsApp é único no banco): a
+      // mensagem saiu, então confirma sem ele — melhor que o relógio eterno
+      delete corpo.wa_id;
+      await sb(e, `atend_mensagens?id=eq.${linha.id}&status=in.(enviando,erro)`, { method: 'PATCH', prefer: 'return=minimal', body: corpo }).catch(() => {});
+    } else if (waId && Array.isArray(feito) && !feito.length) {
+      // o eco ou o ACK chegaram antes desta resposta e já avançaram o status
+      await sb(e, `atend_mensagens?id=eq.${linha.id}&wa_id=is.null`, { method: 'PATCH', prefer: 'return=minimal', body: { wa_id: waId } }).catch(() => {});
+    }
+    return { ok: true, waId };
+  }
+  const bruto = String(falha.message || falha);
+  if (/^Tempo esgotado/.test(bruto)) {
+    await sb(e, `atend_mensagens?id=eq.${linha.id}&status=eq.enviando`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: { erro: 'O WhatsApp demorou para responder. Confira no celular se chegou antes de reenviar.' },
+    }).catch(() => {});
+    return { ok: true, pendente: true };
+  }
+  const motivo = motivoDoEnvio(bruto);
+  if (motivo !== bruto) console.error('[envio] recusado:', bruto.slice(0, 300));
+  await sb(e, `atend_mensagens?id=eq.${linha.id}&status=in.(enviando,erro)`, {
+    method: 'PATCH', prefer: 'return=minimal', body: { status: 'erro', erro: motivo.slice(0, 300), status_em: agora },
+  }).catch(() => {});
+  return { falhou: true, erro: motivo };
 }
 
 // O id que o WhatsApp devolve é o que permite CITAR essa mensagem depois.
@@ -4600,7 +4705,7 @@ async function waStatusDoChat(e, fone, limite = 60) {
 // Só avançamos o status: um ACK atrasado de "entregue" não pode rebaixar uma
 // mensagem que já está marcada como lida.
 // ============================================================================
-const PESO_STATUS = { pendente: 0, enviado: 1, entregue: 2, lido: 3, erro: 9 };
+const PESO_STATUS = { pendente: 0, enviando: 0, enviado: 1, entregue: 2, lido: 3, erro: 9 };
 
 function normalizarAck(v) {
   const s = String(v ?? '').toUpperCase();
@@ -4631,10 +4736,12 @@ async function aplicarStatus(e, waId, novo) {
   // o WhatsApp também confirma a leitura do que o CLIENTE mandou (feita por nós);
   // risquinho só faz sentido no que saiu daqui
   if (msg.direcao === 'in') return false;
-  if (PESO_STATUS[novo] <= PESO_STATUS[msg.status || 'pendente']) return false;
+  // marcada como "não enviada" mas o WhatsApp confirmou: ela saiu, sim
+  const corrigeFalha = msg.status === 'erro' && ['enviado', 'entregue', 'lido'].includes(novo);
+  if (!corrigeFalha && PESO_STATUS[novo] <= PESO_STATUS[msg.status || 'pendente']) return false;
   await sb(e, `atend_mensagens?id=eq.${msg.id}`, {
     method: 'PATCH', prefer: 'return=minimal',
-    body: { status: novo, status_em: new Date().toISOString() },
+    body: { status: novo, status_em: new Date().toISOString(), ...(corrigeFalha ? { erro: null } : {}) },
   });
   return true;
 }
@@ -4975,7 +5082,7 @@ async function tratarWebhook(e, body) {
   const evento = String(body.event || body.type || '').toLowerCase();
   const ehMensagemNova = !evento || evento.includes('messages.upsert') || evento.includes('messages_upsert');
   const d = body.data || body.message || body;
-  const fone = normalizarFone((d.key && d.key.remoteJid) || d.from || d.number || '');
+  const fone = foneDoAviso(d);
 
   if (!fone || !ehMensagemNova) return await tratarWebhookInterno(e, body);
 
@@ -5003,6 +5110,9 @@ async function tratarWebhookInterno(e, body) {
     return await tratarAckMensagem(e, body);
   }
 
+  if (evento.includes('send.message') || evento.includes('send_message')) {
+    return await confirmarEcoProprio(e, body);
+  }
   if (evento && !evento.includes('messages.upsert') && !evento.includes('messages_upsert')) {
     return { ok: true, ignorado: `evento ${evento}` };
   }
@@ -5015,9 +5125,10 @@ async function tratarWebhookInterno(e, body) {
   const edicao = edicaoDaMensagem(d);
   if (edicao) return await tratarEdicaoRecebida(e, edicao);
 
-  if (key.fromMe) return { ok: true, ignorado: 'mensagem própria' };
+  // eco do que saiu daqui: confirma a mensagem que ficou "enviando"
+  if (key.fromMe) return await confirmarEcoProprio(e, body);
 
-  const fone = normalizarFone(key.remoteJid || d.from || d.number);
+  const fone = foneDoAviso(d);
   if (!fone || String(key.remoteJid || '').includes('@g.us')) {
     return { ok: true, ignorado: 'grupo ou remetente inválido' };
   }
@@ -11714,20 +11825,22 @@ export default async function handler(req, res) {
             `atend_mensagens?id=eq.${Number(body.responde_a)}&conversa_id=eq.${id}&select=id,wa_id,conteudo,direcao`);
         }
 
-        const env = await waEnviar(e, c.contato_fone, texto, citada ? {
-          quoted: { wa_id: citada.wa_id, texto: citada.conteudo, fromMe: citada.direcao !== 'in' },
-        } : {});
-
-        await sb(e, 'atend_mensagens', {
-          method: 'POST', prefer: 'return=minimal',
+        // a mensagem entra na conversa ANTES de ir para o WhatsApp: se o envio
+        // falhar ou demorar, ela fica marcada ("não enviada"/"enviando") em
+        // vez de sumir da tela — e o atendente sabe que precisa agir
+        const linha = await sbUm(e, 'atend_mensagens', {
+          method: 'POST',
           body: {
-            conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id,
-            wa_id: idDaEvolution(env), status: 'enviado',
+            conversa_id: id, direcao: 'out', conteudo: texto, autor_id: user.id, status: 'enviando',
             responde_a: citada ? citada.id : null,
             quote_texto: citada ? String(citada.conteudo || '').slice(0, 300) : null,
             quote_direcao: citada ? citada.direcao : null,
           },
         });
+        const envio = await enviarMensagemGravada(e, linha, c.contato_fone, texto, citada ? {
+          quoted: { wa_id: citada.wa_id, texto: citada.conteudo, fromMe: citada.direcao !== 'in' },
+        } : {});
+        if (envio.falhou) return res.status(502).json({ ok: false, error: envio.erro, mensagem_id: linha.id });
         // atendente humano assumiu: o bot para de responder nesta conversa
         // responder é assumir na prática — registra a assunção se ainda não houve
         const eraFila = c.coluna === 'novos' || c.coluna === 'fila';
@@ -11747,7 +11860,58 @@ export default async function handler(req, res) {
           },
         });
         await sb(e, `atend_sessoes?contato_fone=eq.${c.contato_fone}`, { method: 'DELETE', prefer: 'return=minimal' });
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true, mensagem_id: linha.id, pendente: !!envio.pendente });
+      }
+
+      // reenvia uma mensagem que ficou "não enviada" (ou "enviando" há tempo demais)
+      case 'mensagens.reenviar': {
+        const mid = Number(body.mensagem_id);
+        if (!mid) return res.status(400).json({ ok: false, error: 'mensagem_id obrigatório.' });
+        const m = await sbUm(e, `atend_mensagens?id=eq.${mid}&select=id,conversa_id,direcao,conteudo,status,erro,status_em,tipo,wa_id,responde_a,created_at`);
+        if (!m || m.direcao !== 'out') return res.status(404).json({ ok: false, error: 'Mensagem não encontrada.' });
+        const acesso = await conversaDoUsuario(e, user, m.conversa_id, 'id,setor,contato_fone');
+        if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
+        if (m.wa_id || !['erro', 'enviando'].includes(m.status)) return res.status(400).json({ ok: false, error: 'Esta mensagem já saiu pelo WhatsApp.' });
+        // "enviando" sem aviso é envio ainda em curso; com o aviso de demora, o
+        // envio daqui já terminou e o atendente pode tentar de novo
+        if (m.status === 'enviando' && !m.erro && Date.now() - Date.parse(m.created_at) < 90000) {
+          return res.status(400).json({ ok: false, error: 'Ainda está enviando. Espere um pouco antes de reenviar.' });
+        }
+        if ((m.tipo || 'texto') !== 'texto' || !String(m.conteudo || '').trim()) {
+          return res.status(400).json({ ok: false, error: 'Só dá para reenviar mensagem de texto por aqui.' });
+        }
+        // trava contra dois atendentes no mesmo botão: o status_em lido serve de
+        // versão — o primeiro reenvio o troca e o segundo não acha mais a linha
+        const versao = m.status_em ? `status_em=eq.${encodeURIComponent(m.status_em)}` : 'status_em=is.null';
+        const pegou = await sb(e, `atend_mensagens?id=eq.${mid}&wa_id=is.null&status=eq.${m.status}&${versao}`, {
+          method: 'PATCH', body: { status: 'enviando', erro: null, status_em: new Date().toISOString() },
+        });
+        if (!Array.isArray(pegou) || !pegou.length) return res.status(409).json({ ok: false, error: 'Outra pessoa já está reenviando esta mensagem.' });
+        let citada = null;
+        if (m.responde_a) citada = await sbUm(e, `atend_mensagens?id=eq.${m.responde_a}&select=wa_id,conteudo,direcao`).catch(() => null);
+        const envio = await enviarMensagemGravada(e, m, acesso.c.contato_fone, String(m.conteudo).trim(), citada && citada.wa_id ? {
+          quoted: { wa_id: citada.wa_id, texto: citada.conteudo, fromMe: citada.direcao !== 'in' },
+        } : {});
+        if (envio.falhou) return res.status(502).json({ ok: false, error: envio.erro });
+        return res.status(200).json({ ok: true, pendente: !!envio.pendente });
+      }
+
+      /* Saúde do WhatsApp: mensagens que saíram e não tiveram NENHUMA
+         confirmação de entrega nas últimas 2 horas. Foi o sinal da queda de
+         05–06/11: a sessão parou de receber (clientes e "entregue/lido") e
+         ninguém percebeu por 16 horas. */
+      case 'whatsapp.saude': {
+        const agora = Date.now();
+        const desde = new Date(agora - 2 * 3600e3).toISOString(), ate = new Date(agora - 4 * 60e3).toISOString();
+        const lista = await sb(e, `atend_mensagens?direcao=in.(out,bot)&wa_id=not.is.null`
+          + `&created_at=gt.${encodeURIComponent(desde)}&created_at=lt.${encodeURIComponent(ate)}`
+          + `&select=status,created_at,conversa_id&order=created_at.asc&limit=400`).catch(() => []) || [];
+        const sem = lista.filter(m => m.status === 'enviado' || m.status === 'enviando');
+        const confirmadas = lista.filter(m => m.status === 'entregue' || m.status === 'lido').length;
+        const conversas = new Set(sem.map(m => m.conversa_id)).size;
+        const alerta = sem.length >= 4 && conversas >= 3 && confirmadas === 0;
+        return res.status(200).json({ ok: true, alerta, sem_confirmacao: sem.length, conversas, confirmadas,
+          desde: alerta ? sem[0].created_at : null });
       }
 
       // lista todos os bots (rascunhos + o que está em produção)
