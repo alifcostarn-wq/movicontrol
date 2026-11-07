@@ -20039,6 +20039,8 @@ const REG = { sel:null, ass:new Map(), fotos:new Map(), equip:new Map(), _t:null
 const REG_FIM = ['finalizada','concluida'];
 const regEsc = v => escHtml(String(v ?? ''));
 const regQtdFotos = o => Array.isArray(o && o.fotos_r2) ? o.fotos_r2.length : 0;
+// o número da OS no IXC desta visita (fica na visita mesmo se a OS for reaberta lá e virar visita nova)
+const regIxc = o => (o && (o.ixc_os_numero || o.ixc_os_id)) || '';
 function regData(v){ const d = v ? new Date(v) : null; return d && !isNaN(d) ? d.toLocaleString('pt-BR',{ day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—'; }
 function regVisitas(){
   const dias = Number(document.getElementById('reg-periodo')?.value || 30);
@@ -20049,7 +20051,7 @@ function regVisitas(){
   return (_cpOS || []).filter(o => REG_FIM.includes(o.status))
     .filter(o => !corte || (Date.parse(o.finalizado_em || o.data || '') || 0) >= corte)
     .filter(o => !tec || String(o.tecnico_id) === tec)
-    .filter(o => !busca || [o.cliente, o.numero, o.ixc_os_id, o.tecnico_nome].some(v => String(v ?? '').toLowerCase().includes(busca)))
+    .filter(o => !busca || [o.cliente, o.numero, regIxc(o), o.tecnico_nome].some(v => String(v ?? '').toLowerCase().includes(busca)))
     .filter(o => filtro !== 'sem_ass' || !o.assinatura_path)
     .filter(o => filtro !== 'sem_foto' || !regQtdFotos(o))
     .sort((a, b) => (Date.parse(b.finalizado_em || '') || 0) - (Date.parse(a.finalizado_em || '') || 0));
@@ -20067,7 +20069,7 @@ function renderRegistros(){
   if(el){
     el.innerHTML = lista.length ? lista.map(o => `<button type="button" class="reg-item ${o.id === REG.sel ? 'sel' : ''}" role="listitem" aria-current="${o.id === REG.sel}" onclick="regEscolher(${Number(o.id)})">
         <div class="reg-l1"><span>${regEsc(o.cliente || 'Cliente')}</span><span class="reg-data">${regData(o.finalizado_em)}</span></div>
-        <div class="reg-l2">OS ${regEsc(o.numero || o.id)}${o.ixc_os_id ? ' · IXC ' + regEsc(o.ixc_os_id) : ''} · ${regEsc(o.tecnico_nome || 'sem técnico')}${o.descricao ? ' · ' + regEsc(String(o.descricao).slice(0, 60)) : ''}</div>
+        <div class="reg-l2">OS ${regEsc(o.numero || o.id)}${regIxc(o) ? ' · IXC ' + regEsc(regIxc(o)) : ''} · ${regEsc(o.tecnico_nome || 'sem técnico')}${o.descricao ? ' · ' + regEsc(String(o.descricao).slice(0, 60)) : ''}</div>
         <div class="reg-tags">${o.assinatura_path ? '<span class="reg-tag ok">✍️ Assinada</span>' : '<span class="reg-tag falta">Sem assinatura</span>'}${regQtdFotos(o) ? `<span class="reg-tag">📷 ${regQtdFotos(o)} foto${regQtdFotos(o) > 1 ? 's' : ''}</span>` : '<span class="reg-tag">Sem fotos</span>'}</div>
       </button>`).join('')
       : '<div class="reg-vazio" style="margin:14px">Nenhuma visita finalizada com esse filtro.</div>';
@@ -20086,7 +20088,7 @@ function regPainel(){
   const sinal = o.sinal_fibra && o.sinal_fibra !== 'Não se aplica' ? o.sinal_fibra : '—';
   const vel = o.speedtest_down || o.speedtest_up ? `${o.speedtest_down || '—'} / ${o.speedtest_up || '—'} Mbps` : '—';
   el.innerHTML = `<div class="reg-p-nome">${regEsc(o.cliente || 'Cliente')}</div>
-    <div class="reg-p-meta">OS ${regEsc(o.numero || o.id)}${o.ixc_os_id ? ' · OS do IXC ' + regEsc(o.ixc_os_id) : ' · sem OS no IXC (anterior à integração)'} · técnico ${regEsc(o.tecnico_nome || '—')} · finalizada em ${regData(o.finalizado_em)}</div>
+    <div class="reg-p-meta">OS ${regEsc(o.numero || o.id)}${regIxc(o) ? ' · OS do IXC ' + regEsc(regIxc(o)) : ' · sem OS no IXC (anterior à integração)'} · técnico ${regEsc(o.tecnico_nome || '—')} · finalizada em ${regData(o.finalizado_em)}</div>
     <div class="reg-sec"><div class="reg-sec-t">Assinatura do cliente</div><div id="reg-ass">${o.assinatura_path ? '<div class="reg-vazio">Carregando a assinatura…</div>' : '<div class="reg-vazio alerta">O cliente não assinou esta visita.</div>'}</div></div>
     <div class="reg-sec"><div class="reg-sec-t" id="reg-fotos-t">Fotos da visita</div><div id="reg-fotos"><div class="reg-vazio">Procurando as fotos…</div></div></div>
     <div class="reg-sec"><div class="reg-sec-t">O que o técnico registrou</div>

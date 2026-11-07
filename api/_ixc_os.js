@@ -176,10 +176,16 @@ export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, n
     status: 'aberta',
     data: agenda || diaDaqui(agora.getTime()),
     obs: ref ? `Referência: ${ref}` : null,
+    ixc_os_numero: String(o.id),
   };
 }
 
 const NAO_COMECOU = ['aberta', 'reagendada'];
+// status do IXC em que a OS é do técnico: encaminhada, assumida, agendada, em
+// deslocamento, em execução. Aberta, análise e "necessário reagendar" são do
+// escritório: não levam OS ao celular (e tiram, se a visita não começou).
+export const OS_DE_CAMPO = ['EN', 'AS', 'AG', 'DS', 'EX'];
+const DO_ESCRITORIO = ['A', 'AN'];
 
 export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, diasInicio = 60, tecnicos = [], agora = new Date() } = {}) {
   const r = { modo: 'ativo', em: agora.toISOString(), criados: 0, atualizados: 0, reatribuidas: 0, retiradas: 0, agendadas: 0 };
@@ -212,12 +218,28 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
   // 3) o que já está no moviTec
   const ids = registros.map(o => String(o.id));
   const existentes = ids.length
-    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,ixc_fechado_em`) || []
+    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em`) || []
     : [];
   const porOs = new Map(existentes.map(o => [String(o.ixc_os_id), o]));
 
-  // 4) novas: abertas no IXC e encaminhadas a um técnico do moviTec
-  const novas = registros.filter(o => !porOs.has(String(o.id)) && !osIxcFechada(o.status) && tecDoIxc.has(String(idValido(o.id_tecnico))));
+  const stDe = o => String(o.status || '').trim().toUpperCase() || null;
+  const doTecnico = o => OS_DE_CAMPO.includes(stDe(o)) && tecDoIxc.has(String(idValido(o.id_tecnico)));
+
+  // 3b) reaberta no IXC depois da visita (o IXC tinha fechado e voltou a ser de
+  //     campo): é visita nova. A visita feita fica como está — assinatura,
+  //     fotos e o número da OS no IXC (ixc_os_numero) —, só solta o vínculo.
+  const anteriores = new Map();
+  for (const o of registros) {
+    const os = porOs.get(String(o.id));
+    if (!os || !['finalizada', 'concluida'].includes(os.status) || !os.ixc_fechado_em || !doTecnico(o)) continue;
+    const solta = await io.sb(`campo_os?id=eq.${os.id}&status=in.(finalizada,concluida)&select=id`, {
+      method: 'PATCH', prefer: 'return=representation', body: { ixc_os_id: null },
+    }).catch(() => []) || [];
+    if (solta.length) { porOs.delete(String(o.id)); anteriores.set(String(o.id), os); r.reabertas = (r.reabertas || 0) + 1; }
+  }
+
+  // 4) novas: encaminhadas (agendadas, assumidas) a um técnico do moviTec
+  const novas = registros.filter(o => !porOs.has(String(o.id)) && doTecnico(o));
   if (novas.length) {
     const [clientes, logins, cidades, ultima] = await Promise.all([
       io.sb(`clientes?ixc_id=in.(${lista(novas.map(o => idValido(o.id_cliente)))})&select=id,ixc_id,nome,tel1,whatsapp,endereco,numero,complemento,bairro,cidade,uf,referencia,ixc_login`).catch(() => []),
@@ -235,46 +257,69 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
       tec: tecDoIxc.get(String(idValido(o.id_tecnico))),
       numero: ++numero, campoAtual: campo || null, agora,
     }));
+    for (const l of linhas) {
+      const ant = anteriores.get(String(l.ixc_os_id));
+      if (ant) l.obs = [`Reaberta no IXC: nova visita (a anterior foi a OS ${ant.numero || ant.id}).`, l.obs].filter(Boolean).join(' ');
+    }
     const feitas = await io.sb('campo_os?on_conflict=ixc_os_id&select=id,ixc_os_id', {
       method: 'POST', body: linhas, prefer: 'resolution=ignore-duplicates,return=representation',
     }) || [];
     r.criados = feitas.length;
   }
 
-  // 5) as que já estão no moviTec: o que mudou no IXC
+  // 5) as que já estão no moviTec: o que o escritório fez no IXC chega ao celular
+  //    (o técnico continua só com assumir, executar, finalizar e reagendar)
+  const hoje = diaDaqui(agora.getTime());
+  // o motivo vai na observação sem perder a referência do endereço
+  const comRef = (os, texto) => { const ref = String(os.obs || '').match(/Referência: [^\n]*/); return [texto, ref && ref[0]].filter(Boolean).join(' '); };
   for (const o of registros) {
     const os = porOs.get(String(o.id));
     if (!os) continue;
-    const st = String(o.status || '').trim().toUpperCase() || null;
+    const st = stDe(o);
     const tecIxc = idValido(o.id_tecnico);
     const marca = {};                                 // o que o IXC diz: sempre
     if (st && st !== os.ixc_status) marca.ixc_status = st;
     if (campo && horaIxcIso(o[campo])) marca.ixc_atualizado_em = horaIxcIso(o[campo]);
     const trocouTec = tecIxc !== (idValido(os.ixc_tecnico_id) || null);
     if (trocouTec) marca.ixc_tecnico_id = tecIxc;
-    const op = {};                                    // o que muda no celular: só se a visita não começou
-    if (osIxcFechada(st)) {
-      if (NAO_COMECOU.includes(os.status)) Object.assign(op, { status: 'cancelada', obs: 'OS fechada no IXC antes da visita.' });
-      else if (['finalizada', 'concluida'].includes(os.status) && !os.ixc_fechado_em) marca.ixc_fechado_em = agora.toISOString();
-    } else if (NAO_COMECOU.includes(os.status)) {
-      if (trocouTec) {
-        const novo = tecIxc && tecDoIxc.get(String(tecIxc));
-        if (novo && String(novo.id) !== String(os.tecnico_id)) Object.assign(op, { tecnico_id: novo.id, tecnico_nome: novo.nome });
-        else if (!novo) Object.assign(op, { status: 'cancelada', obs: 'Encaminhada no IXC para quem não está no moviTec.' });
+    const novo = tecIxc ? tecDoIxc.get(String(tecIxc)) || null : null;
+    const dia = st === 'AG' ? ixcData(o.data_agenda) : null;
+    let op = {}, guarda = `status=in.(${NAO_COMECOU.join(',')})`;
+    if (NAO_COMECOU.includes(os.status)) {          // visita ainda não começou
+      const retirar = motivo => ({ status: 'cancelada', obs: comRef(os, motivo), ixc_retirada_em: agora.toISOString() });
+      if (osIxcFechada(st)) op = retirar('OS fechada no IXC antes da visita.');
+      else if (DO_ESCRITORIO.includes(st)) op = retirar('Voltou para o escritório no IXC (aberta ou em análise).');
+      else if (st === 'RAG') {
+        if (os.status === 'aberta') op = { status: 'reagendada', reagendado_em: agora.toISOString(), reagendado_para: null,
+          reagendado_turno: null, reagendado_motivo: 'Necessário reagendar (escritório, no IXC)', reagendado_por: 'IXC' };
+      } else if (trocouTec && !novo) op = retirar('Encaminhada no IXC para quem não está no moviTec.');
+      else {
+        if (trocouTec && String(novo.id) !== String(os.tecnico_id)) Object.assign(op, { tecnico_id: novo.id, tecnico_nome: novo.nome });
+        if (dia && (dia !== os.data || os.status === 'reagendada')) Object.assign(op, { data: dia, status: 'aberta' });
+        // o escritório encaminhou de novo sem marcar dia: volta para hoje
+        else if (os.status === 'reagendada' && os.ixc_status === 'RAG' && ['EN', 'AS'].includes(st)) Object.assign(op, { data: hoje, status: 'aberta' });
       }
-      const dia = st === 'AG' ? ixcData(o.data_agenda) : null;
-      if (dia && op.status !== 'cancelada' && (dia !== os.data || os.status === 'reagendada')) Object.assign(op, { data: dia, status: 'aberta' });
+    } else if (os.status === 'cancelada' && os.ixc_retirada_em) {
+      // tinha saído do celular por algo do IXC e voltou a ser de um técnico do moviTec
+      if (OS_DE_CAMPO.includes(st) && novo) {
+        op = { status: 'aberta', tecnico_id: novo.id, tecnico_nome: novo.nome, data: dia || hoje, ixc_retirada_em: null, obs: comRef(os, 'Voltou no IXC para o técnico.') };
+        guarda = 'status=eq.cancelada&ixc_retirada_em=not.is.null';
+      }
+    } else if (['finalizada', 'concluida'].includes(os.status) && osIxcFechada(st) && !os.ixc_fechado_em) {
+      marca.ixc_fechado_em = agora.toISOString();
     }
     if (Object.keys(marca).length) {
       await io.sb(`campo_os?id=eq.${os.id}`, { method: 'PATCH', prefer: 'return=minimal', body: marca });
       r.atualizados++;
     }
     if (Object.keys(op).length) {
-      const feito = await io.sb(`campo_os?id=eq.${os.id}&status=in.(${NAO_COMECOU.join(',')})&select=id`, { method: 'PATCH', prefer: 'return=representation', body: op }) || [];
+      const feito = await io.sb(`campo_os?id=eq.${os.id}&${guarda}&select=id`, { method: 'PATCH', prefer: 'return=representation', body: op }) || [];
       if (feito.length) {
         if (op.status === 'cancelada') r.retiradas++;
+        else if (op.ixc_retirada_em === null) r.voltaram = (r.voltaram || 0) + 1;
+        else if (op.status === 'reagendada') r.a_reagendar = (r.a_reagendar || 0) + 1;
         else if (op.tecnico_id) r.reatribuidas++;
-        if (op.data) r.agendadas++;
+        if (op.data && op.ixc_retirada_em !== null) r.agendadas++;
       }
     }
   }
@@ -345,13 +390,16 @@ export const FALTA_RESPONSAVEL = 'Falta escolher o colaborador responsável no I
 // endereços conferidos no IXC da empresa em 06/11 (OS de teste 20147 a 20149):
 // abrir (já encaminhada: status EN + técnico), executar e fechar gravam; o
 // "agendar" é o reagendar do IXC (data em dd/mm/aaaa); encaminhar uma OS que já
-// existe é o "alterar setor" do IXC (setor + colaborador)
+// existe é o "alterar setor" do IXC (setor + colaborador). Em 07/11 (OS 20150):
+// o IXC não tem endereço próprio para "assumir" — é o mesmo "alterar setor", com
+// status Assumida, no mesmo setor e assunto
 export const ACOES_IXC = {
   abrir:      { endpoint: 'su_oss_chamado',          status: null },
   encaminhar: { endpoint: 'su_oss_chamado_alterar_setor', status: ['EN', 'AS'], padrao: { status: 'EN' } },
   agendar:    { endpoint: 'su_oss_chamado_reagendar', status: ['AG'], padrao: { status: 'AG' } },
   // reagendada pelo técnico sem data: a OS fica "a reagendar" (RAG) para o escritório marcar
   reagendamento: { endpoint: 'su_oss_chamado_reagendamento', status: ['RAG'], padrao: { status: 'RAG' } },
+  assumir:    { endpoint: 'su_oss_chamado_alterar_setor', status: ['AS'], padrao: { status: 'AS' } },
   executar:   { endpoint: 'su_oss_chamado_executar', status: ['EX'], padrao: { status: 'EX' } },
   fechar:     { endpoint: 'su_oss_chamado_fechar',   status: ['F'],  padrao: { status: 'F', gera_comissao: 'N' } },
 };
@@ -376,7 +424,7 @@ export const maisComum = mapa => Object.entries(mapa || {}).sort((a, b) => b[1] 
    quem não tem cadastro lá) preenchem o "Colaborador responsável" que o IXC
    exige em executar, agendar e fechar. `fecharModo`: 'desligado' segura os
    fechamentos na fila; 'teste' só fecha a OS cuja descrição começa com "teste". */
-const PEDE_COLABORADOR = ['executar', 'agendar', 'reagendamento', 'fechar'];
+const PEDE_COLABORADOR = ['assumir', 'executar', 'agendar', 'reagendamento', 'fechar'];
 export async function processarAcoesIxc(io, { agora = new Date(), max = 5, codigos = null, tecnicos = [], responsavel = null, fecharModo = 'ativo' } = {}) {
   const r = { feitas: 0, falhas: 0, adiadas: 0, esperando: 0 };
   const ixcDoTec = new Map((tecnicos || []).filter(t => t && idValido(t.ixc_funcionario_id)).map(t => [String(t.id), String(t.ixc_funcionario_id)]));
@@ -417,18 +465,23 @@ export async function processarAcoesIxc(io, { agora = new Date(), max = 5, codig
       for (const k of ['id_resposta', 'id_equipe', 'data', 'id_evento', 'id_compromisso', 'latitude', 'longitude', 'gps_time']) if (corpo[k] == null) corpo[k] = '';
     }
     if (a.acao === 'reagendamento' && corpo.id_compromisso == null) corpo.id_compromisso = '';
-    if (['encaminhar', 'reagendamento'].includes(a.acao) && (!idValido(corpo.id_setor) || (a.acao === 'encaminhar' && corpo.id_assunto == null))) {
-      // o IXC pede o setor (e, no encaminhar, o assunto): sem pedido de troca, ficam os da OS
+    // o "alterar setor" do IXC (encaminhar, assumir) pede setor e assunto; o
+    // "necessário reagendar", o setor: sem pedido de troca, ficam os da OS
+    const pedeAssunto = ['encaminhar', 'assumir'].includes(a.acao);
+    let tecDaOs = null;
+    if ((pedeAssunto || a.acao === 'reagendamento') && (!idValido(corpo.id_setor) || (pedeAssunto && corpo.id_assunto == null) || a.acao === 'assumir')) {
       const v = await io.ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: String(a.ixc_os_id), oper: '=' }, { paginas: 1, rp: 1 }).catch(() => null);
       const atual = (v && v.registros && v.registros[0]) || null;
       if (atual) {
         if (!idValido(corpo.id_setor)) corpo.id_setor = idValido(atual.setor) || '';
-        if (a.acao === 'encaminhar' && corpo.id_assunto == null) corpo.id_assunto = idValido(atual.id_assunto) || '';
+        if (pedeAssunto && corpo.id_assunto == null) corpo.id_assunto = idValido(atual.id_assunto) || '';
+        tecDaOs = idValido(atual.id_tecnico);
       }
     }
     if (PEDE_COLABORADOR.includes(a.acao) && !idValido(corpo.id_tecnico)) {
       const doTec = os && os.tecnico_id != null ? ixcDoTec.get(String(os.tecnico_id)) : null;
-      corpo.id_tecnico = doTec || (idValido(responsavel) ? String(responsavel) : '');
+      // assumir por quem não tem cadastro no IXC: fica o colaborador que já está na OS
+      corpo.id_tecnico = doTec || (a.acao === 'assumir' && tecDaOs) || (idValido(responsavel) ? String(responsavel) : '');
       if (!idValido(corpo.id_tecnico)) {
         // sem colaborador o IXC recusa: espera na fila (sem gastar tentativa) até escolherem
         if (a.erro !== FALTA_RESPONSAVEL) await marcar({ erro: FALTA_RESPONSAVEL });
