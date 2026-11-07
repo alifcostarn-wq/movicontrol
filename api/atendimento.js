@@ -9206,6 +9206,19 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, salvo: Array.isArray(r) && r.length > 0 });
       }
 
+      // localização recusada por estar longe demais do que está no IXC: o
+      // administrador confere e manda trocar mesmo assim (volta para a fila)
+      case 'osixc.localizacao': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const id = Number(body.id);
+        if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Ação inválida.' });
+        const a = await sbUm(e, `ixc_acoes?id=eq.${id}&acao=eq.localizacao&status=eq.falhou&select=id,dados,erro`);
+        if (!a || !/^longe demais/.test(String(a.erro || ''))) return res.status(404).json({ ok: false, error: 'Essa localização não está esperando conferência.' });
+        const dados = { ...(a.dados || {}), forcar: true, forcado_por: user.nome || user.email || null, forcado_em: new Date().toISOString() };
+        const r = await sb(e, `ixc_acoes?id=eq.${id}&status=eq.falhou`, { method: 'PATCH', prefer: 'return=representation', body: { status: 'pendente', tentativas: 0, erro: null, dados } });
+        return res.status(200).json({ ok: true, na_fila: Array.isArray(r) && r.length > 0 });
+      }
+
       case 'osixc.assunto': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const aid = String(body.assunto_id ?? '').trim();

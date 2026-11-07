@@ -161,8 +161,9 @@ export async function processarLocalizacoesIxc(io, { agora = new Date(), modo = 
     if (manter) {
       if (!coordValida(latAntes, lngAntes)) { await falhar('o cliente de teste não tem localização no IXC para regravar'); continue; }
       lat = latAntes; lng = lngAntes;
-    } else if (coordValida(latAntes, lngAntes)) {
-      // técnico que finalizou longe da casa (na base, no caminho): não troca
+    } else if (coordValida(latAntes, lngAntes) && d.forcar !== true) {
+      // técnico que finalizou longe da casa (na base, no caminho): não troca —
+      // até o administrador conferir e mandar trocar mesmo assim (dados.forcar)
       const km = distanciaKm(noIxc, { lat, lng });
       if (km > DISTANCIA_MAX_KM) {
         await falhar(`longe demais da localização que está no IXC (${km.toFixed(1).replace('.', ',')} km): confira antes de trocar`,

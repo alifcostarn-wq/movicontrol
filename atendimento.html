@@ -4998,7 +4998,10 @@ function oiDesenhar(el){
   const comIxc = d.tecnicos.filter(t=>t.ixc), semIxc = d.tecnicos.filter(t=>!t.ixc);
   const nomeFunc = id => { const f = d.funcionarios.find(x=>x.id===String(id)); return f ? nomeBonito(f.nome) : '#'+id; };
   const rotAcao = { abrir:'abrir', encaminhar:'encaminhar', agendar:'agendar', reagendamento:'reagendar sem data', assumir:'assumir', executar:'executar', fechar:'finalizar', localizacao:'localização do cliente' };
-  const falhas = d.falhas.length ? d.falhas.map(f=>`<div class="oi-falha"><b>${esc(rotAcao[f.acao]||f.acao)}${f.ixc_os_id?' · OS '+esc(f.ixc_os_id):f.ixc_cliente_id?' · cliente IXC '+esc(f.ixc_cliente_id):''}</b> · ${esc(hora(f.criado_em))}<br>${esc(f.erro||'sem motivo')}</div>`).join('')
+  // localização longe demais do que está no IXC: o administrador confere e pode trocar mesmo assim
+  const forcar = f => f.acao==='localizacao' && /^longe demais/.test(f.erro||'')
+    ? `<div style="margin-top:6px"><button type="button" class="vinc-btn" data-oi="forcarloc" data-v="${esc(String(f.id))}" ${OI.salvando?'disabled':''}>Trocar mesmo assim</button></div>` : '';
+  const falhas = d.falhas.length ? d.falhas.map(f=>`<div class="oi-falha"><b>${esc(rotAcao[f.acao]||f.acao)}${f.ixc_os_id?' · OS '+esc(f.ixc_os_id):f.ixc_cliente_id?' · cliente IXC '+esc(f.ixc_cliente_id):''}</b> · ${esc(hora(f.criado_em))}<br>${esc(f.erro||'sem motivo')}${forcar(f)}</div>`).join('')
     : '<div class="tp-nota">Nenhuma recusa nos últimos 7 dias.</div>';
   // assuntos filtrados
   const q = OI.busca.trim().toLowerCase();
@@ -5088,6 +5091,7 @@ function oiClique(b){
   if(k==='os_modo') return oiSalvar({ os_modo: val }, val==='ativo' ? 'Importação das OS ligada.' : 'Importação das OS desligada.');
   if(k==='os_fechar') return oiSalvar({ os_fechar: val }, 'Envio das ações do técnico salvo.');
   if(k==='coord_ixc') return oiSalvar({ coord_ixc: val }, val==='ativo' ? 'Localização no cadastro do IXC ligada.' : val==='teste' ? 'Localização no IXC só no cliente de teste.' : 'Localização no cadastro do IXC desligada.');
+  if(k==='forcarloc') return oiForcarLocalizacao(val);
   if(k==='prio' && OI.rasc){ OI.rasc.prioridade = val; return oiDesenhar(); }
   if(k==='visita' && OI.rasc){ OI.rasc.gera_os = val==='s'; return oiDesenhar(); }
   if(k==='desfazer'){ OI.rasc = null; return oiDesenhar(); }
@@ -5098,6 +5102,14 @@ async function oiSalvar(campos, msg){
   OI.salvando = true; OI.erro = ''; oiDesenhar();
   try{ await chamar('osixc.salvar', campos); OI.d = await chamar('osixc.config', {}); toast(msg); }
   catch(err){ OI.erro = 'Não consegui salvar: '+err.message; }
+  OI.salvando = false; oiDesenhar();
+}
+async function oiForcarLocalizacao(id){
+  if(OI.salvando) return;
+  if(!confirm('Trocar a localização no cadastro do IXC pelo GPS do técnico, mesmo longe da que está lá?')) return;
+  OI.salvando = true; OI.erro = ''; oiDesenhar();
+  try{ await chamar('osixc.localizacao', { id: Number(id) }); OI.d = await chamar('osixc.config', {}); toast('Localização na fila: vai para o IXC na próxima rodada (até 2 min).'); }
+  catch(err){ OI.erro = 'Não consegui mandar a localização: '+err.message; }
   OI.salvando = false; oiDesenhar();
 }
 async function oiSalvarAssunto(){
