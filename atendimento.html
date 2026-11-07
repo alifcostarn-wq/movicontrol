@@ -750,6 +750,14 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
 .ch-tit{font-size:12px;font-weight:700;line-height:1.35;color:var(--text);}
 .ch-meta{font-size:10.5px;color:var(--text-low);margin-top:3px;line-height:1.4;}
 .ch-sol{font-size:10.5px;color:var(--green-deep);background:var(--green-soft);border-radius:6px;padding:5px 7px;margin-top:5px;line-height:1.4;}
+/* status da OS no IXC */
+.os-st{margin-left:auto;font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap;background:var(--chip);color:var(--text-mid);}
+.os-st.en,.os-st.as,.os-st.ds{background:var(--blue-soft);color:var(--blue-txt);}
+.os-st.ag{background:var(--purple-soft);color:var(--purple);}
+.os-st.ex{background:var(--orange-soft);color:var(--orange);}
+.os-st.f{background:var(--green-soft);color:var(--green-deep);}
+.os-st.c,.os-st.ca{background:var(--red-soft);color:var(--red);}
+.ch-meta .os-orig{white-space:nowrap;}
 
 /* ---- risquinhos de entrega/leitura ---- */
 /* o visto é a resposta de "chegou? leu?" — a 14px ele sumia ao lado do
@@ -1659,6 +1667,31 @@ body.dark-mode{--meter-ok:#4ade80;--meter-ok-track:#12382a;--meter-warn:#fbbf24;
 .tp-linha input{width:74px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;
   font-family:inherit;font-size:13px;text-align:right;}
 .tp-nota{font-size:11px;color:var(--text-mid);line-height:1.55;margin-top:6px;}
+/* Configurações › OS no IXC */
+.oi-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;margin-bottom:14px;}
+.oi-card{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:var(--card-3);min-width:0;}
+.oi-card h3{font-size:13px;font-weight:800;color:var(--text);margin:0 0 8px;}
+.oi-campo{margin-top:12px;}
+.oi-rot{display:block;font-size:11.5px;font-weight:700;color:var(--text-mid);margin-bottom:5px;}
+.oi-st{font-size:12px;color:var(--text-mid);}
+.oi-st b{color:var(--text);}
+.oi-falha{border-top:1px solid var(--line);padding:7px 0;font-size:11.5px;line-height:1.45;color:var(--text-mid);}
+.oi-falha:first-of-type{border-top:none;}
+.oi-falha b{color:var(--text);}
+.oi-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0;}
+.oi-filtros select,.oi-filtros input[type=search]{border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--card);color:var(--text);font:inherit;font-size:12px;}
+.oi-ass{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:start;}
+.oi-lista{max-height:420px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:var(--card);}
+.oi-tb{width:100%;border-collapse:collapse;font-size:12px;}
+.oi-tb th{position:sticky;top:0;background:var(--card-3);text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-low);padding:7px 9px;border-bottom:1px solid var(--line);}
+.oi-tb td{padding:7px 9px;border-bottom:1px solid var(--line);color:var(--text);vertical-align:top;}
+.oi-tb tr{cursor:pointer;}
+.oi-tb tr:hover td{background:var(--chip);}
+.oi-tb tr.sel td{background:var(--green-soft);}
+.oi-tb .fora{font-size:10px;color:var(--text-low);margin-left:5px;}
+.oi-ed .oi-campo:first-child{margin-top:0;}
+.oi-ed input[type=number]{width:96px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--card);color:var(--text);font:inherit;}
+@media (max-width:900px){ .oi-grid,.oi-ass{grid-template-columns:1fr;} }
 .tp-seta{text-align:center;color:var(--text-low);font-size:16px;margin:5px 0;}
 .tp-resumo{margin-top:12px;font-size:12.5px;color:var(--text-mid);background:var(--green-soft);
   border:1px solid var(--green-line);border-radius:9px;padding:11px 13px;max-width:640px;line-height:1.6;}
@@ -4933,6 +4966,155 @@ function registrarAcessoSessao(){
   try{ if(sessionStorage.getItem('talk_acesso_sessao')) return; sessionStorage.setItem('talk_acesso_sessao','1'); }catch(e){}
   registrarAcesso('sessao');
 }
+/* ===== Configurações › OS no IXC =====
+   O que antes ficava na Central do MoviOne: a integração das OS com o IXC
+   (importar para o moviTec, mandar ao IXC o que o técnico faz, colaborador
+   responsável para quem não tem cadastro lá), o assunto das OS do robô e os
+   assuntos liberados no "Abrir OS no IXC" da conversa. */
+const OI = { d:null, erro:'', setor:'', busca:'', soLib:false, sel:null, rasc:null, salvando:false };
+// cor do botão escolhido: ligado verde, só teste âmbar, desligado vermelho; prioridade pela própria cor
+const OI_COR = { ativo:'baixa', teste:'media', desligado:'alta', baixa:'baixa', media:'media', alta:'alta', s:'baixa', n:'media' };
+const oiHoras = h => { h = Number(h); if(!(h > 0)) return 'sem prazo'; return h < 1 ? Math.round(h*60)+' min' : h >= 48 && h % 24 === 0 ? (h/24)+' dias' : String(h).replace('.',',')+'h'; };
+const oiSetorNome = id => { const x = OI.d && OI.d.setores.find(s=>s.id===String(id)); return x ? nomeBonito(x.setor) : (id ? 'Setor '+id : 'Sem setor'); };
+function oiRascDe(a){
+  return { id:a.assunto_id, setor:a.setor_proprio ? (a.setor_id || '') : '', usarIxc:!a.prazo_proprio,
+    prazo:a.prazo_proprio && a.prazo_horas ? String(a.prazo_horas).replace('.',',') : '', prioridade:a.prioridade || 'media',
+    gera_os:!!a.gera_os, na_central:!!a.na_central, erro:'' };
+}
+async function renderOsIxcCfg(el){
+  el.innerHTML = '<div class="pn-load">Carregando…</div>';
+  try{ OI.d = await chamar('osixc.config', {}); OI.erro = ''; }
+  catch(err){ el.innerHTML = `<div class="ms-erro">Não consegui ler a configuração: ${esc(err.message)}</div>`; return; }
+  oiDesenhar(el);
+}
+function oiDesenhar(el){
+  el = el || document.getElementById('cfgBody');
+  if(!el || !OI.d) return;
+  const d = OI.d, c = d.config || {};
+  const hora = v => v ? new Date(v).toLocaleString('pt-BR',{ day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+  const seg = (nome, atual, opcoes) => `<div class="cn-seg" role="radiogroup" aria-label="${esc(nome)}">${opcoes.map(([v,t])=>
+    `<button type="button" role="radio" aria-checked="${atual===v}" class="${atual===v?'on '+(OI_COR[v]||'baixa'):''}" data-oi="${esc(nome)}" data-v="${esc(v)}" ${OI.salvando?'disabled':''}>${esc(t)}</button>`).join('')}</div>`;
+  const liberados = d.assuntos.filter(a=>a.na_central);
+  const comIxc = d.tecnicos.filter(t=>t.ixc), semIxc = d.tecnicos.filter(t=>!t.ixc);
+  const nomeFunc = id => { const f = d.funcionarios.find(x=>x.id===String(id)); return f ? nomeBonito(f.nome) : '#'+id; };
+  const rotAcao = { abrir:'abrir', encaminhar:'encaminhar', agendar:'agendar', reagendamento:'reagendar sem data', executar:'executar', fechar:'finalizar' };
+  const falhas = d.falhas.length ? d.falhas.map(f=>`<div class="oi-falha"><b>${esc(rotAcao[f.acao]||f.acao)}${f.ixc_os_id?' · OS '+esc(f.ixc_os_id):''}</b> · ${esc(hora(f.criado_em))}<br>${esc(f.erro||'sem motivo')}</div>`).join('')
+    : '<div class="tp-nota">Nenhuma recusa nos últimos 7 dias.</div>';
+  // assuntos filtrados
+  const q = OI.busca.trim().toLowerCase();
+  const lista = d.assuntos.filter(a=>(!OI.setor || (OI.setor==='sem' ? !a.setor_id : a.setor_id===OI.setor)) && (!OI.soLib || a.na_central) && (!q || nomeBonito(a.assunto).toLowerCase().includes(q)))
+    .sort((x,y)=>(y.na_central - x.na_central) || x.assunto.localeCompare(y.assunto,'pt-BR'));
+  if(OI.sel && !d.assuntos.some(a=>a.assunto_id===OI.sel)){ OI.sel = null; OI.rasc = null; }
+  const linhas = lista.map(a=>`<tr class="${a.assunto_id===OI.sel?'sel':''}" data-oiass="${esc(a.assunto_id)}" tabindex="0" aria-selected="${a.assunto_id===OI.sel}">
+      <td><b>${esc(nomeBonito(a.assunto))}</b>${a.na_central?'':'<span class="fora">fora do MoviTalk</span>'}</td>
+      <td>${esc(a.setor_id ? oiSetorNome(a.setor_id) : 'Sem setor')}</td><td>${esc(oiHoras(a.prazo_horas))}</td><td>${a.gera_os?'🛵 visita':'💻 escritório'}</td></tr>`).join('');
+  const a = OI.sel ? d.assuntos.find(x=>x.assunto_id===OI.sel) : null;
+  if(a && (!OI.rasc || OI.rasc.id !== a.assunto_id)) OI.rasc = oiRascDe(a);
+  const r = OI.rasc;
+  const setoresOrd = [...d.setores].sort((x,y)=>nomeBonito(x.setor).localeCompare(nomeBonito(y.setor),'pt-BR'));
+  const editor = !a ? '<div class="tp-nota">Escolha um assunto na lista para editar.</div>' : `
+    <div class="oi-campo"><div class="oi-rot">Assunto (nome do IXC)</div><div style="font-weight:800;font-size:13px">${esc(nomeBonito(a.assunto))}</div>${a.atualizado_por?`<div class="tp-nota">Ajustado por ${esc(a.atualizado_por)}</div>`:''}</div>
+    <div class="oi-campo"><label class="oi-rot" for="oiEdSetor">Setor da OS no IXC</label><select class="transf" id="oiEdSetor" ${OI.salvando?'disabled':''}>
+      <option value="">${a.setor_id_ixc ? 'Como no IXC ('+esc(oiSetorNome(a.setor_id_ixc))+')' : 'Sem setor'}</option>
+      ${setoresOrd.map(x=>`<option value="${esc(x.id)}" ${r.setor===x.id?'selected':''}>${esc(nomeBonito(x.setor))}</option>`).join('')}</select></div>
+    <div class="oi-campo"><div class="oi-rot">Prazo</div>
+      <label class="cob-check"><input type="checkbox" id="oiEdUsarIxc" ${r.usarIxc?'checked':''} ${OI.salvando?'disabled':''}> ${a.prazo_horas_ixc ? 'Usar o prazo do IXC ('+esc(oiHoras(a.prazo_horas_ixc))+')' : 'Sem prazo no IXC'}</label>
+      ${r.usarIxc ? '' : `<div style="margin-top:6px"><input type="number" id="oiEdPrazo" min="0.5" max="2160" step="0.5" value="${esc(String(r.prazo).replace(',','.'))}" aria-label="Prazo em horas" ${OI.salvando?'disabled':''}> <span class="tp-nota">horas (48 = 2 dias)</span></div>`}</div>
+    <div class="oi-campo"><div class="oi-rot">Prioridade</div>${seg('prio', r.prioridade, [['baixa','Baixa'],['media','Média'],['alta','Alta']])}</div>
+    <div class="oi-campo"><div class="oi-rot">Precisa de visita?</div>${seg('visita', r.gera_os?'s':'n', [['s','Sim · gera visita'],['n','Não · escritório']])}</div>
+    <div class="oi-campo"><label class="cob-check"><input type="checkbox" id="oiEdLib" ${r.na_central?'checked':''} ${OI.salvando?'disabled':''}> Liberado no “Abrir OS no IXC” da conversa</label></div>
+    ${r.erro?`<div class="ms-erro" role="alert">${esc(r.erro)}</div>`:''}
+    <div class="cno-acts" style="margin-top:12px"><button type="button" class="vinc-btn solid" data-oi="salvarass" ${OI.salvando?'disabled':''}>${OI.salvando?'Salvando…':'Salvar assunto'}</button>
+      <button type="button" class="vinc-btn" data-oi="desfazer" ${OI.salvando?'disabled':''}>Desfazer</button></div>`;
+  el.innerHTML = `
+    <div class="vsub">As OS nascem, são encaminhadas e fecham no IXC. Aqui fica como o MoviTalk e o moviTec conversam com ele.</div>
+    ${OI.erro?`<div class="ms-erro" role="alert" style="margin-bottom:10px">${esc(OI.erro)}</div>`:''}
+    <div class="oi-grid">
+      <section class="oi-card"><h3>Integração com o IXC</h3>
+        <div class="oi-st">${c.os_modo==='ativo' ? '<b>Ligada</b>' : '<b>Desligada</b>'} · última leitura ${esc(hora(c.os_em))}${c.ultima && !c.ultima.ok ? ` · <span style="color:var(--red)">falhou: ${esc(c.ultima.erro||'erro')}</span>` : ''}</div>
+        <div class="oi-campo"><div class="oi-rot">OS encaminhada no IXC a um técnico vai para o moviTec dele</div>${seg('os_modo', c.os_modo==='ativo'?'ativo':'desligado', [['ativo','Ligado'],['desligado','Desligado']])}</div>
+        <div class="oi-campo"><div class="oi-rot">O que o técnico faz no moviTec vai para o IXC (executar, agendar, finalizar)</div>${seg('os_fechar', c.os_fechar||'desligado', [['ativo','Ligado'],['teste','Só OS de teste'],['desligado','Desligado']])}
+          <div class="tp-nota">“Só OS de teste”: só a OS cuja descrição no IXC começa com “teste”.</div></div>
+        <div class="oi-campo"><label class="oi-rot" for="oiResp">Colaborador responsável no IXC, para técnico sem cadastro lá</label>
+          <select class="transf" id="oiResp" ${OI.salvando?'disabled':''}><option value="">Escolha…</option>${d.funcionarios.map(f=>`<option value="${esc(f.id)}" ${String(c.os_fechar_responsavel||'')===f.id?'selected':''}>${esc(nomeBonito(f.nome))}</option>`).join('')}</select></div>
+        <div class="oi-campo"><div class="oi-rot">Técnicos do moviTec com cadastro no IXC</div>
+          <div class="tp-nota">${comIxc.length ? comIxc.map(t=>`${esc(t.nome)} (${esc(nomeFunc(t.ixc))})`).join(' · ') : 'Nenhum: a OS encaminhada no IXC não chega ao moviTec.'}${semIxc.length?`<br>Sem cadastro no IXC: ${semIxc.map(t=>esc(t.nome)).join(', ')}.`:''}
+          <br>O IXC só aceita a ação quando o colaborador está vinculado ao setor da OS.</div></div>
+        <div class="oi-campo"><label class="oi-rot" for="oiBot">Assunto das OS abertas pelo robô do WhatsApp</label>
+          <select class="transf" id="oiBot" ${OI.salvando?'disabled':''}><option value="">Escolha…</option>${liberados.map(x=>`<option value="${esc(x.assunto_id)}" ${String(c.os_bot_assunto||'')===x.assunto_id?'selected':''}>${esc(nomeBonito(x.assunto))}</option>`).join('')}</select>
+          <div class="tp-nota">Sem técnico: o escritório encaminha no IXC.</div></div>
+      </section>
+      <section class="oi-card"><h3>Ações que o IXC recusou · 7 dias</h3>${falhas}</section>
+    </div>
+    <section class="oi-card"><h3>Assuntos do IXC</h3>
+      <div class="tp-nota">Os liberados aparecem no “Abrir OS no IXC” da conversa (${liberados.length} hoje). O setor e o prazo vão junto para a OS no IXC.</div>
+      <div class="oi-filtros">
+        <select id="oiSetor" aria-label="Setor"><option value="">Todos os setores</option>${setoresOrd.map(x=>`<option value="${esc(x.id)}" ${OI.setor===x.id?'selected':''}>${esc(nomeBonito(x.setor))}</option>`).join('')}<option value="sem" ${OI.setor==='sem'?'selected':''}>Sem setor</option></select>
+        <input type="search" id="oiBusca" placeholder="Buscar assunto…" value="${esc(OI.busca)}" aria-label="Buscar assunto">
+        <label class="cob-check"><input type="checkbox" id="oiSoLib" ${OI.soLib?'checked':''}> Só os liberados</label>
+      </div>
+      <div class="oi-ass">
+        <div class="oi-lista">${lista.length ? `<table class="oi-tb"><thead><tr><th>Assunto</th><th>Setor</th><th>Prazo</th><th>Visita</th></tr></thead><tbody>${linhas}</tbody></table>` : '<div class="tp-nota" style="padding:12px">Nenhum assunto com esse filtro.</div>'}</div>
+        <div class="oi-ed">${editor}</div>
+      </div>
+    </section>`;
+  oiLigar(el);
+}
+function oiLigar(el){
+  el.querySelectorAll('[data-oi]').forEach(b=>b.onclick=()=>oiClique(b));
+  el.querySelectorAll('tr[data-oiass]').forEach(tr=>{
+    tr.onclick=()=>{ OI.sel = tr.dataset.oiass; OI.rasc = null; oiDesenhar(); };
+    tr.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); tr.click(); } };
+  });
+  const v = id => el.querySelector('#'+id);
+  if(v('oiResp')) v('oiResp').onchange = ev => oiSalvar({ os_fechar_responsavel: ev.target.value || null }, 'Colaborador responsável salvo.');
+  if(v('oiBot')) v('oiBot').onchange = ev => { if(ev.target.value) oiSalvar({ os_bot_assunto: ev.target.value }, 'Assunto do robô salvo.'); };
+  if(v('oiSetor')) v('oiSetor').onchange = ev => { OI.setor = ev.target.value; oiDesenhar(); };
+  if(v('oiBusca')) v('oiBusca').oninput = ev => { OI.busca = ev.target.value; clearTimeout(OI._t); OI._t = setTimeout(()=>{ oiDesenhar(); const b=document.getElementById('oiBusca'); if(b){ b.focus(); b.setSelectionRange(b.value.length,b.value.length); } }, 250); };
+  if(v('oiSoLib')) v('oiSoLib').onchange = ev => { OI.soLib = ev.target.checked; oiDesenhar(); };
+  if(OI.rasc){
+    if(v('oiEdSetor')) v('oiEdSetor').onchange = ev => { OI.rasc.setor = ev.target.value; };
+    if(v('oiEdUsarIxc')) v('oiEdUsarIxc').onchange = ev => { OI.rasc.usarIxc = ev.target.checked; OI.rasc.erro = ''; oiDesenhar(); if(!ev.target.checked) setTimeout(()=>document.getElementById('oiEdPrazo')?.focus(), 0); };
+    if(v('oiEdPrazo')) v('oiEdPrazo').oninput = ev => { OI.rasc.prazo = ev.target.value; };
+    if(v('oiEdLib')) v('oiEdLib').onchange = ev => { OI.rasc.na_central = ev.target.checked; };
+  }
+}
+function oiClique(b){
+  if(b.disabled) return;
+  const k = b.dataset.oi, val = b.dataset.v;
+  if(k==='os_modo') return oiSalvar({ os_modo: val }, val==='ativo' ? 'Importação das OS ligada.' : 'Importação das OS desligada.');
+  if(k==='os_fechar') return oiSalvar({ os_fechar: val }, 'Envio das ações do técnico salvo.');
+  if(k==='prio' && OI.rasc){ OI.rasc.prioridade = val; return oiDesenhar(); }
+  if(k==='visita' && OI.rasc){ OI.rasc.gera_os = val==='s'; return oiDesenhar(); }
+  if(k==='desfazer'){ OI.rasc = null; return oiDesenhar(); }
+  if(k==='salvarass') return oiSalvarAssunto();
+}
+async function oiSalvar(campos, msg){
+  if(OI.salvando) return;
+  OI.salvando = true; OI.erro = ''; oiDesenhar();
+  try{ await chamar('osixc.salvar', campos); OI.d = await chamar('osixc.config', {}); toast(msg); }
+  catch(err){ OI.erro = 'Não consegui salvar: '+err.message; }
+  OI.salvando = false; oiDesenhar();
+}
+async function oiSalvarAssunto(){
+  const r = OI.rasc; if(!r || OI.salvando) return;
+  let prazo = null;
+  if(!r.usarIxc){
+    const n = Number(String(r.prazo).replace(',','.'));
+    if(!(n >= 0.5 && n <= 2160)){ r.erro = 'Informe o prazo em horas, entre 0,5 e 2160 (90 dias).'; oiDesenhar(); document.getElementById('oiEdPrazo')?.focus(); return; }
+    prazo = Math.round(n*10)/10;
+  }
+  OI.salvando = true; r.erro = ''; oiDesenhar();
+  try{
+    const j = await chamar('osixc.assunto', { assunto_id:r.id, setor_id:r.setor || null, prazo_horas:prazo, prioridade:r.prioridade, gera_os:r.gera_os, na_central:r.na_central });
+    if(j.assunto){ const i = OI.d.assuntos.findIndex(a=>a.assunto_id===j.assunto.assunto_id); if(i >= 0) OI.d.assuntos[i] = j.assunto; }
+    OI.rasc = null;
+    ASSUNTOS_CAMPO = []; _tecEm = 0;             // o formulário da conversa recarrega os assuntos
+    toast('Assunto salvo.');
+  }catch(err){ r.erro = 'Não consegui salvar: '+err.message; }
+  OI.salvando = false; oiDesenhar();
+}
+
 // Configurações › Acessos: só as entradas do MoviTalk (a tela é a de /acessos-tela.js)
 function renderAcessosTalk(el){
   if(!window.AcessosTela){ el.innerHTML='<div class="ms-erro">Não consegui carregar a tela de acessos. Recarregue a página.</div>'; return; }
@@ -5615,31 +5797,41 @@ function blocoConexao(c){
   }).join('');
 }
 
+// As OS do cliente no IXC (abertas aqui, pelo robô ou direto lá), em aberto primeiro.
+const ORIGEM_OS = { movitalk:'aberta aqui pelo MoviTalk', bot:'aberta pelo robô do WhatsApp', ixc:'aberta no IXC', movione:'OS antiga do moviTec' };
+function osDataCurta(iso){
+  const d = iso ? new Date(String(iso).length === 10 ? iso+'T12:00:00-03:00' : iso) : null;
+  if(!d || isNaN(d)) return '—';
+  const dia = d.toLocaleDateString('pt-BR',{ day:'2-digit', month:'2-digit', timeZone:'America/Fortaleza' });
+  return String(iso).length === 10 ? dia : dia+' '+d.toLocaleTimeString('pt-BR',{ hour:'2-digit', minute:'2-digit', timeZone:'America/Fortaleza' });
+}
+function osTurno(iso){
+  const h = Number(new Date(iso).toLocaleTimeString('pt-BR',{ hour:'2-digit', hour12:false, timeZone:'America/Fortaleza' }).slice(0,2));
+  return isNaN(h) ? '' : h < 12 ? 'manhã' : h < 18 ? 'tarde' : 'noite';
+}
+function etapaOs(s){
+  if(s.st === 'AG' && s.agenda) return `Agendada · ${osDataCurta(s.agenda).slice(0,5)} ${osTurno(s.agenda)}`.trim();
+  return s.etapa || 'Sem status';
+}
 function blocoChamados(c){
   const p=c.painel;
   if(!p) return `<div class="ms-load">Consultando…</div>`;
-  if(p.erros&&p.erros.chamados) return `<div class="ms-erro">Chamados indisponíveis.</div>`;
+  if(p.erros&&p.erros.chamados) return `<div class="ms-erro">Não consegui ler as OS no IXC agora.</div>`;
   const ch=p.chamados;
   if(!ch) return `<div style="font-size:11.5px;color:var(--text-low)">Sem dados.</div>`;
-  return `<div class="sup-sum"><span class="n">${ch.total30}</span><span class="l">chamados no período${ch.abertos?` · <b style="color:var(--red)">${ch.abertos} em aberto</b>`:''}</span></div>
-    ${ch.itens.map(s=>`
+  return `<div class="sup-sum"><span class="n">${ch.total30}</span><span class="l">OS no IXC no período${ch.abertos?` · <b style="color:var(--red)">${ch.abertos} em aberto</b>`:''}</span></div>
+    ${(ch.itens||[]).map(s=>`
       <div class="ch-item ${s.aberto?'aberto':''}">
         <div class="ch-top">
-          <span class="ch-tipo ${s.origem}">${s.origem==='os'?'O.S.':'CHAMADO'} #${esc(String(s.id))}</span>${
-            s.os_numero?`<span class="ch-tipo os">O.S. #${esc(String(s.os_numero))}</span>`:''}
-          <span class="ch-etapa ${s.aberto?'ab':'ok'}">${esc(s.etapa)}</span>
+          <span class="ch-tipo os">${s.legado?'O.S.':'O.S. IXC'} #${esc(String(s.id))}</span>
+          <span class="os-st ${esc(String(s.st||'').toLowerCase())}">${esc(etapaOs(s))}</span>
         </div>
-        <div class="ch-tit">${esc(s.titulo)}</div>
-        <div class="ch-meta">Aberto em ${esc(s.data||'—')}${
-          s.tecnico?` · téc. <b>${esc(s.tecnico)}</b>`:''}${
-          s.prioridade?` · ${esc(String(s.prioridade))}`:''}</div>
-        ${s.etapa_em?`<div class="ch-meta">Última movimentação: ${esc(s.etapa_em)}${
-          s.movimentacoes>1?` · ${s.movimentacoes} etapas`:''}</div>`:''}
-        ${s.reagendado?`<div class="ch-meta" style="color:var(--amber-txt);font-weight:700;">Reagendado ${esc(s.reagendado)}${
-          s.motivo_reagendamento?` — ${esc(s.motivo_reagendamento)}`:''}</div>`:''}
-        ${s.solucao&&!s.aberto?`<div class="ch-sol">Solução: ${esc(s.solucao)}</div>`:''}
+        <div class="ch-tit">${esc(s.assunto ? (s.legado ? s.assunto : nomeBonito(s.assunto)) : 'Assunto não informado')}</div>
+        <div class="ch-meta">Aberta em ${esc(osDataCurta(s.aberta_em))}${s.tecnico?` · téc. <b>${esc(s.legado ? s.tecnico : nomeBonito(s.tecnico))}</b>`:''} · <span class="os-orig">${esc(ORIGEM_OS[s.origem]||ORIGEM_OS.ixc)}${s.autor?` (${esc(s.autor)})`:''}</span></div>
+        ${s.reagendado?`<div class="ch-meta" style="color:var(--amber-txt);font-weight:700;">Reagendada pelo técnico no moviTec${s.reagendado.para?` para ${esc(osDataCurta(s.reagendado.para))}`:''}${s.reagendado.motivo?`: ${esc(s.reagendado.motivo)}`:''}</div>`:''}
+        ${s.solucao?`<div class="ch-sol">Solução: ${esc(s.solucao)}</div>`:''}
       </div>`).join('')
-      ||'<div style="font-size:11.5px;color:var(--text-low)">Nenhum chamado recente</div>'}
+      ||'<div style="font-size:11.5px;color:var(--text-low)">Nenhuma OS no IXC para este cliente.</div>'}
 `;
 }
 
@@ -11388,7 +11580,7 @@ function abasFicha(c, cl){
       badge: (inst || off) ? { n:'!', cor:'r' } : (q > 3 ? { n:q, cor:'o' } : null) });
     const ch = p && p.chamados;
     abas.push({ id:'suporte', nome:'Suporte', curto:'Suporte',
-      sub: !ch ? '' : `${ch.abertos ? plural(ch.abertos,'aberto','abertos')+' · ' : ''}${ch.total30} em 30 dias`,
+      sub: !ch ? '' : `${ch.abertos ? plural(ch.abertos,'aberta','abertas')+' · ' : ''}${ch.total30} em 30 dias`,
       badge: ch && ch.abertos ? { n:ch.abertos, cor:'b' } : null });
     const pa = pendAssinatura(c);
     abas.push({ id:'contrato', nome:'Contrato e assinatura', curto:'Contrato',
@@ -11438,12 +11630,12 @@ function pendenciasCliente(c){
   const ch = p.chamados;
   if(ch && ch.abertos){
     const a = (ch.itens||[]).find(s=>s.aberto);
-    add('b', 'suporte', ch.abertos===1 && a ? `${a.origem==='os'?'O.S.':'Chamado'} #${a.id} aberto` : plural(ch.abertos,'chamado aberto','chamados abertos'),
-      a ? [a.etapa, a.tecnico].filter(Boolean).join(' · ') : '');
+    add('b', 'suporte', ch.abertos===1 && a ? `OS ${a.id} aberta` : plural(ch.abertos,'OS aberta','OS abertas'),
+      a ? [etapaOs(a), a.tecnico ? nomeBonito(a.tecnico) : ''].filter(Boolean).join(' · ') : '');
   }
   const pa = pendAssinatura(c);
   if(pa) add('o', 'contrato', pa===1 ? 'Assinatura pendente' : `${pa} assinaturas pendentes`, 'documento enviado e ainda não assinado');
-  if(!itens.length) return `<div class="ms-ok">✅ Nada pendente: financeiro em dia, conexão estável e nenhum chamado aberto.</div>`;
+  if(!itens.length) return `<div class="ms-ok">✅ Nada pendente: financeiro em dia, conexão estável e nenhuma OS aberta.</div>`;
   return itens.map(i=>`<button type="button" class="ms-pend ${i.cor}" data-abaficha="${i.aba}">
     <span class="pi">${ICO_FICHA[i.aba]}</span>
     <span class="grow"><span class="pt">${esc(i.titulo)}</span>${i.sub?`<span class="pd">${esc(i.sub)}</span>`:''}</span>
@@ -11532,31 +11724,33 @@ function opcoesTecnicos(escolhido){
   const lista = TECNICOS_CAMPO
     ? TECNICOS_CAMPO.map(t=>`<option value="${esc(String(t.id))}" ${String(escolhido)===String(t.id)?'selected':''}>${esc(t.nome)}</option>`).join('')
     : `<option value="" disabled>${_tecErro?'Não consegui carregar os técnicos':'Carregando técnicos…'}</option>`;
-  return `<option value="">Sem técnico (fica na fila)</option>${lista}`;
+  return `<option value="">Sem técnico: fica no IXC para o escritório encaminhar</option>${lista}`;
 }
 function formChamadoHTML(c){
   const s = chEstado(c.id);
   if(s.feito){
     const f = s.feito;
-    const faltou = [f.com_endereco===false?'endereço':'', f.com_login===false?'login PPPoE':''].filter(Boolean);
     const vence = f.prazo_em ? new Date(f.prazo_em) : null;
     return `<div class="ch-novo-ok" id="chForm" data-conv="${c.id}" data-modo="feito" role="status">
-      <div class="cno-t">✅ Chamado #${esc(String(f.id))} registrado</div>
-      <div class="cno-d">${f.assunto?esc(nomeBonito(f.assunto))+' · ':''}Prioridade ${esc(ROT_PRIO[f.prioridade]||'média')} · ${f.tecnico_nome?'técnico '+esc(f.tecnico_nome):'na fila, sem técnico'}${
+      <div class="cno-t">✅ OS ${esc(String(f.id))} aberta no IXC</div>
+      <div class="cno-d">${f.assunto?esc(nomeBonito(f.assunto))+' · ':''}Prioridade ${esc(ROT_PRIO[f.prioridade]||'média')} · ${f.tecnico_nome
+        ? `encaminhada ao <b>${esc(f.tecnico_nome)}</b>: entra no moviTec dele em até 2 minutos.`
+        : 'sem técnico: o escritório encaminha no IXC.'}${
         vence && !isNaN(vence)?`<br>Prazo: até ${esc(vence.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))}`:''}${
-        faltou.length?`<br>⚠ Sem ${faltou.join(' e ')} no cadastro: confirme com o cliente e passe ao técnico.`:''}</div>
+        f.com_login===false?'<br>⚠ O cadastro não tem login PPPoE: confira no IXC antes da visita.':''}</div>
       <div class="cno-acts">
         <button type="button" class="vinc-btn solid" data-ch="protocolo">💬 Colocar o protocolo na mensagem</button>
-        <button type="button" class="vinc-btn" data-ch="outro">Abrir outro</button>
+        <button type="button" class="vinc-btn" data-ch="outro">Abrir outra</button>
       </div></div>`;
   }
   if(!s.aberto) return `<div id="chForm" data-conv="${c.id}" data-modo="fechado"><div class="acts">
-    <button type="button" class="act hi ch-abrir" data-ch="abrir">🛠️ Abrir chamado técnico</button></div></div>`;
+    <button type="button" class="act hi ch-abrir" data-ch="abrir">🛠️ Abrir OS no IXC</button></div></div>`;
   const aSel = ASSUNTOS_CAMPO.find(a=>a.id===String(s.ass));
   return `<div class="ch-novo" id="chForm" data-conv="${c.id}" data-modo="aberto">
     ${ASSUNTOS_CAMPO.length ? `<label class="cn-rot" for="chAss">Assunto</label>
     <select class="transf" id="chAss" ${s.enviando?'disabled':''}>${opcoesAssuntos(s.ass)}</select>
-    <div class="cn-nota" id="chAssInfo">${aSel ? esc(infoAssunto(aSel)) : 'O assunto define o setor, o prazo e a prioridade.'}</div>` : ''}
+    <div class="cn-nota" id="chAssInfo">${aSel ? esc(infoAssunto(aSel)) : 'O assunto define o setor e o prazo da OS no IXC.'}</div>`
+    : TECNICOS_CAMPO ? `<div class="ms-erro" role="alert">Nenhum assunto liberado para o MoviTalk. Um administrador libera em Configurações › OS no IXC.</div>` : ''}
     <label class="cn-rot" for="chDesc">O que está acontecendo?</label>
     <textarea class="notas" id="chDesc" rows="3" maxlength="500" placeholder="Ex.: sem internet desde ontem, luz LOS vermelha" ${s.enviando?'disabled':''}>${esc(s.desc)}</textarea>
     <div class="cn-rot" id="chPrioRot">Prioridade</div>
@@ -11564,10 +11758,10 @@ function formChamadoHTML(c){
       `<button type="button" role="radio" aria-checked="${s.prio===k}" class="${s.prio===k?'on '+k:''}" data-chprio="${k}" ${s.enviando?'disabled':''}>${n}</button>`).join('')}</div>
     <label class="cn-rot" for="chTec">Técnico</label>
     <select class="transf" id="chTec" ${s.enviando?'disabled':''}>${opcoesTecnicos(s.tec)}</select>
-    <div class="cn-nota">Vai junto o endereço, a referência e o login PPPoE do cadastro.</div>
+    <div class="cn-nota">A OS é aberta no IXC com o login PPPoE e o contrato do cadastro. Com técnico, ela já sai encaminhada e aparece no moviTec dele.</div>
     ${s.erro?`<div class="ms-erro" role="alert">${esc(s.erro)}</div>`:''}
     <div class="cno-acts">
-      <button type="button" class="vinc-btn solid" data-ch="registrar" ${s.enviando?'disabled':''}>${s.enviando?'Registrando…':'Registrar chamado'}</button>
+      <button type="button" class="vinc-btn solid" data-ch="registrar" ${s.enviando||(TECNICOS_CAMPO&&!ASSUNTOS_CAMPO.length)?'disabled':''}>${s.enviando?'Abrindo no IXC…':'Abrir OS no IXC'}</button>
       <button type="button" class="vinc-btn" data-ch="cancelar" ${s.enviando?'disabled':''}>Cancelar</button>
     </div>
   </div>`;
@@ -11592,8 +11786,10 @@ function abrirFormChamado(conv){
     .then(()=>{
       const f = document.getElementById('chForm');
       if(!f || Number(f.dataset.conv)!==conv) return;
-      // os assuntos chegaram agora: o formulário ganha o campo (o texto digitado fica no estado)
-      if(!tinhaAssuntos && ASSUNTOS_CAMPO.length){ const d=f.querySelector('#chDesc'); if(d) chEstado(conv).desc=d.value; redesenharFormChamado(conv, document.activeElement && f.contains(document.activeElement) && document.activeElement.id ? '#'+document.activeElement.id : '#chAss'); return; }
+      // os assuntos chegaram agora (ou não há nenhum liberado): o formulário é
+      // redesenhado com o campo ou com o aviso — o que já foi digitado fica no estado
+      if(!tinhaAssuntos){ const d=f.querySelector('#chDesc'), tc=f.querySelector('#chTec'); if(d) chEstado(conv).desc=d.value; if(tc && tc.value) chEstado(conv).tec=tc.value;
+        redesenharFormChamado(conv, document.activeElement && f.contains(document.activeElement) && document.activeElement.id ? '#'+document.activeElement.id : (ASSUNTOS_CAMPO.length ? '#chAss' : '#chDesc')); return; }
       const sel=f.querySelector('#chTec'); if(sel) sel.innerHTML=opcoesTecnicos(chEstado(conv).tec);
     });
 }
@@ -11607,19 +11803,19 @@ async function registrarChamado(conv){
     if(t) s.tec=t.value;
     if(a) s.ass=a.value;
   }
-  if(ASSUNTOS_CAMPO.length && !s.ass){ s.erro='Escolha o assunto do chamado.'; redesenharFormChamado(conv, '#chAss'); return; }
+  if(!s.ass){ s.erro='Escolha o assunto da OS.'; redesenharFormChamado(conv, ASSUNTOS_CAMPO.length ? '#chAss' : '#chDesc'); return; }
   if(s.desc.trim().length < 5){ s.erro='Descreva o problema do cliente.'; redesenharFormChamado(conv, '#chDesc'); return; }
   Object.assign(s, { enviando:true, erro:'' });
   redesenharFormChamado(conv);
   try{
-    const r = await chamar('chamados.abrir', { conversa_id: conv, descricao: s.desc.trim(), prioridade: s.prio, tecnico_id: s.tec ? Number(s.tec) : null, assunto_id: s.ass || null });
-    CH_FORM.set(conv, { aberto:false, ass:'', desc:'', prio:'media', tec:'', enviando:false, erro:'', feito: r.chamado });
-    toast(`Chamado #${r.chamado.id} registrado`);
+    const r = await chamar('chamados.abrir', { conversa_id: conv, descricao: s.desc.trim(), prioridade: s.prio, tecnico_id: s.tec ? Number(s.tec) : null, assunto_id: s.ass || null }, 60000);
+    CH_FORM.set(conv, { aberto:false, ass:'', desc:'', prio:'media', tec:'', enviando:false, erro:'', feito: r.os });
+    toast(`OS ${r.os.id} aberta no IXC`);
     // a lista da aba e o aviso no ícone passam a mostrar o chamado novo
     const c = state.conversas.find(x=>x.id===conv);
     if(c) api.carregarPainel(c).then(()=>{ if(modalId===conv) openModal(conv); }).catch(()=>{});
   }catch(err){
-    Object.assign(s, { enviando:false, erro: err.message || 'Não consegui registrar o chamado. Tente de novo.' });
+    Object.assign(s, { enviando:false, erro: err.message || 'Não consegui abrir a OS no IXC. Tente de novo.' });
   }
   redesenharFormChamado(conv);
 }
@@ -11627,7 +11823,7 @@ async function registrarChamado(conv){
 function protocoloNaMensagem(conv){
   const s = chEstado(conv), inp = document.getElementById('mInput');
   if(!s.feito || !inp || modalId!==conv) return;
-  const txt = `Seu chamado técnico foi registrado. Protocolo: #${s.feito.id}.`;
+  const txt = `Sua solicitação técnica foi registrada. Protocolo: OS ${s.feito.id}.`;
   inp.value = inp.value.trim() ? inp.value.replace(/\s+$/,'') + '\n' + txt : txt;
   inp.dispatchEvent(new Event('input', { bubbles:true }));
   // no celular a conversa fica na outra aba
@@ -12210,6 +12406,7 @@ function renderAux(){
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='integracoes'?'on':''}" data-tab="integracoes">Integrações</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='contratos'?'on':''}" data-tab="contratos">✍️ Contratos assinados</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='cadastro'?'on':''}" data-tab="cadastro">🗂 Cadastro do IXC</div>`:''}
+        ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='osixc'?'on':''}" data-tab="osixc">🛠️ OS no IXC</div>`:''}
         ${USUARIO&&USUARIO.admin?`<div class="cfg-tab ${configTab==='acessos'?'on':''}" data-tab="acessos">🔐 Acessos</div>`:''}
       </div>`;
     // o editor de fluxo precisa da largura toda: fica FORA da moldura
@@ -12250,6 +12447,7 @@ function renderAux(){
     }
     else if(configTab==='contratos' && USUARIO&&USUARIO.admin){ renderContratos(body); }
     else if(configTab==='cadastro' && USUARIO&&USUARIO.admin){ renderCadastroIxc(body); }
+    else if(configTab==='osixc' && USUARIO&&USUARIO.admin){ renderOsIxcCfg(body); }
     else if(configTab==='acessos' && USUARIO&&USUARIO.admin){ renderAcessosTalk(body); }
     else {
       body.innerHTML=`<div class="vsub">Quando o cliente enviar a palavra-chave, o bot executa a ação automaticamente — antes de chegar a um atendente.</div>

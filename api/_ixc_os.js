@@ -489,3 +489,70 @@ export async function processarAcoesIxc(io, { agora = new Date(), max = 5, codig
   }
   return r;
 }
+
+// ============================================================================
+// MOVITALK → IXC: a OS aberta pelo atendente ou pelo robô nasce direto no IXC
+// ----------------------------------------------------------------------------
+// O corpo é o que a fila manda e o IXC aceitou (06/11): filial e origem do
+// endereço obrigatórias (os códigos que a equipe mais usa); com técnico, a OS
+// já nasce encaminhada (status EN + colaborador, que precisa estar vinculado ao
+// setor da OS no IXC). Login e contrato vão quando o cadastro tem: alguns
+// assuntos do IXC exigem.
+// ============================================================================
+export const PRIORIDADE_PARA_IXC = { baixa: 'B', media: 'N', alta: 'A' };
+
+export function corpoAbrirOs({ ixcId, assunto, prioridade = 'media', descricao = '', tecnicoIxc = null, login = null, contrato = null, codigos = null, rodape = '' }) {
+  const texto = String(descricao || '').trim();
+  const corpo = {
+    tipo: 'C',
+    id_cliente: String(ixcId),
+    id_assunto: String(assunto.id),
+    setor: idValido(assunto.setor_id) || '',
+    prioridade: PRIORIDADE_PARA_IXC[prioridade] || 'N',
+    mensagem: (texto + (rodape ? (texto ? '\n\n' : '') + rodape : '')).slice(0, 1500),
+    status: idValido(tecnicoIxc) ? 'EN' : 'A',
+  };
+  if (idValido(tecnicoIxc)) corpo.id_tecnico = idValido(tecnicoIxc);
+  if (idValido(login)) corpo.id_login = idValido(login);
+  if (idValido(contrato)) corpo.id_contrato_kit = idValido(contrato);
+  for (const c of ['id_filial', 'origem_endereco']) { const v = codigos ? maisComum(codigos[c]) : null; if (v) corpo[c] = v; }
+  return corpo;
+}
+
+/* As OS do cliente no IXC para a aba Suporte do MoviTalk: as abertas primeiro.
+   Só códigos, nomes de assunto e técnico, datas e o que o moviTec registrou —
+   o texto livre da OS no IXC não sai daqui (pode ter senha digitada por alguém). */
+export function osDoClienteNoPainel(regs, { funcionarios = new Map(), assuntos = new Map(), aberturas = new Map(), movitec = new Map(), agora = new Date(), max = 8 } = {}) {
+  const limite = agora.getTime() - 30 * 864e5;
+  const itens = (regs || []).filter(o => o && idValido(o.id)).map(o => {
+    const st = String(o.status || '').trim().toUpperCase() || null;
+    const fechada = osIxcFechada(st);
+    const aberta = horaIxcIso(o.data_abertura);
+    const tec = idValido(o.id_tecnico);
+    const mt = movitec.get(String(o.id)) || null;
+    const quem = aberturas.get(String(o.id)) || null;
+    return {
+      id: String(o.id),
+      st,
+      etapa: STATUS_OS_IXC[st] || (['C', 'CA'].includes(st) ? 'Cancelada' : st || 'Sem status'),
+      assunto: assuntos.get(String(idValido(o.id_assunto))) || null,
+      tecnico: tec ? (funcionarios.get(tec) || null) : null,
+      aberta_em: aberta,
+      agenda: st === 'AG' ? horaIxcIso(o.data_agenda) : null,
+      aberto: !fechada,
+      origem: quem ? quem.origem : 'ixc',
+      autor: quem ? quem.autor || null : null,
+      reagendado: mt && mt.status === 'reagendada' ? { para: mt.reagendado_para || null, motivo: mt.reagendado_motivo ? String(mt.reagendado_motivo).slice(0, 120) : null } : null,
+      solucao: fechada && mt && mt.solucao ? String(mt.solucao).slice(0, 160) : null,
+      _t: aberta ? Date.parse(aberta) : 0,
+    };
+  });
+  const recentes = itens.filter(i => i._t >= limite);
+  const abertos = itens.filter(i => i.aberto);
+  const fechados = itens.filter(i => !i.aberto).sort((a, b) => b._t - a._t);
+  return {
+    total30: recentes.length,
+    abertos: abertos.length,
+    itens: [...abertos.sort((a, b) => b._t - a._t), ...fechados].slice(0, max).map(({ _t, ...r }) => r),
+  };
+}

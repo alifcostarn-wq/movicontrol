@@ -51,7 +51,8 @@ import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
 import { groqChat, groqTranscrever, groqModelos, groqModelosAudio } from './_groq.js';
-import { linhaClienteDoIxc, linhaContratoDoIxc } from './_ixc_espelho.js';
+import { linhaClienteDoIxc, linhaContratoDoIxc, idValido } from './_ixc_espelho.js';
+import { corpoAbrirOs, osDoClienteNoPainel, textoIxc } from './_ixc_os.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
 
@@ -2103,24 +2104,16 @@ async function sessoesDoDia(e, ixcId, login) {
   };
 }
 
-// ---- CHAMADOS E O.S. — módulo de campo do MoviOn -------------------------
-// A fonte NÃO é o IXC: chamado e O.S. vivem no próprio Supabase (campo_chamados
-// / campo_os), e a trilha de etapas em campo_chamados_historico. O vínculo com
-// o cliente é campo_chamados.cliente_id = clientes.ixc_id (texto).
-// Os rótulos abaixo seguem os do módulo (index.html) e os do app do técnico —
-// 'aberto' aqui NÃO é "recém-aberto": significa que o chamado virou O.S.
-const ETAPA_CHAMADO = {
-  novo: 'Novo', atribuido: 'Técnico atribuído', assumido: 'Técnico assumiu',
-  analisando: 'Em análise', andamento: 'Em andamento',
-  aberto: 'Aberto (virou O.S.)', transferido: 'Virou visita técnica',
-  concluido: 'Concluído', cancelado: 'Cancelado',
-};
+// ---- OS DO CLIENTE — direto do IXC -----------------------------------------
+// A OS nasce, é encaminhada e fecha no IXC (aberta aqui, pelo robô ou lá mesmo).
+// A aba Suporte lê as últimas do cliente no IXC; quem abriu por aqui sai do
+// registro em ixc_acoes, e do moviTec vêm o reagendamento e a solução. OS antiga
+// do moviTec (de antes da integração, sem número do IXC) aparece enquanto aberta.
 const ETAPA_OS = {
   aberta: 'Aberta', assumida: 'Técnico designado', executando: 'Técnico no local',
   reagendada: 'Reagendada', finalizada: 'Visita concluída',
   concluida: 'Concluída', cancelada: 'Cancelada',
 };
-const CHAMADO_ENCERRADO = ['concluido', 'cancelado'];
 const OS_ENCERRADA = ['finalizada', 'concluida', 'cancelada'];
 
 function rotuloEtapa(mapa, st) {
@@ -2128,87 +2121,45 @@ function rotuloEtapa(mapa, st) {
   return mapa[k] || (k ? k.charAt(0).toUpperCase() + k.slice(1) : 'Sem etapa');
 }
 
+const listaIn = arr => [...new Set((arr || []).filter(Boolean).map(String))].map(encodeURIComponent).join(',');
+
 async function chamadosAoVivo(e, ixcId) {
   const id = String(ixcId);
-  const [chamados, ordens] = await Promise.all([
-    sb(e, `campo_chamados?cliente_id=eq.${encodeURIComponent(id)}` +
-          `&select=id,descricao,status,prioridade,data,created_at,concluido_em,tecnico_nome,os_id,solucao_tecnica` +
-          `&order=created_at.desc&limit=20`),
-    sb(e, `campo_os?cliente_id=eq.${encodeURIComponent(id)}` +
-          `&select=id,numero,descricao,status,data,tecnico_nome,reagendado_em,reagendado_motivo,chamado_id` +
-          `&order=data.desc&limit=20`),
+  const r = await ixc(e, 'su_oss_chamado', {
+    qtype: 'su_oss_chamado.id_cliente', query: id, oper: '=', page: '1', rp: '20',
+    sortname: 'su_oss_chamado.id', sortorder: 'desc',
+  });
+  const regs = Array.isArray(r && r.registros) ? r.registros : [];
+  const ids = regs.map(o => idValido(o.id)).filter(Boolean);
+  const tecs = regs.map(o => idValido(o.id_tecnico)).filter(Boolean);
+  const ass = regs.map(o => idValido(o.id_assunto)).filter(Boolean);
+  const [funcs, assuntos, aberturas, mt, cli] = await Promise.all([
+    tecs.length ? sb(e, `ixc_funcionarios?id=in.(${listaIn(tecs)})&select=id,nome`).catch(() => []) : [],
+    ass.length ? sb(e, `ixc_assuntos?id=in.(${listaIn(ass)})&select=id,assunto`).catch(() => []) : [],
+    ids.length ? sb(e, `ixc_acoes?acao=eq.abrir&status=eq.feita&origem=in.(movitalk,bot)&ixc_os_id=in.(${listaIn(ids)})&select=ixc_os_id,origem,dados`).catch(() => []) : [],
+    ids.length ? sb(e, `campo_os?ixc_os_id=in.(${listaIn(ids)})&select=ixc_os_id,status,reagendado_para,reagendado_motivo,solucao`).catch(() => []) : [],
+    sbUm(e, `clientes?ixc_id=eq.${encodeURIComponent(id)}&select=id`).catch(() => null),
   ]);
-
-  // trilha de etapas: última movimentação de cada chamado
-  const ids = (chamados || []).map(c => c.id);
-  let historico = [];
-  if (ids.length) {
-    historico = await sb(e,
-      `campo_chamados_historico?chamado_id=in.(${ids.join(',')})` +
-      `&select=chamado_id,status,registrado_em&order=registrado_em.desc&limit=200`) || [];
-  }
-  const ultimaEtapa = new Map();
-  const totalEtapas = new Map();
-  for (const h of historico) {
-    if (!ultimaEtapa.has(h.chamado_id)) ultimaEtapa.set(h.chamado_id, h);
-    totalEtapas.set(h.chamado_id, (totalEtapas.get(h.chamado_id) || 0) + 1);
-  }
-
-  const limite = new Date(); limite.setDate(limite.getDate() - 30); limite.setHours(0, 0, 0, 0);
-  const osPorId = new Map((ordens || []).map(o => [o.id, o]));
-
-  const itensCh = (chamados || []).map(c => {
-    const st = String(c.status || '').toLowerCase();
-    const ult = ultimaEtapa.get(c.id);
-    const dt = parseDataIXC(c.created_at || c.data);
-    const os = c.os_id ? osPorId.get(c.os_id) : null;
-    return {
-      origem: 'chamado',
-      id: c.id,
-      titulo: String(c.descricao || `Chamado #${c.id}`).slice(0, 90),
-      data: fmtDataBR(dt),
-      // quando o chamado já virou O.S., a etapa real está na O.S.
-      etapa: os ? rotuloEtapa(ETAPA_OS, os.status) : rotuloEtapa(ETAPA_CHAMADO, ult ? ult.status : st),
-      etapa_em: ult ? fmtDataHoraBR(parseDataIXC(ult.registrado_em)) : null,
-      movimentacoes: totalEtapas.get(c.id) || 0,
-      aberto: !CHAMADO_ENCERRADO.includes(st),
-      prioridade: c.prioridade || null,
-      tecnico: (os && os.tecnico_nome) || c.tecnico_nome || null,
-      os_numero: os ? (os.numero || os.id) : null,
-      reagendado: os && os.reagendado_em ? fmtDataHoraBR(parseDataIXC(os.reagendado_em)) : null,
-      motivo_reagendamento: os ? os.reagendado_motivo : null,
-      solucao: c.solucao_tecnica ? String(c.solucao_tecnica).slice(0, 160) : null,
-      _dt: dt,
-    };
+  const painel = osDoClienteNoPainel(regs, {
+    funcionarios: new Map((funcs || []).map(f => [String(f.id), f.nome])),
+    assuntos: new Map((assuntos || []).map(a => [String(a.id), a.assunto])),
+    aberturas: new Map((aberturas || []).map(a => [String(a.ixc_os_id), { origem: a.origem, autor: (a.dados && a.dados.autor) || null }])),
+    movitec: new Map((mt || []).map(o => [String(o.ixc_os_id), o])),
   });
-
-  // O.S. avulsa (instalação, por exemplo) não tem chamado de origem
-  const itensOs = (ordens || []).filter(o => !o.chamado_id).map(o => {
-    const st = String(o.status || '').toLowerCase();
-    const dt = parseDataIXC(o.data);
-    return {
-      origem: 'os',
-      id: o.numero || o.id,
-      titulo: String(o.descricao || `O.S. #${o.numero || o.id}`).slice(0, 90),
-      data: fmtDataBR(dt),
-      etapa: rotuloEtapa(ETAPA_OS, st),
-      aberto: !OS_ENCERRADA.includes(st),
-      tecnico: o.tecnico_nome || null,
-      reagendado: o.reagendado_em ? fmtDataHoraBR(parseDataIXC(o.reagendado_em)) : null,
-      motivo_reagendamento: o.reagendado_motivo || null,
-      _dt: dt,
-    };
-  });
-
-  const todos = [...itensCh, ...itensOs].sort((a, b) => (b._dt || 0) - (a._dt || 0));
-  const abertos = todos.filter(i => i.aberto);
-
-  return {
-    total30: todos.filter(i => i._dt && i._dt >= limite).length,
-    abertos: abertos.length,
-    // em aberto primeiro: é o que o atendente precisa para orientar o cliente
-    itens: [...abertos, ...todos.filter(i => !i.aberto)].slice(0, 6).map(({ _dt, ...r }) => r),
-  };
+  // OS do moviTec de antes da integração (sem número do IXC), enquanto abertas
+  const antigas = cli
+    ? await sb(e, `campo_os?cliente_id=eq.${encodeURIComponent(String(cli.id))}&ixc_os_id=is.null&status=not.in.(${OS_ENCERRADA.join(',')})`
+        + '&select=id,numero,descricao,status,data,tecnico_nome&order=data.desc&limit=5').catch(() => [])
+    : [];
+  for (const o of (antigas || []).reverse()) {
+    painel.itens.unshift({
+      id: String(o.numero || o.id), st: null, legado: true, etapa: rotuloEtapa(ETAPA_OS, o.status),
+      assunto: String(o.descricao || '').slice(0, 90) || null, tecnico: o.tecnico_nome || null,
+      aberta_em: o.data || null, agenda: null, aberto: true, origem: 'movione', autor: null, reagendado: null, solucao: null,
+    });
+    painel.abertos++;
+  }
+  return painel;
 }
 
 // Uma consulta lenta ou um endpoint indisponível não pode derrubar o painel
@@ -2849,85 +2800,104 @@ async function respostaMonitorCto(e, { fone, texto, waId, citado }) {
   return { acao: 'ativar', ativados: feitos.map(f => f.inc.protocolo), falhas };
 }
 
-/* ===== Chamado técnico no módulo de campo =====
-   O mesmo registro que o MoviOne grava ao abrir chamado e que o app do técnico
-   lê: campo_chamados + a primeira etapa em campo_chamados_historico (sem ela o
-   painel mostra "Sem etapa" e o app do técnico não avisa o cliente). Quem usa:
-   o bot (bloco "Abrir chamado") e o atendente (aba Suporte do painel). */
+/* ===== OS no IXC aberta pelo MoviTalk (atendente e robô) =====
+   Vai direto para o IXC e volta com o número na hora: o IXC é o lugar da OS
+   (encaminhar, agendar, executar e fechar acontecem lá ou pelo moviTec). Com
+   técnico, ela já nasce encaminhada e cai no moviTec dele na rodada seguinte.
+   A senha do cliente nunca é lida. */
 const PRIORIDADES_CHAMADO = ['baixa', 'media', 'alta'];
 
-// Endereço, referência e login PPPoE para o técnico. Vêm do espelho do IXC
-// (clientes e clientes_logins, os mesmos que o MoviOne usa); o que faltar,
-// pergunta ao IXC. A senha do cliente nunca é lida: o MoviOne também grava o
-// chamado sem ela.
-async function dadosClienteChamado(e, ixcId) {
-  const out = { endereco: null, localizacao: null, login: null };
-  if (!ixcId) return out;
-  const id = encodeURIComponent(String(ixcId));
-  const [cli, logins] = await Promise.all([
-    sbUm(e, `clientes?ixc_id=eq.${id}&select=endereco,numero,complemento,bairro,cidade,uf,referencia&limit=1`).catch(() => null),
-    sb(e, `clientes_logins?ixc_cliente_id=eq.${id}&select=login,ativo&order=ativo.desc.nullslast&limit=5`).catch(() => []),
-  ]);
-  if (cli) {
-    out.endereco = [cli.endereco, cli.numero, cli.complemento, cli.bairro, cli.cidade, cli.uf]
-      .map(v => String(v ?? '').trim()).filter(Boolean).join(', ') || null;
-    out.localizacao = String(cli.referencia ?? '').trim() || null;
+// POST sem o cabeçalho "ixcsoft" é gravação no IXC (com "listar" é leitura)
+async function ixcInserirOs(e, corpo) {
+  if (!e.IXC_USER || !e.IXC_TOKEN) throw new Error('IXC não configurado (IXC_USER / IXC_TOKEN).');
+  const auth = Buffer.from(`${e.IXC_USER}:${e.IXC_TOKEN}`).toString('base64');
+  const r = await fetchComPrazo(`${e.IXC_URL}/webservice/v1/su_oss_chamado`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+    body: JSON.stringify(corpo),
+  }, 25000);
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`IXC ${r.status}`);
+  let d = null;
+  try { d = JSON.parse(txt); } catch { throw new Error('o IXC respondeu fora do formato esperado'); }
+  if (d && String(d.type || '').toLowerCase() === 'error') {
+    // a mensagem do IXC vem com um link para a tela dele ("Clique aqui"): fica só o texto
+    const err = new Error(textoIxc(String(d.message || 'o IXC recusou a OS').replace(/<a\b[^>]*>[\s\S]*?<\/a>/gi, '')).slice(0, 300));
+    err.recusa = true;
+    throw err;
   }
-  const l = (Array.isArray(logins) ? logins : []).find(x => x && String(x.login || '').trim());
-  if (l) out.login = String(l.login).trim();
-  if (!out.endereco) {
-    try {
-      const c = await ixc(e, 'cliente', { qtype: 'cliente.id', query: String(ixcId), oper: '=', rp: '1' });
-      const c0 = (c.registros || [])[0];
-      // "cidade" no IXC é o código da cidade: só entra o nome, quando vier
-      if (c0) out.endereco = [pick(c0, 'endereco', 'logradouro'), pick(c0, 'numero'),
-        pick(c0, 'bairro'), pick(c0, 'cidade_nome')].filter(Boolean).join(', ') || null;
-    } catch { /* segue sem endereço */ }
-  }
-  if (!out.login) {
-    try {
-      const r = await ixc(e, 'radusuarios', { qtype: 'radusuarios.id_cliente', query: String(ixcId), oper: '=', rp: '1' });
-      out.login = pick((r.registros || [])[0] || {}, 'login', 'usuario', 'username') || null;
-    } catch { /* segue sem login */ }
-  }
-  return out;
+  return d || {};
 }
 
-// Grava o chamado e a primeira etapa. Com técnico escolhido já nasce
-// "atribuído", como no MoviOne; sem técnico fica "novo", na fila. Com assunto,
-// o banco preenche setor e prazo (gatilho campo_chamados_assunto_prazo).
-async function criarChamadoCampo(e, { nome, ixcId, telefone, descricao, prioridade = 'media', tecnico = null, assunto = null, origem = 'movitalk' }) {
-  const dados = await dadosClienteChamado(e, ixcId);
-  const status = tecnico ? 'atribuido' : 'novo';
-  const r = await sb(e, 'campo_chamados', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
+// o assunto escolhido, com o setor e o prazo decididos na configuração
+async function assuntoParaOs(e, assuntoId) {
+  const aid = String(assuntoId ?? '').trim();
+  if (!/^\d{1,9}$/.test(aid)) return null;
+  const a = await sbUm(e, `central_assuntos_efetivo?assunto_id=eq.${aid}&na_central=is.true&select=assunto_id,assunto,setor_id,prazo_horas`);
+  return a ? { id: String(a.assunto_id), nome: a.assunto, setor_id: a.setor_id ? String(a.setor_id) : null,
+    prazo_horas: a.prazo_horas == null ? null : Number(a.prazo_horas) } : null;
+}
+
+async function abrirOsNoIxc(e, { ixcId, assunto, prioridade = 'media', descricao = '', tecnico = null, origem = 'movitalk', autor = null, conversaId = null }) {
+  const id = encodeURIComponent(String(ixcId));
+  const [logins, contratos, cfg] = await Promise.all([
+    sb(e, `clientes_logins?ixc_cliente_id=eq.${id}&select=ixc_id,ixc_contrato_id,ativo&order=ativo.desc.nullslast&limit=5`).catch(() => []),
+    sb(e, `clientes_contratos?ixc_cliente_id=eq.${id}&select=ixc_id,status_contrato&limit=10`).catch(() => []),
+    sbUm(e, 'ixc_sync_config?id=eq.1&select=os_codigos').catch(() => null),
+  ]);
+  const login = (Array.isArray(logins) ? logins : []).find(l => idValido(l.ixc_id)) || null;
+  const ctrs = Array.isArray(contratos) ? contratos : [];
+  const contrato = (login && idValido(login.ixc_contrato_id))
+    || idValido((ctrs.find(c => String(c.status_contrato || '').toUpperCase() === 'A') || ctrs[0] || {}).ixc_id);
+  const rodape = origem === 'bot' ? 'Aberta pelo robô do WhatsApp (MoviTalk).' : `Aberta pelo MoviTalk${autor ? ' — ' + autor : ''}.`;
+  const corpo = corpoAbrirOs({ ixcId, assunto, prioridade, descricao, tecnicoIxc: tecnico ? tecnico.ixc_funcionario_id : null,
+    login: login ? login.ixc_id : null, contrato, codigos: cfg ? cfg.os_codigos : null, rodape });
+  const d = await ixcInserirOs(e, corpo);
+  const osId = idValido(d.id || d.id_chamado || d.registro);
+  if (!osId) throw new Error('o IXC respondeu sem o número da OS');
+  // relê: a OS existe, com o status pedido (EN = já encaminhada ao técnico)
+  let rel = null;
+  try {
+    const v = await ixc(e, 'su_oss_chamado', { qtype: 'su_oss_chamado.id', query: osId, oper: '=', page: '1', rp: '1' });
+    rel = (v && v.registros && v.registros[0]) || null;
+  } catch (err) { console.error('[os no ixc] reler:', err.message); }
+  const status = rel ? String(rel.status || '').trim().toUpperCase() || corpo.status : corpo.status;
+  // quem abriu: a aba Suporte mostra "aberta aqui pelo MoviTalk / pelo robô"
+  await sb(e, 'ixc_acoes', {
+    method: 'POST', prefer: 'return=minimal',
     body: {
-      cliente: String(nome || 'Cliente WhatsApp').slice(0, 120),
-      cliente_id: ixcId ? String(ixcId) : null,
-      telefone: telefone || null,
-      endereco: dados.endereco,
-      localizacao: dados.localizacao,
-      login_cliente: dados.login,
-      descricao: String(descricao || '').slice(0, 500),
-      prioridade: PRIORIDADES_CHAMADO.includes(prioridade) ? prioridade : 'media',
-      tecnico_id: tecnico ? tecnico.id : null,
-      tecnico_nome: tecnico ? tecnico.nome : null,
-      status,
-      assunto_id: assunto ? String(assunto.assunto_id) : null,
-      origem,
-      // dia daqui, não o do servidor (UTC): à noite o chamado caía no dia seguinte
-      data: diaEmMossoro(new Date()),
+      acao: 'abrir', ixc_os_id: osId, status: 'feita', tentativas: 1, origem, feita_em: new Date().toISOString(),
+      dados: { conversa_id: conversaId || null, autor: autor || null },
+      resposta: { id: osId, tipo: d.type || null, status, id_tecnico: rel ? idValido(rel.id_tecnico) : null, setor: rel ? idValido(rel.setor) : null },
     },
-  });
-  const criado = Array.isArray(r) ? r[0] : r;
-  const id = criado && criado.id ? criado.id : null;
-  if (id) {
-    await sb(e, 'campo_chamados_historico', {
-      method: 'POST', prefer: 'return=minimal', body: { chamado_id: id, status },
-    }).catch(err => console.error('[atendimento] historico do chamado:', err.message));
-  }
-  return { id, status, prazo_em: criado ? criado.prazo_em || null : null, ...dados };
+  }).catch(err => console.error('[os no ixc] registro:', err.message));
+  return {
+    id: osId, status, encaminhada: status === 'EN',
+    com_login: !!login, com_contrato: !!contrato,
+    prazo_em: assunto.prazo_horas > 0 ? new Date(Date.now() + assunto.prazo_horas * 36e5).toISOString() : null,
+  };
+}
+
+/* O que o cliente escreveu ao robô, para a OS não chegar ao técnico só com "2"
+   (a opção do menu). Fica de fora o que parece documento, telefone ou senha. */
+const TEXTO_SENSIVEL = /senha|password|\bpass\b|\bpin\b|cpf|cnpj|cart[aã]o/i;
+async function descricaoDoRobo(e, conversaId, ultima) {
+  let frases = [];
+  try {
+    const l = await sb(e, `atend_mensagens?conversa_id=eq.${Number(conversaId)}&direcao=eq.in&select=conteudo,tipo&order=created_at.desc&limit=12`);
+    frases = (Array.isArray(l) ? l : [])
+      .filter(m => !m.tipo || m.tipo === 'texto')
+      .map(m => String(m.conteudo || '').replace(/\s+/g, ' ').trim())
+      .filter(t => (t.match(/[A-Za-zÀ-ÿ]{3,}/g) || []).length >= 2 && !TEXTO_SENSIVEL.test(t))
+      .map(t => t.replace(/\d[\d.\-/ ]{5,}\d/g, '…'))
+      .reverse();
+  } catch { /* segue com o texto padrão */ }
+  const visto = new Set();
+  const texto = frases.filter(t => !visto.has(t) && visto.add(t)).slice(-3).join(' / ').slice(0, 400);
+  if (texto) return `Cliente pelo WhatsApp: ${texto}`;
+  const u = String(ultima || '').trim();
+  return (u.match(/[A-Za-zÀ-ÿ]{3,}/g) || []).length >= 2 && !TEXTO_SENSIVEL.test(u)
+    ? `Cliente pelo WhatsApp: ${u.slice(0, 200)}` : 'Cliente pediu atendimento técnico pelo WhatsApp.';
 }
 
 // Assuntos que a equipe pode escolher ao abrir chamado (Central de Chamados):
@@ -3156,29 +3126,26 @@ const CONECTORES = {
     return { resultado: 'ok', variaveis: { pix }, mensagens: mensagensDoPix(pix) };
   },
 
-  // Abre o chamado no MÓDULO DE CAMPO (campo_chamados), não no su_ticket do
-  // IXC: é de lá que o painel do atendente e o app do técnico leem. Gravar no
-  // IXC fazia o chamado sumir — ninguém no fluxo de atendimento o enxergava.
+  // Abre a OS direto no IXC (assunto do robô escolhido nas Configurações do
+  // MoviTalk), sem técnico: o escritório encaminha lá. Se não der (conversa sem
+  // cadastro do IXC, assunto não escolhido, IXC fora), o erro SOBE: o texto do
+  // bloco ("já registrei...") não pode chegar ao cliente sem OS nenhuma — o
+  // motor avisa o cliente e entrega a conversa a um atendente.
   async abrir_chamado({ e, conversa, vars }) {
-    const ixcId = vars.cliente_id || conversa.cliente_ixc_id || null;
-    const snap = conversa.cliente_snapshot || {};
-    const nome = snap.nome || conversa.contato_nome || conversa.contato_fone || 'Cliente WhatsApp';
-    let criado;
-    try {
-      criado = await criarChamadoCampo(e, {
-        nome, ixcId, telefone: conversa.contato_fone, origem: 'bot',
-        descricao: `[Bot MoviTalk] ${vars.ultima_msg || 'Cliente solicitou atendimento técnico pelo WhatsApp.'}`,
-      });
-    } catch (err) {
-      console.error('[atendimento] abrir_chamado:', err.message);
-      return { resultado: 'erro', anexoTexto: '' };
-    }
-    const chamado = criado.id;
+    const ixcId = idValido(vars.cliente_id || conversa.cliente_ixc_id);
+    if (!ixcId) throw new Error('conversa sem cadastro do IXC: a OS precisa de um cliente');
+    const cfg = await sbUm(e, 'ixc_sync_config?id=eq.1&select=os_bot_assunto').catch(() => null);
+    const assunto = await assuntoParaOs(e, cfg && cfg.os_bot_assunto);
+    if (!assunto) throw new Error('assunto das OS do robô não escolhido (MoviTalk › Configurações › OS no IXC)');
+    const criado = await abrirOsNoIxc(e, {
+      ixcId, assunto, prioridade: 'media', origem: 'bot', conversaId: conversa.id,
+      descricao: await descricaoDoRobo(e, conversa.id, vars.ultima_msg),
+    });
     return {
-      resultado: chamado ? 'ok' : 'erro',
-      variaveis: { chamado_id: chamado },
-      patchConversa: chamado ? { chamado_id: String(chamado) } : {},
-      anexoTexto: chamado ? `Protocolo: #${chamado}` : '',
+      resultado: 'ok',
+      variaveis: { chamado_id: criado.id },
+      patchConversa: { chamado_id: String(criado.id) },
+      anexoTexto: `Protocolo: OS ${criado.id}`,
     };
   },
 
@@ -8624,6 +8591,9 @@ async function marcarEvento(e, tipo, detalhe = null) {
   catch (err) { console.error('[raio-x]', err.message); }
 }
 
+// o robô roda os conectores dentro do fluxo; os testes chamam direto
+export { CONECTORES as conectoresDoRobo };
+
 export default async function handler(req, res) {
   const inicioReq = Date.now();   // o prazo da Vercel conta daqui
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9153,13 +9123,101 @@ export default async function handler(req, res) {
 
       // ===== Vínculo manual número ↔ cadastro do cliente =====
       // ===== Painel 360 do cliente — dados ao vivo do IXC =====
-      // ===== CHAMADO TÉCNICO pela aba Suporte do painel =====
-      // O atendente abre o chamado sem sair da conversa. Vai para o mesmo
-      // módulo de campo do MoviOne e do app do técnico (criarChamadoCampo).
+      // ===== OS NO IXC pela aba Suporte do painel =====
+      // O atendente abre a OS sem sair da conversa: vai direto para o IXC.
+      // Técnico só os que têm cadastro de colaborador no IXC (os outros não
+      // recebem OS de lá).
+      // ===== Configurações › OS no IXC (só administrador do atendimento) =====
+      // O que antes ficava na Central do MoviOne: a integração das OS com o IXC
+      // (importar para o moviTec, mandar as ações do técnico, colaborador
+      // responsável), o assunto das OS do robô e os assuntos liberados aqui.
+      case 'osixc.config': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const desde = new Date(Date.now() - 7 * 864e5).toISOString();
+        const [cfg, assuntos, setores, funcs, tecs, falhas] = await Promise.all([
+          sbUm(e, 'ixc_sync_config?id=eq.1&select=os_modo,os_fechar,os_fechar_responsavel,os_bot_assunto,os_em,os_resultado,atualizado_em,atualizado_por'),
+          sb(e, 'central_assuntos_efetivo?ativo_ixc=is.true&select=assunto_id,assunto,setor_id,setor_id_ixc,gera_os,prazo_horas,prazo_horas_ixc,prioridade,na_central,setor_proprio,prazo_proprio,atualizado_por&order=assunto.asc&limit=500'),
+          sb(e, 'ixc_setores?ativo=is.true&select=id,setor&order=setor.asc&limit=300'),
+          sb(e, 'ixc_funcionarios?ativo=eq.true&select=id,nome&order=nome.asc&limit=500'),
+          sb(e, 'campo_tecnicos?status=eq.ativo&select=nome,ixc_funcionario_id&order=nome.asc&limit=200'),
+          sb(e, `ixc_acoes?status=eq.falhou&criado_em=gte.${encodeURIComponent(desde)}&select=id,acao,ixc_os_id,erro,origem,criado_em&order=id.desc&limit=12`),
+        ]);
+        const r = (cfg && cfg.os_resultado) || {};
+        return res.status(200).json({
+          ok: true,
+          config: cfg ? { os_modo: cfg.os_modo, os_fechar: cfg.os_fechar, os_fechar_responsavel: cfg.os_fechar_responsavel, os_bot_assunto: cfg.os_bot_assunto,
+            os_em: cfg.os_em, atualizado_em: cfg.atualizado_em, atualizado_por: cfg.atualizado_por,
+            ultima: { ok: r.ok !== false, erro: r.ok === false ? String(r.erro || '').slice(0, 200) : null, lidas: r.lidas || 0 } } : null,
+          assuntos: (assuntos || []).map(x => ({ ...x, assunto_id: String(x.assunto_id), setor_id: x.setor_id ? String(x.setor_id) : null, setor_id_ixc: x.setor_id_ixc ? String(x.setor_id_ixc) : null,
+            prazo_horas: x.prazo_horas == null ? null : Number(x.prazo_horas), prazo_horas_ixc: x.prazo_horas_ixc == null ? null : Number(x.prazo_horas_ixc) })),
+          setores: (setores || []).map(x => ({ id: String(x.id), setor: x.setor })),
+          funcionarios: (funcs || []).map(f => ({ id: String(f.id), nome: f.nome })),
+          tecnicos: (tecs || []).map(t => ({ nome: t.nome, ixc: t.ixc_funcionario_id ? String(t.ixc_funcionario_id) : null })),
+          falhas: (falhas || []).map(f => ({ ...f, erro: String(f.erro || '').slice(0, 200) })),
+        });
+      }
+
+      case 'osixc.salvar': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const corpo = { atualizado_em: new Date().toISOString(), atualizado_por: user.nome || user.email || null };
+        if (body.os_modo !== undefined) {
+          if (!['desligado', 'ativo'].includes(body.os_modo)) return res.status(400).json({ ok: false, error: 'Modo inválido.' });
+          corpo.os_modo = body.os_modo; corpo.os_em = null;
+        }
+        if (body.os_fechar !== undefined) {
+          if (!['desligado', 'teste', 'ativo'].includes(body.os_fechar)) return res.status(400).json({ ok: false, error: 'Opção inválida.' });
+          corpo.os_fechar = body.os_fechar;
+        }
+        if (body.os_fechar_responsavel !== undefined) {
+          const resp = idValido(body.os_fechar_responsavel);
+          if (body.os_fechar_responsavel && !resp) return res.status(400).json({ ok: false, error: 'Colaborador inválido.' });
+          if (resp && !await sbUm(e, `ixc_funcionarios?id=eq.${resp}&ativo=eq.true&select=id`)) return res.status(400).json({ ok: false, error: 'Colaborador não encontrado no IXC.' });
+          corpo.os_fechar_responsavel = resp;
+        }
+        if (body.os_bot_assunto !== undefined) {
+          const ass = await assuntoParaOs(e, body.os_bot_assunto);
+          if (!ass) return res.status(400).json({ ok: false, error: 'Assunto não encontrado ou não liberado para o MoviTalk.' });
+          corpo.os_bot_assunto = ass.id;
+        }
+        const r = await sb(e, 'ixc_sync_config?id=eq.1', { method: 'PATCH', prefer: 'return=representation', body: corpo });
+        if (corpo.os_fechar_responsavel) {
+          // o que esperava na fila só por falta do responsável sai na próxima rodada
+          await sb(e, `ixc_acoes?status=eq.pendente&erro=like.${encodeURIComponent('Falta escolher o colaborador*')}`, {
+            method: 'PATCH', prefer: 'return=minimal', body: { erro: null },
+          }).catch(err => console.error('[osixc.salvar] fila:', err.message));
+        }
+        return res.status(200).json({ ok: true, salvo: Array.isArray(r) && r.length > 0 });
+      }
+
+      case 'osixc.assunto': {
+        if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        const aid = String(body.assunto_id ?? '').trim();
+        if (!/^\d{1,9}$/.test(aid)) return res.status(400).json({ ok: false, error: 'Assunto inválido.' });
+        if (!await sbUm(e, `ixc_assuntos?id=eq.${aid}&select=id`)) return res.status(404).json({ ok: false, error: 'Assunto não encontrado no IXC.' });
+        const setor = body.setor_id ? idValido(body.setor_id) : null;
+        if (body.setor_id && !setor) return res.status(400).json({ ok: false, error: 'Setor inválido.' });
+        if (setor && !await sbUm(e, `ixc_setores?id=eq.${setor}&select=id`)) return res.status(400).json({ ok: false, error: 'Setor não encontrado no IXC.' });
+        let prazo = null;
+        if (body.prazo_horas != null && body.prazo_horas !== '') {
+          prazo = Math.round(Number(body.prazo_horas) * 10) / 10;
+          if (!(prazo >= 0.5 && prazo <= 2160)) return res.status(400).json({ ok: false, error: 'Prazo em horas entre 0,5 e 2160 (90 dias).' });
+        }
+        const linha = {
+          assunto_id: aid, setor_id: setor, prazo_horas: prazo,
+          prioridade: PRIORIDADES_CHAMADO.includes(body.prioridade) ? body.prioridade : 'media',
+          gera_os: body.gera_os === true, na_central: body.na_central === true,
+          atualizado_em: new Date().toISOString(), atualizado_por: user.nome || user.email || null,
+        };
+        await sb(e, 'central_assuntos?on_conflict=assunto_id', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: linha });
+        const atual = await sbUm(e, `central_assuntos_efetivo?assunto_id=eq.${aid}&select=assunto_id,assunto,setor_id,setor_id_ixc,gera_os,prazo_horas,prazo_horas_ixc,prioridade,na_central,setor_proprio,prazo_proprio,atualizado_por`);
+        return res.status(200).json({ ok: true, assunto: atual ? { ...atual, assunto_id: String(atual.assunto_id), setor_id: atual.setor_id ? String(atual.setor_id) : null,
+          setor_id_ixc: atual.setor_id_ixc ? String(atual.setor_id_ixc) : null, prazo_horas: atual.prazo_horas == null ? null : Number(atual.prazo_horas),
+          prazo_horas_ixc: atual.prazo_horas_ixc == null ? null : Number(atual.prazo_horas_ixc) } : null });
+      }
+
       case 'chamados.tecnicos': {
         const [tecs, assuntos] = await Promise.all([
-          sb(e, 'campo_tecnicos?status=eq.ativo&select=id,nome&order=nome.asc&limit=200'),
-          // sem a lista de assuntos o formulário segue funcionando como antes
+          sb(e, 'campo_tecnicos?status=eq.ativo&ixc_funcionario_id=not.is.null&select=id,nome&order=nome.asc&limit=200'),
           assuntosDaCentral(e).catch(err => { console.error('[chamados.tecnicos] assuntos:', err.message); return []; }),
         ]);
         return res.status(200).json({ ok: true, tecnicos: (tecs || []).map(t => ({ id: t.id, nome: t.nome })), assuntos });
@@ -9171,35 +9229,27 @@ export default async function handler(req, res) {
         const acesso = await conversaDoUsuario(e, user, id, 'id,setor,contato_fone,contato_nome,cliente_ixc_id,cliente_snapshot');
         if (acesso.erro) return res.status(acesso.erro).json({ ok: false, error: acesso.msg });
         const c = acesso.c;
-        // o painel lista os chamados pelo cadastro: sem ele o chamado sumiria da aba
-        if (!c.cliente_ixc_id) return res.status(400).json({ ok: false, error: 'Associe a conversa a um cadastro do IXC antes de abrir o chamado.' });
+        if (!idValido(c.cliente_ixc_id)) return res.status(400).json({ ok: false, error: 'Associe a conversa a um cadastro do IXC antes de abrir a OS.' });
         const descricao = String(body.descricao || '').trim();
         if (descricao.length < 5) return res.status(400).json({ ok: false, error: 'Descreva o problema do cliente.' });
         const prioridade = PRIORIDADES_CHAMADO.includes(body.prioridade) ? body.prioridade : 'media';
-        let assunto = null;
-        if (body.assunto_id != null && String(body.assunto_id).trim() !== '') {
-          const aid = String(body.assunto_id).trim();
-          if (!/^\d{1,9}$/.test(aid)) return res.status(400).json({ ok: false, error: 'Assunto inválido.' });
-          assunto = await sbUm(e, `central_assuntos_efetivo?assunto_id=eq.${aid}&na_central=is.true&select=assunto_id,assunto`);
-          if (!assunto) return res.status(400).json({ ok: false, error: 'Assunto não encontrado ou fora da Central. Escolha outro.' });
-        }
+        const assunto = await assuntoParaOs(e, body.assunto_id);
+        if (!assunto) return res.status(400).json({ ok: false, error: 'Escolha o assunto da OS.' });
         let tecnico = null;
         if (body.tecnico_id) {
-          tecnico = await sbUm(e, `campo_tecnicos?id=eq.${Number(body.tecnico_id)}&status=eq.ativo&select=id,nome`);
-          if (!tecnico) return res.status(400).json({ ok: false, error: 'Técnico não encontrado ou inativo. Escolha outro.' });
+          tecnico = await sbUm(e, `campo_tecnicos?id=eq.${Number(body.tecnico_id)}&status=eq.ativo&ixc_funcionario_id=not.is.null&select=id,nome,ixc_funcionario_id`);
+          if (!tecnico) return res.status(400).json({ ok: false, error: 'Técnico não encontrado, inativo ou sem cadastro no IXC. Escolha outro.' });
         }
-        const snap = c.cliente_snapshot || {};
         let criado = null;
         try {
-          criado = await criarChamadoCampo(e, {
-            nome: snap.nome || c.contato_nome || c.contato_fone, ixcId: c.cliente_ixc_id,
-            telefone: c.contato_fone, descricao, prioridade, tecnico, assunto, origem: 'movitalk',
-          });
+          criado = await abrirOsNoIxc(e, { ixcId: c.cliente_ixc_id, assunto, prioridade, descricao: descricao.slice(0, 1000), tecnico,
+            origem: 'movitalk', autor: user.nome || user.email || null, conversaId: id });
         } catch (err) {
           console.error('[chamados.abrir]', err.message);
+          if (err.recusa) return res.status(422).json({ ok: false, error: `O IXC recusou a OS: ${err.message}` });
+          return res.status(502).json({ ok: false, error: 'O IXC não respondeu. Confira na lista abaixo se a OS apareceu antes de tentar de novo.' });
         }
-        if (!criado || !criado.id) return res.status(502).json({ ok: false, error: 'Não consegui registrar o chamado. Tente de novo.' });
-        // a conversa fica ligada ao chamado, e a equipe vê na conversa quem abriu
+        // a conversa fica ligada à OS, e a equipe vê na conversa quem abriu
         const rotPrio = { baixa: 'baixa', media: 'média', alta: 'alta' }[prioridade];
         await Promise.all([
           sb(e, `atend_conversas?id=eq.${id}`, {
@@ -9209,17 +9259,15 @@ export default async function handler(req, res) {
             method: 'POST', prefer: 'return=minimal',
             body: {
               conversa_id: id, direcao: 'sys', autor_id: user.id, autor_nome: user.nome || null,
-              conteudo: `🛠️ ${user.nome || 'Atendente'} abriu o chamado técnico #${criado.id}`
-                + (assunto ? ` · ${assunto.assunto}` : '') + ` · prioridade ${rotPrio} · `
-                + (tecnico ? `técnico ${tecnico.nome}` : 'na fila, sem técnico'),
+              conteudo: `🛠️ ${user.nome || 'Atendente'} abriu a OS ${criado.id} no IXC · ${assunto.nome} · prioridade ${rotPrio} · `
+                + (tecnico ? `encaminhada ao técnico ${tecnico.nome}` : 'sem técnico, para o escritório encaminhar'),
             },
           }).catch(err => console.error('[chamados.abrir] nota:', err.message)),
         ]);
         return res.status(200).json({
           ok: true,
-          chamado: { id: criado.id, status: criado.status, prioridade, tecnico_nome: tecnico ? tecnico.nome : null,
-            assunto: assunto ? assunto.assunto : null, prazo_em: criado.prazo_em || null,
-            com_endereco: !!criado.endereco, com_login: !!criado.login },
+          os: { id: criado.id, status: criado.status, encaminhada: criado.encaminhada, prioridade, assunto: assunto.nome,
+            tecnico_nome: tecnico ? tecnico.nome : null, prazo_em: criado.prazo_em, com_login: criado.com_login, com_contrato: criado.com_contrato },
         });
       }
 
