@@ -55,6 +55,16 @@ export function camposDiferentes(a, b) {
   return [...nomes].filter(k => !IGNORAR.has(k) && comparavel((a || {})[k]) !== comparavel((b || {})[k])).sort();
 }
 
+/* Forma (nunca o valor) de um campo sensível: vazio, S/N, hash MD5 ou texto —
+   para saber se o IXC guarda a senha em MD5 antes de regravar o cadastro. */
+export function formaSensivel(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return 'vazio';
+  if (/^[SN]$/i.test(s)) return s.toUpperCase();
+  if (/^[a-f0-9]{32}$/i.test(s)) return 'md5';
+  return 'texto';
+}
+
 /* Prévia: como o cadastro vem do IXC — só nomes de campos e formatos, nenhum valor. */
 export function estruturaDoCadastro(reg) {
   const nomes = Object.keys(reg || {});
@@ -64,6 +74,7 @@ export function estruturaDoCadastro(reg) {
     datas: comFormato(/^\d{4}-\d{2}-\d{2}$/), datas_hora: comFormato(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
     datas_vazias: comFormato(/^0000-00-00/), datas_br: comFormato(/^\d{2}\/\d{2}\/\d{4}/),
     sensiveis: nomes.filter(k => CAMPO_SENSIVEL.test(k)),
+    sensiveis_forma: Object.fromEntries(nomes.filter(k => CAMPO_SENSIVEL.test(k)).map(k => [k, formaSensivel(reg[k])])),
     tem_localizacao: num(reg && reg.latitude) != null && num(reg && reg.longitude) != null,
   };
 }
