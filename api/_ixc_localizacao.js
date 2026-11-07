@@ -57,10 +57,15 @@ function mesmoValor(x, y) {
   if ((x === '' && zero(y)) || (y === '' && zero(x))) return true;
   return NUMERO.test(x) && NUMERO.test(y) && Number(x) === Number(y);
 }
+// marcas que o próprio IXC liga ao salvar um cadastro (como quando o escritório edita):
+// atualizar_cadastro_galaxPay = 'S' manda os dados do cliente de novo para o GalaxPay
+// (conferido em 07/11 no cliente 1934: N → S, nada mais mudou)
+const MARCAS_AO_SALVAR = { atualizar_cadastro_galaxPay: 'S' };
 /* Nomes (só os nomes) dos campos que mudaram entre duas leituras do cadastro. */
 export function camposDiferentes(a, b) {
   const nomes = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
-  return [...nomes].filter(k => !IGNORAR.has(k) && !mesmoValor(comparavel((a || {})[k]), comparavel((b || {})[k]))).sort();
+  return [...nomes].filter(k => !IGNORAR.has(k) && !(MARCAS_AO_SALVAR[k] && comparavel((b || {})[k]) === MARCAS_AO_SALVAR[k])
+    && !mesmoValor(comparavel((a || {})[k]), comparavel((b || {})[k]))).sort();
 }
 
 // nomes que podem guardar dado pessoal: o valor nunca aparece, mesmo sendo número ou letra
