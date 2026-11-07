@@ -1,4 +1,5 @@
 import { groqChat } from './_groq.js';
+import { AwsClient } from 'aws4fetch';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -6,6 +7,57 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ixc-url, x-ixc-token, x-ixc-user, x-ixc-endpoint, x-ixc-secret, x-ixc-method, x-target');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // ============================================================
+  // R2 LIST — fotos de uma OS para o MoviOne (Campo › Assinaturas e fotos)
+  // Acionado pelo header x-target: r2-list · body { os_id }
+  // Exige a sessão de quem pede (administrador ou operador do MoviOne) e
+  // devolve links temporários (10 min): o endereço do R2 não é público, e a
+  // foto da casa do cliente não pode ficar aberta para quem souber o número da
+  // OS. (Antes ficava depois da exigência dos cabeçalhos do IXC e nunca rodava.)
+  // ============================================================
+  if ((req.headers['x-target'] || '').toLowerCase() === 'r2-list') {
+    const SUPA_URL = process.env.SUPABASE_URL || 'https://mgtetsmcswdtvsgewcen.supabase.co';
+    const SRV = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const token = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+    if (!token) return res.status(401).json({ error: 'Entre no MoviOne para ver as fotos.' });
+    let perfil = null;
+    try {
+      const rv = await fetch(`${SUPA_URL}/auth/v1/user`, { headers: { apikey: SRV, Authorization: `Bearer ${token}` } });
+      if (!rv.ok) return res.status(401).json({ error: 'Sessão expirada: entre de novo no MoviOne.' });
+      const u = await rv.json();
+      const rp = await fetch(`${SUPA_URL}/rest/v1/perfis?id=eq.${encodeURIComponent(u.id)}&select=perfil`, { headers: { apikey: SRV, Authorization: `Bearer ${SRV}` } });
+      const pj = await rp.json();
+      perfil = Array.isArray(pj) && pj[0] ? pj[0].perfil : null;
+    } catch (e) { return res.status(401).json({ error: 'Não consegui conferir a sessão.' }); }
+    if (!['admin', 'operador'].includes(perfil)) return res.status(403).json({ error: 'Sem acesso às fotos das visitas.' });
+    const osId = Number((req.body || {}).os_id);
+    if (!Number.isInteger(osId) || osId <= 0) return res.status(400).json({ error: 'os_id inválido.' });
+    const R2_ACCOUNT  = process.env.R2_ACCOUNT_ID        || '';
+    const R2_KEY      = process.env.R2_ACCESS_KEY_ID     || '';
+    const R2_SECRET   = process.env.R2_SECRET_ACCESS_KEY || '';
+    const R2_BUCKET   = process.env.R2_BUCKET_NAME       || 'movionfotos';
+    const R2_ENDPOINT = (process.env.R2_ENDPOINT || `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`).replace(/\/$/, '');
+    if (!R2_KEY || !R2_SECRET) return res.status(500).json({ error: 'Armazenamento de fotos (R2) não configurado.' });
+    const aws = new AwsClient({ accessKeyId: R2_KEY, secretAccessKey: R2_SECRET, service: 's3', region: 'auto' });
+    try {
+      const prefixo = `fotos/OS_${osId}/`;
+      const r2 = await aws.fetch(`${R2_ENDPOINT}/${R2_BUCKET}?list-type=2&prefix=${encodeURIComponent(prefixo)}`);
+      if (!r2.ok) return res.status(502).json({ error: `R2 ${r2.status} ao listar as fotos.` });
+      const xml = await r2.text();
+      const chaves = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1]).filter(k => k.startsWith(prefixo)).slice(0, 40);
+      const fotos = [];
+      for (const k of chaves) {
+        const url = new URL(`${R2_ENDPOINT}/${R2_BUCKET}/${k.split('/').map(encodeURIComponent).join('/')}`);
+        url.searchParams.set('X-Amz-Expires', '600');
+        const assinado = await aws.sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } });
+        fotos.push({ key: k, nome: k.split('/').pop(), url: assinado.url });
+      }
+      return res.status(200).json({ ok: true, fotos });
+    } catch (e) {
+      return res.status(502).json({ error: 'Erro ao listar as fotos: ' + String(e.message || e).slice(0, 160) });
+    }
+  }
 
   // ============================================================
   // SUPABASE ADMIN - cria o tecnico INTEIRAMENTE no servidor.
@@ -381,68 +433,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, key, url: `${R2_ENDPOINT}/${R2_BUCKET}/${key}` });
     } catch (e) {
       return res.status(500).json({ error: 'Erro ao enviar para R2: ' + e.message });
-    }
-  }
-
-  // ============================================================
-  // R2 LIST - lista fotos de uma OS
-  // Acionado pelo header x-target: r2-list
-  // Espera body: { os_id }
-  // ============================================================
-  if ((req.headers['x-target'] || '').toLowerCase() === 'r2-list') {
-    const R2_ACCOUNT  = process.env.R2_ACCOUNT_ID        || '';
-    const R2_KEY      = process.env.R2_ACCESS_KEY_ID     || '';
-    const R2_SECRET   = process.env.R2_SECRET_ACCESS_KEY || '';
-    const R2_BUCKET   = process.env.R2_BUCKET_NAME       || 'movionfotos';
-    const R2_ENDPOINT = process.env.R2_ENDPOINT          || `https://${R2_ACCOUNT}.r2.cloudflarestorage.com`;
-
-    const b = req.body || {};
-    const { os_id } = b;
-    if (!os_id) return res.status(400).json({ error: 'os_id obrigatório.' });
-
-    const prefix = `fotos/OS_${os_id}/`;
-    const crypto = await import('crypto');
-    const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
-    const hash = (data) => crypto.createHash('sha256').update(data).digest('hex');
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0,10).replace(/-/g,'');
-    const timeStr = now.toISOString().replace(/[-:]/g,'').slice(0,15) + 'Z';
-    const region = 'auto'; const service = 's3';
-    const host = `${R2_ACCOUNT}.r2.cloudflarestorage.com`;
-    const queryStr = `list-type=2&prefix=${encodeURIComponent(prefix)}`;
-    const listUrl  = `${R2_ENDPOINT}/${R2_BUCKET}?${queryStr}`;
-
-    const payloadHash = hash('');
-    const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${timeStr}\n`;
-    const signedHeaders    = 'host;x-amz-content-sha256;x-amz-date';
-    const canonicalRequest = `GET\n/${R2_BUCKET}\n${queryStr}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-    const credScope = `${dateStr}/${region}/${service}/aws4_request`;
-    const stringToSign = `AWS4-HMAC-SHA256\n${timeStr}\n${credScope}\n${hash(canonicalRequest)}`;
-    const sigKey = hmac(hmac(hmac(hmac(`AWS4${R2_SECRET}`, dateStr), region), service), 'aws4_request');
-    const signature = hmac(sigKey, stringToSign).toString('hex');
-    const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_KEY}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-    try {
-      const r2Res = await fetch(listUrl, {
-        headers: {
-          'host': host,
-          'x-amz-date': timeStr,
-          'x-amz-content-sha256': payloadHash,
-          'Authorization': authHeader,
-        }
-      });
-      const xml = await r2Res.text();
-      // Extrai as keys do XML
-      const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1]);
-      const fotos = keys.map(k => ({
-        key: k,
-        url: `${R2_ENDPOINT}/${R2_BUCKET}/${k}`,
-        nome: k.split('/').pop(),
-      }));
-      return res.status(200).json({ ok: true, fotos });
-    } catch(e) {
-      return res.status(500).json({ error: 'Erro ao listar R2: ' + e.message });
     }
   }
 
