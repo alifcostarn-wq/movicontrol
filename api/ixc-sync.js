@@ -22,6 +22,7 @@ import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
 import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 import { sondarIxc } from './_ixc_sondagem.js';
+import { lerFaturasAbertas } from './_ixc_faturas.js';
 
 export const config = { maxDuration: 60 };
 
@@ -291,6 +292,12 @@ async function rodarOs(cfg, prazo) {
         try { extra.sondagem_resultado = await sondarIxc(io, cfg.sondagem_pedido, { agora: new Date(agora) }); }
         catch (err) { extra.sondagem_resultado = { em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
         extra.sondagem_pedido = null;
+      }
+      // faturas a receber (fotografia para o levantamento do reajuste), quando pedida
+      if (cfg.faturas_pedido) {
+        try { extra.faturas_resultado = await lerFaturasAbertas(io, { agora: new Date(agora) }); }
+        catch (err) { extra.faturas_resultado = { ok: false, em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
+        extra.faturas_pedido = null;
       }
     }
   } catch (err) {
