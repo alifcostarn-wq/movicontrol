@@ -22,7 +22,7 @@ import { CAMPO_SENSIVEL, idValido } from './_ixc_espelho.js';
 import { CAMPOS_ATUALIZACAO } from './_ixc_os.js';
 
 export const PRECISAO_MAX_M = 50;       // o gatilho só põe na fila GPS com até 50 m
-export const DISTANCIA_MAX_KM = 5;      // mais longe que isso do que está no IXC: não troca, pede conferência
+const MESMO_PONTO_KM = 0.001;           // até 1 m do que já está no IXC: nada a gravar
 const TENTATIVAS = 3;
 const TRANSITORIO = /demorou|HTTP 5\d\d|ECONNRESET|fetch failed|socket|sem tempo/i;
 // o próprio IXC muda esses ao gravar: não contam como "mudou outro campo"
@@ -100,7 +100,7 @@ async function lerCliente(io, id) {
 }
 
 /* `ate`: hora-limite da rodada (as outras leituras e gravações vêm antes). */
-export async function processarLocalizacoesIxc(io, { agora = new Date(), modo = 'desligado', clienteTeste = null, max = 3, ate = Infinity } = {}) {
+export async function processarLocalizacoesIxc(io, { agora = new Date(), modo = 'desligado', clienteTeste = null, max = 5, ate = Infinity } = {}) {
   const r = { modo, feitas: 0, falhas: 0, adiadas: 0 };
   if (!['teste', 'ativo'].includes(modo)) return r;
   const teste = idValido(clienteTeste);
@@ -161,15 +161,11 @@ export async function processarLocalizacoesIxc(io, { agora = new Date(), modo = 
     if (manter) {
       if (!coordValida(latAntes, lngAntes)) { await falhar('o cliente de teste não tem localização no IXC para regravar'); continue; }
       lat = latAntes; lng = lngAntes;
-    } else if (coordValida(latAntes, lngAntes) && d.forcar !== true) {
-      // técnico que finalizou longe da casa (na base, no caminho): não troca —
-      // até o administrador conferir e mandar trocar mesmo assim (dados.forcar)
-      const km = distanciaKm(noIxc, { lat, lng });
-      if (km > DISTANCIA_MAX_KM) {
-        await falhar(`longe demais da localização que está no IXC (${km.toFixed(1).replace('.', ',')} km): confira antes de trocar`,
-          { antes: noIxc, nova: { lat, lng }, km: Math.round(km * 10) / 10 });
-        continue;
-      }
+    } else if (coordValida(latAntes, lngAntes) && distanciaKm(noIxc, { lat, lng }) < MESMO_PONTO_KM) {
+      // o IXC já tem essa localização: não regrava o cadastro à toa
+      await marcar({ status: 'feita', tentativas, erro: null, feita_em: agora.toISOString(),
+        resposta: { antes: noIxc, depois: noIxc, precisao: d.precisao ?? null, ja_estava: true } });
+      r.feitas++; continue;
     }
 
     // o cadastro como veio, com as datas no formato que o IXC grava e a localização nova
@@ -194,7 +190,8 @@ export async function processarLocalizacoesIxc(io, { agora = new Date(), modo = 
     }
     const mudaram = camposDiferentes(antes, depois);
     const latDepois = num(depois.latitude), lngDepois = num(depois.longitude);
-    const resposta = { antes: noIxc, depois: { lat: latDepois, lng: lngDepois }, precisao: d.precisao ?? null, conferidos: Object.keys(antes).length };
+    const km = coordValida(latAntes, lngAntes) ? Math.round(distanciaKm(noIxc, { lat, lng }) * 1000) / 1000 : null;
+    const resposta = { antes: noIxc, depois: { lat: latDepois, lng: lngDepois }, km, precisao: d.precisao ?? null, conferidos: Object.keys(antes).length };
     if (mudaram.length) {
       await pausar('o IXC mudou outros campos do cadastro', mudaram);
       await falhar(`o IXC mudou outros campos do cadastro (${mudaram.join(', ')}): confira no IXC — o envio da localização parou`, { ...resposta, campos_mudados: mudaram });
