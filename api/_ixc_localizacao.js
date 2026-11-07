@@ -146,6 +146,12 @@ export async function processarLocalizacoesIxc(io, { agora = new Date(), modo = 
       await falhar(`o IXC esconde ${escondidos.join(', ')} na leitura: não dá para reenviar o cadastro sem trocar esses campos`);
       continue;
     }
+    // regravar foi conferido com a senha da Central em MD5 (o IXC mantém); sem
+    // criptografia, o IXC poderia criptografar ao regravar e a senha mudaria
+    if ('senha' in antes && formaSensivel(antes.senha) === 'texto') {
+      await falhar('a senha da Central deste cliente está sem criptografia no IXC: regravar o cadastro poderia mudar a senha (atualize a localização no IXC)');
+      continue;
+    }
     const latAntes = num(antes.latitude), lngAntes = num(antes.longitude);
     const noIxc = { lat: latAntes, lng: lngAntes };
     if (previa) {
