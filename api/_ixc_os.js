@@ -430,7 +430,9 @@ export async function processarAcoesIxc(io, { agora = new Date(), max = 5, codig
   const ixcDoTec = new Map((tecnicos || []).filter(t => t && idValido(t.ixc_funcionario_id)).map(t => [String(t.id), String(t.ixc_funcionario_id)]));
   // lê mais do que processa: as que esperam (fechamento desligado, sem responsável)
   // não podem travar a fila das outras
-  const fila = await io.sb(`ixc_acoes?status=eq.pendente${fecharModo === 'desligado' ? '&acao=neq.fechar' : ''}`
+  // a localização do cliente tem a rodada própria (_ixc_localizacao.js)
+  const fora = ['localizacao', ...(fecharModo === 'desligado' ? ['fechar'] : [])];
+  const fila = await io.sb(`ixc_acoes?status=eq.pendente&acao=not.in.(${fora.join(',')})`
     + `&select=id,acao,ixc_os_id,os_id,dados,tentativas,erro&order=id.asc&limit=${max * 4}`) || [];
   let feitasNaRodada = 0;
   for (const a of fila) {

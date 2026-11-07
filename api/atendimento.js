@@ -9134,20 +9134,31 @@ export default async function handler(req, res) {
       case 'osixc.config': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
         const desde = new Date(Date.now() - 7 * 864e5).toISOString();
-        const [cfg, assuntos, setores, funcs, tecs, falhas] = await Promise.all([
-          sbUm(e, 'ixc_sync_config?id=eq.1&select=os_modo,os_fechar,os_fechar_responsavel,os_bot_assunto,os_em,os_resultado,atualizado_em,atualizado_por'),
+        const [cfg, assuntos, setores, funcs, tecs, falhas, locs] = await Promise.all([
+          sbUm(e, 'ixc_sync_config?id=eq.1&select=os_modo,os_fechar,os_fechar_responsavel,os_bot_assunto,os_em,os_resultado,atualizado_em,atualizado_por,coord_ixc,coord_ixc_teste,coord_ixc_alerta'),
           sb(e, 'central_assuntos_efetivo?ativo_ixc=is.true&select=assunto_id,assunto,setor_id,setor_id_ixc,gera_os,prazo_horas,prazo_horas_ixc,prioridade,na_central,setor_proprio,prazo_proprio,atualizado_por&order=assunto.asc&limit=500'),
           sb(e, 'ixc_setores?ativo=is.true&select=id,setor&order=setor.asc&limit=300'),
           sb(e, 'ixc_funcionarios?ativo=eq.true&select=id,nome&order=nome.asc&limit=500'),
           sb(e, 'campo_tecnicos?status=eq.ativo&select=nome,ixc_funcionario_id&order=nome.asc&limit=200'),
-          sb(e, `ixc_acoes?status=eq.falhou&criado_em=gte.${encodeURIComponent(desde)}&select=id,acao,ixc_os_id,erro,origem,criado_em&order=id.desc&limit=12`),
+          sb(e, `ixc_acoes?status=eq.falhou&criado_em=gte.${encodeURIComponent(desde)}&select=id,acao,ixc_os_id,ixc_cliente_id,erro,origem,criado_em&order=id.desc&limit=12`),
+          // localização da casa → cadastro no IXC: só a contagem da semana
+          sb(e, `ixc_acoes?acao=eq.localizacao&criado_em=gte.${encodeURIComponent(desde)}&select=status&limit=2000`).catch(() => []),
         ]);
         const r = (cfg && cfg.os_resultado) || {};
+        const teste = cfg ? idValido(cfg.coord_ixc_teste) : null;
+        const cliTeste = teste ? await sbUm(e, `clientes?ixc_id=eq.${teste}&select=nome`).catch(() => null) : null;
+        const contar = st => (locs || []).filter(x => x.status === st).length;
+        const alerta = cfg && cfg.coord_ixc_alerta && typeof cfg.coord_ixc_alerta === 'object' ? cfg.coord_ixc_alerta : null;
         return res.status(200).json({
           ok: true,
           config: cfg ? { os_modo: cfg.os_modo, os_fechar: cfg.os_fechar, os_fechar_responsavel: cfg.os_fechar_responsavel, os_bot_assunto: cfg.os_bot_assunto,
             os_em: cfg.os_em, atualizado_em: cfg.atualizado_em, atualizado_por: cfg.atualizado_por,
-            ultima: { ok: r.ok !== false, erro: r.ok === false ? String(r.erro || '').slice(0, 200) : null, lidas: r.lidas || 0 } } : null,
+            ultima: { ok: r.ok !== false, erro: r.ok === false ? String(r.erro || '').slice(0, 200) : null, lidas: r.lidas || 0 },
+            coord_ixc: cfg.coord_ixc || 'desligado', coord_ixc_teste: teste, coord_ixc_teste_nome: cliTeste ? cliTeste.nome : null,
+            // o alerta só tem nomes de campos, nunca valores do cadastro
+            coord_ixc_alerta: alerta ? { em: alerta.em || null, cliente: idValido(alerta.cliente), motivo: String(alerta.motivo || '').slice(0, 200),
+              campos: Array.isArray(alerta.campos) ? alerta.campos.map(c => String(c).slice(0, 60)).slice(0, 30) : [] } : null } : null,
+          localizacoes: { pendentes: contar('pendente'), feitas: contar('feita'), falhas: contar('falhou') },
           assuntos: (assuntos || []).map(x => ({ ...x, assunto_id: String(x.assunto_id), setor_id: x.setor_id ? String(x.setor_id) : null, setor_id_ixc: x.setor_id_ixc ? String(x.setor_id_ixc) : null,
             prazo_horas: x.prazo_horas == null ? null : Number(x.prazo_horas), prazo_horas_ixc: x.prazo_horas_ixc == null ? null : Number(x.prazo_horas_ixc) })),
           setores: (setores || []).map(x => ({ id: String(x.id), setor: x.setor })),
@@ -9167,6 +9178,12 @@ export default async function handler(req, res) {
         if (body.os_fechar !== undefined) {
           if (!['desligado', 'teste', 'ativo'].includes(body.os_fechar)) return res.status(400).json({ ok: false, error: 'Opção inválida.' });
           corpo.os_fechar = body.os_fechar;
+        }
+        if (body.coord_ixc !== undefined) {
+          if (!['desligado', 'teste', 'ativo'].includes(body.coord_ixc)) return res.status(400).json({ ok: false, error: 'Opção inválida.' });
+          corpo.coord_ixc = body.coord_ixc;
+          // religar é dizer que o cadastro do alerta foi conferido
+          if (body.coord_ixc !== 'desligado') corpo.coord_ixc_alerta = null;
         }
         if (body.os_fechar_responsavel !== undefined) {
           const resp = idValido(body.os_fechar_responsavel);

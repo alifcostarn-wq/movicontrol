@@ -20,6 +20,7 @@
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
+import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 
 export const config = { maxDuration: 60 };
 
@@ -190,6 +191,34 @@ async function ixcGravar(endpoint, corpo, prazo) {
 }
 const ixcFecharOs = (corpo, prazo) => ixcGravar('su_oss_chamado_fechar', corpo, prazo);
 
+/* Edição do cadastro do cliente no IXC — só para a localização da casa (ver
+   _ixc_localizacao.js): PUT em cliente/{id} com o cadastro inteiro que a rodada
+   acabou de ler. Nenhuma outra tabela do IXC é editável por aqui. */
+async function ixcEditarCliente(id, corpo, prazo) {
+  if (!/^\d+$/.test(String(id || '')) || String(id) === '0') throw new Error('cliente do IXC inválido');
+  const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
+  const resta = prazo - Date.now();
+  if (resta <= 1000) throw new Error('sem tempo nesta rodada para gravar no IXC');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), Math.min(resta, 20e3));
+  let r;
+  try {
+    r = await fetch(`${IXC_URL}/webservice/v1/cliente/${id}`, {
+      method: 'PUT', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify(corpo),
+    });
+  } catch (err) {
+    throw new Error(err.name === 'AbortError' ? 'o IXC demorou demais para responder' : `IXC: ${err.message}`);
+  } finally { clearTimeout(timer); }
+  const txt = await r.text();
+  let d = null; try { d = JSON.parse(txt); } catch { d = null; }
+  if (!r.ok) throw new Error(`IXC HTTP ${r.status}${d && d.message ? ': ' + String(d.message).slice(0, 200) : ''}`);
+  if (!d) throw new Error('IXC: resposta que não é JSON');
+  if (d.type === 'error') throw new Error(`IXC: ${String(d.message || 'recusou').slice(0, 200)}`);
+  return d;
+}
+
 /* OS do IXC (ver _ixc_os.js), pela rodada própria do agendador ("os", a cada
    2 min — a cópia de clientes só chama o servidor de 30 em 30 min).
    'previa': lê, conta e guarda os números (no máximo a cada 15 min);
@@ -212,7 +241,7 @@ async function rodarOs(cfg, prazo) {
   });
   if (!Array.isArray(pego) || !pego.length) return { ok: true, modo, pulado: 'outra rodada das OS em andamento' };
   const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcFecharOs: c => ixcFecharOs(c, prazo),
-    ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), sb };
+    ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), ixcEditarCliente: (id, c) => ixcEditarCliente(id, c, prazo), sb };
   let resultado, extra = {};
   try {
     if (modo === 'previa') {
@@ -250,6 +279,12 @@ async function rodarOs(cfg, prazo) {
           responsavel: cfg.os_fechar_responsavel, fecharModo: cfg.os_fechar || 'desligado' });
       }
       catch (err) { resultado.acoes = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
+      // localização da casa (GPS do técnico ao finalizar) → cadastro do cliente no IXC
+      if (['teste', 'ativo'].includes(cfg.coord_ixc)) {
+        try {
+          resultado.localizacoes = await processarLocalizacoesIxc(io, { agora: new Date(agora), modo: cfg.coord_ixc, clienteTeste: cfg.coord_ixc_teste, ate: prazo });
+        } catch (err) { resultado.localizacoes = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
+      }
     }
   } catch (err) {
     resultado = { ok: false, modo, erro: semDadosDoCliente(err.message || err) };

@@ -4997,8 +4997,8 @@ function oiDesenhar(el){
   const liberados = d.assuntos.filter(a=>a.na_central);
   const comIxc = d.tecnicos.filter(t=>t.ixc), semIxc = d.tecnicos.filter(t=>!t.ixc);
   const nomeFunc = id => { const f = d.funcionarios.find(x=>x.id===String(id)); return f ? nomeBonito(f.nome) : '#'+id; };
-  const rotAcao = { abrir:'abrir', encaminhar:'encaminhar', agendar:'agendar', reagendamento:'reagendar sem data', executar:'executar', fechar:'finalizar' };
-  const falhas = d.falhas.length ? d.falhas.map(f=>`<div class="oi-falha"><b>${esc(rotAcao[f.acao]||f.acao)}${f.ixc_os_id?' · OS '+esc(f.ixc_os_id):''}</b> · ${esc(hora(f.criado_em))}<br>${esc(f.erro||'sem motivo')}</div>`).join('')
+  const rotAcao = { abrir:'abrir', encaminhar:'encaminhar', agendar:'agendar', reagendamento:'reagendar sem data', assumir:'assumir', executar:'executar', fechar:'finalizar', localizacao:'localização do cliente' };
+  const falhas = d.falhas.length ? d.falhas.map(f=>`<div class="oi-falha"><b>${esc(rotAcao[f.acao]||f.acao)}${f.ixc_os_id?' · OS '+esc(f.ixc_os_id):f.ixc_cliente_id?' · cliente IXC '+esc(f.ixc_cliente_id):''}</b> · ${esc(hora(f.criado_em))}<br>${esc(f.erro||'sem motivo')}</div>`).join('')
     : '<div class="tp-nota">Nenhuma recusa nos últimos 7 dias.</div>';
   // assuntos filtrados
   const q = OI.busca.trim().toLowerCase();
@@ -5035,6 +5035,9 @@ function oiDesenhar(el){
         <div class="oi-campo"><div class="oi-rot">OS encaminhada no IXC a um técnico vai para o moviTec dele</div>${seg('os_modo', c.os_modo==='ativo'?'ativo':'desligado', [['ativo','Ligado'],['desligado','Desligado']])}</div>
         <div class="oi-campo"><div class="oi-rot">O que o técnico faz no moviTec vai para o IXC (executar, agendar, finalizar)</div>${seg('os_fechar', c.os_fechar||'desligado', [['ativo','Ligado'],['teste','Só OS de teste'],['desligado','Desligado']])}
           <div class="tp-nota">“Só OS de teste”: só a OS cuja descrição no IXC começa com “teste”.</div></div>
+        <div class="oi-campo"><div class="oi-rot">Localização da casa (GPS do técnico ao finalizar) vai para o cadastro do cliente no IXC</div>${seg('coord_ixc', c.coord_ixc||'desligado', [['ativo','Ligado'],['teste','Só cliente de teste'],['desligado','Desligado']])}
+          <div class="tp-nota">Só com GPS de até 50 m e a até 5 km do que já está no IXC. Depois de gravar, o sistema relê o cadastro e para sozinho se o IXC mudar qualquer outro campo.${c.coord_ixc_teste?` “Só cliente de teste”: ${esc(c.coord_ixc_teste_nome?nomeBonito(c.coord_ixc_teste_nome):'cliente')} (IXC ${esc(c.coord_ixc_teste)}).`:''}${d.localizacoes&&(d.localizacoes.feitas||d.localizacoes.pendentes)?` Últimos 7 dias: ${d.localizacoes.feitas} atualizada${d.localizacoes.feitas===1?'':'s'}${d.localizacoes.pendentes?` · ${d.localizacoes.pendentes} na fila`:''}.`:''}</div>
+          ${c.coord_ixc_alerta?`<div class="ms-erro" role="alert" style="margin-top:6px">Parou ${esc(hora(c.coord_ixc_alerta.em))}: ${esc(c.coord_ixc_alerta.motivo||'conferência falhou')}${c.coord_ixc_alerta.campos.length?` (${esc(c.coord_ixc_alerta.campos.join(', '))})`:''}${c.coord_ixc_alerta.cliente?` · cliente IXC ${esc(c.coord_ixc_alerta.cliente)}`:''}. Confira o cadastro no IXC antes de religar.</div>`:''}</div>
         <div class="oi-campo"><label class="oi-rot" for="oiResp">Colaborador responsável no IXC, para técnico sem cadastro lá</label>
           <select class="transf" id="oiResp" ${OI.salvando?'disabled':''}><option value="">Escolha…</option>${d.funcionarios.map(f=>`<option value="${esc(f.id)}" ${String(c.os_fechar_responsavel||'')===f.id?'selected':''}>${esc(nomeBonito(f.nome))}</option>`).join('')}</select></div>
         <div class="oi-campo"><div class="oi-rot">Técnicos do moviTec com cadastro no IXC</div>
@@ -5084,6 +5087,7 @@ function oiClique(b){
   const k = b.dataset.oi, val = b.dataset.v;
   if(k==='os_modo') return oiSalvar({ os_modo: val }, val==='ativo' ? 'Importação das OS ligada.' : 'Importação das OS desligada.');
   if(k==='os_fechar') return oiSalvar({ os_fechar: val }, 'Envio das ações do técnico salvo.');
+  if(k==='coord_ixc') return oiSalvar({ coord_ixc: val }, val==='ativo' ? 'Localização no cadastro do IXC ligada.' : val==='teste' ? 'Localização no IXC só no cliente de teste.' : 'Localização no cadastro do IXC desligada.');
   if(k==='prio' && OI.rasc){ OI.rasc.prioridade = val; return oiDesenhar(); }
   if(k==='visita' && OI.rasc){ OI.rasc.gera_os = val==='s'; return oiDesenhar(); }
   if(k==='desfazer'){ OI.rasc = null; return oiDesenhar(); }
