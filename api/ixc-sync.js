@@ -21,6 +21,7 @@ import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
 import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
+import { sondarIxc } from './_ixc_sondagem.js';
 
 export const config = { maxDuration: 60 };
 
@@ -284,6 +285,12 @@ async function rodarOs(cfg, prazo) {
         try {
           resultado.localizacoes = await processarLocalizacoesIxc(io, { agora: new Date(agora), modo: cfg.coord_ixc, clienteTeste: cfg.coord_ixc_teste, ate: prazo });
         } catch (err) { resultado.localizacoes = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
+      }
+      // sondagem do IXC (só estrutura: nomes de campos, totais, contagem de códigos), quando pedida
+      if (Array.isArray(cfg.sondagem_pedido) && cfg.sondagem_pedido.length) {
+        try { extra.sondagem_resultado = await sondarIxc(io, cfg.sondagem_pedido, { agora: new Date(agora) }); }
+        catch (err) { extra.sondagem_resultado = { em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
+        extra.sondagem_pedido = null;
       }
     }
   } catch (err) {
