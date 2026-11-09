@@ -7817,7 +7817,7 @@ async function tratarCron(e) {
 
   // campanhas em massa: a fila anda aqui, respeitando prazo e ritmo
   let campanhas = null;
-  try { campanhas = await processarCampanhas(e); }
+  try { campanhas = await processarCampanhas(e, { ate: inicioCiclo + 45000 }); }
   catch (err) { console.error('[campanhas]', err.message); campanhas = { erro: err.message }; }
 
   // ---- chat interno: mensagens programadas e prazos de tarefa ----
@@ -8189,8 +8189,11 @@ function campJanelaOk(c, agora) {
   return hm >= String(c.janela_ini).slice(0,5) && hm <= String(c.janela_fim).slice(0,5);
 }
 
-/* Processa a fila de campanhas. Chamada pelo cron. */
-async function processarCampanhas(e) {
+/* Processa a fila de campanhas. Chamada pelo cron e pelo pulso do agendador
+   do banco (acao campanha.pulso, a cada minuto). `ate` é a hora-limite desta
+   chamada: a função da Vercel vive 60 s, e um lote com pausas de 25 s não cabe
+   nisso — o que não couber fica para o próximo pulso. */
+async function processarCampanhas(e, { ate = Date.now() + 40000 } = {}) {
   const ativas = await sb(e,
     'atend_campanhas?status=in.(enfileirada,enviando)&select=*&order=criado_em.asc&limit=3');
   if (!ativas || !ativas.length) return { ok: true, campanhas: 0 };
@@ -8223,6 +8226,8 @@ async function processarCampanhas(e) {
       continue;
     }
 
+    // envio programado: só começa na hora marcada
+    if (c.inicia_em && new Date(c.inicia_em) > agora) { resumo.push({ id: c.id, pulou: 'programada' }); continue; }
     if (!campJanelaOk(c, agora)) { resumo.push({ id: c.id, pulou: 'fora da janela' }); continue; }
 
     // O lote acompanha o tempo que RESTA: prazo apertado manda mais por
@@ -8254,9 +8259,17 @@ async function processarCampanhas(e) {
     }
 
     let ok = 0, erro = 0;
+    const registrar = !!c.incidente_id || !!(c.filtros && c.filtros.registrar_conversa);
     for (const a of alvos) {
+      if (Date.now() > ate - 12000) break;            // sem tempo para mais um envio nesta chamada
+      // reivindica o alvo: duas rodadas ao mesmo tempo não mandam a mesma mensagem duas vezes
+      const meu = await sb(e, `atend_campanha_alvos?id=eq.${a.id}&status=eq.pendente&select=id`, {
+        method: 'PATCH', headers: { Prefer: 'return=representation' }, body: { status: 'enviando' },
+      }).catch(() => null);
+      if (!Array.isArray(meu) || !meu.length) continue;
       try {
-        const texto = campVariar(c.texto, a.nome);
+        // cada alvo pode ter o seu texto (ex.: reajuste por faixa); sem ele, o da campanha
+        const texto = campVariar(a.texto || c.texto, a.nome);
         let env;
         if (c.midia_url) {
           env = await waEnviarMidia(e, a.fone, {
@@ -8271,7 +8284,7 @@ async function processarCampanhas(e) {
            ver o que foi dito — e o livro de avisos evita o bot repetir o mesmo
            aviso para quem já recebeu. Campanha comum segue sem isso. */
         let convId = null;
-        if (c.incidente_id) {
+        if (registrar) {
           try {
             let conv = await conversaPorFone(e, a.fone, 'id,contato_fone');
             if (!conv) {
@@ -8279,7 +8292,7 @@ async function processarCampanhas(e) {
                 method: 'POST', headers: { Prefer: 'return=representation' },
                 body: {
                   contato_fone: a.fone, contato_nome: a.nome || a.fone, coluna: 'resolvidos',
-                  setor: 'Suporte', bot_ativo: true, cliente_ixc_id: a.cliente_ixc_id || null,
+                  setor: (c.filtros && c.filtros.setor) || 'Suporte', bot_ativo: true, cliente_ixc_id: a.cliente_ixc_id || null,
                 },
               });
               conv = Array.isArray(nv) ? nv[0] : nv;
@@ -8292,17 +8305,17 @@ async function processarCampanhas(e) {
               });
               await sb(e, `atend_conversas?id=eq.${convId}`, {
                 method: 'PATCH', prefer: 'return=minimal',
-                body: { ultima_msg: 'Aviso de instabilidade enviado', ultima_msg_em: new Date().toISOString() },
+                body: { ultima_msg: c.incidente_id ? 'Aviso de instabilidade enviado' : 'Aviso enviado: ' + String(c.nome || '').slice(0, 80), ultima_msg_em: new Date().toISOString() },
               });
             }
-            await sb(e, 'movifiber_incidente_avisos', {
+            if (c.incidente_id) await sb(e, 'movifiber_incidente_avisos', {
               method: 'POST', prefer: 'return=minimal',
               body: {
                 incidente_id: c.incidente_id, conversa_id: convId,
                 contato_fone: a.fone, cliente_ixc_id: a.cliente_ixc_id || null,
               },
             });
-          } catch (err) { console.error('[campanha/instabilidade]', err.message); }
+          } catch (err) { console.error('[campanha/registro]', err.message); }
         }
         await sb(e, `atend_campanha_alvos?id=eq.${a.id}`, {
           method: 'PATCH', prefer: 'return=minimal',
@@ -8316,7 +8329,10 @@ async function processarCampanhas(e) {
         });
         erro++;
       }
-      await new Promise(r => setTimeout(r, campIntervalo(c.intervalo_seg)));
+      // pausa entre uma mensagem e outra — só se ainda couber mais um envio depois dela
+      const pausa = campIntervalo(c.intervalo_seg);
+      if (Date.now() + pausa > ate - 12000) break;
+      await new Promise(r => setTimeout(r, pausa));
     }
 
     const tot = await sb(e, `atend_campanha_alvos?campanha_id=eq.${c.id}&select=status`);
@@ -8657,6 +8673,20 @@ export default async function handler(req, res) {
       // inatividade andar. Nunca deixa a entrada de mensagem quebrar por isso.
       try { await talvezVarrer(e); } catch (err) { console.error('[inatividade]', err.message); }
       return res.status(200).json(r);
+    }
+
+    /* Pulso das campanhas: o agendador do banco chama a cada minuto, com o
+       token de atend_whatsapp_monitor. Só faz a fila das campanhas andar —
+       sem isso ela dependeria de alguém estar com o painel aberto. */
+    if (acao === 'campanha.pulso') {
+      const cfgM = await sbUm(e, 'atend_whatsapp_monitor?id=eq.1&select=token').catch(() => null);
+      const veio = Buffer.from(String(req.headers['x-monitor-token'] || ''));
+      const certo = Buffer.from(String((cfgM && cfgM.token) || ''));
+      if (certo.length < 32 || veio.length !== certo.length || !crypto.timingSafeEqual(veio, certo)) {
+        return res.status(401).json({ ok: false });
+      }
+      const r = await processarCampanhas(e, { ate: inicioReq + 50000 });
+      return res.status(200).json({ ok: true, campanhas: r.campanhas || 0 });
     }
 
     if (acao === 'cron') {
