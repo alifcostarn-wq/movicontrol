@@ -244,6 +244,31 @@ async function evoEstado(e) {
   } catch { return 'indisponivel'; }
 }
 
+/* O que o monitor da conexão registrou (api/whatsapp-monitor.js): estado,
+   tempo de resposta da Evolution, último motivo de queda e as mudanças de
+   estado. Só códigos e horários — nada de número, token ou nome. */
+async function monitorWhatsapp(e) {
+  try {
+    const [mon, hist] = await Promise.all([
+      sbUm(e, 'atend_whatsapp_monitor?id=eq.1&select=estado,desde,checado_em,ms,latencias,diagnostico,alerta'),
+      sb(e, 'atend_whatsapp_conexao?select=em,estado,anterior,durou_seg,motivo_codigo,motivo,acao,ms&order=em.desc&limit=15'),
+    ]);
+    if (!mon || !mon.checado_em) return null;
+    const lat = (Array.isArray(mon.latencias) ? mon.latencias : []).map(Number);
+    const respondeu = lat.filter(x => x >= 0);
+    const d = mon.diagnostico || {};
+    return {
+      estado: mon.estado, desde: mon.desde, checado_em: mon.checado_em, ms: mon.ms,
+      ms_medio: respondeu.length ? Math.round(respondeu.reduce((a, b) => a + b, 0) / respondeu.length) : null,
+      lentas: respondeu.filter(x => x > 3000).length, sem_resposta: lat.filter(x => x < 0).length, checagens: lat.length,
+      alerta: mon.alerta || null,
+      evolution: { versao: d.versao || null, versao_whatsapp_web: d.versao_whatsapp_web || null,
+        queda_codigo: d.queda_codigo || null, queda_motivo: d.queda_motivo || null, queda_em: d.queda_em || null },
+      historico: (hist || []).map(h => ({ ...h, motivo: h.motivo ? String(h.motivo).slice(0, 200) : null })),
+    };
+  } catch { return null; }
+}
+
 async function evoPost(e, rota, corpo, ms = 30000, tentativas = 3) {
   let ultimo = null;
   for (let i = 1; i <= tentativas; i++) {
@@ -12072,13 +12097,15 @@ export default async function handler(req, res) {
       // ===== Integração WhatsApp (Evolution API) — tudo dentro do app, sem terminal =====
       case 'whatsapp.status': {
         if (!user.admin) return res.status(403).json({ ok: false, error: 'Apenas administradores.' });
+        // o que o monitor (api/whatsapp-monitor.js, a cada 2 min) registrou: quedas, motivo, tempo de resposta
+        const monitor = await monitorWhatsapp(e);
         try {
           const r = await fetch(`${e.EVO_URL}/instance/connectionState/${e.EVO_INST}`, { headers: { apikey: e.EVO_KEY } });
           const d = await r.json();
-          if (r.status === 404) return res.status(200).json({ ok: true, existe: false, status: 'nao_criada' });
-          return res.status(200).json({ ok: true, existe: true, status: d?.instance?.state || d?.state || 'desconhecido' });
+          if (r.status === 404) return res.status(200).json({ ok: true, existe: false, status: 'nao_criada', monitor });
+          return res.status(200).json({ ok: true, existe: true, status: d?.instance?.state || d?.state || 'desconhecido', monitor });
         } catch (err) {
-          return res.status(200).json({ ok: true, existe: false, status: 'erro', detalhe: err.message });
+          return res.status(200).json({ ok: true, existe: false, status: 'erro', detalhe: err.message, monitor });
         }
       }
 

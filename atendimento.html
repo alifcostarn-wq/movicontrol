@@ -12490,6 +12490,7 @@ async function renderIntegracoes(body){
     <div class="wa-card" id="waCard">
       <div class="wa-status-row mid" id="waStatusRow"><span class="wa-status-dot"></span>Verificando conexão…</div>
       <div id="waBody"></div>
+      <div id="waHist" style="margin-top:18px;text-align:left"></div>
     </div>
     <div class="cp-box" id="iaAudio" style="margin-top:16px"><div class="pn-load">Carregando…</div></div>
     <div class="cp-box" id="nfCfg"><div class="pn-load">Carregando…</div></div>`;
@@ -12554,7 +12555,7 @@ function pintarStatus(status){
   const row=$('#waStatusRow'); if(!row) return;
   const map={
     open:      {cls:'on',  txt:'Conectado'},
-    connecting:{cls:'mid', txt:'Aguardando leitura do QR Code'},
+    connecting:{cls:'mid', txt:'Conectando… (se não conectar sozinho, leia o QR Code)'},
     close:     {cls:'off', txt:'Desconectado'},
     nao_criada:{cls:'off', txt:'Nenhuma instância criada ainda'},
     erro:      {cls:'off', txt:'Não foi possível falar com a Evolution API'},
@@ -12564,10 +12565,34 @@ function pintarStatus(status){
   row.innerHTML=`<span class="wa-status-dot"></span>${esc(m.txt)}`;
 }
 
+/* Histórico do monitor da conexão (a cada 2 min no servidor): quando caiu, por
+   quanto tempo, o motivo que a Evolution registrou e se o servidor dela
+   respondeu — separa "servidor fora do ar" de "sessão do WhatsApp derrubada". */
+const WA_ESTADO={ open:'Conectado', close:'Desconectado', connecting:'Conectando', indisponivel:'Servidor da Evolution sem resposta', nao_criada:'Sem instância', desconhecido:'Estado desconhecido' };
+function waDuracao(seg){ seg=Number(seg)||0; if(seg<60) return seg+' s'; if(seg<3600) return Math.round(seg/60)+' min'; const h=Math.floor(seg/3600), m=Math.round((seg%3600)/60); return h+' h'+(m?' '+m+' min':''); }
+function pintarHistoricoWA(m){
+  const box=$('#waHist'); if(!box) return;
+  if(!m){ box.innerHTML='<div class="tp-nota">O monitor da conexão ainda não fez a primeira verificação.</div>'; return; }
+  const hora=v=>v?new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+  const ev=m.evolution||{};
+  const resp = m.ms_medio!=null ? `resposta média da Evolution ${m.ms_medio} ms` : 'Evolution sem resposta';
+  const ruins = (m.lentas||m.sem_resposta) ? ` · nas últimas ${m.checagens} verificações: ${m.lentas} lenta${m.lentas===1?'':'s'} (mais de 3 s), ${m.sem_resposta} sem resposta` : '';
+  const linhas=(m.historico||[]).map(h=>{
+    const o = h.acao==='reconexao' ? '🔄 '+(h.motivo||'reconexão automática') : `${h.estado==='open'?'🟢':h.estado==='indisponivel'?'⚠️':'🔴'} ${WA_ESTADO[h.estado]||h.estado}${h.anterior&&h.durou_seg!=null?` (antes: ${WA_ESTADO[h.anterior]||h.anterior} por ${waDuracao(h.durou_seg)})`:''}${h.motivo?' — '+h.motivo:''}`;
+    return `<div class="oi-falha"><b>${esc(hora(h.em))}</b> · ${esc(o)}</div>`;
+  }).join('');
+  box.innerHTML=`<div style="font-weight:800;font-size:12.5px;margin-bottom:4px">Monitor da conexão</div>
+    <div class="tp-nota">Verificado ${esc(hora(m.checado_em))} · ${esc(resp)}${esc(ruins)}${ev.versao?` · Evolution ${esc(ev.versao)}`:''}</div>
+    ${m.alerta?`<div class="ms-erro" role="alert" style="margin-top:6px">Fora do ar desde ${esc(hora(m.alerta.desde))}${m.alerta.motivo?': '+esc(m.alerta.motivo):''}</div>`:''}
+    ${ev.queda_codigo?`<div class="tp-nota" style="margin-top:4px">Última queda registrada na Evolution: ${esc(hora(ev.queda_em))} — ${esc(ev.queda_motivo||('código '+ev.queda_codigo))}</div>`:''}
+    <div style="margin-top:8px">${linhas||'<div class="tp-nota">Nenhuma mudança de estado registrada ainda.</div>'}</div>`;
+}
+
 async function atualizarStatusWA(){
   const body=$('#waBody'); if(!body) return;
   try{
     const j=await chamar('whatsapp.status',{});
+    pintarHistoricoWA(j.monitor);
     if(!j.existe){
       pintarStatus('nao_criada');
       body.innerHTML=`<p style="font-size:12.5px;color:var(--text-mid);margin:0 0 16px;line-height:1.6;">
