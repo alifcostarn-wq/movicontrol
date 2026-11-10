@@ -73,9 +73,13 @@ export function pendenteDaGrade(linha, olt) {
   const [nomeOlt, chassi, slot, pon, modelo, mac] = cel.map(texto);
   const serial = serialLimpo(f.MAC || mac || f.CHASSI || chassi);
   if (!serial) return null;
+  const ponid = texto(f.PONID);
+  // Digistar: a grade traz a PON como "placa/pon" (1/4) e a placa vazia
+  const doPonid = /^(\d+)\/(\d+)$/.exec(ponid);
+  const sem = v => (/^[-–—]*$/.test(texto(v)) ? '' : texto(v));
   return { chave: texto(linha.id), olt: idValido(f.ID) || String(olt), olt_nome: (nomeOlt || '').replace(/<[^>]+>/g, '').slice(0, 60),
-    slot: texto(f.SLOT ?? f.SLO ?? slot), pon: texto(f.PON ?? pon), ponid: texto(f.PONID), serial,
-    modelo: texto(f.MODELO || modelo).slice(0, 40), onu_numero: texto(f.ONU_NUMERO) };
+    slot: sem(f.SLOT ?? f.SLO ?? slot) || (doPonid ? doPonid[1] : ''), pon: sem(f.PON ?? pon) || (doPonid ? doPonid[2] : ''), ponid, serial,
+    modelo: sem(f.MODELO || modelo).slice(0, 40), onu_numero: texto(f.ONU_NUMERO) };
 }
 /* "Nenhuma ONU disponível" vem como type:error com total 0: é resposta válida. */
 export function linhasDaGrade(d) {
@@ -203,7 +207,7 @@ export async function portasDaCaixa(io, { tec, osId, caixa, cfg }) {
 export function montarCadastro({ pendente, fibras, login, nome, caixa = null, porta = null, perfil = null }) {
   const olt = String(pendente.olt);
   const daOlt = fibras.filter(f => f.id_transmissor === olt);
-  const daPon = daOlt.filter(f => f.slotno === texto(pendente.slot) && f.ponno === texto(pendente.pon));
+  const daPon = daOlt.filter(f => (texto(pendente.ponid) && f.ponid === texto(pendente.ponid)) || (f.slotno === texto(pendente.slot) && f.ponno === texto(pendente.pon)));
   const notas = [];
   const comVlan = l => l.filter(f => inteiro(f.vlan)).slice(0, 15).map(f => f.vlan);
   let vlan = moda(comVlan(daPon));

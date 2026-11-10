@@ -16,7 +16,9 @@ const TABELA = /^[a-z][a-z0-9_]{2,40}$/;
 export const MAX_TABELAS = 6;
 const MAX_PAGINAS = 5;                  // 5 mil registros por tabela no máximo
 
-export const podeContar = campo => typeof campo === 'string' && /^[A-Za-z0-9_]{1,60}$/.test(campo) && !PESSOAL.test(campo) && !CAMPO_SENSIVEL.test(campo);
+// nomes técnicos que esbarram na lista de pessoais ("onu_numero" tem "numero")
+const TECNICOS = new Set(['onu_numero']);
+export const podeContar = campo => typeof campo === 'string' && /^[A-Za-z0-9_]{1,60}$/.test(campo) && (TECNICOS.has(campo) || (!PESSOAL.test(campo) && !CAMPO_SENSIVEL.test(campo)));
 // só código curto aparece como chave da contagem; o resto vira "(outro)"
 const codigo = v => { const s = v == null ? '' : String(v).trim(); return /^[A-Za-z0-9_.,-]{0,12}$/.test(s) ? s : '(outro)'; };
 // o formato do valor, sem o valor: letra vira A, dígito vira 9 ("0/1/3" → "9/9/9")
@@ -105,7 +107,7 @@ export async function sondarIxc(io, pedido, { agora = new Date() } = {}) {
         r.preenchidos = {};
         for (const c of r.campos) r.preenchidos[c] = regs.filter(reg => reg[c] != null && String(reg[c]).trim() !== '' && String(reg[c]).trim() !== '0').length;
       }
-      tabelas[t] = r;
+      tabelas[tabelas[t] ? `${t}#${Object.keys(tabelas).length}` : t] = r;
     } catch (err) {
       tabelas[t] = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) };
     }

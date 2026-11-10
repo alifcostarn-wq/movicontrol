@@ -2543,7 +2543,8 @@ async function onuApi(acao, dados){
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
       body: JSON.stringify({ acao, ...(dados||{}) }) });
     const j = await r.json().catch(()=>null);
-    if(!r.ok || !j || j.erro) throw new Error((j && j.erro) || `O servidor não respondeu (${r.status}).`);
+    // a autorização que falhou volta com ok:true e o motivo em `erro`: é resposta, não falha da chamada
+    if(!r.ok || !j || (j.erro && !j.ok)) throw new Error((j && j.erro) || `O servidor não respondeu (${r.status}).`);
     return j;
   }catch(e){
     if(e.name==='AbortError') throw new Error('O servidor demorou demais para responder.');
