@@ -332,6 +332,18 @@ textarea.finput{resize:vertical;min-height:90px;line-height:1.5}
 
 /* ---- ALERTA ---- */
 .alert{border-left:3px solid var(--ac);background:var(--ac2);border-radius:0 9px 9px 0;padding:10px 12px;font-size:12.5px;color:var(--ac);margin-bottom:14px;line-height:1.5}
+.onu-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;border-radius:10px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-family:inherit;font-size:13px;cursor:pointer;margin-bottom:8px}
+.onu-item:active{opacity:.8}
+.onu-item b{font-family:monospace;font-size:14px;letter-spacing:.02em}
+.onu-item small{display:block;color:var(--tx3);font-size:11.5px;margin-top:2px}
+.onu-passo{display:flex;gap:10px;align-items:flex-start;padding:9px 0;font-size:13.5px;color:var(--tx3);border-bottom:1px solid var(--bd)}
+.onu-passo:last-child{border-bottom:none}
+.onu-passo.feito{color:var(--tx)}
+.onu-passo i{font-style:normal;width:20px;text-align:center;flex-shrink:0}
+.onu-portas{display:flex;flex-wrap:wrap;gap:6px}
+.onu-porta{min-width:42px;padding:9px 0;border-radius:9px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.onu-porta.sel{background:var(--ac);border-color:var(--ac);color:#fff}
+.onu-porta:disabled{opacity:.4;text-decoration:line-through;cursor:not-allowed}
 .alert.warn{border-color:var(--amb);background:var(--amb-bg);color:var(--amb)}
 .alert.red{border-color:var(--red);background:var(--red-bg);color:var(--red)}
 
@@ -795,6 +807,19 @@ body.dk .btn-red{background:#C42B27}  /* o vermelho do tema escuro é claro dema
   </div>
 </div>
 
+<!-- SHEET: AUTORIZAR ONU NO IXC -->
+<div class="ov" id="ov-onu" onclick="if(event.target===this)fecharOnu()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="onu-titulo">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" onclick="fecharOnu()" aria-label="Fechar">✕</button>
+    <div class="sheet-head">
+      <div class="sheet-title" id="onu-titulo">📡 Autorizar ONU</div>
+      <div class="sheet-sub" id="onu-sub">—</div>
+    </div>
+    <div class="sheet-body" id="onu-body"></div>
+  </div>
+</div>
+
 <!-- SHEET: FICHA DA CTO -->
 <div class="ov" id="ov-cto" onclick="if(event.target===this)fecharCTO()">
   <div class="sheet">
@@ -1019,6 +1044,7 @@ async function logout(){
 }
 
 async function entrar(){
+  onuVerModo();   // o botão "Autorizar ONU" só aparece com a integração ligada
   $('ls').classList.add('hide');
   $('tb-nome').textContent = _tec.nome||'Técnico';
   _avatarTecnico(); attEstadoRede();
@@ -2500,6 +2526,213 @@ async function rapido(evt, id, status){
   }
 }
 
+/* ---- AUTORIZAR ONU NO IXC ----
+   O que o escritório faz em Provedor › Autorizar ONUs, feito daqui: o técnico
+   escolhe a ONU que a OLT está enxergando, a caixa/porta e o perfil; o servidor
+   (/api/ixc-sync, ações onu.*) cria o cadastro de fibra no IXC e manda gravar
+   na OLT, uma etapa por chamada. Sem resposta numa gravação, nada se repete
+   sozinho: primeiro confere. */
+let _onuLigado = false, _onu = null;
+const _oe = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function onuApi(acao, dados){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session) throw new Error('Sessão expirada: entre de novo.');
+  const ctl = new AbortController(); const tm = setTimeout(()=>ctl.abort(), 65000);
+  try{
+    const r = await fetch('/api/ixc-sync', { method:'POST', signal:ctl.signal,
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({ acao, ...(dados||{}) }) });
+    const j = await r.json().catch(()=>null);
+    if(!r.ok || !j || j.erro) throw new Error((j && j.erro) || `O servidor não respondeu (${r.status}).`);
+    return j;
+  }catch(e){
+    if(e.name==='AbortError') throw new Error('O servidor demorou demais para responder.');
+    throw e;
+  }finally{ clearTimeout(tm); }
+}
+async function onuVerModo(){ try{ _onuLigado = !!(await onuApi('onu.modo')).ligado; }catch(e){ _onuLigado = false; } }
+function fecharOnu(){
+  if(_onu && _onu.rodando){ toast('Aguarde: a autorização está em andamento.'); return; }
+  $('ov-onu').classList.remove('open'); _onu = null;
+}
+const _onuErro = (msg, botao) => `<div class="alert red" role="alert">${_oe(msg)}</div>${botao||''}<button class="btn-full btn-ghost" onclick="fecharOnu()">Fechar</button>`;
+const _onuEspera = txt => `<div style="padding:26px 0;text-align:center;color:var(--tx3);font-size:13.5px" role="status">⏳ ${_oe(txt)}</div>`;
+
+async function abrirOnu(osId){
+  _onu = { osId, ini:null, onus:[], falhas:[], sel:null, login:null, caixa:null, porta:null, perfil:'', ocupadas:null, filtro:'', aut:null, rodando:false };
+  $('onu-sub').textContent = '—';
+  $('onu-body').innerHTML = _onuEspera('Consultando o IXC…');
+  $('ov-onu').classList.add('open');
+  try{
+    const ini = await onuApi('onu.inicio', { os_id: osId });
+    if(!_onu || _onu.osId!==osId) return;
+    _onu.ini = ini;
+    _onu.login = (ini.logins.find(l=>l.da_os) || ini.logins[0]).id;
+    $('onu-sub').textContent = `${ini.cliente}${ini.os_numero?` · OS ${ini.os_numero}`:''}`;
+    await onuBuscar();
+  }catch(e){
+    if(_onu) $('onu-body').innerHTML = _onuErro(e.message);
+  }
+}
+async function onuBuscar(){
+  if(!_onu || !_onu.ini) return;
+  const osId = _onu.osId;
+  _onu.sel = null;
+  $('onu-body').innerHTML = _onuEspera('Perguntando às OLTs quais ONUs estão esperando autorização… (até 30 s)');
+  try{
+    const r = await onuApi('onu.pendentes', { os_id: osId });
+    if(!_onu || _onu.osId!==osId) return;
+    _onu.onus = r.onus || []; _onu.falhas = r.falhas || [];
+    onuPintarLista();
+  }catch(e){
+    if(_onu) $('onu-body').innerHTML = _onuErro(e.message, `<button class="btn-full btn-green" onclick="onuBuscar()">Tentar de novo</button>`);
+  }
+}
+function _onuAviso(){
+  const i = _onu.ini;
+  return i.simulacao ? `<div class="alert warn">Modo de teste: para este cliente o app só <b>simula</b> — mostra o que seria enviado ao IXC e não grava nada.</div>` : '';
+}
+function onuPintarLista(){
+  const o = _onu, f = (o.filtro||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+  const lista = o.onus.filter(x => !f || x.serial.toUpperCase().includes(f));
+  const itens = lista.map(x => {
+    const i = o.onus.indexOf(x);
+    return `<button class="onu-item" onclick="onuEscolher(${i})"><span style="font-size:20px">📶</span><span style="flex:1"><b>${_oe(x.serial)}</b>
+      <small>${_oe(x.olt_nome || ('OLT '+x.olt))} · placa ${_oe(x.slot)} · PON ${_oe(x.pon)}${x.modelo?` · ${_oe(x.modelo)}`:''}</small></span><span style="color:var(--tx3)">›</span></button>`;
+  }).join('');
+  $('onu-body').innerHTML = `${_onuAviso()}
+    ${o.falhas.length?`<div class="alert warn">${o.falhas.length===1?'Uma OLT não respondeu':o.falhas.length+' OLTs não responderam'} agora: a ONU pode estar nela. Toque em Atualizar.</div>`:''}
+    ${o.onus.length>4?`<input class="finput" id="onu-filtro" placeholder="Filtrar pelo serial (ex.: últimos 4 dígitos)" value="${_oe(o.filtro)}" oninput="_onu.filtro=this.value;onuPintarLista();const e=$('onu-filtro');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="margin-bottom:10px" autocomplete="off" autocapitalize="characters">`:''}
+    ${o.onus.length
+      ? `<div style="font-size:12px;color:var(--tx3);margin-bottom:8px">Toque na ONU que você acabou de ligar (confira o serial na etiqueta):</div>${itens || '<div style="padding:14px 0;color:var(--tx3);font-size:13px">Nenhuma ONU com esse serial.</div>'}`
+      : `<div style="padding:18px 4px;text-align:center;color:var(--tx3);font-size:13.5px;line-height:1.5">Nenhuma ONU esperando autorização.<br>Confira se a ONU está ligada, com a fibra conectada e a luz PON acesa, e atualize.</div>`}
+    <button class="btn-full btn-ghost" onclick="onuBuscar()">🔄 Atualizar lista</button>`;
+}
+function onuEscolher(i){
+  const o = _onu, x = o.onus[i]; if(!x) return;
+  o.sel = x; o.caixa = null; o.porta = null; o.ocupadas = null; o.buscaCaixa = '';
+  const olt = (o.ini.olts||[]).find(t => t.id===String(x.olt));
+  o.perfil = olt ? (olt.perfil||'') : '';
+  onuPintarForm();
+}
+function onuPintarForm(){
+  const o = _onu, i = o.ini, x = o.sel;
+  const login = i.logins.find(l => l.id===o.login);
+  const caixas = i.caixas.filter(c => c.olt===String(x.olt));
+  const b = (o.buscaCaixa||'').trim().toLowerCase();
+  const achadas = b ? caixas.filter(c => c.nome.toLowerCase().includes(b)).slice(0,8) : [];
+  const cx = o.caixa ? i.caixas.find(c => c.id===o.caixa) : null;
+  const nPortas = cx ? (cx.capacidade || 16) : 0;
+  let portas = '';
+  if(cx){
+    portas = o.ocupadas==null ? '<div style="font-size:12.5px;color:var(--tx3)">Vendo as portas ocupadas…</div>'
+      : `<div class="onu-portas">${Array.from({length:nPortas},(_,k)=>k+1).map(p=>`<button class="onu-porta${o.porta===p?' sel':''}" ${o.ocupadas.includes(p)?'disabled title="ocupada"':''} onclick="_onu.porta=${p};onuPintarForm()">${p}</button>`).join('')}</div>
+         <div style="font-size:11.5px;color:var(--tx3);margin-top:6px">Riscada = já ocupada no IXC.</div>`;
+  }
+  $('onu-body').innerHTML = `${_onuAviso()}
+    <div class="row-sec"><div class="drow"><span class="dlab">ONU</span><span class="dval mono">${_oe(x.serial)}</span></div>
+      <div class="drow"><span class="dlab">OLT</span><span class="dval">${_oe(x.olt_nome || ('OLT '+x.olt))} · placa ${_oe(x.slot)} · PON ${_oe(x.pon)}</span></div></div>
+    ${login && login.onu ? `<div class="alert warn">Este login já tem a ONU <b>${_oe(login.onu)}</b> cadastrada no IXC. Troca de ONU ainda é feita pelo escritório.</div>`:''}
+    <label class="flabel" for="onu-login">Login do cliente</label>
+    <select class="finput" id="onu-login" onchange="_onu.login=this.value;onuPintarForm()">${i.logins.map(l=>`<option value="${_oe(l.id)}" ${l.id===o.login?'selected':''}>${_oe(l.login)}${l.ativo?'':' (inativo)'}${l.onu?' — já tem ONU':''}</option>`).join('')}</select>
+    <label class="flabel" for="onu-cx">Caixa (CTO) — opcional</label>
+    ${cx ? `<div class="row-sec" style="margin-bottom:6px"><div class="drow"><span class="dval" style="text-align:left">${_oe(cx.nome)}</span><button onclick="_onu.caixa=null;_onu.porta=null;_onu.ocupadas=null;onuPintarForm()" style="border:none;background:none;color:var(--ac);font-weight:600;font-size:13px;cursor:pointer">Trocar</button></div></div>`
+      : `<input class="finput" id="onu-cx" placeholder="Digite o nome da caixa" value="${_oe(o.buscaCaixa||'')}" oninput="_onu.buscaCaixa=this.value;onuPintarForm();const e=$('onu-cx');e.focus();e.setSelectionRange(e.value.length,e.value.length)" autocomplete="off">
+         ${achadas.map(c=>`<button class="onu-item" style="margin:6px 0 0" onclick="onuCaixa('${_oe(c.id)}')"><span style="flex:1">${_oe(c.nome)}</span><small>${c.capacidade?c.capacidade+' portas':''}</small></button>`).join('')}
+         ${b && !achadas.length ? '<div style="font-size:12.5px;color:var(--tx3);margin-top:6px">Nenhuma caixa desta OLT com esse nome.</div>':''}`}
+    ${cx ? `<label class="flabel">Porta da caixa</label>${portas}`:''}
+    <label class="flabel" for="onu-perfil">Perfil da ONU</label>
+    <select class="finput" id="onu-perfil" onchange="_onu.perfil=this.value">
+      <option value="" ${o.perfil===''?'selected':''}>Sem perfil</option>
+      ${i.perfis.map(p=>`<option value="${_oe(p.id)}" ${p.id===o.perfil?'selected':''}>${_oe(p.nome)}</option>`).join('')}
+    </select>
+    <div style="font-size:11.5px;color:var(--tx3);margin-top:6px">Já vem o perfil que o escritório mais usa nesta OLT. Só troque se souber que é outro.</div>
+    <button class="btn-full btn-green" onclick="onuAutorizar()" ${login && login.onu ? 'disabled':''}>${i.simulacao?'Simular autorização':'✅ Autorizar esta ONU'}</button>
+    <button class="btn-full btn-ghost" onclick="onuPintarLista()" style="margin-top:6px">‹ Escolher outra ONU</button>`;
+}
+async function onuCaixa(id){
+  const o = _onu; o.caixa = id; o.porta = null; o.ocupadas = null; onuPintarForm();
+  try{
+    const r = await onuApi('onu.portas', { os_id: o.osId, caixa: id });
+    if(_onu===o && o.caixa===id && !o.aut){ o.ocupadas = r.ocupadas || []; onuPintarForm(); }
+  }catch(e){ if(_onu===o && o.caixa===id && !o.aut){ o.ocupadas = []; onuPintarForm(); toast('Não consegui ver as portas ocupadas.'); } }
+}
+function onuPintarAndamento(extra){
+  const o = _onu, a = o.aut;
+  const passos = (a.passos||[]).map((p,k) => {
+    const atual = !p.feito && (a.passos[k-1]?a.passos[k-1].feito:true) && a.status==='andamento';
+    return `<div class="onu-passo${p.feito?' feito':''}"><i>${p.feito?'✅':atual?'⏳':'○'}</i><span>${_oe(p.texto)}</span></div>`;
+  }).join('');
+  let fim = '';
+  if(a.status==='concluida') fim = `<div class="alert" role="status" style="margin-top:12px">✅ ONU <b>${_oe(a.serial)}</b> autorizada no IXC.${a.erro?`<br>${_oe(a.erro)}`:''} Confira o sinal e a navegação do cliente.</div><button class="btn-full btn-green" onclick="_onu.rodando=false;fecharOnu()">Concluir</button>`;
+  else if(a.status==='incerta') fim = `<div class="alert warn" role="alert" style="margin-top:12px">${_oe(a.erro||'O IXC não respondeu.')}</div>
+      <button class="btn-full btn-green" onclick="onuContinuar(false)">🔎 Conferir</button>
+      ${extra && extra.pode_repetir ? `<button class="btn-full btn-amb" onclick="onuContinuar(true)" style="margin-top:6px">Tentar esta etapa de novo</button>`:''}
+      <button class="btn-full btn-ghost" onclick="_onu.rodando=false;fecharOnu()" style="margin-top:6px">Fechar</button>`;
+  else if(a.status==='falhou' || a.status==='nao_confirmada') fim = `<div class="alert red" role="alert" style="margin-top:12px">${_oe(a.erro||'Não foi possível autorizar.')}</div><button class="btn-full btn-ghost" onclick="_onu.rodando=false;fecharOnu()">Fechar</button>`;
+  else fim = `<div style="font-size:12.5px;color:var(--tx3);margin-top:12px;line-height:1.5" role="status">Gravando na OLT. Cada etapa pode levar até 1 minuto — <b>não feche o app</b>.</div>`;
+  $('onu-body').innerHTML = `<div class="row-sec"><div class="drow"><span class="dlab">ONU</span><span class="dval mono">${_oe(a.serial)}</span></div></div>${passos}${fim}`;
+}
+function onuPintarSimulacao(){
+  const e = _onu.aut.enviado || {};
+  const linha = (r,v) => v==null||v===''?'':`<div class="drow"><span class="dlab">${r}</span><span class="dval">${_oe(v)}</span></div>`;
+  $('onu-body').innerHTML = `<div class="alert warn">Simulação: <b>nada foi gravado</b> no IXC. Isto é o que seria enviado.</div>
+    <div class="row-sec">${linha('ONU', e.mac)}${linha('OLT', e.olt_nome || e.id_transmissor)}${linha('Placa / PON', `${e.slotno} / ${e.ponno}`)}${linha('Número da ONU na PON', e.onu_numero)}
+      ${linha('VLAN', e.vlan || 'sem VLAN')}${linha('GEM port', e.gemport)}${linha('Caixa', e.caixa_nome)}${linha('Porta', e.porta_ftth)}${linha('Perfil', e.perfil_nome || 'sem perfil')}</div>
+    ${(e.notas||[]).length?`<div style="font-size:12px;color:var(--tx3);margin-bottom:10px">${e.notas.map(_oe).join(' · ')}</div>`:''}
+    <button class="btn-full btn-ghost" onclick="fecharOnu()">Fechar</button>`;
+}
+async function onuAutorizar(){
+  const o = _onu; if(!o || !o.sel || o.rodando) return;
+  if(o.caixa && !o.porta){ toast('Escolha a porta da caixa.'); return; }
+  if(!o.ini.simulacao && !confirm(`Autorizar a ONU ${o.sel.serial} para este cliente?`)) return;
+  o.rodando = true;
+  $('onu-body').innerHTML = _onuEspera(o.ini.simulacao ? 'Montando o cadastro…' : 'Conferindo a ONU na OLT e criando o cadastro no IXC…');
+  try{
+    o.aut = await onuApi('onu.autorizar', { os_id:o.osId, login:o.login, olt:o.sel.olt, serial:o.sel.serial, caixa:o.caixa, porta:o.porta, perfil:o.perfil });
+  }catch(e){
+    o.rodando = false;
+    if(_onu===o) $('onu-body').innerHTML = `<div class="alert red" role="alert">${_oe(e.message)}</div><button class="btn-full btn-ghost" onclick="onuPintarForm()">‹ Voltar</button>`;
+    return;
+  }
+  if(o.aut.simulacao){ o.rodando = false; onuPintarSimulacao(); return; }
+  await onuSeguir();
+}
+/* roda as etapas seguintes até terminar, falhar ou ficar sem resposta */
+async function onuSeguir(){
+  const o = _onu; let extra = null, falhasRede = 0;
+  o.rodando = true;
+  while(_onu===o && o.aut){
+    onuPintarAndamento(extra);
+    if(!o.aut.continuar) break;
+    try{
+      const r = await onuApi('onu.continuar', { id:o.aut.id });
+      falhasRede = 0;
+      if(r.ocupado){ await new Promise(z=>setTimeout(z,4000)); continue; }
+      o.aut = r; extra = r;
+    }catch(e){
+      // sem internet ou servidor sem resposta: a etapa pode ter rodado — espera e pergunta de novo, sem repetir
+      if(++falhasRede >= 4){ o.aut = { ...o.aut, status:'incerta', continuar:false, erro:'Fiquei sem resposta do servidor. A autorização pode ter continuado: toque em Conferir.' }; break; }
+      await new Promise(z=>setTimeout(z,5000));
+    }
+  }
+  if(_onu===o){ o.rodando = o.aut && o.aut.status==='andamento'; onuPintarAndamento(extra); }
+}
+async function onuContinuar(repetir){
+  const o = _onu; if(!o || !o.aut) return;
+  if(repetir && !confirm('Tentar gravar de novo na OLT?')) return;
+  $('onu-body').innerHTML = _onuEspera(repetir ? 'Tentando de novo…' : 'Conferindo na OLT…');
+  try{
+    const r = await onuApi('onu.continuar', { id:o.aut.id, repetir: repetir===true });
+    o.aut = r;
+    if(r.continuar) return onuSeguir();
+    onuPintarAndamento(r);
+  }catch(e){
+    o.aut = { ...o.aut, erro: e.message };
+    onuPintarAndamento(null);
+  }
+}
+
 /* ---- DETALHE DA OS ---- */
 async function abrirDet(id){
   const os = _os.find(x=>x.id==id);   // == intencional: id pode vir como string ou número
@@ -2659,6 +2892,17 @@ async function abrirDet(id){
           ? `<button onclick="carregarDiag()" class="btn-full btn-ghost" style="margin-top:0;font-size:13px;padding:11px">📡 Carregar diagnóstico</button>`
           : `<div style="font-size:12.5px;color:var(--tx3);padding:4px 0">Configure a integração IXC no MoviOne para ativar o diagnóstico.</div>`
         }
+      </div>
+    </div>`;
+  }
+
+  // Autorizar ONU no IXC (OS em aberto, com cliente do IXC)
+  if(_onuLigado && !['finalizada','concluida','cancelada'].includes(os.status) && (os.login_cliente || os.cliente_id)){
+    html += `<div class="row-sec">
+      <div class="row-sec-title">📡 ONU do cliente</div>
+      <div style="padding:10px 12px">
+        <button onclick="abrirOnu(${os.id})" class="btn-full btn-green" style="margin-top:0;font-size:13.5px;padding:12px">📡 Autorizar ONU no IXC</button>
+        <div style="font-size:11.5px;color:var(--tx3);margin-top:6px;line-height:1.4">Ligue a ONU na fibra e espere a luz PON ficar fixa antes de buscar.</div>
       </div>
     </div>`;
   }

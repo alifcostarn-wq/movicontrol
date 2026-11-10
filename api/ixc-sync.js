@@ -23,6 +23,7 @@ import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIx
 import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 import { sondarIxc } from './_ixc_sondagem.js';
 import { lerFaturasAbertas } from './_ixc_faturas.js';
+import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR } from './_ixc_onu.js';
 
 export const config = { maxDuration: 60 };
 
@@ -219,6 +220,29 @@ async function ixcGrade(tabela, { olt }, prazo, maxMs = 30e3) {
   if (d == null) throw new Error('IXC: resposta que não é JSON');
   return d;
 }
+/* Autorização de ONU (ver _ixc_onu.js): criar o cadastro de fibra e os dois
+   botões do IXC que falam com a OLT. Só estes três endereços. A resposta volta
+   crua (texto ou JSON): quem julga é o _ixc_onu.js. */
+const BOTOES_ONU = new Set([BOTAO_LIBERAR, BOTAO_GRAVAR]);
+async function ixcOnuPost(endpoint, corpo, maxMs) {
+  if (endpoint !== 'radpop_radio_cliente_fibra' && !BOTOES_ONU.has(endpoint)) throw new Error(`endereço do IXC não permitido: ${endpoint}`);
+  const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), maxMs);
+  let r;
+  try {
+    r = await fetch(`${IXC_URL}/webservice/v1/${endpoint}`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify(corpo),
+    });
+  } catch (err) {
+    throw new Error(err.name === 'AbortError' ? 'o IXC demorou demais para responder' : `IXC: ${err.message}`);
+  } finally { clearTimeout(timer); }
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`IXC HTTP ${r.status}`);
+  try { return JSON.parse(txt); } catch { return txt; }
+}
 const ixcFecharOs = (corpo, prazo) => ixcGravar('su_oss_chamado_fechar', corpo, prazo);
 
 /* Edição do cadastro do cliente no IXC — só para a localização da casa (ver
@@ -354,6 +378,43 @@ function tokenConfere(recebido, esperado) {
   return a.length >= 20 && a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// o técnico do moviTec, pela sessão dele (o crachá é a linha em campo_tecnicos)
+async function tecnicoQueChama(req) {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+  const r = await fetch(`${sbUrl()}/auth/v1/user`, { headers: { apikey: process.env.SUPABASE_ANON_KEY || sbKey(), Authorization: `Bearer ${token}` } });
+  if (!r.ok) return null;
+  const u = await r.json().catch(() => null);
+  if (!u || !u.id) return null;
+  const t = await sb(`campo_tecnicos?user_id=eq.${encodeURIComponent(u.id)}&select=id,nome,status&limit=1`);
+  if (!t || !t[0] || (t[0].status && t[0].status !== 'ativo')) return null;
+  return { id: t[0].id, nome: t[0].nome || 'Técnico' };
+}
+
+/* Autorização de ONU pelo app do técnico (ver _ixc_onu.js). */
+async function acaoOnu(acao, b, req, res) {
+  const tec = await tecnicoQueChama(req);
+  if (!tec) return res.status(401).json({ erro: 'Sessão expirada: entre de novo no moviTec.' });
+  const cfg = ((await sb('ixc_sync_config?id=eq.1&select=onu_modo,onu_teste')) || [])[0] || {};
+  if (acao === 'onu.modo') return res.status(200).json({ ok: true, ligado: (cfg.onu_modo || 'desligado') !== 'desligado' });
+  if (!process.env.IXC_USER || !process.env.IXC_TOKEN) return res.status(500).json({ erro: 'IXC não configurado no servidor.' });
+  const prazo = Date.now() + 52e3;
+  const io = { sb, ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcGrade: (t, f) => ixcGrade(t, f, prazo, 25e3),
+    ixcInserirFibra: c => ixcOnuPost('radpop_radio_cliente_fibra', c, 20e3), ixcBotao: (ep, c, ms) => ixcOnuPost(ep, c, Math.min(ms || 30e3, 50e3)) };
+  try {
+    if (acao === 'onu.inicio') return res.status(200).json(await inicioOnu(io, { tec, osId: b.os_id, cfg }));
+    if (acao === 'onu.pendentes') return res.status(200).json(await pendentesOnu(io, { tec, osId: b.os_id, cfg }));
+    if (acao === 'onu.portas') return res.status(200).json(await portasDaCaixa(io, { tec, osId: b.os_id, caixa: b.caixa, cfg }));
+    if (acao === 'onu.autorizar') return res.status(200).json(await autorizarOnu(io, { tec, osId: b.os_id, cfg, loginId: b.login, olt: b.olt, serial: b.serial, caixaId: b.caixa, porta: b.porta, perfilId: b.perfil }));
+    if (acao === 'onu.continuar') return res.status(200).json(await continuarOnu(io, { tec, id: b.id, repetir: b.repetir === true }));
+    return res.status(400).json({ erro: 'ação desconhecida' });
+  } catch (err) {
+    if (err instanceof ErroOnu) return res.status(err.status).json({ erro: err.message });
+    console.error('[ixc-sync] onu:', semDadosDoCliente(err.message || err));
+    return res.status(502).json({ erro: `Não consegui falar com o IXC: ${semDadosDoCliente(err.message || err).slice(0, 160)}` });
+  }
+}
+
 // quem está chamando, pela sessão do MoviOne
 async function quemChama(req) {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -436,6 +497,9 @@ export default async function handler(req, res) {
       if (acao === 'os') return res.status(200).json(await rodarOs(cfg, Date.now() + 50e3));
       return res.status(200).json(await rodar(cfg));
     }
+
+    // ---- o app do técnico: autorizar ONU ----
+    if (acao.startsWith('onu.')) return await acaoOnu(acao, b, req, res);
 
     // ---- a tela do MoviOne ----
     const quem = await quemChama(req);
