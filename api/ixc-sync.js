@@ -191,6 +191,34 @@ async function ixcGravar(endpoint, corpo, prazo) {
   if (d.type === 'error') throw new Error(`IXC: ${String(d.message || 'recusou').slice(0, 200)}`);
   return d;
 }
+/* Grade "ONUs não autorizadas" de uma OLT (Provedor › Autorizar ONUs › Consultar
+   por OLT): o IXC consulta a OLT na hora. Devolve a resposta crua — "nenhuma ONU
+   disponível" vem como type:error e é resposta válida. Só esta grade. */
+const GRADES = new Set(['fh_onu_nao_autorizadas']);
+async function ixcGrade(tabela, { olt }, prazo, maxMs = 30e3) {
+  if (!GRADES.has(tabela)) throw new Error(`grade do IXC não permitida: ${tabela}`);
+  if (!/^[1-9]\d{0,8}$/.test(String(olt || ''))) throw new Error('OLT inválida');
+  const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
+  const resta = prazo - Date.now();
+  if (resta <= 1000) throw new Error('sem tempo para consultar a OLT');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), Math.min(resta, maxMs));
+  let r;
+  try {
+    r = await fetch(`${IXC_URL}/webservice/v1/${tabela}`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: auth, ixcsoft: 'listar' },
+      body: JSON.stringify({ page: 1, rp: 10000, sortname: '', sortorder: 'asc', query: '', qtype: '', oper: 'L',
+        grid_param: JSON.stringify([{ TB: 'id_olt', OP: '=', P: String(olt) }]), grid_param2: false }),
+    });
+  } catch (err) {
+    throw new Error(err.name === 'AbortError' ? 'a OLT demorou demais para responder ao IXC' : `IXC: ${err.message}`);
+  } finally { clearTimeout(timer); }
+  if (!r.ok) throw new Error(`IXC ${tabela} HTTP ${r.status}`);
+  const d = await r.json().catch(() => null);
+  if (d == null) throw new Error('IXC: resposta que não é JSON');
+  return d;
+}
 const ixcFecharOs = (corpo, prazo) => ixcGravar('su_oss_chamado_fechar', corpo, prazo);
 
 /* Edição do cadastro do cliente no IXC — só para a localização da casa (ver
@@ -243,7 +271,8 @@ async function rodarOs(cfg, prazo) {
   });
   if (!Array.isArray(pego) || !pego.length) return { ok: true, modo, pulado: 'outra rodada das OS em andamento' };
   const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcFecharOs: c => ixcFecharOs(c, prazo),
-    ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), ixcEditarCliente: (id, c) => ixcEditarCliente(id, c, prazo), sb };
+    ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), ixcEditarCliente: (id, c) => ixcEditarCliente(id, c, prazo),
+    ixcGrade: (t, f) => ixcGrade(t, f, prazo, 12e3), sb };
   let resultado, extra = {};
   try {
     if (modo === 'previa') {
