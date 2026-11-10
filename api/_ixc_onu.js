@@ -217,10 +217,12 @@ export function montarCadastro({ pendente, fibras, login, nome, caixa = null, po
   let numero = pedido && !usados.has(pedido) ? pedido : null;
   if (!numero) for (let n = 1; n <= MAX_ONU_NA_PON; n++) if (!usados.has(n)) { numero = n; break; }
   if (!numero) return { erro: `Não há número de ONU livre na PON ${pendente.slot}/${pendente.pon}.` };
-  // GEM port: só quando a regra da OLT é clara (sempre a mesma distância do número da ONU)
-  const dif = [...new Set((daPon.length >= 3 ? daPon : daOlt).filter(f => inteiro(f.gemport) && inteiro(f.onu_numero)).slice(0, 40).map(f => inteiro(f.gemport) - inteiro(f.onu_numero)))];
-  const gemport = dif.length === 1 ? String(numero + dif[0]) : '';
-  const portasOlt = [...new Set(daPon.map(f => f.id_radpop_radio_porta).filter(v => inteiro(v)))];
+  // GEM port: pela regra que a PON segue (na Digistar, 500 + número da ONU). Há cadastros
+  // antigos fora da regra, então vale a distância mais comum, se for de pelo menos 70% deles.
+  const difs = (daPon.length >= 3 ? daPon : daOlt).filter(f => inteiro(f.gemport) && inteiro(f.onu_numero)).slice(0, 60).map(f => inteiro(f.gemport) - inteiro(f.onu_numero));
+  const dif = moda(difs.map(String));
+  const gemport = difs.length >= 3 && dif !== '' && difs.filter(d => String(d) === dif).length >= difs.length * 0.7 ? String(numero + Number(dif)) : '';
+  if (difs.length >= 3 && !gemport) notas.push('GEM port sem regra clara nesta PON: foi vazio');
   const padrao = c => moda(daOlt.slice(0, 60).map(f => f[c]));
   const corpo = {
     radpop_estrutura: padrao('radpop_estrutura') || 'N',
@@ -241,7 +243,7 @@ export function montarCadastro({ pendente, fibras, login, nome, caixa = null, po
     onu_tipo: texto(pendente.modelo),
     vlan: vlan || '',
     gemport,
-    id_radpop_radio_porta: portasOlt.length === 1 ? portasOlt[0] : '',
+    id_radpop_radio_porta: moda(daPon.map(f => f.id_radpop_radio_porta).filter(v => inteiro(v))) || '',
     service_port: '',
     id_chamado_radpop: '0',
     tipo_autenticacao: padrao('tipo_autenticacao') || 'MAC',
