@@ -3899,6 +3899,7 @@ function renderTudo(){
       <div class="pp-acoes" style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn sm" onclick="expandirClienteOne('${c.id}')" id="pp-btn-${c.id}">▾ Ver detalhes</button>
         <button class="btn sm ghost" onclick="abrirVincularCTO('${c.id}')">🔗 ${c.caixa?'Alterar caixa':'Vincular'}</button>
+        <button class="btn sm ghost" onclick="moverClienteOne('${c.id}')" title="Arrastar a casa para o lugar certo (grava no MoviOne e no IXC)">📍 Mover</button>
       </div>`);
     hoverAbrePopup(mk);
     layerRefs['one-'+c.id]=mk.addTo(mapa);
@@ -8337,6 +8338,30 @@ async function atualizarStatusIXC(){
     renderTudo();
     toast('Status IXC: '+on+' online · '+off+' offline');
   }catch(e){toast('Falha no IXC: '+e.message,true)}
+}
+
+/* Mover a casa do cliente: arrasta o marcador; ao soltar, grava a localização
+   no cadastro do MoviOne e manda para o IXC (fila da localização). */
+function moverClienteOne(id){
+  const c=clientesOne.find(x=>x.id===id), mk=layerRefs['one-'+id];
+  if(!c||!mk||!mk.dragging){toast('Não consegui liberar este cliente para mover',true);return}
+  mapa.closePopup();
+  mk.dragging.enable();
+  toast('Arraste a casa de '+c.nome+' para o lugar certo e solte');
+  mk.once('dragend',async ev=>{
+    mk.dragging.disable();
+    const p=ev.target.getLatLng();
+    if(!confirm('Gravar a nova localização de '+c.nome+' no MoviOne e no IXC?')){renderTudo();return}
+    try{
+      const d=await nuvemCall({acao:'cliente-localizacao',cliente_id:c.idCliente,lat:+p.lat.toFixed(7),lng:+p.lng.toFixed(7)});
+      c.lat=p.lat;c.lng=p.lng;c.semCoord=false;
+      store.set('movifiber_clientes_one',JSON.stringify(clientesOne));
+      const cl=projAtual&&projAtual.clientes.find(x=>x.idIxc===c.id);
+      if(cl){cl.lat=p.lat;cl.lng=p.lng;salvar()}
+      renderTudo();
+      toast(d.ixc==='fila'?'Localização gravada. Vai para o IXC em até 2 minutos.':d.ixc==='sem_ixc'?'Localização gravada no MoviOne (cliente sem cadastro no IXC).':'Localização gravada no MoviOne. O envio para o IXC está desligado ou falhou.',d.ixc!=='fila'&&d.ixc!=='sem_ixc');
+    }catch(e){renderTudo();toast('Falha ao gravar a localização: '+e.message,true)}
+  });
 }
 
 /* 3) Vincular caixa/CTO → grava no MoviOne */

@@ -128,6 +128,11 @@ export default async function handler(req, res) {
     if (acao === 'inc-listar')        return res.status(200).json(await incListar(b));
     if (acao === 'inc-previa')        return res.status(200).json(await incPrevia(b));
     if (acao === 'inc-avisos')        return res.status(200).json(await incAvisos(b.id));
+    // mover a casa do cliente no mapa: muda o cadastro (MoviOne e IXC), entao tem de ter dono
+    if (acao === 'cliente-localizacao') {
+      if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'faca login no MoviFiber para mover o cliente' });
+      return res.status(200).json(await clienteLocalizacao(b));
+    }
     if (['inc-salvar', 'inc-resolver', 'inc-reabrir', 'inc-excluir'].includes(acao)) {
       if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'faca login no MoviFiber para marcar instabilidade' });
       if (acao === 'inc-salvar')      return res.status(200).json(await incSalvar(b.incidente, quem.usuario));
@@ -216,6 +221,41 @@ async function salvarInstalacao(b) {
   });
   if (!r.ok) throw new Error('Supabase RPC HTTP ' + r.status + ' — rodou a migration ftth_cliente_instalacao?');
   return { ok: true, instalacao: await r.json() };
+}
+
+/* Localizacao do cliente movida no mapa do MoviFiber: grava no MoviOne (fixada,
+   como a do tecnico) e poe na fila do IXC — a mesma do moviTec, que regrava o
+   cadastro do cliente no IXC e confere (api/_ixc_localizacao.js). */
+async function clienteLocalizacao(b) {
+  const id = Number(b.cliente_id), lat = Number(b.lat), lng = Number(b.lng);
+  if (!Number.isInteger(id) || id <= 0) throw new Error('cliente invalido');
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat === 0 || lng === 0 || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw new Error('localizacao invalida');
+  const base = process.env.SUPABASE_URL + '/rest/v1/';
+  const h = { ...sbHeaders(), 'Content-Type': 'application/json' };
+  const r = await fetch(base + 'rpc/atualizar_coord_cliente', { method: 'POST', headers: h, body: JSON.stringify({ p_cliente_id: id, p_lat: lat, p_lng: lng }) });
+  if (!r.ok) throw new Error('nao consegui gravar a localizacao no MoviOne (HTTP ' + r.status + ')');
+  // fila do IXC: so com a integracao da localizacao ligada e cliente com cadastro no IXC
+  let ixc = 'nao';
+  try {
+    const [cfg, cli] = await Promise.all([
+      fetch(base + 'ixc_sync_config?id=eq.1&select=coord_ixc', { headers: h }).then(x => x.json()),
+      fetch(base + `clientes?id=eq.${id}&select=ixc_id`, { headers: h }).then(x => x.json()),
+    ]);
+    const ixcId = cli && cli[0] && /^[1-9]\d{0,17}$/.test(String(cli[0].ixc_id || '')) ? String(cli[0].ixc_id) : null;
+    if (ixcId && cfg && cfg[0] && cfg[0].coord_ixc && cfg[0].coord_ixc !== 'desligado') {
+      const dados = { lat, lng, precisao: 0 };
+      // a mais nova vale: se ja tem uma esperando para o mesmo cliente, troca a localizacao
+      const p = await fetch(base + `ixc_acoes?acao=eq.localizacao&status=eq.pendente&ixc_cliente_id=eq.${ixcId}&dados->>previa=is.null&dados->>manter=is.null`, {
+        method: 'PATCH', headers: { ...h, Prefer: 'return=representation' }, body: JSON.stringify({ dados, origem: 'movifiber', os_id: null, tentativas: 0, erro: null }) });
+      const ja = p.ok ? await p.json() : [];
+      if (!Array.isArray(ja) || !ja.length) {
+        const i = await fetch(base + 'ixc_acoes', { method: 'POST', headers: { ...h, Prefer: 'return=minimal' }, body: JSON.stringify({ acao: 'localizacao', ixc_cliente_id: ixcId, origem: 'movifiber', dados }) });
+        if (!i.ok) throw new Error('fila HTTP ' + i.status);
+      }
+      ixc = 'fila';
+    } else ixc = ixcId ? 'desligado' : 'sem_ixc';
+  } catch (e) { console.error('[movifiber] fila da localizacao:', String(e.message || e).slice(0, 160)); ixc = 'erro'; }
+  return { ok: true, ixc };
 }
 
 // ---------------------- PROJETOS MOVIFIBER (nuvem) --------------------------
