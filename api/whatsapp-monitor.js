@@ -230,6 +230,18 @@ export async function verificar({ agora = new Date() } = {}) {
     if (!!travada !== !!linha.travada || travada) upd.travada = travada;
   } else if (linha.travada) upd.travada = null;
 
+  // a Evolution passou por "conectando" e voltou sozinha: em 11/11 as duas vezes a sessão
+  // voltou travada. Reinício preventivo — sem esperar alguém enviar e não ser entregue
+  // (com o atendimento parado ninguém envia, e as mensagens dos clientes ficam sem chegar).
+  // Não vale para a volta de um QR Code recém-lido nem para a volta do nosso próprio reinício.
+  const recente = (v, ms) => !!v && agora - Date.parse(v) < ms;
+  if (mudou && estado === 'open' && linha.estado === 'connecting' && !acoes.some(a => a.acao === 'reinicio')
+      && !recente(linha.reinicio_em, REINICIAR_CADA_MS) && !recente(linha.reconexao_em, REINICIAR_CADA_MS) && !recente(diag && diag.queda_em, REINICIAR_CADA_MS)) {
+    const resultado = await reiniciarInstancia(inst);
+    upd.reinicio_em = agora.toISOString();
+    acoes.push({ em: agora.toISOString(), estado, anterior: estado, acao: 'reinicio', ms, motivo: `a Evolution reconectou sozinha: reinício preventivo da sessão ${resultado}` });
+  }
+
   // alerta na tela: fora do ar há mais de 5 minutos, ou travada sem o reinício resolver
   const parado = estado !== 'open' && agora - Date.parse(desde) >= ALERTA_APOS_MS;
   const travadaSemJeito = travada && !travada.aguardando && (travada.tentativas || 0) >= REINICIOS_MAX && linha.reinicio_em && agora - Date.parse(linha.reinicio_em) >= ALERTA_APOS_MS;
