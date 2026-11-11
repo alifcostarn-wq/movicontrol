@@ -12,6 +12,9 @@
 //   · se continuar desconectado, pede à Evolution para reconectar com a sessão
 //     guardada (o mesmo "conectar" da tela, sem desconectar nem pedir QR), no
 //     máximo a cada 10 minutos e nunca quando o WhatsApp encerrou a sessão;
+//   · se a sessão está "conectada" mas travada (envia e nada é entregue, nada
+//     chega), reinicia a instância na Evolution — o que antes era feito à mão,
+//     desconectando e lendo o QR Code;
 //   · guarda um diagnóstico (versão da Evolution, último motivo de queda) —
 //     sem token, sem número e sem nome de ninguém.
 // ============================================================================
@@ -56,12 +59,13 @@ async function sb(caminho, { method = 'GET', body, prefer } = {}) {
   try { return txt ? JSON.parse(txt) : null; } catch { return null; }
 }
 
-async function evo(caminho, { ms = 10000 } = {}) {
+async function evo(caminho, { ms = 10000, method = 'GET', body } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms);
   const ini = Date.now();
   try {
-    const r = await fetch(`${evoUrl()}${caminho}`, { headers: { apikey: evoKey() }, signal: ctl.signal });
+    const r = await fetch(`${evoUrl()}${caminho}`, { method, headers: { apikey: evoKey(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined, signal: ctl.signal });
     const json = await r.json().catch(() => null);
     return { status: r.status, json, ms: Date.now() - ini };
   } finally { clearTimeout(timer); }
@@ -100,8 +104,49 @@ export function diagnosticoDe(raiz, instancia) {
   };
 }
 
+/* SESSÃO TRAVADA: a Evolution diz "conectado", mas a sessão morreu por dentro —
+   o que se envia volta como aceito e nunca é entregue, e nada chega (visto em
+   10 e 11/11: começa depois de a própria Evolution passar por "conectando").
+   O sinal é o tráfego: as últimas mensagens enviadas (3 ou mais, para 2 ou mais
+   conversas, há mais de 4 minutos) sem nenhuma confirmação de entrega, e nada
+   recebido nem confirmado desde a mais antiga delas. */
+export const TRAVA_JANELA_MS = 40 * 60e3, TRAVA_ESPERA_MS = 4 * 60e3;
+export const REINICIAR_CADA_MS = 15 * 60e3, REINICIOS_MAX = 2;
+export function sessaoTravada({ saidas = [], ultimaEntrada = null, ultimoRecibo = null } = {}) {
+  // da mais nova para a mais velha: a sequência final de "só enviadas"
+  const fila = [...saidas].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const seq = [];
+  for (const m of fila) { if (m.status === 'enviado') seq.push(m); else break; }
+  if (seq.length < 3 || new Set(seq.map(m => String(m.conversa_id))).size < 2) return null;
+  const desde = Math.min(...seq.map(m => Date.parse(m.created_at)));
+  if (ultimaEntrada && Date.parse(ultimaEntrada) > desde) return null;
+  if (ultimoRecibo && Date.parse(ultimoRecibo) > desde) return null;
+  return { desde: new Date(desde).toISOString(), mensagens: seq.length };
+}
+async function lerTrafego(agora) {
+  const de = new Date(agora - TRAVA_JANELA_MS).toISOString(), ate = new Date(agora - TRAVA_ESPERA_MS).toISOString();
+  const [saidas, ent, rec] = await Promise.all([
+    sb(`atend_mensagens?select=conversa_id,status,created_at&direcao=in.(out,bot)&wa_id=not.is.null&excluido_em=is.null&created_at=gte.${encodeURIComponent(de)}&created_at=lte.${encodeURIComponent(ate)}&order=id.desc&limit=30`),
+    sb('atend_mensagens?select=created_at&direcao=eq.in&order=id.desc&limit=1'),
+    sb(`atend_mensagens?select=status_em&status=in.(entregue,lido)&status_em=gte.${encodeURIComponent(de)}&order=status_em.desc&limit=1`),
+  ]);
+  return { saidas: saidas || [], ultimaEntrada: ent && ent[0] ? ent[0].created_at : null, ultimoRecibo: rec && rec[0] ? rec[0].status_em : null };
+}
+/* Reinicia a instância na Evolution: refaz a ligação com o WhatsApp usando a
+   sessão guardada (sem QR e sem desconectar o aparelho). */
+async function reiniciarInstancia(inst) {
+  for (const method of ['POST', 'PUT']) {
+    try {
+      const r = await evo(`/instance/restart/${inst}`, { ms: 20000, method });
+      if (r.status === 404 || r.status === 405) continue;
+      return r.status < 400 ? 'pedido' : `recusado (${r.status})`;
+    } catch { return 'sem resposta'; }
+  }
+  return 'não suportado por esta Evolution';
+}
+
 export async function verificar({ agora = new Date() } = {}) {
-  const linha = ((await sb('atend_whatsapp_monitor?id=eq.1&select=estado,desde,reconexao_em,diagnostico,diagnostico_em,latencias')) || [])[0] || {};
+  const linha = ((await sb('atend_whatsapp_monitor?id=eq.1&select=estado,desde,reconexao_em,diagnostico,diagnostico_em,latencias,reinicio_em,reinicios,travada')) || [])[0] || {};
   const inst = encodeURIComponent(evoInst());
   let estado = 'desconhecido', ms = null;
   try {
@@ -151,13 +196,50 @@ export async function verificar({ agora = new Date() } = {}) {
     acoes.push({ em: agora.toISOString(), estado, anterior: estado, acao: 'reconexao', motivo: `reconexão automática ${resultado}`, ms });
   }
 
-  // alerta na tela: fora do ar há mais de 5 minutos
+  // sessão travada ("conectado" sem entregar nem receber): reinicia a instância sozinho,
+  // no máximo a cada 15 min e 2 vezes sem melhora — depois disso só o QR resolve
+  let travada = null;
+  if (estado === 'open') {
+    try {
+      const tr = await lerTrafego(agora.getTime());
+      travada = sessaoTravada(tr);
+      // já estava travada e as mensagens saíram da janela: continua travada até chegar
+      // mensagem ou confirmação de entrega. Sem envio novo depois do reinício não dá para
+      // saber se ele resolveu: fica aguardando, sem reiniciar de novo nem alertar.
+      const antes = linha.travada && linha.travada.desde ? Date.parse(linha.travada.desde) : null;
+      if (!travada && antes && !(tr.ultimaEntrada && Date.parse(tr.ultimaEntrada) > antes) && !(tr.ultimoRecibo && Date.parse(tr.ultimoRecibo) > antes)) {
+        const depois = linha.reinicio_em ? tr.saidas.filter(m => m.status === 'enviado' && Date.parse(m.created_at) > Date.parse(linha.reinicio_em)).length : 0;
+        travada = { desde: linha.travada.desde, mensagens: linha.travada.mensagens || 0, ...(depois ? { depois_do_reinicio: depois } : { aguardando: true }) };
+      }
+    } catch { travada = null; }
+    let reinicios = linha.reinicios || 0;
+    // depois do último reinício voltou a entregar ou receber: zera a conta
+    if (!travada && reinicios) { reinicios = 0; upd.reinicios = 0; }
+    if (travada) {
+      const jaTentou = linha.reinicio_em && Date.parse(linha.reinicio_em) > Date.parse(travada.desde);
+      const podeReiniciar = !linha.reinicio_em || agora - Date.parse(linha.reinicio_em) >= REINICIAR_CADA_MS;
+      if (reinicios < REINICIOS_MAX && podeReiniciar && !travada.aguardando) {
+        const resultado = await reiniciarInstancia(inst);
+        upd.reinicio_em = agora.toISOString(); upd.reinicios = reinicios + 1;
+        acoes.push({ em: agora.toISOString(), estado, anterior: estado, acao: 'reinicio', ms,
+          motivo: `sessão travada: ${travada.mensagens} mensagens enviadas desde ${new Date(travada.desde).toLocaleTimeString('pt-BR', { timeZone: 'America/Fortaleza', hour: '2-digit', minute: '2-digit' })} sem entrega e nada recebido — reinício automático ${resultado}` });
+        travada.reinicio = resultado;
+      }
+      travada.tentativas = upd.reinicios ?? reinicios; travada.ja_tentou = !!jaTentou;
+    }
+    if (!!travada !== !!linha.travada || travada) upd.travada = travada;
+  } else if (linha.travada) upd.travada = null;
+
+  // alerta na tela: fora do ar há mais de 5 minutos, ou travada sem o reinício resolver
   const parado = estado !== 'open' && agora - Date.parse(desde) >= ALERTA_APOS_MS;
-  upd.alerta = parado ? { desde, estado, motivo: estado === 'indisponivel' ? 'servidor da Evolution sem resposta' : (diag && diag.queda_motivo) || null } : null;
+  const travadaSemJeito = travada && !travada.aguardando && (travada.tentativas || 0) >= REINICIOS_MAX && linha.reinicio_em && agora - Date.parse(linha.reinicio_em) >= ALERTA_APOS_MS;
+  upd.alerta = parado ? { desde, estado, motivo: estado === 'indisponivel' ? 'servidor da Evolution sem resposta' : (diag && diag.queda_motivo) || null }
+    : travadaSemJeito ? { desde: travada.desde, estado: 'travada', motivo: 'a sessão aparece conectada, mas não entrega nem recebe, e o reinício automático não resolveu: desconecte e leia o QR Code de novo' }
+    : null;
 
   for (const a of acoes) await sb('atend_whatsapp_conexao', { method: 'POST', prefer: 'return=minimal', body: a });
   await sb('atend_whatsapp_monitor?id=eq.1', { method: 'PATCH', prefer: 'return=minimal', body: upd });
-  return { estado, ms, mudou, reconexao: !!upd.reconexao_em && acoes.some(a => a.acao === 'reconexao') };
+  return { estado, ms, mudou, reconexao: !!upd.reconexao_em && acoes.some(a => a.acao === 'reconexao'), reinicio: acoes.some(a => a.acao === 'reinicio') };
 }
 
 function tokenConfere(recebido, esperado) {

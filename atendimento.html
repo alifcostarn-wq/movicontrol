@@ -12582,12 +12582,12 @@ function pintarHistoricoWA(m){
   const resp = m.ms_medio!=null ? `resposta média da Evolution ${m.ms_medio} ms` : 'Evolution sem resposta';
   const ruins = (m.lentas||m.sem_resposta) ? ` · nas últimas ${m.checagens} verificações: ${m.lentas} lenta${m.lentas===1?'':'s'} (mais de 3 s), ${m.sem_resposta} sem resposta` : '';
   const linhas=(m.historico||[]).map(h=>{
-    const o = h.acao==='reconexao' ? '🔄 '+(h.motivo||'reconexão automática') : `${h.estado==='open'?'🟢':h.estado==='indisponivel'?'⚠️':'🔴'} ${WA_ESTADO[h.estado]||h.estado}${h.anterior&&h.durou_seg!=null?` (antes: ${WA_ESTADO[h.anterior]||h.anterior} por ${waDuracao(h.durou_seg)})`:''}${h.motivo?' — '+h.motivo:''}`;
+    const o = h.acao==='reconexao' ? '🔄 '+(h.motivo||'reconexão automática') : h.acao==='reinicio' ? '♻️ '+(h.motivo||'reinício automático da sessão') : `${h.estado==='open'?'🟢':h.estado==='indisponivel'?'⚠️':'🔴'} ${WA_ESTADO[h.estado]||h.estado}${h.anterior&&h.durou_seg!=null?` (antes: ${WA_ESTADO[h.anterior]||h.anterior} por ${waDuracao(h.durou_seg)})`:''}${h.motivo?' — '+h.motivo:''}`;
     return `<div class="oi-falha"><b>${esc(hora(h.em))}</b> · ${esc(o)}</div>`;
   }).join('');
   box.innerHTML=`<div style="font-weight:800;font-size:12.5px;margin-bottom:4px">Monitor da conexão</div>
     <div class="tp-nota">Verificado ${esc(hora(m.checado_em))} · ${esc(resp)}${esc(ruins)}${ev.versao?` · Evolution ${esc(ev.versao)}`:''}</div>
-    ${m.alerta?`<div class="ms-erro" role="alert" style="margin-top:6px">Fora do ar desde ${esc(hora(m.alerta.desde))}${m.alerta.motivo?': '+esc(m.alerta.motivo):''}</div>`:''}
+    ${m.alerta?`<div class="ms-erro" role="alert" style="margin-top:6px">${m.alerta.estado==='travada'?'Sessão travada':'Fora do ar'} desde ${esc(hora(m.alerta.desde))}${m.alerta.motivo?': '+esc(m.alerta.motivo):''}</div>`:''}
     ${ev.queda_codigo?`<div class="tp-nota" style="margin-top:4px">Última queda registrada na Evolution: ${esc(hora(ev.queda_em))} — ${esc(ev.queda_motivo||('código '+ev.queda_codigo))}</div>`:''}
     <div style="margin-top:8px">${linhas||'<div class="tp-nota">Nenhuma mudança de estado registrada ainda.</div>'}</div>`;
 }
