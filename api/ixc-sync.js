@@ -23,6 +23,7 @@ import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIx
 import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 import { sondarIxc } from './_ixc_sondagem.js';
 import { lerFaturasAbertas } from './_ixc_faturas.js';
+import { copiarRedeFibra } from './_ixc_fibra.js';
 import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR } from './_ixc_onu.js';
 
 export const config = { maxDuration: 60 };
@@ -279,6 +280,7 @@ async function ixcEditarCliente(id, corpo, prazo) {
    'ativo' : traz para a Central as OS de assunto que gera visita. */
 const OS_PREVIA_CADA_MS = 15 * 60e3;
 const OS_TRAVA_MS = 2 * 60e3;          // rodada das OS mais velha que isso morreu
+const FIBRA_CADA_MS = 10 * 60e3;             // cópia das caixas/projetos/vínculos de fibra do IXC
 const FUNCIONARIOS_CADA_MS = 6 * 3600e3;  // lista de colaboradores do IXC (responsável no fechamento)
 // o erro do banco traz a linha recusada inteira ("details": nome, telefone,
 // endereço do cliente) — o resultado aparece na tela: fica só o código e a regra
@@ -345,6 +347,12 @@ async function rodarOs(cfg, prazo) {
         try { extra.sondagem_resultado = await sondarIxc(io, cfg.sondagem_pedido, { agora: new Date(agora) }); }
         catch (err) { extra.sondagem_resultado = { em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
         extra.sondagem_pedido = null;
+      }
+      // rede de fibra do IXC (caixas, projetos, vínculo caixa/porta de cada cliente): a cada 10 min
+      if (!cfg.fibra_em || agora - Date.parse(cfg.fibra_em) > FIBRA_CADA_MS) {
+        try { extra.fibra_resultado = await copiarRedeFibra(io, { agora: new Date(agora) }); }
+        catch (err) { extra.fibra_resultado = { ok: false, em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
+        extra.fibra_em = new Date(agora).toISOString();
       }
       // faturas a receber (fotografia para o levantamento do reajuste), quando pedida
       if (cfg.faturas_pedido) {
