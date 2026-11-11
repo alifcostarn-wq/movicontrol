@@ -24,6 +24,7 @@ import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 import { sondarIxc } from './_ixc_sondagem.js';
 import { lerFaturasAbertas } from './_ixc_faturas.js';
 import { copiarRedeFibra } from './_ixc_fibra.js';
+import { reconciliarFibra, processarVinculosFibra } from './_ixc_fibra_sinc.js';
 import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR } from './_ixc_onu.js';
 
 export const config = { maxDuration: 60 };
@@ -249,8 +250,12 @@ const ixcFecharOs = (corpo, prazo) => ixcGravar('su_oss_chamado_fechar', corpo, 
 /* Edição do cadastro do cliente no IXC — só para a localização da casa (ver
    _ixc_localizacao.js): PUT em cliente/{id} com o cadastro inteiro que a rodada
    acabou de ler. Nenhuma outra tabela do IXC é editável por aqui. */
-async function ixcEditarCliente(id, corpo, prazo) {
-  if (!/^\d+$/.test(String(id || '')) || String(id) === '0') throw new Error('cliente do IXC inválido');
+const ixcEditarCliente = (id, corpo, prazo) => ixcEditar('cliente', id, corpo, prazo);
+// o cadastro de fibra: só caixa, porta e projeto (ver _ixc_fibra_sinc.js)
+const ixcEditarFibra = (id, corpo, prazo) => ixcEditar('radpop_radio_cliente_fibra', id, corpo, prazo);
+async function ixcEditar(tabela, id, corpo, prazo) {
+  if (!['cliente', 'radpop_radio_cliente_fibra'].includes(tabela)) throw new Error(`edição do IXC não permitida: ${tabela}`);
+  if (!/^\d+$/.test(String(id || '')) || String(id) === '0') throw new Error('registro do IXC inválido');
   const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
   const resta = prazo - Date.now();
   if (resta <= 1000) throw new Error('sem tempo nesta rodada para gravar no IXC');
@@ -258,7 +263,7 @@ async function ixcEditarCliente(id, corpo, prazo) {
   const timer = setTimeout(() => ctl.abort(), Math.min(resta, 20e3));
   let r;
   try {
-    r = await fetch(`${IXC_URL}/webservice/v1/cliente/${id}`, {
+    r = await fetch(`${IXC_URL}/webservice/v1/${tabela}/${id}`, {
       method: 'PUT', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify(corpo),
@@ -298,7 +303,7 @@ async function rodarOs(cfg, prazo) {
   if (!Array.isArray(pego) || !pego.length) return { ok: true, modo, pulado: 'outra rodada das OS em andamento' };
   const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcFecharOs: c => ixcFecharOs(c, prazo),
     ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), ixcEditarCliente: (id, c) => ixcEditarCliente(id, c, prazo),
-    ixcGrade: (t, f) => ixcGrade(t, f, prazo, 12e3), sb };
+    ixcEditarFibra: (id, c) => ixcEditarFibra(id, c, prazo), ixcGrade: (t, f) => ixcGrade(t, f, prazo, 12e3), sb, sbTudo };
   let resultado, extra = {};
   try {
     if (modo === 'previa') {
@@ -353,6 +358,16 @@ async function rodarOs(cfg, prazo) {
         try { extra.fibra_resultado = await copiarRedeFibra(io, { agora: new Date(agora) }); }
         catch (err) { extra.fibra_resultado = { ok: false, em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
         extra.fibra_em = new Date(agora).toISOString();
+        // MoviFiber ↔ IXC: compara o vínculo caixa/porta dos dois lados e decide o que vai para onde
+        if (extra.fibra_resultado && extra.fibra_resultado.ok && ['previa', 'ativo'].includes(cfg.fibra_sinc)) {
+          try { extra.fibra_sinc_resultado = await reconciliarFibra(io, { modo: cfg.fibra_sinc, agora: new Date(agora) }); }
+          catch (err) { extra.fibra_sinc_resultado = { ok: false, em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
+        }
+      }
+      // vínculos que o MoviFiber mudou → cadastro de fibra no IXC
+      if (['teste', 'ativo'].includes(cfg.fibra_gravar)) {
+        try { resultado.fibra_vinculos = await processarVinculosFibra(io, { modo: cfg.fibra_gravar, clienteTeste: cfg.fibra_teste, agora: new Date(agora), ate: prazo }); }
+        catch (err) { resultado.fibra_vinculos = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
       }
       // faturas a receber (fotografia para o levantamento do reajuste), quando pedida
       if (cfg.faturas_pedido) {
