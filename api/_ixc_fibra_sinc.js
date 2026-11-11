@@ -67,9 +67,9 @@ export function ctosDoMovifiber(projetos) {
 const escolher = (lista, projNorm) => (!lista || !lista.length ? null : lista.length === 1 ? lista[0] : lista.find(x => x.projeto_norm === projNorm) || null);
 
 export async function reconciliarFibra(io, { modo = 'previa', agora = new Date() } = {}) {
-  const r = { ok: true, modo, em: agora.toISOString(), iguais: 0, ixc_para_mf: 0, mf_para_ixc: 0, na_fila: 0, divergentes: 0, sem_cadastro_fibra: 0, caixa_sem_par: 0, lista_divergentes: [] };
+  const r = { ok: true, modo, em: agora.toISOString(), iguais: 0, ixc_para_mf: 0, mf_para_ixc: 0, na_fila: 0, divergentes: 0, sem_cadastro_fibra: 0, caixa_sem_par: 0, porta_ocupada: 0, recusadas_antes: 0, lista_divergentes: [], lista_ocupadas: [] };
   if (!['previa', 'ativo'].includes(modo)) return r;
-  const [fibras, caixas, projIxc, logins, vinculos, projMf, bases, fila] = await Promise.all([
+  const [fibras, caixas, projIxc, logins, vinculos, projMf, bases, fila, loginsFtth, recusadas] = await Promise.all([
     io.sbTudo('ixc_fibras?select=id,id_login,id_caixa_ftth,porta_ftth,id_projeto&id_login=not.is.null&order=id.asc'),
     io.sbTudo('ixc_caixas?select=id,nome,id_projeto&order=id.asc'),
     io.sbTudo('ixc_projetos_fibra?select=id,nome&order=id.asc'),
@@ -78,7 +78,11 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
     io.sbTudo('movifiber_projetos?select=id,nome,elementos:dados->elementos&order=id.asc'),
     io.sbTudo('fibra_sinc_base?select=cliente_id,ixc_fibra_id,estado&order=cliente_id.asc'),
     io.sbTudo('ixc_acoes?select=id,dados&acao=eq.fibra_vinculo&status=eq.pendente&order=id.asc'),
+    io.sbTudo('ixc_logins_ftth?select=id,id_caixa_ftth,ftth_porta&id_caixa_ftth=not.is.null&order=id.asc').catch(() => []),
+    // o que o IXC recusou nas últimas 6 h não volta para a fila igual
+    io.sbTudo(`ixc_acoes?select=id,dados&acao=eq.fibra_vinculo&status=eq.falhou&criado_em=gte.${encodeURIComponent(new Date(agora.getTime() - 6 * 3600e3).toISOString())}&order=id.asc`).catch(() => []),
   ]);
+  const jaRecusada = new Set((recusadas || []).map(a => `${a.dados && a.dados.fibra}>${a.dados && a.dados.caixa || ''}|${a.dados && a.dados.porta || ''}`));
   const projNomeIxc = new Map((projIxc || []).map(p => [String(p.id), nomeNorm(p.nome)]));
   const cxIxc = new Map((caixas || []).map(c => [String(c.id), c]));
   const cxIxcPorNome = new Map();
@@ -96,7 +100,7 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
     if (!atual || nota > atual.nota || (nota === atual.nota && Number(f.id) > Number(atual.f.id))) fibraDe.set(k, { f, nota, cliIxc: l.ixc_cliente_id });
   }
   const clientes = new Set([...fibraDe.keys(), ...vincDe.keys()]);
-  const paraMf = [], paraFila = [], novasBases = [];
+  const paraMf = [], paraFila = [], novasBases = [], paraIxc = [];
   for (const k of clientes) {
     const v = vincDe.get(k), fx = fibraDe.get(k);
     const temMf = !!(v && texto(v.caixa_nome));
@@ -128,10 +132,7 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
       novasBases.push({ cliente_id: Number(k), ixc_fibra_id: String(f.id), estado: ixc, em: r.em });
     } else if (acao === 'mf_para_ixc') {
       r.mf_para_ixc++;
-      if (pendente.has(String(f.id))) { r.na_fila++; continue; }
-      const c = cxIxc.get(caixaDe(mf));
-      paraFila.push({ acao: 'fibra_vinculo', ixc_cliente_id: idValido(fx.cliIxc), origem: 'movifiber',
-        dados: { fibra: String(f.id), cliente_id: Number(k), caixa: caixaDe(mf) || null, porta: portaDe(mf), projeto: c ? idValido(c.id_projeto) : null } });
+      paraIxc.push({ k, f, fx, mf, ixc });
     } else {
       r.divergentes++;
       if (r.lista_divergentes.length < 40) {
@@ -139,6 +140,36 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
         r.lista_divergentes.push({ cliente_id: Number(k), cliente_ixc: idValido(fx.cliIxc), movifiber: nome(mf), ixc: nome(ixc) });
       }
     }
+  }
+  // MoviFiber → IXC. O IXC não aceita a mesma porta da caixa para dois clientes: a porta que
+  // está com outro cliente só é pedida se esse outro também está saindo dela nesta rodada
+  // (troca de portas); senão vai só a caixa e o caso aparece como "porta ocupada".
+  const saindo = new Set(paraIxc.map(x => String(x.f.id)));
+  const donoFibra = new Map((fibras || []).map(f => [String(f.id), f]));
+  const fibraDoLogin = new Map((fibras || []).map(f => [String(f.id_login), String(f.id)]));
+  const ocupantes = new Map();
+  const ocupar = (cx, porta, quem) => { if (!cx || !inteiro(porta)) return; const kk = `${cx}|${inteiro(porta)}`; if (!ocupantes.has(kk)) ocupantes.set(kk, new Set()); ocupantes.get(kk).add(quem); };
+  for (const f of fibras || []) ocupar(idValido(f.id_caixa_ftth), f.porta_ftth, String(f.id));
+  for (const l of loginsFtth || []) ocupar(idValido(l.id_caixa_ftth), l.ftth_porta, fibraDoLogin.get(String(l.id)) || `login:${l.id}`);
+  for (const x of paraIxc) {
+    const id = String(x.f.id);
+    let alvo = x.mf;
+    const outros = portaDe(alvo) ? [...(ocupantes.get(alvo) || [])].filter(o => o !== id) : [];
+    const presos = outros.filter(o => !saindo.has(o));
+    if (presos.length) {
+      r.porta_ocupada++;
+      if (r.lista_ocupadas.length < 40) {
+        const dono = donoFibra.get(presos[0]), lg = dono ? loginDe.get(String(dono.id_login)) : loginDe.get(presos[0].replace('login:', ''));
+        r.lista_ocupadas.push({ cliente_id: Number(x.k), cliente_ixc: idValido(x.fx.cliIxc), caixa: (cxIxc.get(caixaDe(alvo)) || {}).nome || caixaDe(alvo), porta: portaDe(alvo), ocupada_por_cliente_ixc: lg ? idValido(lg.ixc_cliente_id) : null });
+      }
+      alvo = estado(caixaDe(alvo), null);                 // vai só a caixa
+      if (caixaDe(alvo) === caixaDe(x.ixc)) continue;      // a caixa já está certa no IXC: nada a gravar
+    }
+    if (pendente.has(id)) { r.na_fila++; continue; }
+    if (jaRecusada.has(`${id}>${caixaDe(alvo) || ''}|${portaDe(alvo) || ''}`)) { r.recusadas_antes++; continue; }
+    const c = cxIxc.get(caixaDe(alvo));
+    paraFila.push({ acao: 'fibra_vinculo', ixc_cliente_id: idValido(x.fx.cliIxc), origem: 'movifiber',
+      dados: { fibra: id, cliente_id: Number(x.k), caixa: caixaDe(alvo) || null, porta: portaDe(alvo), projeto: c ? idValido(c.id_projeto) : null } });
   }
   if (modo === 'ativo') {
     for (let i = 0; i < paraMf.length; i += 200) {
@@ -164,6 +195,27 @@ export async function processarVinculosFibra(io, { modo = 'desligado', clienteTe
   const teste = idValido(clienteTeste);
   if (modo === 'teste' && !teste) return r;
   const fila = await io.sb('ixc_acoes?status=eq.pendente&acao=eq.fibra_vinculo' + (modo === 'teste' ? `&ixc_cliente_id=eq.${teste}` : '') + `&select=id,ixc_cliente_id,dados,tentativas&order=id.asc&limit=${max}`) || [];
+  const lerFibra = async id => { const v = await io.ixcListar('radpop_radio_cliente_fibra', { qtype: 'radpop_radio_cliente_fibra.id', query: id, oper: '=' }, { paginas: 1, rp: 1 }); return ((v && v.registros) || []).find(x => String(x && x.id) === id) || null; };
+  // 1ª passada — troca de portas: quem vai mudar de porta solta a que tem agora, para a porta
+  // de um não esbarrar na do outro (o IXC recusa a porta que está com outro cliente)
+  if (fila.length > 1) {
+    for (const a of fila) {
+      if (Date.now() > ate - 25e3) break;
+      const d = a.dados || {}, id = idValido(d.fibra);
+      if (!id || d.liberada) continue;
+      try {
+        const reg = await lerFibra(id);
+        const mudaPorta = reg && inteiro(reg.porta_ftth) && (inteiro(reg.porta_ftth) !== (inteiro(d.porta) || 0) || (inteiro(reg.id_caixa_ftth) || 0) !== (inteiro(d.caixa) || 0));
+        if (mudaPorta) {
+          const corpo = {};
+          for (const [k, v] of Object.entries(reg)) corpo[k] = dataParaGravar(v);
+          corpo.porta_ftth = '';
+          await io.ixcEditarFibra(id, corpo);
+        }
+        await io.sb(`ixc_acoes?id=eq.${Number(a.id)}&status=eq.pendente`, { method: 'PATCH', prefer: 'return=minimal', body: { dados: { ...d, liberada: true } } });
+      } catch { /* a 2ª passada diz o que deu errado */ }
+    }
+  }
   for (const a of fila) {
     if (r.pausada || Date.now() > ate - 15e3) break;
     const d = a.dados || {}, id = idValido(d.fibra), tentativas = (a.tentativas || 0) + 1;
@@ -184,6 +236,7 @@ export async function processarVinculosFibra(io, { modo = 'desligado', clienteTe
     Object.assign(corpo, alvo);
     let erroGravar = null, resp = null;
     try { resp = await io.ixcEditarFibra(id, corpo); } catch (err) { erroGravar = String(err.message || err); }
+    if (erroGravar && /porta ftth n[aã]o corresponde/i.test(erroGravar)) { await falhar(`a porta ${alvo.porta_ftth} dessa caixa já está com outro cliente no IXC: confira qual dos dois está certo`); continue; }
     if (erroGravar && !TRANSITORIO.test(erroGravar)) { await falhar('o IXC recusou: ' + semNumeros(erroGravar.replace(/^IXC:\s*/, ''))); continue; }
     let depois = null;
     try { depois = await ler(); } catch { depois = null; }

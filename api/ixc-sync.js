@@ -366,7 +366,7 @@ async function rodarOs(cfg, prazo) {
       }
       // vínculos que o MoviFiber mudou → cadastro de fibra no IXC
       if (['teste', 'ativo'].includes(cfg.fibra_gravar)) {
-        try { resultado.fibra_vinculos = await processarVinculosFibra(io, { modo: cfg.fibra_gravar, clienteTeste: cfg.fibra_teste, agora: new Date(agora), ate: prazo }); }
+        try { resultado.fibra_vinculos = await processarVinculosFibra(io, { modo: cfg.fibra_gravar, clienteTeste: cfg.fibra_teste, max: 6, agora: new Date(agora), ate: prazo }); }
         catch (err) { resultado.fibra_vinculos = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
       }
       // faturas a receber (fotografia para o levantamento do reajuste), quando pedida
