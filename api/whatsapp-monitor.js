@@ -126,11 +126,14 @@ export function sessaoTravada({ saidas = [], ultimaEntrada = null, ultimoRecibo 
 async function lerTrafego(agora) {
   const de = new Date(agora - TRAVA_JANELA_MS).toISOString(), ate = new Date(agora - TRAVA_ESPERA_MS).toISOString();
   const [saidas, ent, rec] = await Promise.all([
-    sb(`atend_mensagens?select=conversa_id,status,created_at&direcao=in.(out,bot)&wa_id=not.is.null&excluido_em=is.null&created_at=gte.${encodeURIComponent(de)}&created_at=lte.${encodeURIComponent(ate)}&order=id.desc&limit=30`),
+    sb(`atend_mensagens?select=conversa_id,status,created_at,reenviada_em&direcao=in.(out,bot)&wa_id=not.is.null&excluido_em=is.null&created_at=gte.${encodeURIComponent(de)}&created_at=lte.${encodeURIComponent(ate)}&order=id.desc&limit=30`),
     sb('atend_mensagens?select=created_at&direcao=eq.in&order=id.desc&limit=1'),
     sb(`atend_mensagens?select=status_em&status=in.(entregue,lido)&status_em=gte.${encodeURIComponent(de)}&order=status_em.desc&limit=1`),
   ]);
-  return { saidas: saidas || [], ultimaEntrada: ent && ent[0] ? ent[0].created_at : null, ultimoRecibo: rec && rec[0] ? rec[0].status_em : null };
+  // a reenviada conta pela hora do reenvio (ver reenviarPerdidas)
+  const reenv = await sb(`atend_mensagens?select=conversa_id,status,created_at:reenviada_em&direcao=in.(out,bot)&excluido_em=is.null&reenviada_em=gte.${encodeURIComponent(de)}&reenviada_em=lte.${encodeURIComponent(ate)}&order=id.desc&limit=30`).catch(() => []);
+  const semReenviadas = (saidas || []).filter(m => !m.reenviada_em);
+  return { saidas: [...semReenviadas, ...(reenv || [])], ultimaEntrada: ent && ent[0] ? ent[0].created_at : null, ultimoRecibo: rec && rec[0] ? rec[0].status_em : null };
 }
 /* Reinicia a instância na Evolution: refaz a ligação com o WhatsApp usando a
    sessão guardada (sem QR e sem desconectar o aparelho). */
@@ -145,8 +148,39 @@ async function reiniciarInstancia(inst) {
   return 'não suportado por esta Evolution';
 }
 
+/* REENVIO: o que foi enviado enquanto a sessão estava travada nunca chegou ao
+   cliente. Quando ela volta, as mensagens de TEXTO desse período que continuam
+   sem confirmação de entrega saem de novo, na ordem, poucas por rodada (até 3 h
+   de idade, no máximo 2 reenvios cada). Arquivo e imagem não são reenviados.
+   Uma ou outra pode chegar duplicada, se tinha sido entregue sem a confirmação. */
+export const REENVIO_IDADE_MAX_MS = 3 * 3600e3, REENVIO_POR_RODADA = 5;
+async function reenviarPerdidas(inst, janela, agora) {
+  const r = { reenviadas: 0, falhas: 0, restam: 0 };
+  const de = new Date(Math.max(Date.parse(janela.desde), agora - REENVIO_IDADE_MAX_MS)).toISOString();
+  const fila = await sb(`atend_mensagens?select=id,conversa_id,conteudo,reenvios&direcao=in.(out,bot)&tipo=eq.texto&status=eq.enviado&wa_id=not.is.null&excluido_em=is.null&reenvios=lt.2`
+    + `&created_at=gte.${encodeURIComponent(de)}&created_at=lte.${encodeURIComponent(janela.ate)}&or=(reenviada_em.is.null,reenviada_em.lt.${encodeURIComponent(janela.ate)})&order=id.asc&limit=${REENVIO_POR_RODADA + 1}`) || [];
+  r.restam = Math.max(0, fila.length - REENVIO_POR_RODADA);
+  for (const m of fila.slice(0, REENVIO_POR_RODADA)) {
+    const marcar = body => sb(`atend_mensagens?id=eq.${Number(m.id)}`, { method: 'PATCH', prefer: 'return=minimal', body });
+    let ok = false;
+    try {
+      const c = ((await sb(`atend_conversas?id=eq.${Number(m.conversa_id)}&select=contato_fone,bloqueado_em,deleted_at`)) || [])[0];
+      const numero = c && !c.bloqueado_em && !c.deleted_at ? String(c.contato_fone || '').replace(/\D/g, '') : '';
+      const texto = String(m.conteudo || '').trim();
+      if (numero.length >= 10 && texto) {
+        const e = await evo(`/message/sendText/${inst}`, { ms: 12000, method: 'POST', body: { number: numero, text: texto } });
+        const novo = e.status < 400 && e.json && e.json.key && e.json.key.id ? String(e.json.key.id) : null;
+        if (novo) { await marcar({ wa_id: novo, reenviada_em: new Date(agora).toISOString(), reenvios: (m.reenvios || 0) + 1 }).catch(() => {}); ok = true; }
+      }
+    } catch { ok = false; }
+    // a que não saiu não fica tentando para sempre
+    if (ok) r.reenviadas++; else { r.falhas++; await marcar({ reenvios: 2 }).catch(() => {}); }
+  }
+  return r;
+}
+
 export async function verificar({ agora = new Date() } = {}) {
-  const linha = ((await sb('atend_whatsapp_monitor?id=eq.1&select=estado,desde,reconexao_em,diagnostico,diagnostico_em,latencias,reinicio_em,reinicios,travada')) || [])[0] || {};
+  const linha = ((await sb('atend_whatsapp_monitor?id=eq.1&select=estado,desde,reconexao_em,diagnostico,diagnostico_em,latencias,reinicio_em,reinicios,travada,reenviar')) || [])[0] || {};
   const inst = encodeURIComponent(evoInst());
   let estado = 'desconhecido', ms = null;
   try {
@@ -228,6 +262,18 @@ export async function verificar({ agora = new Date() } = {}) {
       travada.tentativas = upd.reinicios ?? reinicios; travada.ja_tentou = !!jaTentou;
     }
     if (!!travada !== !!linha.travada || travada) upd.travada = travada;
+    // destravou (voltou a receber ou a confirmar entrega): o que saiu no período vai de novo
+    let reenviar = linha.reenviar || null;
+    if (!travada && linha.travada && linha.travada.desde) reenviar = { desde: linha.travada.desde, ate: agora.toISOString() };
+    if (reenviar && !travada) {
+      try {
+        const rr = await reenviarPerdidas(inst, reenviar, agora.getTime());
+        if (rr.reenviadas || rr.falhas) acoes.push({ em: agora.toISOString(), estado, anterior: estado, acao: 'reenvio', ms,
+          motivo: `a sessão voltou: ${rr.reenviadas} mensagem(ns) do período travado reenviada(s)${rr.falhas ? `, ${rr.falhas} não saíram` : ''}${rr.restam ? ' — continua na próxima verificação' : ''}` });
+        reenviar = rr.restam ? reenviar : null;
+      } catch { /* tenta de novo na próxima rodada */ }
+    }
+    if (JSON.stringify(reenviar) !== JSON.stringify(linha.reenviar || null)) upd.reenviar = reenviar;
   } else if (linha.travada) upd.travada = null;
 
   // a Evolution passou por "conectando" e voltou sozinha: em 11/11 as duas vezes a sessão
