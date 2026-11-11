@@ -19,6 +19,9 @@ export const linhaFibra = (f, em) => ({ id: String(f.id), id_login: idValido(f.i
   id_caixa_ftth: idValido(f.id_caixa_ftth), porta_ftth: inteiro(f.porta_ftth), id_projeto: idValido(f.id_projeto), serial: texto(f.mac).slice(0, 32) || null,
   slotno: texto(f.slotno).slice(0, 8) || null, ponno: texto(f.ponno).slice(0, 8) || null, onu_numero: inteiro(f.onu_numero), lido_em: em });
 
+// do login (radusuarios) só a caixa, a porta e o projeto: o IXC confere a porta do cadastro de fibra com a do login
+export const linhaLoginFtth = (l, em) => ({ id: String(l.id), id_caixa_ftth: idValido(l.id_caixa_ftth), ftth_porta: inteiro(l.ftth_porta), id_projeto: idValido(l.id_df_projeto), lido_em: em });
+
 async function copiar(io, tabelaIxc, tabela, linha, em, paginas = 5) {
   const v = await io.ixcListar(tabelaIxc, { qtype: `${tabelaIxc}.id`, query: '0', oper: '>', sortorder: 'asc' }, { paginas, rp: 1000 });
   const regs = ((v && v.registros) || []).filter(r => idValido(r && r.id));
@@ -34,7 +37,7 @@ async function copiar(io, tabelaIxc, tabela, linha, em, paginas = 5) {
 
 export async function copiarRedeFibra(io, { agora = new Date() } = {}) {
   const em = agora.toISOString(), ini = Date.now(), r = { ok: true, em };
-  for (const [ixc, tab, fn] of [['rad_caixa_ftth', 'ixc_caixas', linhaCaixa], ['df_projeto', 'ixc_projetos_fibra', linhaProjeto], ['radpop_radio_cliente_fibra', 'ixc_fibras', linhaFibra]]) {
+  for (const [ixc, tab, fn] of [['rad_caixa_ftth', 'ixc_caixas', linhaCaixa], ['df_projeto', 'ixc_projetos_fibra', linhaProjeto], ['radpop_radio_cliente_fibra', 'ixc_fibras', linhaFibra], ['radusuarios', 'ixc_logins_ftth', linhaLoginFtth]]) {
     try { r[tab] = await copiar(io, ixc, tab, fn, em); }
     catch (err) { r[tab] = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; r.ok = false; }
   }
