@@ -236,6 +236,8 @@ export async function processarVinculosFibra(io, { modo = 'desligado', clienteTe
     Object.assign(corpo, alvo);
     let erroGravar = null, resp = null;
     try { resp = await io.ixcEditarFibra(id, corpo); } catch (err) { erroGravar = String(err.message || err); }
+    // porta ainda com outro cliente: pode ser o par de uma troca que ficou para a próxima rodada — espera um pouco antes de desistir
+    if (erroGravar && /porta ftth n[aã]o corresponde/i.test(erroGravar) && tentativas < 4) { await marcar({ tentativas, erro: `esperando a porta ${alvo.porta_ftth} ser liberada no IXC` }); r.adiadas++; continue; }
     if (erroGravar && /porta ftth n[aã]o corresponde/i.test(erroGravar)) { await falhar(`a porta ${alvo.porta_ftth} dessa caixa já está com outro cliente no IXC: confira qual dos dois está certo`); continue; }
     if (erroGravar && !TRANSITORIO.test(erroGravar)) { await falhar('o IXC recusou: ' + semNumeros(erroGravar.replace(/^IXC:\s*/, ''))); continue; }
     let depois = null;
