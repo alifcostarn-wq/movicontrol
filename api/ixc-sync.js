@@ -24,6 +24,7 @@ import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 import { sondarIxc } from './_ixc_sondagem.js';
 import { lerFaturasAbertas } from './_ixc_faturas.js';
 import { copiarRedeFibra } from './_ixc_fibra.js';
+import { copiarEstoqueDoIxc } from './_ixc_estoque.js';
 import { reconciliarFibra, processarVinculosFibra } from './_ixc_fibra_sinc.js';
 import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR } from './_ixc_onu.js';
 
@@ -285,6 +286,7 @@ async function ixcEditar(tabela, id, corpo, prazo) {
    'ativo' : traz para a Central as OS de assunto que gera visita. */
 const OS_PREVIA_CADA_MS = 15 * 60e3;
 const OS_TRAVA_MS = 2 * 60e3;          // rodada das OS mais velha que isso morreu
+const ESTOQUE_CADA_MS = 30 * 60e3;           // cópia do estoque do IXC
 const FIBRA_CADA_MS = 10 * 60e3;             // cópia das caixas/projetos/vínculos de fibra do IXC
 const FUNCIONARIOS_CADA_MS = 6 * 3600e3;  // lista de colaboradores do IXC (responsável no fechamento)
 // o erro do banco traz a linha recusada inteira ("details": nome, telefone,
@@ -363,6 +365,12 @@ async function rodarOs(cfg, prazo) {
           try { extra.fibra_sinc_resultado = await reconciliarFibra(io, { modo: cfg.fibra_sinc, agora: new Date(agora) }); }
           catch (err) { extra.fibra_sinc_resultado = { ok: false, em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
         }
+      }
+      // estoque do IXC (produtos, saldo por almoxarifado, patrimônio): cópia a cada 30 min, só leitura
+      if (!cfg.estoque_em || agora - Date.parse(cfg.estoque_em) > ESTOQUE_CADA_MS) {
+        try { extra.estoque_resultado = await copiarEstoqueDoIxc(io, { agora: new Date(agora) }); }
+        catch (err) { extra.estoque_resultado = { ok: false, em: new Date(agora).toISOString(), erro: semDadosDoCliente(err.message || err) }; }
+        extra.estoque_em = new Date(agora).toISOString();
       }
       // vínculos que o MoviFiber mudou → cadastro de fibra no IXC
       if (['teste', 'ativo'].includes(cfg.fibra_gravar)) {
