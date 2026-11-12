@@ -76,7 +76,7 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
     io.sbTudo('clientes_logins?select=ixc_id,cliente_id,ixc_cliente_id,ativo&cliente_id=not.is.null&order=ixc_id.asc'),
     io.sbTudo('ftth_cliente_instalacao?select=cliente_id,projeto_ftth,caixa_id,caixa_nome,porta&order=id.asc'),
     io.sbTudo('movifiber_projetos?select=id,nome,elementos:dados->elementos&order=id.asc'),
-    io.sbTudo('fibra_sinc_base?select=cliente_id,ixc_fibra_id,estado&order=cliente_id.asc'),
+    io.sbTudo('fibra_sinc_base?select=cliente_id,ixc_fibra_id,estado,forcar&order=cliente_id.asc'),
     io.sbTudo('ixc_acoes?select=id,dados&acao=eq.fibra_vinculo&status=eq.pendente&order=id.asc'),
     io.sbTudo('ixc_logins_ftth?select=id,id_caixa_ftth,ftth_porta&id_caixa_ftth=not.is.null&order=id.asc').catch(() => []),
     // o que o IXC recusou nas últimas 6 h não volta para a fila igual
@@ -115,10 +115,12 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
     }
     const ixc = estado(idValido(f.id_caixa_ftth), f.porta_ftth);
     const b = baseDe.get(k);
-    const acao = decidir(mf, ixc, b ? b.estado : null);
+    let acao = decidir(mf, ixc, b ? b.estado : null);
+    // divergência resolvida por uma pessoa no MoviFiber ("vale o MoviFiber" / "vale o IXC")
+    if (acao === 'divergente' && b && b.forcar) acao = b.forcar === 'ixc' ? 'ixc_para_mf' : 'mf_para_ixc';
     if (acao === 'igual') {
       r.iguais++;
-      if (!b || b.estado !== ixc || String(b.ixc_fibra_id) !== String(f.id)) novasBases.push({ cliente_id: Number(k), ixc_fibra_id: String(f.id), estado: ixc, em: r.em });
+      if (!b || b.estado !== ixc || String(b.ixc_fibra_id) !== String(f.id) || b.forcar) novasBases.push({ cliente_id: Number(k), ixc_fibra_id: String(f.id), estado: ixc, em: r.em, forcar: null });
     } else if (acao === 'ixc_para_mf') {
       let linha;
       if (!ixc) linha = { cliente_id: Number(k), projeto_ftth: null, caixa_id: null, caixa_nome: null, porta: null, origem: 'ixc' };
@@ -129,7 +131,7 @@ export async function reconciliarFibra(io, { modo = 'previa', agora = new Date()
         linha = { cliente_id: Number(k), projeto_ftth: cto.projeto, caixa_id: cto.id, caixa_nome: cto.nome, porta: portaDe(ixc), origem: 'ixc' };
       }
       r.ixc_para_mf++; paraMf.push(linha);
-      novasBases.push({ cliente_id: Number(k), ixc_fibra_id: String(f.id), estado: ixc, em: r.em });
+      novasBases.push({ cliente_id: Number(k), ixc_fibra_id: String(f.id), estado: ixc, em: r.em, forcar: null });
     } else if (acao === 'mf_para_ixc') {
       r.mf_para_ixc++;
       paraIxc.push({ k, f, fx, mf, ixc });

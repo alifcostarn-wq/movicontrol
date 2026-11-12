@@ -1005,6 +1005,7 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
     <div class="navsec">Gerenciamento</div>
     <div class="nav-i" data-pg="cadastros" onclick="irPg('cadastros')"><span class="ic" data-i="dio"></span> Cadastros</div>
     <div class="nav-i" data-pg="instab" onclick="irPg('instab')"><span class="ic">🔴</span> Instabilidades <span class="badge" id="instab-badge" style="display:none"></span></div>
+    <div class="nav-i" data-pg="ixc" onclick="irPg('ixc')"><span class="ic">🔄</span> Integração IXC</div>
     <div class="nav-i" data-pg="acessos" id="nav-acessos" onclick="irPg('acessos')" style="display:none"><span class="ic">🔐</span> Acessos</div>
     <div class="foot">
       <button class="btn ghost sm" style="width:100%" onclick="document.getElementById('imp-proj-file').click()">📂 Importar projeto</button>
@@ -1038,6 +1039,13 @@ table.tp td{padding:8px;border-bottom:1px solid var(--surface2)}
         <div><h1>🔐 Acessos</h1><p>Quem entrou no MoviFiber, quando e de onde.</p></div>
       </div>
       <div id="acs-movifiber"></div>
+    </div>
+    <!-- INTEGRAÇÃO COM O IXC -->
+    <div class="pg" id="pg-ixc">
+      <div class="pg-head">
+        <div><h1>🔄 Integração com o IXC</h1><p>Caixa (CTO), porta, projeto e localização do cliente nos dois sentidos, entre o MoviFiber e o IXC.</p></div>
+      </div>
+      <div id="ixs-body"></div>
     </div>
     <!-- INSTABILIDADES -->
     <div class="pg" id="pg-instab">
@@ -2867,6 +2875,7 @@ function irPg(pg){
   if(pg==='cadastros')initCadastros();
   if(pg==='instab')initInstab();
   if(pg==='acessos')abrirAcessosMF();
+  if(pg==='ixc')recarregarIxcSinc();
   if(pg==='projetos')renderHome();
 }
 function abrirProjetoSelecionado(){
@@ -9761,6 +9770,71 @@ async function initInstab(){
    números daqui. Respondendo "1", o MoviTalk ativa a instabilidade da caixa —
    a mesma que se marca à mão nesta página — e o aviso sai sozinho quando a
    maioria volta. */
+/* ---- INTEGRAÇÃO COM O IXC ----
+   Caixa (CTO), porta e projeto do cliente andam nos dois sentidos: o que muda no
+   IXC aparece aqui e o que é vinculado/trocado aqui é gravado no IXC (a cada 10
+   min). A localização movida no mapa (📍 Mover) também vai para o IXC. Este
+   painel mostra como está, o que diverge e o que foi gravado; o administrador
+   liga/desliga e decide as divergências. */
+let _ixs=null, _ixsOcupado=false;
+async function recarregarIxcSinc(){
+  try{_ixs=await nuvemCall({acao:'ixc-sinc-status'})}
+  catch(e){_ixs={erro:e.message}}
+  renderIxcSinc();
+}
+async function ixsSalvar(campo,valor){
+  if(_ixsOcupado)return;
+  if(campo==='gravar'&&valor&&_ixs&&_ixs.alerta&&!confirm('A gravação parou sozinha porque o IXC mudou outros campos de um cadastro. Você conferiu esse cadastro no IXC? Religar agora?'))return;
+  _ixsOcupado=true;renderIxcSinc();
+  try{_ixs=await nuvemCall({acao:'ixc-sinc-salvar',[campo]:valor});toast(campo==='gravar'?(valor?'Gravação no IXC ligada':'Gravação no IXC desligada'):(valor?'Sincronização com o IXC ligada':'Sincronização com o IXC desligada'))}
+  catch(e){toast('Não consegui salvar: '+e.message,true)}
+  _ixsOcupado=false;renderIxcSinc();
+}
+async function ixsResolver(clienteId,vale){
+  if(_ixsOcupado)return;
+  if(!confirm(vale==='movifiber'?'Vale o MoviFiber: a caixa e a porta daqui serão gravadas no IXC. Confirmar?':'Vale o IXC: a caixa e a porta do IXC substituem as do MoviFiber. Confirmar?'))return;
+  _ixsOcupado=true;renderIxcSinc();
+  try{_ixs=await nuvemCall({acao:'ixc-sinc-resolver',cliente_id:clienteId,vale});toast('Escolha registrada. Aplica em até 10 minutos.')}
+  catch(e){toast('Não consegui registrar: '+e.message,true)}
+  _ixsOcupado=false;renderIxcSinc();
+}
+function renderIxcSinc(){
+  const b=document.getElementById('ixs-body'); if(!b)return;
+  if(!_ixs){b.innerHTML='';return}
+  if(_ixs.erro){b.innerHTML='<div class="mon-card"><div class="mon-h"><h3>🔄 Integração com o IXC</h3></div><div class="mon-res" style="color:var(--danger)">'+_esc(_ixs.erro)+'</div></div>';return}
+  const x=_ixs, n=x.numeros||{}, adm=USUARIO&&USUARIO.perfil==='admin', dis=_ixsOcupado?' disabled':'';
+  const cli=(nome,ixc)=>'<b>'+_esc(nome||'cliente')+'</b>'+(ixc?' <span style="color:var(--text-dim)">(IXC '+_esc(ixc)+')</span>':'');
+  const chave=(rot,ligado,campo)=>'<span class="mon-st '+(ligado?'on':'off')+'" title="'+_esc(rot)+'">'+_esc(rot)+': '+(ligado?'ligado':'desligado')+'</span>'
+    +(adm?'<button class="btn ghost sm"'+dis+' onclick="ixsSalvar(\''+campo+'\','+(!ligado)+')">'+(ligado?'Desligar':'Ligar')+'</button>':'');
+  const res='Última comparação <b>'+_monQuando(x.ultima)+'</b> · <b>'+n.iguais+'</b> clientes iguais nos dois lados'
+    +(n.na_fila?' · <b>'+n.na_fila+'</b> esperando gravar no IXC':'')
+    +(n.caixa_sem_par?' · '+n.caixa_sem_par+' em caixa do IXC que não está desenhada aqui':'')
+    +(x.erro?'<br><span style="color:var(--danger)">⚠️ '+_esc(x.erro)+'</span>':'')
+    +'<br>Localização movida no mapa (📍 Mover) → IXC: <b>'+(x.localizacao==='ativo'?'ligada':x.localizacao==='teste'?'só cliente de teste':'desligada')+'</b>'
+    +(n.localizacao_fixada?' · '+n.localizacao_fixada+' clientes com localização fixada aqui não recebem a do IXC':'');
+  const alerta=x.alerta?'<div class="mon-res" role="alert" style="color:var(--danger)">⚠️ A gravação no IXC parou '+_monQuando(x.alerta.em)+': '+_esc(x.alerta.motivo||'conferência falhou')
+    +(x.alerta.campos.length?' ('+_esc(x.alerta.campos.join(', '))+')':'')+(x.alerta.cliente_ixc?' · cliente IXC '+_esc(x.alerta.cliente_ixc):'')+'. Confira o cadastro de fibra no IXC antes de religar.</div>':'';
+  const div=(x.divergentes||[]).map(d=>'<div class="mon-al-i"><span class="mon-s pendente">divergente</span>'
+    +'<span class="q">'+cli(d.nome,d.cliente_ixc)+' · aqui: <b>'+_esc(d.movifiber)+'</b> · no IXC: <b>'+_esc(d.ixc)+'</b></span>'
+    +(d.escolhido?'<span style="color:var(--text-dim)">vale o '+(d.escolhido==='ixc'?'IXC':'MoviFiber')+' — aplicando</span>'
+      :adm?'<button class="btn ghost sm"'+dis+' onclick="ixsResolver('+Number(d.cliente_id)+',\'movifiber\')">Vale o MoviFiber</button><button class="btn ghost sm"'+dis+' onclick="ixsResolver('+Number(d.cliente_id)+',\'ixc\')">Vale o IXC</button>':'')
+    +'</div>').join('');
+  const ocu=(x.ocupadas||[]).map(o=>'<div class="mon-al-i"><span class="mon-s falhou">porta ocupada</span>'
+    +'<span class="q">'+cli(o.nome,o.cliente_ixc)+' está aqui na <b>'+_esc(o.caixa)+' porta '+_esc(o.porta)+'</b>, mas no IXC essa porta é de '+cli(o.com_nome,o.com_cliente_ixc)+'. Confira na caixa e corrija o errado.</span></div>').join('');
+  const ST={feita:'gravado',pendente:'na fila',falhou:'não gravou'};
+  const rec=(x.recentes||[]).slice(0,8).map(a=>'<div class="mon-al-i"><span class="mon-s '+(a.status==='feita'?'normalizado':a.status==='falhou'?'falhou':'pendente')+'">'+_esc(ST[a.status]||a.status)+'</span>'
+    +'<span class="q">'+cli(a.nome,a.cliente_ixc)+' · '+(a.tipo==='localizacao'?'localização':(a.caixa?_esc(a.caixa)+(a.porta?' porta '+_esc(a.porta):' (sem porta)'):'vínculo removido'))
+    +(a.erro&&a.status!=='feita'?' — <span style="color:var(--danger)">'+_esc(a.erro)+'</span>':'')+'</span><span class="t">'+_monQuando(a.em)+'</span></div>').join('');
+  b.innerHTML='<div class="mon-card">'
+    +'<div class="mon-h"><h3>Situação</h3>'+chave('IXC ↔ MoviFiber',x.sincronizar,'sincronizar')+chave('Gravar no IXC',x.gravar,'gravar')
+      +'<button class="btn ghost sm" onclick="recarregarIxcSinc()" title="Atualizar">↻</button></div>'
+    +'<div class="mon-res">Caixa (CTO), porta e projeto do cliente: o que muda no IXC aparece aqui e o que é vinculado aqui é gravado no IXC, a cada 10 minutos.<br>'+res+'</div>'
+    +alerta
+    +(div||ocu?'<div class="mon-al">'+div+ocu+'</div>':'')
+    +(rec?'<div class="mon-res" style="margin-top:10px"><b>Últimas gravações no IXC</b></div><div class="mon-al">'+rec+'</div>':'')
+    +'</div>';
+}
+
 let _mon=null, _monSit=null;
 const MON_ST={pendente:'aguardando resposta',ativado:'aviso ativo',ignorado:'ignorado',expirado:'sem resposta',normalizado:'normalizou',falhou:'não enviou'};
 async function recarregarMonitor(){

@@ -121,6 +121,15 @@ export default async function handler(req, res) {
       if (acao === 'monitor-testar')    return res.status(200).json(await monitorTestar(quem.usuario));
     }
 
+    // ---- integracao MoviFiber <-> IXC (caixa, porta, projeto, localizacao) ----
+    if (['ixc-sinc-status', 'ixc-sinc-salvar', 'ixc-sinc-resolver'].includes(acao)) {
+      if (!quem.ok) return res.status(401).json({ erro: quem.motivo || 'faca login no MoviFiber' });
+      if (acao === 'ixc-sinc-status') return res.status(200).json(await ixcSincStatus());
+      if (!(await monitorEhAdmin(quem.usuario))) return res.status(403).json({ erro: 'so administrador muda a integracao com o IXC' });
+      if (acao === 'ixc-sinc-salvar') return res.status(200).json(await ixcSincSalvar(b, quem.usuario));
+      return res.status(200).json(await ixcSincResolver(b, quem.usuario));
+    }
+
     // ---- instabilidades (o que o MoviTalk responde sozinho ao cliente) ----
     // Leitura segue a regra geral do proxy; ESCRITA exige usuario identificado
     // mesmo com MOVIFIBER_EXIGE_LOGIN desligado: marcar uma regiao como fora do
@@ -1388,6 +1397,66 @@ async function monitorCto({ simular = false } = {}) {
   res.situacao_resumo = situacao.slice(0, 40);
   await monSb(`${SB_MON_CFG}?id=eq.1`, { method: 'PATCH', prefer: 'return=minimal', body: { ultimo_resultado: res } }).catch(() => {});
   return res;
+}
+
+/* Painel "Integracao com o IXC" do MoviFiber: como esta a sincronizacao do
+   vinculo (caixa, porta, projeto) e da localizacao, o que esta divergente e o
+   que foi gravado no IXC. A sincronizacao em si roda no agendador
+   (api/ixc-sync.js + _ixc_fibra_sinc.js); aqui e so leitura e liga/desliga. */
+async function ixcSincStatus() {
+  const cfg = ((await monSb('ixc_sync_config?id=eq.1&select=fibra_sinc,fibra_gravar,fibra_alerta,fibra_em,fibra_sinc_resultado,coord_ixc')) || [])[0];
+  if (!cfg) throw new Error('integracao com o IXC nao configurada');
+  const r = cfg.fibra_sinc_resultado || {};
+  const desde = new Date(Date.now() - 7 * 864e5).toISOString();
+  const [acoes, fixadas] = await Promise.all([
+    monSb(`ixc_acoes?acao=in.(fibra_vinculo,localizacao)&origem=eq.movifiber&criado_em=gte.${encodeURIComponent(desde)}&select=id,acao,ixc_cliente_id,status,erro,dados,criado_em,feita_em&order=id.desc&limit=25`).catch(() => []),
+    monSb('clientes?coord_fixada=is.true&select=id&limit=1000').catch(() => []),
+  ]);
+  const div = (Array.isArray(r.lista_divergentes) ? r.lista_divergentes : []).slice(0, 40);
+  const ocu = (Array.isArray(r.lista_ocupadas) ? r.lista_ocupadas : []).slice(0, 40);
+  // nomes dos clientes e das caixas citados (so para mostrar na tela)
+  const ixcIds = [...new Set([...div.map(d => d.cliente_ixc), ...ocu.map(o => o.cliente_ixc), ...ocu.map(o => o.ocupada_por_cliente_ixc), ...(acoes || []).map(a => a.ixc_cliente_id)].filter(v => /^\d{1,18}$/.test(String(v || ''))))];
+  const cxIds = [...new Set((acoes || []).map(a => a.dados && a.dados.caixa).filter(v => /^\d{1,18}$/.test(String(v || ''))))];
+  const [cli, cxs, forcas] = await Promise.all([
+    ixcIds.length ? monSb(`clientes?ixc_id=in.(${ixcIds.join(',')})&select=ixc_id,${SB_NOME}`).catch(() => []) : [],
+    cxIds.length ? monSb(`ixc_caixas?id=in.(${cxIds.join(',')})&select=id,nome`).catch(() => []) : [],
+    div.length ? monSb(`fibra_sinc_base?cliente_id=in.(${div.map(d => Number(d.cliente_id)).filter(Number.isInteger).join(',') || 0})&select=cliente_id,forcar`).catch(() => []) : [],
+  ]);
+  const nome = new Map((cli || []).map(c => [String(c.ixc_id), c[SB_NOME]]));
+  const nomeCx = new Map((cxs || []).map(c => [String(c.id), c.nome]));
+  const forcar = new Map((forcas || []).map(f => [String(f.cliente_id), f.forcar]));
+  return {
+    ok: true,
+    sincronizar: cfg.fibra_sinc === 'ativo', gravar: cfg.fibra_gravar === 'ativo', gravar_modo: cfg.fibra_gravar, localizacao: cfg.coord_ixc || 'desligado',
+    alerta: cfg.fibra_alerta ? { em: cfg.fibra_alerta.em || null, motivo: String(cfg.fibra_alerta.motivo || '').slice(0, 200), campos: Array.isArray(cfg.fibra_alerta.campos) ? cfg.fibra_alerta.campos.map(String).slice(0, 20) : [], cliente_ixc: cfg.fibra_alerta.cliente || null } : null,
+    ultima: cfg.fibra_em || null, erro: r.ok === false ? String(r.erro || '').slice(0, 200) : null,
+    numeros: { iguais: r.iguais || 0, divergentes: r.divergentes || 0, porta_ocupada: r.porta_ocupada || 0, na_fila: r.na_fila || 0, caixa_sem_par: r.caixa_sem_par || 0, sem_cadastro_fibra: r.sem_cadastro_fibra || 0, localizacao_fixada: (fixadas || []).length },
+    divergentes: div.map(d => ({ cliente_id: d.cliente_id, cliente_ixc: d.cliente_ixc, nome: nome.get(String(d.cliente_ixc)) || null, movifiber: d.movifiber, ixc: d.ixc, escolhido: forcar.get(String(d.cliente_id)) || null })),
+    ocupadas: ocu.map(o => ({ cliente_ixc: o.cliente_ixc, nome: nome.get(String(o.cliente_ixc)) || null, caixa: o.caixa, porta: o.porta, com_cliente_ixc: o.ocupada_por_cliente_ixc, com_nome: nome.get(String(o.ocupada_por_cliente_ixc)) || null })),
+    recentes: (acoes || []).map(a => ({ tipo: a.acao, cliente_ixc: a.ixc_cliente_id, nome: nome.get(String(a.ixc_cliente_id)) || null, status: a.status, erro: a.erro ? String(a.erro).slice(0, 200) : null,
+      caixa: a.dados && a.dados.caixa ? (nomeCx.get(String(a.dados.caixa)) || null) : null, porta: a.dados ? a.dados.porta ?? null : null, em: a.feita_em || a.criado_em })),
+  };
+}
+async function ixcSincSalvar(b, usuario) {
+  const body = {};
+  if (b.sincronizar !== undefined) { body.fibra_sinc = b.sincronizar === true ? 'ativo' : 'desligado'; if (b.sincronizar === true) body.fibra_em = null; }
+  // religar a gravacao e dizer que o cadastro do alerta foi conferido
+  if (b.gravar !== undefined) { body.fibra_gravar = b.gravar === true ? 'ativo' : 'desligado'; if (b.gravar === true) body.fibra_alerta = null; }
+  if (!Object.keys(body).length) throw new Error('nada para salvar');
+  body.atualizado_em = new Date().toISOString(); body.atualizado_por = usuario ? (usuario.nome || usuario.email || null) : null;
+  await monSb('ixc_sync_config?id=eq.1', { method: 'PATCH', body, prefer: 'return=minimal' });
+  return ixcSincStatus();
+}
+/* Divergencia (os dois lados mudaram): a pessoa escolhe qual vale. A proxima
+   rodada da sincronizacao aplica — ate 10 minutos. */
+async function ixcSincResolver(b, usuario) {
+  const id = Number(b.cliente_id);
+  if (!Number.isInteger(id) || id <= 0) throw new Error('cliente invalido');
+  if (!['movifiber', 'ixc'].includes(b.vale)) throw new Error('escolha qual lado vale');
+  await monSb('fibra_sinc_base?on_conflict=cliente_id', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal',
+    body: { cliente_id: id, forcar: b.vale, forcado_por: usuario ? (usuario.nome || usuario.email || null) : null, em: new Date().toISOString() } });
+  await monSb('ixc_sync_config?id=eq.1', { method: 'PATCH', body: { fibra_em: null }, prefer: 'return=minimal' });   // roda ja na proxima verificacao
+  return ixcSincStatus();
 }
 
 async function monitorStatus() {
