@@ -544,7 +544,10 @@ export default async function handler(req, res) {
         sb('campo_tecnicos?select=nome,status,ixc_funcionario_id&order=nome.asc').catch(() => []),
       ]);
       const nomeIxc = new Map((funcionarios || []).map(f => [String(f.id), f.nome]));
-      return { ...st, funcionarios: funcionarios || [],
+      // últimas ONUs autorizadas pelos técnicos: só serial, técnico e resultado
+      const onus = await sb(`ixc_onu_autorizacoes?select=id,criado_em,tecnico_nome,serial,status,erro&order=id.desc&limit=6`).catch(() => []);
+      return { ...st, onus: (onus || []).map(o => ({ em: o.criado_em, tecnico: o.tecnico_nome || null, serial: String(o.serial || '').slice(0, 32), status: o.status, erro: o.erro ? String(o.erro).slice(0, 200) : null })),
+        funcionarios: funcionarios || [],
         tecnicos_ixc: (tecs || []).filter(t => t.status !== 'inativo').map(t => ({ nome: t.nome, ixc: t.ixc_funcionario_id ? (nomeIxc.get(String(t.ixc_funcionario_id)) || `#${t.ixc_funcionario_id}`) : null })) };
     };
     if (acao === 'status') return res.status(200).json(await comFuncionarios(statusDe(cfg, quem)));
@@ -584,6 +587,14 @@ export default async function handler(req, res) {
           method: 'PATCH', prefer: 'return=minimal', body: { erro: null },
         }).catch(() => {});
       }
+      return res.status(200).json(await comFuncionarios(statusDe((novo && novo[0]) || cfg, quem)));
+    }
+    // autorização de ONU pelo técnico (moviTec): desligado / só cliente de teste / ligado
+    if (acao === 'onu_salvar') {
+      const modo = String(b.onu_modo || '');
+      if (!['desligado', 'teste', 'ativo'].includes(modo)) return res.status(400).json({ erro: 'opção inválida' });
+      const novo = await sb('ixc_sync_config?id=eq.1', { method: 'PATCH', prefer: 'return=representation',
+        body: { onu_modo: modo, atualizado_em: new Date().toISOString(), atualizado_por: quem.nome } });
       return res.status(200).json(await comFuncionarios(statusDe((novo && novo[0]) || cfg, quem)));
     }
     if (acao === 'agora') {

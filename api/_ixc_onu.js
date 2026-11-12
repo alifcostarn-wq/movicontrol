@@ -313,6 +313,8 @@ export async function autorizarOnu(io, { tec, osId, cfg, loginId, olt, serial, c
   const pendente = pendentes.find(p => mesmoSerial(p.serial, serial));
   if (!pendente) throw new ErroOnu('Essa ONU não está mais na lista de pendentes da OLT. Atualize a lista.');
   let caixa = null, perfil = null, portaN = null;
+  // caixa e porta são obrigatórias: sem elas o cadastro de fibra ficava incompleto no IXC
+  if (caixaId == null || caixaId === '' || porta == null || porta === '') throw new ErroOnu('Escolha a caixa (CTO) e a porta antes de autorizar.');
   if (caixaId != null && caixaId !== '') {
     caixa = caixas.find(c => c.id === String(caixaId));
     if (!caixa) throw new ErroOnu('Caixa não encontrada no IXC.');

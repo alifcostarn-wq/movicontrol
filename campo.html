@@ -2636,11 +2636,11 @@ function onuPintarForm(){
     ${login && login.onu ? `<div class="alert warn">Este login já tem a ONU <b>${_oe(login.onu)}</b> cadastrada no IXC. Troca de ONU ainda é feita pelo escritório.</div>`:''}
     <label class="flabel" for="onu-login">Login do cliente</label>
     <select class="finput" id="onu-login" onchange="_onu.login=this.value;onuPintarForm()">${i.logins.map(l=>`<option value="${_oe(l.id)}" ${l.id===o.login?'selected':''}>${_oe(l.login)}${l.ativo?'':' (inativo)'}${l.onu?' — já tem ONU':''}</option>`).join('')}</select>
-    <label class="flabel" for="onu-cx">Caixa (CTO) — opcional</label>
+    <label class="flabel" for="onu-cx">Caixa (CTO)</label>
     ${cx ? `<div class="row-sec" style="margin-bottom:6px"><div class="drow"><span class="dval" style="text-align:left">${_oe(cx.nome)}</span><button onclick="_onu.caixa=null;_onu.porta=null;_onu.ocupadas=null;onuPintarForm()" style="border:none;background:none;color:var(--ac);font-weight:600;font-size:13px;cursor:pointer">Trocar</button></div></div>`
       : `<input class="finput" id="onu-cx" placeholder="Digite o nome da caixa" value="${_oe(o.buscaCaixa||'')}" oninput="_onu.buscaCaixa=this.value;onuPintarForm();const e=$('onu-cx');e.focus();e.setSelectionRange(e.value.length,e.value.length)" autocomplete="off">
          ${achadas.map(c=>`<button class="onu-item" style="margin:6px 0 0" onclick="onuCaixa('${_oe(c.id)}')"><span style="flex:1">${_oe(c.nome)}</span><small>${c.capacidade?c.capacidade+' portas':''}</small></button>`).join('')}
-         ${b && !achadas.length ? '<div style="font-size:12.5px;color:var(--tx3);margin-top:6px">Nenhuma caixa desta OLT com esse nome.</div>':''}`}
+         ${b && !achadas.length ? '<div style="font-size:12.5px;color:var(--tx3);margin-top:6px">Nenhuma caixa desta OLT com esse nome. Se a caixa não está cadastrada no IXC, peça ao escritório para cadastrar.</div>':''}`}
     ${cx ? `<label class="flabel">Porta da caixa</label>${portas}`:''}
     <label class="flabel" for="onu-perfil">Perfil da ONU</label>
     <select class="finput" id="onu-perfil" onchange="_onu.perfil=this.value">
@@ -2685,7 +2685,8 @@ function onuPintarSimulacao(){
 }
 async function onuAutorizar(){
   const o = _onu; if(!o || !o.sel || o.rodando) return;
-  if(o.caixa && !o.porta){ toast('Escolha a porta da caixa.'); return; }
+  if(!o.caixa){ toast('Escolha a caixa (CTO) do cliente.'); return; }
+  if(!o.porta){ toast('Escolha a porta da caixa.'); return; }
   if(!o.ini.simulacao && !confirm(`Autorizar a ONU ${o.sel.serial} para este cliente?`)) return;
   o.rodando = true;
   $('onu-body').innerHTML = _onuEspera(o.ini.simulacao ? 'Montando o cadastro…' : 'Conferindo a ONU na OLT e criando o cadastro no IXC…');

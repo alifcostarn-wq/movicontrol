@@ -24450,7 +24450,47 @@ function ixaRenderSecao(st, erro){
       <div><b>Próxima:</b> ${c.ativo && st.proxima ? 'por volta de ' + _ixaHora(st.proxima) : 'desligada'}</div>
     </div>
     ${admin ? `<div class="ixa-acoes"><button class="btn" id="ixa-agora" onclick="ixaRodarAgora()">⟳ Sincronizar agora pelo servidor</button></div>`
-            : '<div class="ixa-nota">Só o administrador liga, desliga ou muda o intervalo.</div>'}`;
+            : '<div class="ixa-nota">Só o administrador liga, desliga ou muda o intervalo.</div>'}
+    ${ixaOnuHtml(st)}`;
+}
+
+/* Autorização de ONU pelo técnico (moviTec): o técnico, dentro da OS, autoriza
+   no IXC a ONU que acabou de ligar. Aqui o administrador liga e desliga. */
+const IXA_ONU_ST = {concluida:'autorizada', simulada:'simulação', falhou:'falhou', nao_confirmada:'não confirmada', incerta:'sem resposta', andamento:'em andamento'};
+function ixaOnuHtml(st){
+  const c = st.config || {}, admin = !!st.admin, modo = c.onu_modo || 'desligado';
+  const ult = (st.onus || []).map(o => `<div>${escHtml(_ixaHora(o.em))} · ${escHtml(o.tecnico || 'técnico')} · <span style="font-family:monospace">${escHtml(o.serial)}</span> · `
+    + `<span class="${o.status==='concluida'?'ixa-ok':(o.status==='falhou'||o.status==='nao_confirmada')?'ixa-erro':''}">${escHtml(IXA_ONU_ST[o.status] || o.status)}</span>`
+    + `${o.erro && o.status!=='concluida' ? ' — <span class="ixa-erro">'+escHtml(o.erro)+'</span>' : ''}</div>`).join('');
+  return `<div class="ixa-box">
+    <div class="ixa-tit">Autorização de ONU pelo técnico (moviTec)</div>
+    <div class="ixa-sub">Dentro da OS, o técnico escolhe a ONU que a OLT está enxergando, a caixa, a porta e o perfil; o sistema cria o cadastro de fibra no IXC e grava na OLT. Troca de ONU continua sendo feita pelo escritório.</div>
+    <div class="ixa-linha">
+      <label for="ixa-onu">Situação</label>
+      <select id="ixa-onu" class="cp-form-input" ${admin?'':'disabled'} onchange="ixaOnuSalvar()">
+        <option value="ativo" ${modo==='ativo'?'selected':''}>Ligada para todos os clientes</option>
+        <option value="teste" ${modo==='teste'?'selected':''}>Só o cliente de teste${c.onu_teste?' (IXC '+escHtml(c.onu_teste)+')':''}; os outros só simulam</option>
+        <option value="desligado" ${modo==='desligado'?'selected':''}>Desligada</option>
+      </select>
+      <span class="ixa-salvo" id="ixa-onu-salvo" aria-live="polite"></span>
+    </div>
+    ${ult ? `<div class="ixa-estado"><div><b>Últimas autorizações</b></div>${ult}</div>` : ''}
+  </div>`;
+}
+async function ixaOnuSalvar(){
+  const modo = document.getElementById('ixa-onu')?.value;
+  const salvo = document.getElementById('ixa-onu-salvo');
+  if(salvo) salvo.textContent = 'Salvando…';
+  try{
+    const st = await ixaAPI('onu_salvar', { onu_modo: modo });
+    _ixaStatus = st; _ixaStatusEm = Date.now();
+    ixaRenderSecao(st);
+    const s2 = document.getElementById('ixa-onu-salvo'); if(s2) s2.textContent = 'Salvo ✓';
+    showToast(modo==='ativo' ? 'Autorização de ONU pelo moviTec ligada.' : modo==='teste' ? 'Autorização de ONU só no cliente de teste.' : 'Autorização de ONU pelo moviTec desligada.');
+  }catch(e){
+    showToast('Não salvou: ' + e.message, true);
+    ixaCarregarStatus(true).then(st => ixaRenderSecao(st)).catch(err => ixaRenderSecao(null, err.message));
+  }
 }
 
 async function ixaSalvar(){
