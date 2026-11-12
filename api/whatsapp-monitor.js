@@ -290,9 +290,9 @@ export async function verificar({ agora = new Date() } = {}) {
 
   // alerta na tela: fora do ar há mais de 5 minutos, ou travada sem o reinício resolver
   const parado = estado !== 'open' && agora - Date.parse(desde) >= ALERTA_APOS_MS;
-  const travadaSemJeito = travada && !travada.aguardando && (travada.tentativas || 0) >= REINICIOS_MAX && linha.reinicio_em && agora - Date.parse(linha.reinicio_em) >= ALERTA_APOS_MS;
+  const travadaSemJeito = travada && !travada.aguardando && (travada.tentativas || 0) >= 1 && linha.reinicio_em && agora - Date.parse(linha.reinicio_em) >= ALERTA_APOS_MS;
   upd.alerta = parado ? { desde, estado, motivo: estado === 'indisponivel' ? 'servidor da Evolution sem resposta' : (diag && diag.queda_motivo) || null }
-    : travadaSemJeito ? { desde: travada.desde, estado: 'travada', motivo: 'a sessão aparece conectada, mas não entrega nem recebe, e o reinício automático não resolveu: desconecte e leia o QR Code de novo' }
+    : travadaSemJeito ? { desde: travada.desde, estado: 'travada', motivo: 'a sessão aparece conectada, mas não entrega nem recebe, e o reinício automático não resolveu: desconecte e leia o QR Code de novo (o que foi enviado nesse período é reenviado quando voltar)' }
     : null;
 
   for (const a of acoes) await sb('atend_whatsapp_conexao', { method: 'POST', prefer: 'return=minimal', body: a });
