@@ -314,7 +314,10 @@ async function rodarOs(cfg, prazo) {
       // técnicos do moviTec com cadastro no IXC: a OS encaminhada a eles lá vai
       // direto para o celular, e as ações deles saem no nome de quem fez
       const tecnicos = await sb('campo_tecnicos?ixc_funcionario_id=not.is.null&select=id,nome,status,ixc_funcionario_id').catch(() => []) || [];
-      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, tecnicos, agora: new Date(agora) });
+      // nomes dos assuntos: a OS de retirada entra marcada para não avisar o cliente
+      const listaAss = await sb('ixc_assuntos?select=id,assunto&limit=1000').catch(() => []) || [];
+      const assuntos = new Map(listaAss.map(x => [String(x.id), x.assunto]));
+      const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, tecnicos, agora: new Date(agora), assuntos });
       resultado = { ok: true, ...r };
       extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
       // colaboradores do IXC (só id, nome, ativo): o IXC exige um responsável para fechar a OS

@@ -2292,6 +2292,7 @@ async function _enviarWaCliente(os, texto){
 
 function enviarWaOS(etapa){
   const os = _aberta; if(!os){ toast('Abra uma OS primeiro'); return; }
+  if(os.sem_aviso){ toast('OS de retirada: o cliente não é avisado.'); return; }
   const cfg = _waTemplates(os)[etapa]; if(!cfg) return;
   const tel = (os.telefone||'').replace(/\D/g,'');
   _smsCtx = { etapa, osId: os.id, cliId: parseInt(os.cliente_id)||null };
@@ -2348,6 +2349,7 @@ async function confirmarEnvioWa(){
 // Envio AUTOMÁTICO ao mudar status (sem confirmação). Fire-and-forget.
 async function _autoWaStatus(os, etapa){
   if(!os) return;
+  if(os.sem_aviso) return;                             // retirada de equipamento: o cliente não é avisado
   const cfg = _waTemplates(os)[etapa]; if(!cfg) return;
   const telDigits = (os.telefone||'').replace(/\D/g,'');
   if(telDigits.length < 10){ return; }                 // sem telefone válido, não envia
@@ -2919,7 +2921,13 @@ async function abrirDet(id){
   }
 
   // 💬 Avisos por WhatsApp — automáticos nas mudanças de status; botões reenviam se precisar
-  if(!['cancelada'].includes(os.status)){
+  if(os.sem_aviso){
+    // retirada de equipamento: o cliente não fica sabendo da visita
+    html += `<div class="row-sec" style="margin-top:14px">
+      <div class="row-sec-title">🔕 Sem aviso ao cliente</div>
+      <div style="font-size:12.5px;color:var(--tx2);padding:8px 12px 12px;line-height:1.5">OS de <b>retirada de equipamento</b>: o cliente <b>não é avisado</b> pelo WhatsApp ao assumir, chegar ou finalizar.</div>
+    </div>`;
+  } else if(!['cancelada'].includes(os.status)){
     html += `<div class="row-sec" style="margin-top:14px">
       <div class="row-sec-title">💬 Avisos ao cliente (automáticos)</div>
       <div style="font-size:11px;color:var(--tx3);padding:8px 12px 2px">Enviados sozinhos ao assumir, executar e finalizar. Use os botões só para reenviar.</div>

@@ -147,7 +147,12 @@ export function dataReagendar(v) {
 const lista = ids => [...new Set(ids.filter(Boolean).map(String))].map(x => encodeURIComponent(x)).join(',');
 
 /* A OS do IXC no formato do moviTec (campo_os). */
-export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, numero = null, campoAtual = null, agora = new Date() } = {}) {
+/* OS de RETIRADA de equipamento: o cliente não é avisado pelo WhatsApp (nem "a
+   caminho", nem "cheguei"), para não saber da visita e sair de casa. Vale pelo
+   nome do assunto no IXC. */
+export const assuntoSemAviso = nome => /retirad/i.test(String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+
+export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, numero = null, campoAtual = null, agora = new Date(), assuntos = null } = {}) {
   const endOs = textoIxc(o.endereco);
   const juntar = l => l.map(x => textoIxc(x)).filter(Boolean).join(', ');
   const endereco = endOs
@@ -177,6 +182,8 @@ export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, n
     data: agenda || diaDaqui(agora.getTime()),
     obs: ref ? `Referência: ${ref}` : null,
     ixc_os_numero: String(o.id),
+    ixc_assunto_id: idValido(o.id_assunto),
+    sem_aviso: assuntoSemAviso(assuntos && assuntos.get(String(idValido(o.id_assunto)))),
   };
 }
 
@@ -187,7 +194,7 @@ const NAO_COMECOU = ['aberta', 'reagendada'];
 export const OS_DE_CAMPO = ['EN', 'AS', 'AG', 'DS', 'EX'];
 const DO_ESCRITORIO = ['A', 'AN'];
 
-export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, diasInicio = 60, tecnicos = [], agora = new Date() } = {}) {
+export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, diasInicio = 60, tecnicos = [], agora = new Date(), assuntos = null } = {}) {
   const r = { modo: 'ativo', em: agora.toISOString(), criados: 0, atualizados: 0, reatribuidas: 0, retiradas: 0, agendadas: 0 };
   // 1) o que ler: o que mudou desde a última leitura (com folga) ou, na
   //    primeira vez / IXC sem o campo de atualização, os últimos 60 dias.
@@ -218,7 +225,7 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
   // 3) o que já está no moviTec
   const ids = registros.map(o => String(o.id));
   const existentes = ids.length
-    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em`) || []
+    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em,ixc_assunto_id,sem_aviso`) || []
     : [];
   const porOs = new Map(existentes.map(o => [String(o.ixc_os_id), o]));
 
@@ -255,7 +262,7 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
       login: lg.get(String(idValido(o.id_login))) || null,
       cidade: cid.get(String(idValido(o.id_cidade))) || null,
       tec: tecDoIxc.get(String(idValido(o.id_tecnico))),
-      numero: ++numero, campoAtual: campo || null, agora,
+      numero: ++numero, campoAtual: campo || null, agora, assuntos,
     }));
     for (const l of linhas) {
       const ant = anteriores.get(String(l.ixc_os_id));
@@ -280,6 +287,11 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
     const marca = {};                                 // o que o IXC diz: sempre
     if (st && st !== os.ixc_status) marca.ixc_status = st;
     if (campo && horaIxcIso(o[campo])) marca.ixc_atualizado_em = horaIxcIso(o[campo]);
+    // o assunto (trocado no IXC, ou OS importada antes desta regra): decide se o cliente é avisado
+    const ass = idValido(o.id_assunto);
+    if (ass && (ass !== (idValido(os.ixc_assunto_id) || null) || !!os.sem_aviso !== assuntoSemAviso(assuntos && assuntos.get(ass)))) {
+      marca.ixc_assunto_id = ass; marca.sem_aviso = assuntoSemAviso(assuntos && assuntos.get(ass));
+    }
     const trocouTec = tecIxc !== (idValido(os.ixc_tecnico_id) || null);
     if (trocouTec) marca.ixc_tecnico_id = tecIxc;
     const novo = tecIxc ? tecDoIxc.get(String(tecIxc)) || null : null;
@@ -323,6 +335,19 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
       }
     }
   }
+
+  // 5b) OS em aberto importadas antes de o assunto ser guardado: busca no IXC, poucas por rodada
+  try {
+    const sem = await io.sb('campo_os?ixc_os_id=not.is.null&ixc_assunto_id=is.null&status=not.in.(finalizada,concluida,cancelada)&select=id,ixc_os_id&order=id.desc&limit=6') || [];
+    for (const os of sem) {
+      const v = await io.ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: String(os.ixc_os_id), oper: '=' }, { paginas: 1, rp: 1 }).catch(() => null);
+      const o = v && v.registros && v.registros[0];
+      const ass = o ? idValido(o.id_assunto) : null;
+      if (!ass) continue;
+      await io.sb(`campo_os?id=eq.${os.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { ixc_assunto_id: ass, sem_aviso: assuntoSemAviso(assuntos && assuntos.get(ass)) } });
+      r.assuntos_preenchidos = (r.assuntos_preenchidos || 0) + 1;
+    }
+  } catch { /* fica para a próxima rodada */ }
 
   // 6) próximo ponto de partida: a mudança mais recente que o IXC mostrou
   let maior = cursor && !isNaN(Date.parse(cursor)) ? Date.parse(cursor) : 0;

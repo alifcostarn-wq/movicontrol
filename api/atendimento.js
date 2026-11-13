@@ -8408,6 +8408,22 @@ async function avisoDoTecnico(e, tec, body) {
   if (!texto) { const err = new Error('Mensagem vazia.'); err.status = 400; throw err; }
   if (fone.length < 12) { const err = new Error('Telefone inválido (precisa do DDD).'); err.status = 400; throw err; }
 
+  // OS de retirada de equipamento: o cliente não é avisado (para não saber da visita e sair
+  // de casa). O app já não manda; esta conferência vale para app antigo ou envio manual.
+  const osId = Number(body.os_id);
+  let semAviso = false;
+  if (Number.isInteger(osId) && osId > 0) {
+    const os = await sbUm(e, `campo_os?id=eq.${osId}&select=sem_aviso`).catch(() => null);
+    semAviso = !!(os && os.sem_aviso);
+  }
+  if (!semAviso) {
+    // sem o número da OS: qualquer retirada em aberto deste técnico para o mesmo telefone
+    const abertas = await sb(e, `campo_os?tecnico_id=eq.${Number(tec.id)}&sem_aviso=is.true&status=not.in.(finalizada,concluida,cancelada)&select=telefone&limit=50`).catch(() => []);
+    const fim = fone.slice(-8);
+    semAviso = (abertas || []).some(o => String(o.telefone || '').replace(/\D/g, '').slice(-8) === fim);
+  }
+  if (semAviso) { const err = new Error('OS de retirada: o cliente não é avisado.'); err.status = 409; throw err; }
+
   // o id do IXC vem da OS; nem toda OS tem um que case com o cadastro espelhado
   const ixcId = String(body.cliente_ixc_id || '').trim();
   const cad = ixcId
