@@ -52,6 +52,7 @@ import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
 import { groqChat, groqTranscrever, groqModelos, groqModelosAudio } from './_groq.js';
 import { linhaClienteDoIxc, linhaContratoDoIxc, idValido } from './_ixc_espelho.js';
+import { desbloquearEmConfianca, pedirPelaCentral } from './_ixc_confianca.js';
 import { corpoAbrirOs, osDoClienteNoPainel, textoIxc } from './_ixc_os.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
@@ -3201,17 +3202,42 @@ const CONECTORES = {
     return { resultado: 'ok', anexoTexto: `${e.IXC_URL}/contrato/${id}` };
   },
 
-  // ATENÇÃO: o desbloqueio de confiança só funciona via Central do Assinante
-  // (login por sessão com CPF mascarado). O endpoint PUT do webservice NÃO
-  // executa a liberação. Por isso aqui ele transborda para o Financeiro até
-  // que a rotina da Central seja portada para este proxy.
-  async desbloqueio_confianca({ conversa, vars }) {
-    const id = vars.cliente_id || conversa.cliente_ixc_id;
-    if (!id) return { resultado: 'sem_cliente' };
-    return {
-      resultado: 'manual',
-      anexoTexto: 'Vou pedir para o Financeiro liberar seu acesso de confiança agora mesmo.',
+  /* Desbloqueio de confiança de verdade (antes só passava para o Financeiro, e o
+     texto do bloco dizia "liberei" sem ter liberado). Pede ao IXC, pela API e,
+     se preciso, pela Central do Assinante, e só confirma relendo o contrato —
+     ver _ixc_confianca.js. O que o IXC não permite (bloqueio manual, recurso
+     desabilitado, restrição) vai para o Financeiro com o motivo. */
+  async desbloqueio_confianca({ e, conversa, vars }) {
+    const id = idValido(vars.cliente_id || conversa.cliente_ixc_id);
+    if (!id) return { resultado: 'manual', anexoTexto: 'Para liberar seu acesso preciso confirmar seu cadastro. Vou te passar para o Financeiro. 👤' };
+    const cad = await sbUm(e, `clientes?ixc_id=eq.${id}&select=id,cnpj&limit=1`).catch(() => null);
+    const central = (process.env.CENTRAL_ASSINANTE_URL || '').replace(/\/$/, '');
+    const auth = 'Basic ' + Buffer.from(`${e.IXC_USER}:${e.IXC_TOKEN}`).toString('base64');
+    const io = {
+      contratosDoCliente: async cli => (await ixc(e, 'cliente_contrato', { qtype: 'cliente_contrato.id_cliente', query: String(cli), oper: '=', rp: '20' })).registros || [],
+      contrato: async cid => ((await ixc(e, 'cliente_contrato', { qtype: 'cliente_contrato.id', query: String(cid), oper: '=', rp: '1' })).registros || [])[0] || null,
+      // ação do IXC (sem o cabeçalho de listagem)
+      pedirPelaApi: async cid => {
+        const r = await fetchComPrazo(`${e.IXC_URL}/webservice/v1/desbloqueio_confianca`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ id: String(cid) }) });
+        const txt = await r.text();
+        try { return JSON.parse(txt); } catch { return txt.slice(0, 300); }
+      },
+      pedirPelaCentral: central ? (cid, cpf) => pedirPelaCentral(central, cid, cpf, (u, o) => fetchComPrazo(u, o)) : null,
     };
+    const r = await desbloquearEmConfianca(io, { clienteIxc: id, cpf: cad && cad.cnpj, padraoGlobal: process.env.IXC_DESBLOQUEIO_CONFIANCA_PADRAO || 'S' });
+    // auditoria: mesmo registro do aplicativo do cliente (só códigos e a resposta do IXC)
+    if (r.contrato && r.resultado !== 'nao_bloqueado') {
+      await sb(e, 'desbloqueios_confianca_log', { method: 'POST', prefer: 'return=minimal', body: {
+        cliente_id: cad ? cad.id : null, ixc_contrato_id: String(r.contrato), sucesso: r.resultado === 'ok',
+        motivo: r.resultado === 'ok' ? `robô do MoviTalk (${r.via})` : `robô do MoviTalk: ${r.resultado === 'ja_ativo' ? 'já ativo' : r.motivo || 'não liberado'}`,
+        resposta_ixc: r.respostas || null } }).catch(err => console.error('[confianca] registro:', err.message));
+    }
+    if (r.resultado === 'ok') return { resultado: 'ok', variaveis: { bloqueado: 'nao' },
+      anexoTexto: 'Pronto! Liberei sua conexão em confiança. ✅\nA internet volta em alguns minutos — se não voltar, desligue o equipamento da tomada por 10 segundos e ligue de novo.\nRegularize o pagamento para evitar um novo bloqueio.' };
+    if (r.resultado === 'nao_bloqueado') return { resultado: 'nao_bloqueado', anexoTexto: 'Verifiquei aqui e seu acesso não está bloqueado. ✅' };
+    if (r.resultado === 'ja_ativo') return { resultado: 'ja_ativo', anexoTexto: 'O desbloqueio de confiança do seu contrato já está em uso. Para manter o acesso, é preciso regularizar o pagamento. 💳' };
+    return { resultado: 'manual', anexoTexto: 'Não consegui liberar seu acesso automaticamente. Vou te passar para o Financeiro, que resolve com você. 👤' };
   },
 };
 
