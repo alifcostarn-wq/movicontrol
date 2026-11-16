@@ -29462,18 +29462,15 @@ async function asnExcluirLote(loteId){
   const l = (asnLotes||[]).find(x=>Number(x.id)===Number(loteId));
   if(!l) return;
   const dados = { lote_id: loteId };
-  if(l.status === 'assinado'){
-    const dig = prompt('ATENÇÃO: este contrato está ASSINADO.\n\nExcluir apaga o PDF assinado, a selfie e o certificado — a prova da contratação — e NÃO TEM VOLTA.\n\nPara confirmar, digite EXCLUIR:', '');
-    if(dig === null) return;
-    if(dig.trim().toUpperCase() !== 'EXCLUIR'){ showToast('Não excluí: a confirmação não confere.', true); return; }
-    dados.confirmar_assinado = true;
-  } else if(!confirm('Excluir este contrato?\n\nApaga o contrato, os documentos e os arquivos. Não tem volta.')) return;
+  if(l.status === 'assinado'){ showToast('Contrato assinado não pode ser excluído.', true); return; }
+  if(!confirm('Excluir este contrato?\n\nApaga o contrato, os documentos e os arquivos. Não tem volta.')) return;
   const r = await asnProxy('excluir_lote', dados);
   if(!r.ok){ showToast('Falha: '+(r.error||'não deu para excluir'), true); return; }
   showToast(r.arquivos_nao_apagados ? 'Contrato excluído (alguns arquivos não puderam ser apagados do armazenamento)' : 'Contrato excluído');
   asnCarregarLista();
 }
 function asnGestaoHtml(l){
+  if(l.status==='assinado') return '';
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
     ${l.status==='pendente' ? `<button type="button" class="btn btn-sm asn-bt" onclick="asnCancelarLote(${Number(l.id)})" title="O cliente não consegue mais assinar; o contrato fica na lista como cancelado">✕ Cancelar contrato</button>` : ''}
     <button type="button" class="btn btn-sm asn-bt" style="color:var(--danger);border-color:var(--danger)" onclick="asnExcluirLote(${Number(l.id)})" title="Apaga o contrato, os documentos e os arquivos — não tem volta">🗑 Excluir</button>

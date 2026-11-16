@@ -6012,10 +6012,10 @@ function asnMarcarAssinado(lote, nomeCli, depois){
 /* ===== CANCELAR / EXCLUIR um contrato gerado =====
    Cancelar: só o que ainda não foi assinado — o link morre e o lote fica na
    lista como CANCELADO, com quem cancelou. Excluir: apaga lote, documentos e
-   arquivos, sem volta (só admin/operador; assinado pede confirmação escrita). */
+   arquivos, sem volta (só admin/operador; contrato assinado nunca se exclui). */
 function asnBotoesGestao(l, pref){
   return `${l.status==='pendente'?`<button class="asn-gest" data-${pref}cancelar="${l.id}" title="O cliente não consegue mais assinar; o contrato fica na lista como cancelado">✕ Cancelar contrato</button>`:''}
-    <button class="asn-gest del" data-${pref}excluir="${l.id}" title="Apaga o contrato, os documentos e os arquivos — não tem volta">🗑 Excluir</button>`;
+    ${l.status!=='assinado'?`<button class="asn-gest del" data-${pref}excluir="${l.id}" title="Apaga o contrato, os documentos e os arquivos — não tem volta">🗑 Excluir</button>`:''}`;
 }
 function asnCanceladoTexto(l){
   return `🚫 <b>Cancelado</b>${l.cancelado_em?' em '+dataHora(l.cancelado_em):''}${l.cancelado_por_nome?' por '+esc(l.cancelado_por_nome):''}`
@@ -6030,12 +6030,8 @@ async function asnCancelarLote(loteId, depois){
 async function asnExcluirLote(lote, depois){
   if(!lote) return;
   const dados = { lote_id: lote.id };
-  if(lote.status === 'assinado'){
-    const dig = prompt('ATENÇÃO: este contrato está ASSINADO.\n\nExcluir apaga o PDF assinado, a selfie e o certificado — a prova da contratação — e NÃO TEM VOLTA.\n\nPara confirmar, digite EXCLUIR:', '');
-    if(dig === null) return;
-    if(dig.trim().toUpperCase() !== 'EXCLUIR'){ toast('Não excluí: a confirmação não confere.'); return; }
-    dados.confirmar_assinado = true;
-  } else if(!confirm('Excluir este contrato?\n\nApaga o contrato, os documentos e os arquivos. Não tem volta.')) return;
+  if(lote.status === 'assinado'){ toast('Contrato assinado não pode ser excluído.'); return; }
+  if(!confirm('Excluir este contrato?\n\nApaga o contrato, os documentos e os arquivos. Não tem volta.')) return;
   try{
     const j = await asnChamar('excluir_lote', dados);
     toast(j.arquivos_nao_apagados ? 'Contrato excluído (alguns arquivos não puderam ser apagados do armazenamento)' : 'Contrato excluído');

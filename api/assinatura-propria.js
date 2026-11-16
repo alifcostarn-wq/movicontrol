@@ -935,9 +935,9 @@ function soNomeDeLugar(v) {
       return res.status(200).json({ ok: true });
     }
 
-    /* EXCLUIR apaga o lote, os documentos e os arquivos (PDFs e selfie). Não tem
-       volta — por isso: só admin/operador; contrato ASSINADO exige confirmação
-       expressa (é a prova da contratação); e fica o registro de quem excluiu. */
+    /* EXCLUIR apaga o lote, os documentos e os arquivos. Não tem volta — por
+       isso: só admin/operador, só contrato SEM assinatura (pendente ou
+       cancelado), e fica o registro de quem excluiu. */
     if (action === 'excluir_lote') {
       if (!ehGestor) return res.status(403).json({ ok: false, error: 'Só administrador ou operador pode excluir contratos.' });
       const loteId = Number(req.body?.lote_id);
@@ -946,8 +946,9 @@ function soNomeDeLugar(v) {
       if (!lr.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar o contrato' });
       if (!lr.data?.length) return res.status(404).json({ ok: false, error: 'Contrato não encontrado' });
       const lote = lr.data[0];
-      if (lote.status === 'assinado' && req.body?.confirmar_assinado !== true) {
-        return res.status(409).json({ ok: false, assinado: true, error: 'Este contrato está ASSINADO. Para excluir é preciso confirmar.' });
+      // assinado nunca se exclui: é a prova da contratação
+      if (lote.status === 'assinado') {
+        return res.status(409).json({ ok: false, assinado: true, error: 'Contrato assinado não pode ser excluído.' });
       }
       const docs = await sb(`contratos_assinatura?lote_id=eq.${loteId}&select=id,documento_nome,documento_url,documento_assinado_url,documento_certificado_url,status`);
       if (!docs.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar os documentos' });
@@ -959,9 +960,9 @@ function soNomeDeLugar(v) {
       }) });
       if (!reg.ok) return res.status(500).json({ ok: false, error: 'Não consegui registrar a exclusão — nada foi apagado.' });
       // banco primeiro (documentos, depois o lote); os arquivos por último
-      const d1 = await sb(`contratos_assinatura?lote_id=eq.${loteId}`, { method: 'DELETE', prefer: 'return=minimal' });
+      const d1 = await sb(`contratos_assinatura?lote_id=eq.${loteId}&status=neq.assinado`, { method: 'DELETE', prefer: 'return=minimal' });
       if (!d1.ok) return res.status(500).json({ ok: false, error: 'Falha ao excluir os documentos' });
-      const d2 = await sb(`assinatura_lotes?id=eq.${loteId}`, { method: 'DELETE', prefer: 'return=minimal' });
+      const d2 = await sb(`assinatura_lotes?id=eq.${loteId}&status=neq.assinado`, { method: 'DELETE', prefer: 'return=minimal' });
       if (!d2.ok) return res.status(500).json({ ok: false, error: 'Falha ao excluir o lote' });
       const chaves = new Set([lote.selfie_url]);
       for (const d of (docs.data || [])) for (const k of [d.documento_url, d.documento_assinado_url, d.documento_certificado_url]) chaves.add(k);
