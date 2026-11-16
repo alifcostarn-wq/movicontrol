@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="/visor-pdf.js" defer></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -29531,9 +29532,10 @@ function asnDocsAcoes(l){
   return `<div class="asn-docs-acoes">${docs.map(d=>`
     <div class="asn-doc-acao">
       ${d.documento_url
-        ? `<a class="asn-doc-acao-n" href="${asnA(d.documento_url)}" target="_blank" rel="noopener" title="Abrir: ${asnA(d.documento_nome||'Documento')}">${d.assinado_final?'✅':'📄'} ${escHtml(d.documento_nome||'Documento')}</a>`
+        ? `<a class="asn-doc-acao-n" href="${asnA(d.documento_url)}" onclick="event.preventDefault();asnVerPdf(${Number(d.id)})" title="Ver na tela: ${asnA(d.documento_nome||'Documento')}">${d.assinado_final?'✅':'📄'} ${escHtml(d.documento_nome||'Documento')}</a>`
         : `<span class="asn-doc-acao-n" title="${asnA(d.documento_nome||'Documento')}">${d.assinado_final?'✅':'📄'} ${escHtml(d.documento_nome||'Documento')}</span>`}
       ${d.documento_url ? `
+      <button type="button" class="btn btn-sm asn-bt" onclick="asnVerPdf(${Number(d.id)})" title="Ver o documento aqui na tela, sem baixar">👁 Ver</button>
       <button type="button" class="btn btn-sm asn-bt" data-asnbaixar="${d.id}" onclick="asnBaixarPdf(${Number(d.id)}, this)" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado de assinatura':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ Baixar PDF</button>
       <button type="button" class="btn btn-sm asn-bt wa" data-asnwhats="${d.id}" onclick="asnEnviarPdfWhats(${Number(d.id)}, this)" title="${d.assinado_final?'Mandar o PDF assinado na conversa do cliente':'Mandar o PDF para o cliente ler (ainda sem assinatura)'}">📲 Enviar PDF no WhatsApp</button>`
       : '<span class="asn-sem-pdf">sem PDF guardado</span>'}
@@ -29553,6 +29555,15 @@ function asnOcupado(bt, rotulo){
    download, com o nome do documento e do cliente. Abre em outra aba de
    propósito — se um dia o R2 ignorar o "baixe como", o PDF abre lá e o
    MoviOne continua aqui. */
+/* Ver na tela, sem baixar: o PDF vem pelo servidor e as páginas são
+   desenhadas aqui (visor-pdf.js) — funciona também no celular. */
+function asnVerPdf(docId){
+  if(!window.abrirVisorPdf){ showToast('O visor ainda está carregando — tente de novo.', true); return; }
+  const d = asnDocDaTela(docId);
+  abrirVisorPdf({ nome: (d && d.documento_nome) || 'Documento',
+    obter: async()=>{ const j = await asnProxy('pdf_documento', { contrato_id: docId, como: 'arquivo' }); if(!j.ok) throw new Error(j.error || 'Falha ao ler o PDF'); return j; },
+    baixar: ()=>asnBaixarPdf(docId) });
+}
 async function asnBaixarPdf(docId, bt){
   const livre = asnOcupado(bt, 'Preparando…');
   try{

@@ -3597,6 +3597,7 @@ try{var _t=localStorage.getItem('movitalk_tema');if(_t==='dark'||(!_t&&window.ma
      e para isso ele depende do html2canvas — sem os dois, o "Gerar" falha -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="/visor-pdf.js" defer></script>
 <script>
 /* ================= DATA ================= */
 const COLS = [
@@ -5896,9 +5897,9 @@ function blocoAssinatura(c){
       ${docs.map(d=>`<div class="asn-doc-linha">
         <span>${d.assinado_final?'✅':'📄'}</span>
         ${d.documento_url
-          ? `<a href="${esc(d.documento_url)}" target="_blank" rel="noopener" title="${esc(d.documento_nome||'documento')}">${esc(d.documento_nome||'documento')}</a>`
+          ? `<a href="${esc(d.documento_url)}" data-asnver="${d.id}" data-asnvernome="${esc(d.documento_nome||'documento')}" title="Ver na tela: ${esc(d.documento_nome||'documento')}">${esc(d.documento_nome||'documento')}</a>`
           : `<span style="flex:1">${esc(d.documento_nome||'documento')}</span>`}
-        ${d.documento_url ? `<button class="fin-copy" data-asnbaixar="${d.id}" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ PDF</button>
+        ${d.documento_url ? `<button class="fin-copy" data-asnver="${d.id}" data-asnvernome="${esc(d.documento_nome||'documento')}" title="Ver o documento aqui na tela, sem baixar">👁 ver</button><button class="fin-copy" data-asnbaixar="${d.id}" title="${d.assinado_final?'Baixar o PDF assinado, com o certificado':'Baixar o PDF para mandar ao cliente, imprimir ou guardar'}">⬇ PDF</button>
           <button class="fin-copy" data-asnpdf="${d.id}" title="${d.assinado_final?'Enviar este PDF assinado na conversa':'Enviar o PDF na conversa para o cliente ler (ainda sem assinatura)'}">📲 enviar</button>` : ''}
       </div>`).join('')}
       ${l.status==='assinado' && asnExterna(l) ? `<div class="asn-meta">${asnExternaTexto(l)}
@@ -6129,6 +6130,13 @@ async function asnPdfDoc(docId, como){
    download, com o nome do documento e do cliente. Abre em outra aba de
    propósito — se um dia o R2 ignorar o "baixe como", o PDF abre lá, e a
    conversa continua aqui onde estava. */
+/* Ver o documento na tela, sem baixar: o PDF vem pelo servidor e as páginas
+   são desenhadas aqui (visor-pdf.js) — funciona também no celular. */
+function asnVerPdf(docId, nome){
+  if(!window.abrirVisorPdf){ toast('O visor ainda está carregando — tente de novo.'); return; }
+  abrirVisorPdf({ nome: nome || 'Documento', obter: ()=>asnPdfDoc(docId, 'arquivo'),
+    baixar: ()=>asnBaixarPdf(docId).then(j=>toast('⬇ Baixando '+(j.nome||'o PDF'))).catch(err=>toast('Falha: '+err.message)) });
+}
 async function asnBaixarPdf(docId){
   const j = await asnPdfDoc(docId, 'link');
   if(!j.url) throw new Error('O servidor não devolveu o endereço do PDF.');
@@ -11194,6 +11202,7 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
     try{ const j=await asnEnviarPdfNaConversa(c, doc); toast(j.assinado?'PDF assinado enviado':'PDF enviado na conversa'); openModal(c.id); }
     catch(err){ el.disabled=false; el.textContent='📲 enviar'; toast('Falha: '+err.message); }
   });
+  document.querySelectorAll('[data-asnver]').forEach(el=>el.onclick=ev=>{ ev.preventDefault(); asnVerPdf(el.dataset.asnver, el.dataset.asnvernome); });
   document.querySelectorAll('[data-asnbaixar]').forEach(el=>el.onclick=async()=>{
     el.disabled=true; el.textContent='…';
     try{ const j=await asnBaixarPdf(el.dataset.asnbaixar); toast('⬇ Baixando '+(j.nome||'o PDF')); }
@@ -12394,7 +12403,7 @@ function ctrPintar(el){
     let doc = null;
     for(const l of CTR.lotes) for(const d of (l.documentos||[]))
       if(String(d.id)===b.dataset.ctrver) doc = d;
-    if(doc) ctrAbrirVisor(doc.documento_url, doc.documento_nome || 'Contrato');
+    if(doc) asnVerPdf(doc.id, doc.documento_nome || 'Contrato');
   });
   el.querySelectorAll('[data-ctrbaixar]').forEach(b=>b.onclick=async()=>{
     b.disabled = true; b.textContent = '…';
