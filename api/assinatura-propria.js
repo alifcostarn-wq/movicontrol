@@ -102,6 +102,12 @@ export default async function handler(req, res) {
     return { ok: true, key };
   }
 
+  async function r2Apagar(key) {
+    if (!key || /^https?:/i.test(String(key))) return true;
+    try { const r = await r2.fetch(`${R2_ENDPOINT}/${R2_BUCKET}/${key}`, { method: 'DELETE' }); return r.ok || r.status === 404; }
+    catch { return false; }
+  }
+
   // Download de um objeto do R2 (para reprocessar o PDF original na hora de assinar)
   async function r2Get(key) {
     const url = `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
@@ -332,6 +338,7 @@ function soNomeDeLugar(v) {
     if (lote.data[0].status === 'assinado') {
       return { ja_assinado: true, codigo_verificacao: lote.data[0].codigo_verificacao };
     }
+    if (lote.data[0].status !== 'pendente') return { erro: 'Este contrato foi cancelado. Peça um novo ao atendimento.', status: 410 };
 
     // 1) sobe a selfie
     const selfieKey = `assinaturas/selfies/${clienteId}/${loteId}_${Date.now()}.jpg`;
@@ -449,6 +456,9 @@ function soNomeDeLugar(v) {
           codigo_verificacao: lote.codigo_verificacao, assinado_em: lote.assinado_em
         });
       }
+      if (lote.status === 'cancelado') {
+        return res.status(410).json({ ok: false, expirado: true, error: 'Este contrato foi cancelado. Peça um novo para o atendimento.' });
+      }
       if (lote.link_expira_em && new Date(lote.link_expira_em) < new Date()) {
         return res.status(410).json({ ok: false, expirado: true, error: 'Este link expirou. Peça um novo para o atendimento.' });
       }
@@ -511,7 +521,7 @@ function soNomeDeLugar(v) {
       const clienteId = ca.data[0].cliente_id;
 
       if (action === 'meus_lotes') {
-        const r = await sb(`assinatura_lotes?cliente_id=eq.${clienteId}&select=id,status,criado_em,assinado_em&order=criado_em.desc`);
+        const r = await sb(`assinatura_lotes?cliente_id=eq.${clienteId}&status=neq.cancelado&select=id,status,criado_em,assinado_em&order=criado_em.desc`);
         return res.status(200).json({ ok: true, lotes: r.data || [] });
       }
 
@@ -644,10 +654,11 @@ function soNomeDeLugar(v) {
       let url = 'assinatura_lotes?select=' + encodeURIComponent(
         'id,cliente_id,status,criado_em,assinado_em,codigo_verificacao,selfie_url,' +
         'dados_confirmados,geo_lat,geo_lng,link_expira_em,link_aberto_em,link_enviado_em,ixc_contrato_id,' +
+        'cancelado_em,cancelado_por_nome,cancelado_motivo,' +
         'clientes!inner(nome,razao,cnpj,ixc_id),' +
         'contratos_assinatura(id,documento_nome,documento_url,documento_assinado_url,status)'
       ) + `&order=criado_em.desc&limit=${limite}`;
-      if (status === 'assinado' || status === 'pendente') url += `&status=eq.${status}`;
+      if (status === 'assinado' || status === 'pendente' || status === 'cancelado') url += `&status=eq.${status}`;
       // procura pelos dois: quem digita o apelido também tem de achar
       if (busca) url += `&clientes.or=${encodeURIComponent(`(nome.ilike.*${busca}*,razao.ilike.*${busca}*)`)}`;
 
@@ -677,11 +688,12 @@ function soNomeDeLugar(v) {
       }
       // os contadores vêm do banco, não da página devolvida: com limite de 200
       // o rodapé mentiria justamente quando a lista ficasse grande
-      const [ca, cp] = await Promise.all([
+      const [ca, cp, cc] = await Promise.all([
         sb('assinatura_lotes?select=id&status=eq.assinado&limit=1', { headers: { Prefer: 'count=exact' } }),
         sb('assinatura_lotes?select=id&status=eq.pendente&limit=1', { headers: { Prefer: 'count=exact' } }),
+        sb('assinatura_lotes?select=id&status=eq.cancelado&limit=1', { headers: { Prefer: 'count=exact' } }),
       ]);
-      return res.status(200).json({ ok: true, lotes, total_assinados: ca.total, total_pendentes: cp.total });
+      return res.status(200).json({ ok: true, lotes, total_assinados: ca.total, total_pendentes: cp.total, total_cancelados: cc.total });
     }
 
     if (action === 'listar_lotes') {
@@ -770,6 +782,7 @@ function soNomeDeLugar(v) {
       if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
       const lote = lr.data[0];
       if (lote.status === 'assinado') return res.status(400).json({ ok: false, error: 'Este lote já foi assinado.' });
+      if (lote.status === 'cancelado') return res.status(400).json({ ok: false, error: 'Este contrato foi cancelado. Gere um novo.' });
 
       const agora = new Date();
       const expira = new Date(agora.getTime() + LINK_DIAS * 86400000);
@@ -816,6 +829,7 @@ function soNomeDeLugar(v) {
       if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Lote não encontrado' });
       const lote = lr.data[0];
       if (lote.status === 'assinado') return res.status(400).json({ ok: false, error: 'Este lote já está assinado.' });
+      if (lote.status === 'cancelado') return res.status(400).json({ ok: false, error: 'Este contrato foi cancelado. Gere um novo.' });
 
       // a data que o cliente assinou: hoje, ou um dia entre o envio e hoje
       const agora = new Date();
@@ -895,6 +909,65 @@ function soNomeDeLugar(v) {
       }) });
       if (!up.ok) return res.status(500).json({ ok: false, error: 'Falha ao desfazer' });
       return res.status(200).json({ ok: true });
+    }
+
+    /* CANCELAR um contrato gerado que ainda não foi assinado: o link morre na
+       hora, o cliente não consegue mais assinar e o lote fica na lista como
+       CANCELADO, com quem cancelou e o motivo. Assinado não se cancela aqui. */
+    if (action === 'cancelar_lote') {
+      const loteId = Number(req.body?.lote_id);
+      if (!Number.isInteger(loteId) || loteId <= 0) return res.status(400).json({ ok: false, error: 'lote_id obrigatório' });
+      const agora = new Date().toISOString();
+      const up = await sb(`assinatura_lotes?id=eq.${loteId}&status=eq.pendente`, { method: 'PATCH', body: JSON.stringify({
+        status: 'cancelado', cancelado_em: agora, cancelado_por: userId, cancelado_por_nome: p0.nome || null,
+        cancelado_motivo: String(req.body?.motivo || '').trim().slice(0, 300) || null,
+        link_token: null, link_expira_em: agora,
+      }) });
+      if (!up.ok) return res.status(500).json({ ok: false, error: 'Falha ao cancelar o contrato' });
+      if (!Array.isArray(up.data) || !up.data.length) {
+        const lr = await sb(`assinatura_lotes?id=eq.${loteId}&select=status`);
+        if (!lr.ok || !lr.data?.length) return res.status(404).json({ ok: false, error: 'Contrato não encontrado' });
+        return res.status(409).json({ ok: false, error: lr.data[0].status === 'assinado'
+          ? 'Este contrato já foi assinado — não dá para cancelar.' : 'Este contrato já estava cancelado.' });
+      }
+      await sb(`contratos_assinatura?lote_id=eq.${loteId}&status=neq.assinado`, { method: 'PATCH', prefer: 'return=minimal',
+        body: JSON.stringify({ status: 'cancelado', atualizado_em: agora }) });
+      return res.status(200).json({ ok: true });
+    }
+
+    /* EXCLUIR apaga o lote, os documentos e os arquivos (PDFs e selfie). Não tem
+       volta — por isso: só admin/operador; contrato ASSINADO exige confirmação
+       expressa (é a prova da contratação); e fica o registro de quem excluiu. */
+    if (action === 'excluir_lote') {
+      if (!ehGestor) return res.status(403).json({ ok: false, error: 'Só administrador ou operador pode excluir contratos.' });
+      const loteId = Number(req.body?.lote_id);
+      if (!Number.isInteger(loteId) || loteId <= 0) return res.status(400).json({ ok: false, error: 'lote_id obrigatório' });
+      const lr = await sb(`assinatura_lotes?id=eq.${loteId}&select=id,cliente_id,ixc_contrato_id,status,assinado_em,codigo_verificacao,selfie_url`);
+      if (!lr.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar o contrato' });
+      if (!lr.data?.length) return res.status(404).json({ ok: false, error: 'Contrato não encontrado' });
+      const lote = lr.data[0];
+      if (lote.status === 'assinado' && req.body?.confirmar_assinado !== true) {
+        return res.status(409).json({ ok: false, assinado: true, error: 'Este contrato está ASSINADO. Para excluir é preciso confirmar.' });
+      }
+      const docs = await sb(`contratos_assinatura?lote_id=eq.${loteId}&select=id,documento_nome,documento_url,documento_assinado_url,documento_certificado_url,status`);
+      if (!docs.ok) return res.status(500).json({ ok: false, error: 'Erro ao consultar os documentos' });
+      const reg = await sb('assinatura_exclusoes', { method: 'POST', prefer: 'return=minimal', body: JSON.stringify({
+        lote_id: loteId, cliente_id: lote.cliente_id, ixc_contrato_id: lote.ixc_contrato_id ? String(lote.ixc_contrato_id) : null,
+        status_anterior: lote.status, assinado_em: lote.assinado_em, codigo_verificacao: lote.codigo_verificacao,
+        documentos: (docs.data || []).map(d => ({ id: d.id, nome: d.documento_nome, status: d.status })),
+        motivo: String(req.body?.motivo || '').trim().slice(0, 300) || null, excluido_por: userId, excluido_por_nome: p0.nome || null,
+      }) });
+      if (!reg.ok) return res.status(500).json({ ok: false, error: 'Não consegui registrar a exclusão — nada foi apagado.' });
+      // banco primeiro (documentos, depois o lote); os arquivos por último
+      const d1 = await sb(`contratos_assinatura?lote_id=eq.${loteId}`, { method: 'DELETE', prefer: 'return=minimal' });
+      if (!d1.ok) return res.status(500).json({ ok: false, error: 'Falha ao excluir os documentos' });
+      const d2 = await sb(`assinatura_lotes?id=eq.${loteId}`, { method: 'DELETE', prefer: 'return=minimal' });
+      if (!d2.ok) return res.status(500).json({ ok: false, error: 'Falha ao excluir o lote' });
+      const chaves = new Set([lote.selfie_url]);
+      for (const d of (docs.data || [])) for (const k of [d.documento_url, d.documento_assinado_url, d.documento_certificado_url]) chaves.add(k);
+      let sobras = 0;
+      for (const k of chaves) if (k && !(await r2Apagar(k))) sobras++;
+      return res.status(200).json({ ok: true, arquivos_nao_apagados: sobras });
     }
 
     if (action === 'upload_pdf') {

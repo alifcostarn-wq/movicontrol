@@ -2518,6 +2518,10 @@ body.flow-full .flow-field textarea{min-height:200px;}
 .asn-st.pendente{background:var(--orange-soft);color:var(--amber-txt);border:1px solid var(--amber-line);}
 .asn-st.assinado{background:var(--green-soft);color:var(--green-deep);}
 .asn-st.recusado{background:var(--red-soft);color:var(--red);}
+.asn-st.cancelado{background:var(--red-soft);color:var(--red);}
+.asn-gests{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;}
+.asn-gest{font-family:inherit;font-size:10.5px;font-weight:700;background:none;border:1px solid var(--line,#d8dee6);border-radius:7px;padding:4px 9px;cursor:pointer;color:inherit;}
+.asn-gest.del{color:var(--red);border-color:var(--red);}
 .asn-doc-linha{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-mid);padding:4px 0;}
 .asn-doc-linha a{color:var(--green-deep);font-weight:700;text-decoration:none;flex:1;min-width:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -5883,7 +5887,7 @@ function blocoAssinatura(c){
   const lotes = c.asn.lotes || [];
   const corpo = lotes.length ? lotes.map(l=>{
     const docs = l.documentos || [];
-    const pend = l.status !== 'assinado';
+    const pend = l.status === 'pendente';
     return `<div class="asn-box ${pend?'pend':''}">
       <div class="asn-box-top">
         <span class="asn-box-t">${docs.length} documento${docs.length===1?'':'s'} · ${dataCurta(l.criado_em)}</span>
@@ -5904,7 +5908,7 @@ function blocoAssinatura(c){
         ${l.dados_confirmados&&l.dados_confirmados.origem==='link_whatsapp'?' · pelo link do WhatsApp':''}
         ${l.codigo_verificacao?`<br>Código: <span class="asn-cod">${esc(l.codigo_verificacao)}</span>`:''}
         ${(l.geo_lat&&l.geo_lng)?` · <a href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" rel="noopener" style="color:var(--green-deep)">📍 local</a>`:''}
-      </div>` : `<div class="asn-acts">
+      </div>` : l.status==='cancelado' ? `<div class="asn-meta">${asnCanceladoTexto(l)}</div>` : `<div class="asn-acts">
         <button class="vinc-btn solid" data-asnlink="${l.id}">🔗 Mandar link para assinar</button>
         <button class="vinc-btn" data-asnsolink="${l.id}" title="Manda só o endereço, sem a mensagem de explicação">🔗 Só o link, sem texto</button>
         <button class="vinc-btn" data-asnavisar="${l.id}">📱 Avisar pelo MoviApp</button>
@@ -5913,6 +5917,7 @@ function blocoAssinatura(c){
             ? `🔗 Link enviado · <b>o cliente abriu</b> em ${dataHora(l.link_aberto_em)}`
             : `🔗 Link enviado · ainda não foi aberto`}</div>` : ''}
       </div>`}
+      <div class="asn-gests">${asnBotoesGestao(l, 'asn')}</div>
     </div>`;
   }).join('') : '<div class="asn-vazio">Nenhum documento enviado para assinatura ainda.</div>';
 
@@ -6003,6 +6008,39 @@ function asnMarcarAssinado(lote, nomeCli, depois){
     }catch(err){ bt.disabled = false; bt.textContent = '✓ Marcar como assinado'; falhar(err.message); }
   };
   ov.querySelector('[data-onde].on').focus();
+}
+/* ===== CANCELAR / EXCLUIR um contrato gerado =====
+   Cancelar: só o que ainda não foi assinado — o link morre e o lote fica na
+   lista como CANCELADO, com quem cancelou. Excluir: apaga lote, documentos e
+   arquivos, sem volta (só admin/operador; assinado pede confirmação escrita). */
+function asnBotoesGestao(l, pref){
+  return `${l.status==='pendente'?`<button class="asn-gest" data-${pref}cancelar="${l.id}" title="O cliente não consegue mais assinar; o contrato fica na lista como cancelado">✕ Cancelar contrato</button>`:''}
+    <button class="asn-gest del" data-${pref}excluir="${l.id}" title="Apaga o contrato, os documentos e os arquivos — não tem volta">🗑 Excluir</button>`;
+}
+function asnCanceladoTexto(l){
+  return `🚫 <b>Cancelado</b>${l.cancelado_em?' em '+dataHora(l.cancelado_em):''}${l.cancelado_por_nome?' por '+esc(l.cancelado_por_nome):''}`
+    + (l.cancelado_motivo?`<br>Motivo: ${esc(l.cancelado_motivo)}`:'');
+}
+async function asnCancelarLote(loteId, depois){
+  const motivo = prompt('Cancelar este contrato?\n\nO link de assinatura para de funcionar e o cliente não consegue mais assinar. O contrato continua na lista, como CANCELADO.\n\nMotivo (opcional):', '');
+  if(motivo === null) return;
+  try{ await asnChamar('cancelar_lote', { lote_id: loteId, motivo }); toast('Contrato cancelado'); if(depois) depois(); }
+  catch(err){ toast('Falha: '+err.message); }
+}
+async function asnExcluirLote(lote, depois){
+  if(!lote) return;
+  const dados = { lote_id: lote.id };
+  if(lote.status === 'assinado'){
+    const dig = prompt('ATENÇÃO: este contrato está ASSINADO.\n\nExcluir apaga o PDF assinado, a selfie e o certificado — a prova da contratação — e NÃO TEM VOLTA.\n\nPara confirmar, digite EXCLUIR:', '');
+    if(dig === null) return;
+    if(dig.trim().toUpperCase() !== 'EXCLUIR'){ toast('Não excluí: a confirmação não confere.'); return; }
+    dados.confirmar_assinado = true;
+  } else if(!confirm('Excluir este contrato?\n\nApaga o contrato, os documentos e os arquivos. Não tem volta.')) return;
+  try{
+    const j = await asnChamar('excluir_lote', dados);
+    toast(j.arquivos_nao_apagados ? 'Contrato excluído (alguns arquivos não puderam ser apagados do armazenamento)' : 'Contrato excluído');
+    if(depois) depois();
+  }catch(err){ toast('Falha: '+err.message); }
 }
 async function asnDesmarcarAssinado(loteId, depois){
   if(!confirm('Desfazer a marcação de assinado?\n\nO lote volta para pendente e o PDF assinado anexado deixa de ser o do documento.')) return;
@@ -11136,6 +11174,10 @@ O WhatsApp só permite isso por cerca de dois dias depois do envio.`)) return;
   });
   document.querySelectorAll('[data-asndesmarcar]').forEach(el=>el.onclick=()=>
     asnDesmarcarAssinado(+el.dataset.asndesmarcar, ()=>{ c._asnCarregado=false; c.asn=null; openModal(c.id); }));
+  document.querySelectorAll('[data-asncancelar]').forEach(el=>el.onclick=()=>
+    asnCancelarLote(+el.dataset.asncancelar, ()=>{ c._asnCarregado=false; c.asn=null; openModal(c.id); }));
+  document.querySelectorAll('[data-asnexcluir]').forEach(el=>el.onclick=()=>
+    asnExcluirLote((c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnexcluir), ()=>{ c._asnCarregado=false; c.asn=null; openModal(c.id); }));
   document.querySelectorAll('[data-asnavisar]').forEach(el=>el.onclick=async()=>{
     const lote=(c.asn&&c.asn.lotes||[]).find(l=>String(l.id)===el.dataset.asnavisar);
     if(!lote) return;
@@ -12261,7 +12303,7 @@ async function ctrCarregar(){
   try{
     const j = await asnChamar('listar_assinados', { status: CTR.filtro, busca: CTR.busca });
     CTR.lotes = j.lotes || [];
-    CTR.totais = { assinados: j.total_assinados, pendentes: j.total_pendentes };
+    CTR.totais = { assinados: j.total_assinados, pendentes: j.total_pendentes, cancelados: j.total_cancelados };
   }catch(err){ CTR.erro = err.message; CTR.lotes = []; }
   CTR.carregando = false;
 }
@@ -12277,7 +12319,7 @@ function ctrPintar(el){
   const lista = CTR.erro
     ? `<div class="ms-erro">Não consegui ler os contratos.<br><b>${esc(CTR.erro)}</b></div>`
     : (CTR.lotes.length ? CTR.lotes.map(l=>{
-        const pend = l.status !== 'assinado';
+        const pend = l.status === 'pendente';
         const docs = l.documentos || [];
         const quem = (l.dados_confirmados && l.dados_confirmados.nome) || l.cliente_nome || 'Cliente';
         return `<div class="ctr-linha ${pend?'pend':''}">
@@ -12287,6 +12329,7 @@ function ctrPintar(el){
               ${l.cliente_cnpj?esc(l.cliente_cnpj)+' · ':''}${l.cliente_ixc_id?'IXC #'+esc(String(l.cliente_ixc_id))+' · ':''}enviado em ${dataCurta(l.criado_em)}
               ${l.assinado_em && asnExterna(l) ? `<br>${asnExternaTexto(l)}` : l.assinado_em?`<br>✅ Assinado em ${dataHora(l.assinado_em)}${(l.dados_confirmados&&l.dados_confirmados.nome)?' por '+esc(l.dados_confirmados.nome):''}`:''}
               ${l.codigo_verificacao?`<br>Código: <span class="asn-cod">${esc(l.codigo_verificacao)}</span>`:''}
+              ${l.status==='cancelado'?`<br>${asnCanceladoTexto(l)}`:''}
               ${pend?`<br>${l.link_aberto_em?`🔗 O cliente abriu o link em ${dataHora(l.link_aberto_em)}, mas não assinou`:(l.link_enviado_em?`🔗 Link enviado em ${dataHora(l.link_enviado_em)} · ainda não foi aberto`:'Link ainda não enviado')}`:''}
             </div>
             <div class="ctr-docs">
@@ -12302,11 +12345,12 @@ function ctrPintar(el){
             ${pend?`<button class="ctr-ver" data-ctrmarcar="${l.id}" title="O cliente assinou fora do MoviTalk: gov.br, outra plataforma ou no papel">✓ marcar como assinado</button>`:''}
             ${!pend && asnExterna(l)?`<button class="ctr-ver" data-ctrdesmarcar="${l.id}" title="Volta o lote para pendente">↺ desfazer</button>`:''}
             ${l.selfie_url?`<button class="ctr-ver" data-ctrselfie="${l.id}">🤳 selfie</button>`:''}
+            ${asnBotoesGestao(l, 'ctr')}
             ${(l.geo_lat&&l.geo_lng)?`<a class="ctr-ver" href="https://www.google.com/maps?q=${l.geo_lat},${l.geo_lng}" target="_blank" rel="noopener">📍 local</a>`:''}
           </div>
         </div>`;
       }).join('')
-      : `<div class="asn-vazio">${CTR.busca?'Nenhum contrato para esta busca.':(CTR.filtro==='pendente'?'Nenhum contrato pendente — todos os enviados foram assinados.':'Nenhum contrato assinado ainda.')}</div>`);
+      : `<div class="asn-vazio">${CTR.busca?'Nenhum contrato para esta busca.':(CTR.filtro==='pendente'?'Nenhum contrato pendente.':CTR.filtro==='cancelado'?'Nenhum contrato cancelado.':CTR.filtro==='todos'?'Nenhum contrato gerado ainda.':'Nenhum contrato assinado ainda.')}</div>`);
 
   el.innerHTML = `
     <div class="vsub">Todos os documentos enviados para assinatura, de todos os clientes. O contrato assinado abre aqui na tela, com o certificado de assinatura no fim do PDF.</div>
@@ -12314,6 +12358,7 @@ function ctrPintar(el){
       <div class="ctr-filtros">
         <button class="ctr-fil ${CTR.filtro==='assinado'?'on':''}" data-ctrfil="assinado">✅ Assinados${t.assinados!=null?' ('+t.assinados+')':''}</button>
         <button class="ctr-fil ${CTR.filtro==='pendente'?'on':''}" data-ctrfil="pendente">⏳ Pendentes${t.pendentes!=null?' ('+t.pendentes+')':''}</button>
+        <button class="ctr-fil ${CTR.filtro==='cancelado'?'on':''}" data-ctrfil="cancelado">🚫 Cancelados${t.cancelados!=null?' ('+t.cancelados+')':''}</button>
         <button class="ctr-fil ${CTR.filtro==='todos'?'on':''}" data-ctrfil="todos">Todos</button>
       </div>
       <input class="ctr-busca" id="ctrBusca" placeholder="Buscar pelo nome do cliente…" value="${esc(CTR.busca)}">
@@ -12347,6 +12392,8 @@ function ctrPintar(el){
     if(l) asnMarcarAssinado(l, l.cliente_nome, recarregarCtr);
   });
   el.querySelectorAll('[data-ctrdesmarcar]').forEach(b=>b.onclick=()=>asnDesmarcarAssinado(+b.dataset.ctrdesmarcar, recarregarCtr));
+  el.querySelectorAll('[data-ctrcancelar]').forEach(b=>b.onclick=()=>asnCancelarLote(+b.dataset.ctrcancelar, recarregarCtr));
+  el.querySelectorAll('[data-ctrexcluir]').forEach(b=>b.onclick=()=>asnExcluirLote(CTR.lotes.find(x=>String(x.id)===b.dataset.ctrexcluir), recarregarCtr));
   el.querySelectorAll('[data-ctrver]').forEach(b=>b.onclick=()=>{
     let doc = null;
     for(const l of CTR.lotes) for(const d of (l.documentos||[]))

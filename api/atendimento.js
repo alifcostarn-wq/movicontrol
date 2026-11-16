@@ -5003,7 +5003,7 @@ async function marcarAssinaturaPendente(e, conversas) {
   let lotes = [];
   try {
     lotes = await sb(e,
-      'assinatura_lotes?status=neq.assinado&link_token=not.is.null' +
+      'assinatura_lotes?status=eq.pendente&link_token=not.is.null' +
       '&select=id,clientes(ixc_id)&limit=500');
   } catch (err) {
     console.error('[atendimento] assinaturas pendentes:', err.message);
