@@ -543,9 +543,10 @@ export default async function handler(req, res) {
     // ---- Métricas recorrentes: lido direto do IXC, na hora ----
     if (acao === 'metricas.ativacoes') {
       const prazo = Date.now() + 45e3;
-      const [contratos, planos, clientes] = await Promise.all([ixcTudo('cliente_contrato', prazo), ixcTudo('vd_contratos', prazo), ixcTudo('cliente', prazo)]);
+      const [contratos, planos, clientes, produtos, descontos, acrescimos] = await Promise.all(
+        ['cliente_contrato', 'vd_contratos', 'cliente', 'vd_contratos_produtos', 'cliente_contrato_descontos', 'cliente_contrato_acrescimos'].map(t => ixcTudo(t, prazo)));
       return res.status(200).json({ ok: true, lido_em: new Date().toISOString(), contratos: contratos.length,
-        linhas: ativacoesDoIxc({ contratos, planos, clientes }) });
+        linhas: ativacoesDoIxc({ contratos, planos, clientes, produtos, descontos, acrescimos }) });
     }
     const cfg = await lerConfig();
     if (!cfg) return res.status(500).json({ erro: 'falta criar a tabela ixc_sync_config no banco' });
