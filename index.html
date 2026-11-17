@@ -3923,6 +3923,10 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 8h6M8 12h8M8 16h5"/></svg>
       <span class="nav-label">Cobrança</span>
     </button>
+    <button class="nav-item" data-page="metricas" data-tooltip="Métricas recorrentes" onclick="navTo('metricas',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>
+      <span class="nav-label">Métricas recorrentes</span>
+    </button>
     <button class="nav-item" data-page="analises" data-tooltip="Diagnóstico" onclick="navTo('analises',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       <span class="nav-label">Diagnóstico</span>
@@ -5918,6 +5922,13 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
     <!-- ====== ANÁLISES — SAÚDE FINANCEIRA ====== -->
     <div class="page" id="page-cobranca">
       <div id="cob-conteudo"></div>
+    </div>
+
+    <div class="page" id="page-metricas">
+      <div class="main-tabs" style="margin-bottom:18px">
+        <button class="main-tab active">📈 Ativações mensais</button>
+      </div>
+      <div id="mtr-conteudo"></div>
     </div>
 
     <div class="page" id="page-analises">
@@ -7947,6 +7958,7 @@ const PAGE_META={
   clientes:{title:'Clientes',sub:'Cadastro de clientes'},
   fornecedores:{title:'Fornecedores',sub:'Cadastro de fornecedores'},
   analises:{title:'Diagnóstico Financeiro',sub:'Saúde financeira e painel de endividamento'},
+  metricas:{title:'Métricas recorrentes',sub:'Análises da base de contratos, lidas direto do IXC'},
   bancos:{title:'Contas Bancárias',sub:'Gestão de contas, extratos e transferências'},
   plano:{title:'Plano de Contas',sub:'Estrutura hierárquica de contas'},
   usuarios:{title:'Usuários do Sistema',sub:'Gerenciar acessos e permissões'},
@@ -8051,7 +8063,7 @@ function navTo(page,btn){
   else if(page==='bancos') tr.innerHTML=btnTema+btnOcultar+'<button class="btn perm-edit" onclick="abrirModalTransferencia()">⇄ Transferir</button><button class="btn perm-edit" onclick="abrirModalAjusteBanco(null,\'entrada\')">+ Entrada</button><button class="btn perm-edit" style="color:var(--danger);border-color:var(--danger)" onclick="abrirModalAjusteBanco(null,\'saida\')">− Saída</button><button class="btn btn-primary" onclick="abrirModalBanco()">+ Nova Conta</button>';
   else tr.innerHTML=btnTema+btnOcultar;
   // Render da página
-  const renders={intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,acessos:()=>acsAbrir('movione'),'cp-acessos':()=>acsAbrir('movitec'),'cp-registros':renderRegistros,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-estoque-bi':()=>estBiAbrir(false),'cp-movimentacoes':renderMovimentacoes,'cp-requisicoes':cmpAbrirReqEstoque,compras:cmpAbrir,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false),config:renderConfig};
+  const renders={metricas:renderMetricas,intel:renderIntel,painel:renderPainel,diario:renderDiario,fluxo:renderFluxo,contas:renderContas,tesouraria:renderTesouraria,governanca:renderGovernanca,simulador:renderSimulador,planejamento:renderPlan,analises:renderAnalises,cobranca:renderCobrancaModulo,clientes:()=>renderCadastro('clientes'),fornecedores:()=>renderCadastro('fornecedores'),plano:renderPlano,bancos:renderBancos,usuarios:renderUsuarios,acessos:()=>acsAbrir('movione'),'cp-acessos':()=>acsAbrir('movitec'),'cp-registros':renderRegistros,'cp-tecnicos':renderTecnicos,'cp-estoque':renderEstoque,'cp-estoque-bi':()=>estBiAbrir(false),'cp-movimentacoes':renderMovimentacoes,'cp-requisicoes':cmpAbrirReqEstoque,compras:cmpAbrir,'modelos-doc':asnRenderModelosPagina,roteadores:()=>rotRenderPagina(false),config:renderConfig};
   renders[page]?.();
   // Auto-sync IXC ao abrir a aba clientes (se configurado)
   if(page==='clientes' && typeof autoSyncIXC==='function') autoSyncIXC();
@@ -29991,6 +30003,209 @@ async function asnExcluirModelo(id){
      avisa quando uma versão nova sobe, e o recarregar é decisão de quem está
      na tela — no meio de um cadastro, recarregar sozinho perderia o trabalho -->
 <script src="/acessos-tela.js" defer></script>
+<!-- ===== MÉTRICAS RECORRENTES (1ª análise: ativações mensais) =====
+     Os dados vêm DIRETO do IXC a cada abertura (api/ixc-sync › metricas.ativacoes);
+     nada é lido da cópia do MoviOne. -->
+<style>
+.mtr-topo{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-bottom:16px}
+.mtr-mes{display:flex;align-items:center;gap:4px}
+.mtr-mes select{width:auto;min-width:150px;font-weight:700}
+.mtr-seta{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;width:34px;height:34px;font-size:15px;cursor:pointer}
+.mtr-seta:disabled{opacity:.35;cursor:default}
+.mtr-seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.mtr-seg button{appearance:none;border:0;background:var(--surface);color:var(--text2);font:inherit;font-size:12.5px;font-weight:600;padding:8px 12px;cursor:pointer}
+.mtr-seg button+button{border-left:1px solid var(--border)}
+.mtr-seg button[aria-pressed="true"]{background:var(--ebi-s1);color:#fff}
+.mtr-fonte{margin-left:auto;font-size:11.5px;color:var(--text3);display:flex;align-items:center;gap:8px}
+.mtr-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:14px}
+.mtr-tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
+.mtr-tile .k{font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:6px}
+.mtr-tile .n{font-size:26px;font-weight:800;color:var(--text);line-height:1.1;overflow-wrap:anywhere}
+.mtr-tile .n.txt{font-size:17px;line-height:1.25}
+.mtr-tile .s{font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.4}
+.mtr-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:12px}
+.mtr-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;min-width:0}
+.mtr-card h3{font-size:13.5px;font-weight:700;color:var(--text);margin:0 0 2px}
+.mtr-card .d{font-size:11.5px;color:var(--text3);margin-bottom:14px}
+.mtr-cols{display:flex;align-items:flex-end;gap:2px;height:170px;border-bottom:1px solid var(--ebi-base)}
+.mtr-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;cursor:pointer;appearance:none;border:0;background:none;padding:0 2px;font:inherit}
+.mtr-col .q{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:3px}
+.mtr-col .br{width:100%;max-width:34px;background:var(--ebi-trilha);border-radius:4px 4px 0 0;min-height:2px}
+.mtr-col:hover .br{background:var(--ebi-s1);opacity:.7}
+.mtr-col[aria-current="true"] .br{background:var(--ebi-s1);opacity:1}
+.mtr-col[aria-current="true"] .q{color:var(--text);font-weight:800}
+.mtr-col:focus-visible{outline:2px solid var(--ebi-s1);outline-offset:1px;border-radius:6px}
+.mtr-eixo{display:flex;gap:2px;margin-top:5px}
+.mtr-eixo span{flex:1;min-width:0;text-align:center;font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden}
+.mtr-eixo span.on{color:var(--text);font-weight:700}
+.mtr-hb{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;align-items:center;gap:4px 10px}
+.mtr-hb .nm{font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mtr-hb .tr{height:14px;display:flex}
+.mtr-hb .tr i{display:block;height:100%;background:var(--ebi-s1);border-radius:0 4px 4px 0;min-width:2px}
+.mtr-hb .vl{font-size:12.5px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap}
+.mtr-hb .vl small{font-weight:500;color:var(--text3);margin-left:4px}
+.mtr-mais{appearance:none;border:0;background:none;color:var(--azul-txt);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:10px 0 0}
+.mtr-tab{width:100%;border-collapse:collapse;font-size:12.5px}
+.mtr-tab th{text-align:left;font-size:11px;font-weight:600;color:var(--text3);padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.mtr-tab td{padding:8px;border-bottom:1px solid var(--ebi-grid);color:var(--text);vertical-align:middle}
+.mtr-tab .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mtr-tab .mini{display:inline-block;height:8px;background:var(--ebi-s1);border-radius:0 3px 3px 0;vertical-align:middle;margin-right:7px;min-width:2px}
+.mtr-selo{display:inline-block;font-size:10px;font-weight:700;background:var(--info-bg);color:var(--info);border-radius:6px;padding:2px 7px;margin-left:6px;white-space:nowrap}
+.mtr-vazio{padding:26px 10px;text-align:center;color:var(--text3);font-size:13px}
+.mtr-rolar{overflow-x:auto}
+</style>
+<script>
+const MTR = { linhas:null, lidoEm:null, mes:null, soAtivos:false, todosBairros:false, carregando:false, erro:null };
+const MTR_MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+function mtrMesNome(m, longo){ const [a,b] = m.split('-'); return longo ? ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][+b-1]+' de '+a : MTR_MESES[+b-1]+'/'+a.slice(2); }
+function mtrMesSoma(m, d){ const [a,b] = m.split('-').map(Number); const t = a*12 + (b-1) + d; return Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0'); }
+function mtrMesAtual(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Fortaleza'}).slice(0,7); }
+function mtrEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mtrDin(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* Tudo que a tela mostra sai daqui, calculado sobre as linhas do IXC.
+   soAtivos = só as ativações cujo contrato continua ativo (status A) hoje. */
+function mtrCalcular(linhas, mes, soAtivos){
+  const vale = l => !soAtivos || l.s === 'A';
+  const doMes = linhas.filter(l => l.m === mes);
+  const base = doMes.filter(vale);
+  const agrupar = (arr, chave) => { const m = new Map(); for(const l of arr){ const k = chave(l); m.set(k, (m.get(k)||0)+1); } return [...m].map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd || String(a.nome).localeCompare(String(b.nome),'pt-BR')); };
+  const planos = new Map();
+  for(const l of base){
+    const k = l.p || 'Sem plano informado';
+    const p = planos.get(k) || planos.set(k, { nome:k, vel:l.v||null, qtd:0, soma:0, min:null, max:null }).get(k);
+    p.qtd++; const r = Number(l.r)||0; p.soma += r;
+    if(r){ p.min = p.min==null ? r : Math.min(p.min, r); p.max = p.max==null ? r : Math.max(p.max, r); }
+    if(!p.vel && l.v) p.vel = l.v;
+  }
+  const listaPlanos = [...planos.values()].sort((a,b)=>b.qtd-a.qtd || b.soma-a.soma || a.nome.localeCompare(b.nome,'pt-BR'));
+  const receita = base.reduce((s,l)=>s+(Number(l.r)||0), 0);
+  const serie = []; for(let i=11;i>=0;i--){ const m = mtrMesSoma(mes, -i); serie.push({ mes:m, qtd: linhas.filter(l=>l.m===m && vale(l)).length }); }
+  const anterior = linhas.filter(l => l.m === mtrMesSoma(mes,-1) && vale(l)).length;
+  return {
+    total: base.length, totalMes: doMes.length, aindaAtivos: doMes.filter(l=>l.s==='A').length, anterior,
+    bairros: agrupar(base, l => l.b || 'Sem bairro informado'),
+    velocidades: agrupar(base, l => l.v ? l.v+' Mega' : 'Sem velocidade no nome'),
+    planos: listaPlanos, maisVendido: listaPlanos[0] || null,
+    receita, ticket: base.length ? receita/base.length : 0, serie,
+  };
+}
+
+async function mtrCarregar(forcar){
+  if(MTR.carregando) return;
+  if(MTR.linhas && !forcar) return;
+  MTR.carregando = true; MTR.erro = null; mtrPintar();
+  try{
+    const j = await ixaAPI('metricas.ativacoes', {}, 58000);
+    MTR.linhas = j.linhas || []; MTR.lidoEm = j.lido_em || new Date().toISOString();
+    if(!MTR.mes) MTR.mes = mtrMesAtual();
+  }catch(e){ MTR.erro = e.message || String(e); }
+  MTR.carregando = false; mtrPintar();
+}
+function renderMetricas(){ mtrPintar(); mtrCarregar(false); }
+
+function mtrBarras(lista, total, limite){
+  if(!lista.length) return '<div class="mtr-vazio">Nenhuma ativação neste mês.</div>';
+  const max = lista[0].qtd || 1;
+  const mostra = limite ? lista.slice(0, limite) : lista;
+  return `<div class="mtr-hb">${mostra.map(x=>`
+    <span class="nm" title="${mtrEsc(x.nome)}">${mtrEsc(x.nome)}</span>
+    <span class="tr" data-mtrtip="${mtrEsc(x.nome)}: ${x.qtd} ativaç${x.qtd===1?'ão':'ões'} (${Math.round(x.qtd/total*100)}% do mês)"><i style="width:${Math.max(1.5, x.qtd/max*100)}%"></i></span>
+    <span class="vl">${x.qtd}<small>${Math.round(x.qtd/total*100)}%</small></span>`).join('')}</div>`;
+}
+
+function mtrPintar(){
+  const el = document.getElementById('mtr-conteudo'); if(!el) return;
+  if(MTR.erro && !MTR.linhas){
+    el.innerHTML = `<div class="mtr-card"><div class="mtr-vazio">Não consegui ler os contratos no IXC.<br><b>${mtrEsc(MTR.erro)}</b><br><br><button class="btn btn-primary" onclick="mtrCarregar(true)">Tentar novamente</button></div></div>`; return;
+  }
+  if(!MTR.linhas){ el.innerHTML = '<div class="mtr-card"><div class="mtr-vazio">Lendo os contratos direto do IXC… pode levar alguns segundos.</div></div>'; return; }
+  const mesAtual = mtrMesAtual();
+  const primeiro = MTR.linhas.reduce((m,l)=> l.m < m ? l.m : m, mesAtual);
+  const meses = []; for(let m = mesAtual; m >= primeiro && meses.length < 240; m = mtrMesSoma(m,-1)) meses.push(m);
+  const c = mtrCalcular(MTR.linhas, MTR.mes, MTR.soAtivos);
+  const dif = c.total - c.anterior;
+  const maxSerie = Math.max(1, ...c.serie.map(s=>s.qtd));
+  const mv = c.maisVendido;
+  const hora = MTR.lidoEm ? new Date(MTR.lidoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+  const limiteB = MTR.todosBairros ? 0 : 10;
+  el.innerHTML = `
+    <div class="mtr-topo">
+      <div class="mtr-mes">
+        <button class="mtr-seta" title="Mês anterior" onclick="mtrIrMes(-1)" ${MTR.mes<=primeiro?'disabled':''}>‹</button>
+        <select onchange="mtrDefMes(this.value)" aria-label="Mês da análise">${meses.map(m=>`<option value="${m}" ${m===MTR.mes?'selected':''}>${mtrMesNome(m,true)}</option>`).join('')}</select>
+        <button class="mtr-seta" title="Próximo mês" onclick="mtrIrMes(1)" ${MTR.mes>=mesAtual?'disabled':''}>›</button>
+      </div>
+      <div class="mtr-seg" role="group" aria-label="Quais ativações contar">
+        <button aria-pressed="${!MTR.soAtivos}" onclick="mtrDefAtivos(false)" title="Todo contrato ativado no mês, mesmo que tenha sido cancelado depois">Todas as ativações</button>
+        <button aria-pressed="${MTR.soAtivos}" onclick="mtrDefAtivos(true)" title="Só os contratos ativados no mês que continuam ativos hoje">Só os que continuam ativos</button>
+      </div>
+      <div class="mtr-fonte">${MTR.carregando?'Lendo o IXC…':`Direto do IXC · lido às ${hora}`}
+        <button class="btn" onclick="mtrCarregar(true)" ${MTR.carregando?'disabled':''} title="Ler de novo no IXC">⟳ Atualizar</button></div>
+    </div>
+    ${MTR.erro?`<div class="mtr-card" style="margin-bottom:12px;color:var(--danger)">Não consegui atualizar: ${mtrEsc(MTR.erro)} — mostrando a última leitura.</div>`:''}
+
+    <div class="mtr-tiles">
+      <div class="mtr-tile"><div class="k">${MTR.soAtivos?'Ativados no mês e ainda ativos':'Contratos ativados no mês'}</div><div class="n">${c.total}</div>
+        <div class="s">${dif===0?'igual a':(dif>0?'▲ '+dif+' a mais que':'▼ '+Math.abs(dif)+' a menos que')} ${mtrMesNome(mtrMesSoma(MTR.mes,-1))} (${c.anterior})</div></div>
+      <div class="mtr-tile"><div class="k">Continuam ativos hoje</div><div class="n">${c.aindaAtivos}<span style="font-size:14px;font-weight:600;color:var(--text3)"> de ${c.totalMes}</span></div>
+        <div class="s">${c.totalMes?Math.round(c.aindaAtivos/c.totalMes*100)+'% dos ativados no mês seguem com contrato ativo':'sem ativações no mês'}</div></div>
+      <div class="mtr-tile"><div class="k">Plano mais vendido</div><div class="n txt">${mv?mtrEsc(mv.nome):'—'}</div>
+        <div class="s">${mv?`${mv.qtd} ativaç${mv.qtd===1?'ão':'ões'} · ${Math.round(mv.qtd/c.total*100)}% do mês${mv.min?' · '+mtrDin(mv.min):''}`:'sem ativações no mês'}</div></div>
+      <div class="mtr-tile"><div class="k">Receita mensal nova</div><div class="n val-monetario">${mtrDin(c.receita)}</div>
+        <div class="s">soma das mensalidades · ticket médio <span class="val-monetario">${mtrDin(c.ticket)}</span></div></div>
+    </div>
+
+    <div class="mtr-grade">
+      <div class="mtr-card">
+        <h3>Ativações por mês</h3><div class="d">12 meses até ${mtrMesNome(MTR.mes,true)} · toque num mês para analisar</div>
+        <div class="mtr-cols">${c.serie.map(s=>`<button class="mtr-col" aria-current="${s.mes===MTR.mes}" onclick="mtrDefMes('${s.mes}')" data-mtrtip="${mtrMesNome(s.mes,true)}: ${s.qtd} ativaç${s.qtd===1?'ão':'ões'}" aria-label="${mtrMesNome(s.mes,true)}: ${s.qtd}">
+          <span class="q">${s.qtd}</span><span class="br" style="height:${s.qtd/maxSerie*82}%"></span></button>`).join('')}</div>
+        <div class="mtr-eixo">${c.serie.map(s=>`<span class="${s.mes===MTR.mes?'on':''}" title="${mtrMesNome(s.mes,true)}">${MTR_MESES[+s.mes.slice(5)-1]}</span>`).join('')}</div>
+      </div>
+      <div class="mtr-card">
+        <h3>Ativações por velocidade</h3><div class="d">${mtrMesNome(MTR.mes,true)} · planos agrupados pela velocidade</div>
+        ${mtrBarras(c.velocidades, c.total)}
+      </div>
+    </div>
+
+    <div class="mtr-grade">
+      <div class="mtr-card">
+        <h3>Ativações por bairro</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.bairros.length} bairro${c.bairros.length===1?'':'s'}</div>
+        ${mtrBarras(c.bairros, c.total, limiteB)}
+        ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
+      </div>
+      <div class="mtr-card">
+        <h3>Planos ativados e valores</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.planos.length} plano${c.planos.length===1?'':'s'}</div>
+        ${c.planos.length?`<div class="mtr-rolar"><table class="mtr-tab">
+          <thead><tr><th>Plano</th><th class="num">Velocidade</th><th class="num">Mensalidade</th><th class="num">Ativações</th><th class="num">Soma mensal</th></tr></thead>
+          <tbody>${c.planos.map((p,i)=>`<tr>
+            <td>${mtrEsc(p.nome)}${i===0?'<span class="mtr-selo">mais vendido</span>':''}</td>
+            <td class="num">${p.vel?p.vel+' Mega':'—'}</td>
+            <td class="num val-monetario">${p.min==null?'—':(p.min===p.max?mtrDin(p.min):mtrDin(p.min)+' a '+mtrDin(p.max))}</td>
+            <td class="num"><span class="mini" style="width:${Math.max(2,p.qtd/c.planos[0].qtd*46)}px"></span>${p.qtd} <span style="color:var(--text3)">(${Math.round(p.qtd/c.total*100)}%)</span></td>
+            <td class="num val-monetario">${mtrDin(p.soma)}</td></tr>`).join('')}</tbody>
+        </table></div>`:'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
+      </div>
+    </div>`;
+  mtrLigarDicas(el);
+}
+function mtrDefMes(m){ MTR.mes = m; MTR.todosBairros = false; mtrPintar(); }
+function mtrIrMes(d){ mtrDefMes(mtrMesSoma(MTR.mes, d)); }
+function mtrDefAtivos(v){ MTR.soAtivos = !!v; mtrPintar(); }
+/* dica ao passar o mouse nas barras */
+function mtrLigarDicas(raiz){
+  let tip = document.getElementById('mtr-tip');
+  if(!tip){ tip = document.createElement('div'); tip.id = 'mtr-tip'; tip.className = 'ebi-tip'; tip.hidden = true; document.body.appendChild(tip); }
+  tip.hidden = true;
+  raiz.querySelectorAll('[data-mtrtip]').forEach(a=>{
+    a.onmousemove = ev => { tip.textContent = a.dataset.mtrtip; tip.hidden = false;
+      const w = tip.offsetWidth, x = Math.min(window.innerWidth - w - 8, ev.clientX + 14);
+      tip.style.left = Math.max(8, x)+'px'; tip.style.top = Math.max(8, ev.clientY - tip.offsetHeight - 12)+'px'; };
+    a.onmouseleave = () => { tip.hidden = true; };
+  });
+}
+</script>
 <script src="/versao.js" data-app="MoviOne" data-canto="centro" defer></script>
 </body>
 </html>

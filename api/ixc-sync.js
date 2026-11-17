@@ -17,6 +17,7 @@
 // A cópia em si (o que lê, o que compara, o que grava) está em
 // _ixc_espelho.js, com o mesmo mapeamento do navegador.
 // ============================================================================
+import { ativacoesDoIxc } from './_ixc_metricas.js';
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
@@ -539,6 +540,13 @@ export default async function handler(req, res) {
     const quem = await quemChama(req);
     if (!quem) return res.status(401).json({ erro: 'sessão expirada: entre de novo no MoviOne' });
     if (!['admin', 'operador'].includes(quem.perfil)) return res.status(403).json({ erro: 'sem acesso à integração com o IXC' });
+    // ---- Métricas recorrentes: lido direto do IXC, na hora ----
+    if (acao === 'metricas.ativacoes') {
+      const prazo = Date.now() + 45e3;
+      const [contratos, planos, clientes] = await Promise.all([ixcTudo('cliente_contrato', prazo), ixcTudo('vd_contratos', prazo), ixcTudo('cliente', prazo)]);
+      return res.status(200).json({ ok: true, lido_em: new Date().toISOString(), contratos: contratos.length,
+        linhas: ativacoesDoIxc({ contratos, planos, clientes }) });
+    }
     const cfg = await lerConfig();
     if (!cfg) return res.status(500).json({ erro: 'falta criar a tabela ixc_sync_config no banco' });
     const comFuncionarios = async st => {
