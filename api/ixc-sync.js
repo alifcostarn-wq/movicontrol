@@ -21,8 +21,9 @@ import { ativacoesDoIxc, bairroLimpo, nomesDosMotivos, saidasDoIxc } from './_ix
 // onde o IXC pode guardar os nomes dos motivos de cancelamento (varia por versão/permissão)
 const MOTIVOS_CANCELAMENTO_IXC = ['cliente_contrato_motivo_cancelamento', 'motivo_cancelamento', 'fn_motivo_cancelamento', 'cliente_contrato_motivos_cancelamento'];
 import crypto from 'crypto';
-import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
-import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
+import { sincronizarTudoDoIxc, sincronizarApoioDoIxc, idValido } from './_ixc_espelho.js';
+import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs,
+  osDoClienteNaAba, historicoDaOs, acaoOsDoEscritorio, ACOES_DO_ESCRITORIO } from './_ixc_os.js';
 import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
 import { sondarIxc } from './_ixc_sondagem.js';
 import { lerFaturasAbertas } from './_ixc_faturas.js';
@@ -466,6 +467,86 @@ async function acaoOnu(acao, b, req, res) {
   }
 }
 
+/* ---- Cadastro do cliente › Ordens de serviço ------------------------------
+   os.cliente   → as OS do cliente no IXC + o que os formulários precisam
+   os.historico → o histórico de uma OS (só se ela for do cliente)
+   os.encaminhar | os.agendar | os.fechar → grava no IXC na hora e relê */
+const MAX_OS_DO_CLIENTE = 100;
+async function listarOsDoCliente(ixcId, prazo) {
+  const [lista, diagnosticos] = await Promise.all([
+    ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id_cliente', query: ixcId, oper: '=', sortname: 'su_oss_chamado.id', sortorder: 'desc' }, { paginas: 1, rp: MAX_OS_DO_CLIENTE, prazo }),
+    ixcListar('su_diagnostico', { qtype: 'su_diagnostico.id', query: '0', oper: '>', sortorder: 'asc' }, { paginas: 1, rp: 200, prazo }).catch(() => ({ registros: [] })),
+  ]);
+  const regs = lista.registros || [];
+  const ids = regs.map(o => idValido(o.id)).filter(Boolean);
+  const [funcs, assuntos, setores, tecs, mt, cfg] = await Promise.all([
+    sb('ixc_funcionarios?select=id,nome,ativo&order=nome.asc&limit=1000').catch(() => []),
+    sb('ixc_assuntos?select=id,assunto&limit=1000').catch(() => []),
+    sb('ixc_setores?select=id,setor&order=setor.asc&limit=300').catch(() => []),
+    sb('campo_tecnicos?ixc_funcionario_id=not.is.null&select=nome,ixc_funcionario_id').catch(() => []),
+    ids.length ? sb(`campo_os?ixc_os_id=in.(${ids.join(',')})&select=id,ixc_os_id,numero,status,tecnico_nome,reagendado_para,reagendado_motivo,solucao,finalizado_em`).catch(() => []) : [],
+    sb('ixc_sync_config?id=eq.1&select=os_fechar_responsavel').catch(() => []),
+  ]);
+  const nomeFunc = new Map((funcs || []).map(f => [String(f.id), f.nome]));
+  const aba = osDoClienteNaAba(regs, {
+    funcionarios: nomeFunc,
+    assuntos: new Map((assuntos || []).map(a => [String(a.id), a.assunto])),
+    setores: new Map((setores || []).map(x => [String(x.id), String(x.setor || '').trim()])),
+    movitec: new Map((mt || []).map(o => [String(o.ixc_os_id), o])),
+  });
+  const doMovitec = new Set((tecs || []).map(t => String(t.ixc_funcionario_id)));
+  return {
+    ok: true, lido_em: new Date().toISOString(), ...aba, limite: regs.length >= MAX_OS_DO_CLIENTE ? MAX_OS_DO_CLIENTE : null,
+    opcoes: {
+      setores: (setores || []).map(x => ({ id: String(x.id), nome: String(x.setor || '').trim() || `Setor #${x.id}` })),
+      // ativos; o técnico do moviTec vem marcado (a OS chega ao celular dele)
+      colaboradores: (funcs || []).filter(f => f.ativo !== false).map(f => ({ id: String(f.id), nome: f.nome, movitec: doMovitec.has(String(f.id)) })),
+      diagnosticos: (diagnosticos.registros || []).filter(x => idValido(x.id) && !['N', 'n', '0'].includes(String(x.ativo ?? 'S')))
+        .map(x => ({ id: String(x.id), nome: String(x.descricao || '').trim() || `Diagnóstico #${x.id}` })),
+      responsavel: idValido(((cfg || [])[0] || {}).os_fechar_responsavel),
+    },
+  };
+}
+
+async function acaoOsDoCliente(acao, b, quem, res) {
+  if (!process.env.IXC_USER || !process.env.IXC_TOKEN) return res.status(500).json({ erro: 'IXC não configurado no servidor (IXC_USER / IXC_TOKEN na Vercel)' });
+  const ixcId = idValido(b.ixc_id);
+  if (!ixcId) return res.status(400).json({ erro: 'este cliente não está vinculado ao IXC' });
+  const prazo = Date.now() + 40e3;
+  try {
+    if (acao === 'os.cliente') return res.status(200).json(await listarOsDoCliente(ixcId, prazo));
+    if (acao === 'os.historico') {
+      const osId = idValido(b.ixc_os_id);
+      if (!osId) return res.status(400).json({ erro: 'falta o número da OS' });
+      const v = await ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: osId, oper: '=' }, { paginas: 1, rp: 1, prazo });
+      const os = (v.registros || [])[0];
+      if (!os || idValido(os.id_cliente) !== ixcId) return res.status(404).json({ erro: 'esta OS não é deste cliente' });
+      const [msgs, eventos, funcs] = await Promise.all([
+        ixcListar('su_oss_chamado_mensagem', { qtype: 'su_oss_chamado_mensagem.id_chamado', query: osId, oper: '=', sortname: 'su_oss_chamado_mensagem.id', sortorder: 'asc' }, { paginas: 1, rp: 200, prazo }),
+        ixcListar('su_oss_evento', { qtype: 'su_oss_evento.id', query: '0', oper: '>', sortorder: 'asc' }, { paginas: 1, rp: 100, prazo }).catch(() => ({ registros: [] })),
+        sb('ixc_funcionarios?select=id,nome&limit=1000').catch(() => []),
+      ]);
+      return res.status(200).json({ ok: true, historico: historicoDaOs(msgs.registros || [], {
+        eventos: new Map((eventos.registros || []).map(e => [String(e.id), String(e.descricao || '').trim()])),
+        funcionarios: new Map((funcs || []).map(f => [String(f.id), f.nome])),
+      }) });
+    }
+    const qual = acao.slice(3);
+    if (!ACOES_DO_ESCRITORIO.includes(qual)) return res.status(400).json({ erro: 'ação desconhecida' });
+    const cfg = await sb('ixc_sync_config?id=eq.1&select=os_fechar_responsavel').then(l => (l || [])[0] || {}).catch(() => ({}));
+    const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), sb };
+    const r = await acaoOsDoEscritorio(io, { acao: qual, ixcOsId: b.ixc_os_id, ixcClienteId: ixcId, dados: b.dados && typeof b.dados === 'object' ? b.dados : {},
+      autor: quem.nome, responsavel: cfg.os_fechar_responsavel });
+    if (!r.ok) return res.status(422).json({ erro: r.erro });
+    // devolve a lista já relida: a tela atualiza sem outra viagem
+    const lista = await listarOsDoCliente(ixcId, Math.max(prazo, Date.now() + 15e3)).catch(() => null);
+    return res.status(200).json({ ok: true, feito: { acao: qual, ixc_os_id: String(b.ixc_os_id), status: r.status }, ...(lista || {}) });
+  } catch (err) {
+    console.error('[ixc-sync os]', acao, String(err.message || err).slice(0, 200));
+    return res.status(502).json({ erro: semDadosDoCliente(err.message || err) });
+  }
+}
+
 // quem está chamando, pela sessão do MoviOne
 async function quemChama(req) {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -556,6 +637,8 @@ export default async function handler(req, res) {
     const quem = await quemChama(req);
     if (!quem) return res.status(401).json({ erro: 'sessão expirada: entre de novo no MoviOne' });
     if (!['admin', 'operador'].includes(quem.perfil)) return res.status(403).json({ erro: 'sem acesso à integração com o IXC' });
+    // ---- cadastro do cliente › Ordens de serviço: lidas e gravadas direto no IXC ----
+    if (acao.startsWith('os.')) return await acaoOsDoCliente(acao, b, quem, res);
     // ---- Métricas recorrentes: lido direto do IXC, na hora ----
     if (acao === 'metricas.ativacoes') {
       const prazo = Date.now() + 45e3;

@@ -636,3 +636,160 @@ export function osDoClienteNoPainel(regs, { funcionarios = new Map(), assuntos =
     itens: [...abertos.sort((a, b) => b._t - a._t), ...fechados].slice(0, max).map(({ _t, ...r }) => r),
   };
 }
+
+// ============================================================================
+// MOVIONE › CADASTRO DO CLIENTE › ORDENS DE SERVIÇO
+// ----------------------------------------------------------------------------
+// A aba lê as OS do cliente direto do IXC e grava lá, NA HORA, o que o
+// escritório faz: encaminhar, agendar e fechar. O corpo de cada ação é o mesmo
+// da fila acima (conferido no IXC da empresa em 06 e 07/11) e a ação só vale
+// se a releitura mostrar o resultado — "salvo com sucesso" sem a OS mudar é
+// falha. Cada ação fica registrada em ixc_acoes (origem movione), já feita ou
+// falha: a fila do agendador não repete nada disso por conta própria.
+// ============================================================================
+export const ACOES_DO_ESCRITORIO = ['encaminhar', 'agendar', 'fechar'];
+export const TURNOS_AGENDA = { manha: ['08:00', '12:00'], tarde: ['13:00', '18:00'], dia: ['08:00', '18:00'] };
+
+const textoDaTela = (v, n) => String(v ?? '').replace(/\r/g, '').replace(/[^\S\n]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, n);
+const DIA_ISO = /^\d{4}-\d{2}-\d{2}$/, HORA_MIN = /^([01]\d|2[0-3]):[0-5]\d$/;
+// 'aaaa-mm-ddThh:mm' (campo da tela, horário daqui) → 'aaaa-mm-dd hh:mm:ss' (IXC)
+const horaDaTela = v => { const m = String(v || '').trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2})?$/); return m ? `${m[1]} ${m[2]}:00` : null; };
+const nomeOu = (mapa, id, rotulo) => (id ? (mapa.get(id) || `${rotulo} #${id}`) : null);
+
+/* Uma OS do IXC para a aba: códigos, nomes (assunto, setor, colaborador),
+   datas, o texto da OS e o do fechamento — o mesmo texto que o técnico já vê
+   no moviTec. Endereço, coordenadas, login e valores ficam no IXC. */
+export function osParaAbaDoCliente(o, { funcionarios = new Map(), assuntos = new Map(), setores = new Map(), movitec = new Map() } = {}) {
+  const st = String(o.status || '').trim().toUpperCase() || null;
+  const tec = idValido(o.id_tecnico), ass = idValido(o.id_assunto), set = idValido(o.setor);
+  const mt = movitec.get(String(o.id)) || null;
+  return {
+    id: String(o.id),
+    status: st,
+    etapa: STATUS_OS_IXC[st] || (['C', 'CA'].includes(st) ? 'Cancelada' : st || 'Sem status'),
+    aberta: !osIxcFechada(st),
+    protocolo: idValido(o.protocolo),
+    assunto_id: ass, assunto: nomeOu(assuntos, ass, 'Assunto'),
+    setor_id: set, setor: nomeOu(setores, set, 'Setor'),
+    tecnico_id: tec, tecnico: nomeOu(funcionarios, tec, 'Colaborador'),
+    prioridade: PRIORIDADE_IXC[String(o.prioridade || '').trim().toUpperCase()] || null,
+    abertura: horaIxcIso(o.data_abertura),
+    // a data da agenda fica gravada depois de a OS seguir: só vale agendada
+    agenda: ['AG', 'RAG'].includes(st) ? horaIxcIso(o.data_agenda) : null,
+    agenda_fim: ['AG', 'RAG'].includes(st) ? horaIxcIso(o.data_agenda_final) : null,
+    fechamento: osIxcFechada(st) ? horaIxcIso(o.data_fechamento) : null,
+    prazo: horaIxcIso(o.data_prazo_limite),
+    descricao: textoIxc(o.mensagem).slice(0, 3000) || null,
+    resposta: textoIxc(o.mensagem_resposta).slice(0, 3000) || null,
+    movitec: mt ? {
+      id: mt.id, numero: mt.numero || null, status: mt.status || null, tecnico: mt.tecnico_nome || null,
+      reagendado_para: mt.reagendado_para || null, motivo: mt.reagendado_motivo ? String(mt.reagendado_motivo).slice(0, 160) : null,
+      solucao: mt.solucao ? String(mt.solucao).slice(0, 400) : null, finalizado_em: mt.finalizado_em || null,
+    } : null,
+  };
+}
+
+/* As OS do cliente para a aba: abertas primeiro, cada grupo da mais nova para a mais antiga. */
+export function osDoClienteNaAba(regs, nomes = {}, { max = 80 } = {}) {
+  const itens = (regs || []).filter(o => o && idValido(o.id)).map(o => osParaAbaDoCliente(o, nomes));
+  const t = i => Date.parse(i.abertura || '') || Number(i.id);
+  const abertas = itens.filter(i => i.aberta).sort((a, b) => t(b) - t(a));
+  const fechadas = itens.filter(i => !i.aberta).sort((a, b) => t(b) - t(a));
+  return { abertas: abertas.length, total: itens.length, itens: [...abertas, ...fechadas].slice(0, max) };
+}
+
+/* Histórico da OS (su_oss_chamado_mensagem): quando, o evento, o status, o
+   colaborador e a mensagem. O operador do IXC fica de fora (a tabela de
+   usuários de lá tem senha e e-mail). */
+export function historicoDaOs(regs, { eventos = new Map(), funcionarios = new Map() } = {}) {
+  return (regs || []).filter(m => m && idValido(m.id)).map(m => {
+    const st = String(m.status || '').trim().toUpperCase() || null;
+    const tec = idValido(m.id_tecnico), ev = idValido(m.id_evento);
+    return {
+      id: String(m.id), quando: horaIxcIso(m.data),
+      evento: ev ? (eventos.get(ev) || null) : null,
+      status: st, etapa: st ? (STATUS_OS_IXC[st] || st) : null,
+      tecnico: nomeOu(funcionarios, tec, 'Colaborador'),
+      inicio: horaIxcIso(m.data_inicio), fim: horaIxcIso(m.data_final),
+      mensagem: textoIxc(m.mensagem).slice(0, 1500) || null,
+    };
+  }).sort((a, b) => (Date.parse(a.quando || '') || 0) - (Date.parse(b.quando || '') || 0) || Number(a.id) - Number(b.id));
+}
+
+/* Encaminhar, agendar ou fechar uma OS do cliente, pelo MoviOne.
+   dados: { id_tecnico, id_setor, data, turno, hora_ini, hora_fim, mensagem,
+   inicio, fim, id_diagnostico }. `responsavel` = colaborador padrão do
+   fechamento (configuração do MoviOne). */
+export async function acaoOsDoEscritorio(io, { acao, ixcOsId, ixcClienteId, dados = {}, autor = null, responsavel = null, agora = new Date() } = {}) {
+  if (!ACOES_DO_ESCRITORIO.includes(acao)) return { ok: false, erro: 'ação inválida' };
+  const osId = idValido(ixcOsId), cliId = idValido(ixcClienteId);
+  if (!osId || !cliId) return { ok: false, erro: 'falta o número da OS ou do cliente' };
+  const ler = () => io.ixcListar('su_oss_chamado', { qtype: 'su_oss_chamado.id', query: osId, oper: '=' }, { paginas: 1, rp: 1 });
+  const v = await ler();
+  const atual = (v && v.registros && v.registros[0]) || null;
+  if (!atual) return { ok: false, erro: 'a OS não foi encontrada no IXC' };
+  if (idValido(atual.id_cliente) !== cliId) return { ok: false, erro: 'esta OS não é deste cliente' };
+  if (osIxcFechada(atual.status)) return { ok: false, erro: 'esta OS já está finalizada no IXC' };
+  const def = ACOES_IXC[acao];
+  const quem = textoDaTela(autor, 60);
+  const texto = textoDaTela(dados.mensagem, 1500);
+  const assinatura = verbo => `${verbo} pelo MoviOne${quem ? ' — ' + quem : ''}.`;
+  const agoraIxc = horaParaIxc(agora.getTime()), hoje = agoraIxc.slice(0, 10);
+  const corpo = { id_chamado: osId, ...(def.padrao || {}) };
+  if (acao === 'encaminhar') {
+    const tec = idValido(dados.id_tecnico);
+    if (!tec) return { ok: false, erro: 'escolha o colaborador que vai receber a OS' };
+    const setor = idValido(dados.id_setor) || idValido(atual.setor);
+    if (!setor) return { ok: false, erro: 'escolha o setor' };
+    Object.assign(corpo, { id_setor: setor, id_assunto: idValido(atual.id_assunto) || '', id_tecnico: tec,
+      mensagem: texto ? `${texto}\n\n${assinatura('Encaminhada')}` : assinatura('Encaminhada') });
+  } else if (acao === 'agendar') {
+    const dia = String(dados.data || '').trim();
+    if (!DIA_ISO.test(dia)) return { ok: false, erro: 'escolha o dia da visita' };
+    if (dia < hoje) return { ok: false, erro: 'esse dia já passou' };
+    const turno = TURNOS_AGENDA[dados.turno] || TURNOS_AGENDA.dia;
+    const ini = HORA_MIN.test(String(dados.hora_ini || '')) ? String(dados.hora_ini) : turno[0];
+    const fim = HORA_MIN.test(String(dados.hora_fim || '')) ? String(dados.hora_fim) : turno[1];
+    if (fim <= ini) return { ok: false, erro: 'a hora final precisa ser depois da inicial' };
+    if (dia === hoje && fim <= agoraIxc.slice(11, 16)) return { ok: false, erro: 'esse horário de hoje já passou' };
+    const tec = idValido(dados.id_tecnico) || idValido(atual.id_tecnico);
+    if (!tec) return { ok: false, erro: 'escolha o colaborador da visita' };
+    Object.assign(corpo, { data_agendamento: dataReagendar(`${dia} ${ini}:00`), data_agendamento_final: dataReagendar(`${dia} ${fim}:00`), id_tecnico: tec,
+      mensagem: texto ? `${texto}\n\n${assinatura('Agendada')}` : assinatura('Agendada') });
+    // como o formulário do IXC manda (conferido em 06/11, OS 20148)
+    for (const k of ['id_resposta', 'id_equipe', 'data', 'id_evento', 'id_compromisso', 'latitude', 'longitude', 'gps_time']) if (corpo[k] == null) corpo[k] = '';
+  } else {
+    if (texto.length < 3) return { ok: false, erro: 'escreva a solução: o que foi feito' };
+    const tec = idValido(dados.id_tecnico) || idValido(atual.id_tecnico) || idValido(responsavel);
+    if (!tec) return { ok: false, erro: 'escolha o colaborador responsável pelo fechamento' };
+    const fim = horaDaTela(dados.fim) || agoraIxc;
+    const ini = horaDaTela(dados.inicio) || fim;
+    if (ini > fim) return { ok: false, erro: 'o início precisa ser antes do fim' };
+    if (fim > horaParaIxc(agora.getTime() + 5 * 60e3)) return { ok: false, erro: 'o fim não pode ficar no futuro' };
+    Object.assign(corpo, { data_inicio: ini, data_final: fim, id_tecnico: tec, mensagem: `${texto}\n\n${assinatura('Fechada')}` });
+    if (idValido(dados.id_diagnostico)) corpo.id_su_diagnostico = idValido(dados.id_diagnostico);
+  }
+  let d = null, erro = null, rel = null;
+  try { d = await io.ixcGravar(def.endpoint, corpo); }
+  catch (err) { erro = msg(err).replace(/^IXC:\s*/, 'o IXC recusou: '); }
+  if (!erro) {
+    const r = await ler().catch(() => null);
+    rel = (r && r.registros && r.registros[0]) || null;
+    const st = rel ? String(rel.status || '').trim().toUpperCase() : null;
+    const tecOk = acao === 'encaminhar' && rel && idValido(rel.id_tecnico) === corpo.id_tecnico;
+    if (!rel) erro = 'a OS não apareceu no IXC depois da ação';
+    else if (def.status && !def.status.includes(st) && !tecOk) erro = `o IXC respondeu, mas a OS ficou ${STATUS_OS_IXC[st] || st || 'sem status'}`;
+  }
+  erro = erro ? textoIxc(erro).slice(0, 300) : null;
+  // só códigos e o status relido: nada de dado de cliente
+  const resposta = {
+    tipo: (d && d.type) || null, mensagem: d && d.message ? textoIxc(d.message).slice(0, 300) : null,
+    status: rel ? String(rel.status || '').trim().toUpperCase() : null, id_tecnico: rel ? idValido(rel.id_tecnico) : null,
+    data_agenda: rel ? ixcHora(rel.data_agenda) : null, setor: rel ? idValido(rel.setor) : null,
+  };
+  await io.sb('ixc_acoes', { method: 'POST', prefer: 'return=minimal', body: {
+    acao, ixc_os_id: osId, ixc_cliente_id: cliId, origem: 'movione', status: erro ? 'falhou' : 'feita', tentativas: 1,
+    dados: { corpo, autor: quem || null }, resposta, erro, feita_em: erro ? null : agora.toISOString(),
+  } }).catch(() => {});
+  return erro ? { ok: false, erro } : { ok: true, status: resposta.status, registro: rel };
+}
