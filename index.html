@@ -30156,7 +30156,7 @@ function mtrPintar(){
       <div class="mtr-tile"><div class="k">Plano mais vendido</div><div class="n txt">${mv?mtrEsc(mv.nome):'—'}</div>
         <div class="s">${mv?`${mv.qtd} ativaç${mv.qtd===1?'ão':'ões'} · ${Math.round(mv.qtd/c.total*100)}% do mês${mv.min!=null?' · '+(mv.min===mv.max?mtrDin(mv.min):mtrDin(mv.min)+' a '+mtrDin(mv.max)):''}`:'sem ativações no mês'}</div></div>
       <div class="mtr-tile"><div class="k">Receita mensal nova</div><div class="n val-monetario">${mtrDin(c.receita)}</div>
-        <div class="s">valor final, já com desconto · ticket médio <span class="val-monetario">${mtrDin(c.ticket)}</span>${Math.abs(c.receitaTabela-c.receita)>0.005?`<br>pela tabela seria <span class="val-monetario">${mtrDin(c.receitaTabela)}</span>`:''}</div></div>
+        <div class="s">valor final, já com desconto · ticket médio <span class="val-monetario">${mtrDin(c.ticket)}</span></div></div>
     </div>
 
     <div class="mtr-grade">
@@ -30179,14 +30179,13 @@ function mtrPintar(){
         ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
       </div>
       <div class="mtr-card">
-        <h3>Planos ativados e valores</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.planos.length} plano${c.planos.length===1?'':'s'} · valor final = tabela − descontos + acréscimos do contrato</div>
+        <h3>Planos ativados e valores</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.planos.length} plano${c.planos.length===1?'':'s'} · valores finais, já com desconto</div>
         ${c.planos.length?`<div class="mtr-rolar"><table class="mtr-tab">
-          <thead><tr><th>Plano</th><th class="num">Velocidade</th><th class="num">Tabela</th><th class="num" title="Valor de tabela menos os descontos e mais os acréscimos do contrato em vigor hoje">Valor final</th><th class="num">Ativações</th><th class="num">Soma mensal</th></tr></thead>
+          <thead><tr><th>Plano</th><th class="num">Velocidade</th><th class="num" title="Valor final do contrato, já com os descontos">Valor final</th><th class="num">Ativações</th><th class="num">Soma mensal</th></tr></thead>
           <tbody>${c.planos.map((p,i)=>`<tr>
             <td>${mtrEsc(p.nome)}${i===0?'<span class="mtr-selo">mais vendido</span>':''}</td>
             <td class="num">${p.vel?p.vel+' Mega':'—'}</td>
-            <td class="num val-monetario">${p.tab==null?'—':mtrDin(p.tab)}</td>
-            <td class="num"><span class="val-monetario">${p.min==null?'—':(p.min===p.max?mtrDin(p.min):mtrDin(p.min)+' a '+mtrDin(p.max))}</span>${p.comDesc?`<br><span style="font-size:11px;color:var(--text3)">${p.comDesc} com desconto</span>`:''}</td>
+            <td class="num val-monetario">${p.min==null?'—':(p.min===p.max?mtrDin(p.min):mtrDin(p.min)+' a '+mtrDin(p.max))}</td>
             <td class="num"><span class="mini" style="width:${Math.max(2,p.qtd/c.planos[0].qtd*46)}px"></span>${p.qtd} <span style="color:var(--text3)">(${Math.round(p.qtd/c.total*100)}%)</span></td>
             <td class="num val-monetario">${mtrDin(p.soma)}</td></tr>`).join('')}</tbody>
         </table></div>`:'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
