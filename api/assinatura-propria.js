@@ -15,6 +15,7 @@
 import { AwsClient } from 'aws4fetch';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import crypto from 'crypto';
+import { avisarAssinaturas } from './atendimento.js';
 
 // maxDuration: assinar é a parte cara. Para CADA documento do lote o servidor
 // baixa o original do R2, refaz o PDF com a página de certificado (pdf-lib) e
@@ -23,6 +24,16 @@ import crypto from 'crypto';
 // tirado a selfie. sizeLimit: a selfie e os PDFs viajam em base64, que passa
 // folgado do 1MB padrão.
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } }, maxDuration: 60 };
+
+/* Assinou: avisa a equipe no MoviTalk e manda a via assinada ao cliente pelo
+   WhatsApp (atendimento.js › avisarAssinaturas). Nunca segura a resposta ao
+   cliente por mais de 15 s nem derruba a assinatura: o que não sair aqui o
+   monitor do WhatsApp manda depois. */
+async function avisarDepoisDeAssinar(loteId) {
+  try {
+    await Promise.race([avisarAssinaturas({ loteId }), new Promise(r => setTimeout(r, 15000))]);
+  } catch (err) { console.error('[assinatura] aviso da assinatura:', err && err.message); }
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -504,6 +515,7 @@ function soNomeDeLugar(v) {
           selfieBase64: selfie_base64, geo, origem: 'link_whatsapp'
         });
         if (r.erro) return res.status(r.status || 500).json({ ok: false, error: r.erro });
+        if (!r.ja_assinado) await avisarDepoisDeAssinar(lote.id);
         return res.status(200).json({ ok: true, ja_assinado: !!r.ja_assinado, codigo_verificacao: r.codigo_verificacao });
       }
 
@@ -548,6 +560,7 @@ function soNomeDeLugar(v) {
         });
         if (r.erro) return res.status(r.status || 500).json({ ok: false, error: r.erro });
         if (r.ja_assinado) return res.status(200).json({ ok: true, ja_assinado: true, codigo_verificacao: r.codigo_verificacao });
+        await avisarDepoisDeAssinar(lote_id);
         return res.status(200).json({ ok: true, codigo_verificacao: r.codigo_verificacao });
       }
 

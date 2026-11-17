@@ -506,6 +506,8 @@ mark.achou.atual{background:var(--orange-fill);color:#fff;}
   letter-spacing:.03em;margin-bottom:4px;}
 .m-recado .rec-x{font-size:13px;line-height:1.5;color:var(--text);white-space:normal;}
 .m-recado .rec-h{font-size:10px;color:#7a5a10;margin-top:5px;}
+.m-recado.m-assin{background:var(--green-soft);border-color:var(--green-line);border-left-color:var(--green-deep);}
+.m-recado.m-assin .rec-t,.m-recado.m-assin .rec-h{color:var(--green-deep);}
 /* fim de atendimento: a linha que fecha a conversa e a separa da próxima vez
    que o cliente escrever. É para ser vista de relance — por isso atravessa a
    thread de ponta a ponta, e não é mais uma pílula cinza no meio */
@@ -3297,6 +3299,8 @@ body.dark-mode .bb-btn:hover{background:rgba(255,255,255,.06);}
 body.dark-mode .bb-btn.transf:hover{background:#1e3a5f;}
 body.dark-mode .m-recado{background:#2f2610;border-color:#6b5414;border-left-color:#f0b429;}
 body.dark-mode .m-recado .rec-t{color:#fcd34d;}
+body.dark-mode .m-recado.m-assin{background:#12382a;border-color:#1f6b47;border-left-color:#4ade80;}
+body.dark-mode .m-recado.m-assin .rec-t,body.dark-mode .m-recado.m-assin .rec-h{color:#86efac;}
 body.dark-mode .m-recado .rec-h{color:#d6b25e;}
 body.dark-mode .inst-aviso{border-color:#7f2d2d;}
 body.dark-mode .av-at:hover{background:#174a33;}
@@ -4111,7 +4115,13 @@ async function recarregarConversas(){
       // lista (que roda de minuto em minuto) seria desperdício puro
       nova.asn = antiga.asn;
       nova._asnCarregado = antiga._asnCarregado;
+      nova._asnEm = antiga._asnEm;
       nova.asnErro = antiga.asnErro;
+      // com contrato pendente na tela, relê quando o servidor diz que mudou
+      // (assinou, cancelou) ou a cada 1 min — antes o painel ficava "pendente"
+      // até alguém recarregar a página, mesmo com o cliente já tendo assinado
+      const temPendente = antiga.asn && (antiga.asn.lotes || []).some(l => l.status === 'pendente');
+      if (temPendente && (antiga.asnPendente !== nova.asnPendente || Date.now() - (antiga._asnEm || 0) > 60000)) nova._asnCarregado = false;
       // o rascunho NÃO é copiado aqui de propósito: ele mora em RASCUNHOS,
       // fora dos objetos de conversa, justamente porque esta troca acontecia no
       // meio da digitação e levava embora o que tinha sido escrito depois
@@ -4138,6 +4148,19 @@ async function recarregarConversas(){
   }
   renderAll();
   conferirFila();
+  asnReler();
+}
+/* conversa aberta com assinatura a reler: busca de novo e só redesenha se algo mudou */
+function asnReler(){
+  const c = modalId != null ? state.conversas.find(x => x.id === modalId) : null;
+  if(!c || !c.clienteVinculado || !c.asn || c._asnCarregado || c._asnRelendo) return;
+  const marca = x => JSON.stringify(((x && x.lotes) || []).map(l => [l.id, l.status, l.link_aberto_em || null]));
+  const antes = marca(c.asn);
+  c._asnRelendo = true;
+  carregarAssinaturas(c)
+    .then(() => { c._asnCarregado = true; if(marca(c.asn) !== antes && modalId === c.id) openModal(c.id); })
+    .catch(() => {})
+    .finally(() => { c._asnRelendo = false; });
 }
 
 /* ═══════════ HISTÓRICO DE CONVERSAS: páginas e busca no servidor ═══════════
@@ -6060,6 +6083,7 @@ function dataHora(iso){
 async function carregarAssinaturas(c){
   const j = await asnChamar('listar_lotes', { cliente_ixc_id: c.clienteVinculado.id });
   c.asn = { lotes: j.lotes || [] };
+  c._asnEm = Date.now();
   c.asnErro = null;
   return c.asn;
 }
@@ -10431,9 +10455,16 @@ function openModal(id){
         // fim de atendimento (quem encerrou e o que o cliente recebeu): a
         // primeira linha é o título, o resto é o detalhe
         if(m.t==='sys' && m.origem==='encerramento') return sep + faixaFim(m.x, m.h);
+        // o cliente assinou: aviso da equipe que não pode passar batido
+        if(m.t==='sys' && m.origem==='assinatura'){
+          return sep + `<div class="m-recado m-assin" role="note">
+            <div class="rec-t">✍️ Assinatura de contrato</div>
+            <div class="rec-x">${fmtWA(esc(m.x)).replace(/\n/g,'<br>')}</div>
+            <div class="rec-h">🔒 só a equipe vê${m.h?' · '+esc(m.h):''}</div></div>`;
+        }
         return sep + (m.t==='sys'
         ?`<div class="m-sys">${esc(m.x)}</div>`
-        :`<div class="mb ${m.t}${reac.porMsg.has(m.id)?' com-reac':''}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?'<span class="bt">● Bot</span>':''}${
+        :`<div class="mb ${m.t}${reac.porMsg.has(m.id)?' com-reac':''}" ${m.id?`data-msgid="${m.id}"`:''}>${m.t==='bot'?(m.origem==='assinatura'?'<span class="bt" title="Enviada sozinha quando o cliente assinou">✍️ Automática · assinatura</span>':'<span class="bt">● Bot</span>'):''}${
             // o cliente recebe tudo pelo mesmo número; aqui dentro, quem
             // atende precisa saber que quem falou foi o técnico em campo
             m.origem==='movitec'?`<span class="bt tec" title="Aviso enviado pelo aplicativo dos técnicos">🔧 ${esc(m.autorNome||'Técnico')} · MoviTec</span>`:''}${

@@ -19,6 +19,7 @@
 //     sem token, sem número e sem nome de ninguém.
 // ============================================================================
 import crypto from 'crypto';
+import { avisarAssinaturas } from './atendimento.js';
 
 export const config = { maxDuration: 30 };
 
@@ -294,6 +295,12 @@ export async function verificar({ agora = new Date() } = {}) {
   upd.alerta = parado ? { desde, estado, motivo: estado === 'indisponivel' ? 'servidor da Evolution sem resposta' : (diag && diag.queda_motivo) || null }
     : travadaSemJeito ? { desde: travada.desde, estado: 'travada', motivo: 'a sessão aparece conectada, mas não entrega nem recebe, e o reinício automático não resolveu: desconecte e leia o QR Code de novo (o que foi enviado nesse período é reenviado quando voltar)' }
     : null;
+
+  // contrato assinado cujo aviso não saiu na hora (WhatsApp fora, lento): tenta de novo
+  if (estado === 'open' && !travada) {
+    try { await Promise.race([avisarAssinaturas({ limite: 2, agora }), new Promise(r => setTimeout(r, 12000))]); }
+    catch (err) { console.error('[monitor] aviso de assinatura:', err && err.message); }
+  }
 
   for (const a of acoes) await sb('atend_whatsapp_conexao', { method: 'POST', prefer: 'return=minimal', body: a });
   await sb('atend_whatsapp_monitor?id=eq.1', { method: 'PATCH', prefer: 'return=minimal', body: upd });

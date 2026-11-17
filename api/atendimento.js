@@ -4997,6 +4997,140 @@ async function tratarEdicaoRecebida(e, ed) {
 
    Falha aqui não derruba a lista de conversas: sem a marca o painel volta a
    ser o que era, com a lista inteira; sem a lista não há atendimento. */
+// ============================================================================
+// ASSINATURA CONCLUÍDA → aviso à equipe e ao cliente
+// ----------------------------------------------------------------------------
+// Quando o cliente assinava (link do WhatsApp ou MoviApp), a assinatura era
+// gravada e mais nada: ninguém na equipe ficava sabendo, e o cliente ficava sem
+// a via dele. Agora, na conversa mais recente do cliente no MoviTalk:
+//   1. uma linha do sistema "✍️ Contrato assinado pelo cliente…" — a conversa
+//      sobe na lista e ganha 1 não lida (uma vez só: aviso_equipe_em);
+//   2. o cliente recebe pelo WhatsApp a confirmação e a via assinada em PDF
+//      (aviso_enviado_em). O PDF na conversa aponta para o mesmo arquivo do R2.
+// Um lote é reservado antes do envio (aviso_reservado_em): a chamada da própria
+// assinatura e a do monitor do WhatsApp nunca avisam o mesmo lote duas vezes.
+// Falhou o WhatsApp: a reserva cai e o monitor tenta de novo, até 5 vezes, só
+// para assinaturas dos últimos 2 dias. Assinatura marcada pela equipe (gov.br,
+// papel) não gera aviso.
+// ============================================================================
+export const AVISO_ASSINATURA_TENTATIVAS = 5;
+const AVISO_RESERVA_MS = 3 * 60e3;
+const ORIGEM_ASSINATURA = { link_whatsapp: 'pelo link do WhatsApp', moviapp: 'pelo MoviApp' };
+function primeiroNomeCliente(...nomes) {
+  const n = nomes.map(x => String(x || '').trim()).find(Boolean) || '';
+  const p = n.split(/\s+/)[0] || '';
+  return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : '';
+}
+function nomeArquivoAssinado(nome) {
+  const base = String(nome || 'documento').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'documento';
+  return base + '_assinado.pdf';
+}
+async function r2Ler(e, chave) {
+  const { cli, base } = r2Cliente(e);
+  const r = await cli.fetch(`${base}/${chave}`, { method: 'GET' });
+  if (!r.ok) throw new Error(`não achei a via assinada no armazenamento (R2 ${r.status})`);
+  return Buffer.from(await r.arrayBuffer());
+}
+export function textoAvisoAssinatura({ primeiro, docs, codigo }) {
+  const lista = docs.map(d => `• ${d.documento_nome || 'Documento'}`).join('\n');
+  const varios = docs.length > 1;
+  return `✅ *Assinatura recebida!*\n\n${primeiro ? `Obrigado, ${primeiro}! ` : 'Obrigado! '}Recebemos a sua assinatura ${varios ? 'dos documentos' : 'do documento'}:\n${lista}`
+    + `${codigo ? `\n\nCódigo de verificação: *${codigo}*` : ''}\n\n${varios ? 'Seguem as suas vias assinadas' : 'Segue a sua via assinada'}. Guarde para consultar quando quiser. 💚`;
+}
+async function avisarUmaAssinatura(e, l, agora) {
+  const origem = (l.dados_confirmados && l.dados_confirmados.origem) || null;
+  const [cli, docs] = await Promise.all([
+    sbUm(e, `clientes?id=eq.${Number(l.cliente_id)}&select=ixc_id,nome,razao,nome_social`),
+    sb(e, `contratos_assinatura?lote_id=eq.${Number(l.id)}&select=id,documento_nome,documento_assinado_url&order=id.asc`),
+  ]);
+  const ixc = cli && cli.ixc_id ? String(cli.ixc_id) : '';
+  const conversa = ixc ? await sbUm(e, `atend_conversas?cliente_ixc_id=eq.${encodeURIComponent(ixc)}&deleted_at=is.null`
+    + '&select=id,contato_fone,contato_nome,nao_lidas&order=ultima_msg_em.desc.nullslast&limit=1') : null;
+  if (!conversa) return { conversa: null, enviado: false, motivo: 'cliente sem conversa no MoviTalk' };
+  const lista = (docs || []);
+  const nomes = lista.map(d => d.documento_nome || 'Documento').join(', ') || 'contrato';
+  const quando = new Date(l.assinado_em || agora).toLocaleString('pt-BR', { timeZone: 'America/Fortaleza', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+  // 1) a equipe: linha do sistema na conversa, uma vez só
+  if (!l.aviso_equipe_em) {
+    const txt = `✍️ Contrato assinado pelo cliente: ${nomes} · ${quando} · ${ORIGEM_ASSINATURA[origem] || 'pelo sistema de assinatura'}`
+      + (l.codigo_verificacao ? ` · código ${l.codigo_verificacao}` : '');
+    await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+      body: { conversa_id: conversa.id, direcao: 'sys', origem: 'assinatura', autor_nome: 'Assinatura', conteudo: txt } });
+    await sb(e, `atend_conversas?id=eq.${conversa.id}`, { method: 'PATCH', prefer: 'return=minimal',
+      body: { ultima_msg: ('✍️ Contrato assinado: ' + nomes).slice(0, 200), ultima_msg_em: agora.toISOString(), nao_lidas: (Number(conversa.nao_lidas) || 0) + 1 } });
+    await sb(e, `assinatura_lotes?id=eq.${Number(l.id)}`, { method: 'PATCH', prefer: 'return=minimal', body: { aviso_equipe_em: agora.toISOString() } });
+  }
+
+  // 2) o cliente: confirmação + via(s) assinada(s) pelo WhatsApp
+  const fone = conversa.contato_fone;
+  if (!fone) throw new Error('a conversa do cliente não tem telefone');
+  const texto = textoAvisoAssinatura({ primeiro: primeiroNomeCliente(cli && cli.nome_social, cli && cli.nome, cli && cli.razao, conversa.contato_nome), docs: lista, codigo: l.codigo_verificacao });
+  const r1 = await waEnviar(e, fone, texto);
+  await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+    body: { conversa_id: conversa.id, direcao: 'bot', origem: 'assinatura', tipo: 'texto', conteudo: texto, wa_id: idDaEvolution(r1), status: 'enviado' } });
+  let pdfs = 0;
+  for (const d of lista) {
+    if (!d.documento_assinado_url) continue;
+    const bytes = await r2Ler(e, d.documento_assinado_url);
+    const leg = `${d.documento_nome || 'Documento'} (assinado)`;
+    await new Promise(r => setTimeout(r, 700));
+    const r2 = await waEnviarMidia(e, fone, { base64: bytes.toString('base64'), tipo: 'document', mimetype: 'application/pdf',
+      nomeArquivo: nomeArquivoAssinado(d.documento_nome), legenda: leg });
+    await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+      body: { conversa_id: conversa.id, direcao: 'bot', origem: 'assinatura', tipo: 'documento', conteudo: leg,
+        wa_id: idDaEvolution(r2), status: 'enviado', midia_url: R2_PREFIXO + d.documento_assinado_url } });
+    pdfs++;
+  }
+  return { conversa: conversa.id, enviado: true, pdfs };
+}
+/* loteId: avisa só esse (chamada logo depois da assinatura). Sem loteId: as
+   assinaturas recentes que ainda não foram avisadas (monitor do WhatsApp). */
+export async function avisarAssinaturas({ loteId = null, limite = 3, agora = new Date() } = {}) {
+  const e = env();
+  if (!e.SRV) return [];
+  const ts = agora.toISOString();
+  const desde = new Date(agora.getTime() - 2 * 864e5).toISOString();
+  const livre = new Date(agora.getTime() - AVISO_RESERVA_MS).toISOString();
+  const filtro = loteId ? `id=eq.${Number(loteId)}` : `assinado_em=gte.${encodeURIComponent(desde)}&aviso_tentativas=lt.${AVISO_ASSINATURA_TENTATIVAS}`;
+  const lotes = await sb(e, `assinatura_lotes?status=eq.assinado&aviso_enviado_em=is.null&${filtro}`
+    + `&select=id,cliente_id,assinado_em,codigo_verificacao,dados_confirmados,aviso_equipe_em,aviso_tentativas&order=assinado_em.asc&limit=${loteId ? 1 : Math.max(1, Math.min(10, limite))}`) || [];
+  const feitos = [];
+  for (const l of lotes) {
+    if (l.dados_confirmados && l.dados_confirmados.origem === 'externa') {
+      await sb(e, `assinatura_lotes?id=eq.${l.id}`, { method: 'PATCH', prefer: 'return=minimal', body: { aviso_enviado_em: ts, aviso_erro: 'marcada pela equipe: sem aviso' } });
+      continue;
+    }
+    // reserva: só quem conseguir marcar o lote segue
+    const res = await sb(e, `assinatura_lotes?id=eq.${l.id}&aviso_enviado_em=is.null&or=(aviso_reservado_em.is.null,aviso_reservado_em.lt.${encodeURIComponent(livre)})`,
+      { method: 'PATCH', prefer: 'return=representation', body: { aviso_reservado_em: ts } });
+    if (!Array.isArray(res) || !res.length) continue;
+    try {
+      const r = await avisarUmaAssinatura(e, l, agora);
+      await sb(e, `assinatura_lotes?id=eq.${l.id}`, { method: 'PATCH', prefer: 'return=minimal',
+        body: { aviso_enviado_em: new Date().toISOString(), aviso_reservado_em: null, aviso_erro: r.enviado ? null : r.motivo || null } });
+      feitos.push({ lote: l.id, ...r });
+    } catch (err) {
+      const tent = (Number(l.aviso_tentativas) || 0) + 1;
+      const msg = String((err && err.message) || err).slice(0, 300);
+      await sb(e, `assinatura_lotes?id=eq.${l.id}`, { method: 'PATCH', prefer: 'return=minimal',
+        body: { aviso_reservado_em: null, aviso_tentativas: tent, aviso_erro: msg } }).catch(() => {});
+      // última tentativa: a equipe fica sabendo que a via não foi ao cliente
+      if (tent >= AVISO_ASSINATURA_TENTATIVAS) {
+        try {
+          const cli = await sbUm(e, `clientes?id=eq.${Number(l.cliente_id)}&select=ixc_id`);
+          const conv = cli && cli.ixc_id ? await sbUm(e, `atend_conversas?cliente_ixc_id=eq.${encodeURIComponent(String(cli.ixc_id))}&deleted_at=is.null&select=id&order=ultima_msg_em.desc.nullslast&limit=1`) : null;
+          if (conv) await sb(e, 'atend_mensagens', { method: 'POST', prefer: 'return=minimal',
+            body: { conversa_id: conv.id, direcao: 'sys', origem: 'assinatura', autor_nome: 'Assinatura', conteudo: `⚠️ Não consegui mandar ao cliente a via assinada pelo WhatsApp (${msg.slice(0, 120)}). Envie pelo painel de assinaturas da conversa.` } });
+        } catch { /* só aviso */ }
+      }
+      feitos.push({ lote: l.id, erro: msg });
+    }
+  }
+  return feitos;
+}
+
 async function marcarAssinaturaPendente(e, conversas) {
   const comCliente = (conversas || []).filter(c => c && c.cliente_ixc_id);
   if (!comCliente.length) return conversas;
