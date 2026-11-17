@@ -2605,6 +2605,7 @@ body.dark-mode .reg-trj-et.assumiu{--trj-c:#d95926}body.dark-mode .reg-trj-et.ch
 .reg-trj-seta{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 2px;color:var(--text3);font-size:11px}
 .reg-trj-seta b{font-size:13px;color:var(--text);white-space:nowrap}
 .reg-trj-seta b::before{content:"→ ";color:var(--text3);font-weight:400}
+.reg-trj-et small.reg-trj-falha{color:var(--warn);font-weight:600}
 .reg-trj-num{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--text3);margin:10px 0 6px}
 .reg-trj-num b{color:var(--text)}
 .reg-trj-alerta{font-size:12px;border-radius:9px;padding:7px 10px;margin-top:6px;line-height:1.4}
@@ -20142,29 +20143,38 @@ function regTrajetoCalc(o, d){
       if(tA && tF){ const a = Math.max(q.t, tA), b = Math.min(p.t, tF); if(b > a) coberto += b - a; }
     }
   }
-  const as = marco('assumiu'), ch = marco('chegou'), fi = marco('finalizou');
+  // posição de cada etapa: a gravada na OS no momento do botão; sem ela, o marco do trajeto
+  const naOs = (lat, lng, acc) => lat != null && lng != null ? { lat: +lat, lng: +lng, acc: acc != null ? +acc : null } : null;
+  const as = naOs(o.assumido_lat, o.assumido_lng, o.assumido_precisao) || marco('assumiu');
+  const ch = naOs(o.executando_lat, o.executando_lng, o.executando_precisao) || marco('chegou');
+  const fi = naOs(o.fin_lat, o.fin_lng, o.fin_precisao) || marco('finalizou');
+  const semSinal = [['assumido_gps', 'assumir'], ['executando_gps', '"cheguei"'], ['fin_gps', 'finalizar']].filter(([c]) => o[c] === 'sem_sinal').map(([, n]) => n);
   const dRef = p => (p && ref) ? regDist(p, ref) : null;
   // a chegada que o GPS viu: o primeiro ponto a até 150 m do local, depois de assumir
   const chegadaGps = ref ? (pts.find(p => (!tA || p.t >= tA - 60e3) && regDist(p, ref) <= 150) || null) : null;
   const alertas = [];
-  if(!pts.length) alertas.push({ tipo: 'info', txt: 'Sem registro de trajeto nesta visita: ela é anterior ao registro, ou o moviTec ficou fechado (ou sem permissão de localização) durante o atendimento.' });
+  if(semSinal.length) alertas.push({ tipo: 'aviso', txt: `Seguiu sem GPS ao ${semSinal.join(', ao ')}: o celular não conseguiu a localização e o técnico continuou assim mesmo.` });
+  if(!pts.length && !as && !ch) alertas.push({ tipo: 'info', txt: 'Sem GPS nesta visita: ela é anterior ao registro da localização nas etapas, ou foi marcada fora do moviTec.' });
+  else if(!pts.length) alertas.push({ tipo: 'info', txt: 'Sem trajeto entre as etapas: o moviTec ficou fechado ou em segundo plano durante o atendimento.' });
   if(as && ref && dRef(as) <= 200) alertas.push({ tipo: 'aviso', txt: `Assumiu a OS já no local do atendimento (a ${regDistTxt(dRef(as))}): o deslocamento não foi medido pelos botões.` });
   else if(tA && tC && tC - tA < 2 * 60e3) alertas.push({ tipo: 'aviso', txt: `Assumiu e marcou "cheguei" com ${regDurTxt(tC - tA)} de diferença: o deslocamento não foi medido pelos botões.` });
   if(ch && ref && dRef(ch) > 300) alertas.push({ tipo: 'aviso', txt: `Marcou "cheguei" a ${regDistTxt(dRef(ch))} do local do atendimento.` });
   if(chegadaGps && tC && Math.abs(chegadaGps.t - tC) > 10 * 60e3) alertas.push({ tipo: 'info', txt: `Pelo GPS chegou ao local às ${regHora(chegadaGps.t)}; o "cheguei" foi marcado às ${regHora(tC)}.` });
-  return { pts, ref, as, ch, fi, tA, tC, tF, kmGps, kmSem, trechos, chegadaGps, alertas,
+  return { pts, ref, as, ch, fi, tA, tC, tF, kmGps, kmSem, trechos, chegadaGps, alertas, o,
     cobertura: tA && tF && tF > tA && pts.length ? Math.min(1, coberto / (tF - tA)) : null,
     dAs: dRef(as), dCh: dRef(ch), dFi: dRef(fi) };
 }
 function regTrajetoHtml(t){
-  const et = (ico, rot, tm, dist, cls, nota) => `<div class="reg-trj-et ${cls}"><span class="reg-trj-ico" aria-hidden="true">${ico}</span><b>${rot}</b><span class="reg-trj-h">${regHora(tm)}</span><small>${nota || (dist != null ? 'a ' + regDistTxt(dist) + ' do local' : 'sem GPS nesta etapa')}</small></div>`;
+  const o = t.o || {};
+  const prec = p => p && p.acc != null && p.acc > 100 ? ` · precisão ±${regDistTxt(p.acc)}` : '';
+  const et = (ico, rot, tm, dist, cls, nota, p, falhou) => `<div class="reg-trj-et ${cls}"><span class="reg-trj-ico" aria-hidden="true">${ico}</span><b>${rot}</b><span class="reg-trj-h">${regHora(tm)}</span><small${falhou ? ' class="reg-trj-falha"' : ''}>${falhou ? '⚠️ seguiu sem GPS (sem sinal)' : (nota || (dist != null ? 'a ' + regDistTxt(dist) + ' do local' : p ? 'GPS registrado' : 'sem GPS nesta etapa')) + prec(p)}</small></div>`;
   // finalizou É o local de referência quando há GPS da finalização: "a 0 m" não diz nada
   const notaFim = t.ref && t.ref.de === 'onde a OS foi finalizada' ? 'é o local de referência do atendimento' : null;
   const seta = (ms, rot) => `<div class="reg-trj-seta" aria-hidden="false"><b>${regDurTxt(ms)}</b><small>${rot}</small></div>`;
   return `<div class="reg-trj-etapas">
-      ${et('✋', 'Assumiu', t.tA, t.dAs, 'assumiu')}${seta(t.tA && t.tC ? t.tC - t.tA : null, 'deslocamento')}
-      ${et('📍', 'Chegou', t.tC, t.dCh, 'chegou')}${seta(t.tC && t.tF ? t.tF - t.tC : null, 'no local')}
-      ${et('✅', 'Finalizou', t.tF, t.dFi, 'finalizou', notaFim)}
+      ${et('✋', 'Assumiu', t.tA, t.dAs, 'assumiu', null, t.as, o.assumido_gps === 'sem_sinal')}${seta(t.tA && t.tC ? t.tC - t.tA : null, 'deslocamento')}
+      ${et('📍', 'Chegou', t.tC, t.dCh, 'chegou', null, t.ch, o.executando_gps === 'sem_sinal')}${seta(t.tC && t.tF ? t.tF - t.tC : null, 'no local')}
+      ${et('✅', 'Finalizou', t.tF, t.dFi, 'finalizou', t.fi ? notaFim : null, t.fi, o.fin_gps === 'sem_sinal')}
     </div>
     <div class="reg-trj-num">
       <span><b>${regDurTxt(t.tA && t.tF ? t.tF - t.tA : null)}</b> do assumir ao finalizar</span>
@@ -20174,7 +20184,7 @@ function regTrajetoHtml(t){
       ${t.chegadaGps ? `<span>chegada ao local pelo GPS: <b>${regHora(t.chegadaGps.t)}</b></span>` : ''}
     </div>
     ${t.alertas.map(a => `<div class="reg-trj-alerta ${a.tipo}" role="note">${a.tipo === 'aviso' ? '⚠️' : 'ℹ️'} ${regEsc(a.txt)}</div>`).join('')}
-    ${t.pts.length || t.ref ? `<div class="reg-trj-mapa" id="reg-trj-mapa" aria-label="Mapa do trajeto"></div>
+    ${t.pts.length || t.ref || t.as || t.ch ? `<div class="reg-trj-mapa" id="reg-trj-mapa" aria-label="Mapa do trajeto"></div>
     <div class="reg-trj-leg"><span><i class="rota"></i>trajeto com GPS</span><span><i class="sem"></i>sem registro</span>
       <span><i class="pt assumiu"></i>assumiu</span><span><i class="pt chegou"></i>chegou</span><span><i class="pt finalizou"></i>finalizou</span>
       ${t.ref ? `<span><i class="ref"></i>local do atendimento (${regEsc(t.ref.de)})</span>` : ''}</div>` : ''}`;
@@ -20238,11 +20248,15 @@ async function regCarregarTrajeto(o){
   if(REG.sel !== o.id) return;
   const t = regTrajetoCalc(o, d);
   el.innerHTML = regTrajetoHtml(t);
-  if(t.pts.length || t.ref) regTrajetoMapa(t, o.id);
+  if(t.pts.length || t.ref || t.as || t.ch) regTrajetoMapa(t, o.id);
 }
 /* mediana, para o resumo não ser puxado por uma OS esquecida aberta */
 function regMediana(v){ const a = v.filter(x => x != null && isFinite(x) && x >= 0).sort((x, y) => x - y); if(!a.length) return null; const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; }
 const regNoLocal = o => { const a = Date.parse(o.executando_em || ''), b = Date.parse(o.finalizado_em || ''); return a && b && b >= a ? b - a : null; };
+/* assumiu já no local do atendimento (até 200 m de onde finalizou) */
+const regAssumiuNoLocal = o => o.assumido_lat != null && o.fin_lat != null && (o.fin_precisao == null || o.fin_precisao <= 150)
+  && regDist({ lat: +o.assumido_lat, lng: +o.assumido_lng }, { lat: +o.fin_lat, lng: +o.fin_lng }) <= 200;
+const regSemSinal = o => ['assumido_gps', 'executando_gps', 'fin_gps'].some(c => o[c] === 'sem_sinal');
 const regDesloc = o => { const a = Date.parse(o.assumido_em || ''), b = Date.parse(o.executando_em || ''); return a && b && b >= a ? b - a : null; };
 
 function regFiltroMudou(){ clearTimeout(REG._t); REG._t = setTimeout(renderRegistros, 120); }
@@ -20261,7 +20275,7 @@ function renderRegistros(){
     el.innerHTML = lista.length ? lista.map(o => `<button type="button" class="reg-item ${o.id === REG.sel ? 'sel' : ''}" role="listitem" aria-current="${o.id === REG.sel}" onclick="regEscolher(${Number(o.id)})">
         <div class="reg-l1"><span>${regEsc(o.cliente || 'Cliente')}</span><span class="reg-data">${regData(o.finalizado_em)}</span></div>
         <div class="reg-l2">OS ${regEsc(o.numero || o.id)}${regIxc(o) ? ' · IXC ' + regEsc(regIxc(o)) : ''} · ${regEsc(o.tecnico_nome || 'sem técnico')}${o.descricao ? ' · ' + regEsc(String(o.descricao).slice(0, 60)) : ''}</div>
-        <div class="reg-tags">${o.assinatura_path ? '<span class="reg-tag ok">✍️ Assinada</span>' : '<span class="reg-tag falta">Sem assinatura</span>'}${regQtdFotos(o) ? `<span class="reg-tag">📷 ${regQtdFotos(o)} foto${regQtdFotos(o) > 1 ? 's' : ''}</span>` : '<span class="reg-tag">Sem fotos</span>'}${regNoLocal(o) != null ? `<span class="reg-tag">⏱️ ${regDurTxt(regNoLocal(o))} no local</span>` : ''}</div>
+        <div class="reg-tags">${o.assinatura_path ? '<span class="reg-tag ok">✍️ Assinada</span>' : '<span class="reg-tag falta">Sem assinatura</span>'}${regQtdFotos(o) ? `<span class="reg-tag">📷 ${regQtdFotos(o)} foto${regQtdFotos(o) > 1 ? 's' : ''}</span>` : '<span class="reg-tag">Sem fotos</span>'}${regNoLocal(o) != null ? `<span class="reg-tag">⏱️ ${regDurTxt(regNoLocal(o))} no local</span>` : ''}${regAssumiuNoLocal(o) ? '<span class="reg-tag falta" title="Assumiu a OS a até 200 m de onde finalizou: o deslocamento não foi medido">⚠️ Assumiu no local</span>' : ''}${regSemSinal(o) ? '<span class="reg-tag falta" title="O técnico seguiu sem GPS em alguma etapa">📍 Sem GPS</span>' : ''}</div>
       </button>`).join('')
       : '<div class="reg-vazio" style="margin:14px">Nenhuma visita finalizada com esse filtro.</div>';
   }

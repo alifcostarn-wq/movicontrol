@@ -68,6 +68,12 @@ body{font-family:'Inter Tight','DM Sans',system-ui,sans-serif;background:var(--b
 .topbar-brand .marca-ico{width:28px;height:28px;border-radius:8px;display:block;flex-shrink:0}
 .topbar-right{display:flex;align-items:center;gap:6px}
 /* aviso do registro do trajeto (OS em andamento) */
+.gps-st{display:flex;gap:14px;align-items:flex-start;font-size:13px;color:var(--tx2);line-height:1.45;margin-bottom:6px}
+.gps-st b{color:var(--tx)}
+.gps-radar{width:34px;height:34px;border-radius:50%;flex-shrink:0;background:var(--blu-bg);position:relative}
+.gps-radar::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--blu);animation:gpsRadar 1.4s ease-out infinite}
+@keyframes gpsRadar{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.9);opacity:0}}
+@media (prefers-reduced-motion:reduce){.gps-radar::after{animation:none}}
 .trj-aviso{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--blu-bg);color:var(--blu);border-bottom:1px solid var(--bd);font-size:12px;line-height:1.35;flex-shrink:0}
 .trj-aviso[hidden]{display:none}
 .trj-aviso.erro{background:var(--red-bg);color:var(--red)}
@@ -830,6 +836,18 @@ body.dk .btn-red{background:#C42B27}  /* o vermelho do tema escuro é claro dema
   </div>
 </div>
 
+<!-- SHEET: GPS DA ETAPA (assumir, cheguei, finalizar) -->
+<div class="ov" id="ov-gps">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="gps-titulo">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-title" id="gps-titulo">📍 Localização</div>
+      <div class="sheet-sub" id="gps-sub">—</div>
+    </div>
+    <div class="sheet-body" id="gps-body"></div>
+  </div>
+</div>
+
 <!-- SHEET: FICHA DA CTO -->
 <div class="ov" id="ov-cto" onclick="if(event.target===this)fecharCTO()">
   <div class="sheet">
@@ -975,7 +993,7 @@ const SB_KEY = 'sb_publishable_sJbQFk74Yhxw9Mnt6r3Piw_ahaydtFQ';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 
 let _tec = null, _os = [], _fil = '', _aberta = null, _proxyUrl = '', _ixcUrl = '', _ixcToken = '', _ixcUser = '';
-let _subEstoqueId = null, _meuEstoque = [], _meusSeriais = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os', _finGeo = null;
+let _subEstoqueId = null, _meuEstoque = [], _meusSeriais = [], _finPecas = [], _finEquip = [], _zx = null, _track = null, _view = 'os', _finGeo = null, _finSemGps = null;
 
 /* ---- UTILS ---- */
 const $  = id => document.getElementById(id);
@@ -2019,6 +2037,84 @@ window.addEventListener('offline', trjPintar);
 setInterval(() => { if(_tec) trjEnviar(); }, 30000);
 trjCarregarFila();
 
+/* ============================================================
+   📍 GPS OBRIGATÓRIO NAS ETAPAS DA OS
+   Assumir, "cheguei" e finalizar só seguem com a localização do técnico
+   naquele momento, gravada na própria OS (assumido_*, executando_*, fin_*).
+   O escritório vê no MoviOne onde cada etapa foi marcada.
+   - Localização bloqueada: não segue (o técnico precisa liberar).
+   - Sem sinal de GPS: tenta de novo; se ainda assim não vier, pode seguir
+     sem GPS, e a OS fica marcada "sem sinal" para o escritório ver.
+   Espera até 25 s pela melhor leitura; sai antes se a precisão for boa.
+   ============================================================ */
+const GPS_ETAPA_NOMES = { assumir:'Assumir a OS', cheguei:'Cheguei', finalizar:'Finalizar a OS' };
+let _gpsEtapa = null;
+function gpsLer(ms){
+  return new Promise(res => {
+    if(!navigator.geolocation) return res({ erro:'indisponivel' });
+    let melhor = null, fim = false, id = null;
+    const acabar = r => { if(fim) return; fim = true; try{ if(id != null) navigator.geolocation.clearWatch(id); }catch(e){} clearTimeout(tm); res(r); };
+    const tm = setTimeout(() => acabar(melhor ? { pos: melhor } : { erro:'sem_sinal' }), ms);
+    try{
+      id = navigator.geolocation.watchPosition(p => {
+        if(!melhor || p.coords.accuracy < melhor.coords.accuracy) melhor = p;
+        if(p.coords.accuracy <= 50) acabar({ pos: p });
+      }, e => { if(e && e.code === 1) acabar({ erro:'negado' }); }, { enableHighAccuracy:true, maximumAge:30000, timeout:ms });
+    }catch(e){ acabar({ erro:'indisponivel' }); }
+  });
+}
+function gpsPintar(estado){
+  const b = $('gps-body'); if(!b || !_gpsEtapa) return;
+  const nome = GPS_ETAPA_NOMES[_gpsEtapa.etapa] || 'esta etapa';
+  if(estado === 'lendo'){
+    b.innerHTML = `<div class="gps-st"><span class="gps-radar" aria-hidden="true"></span><div><b>Pegando sua localização…</b><br><span>Para registrar <b>${_escR(nome)}</b>. Fique com o celular desbloqueado, de preferência fora de casa ou perto de uma janela.</span></div></div>
+      <button class="btn-full" style="background:var(--sf2);color:var(--tx2)" onclick="gpsCancelar()">Cancelar</button>`;
+  } else if(estado === 'negado'){
+    b.innerHTML = `<div class="alert red" role="alert" style="margin-top:0">📍 <b>Localização bloqueada.</b> Para ${_escR(nome.toLowerCase())} o moviTec precisa da sua localização. Libere a localização do navegador para este site (no cadeado ao lado do endereço ou nas configurações do celular) e tente de novo.</div>
+      <button class="btn-full btn-green" onclick="gpsTentar()">📡 Tentar de novo</button>
+      <button class="btn-full" style="background:var(--sf2);color:var(--tx2)" onclick="gpsCancelar()">Cancelar</button>`;
+  } else {
+    b.innerHTML = `<div class="alert warn" role="alert" style="margin-top:0">📡 <b>Não consegui o GPS.</b> O celular não achou o sinal. Vá para um lugar aberto e tente de novo.</div>
+      <button class="btn-full btn-green" onclick="gpsTentar()">📡 Tentar de novo</button>
+      ${_gpsEtapa.tentativas >= 2 ? `<button class="btn-full" style="background:var(--sf2);color:var(--tx)" onclick="gpsSemSinal()">Seguir sem GPS</button>
+      <div style="font-size:11.5px;color:var(--tx3);margin-top:6px;line-height:1.4">A OS fica marcada "sem sinal de GPS" para o escritório.</div>` : ''}
+      <button class="btn-full" style="background:var(--sf2);color:var(--tx2)" onclick="gpsCancelar()">Cancelar</button>`;
+  }
+}
+async function gpsTentar(){
+  if(!_gpsEtapa) return;
+  const ctx = _gpsEtapa; ctx.tentativas++;
+  gpsPintar('lendo');
+  const r = await gpsLer(window.__gpsEsperaMs || 25000);
+  if(_gpsEtapa !== ctx) return;                       // cancelado no meio
+  if(r.pos){ const c = r.pos.coords; return gpsFechar({ lat:c.latitude, lng:c.longitude, acc: Math.round(c.accuracy || 0) }); }
+  gpsPintar(r.erro === 'negado' ? 'negado' : 'sem_sinal');
+}
+function gpsFechar(resultado){
+  const ctx = _gpsEtapa; _gpsEtapa = null;
+  $('ov-gps')?.classList.remove('open');
+  if(ctx) ctx.resolver(resultado);
+}
+function gpsCancelar(){ gpsFechar(null); }
+function gpsSemSinal(){ gpsFechar({ semGps:'sem_sinal' }); }
+/* devolve {lat,lng,acc}, {semGps:'sem_sinal'} ou null (cancelou) */
+function gpsDaEtapa(etapa, os){
+  if(_gpsEtapa) gpsFechar(null);
+  return new Promise(resolver => {
+    _gpsEtapa = { etapa, resolver, tentativas: 0 };
+    $('gps-titulo').textContent = '📍 ' + (GPS_ETAPA_NOMES[etapa] || 'Localização');
+    $('gps-sub').textContent = os ? `OS #${String(os.numero || os.id || '').padStart(4, '0')} — ${os.cliente || '—'}` : '';
+    $('ov-gps').classList.add('open');
+    gpsTentar();
+  });
+}
+/* campos da OS para a etapa ('assumido' ou 'executando') */
+function gpsCampos(prefixo, g){
+  if(!g) return {};
+  if(g.semGps) return { [prefixo + '_gps']: g.semGps, [prefixo + '_lat']: null, [prefixo + '_lng']: null, [prefixo + '_precisao']: null };
+  return { [prefixo + '_lat']: g.lat, [prefixo + '_lng']: g.lng, [prefixo + '_precisao']: g.acc, [prefixo + '_gps']: null };
+}
+
 function iniciarTelaRota(){
   // Se já há rota calculada nesta sessão, re-renderiza com status atualizado
   if(_rotaState.paradas.length){ _renderRota(); _renderMapaRota(); return; }
@@ -2669,14 +2765,20 @@ function render(){
 /* ---- AÇÃO RÁPIDA ---- */
 async function rapido(evt, id, status){
   evt.stopPropagation();
-  const campos = status==='assumida'   ? {status,assumido_em:new Date().toISOString()} :
-                 status==='executando'  ? {status,executando_em:new Date().toISOString()} :
+  // GPS obrigatório: onde o técnico estava ao assumir / ao marcar "cheguei"
+  let g = null;
+  if(status==='assumida' || status==='executando'){
+    g = await gpsDaEtapa(status==='assumida' ? 'assumir' : 'cheguei', _os.find(x=>x.id==id));
+    if(!g) return;
+  }
+  const campos = status==='assumida'   ? {status,assumido_em:new Date().toISOString(), ...gpsCampos('assumido', g)} :
+                 status==='executando'  ? {status,executando_em:new Date().toISOString(), ...gpsCampos('executando', g)} :
                  {status};
   ld(true);
   const {error} = await sb.from('campo_os').update(campos).eq('id',id);
   ld(false);
   if(error){ toast('Erro: '+error.message); return; }
-  if(status==='assumida' || status==='executando') trjMarco(id, status==='assumida' ? 'assumiu' : 'chegou');
+  if(g && g.lat != null) trjMarco(id, status==='assumida' ? 'assumiu' : 'chegou', g);
   await atualizar(false, true);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Executando!'}[status]||'Atualizado!');
   // Aviso automático ao cliente (WhatsApp)
@@ -3148,14 +3250,20 @@ async function _carregarEquipDet(osId){
 
 /* ---- AÇÃO RÁPIDA NA ROTA (substitui rapido() para OS da rota) ---- */
 async function rapidoRota(id, status){
-  const campos = status==='assumida'   ? {status,assumido_em:new Date().toISOString()} :
-                 status==='executando'  ? {status,executando_em:new Date().toISOString()} :
+  // GPS obrigatório: onde o técnico estava ao assumir / ao marcar "cheguei"
+  let g = null;
+  if(status==='assumida' || status==='executando'){
+    g = await gpsDaEtapa(status==='assumida' ? 'assumir' : 'cheguei', _os.find(x=>x.id==id));
+    if(!g) return;
+  }
+  const campos = status==='assumida'   ? {status,assumido_em:new Date().toISOString(), ...gpsCampos('assumido', g)} :
+                 status==='executando'  ? {status,executando_em:new Date().toISOString(), ...gpsCampos('executando', g)} :
                  {status};
   ld(true);
   const {error} = await sb.from('campo_os').update(campos).eq('id',id);
   ld(false);
   if(error){ toast('Erro: '+error.message); return; }
-  if(status==='assumida' || status==='executando') trjMarco(id, status==='assumida' ? 'assumiu' : 'chegou');
+  if(g && g.lat != null) trjMarco(id, status==='assumida' ? 'assumiu' : 'chegou', g);
   await atualizar(false, false);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Em execução!'}[status]||'Atualizado!');
   const _osNotif = _os.find(x=>x.id==id);
@@ -4685,6 +4793,14 @@ async function confirmarFin(){
   if(!sol){ toast('⚠️ Descreva o que foi feito.'); return; }
   if(_finEquip.length===0){ toast('⚠️ Registre ao menos 1 equipamento (MAC ou nº de série).'); return; }
   if(!_assinaTem){ toast('✍️ Colete a assinatura do cliente para finalizar.'); return; }
+  // GPS obrigatório ao finalizar: usa a leitura feita ao abrir a tela; sem ela, pede agora
+  _finSemGps = null;
+  if(!_finGeo || _finGeo.lat == null){
+    const g = await gpsDaEtapa('finalizar', _aberta);
+    if(!g) return;
+    if(g.semGps) _finSemGps = g.semGps;
+    else { _finGeo = { lat: g.lat, lng: g.lng, acc: g.acc }; const st = $('fin-geo-status'); if(st){ st.className='geo-status ok'; st.textContent=`📍 Localização capturada (±${g.acc} m)`; } }
+  }
 
   const btn = $('btn-fin');
   btn.disabled=true; btn.textContent='Finalizando...';
@@ -4739,6 +4855,7 @@ async function confirmarFin(){
       fin_lat: _finGeo?_finGeo.lat:null,
       fin_lng: _finGeo?_finGeo.lng:null,
       fin_precisao: _finGeo?_finGeo.acc:null,
+      fin_gps: _finGeo ? null : (_finSemGps || null),
       finalizado_em: new Date().toISOString(),
       assinatura_path: _assinaPath,
       assinatura_em: new Date().toISOString(),
