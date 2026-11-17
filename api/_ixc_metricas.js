@@ -1,9 +1,9 @@
 // ============================================================================
 // MÉTRICAS RECORRENTES — leitura DIRETA do IXC (não usa a cópia do MoviOne)
 // ----------------------------------------------------------------------------
-// Ativações mensais: uma linha enxuta por contrato —
-// mês, bairro, plano, velocidade, valor FINAL (tabela − descontos + acréscimos
-// do contrato em vigor) e situação. Nada de nome, documento,
+// Ativações e cancelamentos: uma linha enxuta por contrato — datas de
+// ativação e saída, motivo (código), bairro, plano, velocidade, valor FINAL
+// e situação. Nada de nome, documento,
 // endereço ou senha: o cadastro do cliente só passa pela memória para dar o
 // bairro e é reduzido a { id → bairro } assim que chega.
 // ============================================================================
@@ -31,42 +31,63 @@ export function valorDeTabela(planos = [], produtos = []) {
   return m;
 }
 
-/* Σ por contrato dos descontos (ou acréscimos) em vigor hoje. O IXC grava o
-   valor em reais; registro só com percentual é aplicado sobre o valor de tabela. */
-function ajustesPorContrato(regs = [], hoje, tabelaDoContrato) {
+/* Descontos (ou acréscimos) de cada contrato, com a validade. A soma é feita
+   numa data de referência: hoje para quem está ativo, o dia da saída para quem
+   saiu — assim a "receita perdida" é o que o cliente pagava quando saiu. O IXC
+   grava o valor em reais; registro só com percentual vale sobre a tabela. */
+function ajustesPorContrato(regs = []) {
   const m = new Map();
   for (const d of regs) {
     const k = idValido(d.id_contrato);
-    if (!k || !emVigor(d.data_validade, hoje)) continue;
-    const v = num(d.valor) || (num(d.percentual) / 100) * (tabelaDoContrato.get(k) || 0);
-    if (v > 0) m.set(k, (m.get(k) || 0) + v);
+    if (!k) continue;
+    (m.get(k) || m.set(k, []).get(k)).push({ valor: num(d.valor), perc: num(d.percentual), validade: d.data_validade });
   }
   return m;
 }
+const somaEm = (lista, ref, tabela) => (lista || []).reduce((s, d) => emVigor(d.validade, ref) ? s + (d.valor || (d.perc / 100) * tabela) : s, 0);
+
+/* Quando o contrato deixou de ser ativo: cancelado (I), desistência (D) ou
+   negativado (N). Contrato ativo não tem saída; sem data no IXC fica null. */
+export function dataDeSaida(r) {
+  const st = String(r.status || '').toUpperCase();
+  if (st === 'A' || st === 'P' || !st) return null;
+  const ordem = st === 'D' ? [r.data_desistencia, r.data_cancelamento]
+    : st === 'N' ? [r.data_negativacao, r.data_cancelamento, r.data_acesso_desativado]
+      : [r.data_cancelamento, r.data_desistencia, r.data_acesso_desativado];
+  for (const v of ordem) { const d = ixcData(v); if (d) return d; }
+  return null;
+}
 
 /* regs = registros crus do IXC: { contratos, planos (vd_contratos), clientes,
-   produtos (vd_contratos_produtos), descontos, acrescimos }.
-   r = valor FINAL da mensalidade (tabela − descontos + acréscimos em vigor);
-   t = valor de tabela do plano. */
+   produtos (vd_contratos_produtos), descontos, acrescimos }. Por contrato:
+     m  mês da ativação (null sem data)     a  data da ativação
+     x  data da saída (cancelado, desistência, negativado; null se ativo ou sem data)
+     k  código do motivo (cancelamento, ou desistência com prefixo "d")
+     r  valor FINAL da mensalidade (tabela − descontos + acréscimos em vigor
+        hoje, ou no dia da saída para quem saiu)     t  valor de tabela */
 export function ativacoesDoIxc({ contratos = [], planos = [], clientes = [], produtos = [], descontos = [], acrescimos = [], hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' }) } = {}) {
   const bairroDoCliente = new Map();
   for (const c of clientes) bairroDoCliente.set(String(c.id), bairroLimpo(c.bairro));
   const pv = planosDoIxc(planos);
   const tabela = valorDeTabela(planos, produtos);
-  const tabelaDoContrato = new Map(contratos.map(r => [String(r.id), tabela.get(String(r.id_vd_contrato || '')) || 0]));
-  const desc = ajustesPorContrato(descontos, hoje, tabelaDoContrato);
-  const acr = ajustesPorContrato(acrescimos, hoje, tabelaDoContrato);
+  const desc = ajustesPorContrato(descontos), acr = ajustesPorContrato(acrescimos);
   const linhas = [];
   for (const r of contratos) {
     const l = linhaContratoDoIxc(r, null, pv);
     // contrato com endereço próprio (instalado em outro lugar) vale o bairro dele
     const proprio = String(r.endereco_padrao_cliente || '').toUpperCase() === 'N' ? bairroLimpo(r.bairro) : null;
     const id = String(r.id);
-    const cheio = tabelaDoContrato.get(id) || l.valor || 0;
-    const final = Math.max(0, centavos(cheio - (desc.get(id) || 0) + (acr.get(id) || 0)));
+    const cheio = tabela.get(String(r.id_vd_contrato || '')) || l.valor || 0;
+    const saida = dataDeSaida(r);
+    const ref = saida && saida < hoje ? saida : hoje;
+    const final = Math.max(0, centavos(cheio - somaEm(desc.get(id), ref, cheio) + somaEm(acr.get(id), ref, cheio)));
+    const st = String(r.status || '').toUpperCase();
+    const mc = idValido(r.motivo_cancelamento), md = idValido(r.motivo_desistencia);
     linhas.push({
-      // sem data de ativação não entra em mês nenhum, mas conta na base ativa do bairro
       m: l.data_ativacao ? String(l.data_ativacao).slice(0, 7) : null,
+      a: l.data_ativacao || null,
+      x: saida,
+      k: st === 'D' ? (md ? 'd' + md : (mc || null)) : (st && st !== 'A' ? (mc || null) : null),
       b: proprio || bairroDoCliente.get(String(r.id_cliente)) || null,
       p: String(l.plano || '').trim() || null,
       v: l.velocidade_mbps || null,
@@ -76,4 +97,13 @@ export function ativacoesDoIxc({ contratos = [], planos = [], clientes = [], pro
     });
   }
   return linhas;
+}
+
+/* Nomes dos motivos: { id → texto }. Desistência vem com prefixo "d". */
+export function nomesDosMotivos(cancelamento = [], desistencia = []) {
+  const m = {};
+  const nome = x => String(x.descricao || x.motivo || x.nome || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  for (const x of cancelamento) { const id = idValido(x.id); if (id && nome(x)) m[id] = nome(x); }
+  for (const x of desistencia) { const id = idValido(x.id); if (id && nome(x)) m['d' + id] = nome(x); }
+  return m;
 }

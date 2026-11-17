@@ -5926,7 +5926,8 @@ body.dark-mode .fatixc-saldo{color:#7FB8F0}
 
     <div class="page" id="page-metricas">
       <div class="main-tabs" style="margin-bottom:18px">
-        <button class="main-tab active">📈 Ativações mensais</button>
+        <button class="main-tab active" id="mtr-aba-ativacoes" onclick="mtrDefAba('ativacoes')">📈 Ativações mensais</button>
+        <button class="main-tab" id="mtr-aba-cancelamentos" onclick="mtrDefAba('cancelamentos')">📉 Cancelamentos</button>
       </div>
       <div id="mtr-conteudo"></div>
     </div>
@@ -30043,6 +30044,8 @@ async function asnExcluirModelo(id){
 #page-metricas [data-cor="laranja"]{--mc:#eb6834}
 #page-metricas [data-cor="verde"]{--mc:#1baf7a}
 #page-metricas [data-cor="violeta"]{--mc:#6250d6}
+#page-metricas [data-cor="vermelho"]{--mc:#e34948}
+body.dark-mode #page-metricas [data-cor="vermelho"]{--mc:#e66767}
 body.dark-mode #page-metricas [data-cor="azul"]{--mc:#3987e5}
 body.dark-mode #page-metricas [data-cor="laranja"]{--mc:#d95926}
 body.dark-mode #page-metricas [data-cor="verde"]{--mc:#199e70}
@@ -30074,6 +30077,7 @@ body.dark-mode #page-metricas{--mtr-sobe:#3fc23f;--mtr-desce:#f08a8a}
 .mtr-tile[data-cor] .k{display:flex;align-items:center;gap:9px;font-size:12px}
 .mtr-tile[data-cor] .mtr-ico{width:30px;height:30px;font-size:15px;background:color-mix(in srgb,var(--mc) 22%,var(--surface))}
 .mtr-tile.heroi{background:linear-gradient(150deg,#2a78d6,#184f95);border-color:transparent;color:#fff}
+.mtr-tile.heroi[data-cor="vermelho"]{background:linear-gradient(150deg,#c63a39,#8f1f1f)}
 .mtr-tile.heroi .k,.mtr-tile.heroi .n,.mtr-tile.heroi .s{color:#fff}
 .mtr-tile.heroi .n{font-size:38px}
 .mtr-tile.heroi .mtr-ico{background:rgba(255,255,255,.2)}
@@ -30111,7 +30115,7 @@ body.dark-mode #page-metricas{--mtr-sobe:#3fc23f;--mtr-desce:#f08a8a}
 .mtr-rolar{overflow-x:auto}
 </style>
 <script>
-const MTR = { fechados:(()=>{ try{ return JSON.parse(localStorage.getItem('mtr_fechados')||'{}'); }catch(e){ return {}; } })(), linhas:null, brutas:null, juntos:{}, lidoEm:null, mes:null, comparar:'anterior', soAtivos:false, todosBairros:false, carregando:false, erro:null };
+const MTR = { aba:'ativacoes', mesC:null, tipoC:'todos', compararC:'anterior', motivos:{}, fechados:(()=>{ try{ return JSON.parse(localStorage.getItem('mtr_fechados')||'{}'); }catch(e){ return {}; } })(), linhas:null, brutas:null, juntos:{}, lidoEm:null, mes:null, comparar:'anterior', soAtivos:false, todosBairros:false, carregando:false, erro:null };
 const MTR_MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function mtrMesNome(m, longo){ const [a,b] = m.split('-'); return longo ? ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][+b-1]+' de '+a : MTR_MESES[+b-1]+'/'+a.slice(2); }
 function mtrMesSoma(m, d){ const [a,b] = m.split('-').map(Number); const t = a*12 + (b-1) + d; return Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0'); }
@@ -30201,15 +30205,22 @@ function mtrBairros(base){
 async function mtrCarregar(forcar){
   if(MTR.carregando) return;
   if(MTR.linhas && !forcar) return;
-  MTR.carregando = true; MTR.erro = null; mtrPintar();
+  MTR.carregando = true; MTR.erro = null; mtrPintarAba();
   try{
     const j = await ixaAPI('metricas.ativacoes', {}, 58000);
-    MTR.brutas = j.linhas || []; MTR.juntos = j.bairros_juntos || {}; mtrAplicarJuntos(); MTR.lidoEm = j.lido_em || new Date().toISOString();
+    MTR.brutas = j.linhas || []; MTR.juntos = j.bairros_juntos || {}; MTR.motivos = j.motivos || {}; mtrAplicarJuntos(); MTR.lidoEm = j.lido_em || new Date().toISOString();
     if(!MTR.mes) MTR.mes = mtrMesAtual();
   }catch(e){ MTR.erro = e.message || String(e); }
-  MTR.carregando = false; mtrPintar();
+  MTR.carregando = false; mtrPintarAba();
 }
-function renderMetricas(){ mtrPintar(); mtrCarregar(false); }
+function renderMetricas(){ mtrPintarAba(); mtrCarregar(false); }
+/* qual aba está na frente: ativações ou cancelamentos (a leitura do IXC é a mesma) */
+function mtrPintarAba(){
+  document.getElementById('mtr-aba-ativacoes')?.classList.toggle('active', MTR.aba === 'ativacoes');
+  document.getElementById('mtr-aba-cancelamentos')?.classList.toggle('active', MTR.aba === 'cancelamentos');
+  if(MTR.aba === 'cancelamentos' && MTR.linhas) mtrPintarCanc(); else mtrPintar();
+}
+function mtrDefAba(a){ MTR.aba = a; MTR.todosBairros = false; mtrPintarAba(); }
 
 function mtrBarras(lista, total, limite){
   if(!lista.length) return '<div class="mtr-vazio">Nenhuma ativação neste mês.</div>';
@@ -30399,7 +30410,7 @@ function mtrDefMes(m){ MTR.mes = m; MTR.todosBairros = false; mtrPintar(); }
 function mtrIrMes(d){ mtrDefMes(mtrMesSoma(MTR.mes, d)); }
 function mtrDefAtivos(v){ MTR.soAtivos = !!v; mtrPintar(); }
 function mtrDefComparar(v){ MTR.comparar = v; mtrPintar(); }
-function mtrAlternarModulo(id){ MTR.fechados[id] = !MTR.fechados[id]; try{ localStorage.setItem('mtr_fechados', JSON.stringify(MTR.fechados)); }catch(e){} mtrPintar(); }
+function mtrAlternarModulo(id){ MTR.fechados[id] = !MTR.fechados[id]; try{ localStorage.setItem('mtr_fechados', JSON.stringify(MTR.fechados)); }catch(e){} mtrPintarAba(); }
 
 /* ---- Juntar bairros: o mesmo lugar escrito de jeitos diferentes ---- */
 function mtrAbrirJuntar(){
@@ -30430,10 +30441,267 @@ async function mtrJuntar(de, para, sel){
   if(sel) sel.disabled = true;
   try{
     const r = await ixaAPI('metricas.bairro_juntar', { de, para });
-    MTR.juntos = r.bairros_juntos || {}; mtrAplicarJuntos(); mtrPintar(); mtrPintarJuntar();
+    MTR.juntos = r.bairros_juntos || {}; mtrAplicarJuntos(); mtrPintarAba(); mtrPintarJuntar();
   }catch(e){ mtrPintarJuntar('Não consegui salvar: '+(e.message||e)); }
 }
 /* dica ao passar o mouse nas barras */
+/* ===================== ABA CANCELAMENTOS =====================
+   Saída = contrato cancelado (I), negativado (N) ou desistência (D), contado
+   no mês da data de saída que o IXC registra. Valor = mensalidade final que o
+   contrato pagava quando saiu. Separada da aba de ativações de propósito. */
+const MTR_TIPOS = { I:'Cancelado', N:'Negativado', D:'Desistência' };
+const MTR_CASA = [['Menos de 3 meses',0,3],['3 a 6 meses',3,6],['6 a 12 meses',6,12],['1 a 2 anos',12,24],['Mais de 2 anos',24,Infinity]];
+function mtrMesesEntre(a, b){ const [y1,m1,d1] = a.split('-').map(Number), [y2,m2,d2] = b.split('-').map(Number); return (y2-y1)*12 + (m2-m1) - (d2 < d1 ? 1 : 0); }
+function mtrMotivoNome(k){
+  if(!k) return 'Sem motivo informado';
+  const n = (MTR.motivos||{})[k];
+  return n || (String(k).startsWith('d') ? 'Desistência nº '+k.slice(1) : 'Motivo nº '+k);
+}
+function mtrSaidas(linhas, tipo){ return linhas.filter(l => l.x && l.s && (tipo === 'todos' ? true : l.s === tipo)); }
+/* base ativa no 1º dia do mês: ativado antes dele e ainda sem saída naquele dia
+   (contrato que saiu sem data no IXC fica de fora: não se sabe quando saiu) */
+function mtrBaseNoInicio(linhas, mes, bairro){
+  const ini = mes+'-01';
+  return linhas.filter(l => l.a && l.a < ini && (bairro == null || (l.b||'Sem bairro informado') === bairro)
+    && ((l.s === 'A' && !l.x) || (l.x && l.x >= ini))).length;
+}
+function mtrResumoCanc(arr, linhas, mes){
+  const receita = arr.reduce((s,l)=>s+(Number(l.r)||0), 0);
+  const mot = new Map(); for(const l of arr){ const k = l.k || ''; mot.set(k, (mot.get(k)||0)+1); }
+  const top = [...mot].sort((a,b)=>b[1]-a[1])[0];
+  const casa = arr.filter(l=>l.a && l.x >= l.a).map(l=>mtrMesesEntre(l.a, l.x));
+  const base = mtrBaseNoInicio(linhas, mes);
+  return { total: arr.length, receita, ticket: arr.length ? receita/arr.length : 0, base, churn: base ? arr.length/base : null,
+    motivo: top ? mtrMotivoNome(top[0]) : null, motivoQtd: top ? top[1] : 0,
+    casaMedia: casa.length ? casa.reduce((s,v)=>s+v,0)/casa.length : null,
+    bairros: new Set(arr.map(l=>l.b||'')).size };
+}
+function mtrCalcCanc(linhas, mes, tipo, comparar){
+  const todas = mtrSaidas(linhas, tipo);
+  const base = todas.filter(l => l.x.slice(0,7) === mes);
+  const mesComp = mtrMesComparado(mes, comparar);
+  const agrupar = (arr, chave) => { const m = new Map(); for(const l of arr){ const k = chave(l); m.set(k, (m.get(k)||0)+1); } return [...m].map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd || String(a.nome).localeCompare(String(b.nome),'pt-BR')); };
+  // por bairro: saídas, receita perdida, base no início do mês e motivo mais comum
+  const bm = new Map();
+  for(const l of base){
+    const k = l.b || 'Sem bairro informado';
+    const b = bm.get(k) || bm.set(k, { nome:k, qtd:0, receita:0, mot:new Map() }).get(k);
+    b.qtd++; b.receita += Number(l.r)||0; const mk = l.k||''; b.mot.set(mk, (b.mot.get(mk)||0)+1);
+  }
+  const bairros = [...bm.values()].map(b => { const t = [...b.mot].sort((x,y)=>y[1]-x[1])[0]; const bs = mtrBaseNoInicio(linhas, mes, b.nome);
+    return { nome:b.nome, qtd:b.qtd, receita:b.receita, base:bs, taxa: bs ? b.qtd/bs : null, motivo: mtrMotivoNome(t[0]), motivoQtd: t[1] }; })
+    .sort((a,b)=>b.qtd-a.qtd || b.receita-a.receita || a.nome.localeCompare(b.nome,'pt-BR'));
+  // planos (mesma oferta junta, como na aba de ativações)
+  const pm = new Map();
+  for(const l of base){ const k = mtrPlanoGrupo(l); const p = pm.get(k) || pm.set(k, { nome:k, vel:l.v||null, qtd:0, soma:0, nomes:new Map() }).get(k);
+    p.qtd++; p.soma += Number(l.r)||0; const n = l.p || 'Sem plano informado'; p.nomes.set(n, (p.nomes.get(n)||0)+1); }
+  const planos = [...pm.values()].map(p => ({ ...p, nomes:[...p.nomes].sort((a,b)=>b[1]-a[1]).map(([nome,qtd])=>({nome,qtd})) })).sort((a,b)=>b.qtd-a.qtd || b.soma-a.soma);
+  const casa = MTR_CASA.map(([nome,de,ate]) => ({ nome, qtd: base.filter(l => l.a && l.x >= l.a && mtrMesesEntre(l.a,l.x) >= de && mtrMesesEntre(l.a,l.x) < ate).length }));
+  const semAtiv = base.filter(l => !l.a || l.x < l.a).length; if(semAtiv) casa.push({ nome:'Sem data de ativação', qtd: semAtiv });
+  const faixas = MTR_FAIXAS.map(([nome,de,ate]) => ({ nome, qtd: base.filter(l => l.r != null && Number(l.r) >= de && Number(l.r) < ate).length }));
+  const semValor = base.filter(l => l.r == null).length; if(semValor) faixas.push({ nome:'Sem valor no IXC', qtd: semValor });
+  const serie = []; for(let i=11;i>=0;i--){ const m = mtrMesSoma(mes,-i); serie.push({ mes:m, qtd: todas.filter(l=>l.x.slice(0,7)===m).length }); }
+  return {
+    mesComp, atual: mtrResumoCanc(base, linhas, mes), comp: mtrResumoCanc(todas.filter(l => l.x.slice(0,7) === mesComp), linhas, mesComp),
+    total: base.length, serie, bairros, planos,
+    tipos: agrupar(base, l => MTR_TIPOS[l.s] || l.s),
+    motivos: agrupar(base, l => mtrMotivoNome(l.k)),
+    velocidades: agrupar(base, l => l.v ? l.v+' Mega' : 'Sem velocidade no nome'),
+    casa, faixas,
+    semData: linhas.filter(l => !l.x && l.s && l.s !== 'A' && l.s !== 'P' && (tipo === 'todos' || l.s === tipo)).length,
+    codigosSemNome: [...new Set(linhas.filter(l => l.k && !(MTR.motivos||{})[l.k]).map(l => l.k))],
+  };
+}
+
+function mtrPintarCanc(){
+  const el = document.getElementById('mtr-conteudo'); if(!el) return;
+  const mesAtual = mtrMesAtual();
+  const primeiro = MTR.linhas.reduce((m,l)=> l.x && l.x.slice(0,7) < m ? l.x.slice(0,7) : m, mesAtual);
+  const meses = []; for(let m = mesAtual; m >= primeiro && meses.length < 240; m = mtrMesSoma(m,-1)) meses.push(m);
+  if(!MTR.mesC) MTR.mesC = mesAtual;
+  const c = mtrCalcCanc(MTR.linhas, MTR.mesC, MTR.tipoC, MTR.compararC);
+  const A = c.atual, B = c.comp, dif = A.total - B.total;
+  const difTxt = (a, b, fmt) => { if(a==null || b==null) return '—'; const d = a - b; if(Math.abs(d) < 0.005) return 'igual'; const pc = b ? ' ('+(d>0?'+':'−')+Math.abs(Math.round(d/b*100))+'%)' : ''; return (d>0?'▲ ':'▼ ')+fmt(Math.abs(d))+pc; };
+  const inteiro = v => String(Math.round(v)), pct = v => v==null ? '—' : (v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
+  const pp = v => (v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+' p.p.';
+  const meses1 = v => v==null ? '—' : (v < 12 ? Math.round(v)+' meses' : (v/12).toLocaleString('pt-BR',{maximumFractionDigits:1})+' anos');
+  const maxSerie = Math.max(1, ...c.serie.map(s=>s.qtd));
+  const hora = MTR.lidoEm ? new Date(MTR.lidoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+  const limiteB = MTR.todosBairros ? 0 : 10;
+  const bTela = limiteB ? c.bairros.slice(0, limiteB) : c.bairros;
+  const bValor = [...c.bairros].sort((a,b)=>b.receita-a.receita || b.qtd-a.qtd);
+  const maxRec = Math.max(0.01, ...c.bairros.map(b=>b.receita));
+  const bTop = c.bairros.find(b => b.nome !== 'Sem bairro informado') || null;
+  const tipoNome = { todos:'saídas', I:'cancelamentos', N:'negativações', D:'desistências' }[MTR.tipoC];
+  const verTodos = c.bairros.length>10 ? `<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintarCanc()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>` : '';
+  const vazio = '<div class="mtr-vazio">Nenhuma saída neste mês.</div>';
+  const subir = dif > 0;               // aqui subir é ruim
+  const mod = (id, cor, ico, tit, sub, corpo) => `
+    <section class="mtr-mod" data-cor="${cor}" data-mod="c-${id}" ${MTR.fechados['c-'+id]?'data-fechado':''}>
+      <button class="mtr-mod-h" onclick="mtrAlternarModulo('c-${id}')" aria-expanded="${!MTR.fechados['c-'+id]}">
+        <span class="mtr-ico">${ico}</span><span class="mtr-mod-t">${tit}<small>${sub}</small></span><span class="mtr-chev">⌄</span></button>
+      <div class="mtr-mod-c">${corpo}</div>
+    </section>`;
+  el.innerHTML = `
+    <div class="mtr-topo">
+      <div class="mtr-mes">
+        <button class="mtr-seta" title="Mês anterior" onclick="mtrDefMesC(mtrMesSoma(MTR.mesC,-1))" ${MTR.mesC<=primeiro?'disabled':''}>‹</button>
+        <select onchange="mtrDefMesC(this.value)" aria-label="Mês da análise">${meses.map(m=>`<option value="${m}" ${m===MTR.mesC?'selected':''}>${mtrMesNome(m,true)}</option>`).join('')}</select>
+        <button class="mtr-seta" title="Próximo mês" onclick="mtrDefMesC(mtrMesSoma(MTR.mesC,1))" ${MTR.mesC>=mesAtual?'disabled':''}>›</button>
+      </div>
+      <label class="mtr-comp">Comparar com
+        <select onchange="MTR.compararC=this.value;mtrPintarCanc()" aria-label="Mês de comparação">
+          <option value="anterior" ${MTR.compararC==='anterior'?'selected':''}>Mês anterior (${mtrMesNome(mtrMesSoma(MTR.mesC,-1))})</option>
+          <option value="ano" ${MTR.compararC==='ano'?'selected':''}>Mesmo mês do ano anterior (${mtrMesNome(mtrMesSoma(MTR.mesC,-12))})</option>
+          <optgroup label="Escolher o mês">${meses.filter(m=>m!==MTR.mesC).map(m=>`<option value="${m}" ${m===MTR.compararC?'selected':''}>${mtrMesNome(m,true)}</option>`).join('')}</optgroup>
+        </select></label>
+      <div class="mtr-seg" role="group" aria-label="Tipo de saída">
+        ${[['todos','Todas as saídas'],['I','Cancelados'],['N','Negativados'],['D','Desistências']].map(([v,t])=>`<button aria-pressed="${MTR.tipoC===v}" onclick="MTR.tipoC='${v}';mtrPintarCanc()">${t}</button>`).join('')}
+      </div>
+      <div class="mtr-fonte">${MTR.carregando?'Lendo o IXC…':`Direto do IXC · lido às ${hora}`}
+        <button class="btn" onclick="mtrCarregar(true)" ${MTR.carregando?'disabled':''} title="Ler de novo no IXC">⟳ Atualizar</button></div>
+    </div>
+    ${MTR.erro?`<div class="mtr-card" style="margin-bottom:12px;color:var(--danger)">Não consegui atualizar: ${mtrEsc(MTR.erro)} — mostrando a última leitura.</div>`:''}
+    ${mod('resumo','vermelho','📉','Resumo do mês',`${mtrMesNome(MTR.mesC,true)} · ${tipoNome}, taxa e comparação`, `
+      <div class="mtr-tiles">
+        <div class="mtr-tile heroi" data-cor="vermelho"><div class="k"><span class="mtr-ico">📉</span>${{todos:'Saídas no mês',I:'Cancelamentos no mês',N:'Negativações no mês',D:'Desistências no mês'}[MTR.tipoC]}</div><div class="n">${A.total}</div>
+          <div class="s"><span class="mtr-var ${subir?'desce':dif<0?'sobe':''}">${dif===0?'= igual':(dif>0?'▲ '+dif+' a mais':'▼ '+Math.abs(dif)+' a menos')}</span> que ${mtrMesNome(c.mesComp)} (${B.total})</div></div>
+        <div class="mtr-tile" data-cor="vermelho"><div class="k"><span class="mtr-ico">⚖️</span>Taxa de cancelamento</div><div class="n">${pct(A.churn)}</div>
+          <div class="s">${A.total} de ${A.base} contratos ativos no início do mês${A.churn!=null&&B.churn!=null?` · ${mtrMesNome(c.mesComp)}: ${pct(B.churn)}`:''}</div></div>
+        <div class="mtr-tile" data-cor="laranja"><div class="k"><span class="mtr-ico">💸</span>Receita mensal perdida</div><div class="n val-monetario">${mtrDin(A.receita)}</div>
+          <div class="s">mensalidade final que esses contratos pagavam · ticket médio <span class="val-monetario">${mtrDin(A.ticket)}</span></div></div>
+        <div class="mtr-tile" data-cor="azul"><div class="k"><span class="mtr-ico">💬</span>Motivo mais comum</div><div class="n txt">${A.motivo?mtrEsc(A.motivo):'—'}</div>
+          <div class="s">${A.motivo?`${A.motivoQtd} de ${A.total} · ${Math.round(A.motivoQtd/A.total*100)}% das ${tipoNome}`:'sem saídas no mês'}</div></div>
+        <div class="mtr-tile" data-cor="verde"><div class="k"><span class="mtr-ico">📍</span>Bairro com mais ${tipoNome}</div><div class="n txt">${bTop?mtrEsc(bTop.nome):'—'}</div>
+          <div class="s">${bTop?`${bTop.qtd} saída${bTop.qtd===1?'':'s'}${bTop.taxa!=null?' · '+pct(bTop.taxa)+' da base do bairro':''}`:'sem saídas no mês'}</div></div>
+        <div class="mtr-tile" data-cor="violeta"><div class="k"><span class="mtr-ico">⏳</span>Tempo médio de casa</div><div class="n">${meses1(A.casaMedia)}</div>
+          <div class="s">da ativação até a saída</div></div>
+      </div>
+      <div class="mtr-grade">
+        <div class="mtr-card">
+          <h3>${{todos:'Saídas',I:'Cancelamentos',N:'Negativações',D:'Desistências'}[MTR.tipoC]} por mês</h3><div class="d">12 meses até ${mtrMesNome(MTR.mesC,true)} · toque num mês para analisar</div>
+          <div class="mtr-cols">${c.serie.map(s=>`<button class="mtr-col" aria-current="${s.mes===MTR.mesC}" onclick="mtrDefMesC('${s.mes}')" data-mtrtip="${mtrMesNome(s.mes,true)}: ${s.qtd}" aria-label="${mtrMesNome(s.mes,true)}: ${s.qtd}">
+            <span class="q">${s.qtd}</span><span class="br" style="height:${s.qtd/maxSerie*82}%"></span></button>`).join('')}</div>
+          <div class="mtr-eixo">${c.serie.map(s=>`<span class="${s.mes===MTR.mesC?'on':''}" title="${mtrMesNome(s.mes,true)}">${MTR_MESES[+s.mes.slice(5)-1]}</span>`).join('')}</div>
+          ${c.semData?`<div class="d" style="margin:8px 0 0">${c.semData} contrato${c.semData===1?'':'s'} inativo${c.semData===1?'':'s'} sem data de saída no IXC não entra${c.semData===1?'':'m'} em nenhum mês.</div>`:''}
+        </div>
+        <div class="mtr-card">
+          <h3>Comparação: ${mtrMesNome(MTR.mesC,true)} × ${mtrMesNome(c.mesComp,true)}</h3><div class="d">Troque o mês comparado em "Comparar com", no alto da tela · aqui ▲ é piora</div>
+          <div class="mtr-rolar"><table class="mtr-tab">
+            <thead><tr><th>Indicador</th><th class="num">${mtrMesNome(MTR.mesC)}</th><th class="num">${mtrMesNome(c.mesComp)}</th><th class="num">Diferença</th></tr></thead>
+            <tbody>
+              <tr><td>${{todos:'Saídas',I:'Cancelamentos',N:'Negativações',D:'Desistências'}[MTR.tipoC]}</td><td class="num"><b>${A.total}</b></td><td class="num">${B.total}</td><td class="num">${difTxt(A.total, B.total, inteiro)}</td></tr>
+              <tr><td>Taxa de cancelamento</td><td class="num"><b>${pct(A.churn)}</b></td><td class="num">${pct(B.churn)}</td><td class="num">${A.churn!=null&&B.churn!=null?difTxt(A.churn, B.churn, pp).replace(/ \([^)]*\)/,''):'—'}</td></tr>
+              <tr><td>Receita mensal perdida</td><td class="num val-monetario"><b>${mtrDin(A.receita)}</b></td><td class="num val-monetario">${mtrDin(B.receita)}</td><td class="num val-monetario">${difTxt(A.receita, B.receita, mtrDin)}</td></tr>
+              <tr><td>Ticket médio de quem saiu</td><td class="num val-monetario"><b>${mtrDin(A.ticket)}</b></td><td class="num val-monetario">${mtrDin(B.ticket)}</td><td class="num val-monetario">${A.total&&B.total?difTxt(A.ticket, B.ticket, mtrDin):'—'}</td></tr>
+              <tr><td>Tempo médio de casa</td><td class="num"><b>${meses1(A.casaMedia)}</b></td><td class="num">${meses1(B.casaMedia)}</td><td class="num">${A.casaMedia!=null&&B.casaMedia!=null?difTxt(A.casaMedia, B.casaMedia, v=>Math.round(v)+' meses').replace(/ \([^)]*\)/,''):'—'}</td></tr>
+              <tr><td>Bairros com saída</td><td class="num"><b>${A.bairros && A.total ? A.bairros : 0}</b></td><td class="num">${B.total ? B.bairros : 0}</td><td class="num">${difTxt(A.total?A.bairros:0, B.total?B.bairros:0, inteiro)}</td></tr>
+              <tr><td>Motivo mais comum</td><td class="num"><b>${A.motivo?mtrEsc(A.motivo)+' ('+A.motivoQtd+')':'—'}</b></td><td class="num">${B.motivo?mtrEsc(B.motivo)+' ('+B.motivoQtd+')':'—'}</td><td class="num">${A.motivo&&B.motivo?(A.motivo===B.motivo?'o mesmo':'mudou'):'—'}</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>`)}
+    ${mod('motivos','azul','💬','Motivos','por que os clientes saíram', `
+      <div class="mtr-grade">
+        <div class="mtr-card">
+          <h3>${{todos:'Saídas',I:'Cancelamentos',N:'Negativações',D:'Desistências'}[MTR.tipoC]} por motivo</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · motivo registrado no contrato, no IXC</div>
+          ${c.total?mtrBarras(c.motivos, c.total):vazio}
+          <button class="mtr-mais" onclick="mtrAbrirMotivos()" title="Dar nome aos códigos de motivo que o IXC não entrega pela API">Nomear motivos${c.codigosSemNome.length?' ('+c.codigosSemNome.length+' sem nome)':''}</button>
+        </div>
+        <div class="mtr-card">
+          <h3>Tipo de saída</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · cancelado, negativado ou desistência (antes de ativar)</div>
+          ${c.total?mtrBarras(c.tipos, c.total):vazio}
+        </div>
+      </div>`)}
+    ${mod('bairros','verde','📍','Bairros','onde os clientes saíram e quanto isso pesa em cada bairro', `
+      <div class="mtr-grade">
+        <div class="mtr-card">
+          <h3>${{todos:'Saídas',I:'Cancelamentos',N:'Negativações',D:'Desistências'}[MTR.tipoC]} por bairro</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · ${c.bairros.length} bairro${c.bairros.length===1?'':'s'}</div>
+          ${c.total?mtrBarras(c.bairros, c.total, limiteB):vazio}
+          ${verTodos}
+          <button class="mtr-mais" style="float:right" onclick="mtrAbrirJuntar()" title="Bairros que são o mesmo lugar com nomes diferentes passam a contar juntos">Juntar bairros${Object.keys(MTR.juntos||{}).length?' ('+Object.keys(MTR.juntos).length+')':''}</button>
+        </div>
+        <div class="mtr-card">
+          <h3>Receita perdida por bairro</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · soma das mensalidades finais de quem saiu</div>
+          ${c.total?`<div class="mtr-hb">${(limiteB?bValor.slice(0,limiteB):bValor).map(x=>`
+            <span class="nm" title="${mtrEsc(x.nome)}">${mtrEsc(x.nome)}</span>
+            <span class="tr" data-mtrtip="${mtrEsc(x.nome)}: ${mtrDin(x.receita)} por mês · ${x.qtd} saída${x.qtd===1?'':'s'}"><i style="width:${x.receita?Math.max(1.5, x.receita/maxRec*100):0}%"></i></span>
+            <span class="vl"><span class="val-monetario">${mtrDin(x.receita)}</span><small>${A.receita?Math.round(x.receita/A.receita*100):0}%</small></span>`).join('')}</div>`:vazio}
+          ${verTodos}
+        </div>
+      </div>
+      <div class="mtr-card">
+        <h3>Bairros: taxa de cancelamento e motivo</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · taxa = saídas do mês ÷ contratos ativos no bairro no início do mês</div>
+        ${c.total?`<div class="mtr-rolar"><table class="mtr-tab">
+          <thead><tr><th>Bairro</th><th class="num">Saídas</th><th class="num">Ativos no início do mês</th><th>Taxa</th><th>Motivo mais comum</th></tr></thead>
+          <tbody>${bTela.map(x=>`<tr><td>${mtrEsc(x.nome)}</td><td class="num"><b>${x.qtd}</b></td><td class="num">${x.base}</td>
+            <td style="min-width:130px">${x.taxa==null?'<span style="color:var(--text3)">sem base no início do mês</span>':`<span class="mini" style="height:10px;width:${Math.max(2, Math.min(1,x.taxa*5)*90)}px"></span>${pct(x.taxa)}`}</td>
+            <td>${mtrEsc(x.motivo)} <span style="color:var(--text3)">· ${x.motivoQtd} de ${x.qtd}</span></td></tr>`).join('')}</tbody>
+        </table></div>`:vazio}
+        ${verTodos}
+      </div>`)}
+    ${mod('planos','violeta','📦','Planos','quais planos estão perdendo clientes', `
+      <div class="mtr-grade">
+        <div class="mtr-card">
+          <h3>Por velocidade</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · planos agrupados pela velocidade</div>
+          ${c.total?mtrBarras(c.velocidades, c.total):vazio}
+        </div>
+        <div class="mtr-card">
+          <h3>Planos e receita perdida</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · nomes diferentes com a mesma velocidade e valor final contam juntos</div>
+          ${c.planos.length?`<div class="mtr-rolar"><table class="mtr-tab">
+            <thead><tr><th>Plano</th><th class="num">Saídas</th><th class="num">Receita perdida</th></tr></thead>
+            <tbody>${c.planos.map((p,i)=>`<tr>
+              <td>${mtrEsc(p.nome)}${i===0?'<span class="mtr-selo">mais perdido</span>':''}${p.vel?`<div class="mtr-nomes">${p.nomes.slice(0,3).map(n=>mtrEsc(n.nome)+(p.nomes.length>1?' ('+n.qtd+')':'')).join(' · ')}${p.nomes.length>3?' · +'+(p.nomes.length-3):''}</div>`:''}</td>
+              <td class="num"><span class="mini" style="width:${Math.max(2,p.qtd/c.planos[0].qtd*46)}px"></span>${p.qtd} <span style="color:var(--text3)">(${Math.round(p.qtd/c.total*100)}%)</span></td>
+              <td class="num val-monetario">${mtrDin(p.soma)}</td></tr>`).join('')}</tbody>
+          </table></div>`:vazio}
+        </div>
+      </div>`)}
+    ${mod('casa','laranja','⏳','Tempo de casa e valores','há quanto tempo eram clientes e quanto pagavam', `
+      <div class="mtr-grade">
+        <div class="mtr-card">
+          <h3>Tempo de casa ao sair</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · da ativação até a saída</div>
+          ${c.total?mtrBarras(c.casa, c.total):vazio}
+        </div>
+        <div class="mtr-card">
+          <h3>Por faixa de valor</h3><div class="d">${mtrMesNome(MTR.mesC,true)} · mensalidade final que pagavam ao sair</div>
+          ${c.total?mtrBarras(c.faixas, c.total):vazio}
+        </div>
+      </div>`)}`;
+  mtrLigarDicas(el);
+}
+function mtrDefMesC(m){ MTR.mesC = m; MTR.todosBairros = false; mtrPintarCanc(); }
+
+/* ---- Nomear motivos (o IXC não entrega a lista de nomes pela API) ---- */
+function mtrAbrirMotivos(){
+  let ov = document.getElementById('mtr-motivos');
+  if(!ov){ ov = document.createElement('div'); ov.id = 'mtr-motivos'; ov.className = 'mtr-ov'; document.body.appendChild(ov);
+    ov.addEventListener('click', ev => { if(ev.target === ov) ov.remove(); }); }
+  mtrPintarMotivos();
+}
+function mtrPintarMotivos(aviso){
+  const ov = document.getElementById('mtr-motivos'); if(!ov) return;
+  const cont = new Map(); for(const l of (MTR.linhas||[])) if(l.k) cont.set(l.k, (cont.get(l.k)||0)+1);
+  const cods = [...cont.keys()].sort((a,b)=> (a[0]==='d') - (b[0]==='d') || Number(a.replace('d','')) - Number(b.replace('d','')));
+  ov.innerHTML = `<div class="mtr-ov-cx" role="dialog" aria-label="Nomear motivos">
+    <div class="mtr-ov-topo"><b>Nomear motivos de cancelamento</b><button class="mtr-seta" onclick="document.getElementById('mtr-motivos').remove()" title="Fechar">✕</button></div>
+    <div class="d" style="margin:0 0 10px">O IXC entrega pela API só o número de cada motivo. Escreva o nome que aparece no IXC (Contratos › Motivos de cancelamento). Fica salvo para todos; o IXC não é alterado.</div>
+    ${aviso?`<div style="color:var(--danger);font-size:12.5px;margin-bottom:8px">${mtrEsc(aviso)}</div>`:''}
+    <div class="mtr-ov-lista">${cods.map(k=>`<div class="mtr-ov-linha">
+      <span>${k[0]==='d'?'Desistência nº '+k.slice(1):'Motivo nº '+k} <small>${cont.get(k)} contrato${cont.get(k)===1?'':'s'}</small></span>
+      <input type="text" maxlength="80" data-mtrmot="${k}" value="${mtrEsc((MTR.motivos||{})[k]||'')}" placeholder="nome do motivo" aria-label="Nome do ${k[0]==='d'?'motivo de desistência':'motivo'} ${k.replace('d','')}"></div>`).join('')}</div>
+  </div>`;
+  ov.querySelectorAll('input[data-mtrmot]').forEach(inp => inp.onchange = () => mtrNomearMotivo(inp.dataset.mtrmot, inp.value, inp));
+}
+async function mtrNomearMotivo(codigo, nome, inp){
+  if(inp) inp.disabled = true;
+  try{
+    const r = await ixaAPI('metricas.motivo_nomear', { codigo, nome });
+    MTR.motivos = { ...(MTR.motivos||{}) }; if(String(nome||'').trim()) MTR.motivos[codigo] = String(nome).trim(); else delete MTR.motivos[codigo];
+    mtrPintarAba(); mtrPintarMotivos();
+  }catch(e){ mtrPintarMotivos('Não consegui salvar: '+(e.message||e)); }
+}
+
 function mtrLigarDicas(raiz){
   let tip = document.getElementById('mtr-tip');
   if(!tip){ tip = document.createElement('div'); tip.id = 'mtr-tip'; tip.className = 'ebi-tip'; tip.hidden = true; document.body.appendChild(tip); }

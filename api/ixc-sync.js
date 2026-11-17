@@ -17,7 +17,9 @@
 // A cópia em si (o que lê, o que compara, o que grava) está em
 // _ixc_espelho.js, com o mesmo mapeamento do navegador.
 // ============================================================================
-import { ativacoesDoIxc, bairroLimpo } from './_ixc_metricas.js';
+import { ativacoesDoIxc, bairroLimpo, nomesDosMotivos } from './_ixc_metricas.js';
+// onde o IXC pode guardar os nomes dos motivos de cancelamento (varia por versão/permissão)
+const MOTIVOS_CANCELAMENTO_IXC = ['cliente_contrato_motivo_cancelamento', 'motivo_cancelamento', 'fn_motivo_cancelamento', 'cliente_contrato_motivos_cancelamento'];
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
@@ -547,13 +549,32 @@ export default async function handler(req, res) {
         ['cliente_contrato', 'vd_contratos', 'cliente', 'vd_contratos_produtos', 'cliente_contrato_descontos', 'cliente_contrato_acrescimos'].map(t => ixcTudo(t, prazo)));
       // bairros que a equipe juntou ("AGROVILA POMAR" conta como "POMAR"): quem aplica é a tela
       const juntos = await sb('metricas_bairro_alias?select=de,para&limit=1000').catch(() => []);
+      // nomes dos motivos: o que o IXC entregar; o que a equipe nomeou vale por cima
+      const lerOpcional = async lista => { for (const t of lista) { try { const r = await ixcTudo(t, Math.min(prazo, Date.now() + 6e3)); if (r.length) return r; } catch { /* recurso indisponível: tenta o próximo */ } } return []; };
+      const [mCanc, mDes, mNomeados] = await Promise.all([
+        lerOpcional(MOTIVOS_CANCELAMENTO_IXC), lerOpcional(['cliente_contrato_motivo_desistencia']),
+        sb('metricas_motivos?select=codigo,nome&limit=500').catch(() => []),
+      ]);
+      const motivos = { ...nomesDosMotivos(mCanc, mDes), ...Object.fromEntries((mNomeados || []).map(m => [m.codigo, m.nome])) };
       return res.status(200).json({ ok: true, lido_em: new Date().toISOString(), contratos: contratos.length,
-        bairros_juntos: Object.fromEntries((juntos || []).map(j => [j.de, j.para])),
+        bairros_juntos: Object.fromEntries((juntos || []).map(j => [j.de, j.para])), motivos,
+        motivos_do_ixc: Object.keys(nomesDosMotivos(mCanc, [])).length > 0,
         linhas: ativacoesDoIxc({ contratos, planos, clientes, produtos, descontos, acrescimos }) });
     }
     /* Juntar bairros: { de, para } grava; para vazio desfaz. O destino nunca é
        um bairro que já conta como outro, e quem apontava para `de` passa a
        apontar para o novo destino — a regra fica sempre de um nível só. */
+    /* Nomear um código de motivo de cancelamento (nome vazio apaga). */
+    if (acao === 'metricas.motivo_nomear') {
+      const codigo = String(b.codigo || '').trim();
+      const nome = String(b.nome || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (!/^d?[0-9]{1,9}$/.test(codigo)) return res.status(400).json({ erro: 'código inválido' });
+      if (!nome) await sb(`metricas_motivos?codigo=eq.${codigo}`, { method: 'DELETE', prefer: 'return=minimal' });
+      else await sb('metricas_motivos?on_conflict=codigo', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal',
+        body: { codigo, nome, atualizado_por: quem.nome, atualizado_em: new Date().toISOString() } });
+      const nomeados = await sb('metricas_motivos?select=codigo,nome&limit=500');
+      return res.status(200).json({ ok: true, nomeados: Object.fromEntries((nomeados || []).map(m => [m.codigo, m.nome])) });
+    }
     if (acao === 'metricas.bairro_juntar') {
       const de = bairroLimpo(b.de), para = bairroLimpo(b.para);
       if (!de || de.length > 80 || (para && para.length > 80)) return res.status(400).json({ erro: 'bairro inválido' });
