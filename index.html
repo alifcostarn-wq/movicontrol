@@ -18358,7 +18358,7 @@ function excluirConta(idx){
   let _msg='Excluir esta conta e todas as suas movimentações?';
   if(_lcVinc.length){
     const _tot=_lcVinc.reduce((sm,l)=>sm+Math.abs(_lancRealizado(l)),0);
-    _msg+=`\n\n⚠️ Esta conta tem ${_lcVinc.length} lançamento(s) quitado(s) vinculado(s), somando R$ ${_tot.toLocaleString('pt-BR',{minimumFractionDigits:2})}.\nEles NÃO serão excluídos, mas perderão o vínculo e deixarão de compor os saldos.`;
+    _msg+=`\n\n⚠️ Esta conta tem ${_lcVinc.length} lançamento(s) quitado(s) vinculado(s), somando R$ ${_tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}.\nEles NÃO serão excluídos, mas perderão o vínculo e deixarão de compor os saldos.`;
   }
   if(!confirm(_msg))return;
   bancos.splice(idx,1);
@@ -18484,7 +18484,7 @@ function salvarTransferencia(){
   if(!valor||valor<=0){showToast('Informe um valor válido.',true);return;}
   // CONTROLE: avisa (sem bloquear) quando a transferência deixa a origem negativa
   const _saldoOrig=calcSaldoConta(origIdx);
-  if(valor>_saldoOrig && !confirm(`Atenção: a conta "${bancos[origIdx]?.nome||''}" tem saldo de ${'R$ '+_saldoOrig.toLocaleString('pt-BR',{minimumFractionDigits:2})} e ficará NEGATIVA após esta transferência.\n\nDeseja continuar mesmo assim?`))return;
+  if(valor>_saldoOrig && !confirm(`Atenção: a conta "${bancos[origIdx]?.nome||''}" tem saldo de ${'R$ '+_saldoOrig.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} e ficará NEGATIVA após esta transferência.\n\nDeseja continuar mesmo assim?`))return;
   const data=document.getElementById('tr-data').value;
   if(!data){showToast('Informe a data.',true);return;}
   const desc=document.getElementById('tr-desc').value.trim()||'Transferência entre contas';
@@ -25286,11 +25286,28 @@ function ifPerfisFiltrados(){
   if(f==='negativados') return IF_state.perfis.filter(pf=>pf.grupo==='negativado');
   return IF_state.perfis;
 }
+// Recorte das ANÁLISES da Inteligência (dashboard, insights, gerencial, IA).
+// A Cobrança segue no ifPerfisFiltrados, que precisa enxergar todo negativado.
+// Aqui a "base atual" deixa de fora quem já saiu: cancelado ou negativado com o
+// acesso desativado (contrato encerrado devendo, pf.ex). Contados como base,
+// esses ex-clientes inflavam o vencido, a inadimplência e o score médio.
+function ifPerfisAnalise(){
+  if(IF_state.filtroStatus==='ativos') return IF_state.perfis.filter(pf=>!pf.ex);
+  return ifPerfisFiltrados();
+}
+// Texto que vem do IXC (nome, bairro, plano, motivo, observação) entra na tela
+// como TEXTO, nunca como HTML; ifArg monta o argumento de um onclick="…".
+function ifH(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function ifArg(s){ return ifH(JSON.stringify(String(s==null?'':s))); }
+// resposta da IA: texto puro com quebras de linha
+function ifTextoIA(t){ return ifH(t).replace(/\n/g,'<br>'); }
+// número na tela com vírgula decimal (3,09% e não 3.09%)
+function ifDec(v,c){ return (Number(v)||0).toFixed(c).replace('.',','); }
 let _ifMensalCache={};
 function ifMensalFiltrado(){
   const k=IF_state.filtroStatus+'_'+IF_state.geradoEm;
   if(_ifMensalCache[k]) return _ifMensalCache[k];
-  const fats=ifPerfisFiltrados().flatMap(pf=>pf.fats);
+  const fats=ifPerfisAnalise().flatMap(pf=>pf.fats);
   return _ifMensalCache[k]=ifAgregadosMensais(fats);
 }
 function ifSetFiltroStatus(v){ IF_state.filtroStatus=v; ifRenderTudo(); }
@@ -25461,7 +25478,7 @@ function ifProbabilidades(p, cli){
 // ── segmentação automática (multi-tag + segmento principal) ──
 function ifSegmentos(p, sc, prob, cli, vipCorte){
   const tags=[];
-  const cancelado = cli && cli._sca && /Cancelado|Desistiu/.test(cli._sca.contrato||'');
+  const cancelado = cli && cli._sca && /Cancelado|Desistiu|Inativo/.test(cli._sca.contrato||'');
   if(cancelado){ tags.push('Cancelado'); return {tags, principal:'Cancelado'}; }
   if(p.nVencidas>=3) tags.push('Crítico');
   if(prob.probCancel>=60) tags.push('Tendência de cancelamento');
@@ -25487,7 +25504,7 @@ const IF_SEG_CORES = {
 
 // ── resumo textual do cliente (linguagem natural, gerado dos dados) ──
 function ifResumoTexto(perf){
-  const p=perf.p, nome=perf.nome.split(' ')[0];
+  const p=perf.p, nome=ifH(String(perf.nome||'').split(' ')[0]);
   const fr=[];
   if(p.nPagas===0) fr.push(`${nome} ainda não tem pagamentos registrados no período analisado.`);
   else{
@@ -25496,8 +25513,8 @@ function ifResumoTexto(perf){
     if(p.mesesAtraso.length && p.nAtrasos>=3){ const nomes=['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']; fr.push(`Os atrasos se concentram em ${p.mesesAtraso.map(m=>nomes[m.mes]).join(', ')}.`); }
     if(p.seqEmDia>=3) fr.push(`Está há ${p.seqEmDia} pagamento(s) consecutivo(s) em dia.`);
   }
-  if(p.nVencidas>0) fr.push(`Atualmente tem ${p.nVencidas} fatura(s) vencida(s) somando ${'R$ '+p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2})}${p.maxDiasVencida?` (a mais antiga há ${p.maxDiasVencida} dias)`:''}.`);
-  if(p.valorRecuperado>0) fr.push(`Já recuperou ${'R$ '+p.valorRecuperado.toLocaleString('pt-BR',{minimumFractionDigits:2})} em faturas que estavam 15+ dias vencidas.`);
+  if(p.nVencidas>0) fr.push(`Atualmente tem ${p.nVencidas} fatura(s) vencida(s) somando ${'R$ '+p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}${p.maxDiasVencida?` (a mais antiga há ${p.maxDiasVencida} dias)`:''}.`);
+  if(p.valorRecuperado>0) fr.push(`Já recuperou ${'R$ '+p.valorRecuperado.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} em faturas que estavam 15+ dias vencidas.`);
   if(p.tendencia==='melhora') fr.push('A tendência recente é de MELHORA no comportamento de pagamento.');
   if(p.tendencia==='piora') fr.push('A tendência recente é de PIORA no comportamento de pagamento.');
   fr.push(`Probabilidade de atraso na próxima fatura: ${perf.prob.probAtraso}%${perf.prob.diasPrevistos?` (previsão de ~${perf.prob.diasPrevistos} dias de atraso)`:''}, porque ${perf.prob.motivos.atraso.join('; ')}.`);
@@ -25505,8 +25522,15 @@ function ifResumoTexto(perf){
 }
 
 // ── agregados mensais (12m) para gráficos e insights ──
+function ifFimDoMes(ym){ const[y,m]=ym.split('-').map(Number); return ym+'-'+String(new Date(Date.UTC(y,m,0)).getUTCDate()).padStart(2,'0'); }
+// Recebido no mês `ym` até o dia `dia` (comparar o mês corrente com o mesmo
+// trecho do mês anterior, e não com o mês anterior inteiro).
+function ifRecebidoAteDia(faturas, ym, dia){
+  const lim=Math.min(dia, +ifFimDoMes(ym).slice(8));
+  return faturas.filter(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===ym&&+f.pgto.slice(8,10)<=lim).reduce((s,f)=>s+(f.recebido||f.valor),0);
+}
 function ifAgregadosMensais(faturas){
-  const meses=ifMesesRange(12);
+  const meses=ifMesesRange(12), hj=hoje();
   return meses.map(m=>{
     const doMes=faturas.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===m);
     const prevista=doMes.reduce((s,f)=>s+f.valor,0);
@@ -25516,7 +25540,14 @@ function ifAgregadosMensais(faturas){
     const pagasComAtraso=doMes.filter(f=>f.tipo==='paga'&&f.atrasoDias>=1);
     const inadimpl=prevista>0 ? (vencidasDoMes.reduce((s,f)=>s+f.valor,0))/prevista : 0;
     const recuperada=pagasNoMes.filter(f=>f.atrasoDias>=15).reduce((s,f)=>s+(f.recebido||f.valor),0);
-    return {mes:m, prevista, recebida, recuperada, inadimpl, nVencidas:vencidasDoMes.length, nAtrasos:pagasComAtraso.length, nFaturas:doMes.length};
+    // Inadimplência COMPARÁVEL entre meses: das faturas que já venceram há 30+
+    // dias, quanto não foi pago em até 30 dias. O "ainda vencido hoje" acima
+    // pune o mês corrente (pouco tempo para pagar) e não serve para comparar.
+    const maduras=doMes.filter(f=>(ifDiasEntre(f.venc,hj)||0)>=30);
+    const base30=maduras.reduce((s,f)=>s+(f.valorFace!=null?f.valorFace:f.valor),0);
+    const nao30=maduras.filter(f=>f.tipo==='vencida'||(f.tipo==='paga'&&f.atrasoDias>30)).reduce((s,f)=>s+f.valor,0);
+    return {mes:m, prevista, recebida, recuperada, inadimpl, nVencidas:vencidasDoMes.length, nAtrasos:pagasComAtraso.length, nFaturas:doMes.length,
+      inad30: base30>0 ? nao30/base30 : null, completo30: (ifDiasEntre(ifFimDoMes(m),hj)||0)>=30};
   });
 }
 
@@ -25552,6 +25583,7 @@ async function ifAnalisar(){
     const cfg=await getIXCConfig();
     if(!cfg.proxyUrl) throw new Error('Configure a integração IXC em Configurações.');
     const corte=ifAddMeses(hoje().slice(0,7),-24)+'-01';
+    const chamados=ifCarregarChamados(); // em paralelo com as faturas
     const resp=await buscarTudoIXC(cfg,'fn_areceber',{
       qtype:'fn_areceber.data_emissao', query:corte, oper:'>=',
       sortname:'fn_areceber.data_vencimento', sortorder:'asc', rp:'1000'
@@ -25559,22 +25591,59 @@ async function ifAnalisar(){
     const regs=resp.registros||[];
     if(!regs.length) throw new Error('O IXC não retornou faturas no período. Verifique a integração.');
     document.getElementById('if-load-msg').textContent=`Analisando ${regs.length.toLocaleString('pt-BR')} faturas…`;
+    IF_state.chamados=await chamados;
     await new Promise(r=>setTimeout(r,30)); // deixa a UI respirar
     ifProcessar(regs);
     ifRenderTudo();
   }catch(e){
     console.error('[intel]',e);
     el.innerHTML=`<div class="if-hero"><div class="if-hero-inner">
-      <h3>❌ Falha na análise</h3><p style="color:var(--text3)">${e.message||e}</p>
+      <h3>❌ Falha na análise</h3><p style="color:var(--text3)">${ifH(e.message||e)}</p>
       <button class="btn if-btn-primario" onclick="ifAnalisar()">↻ Tentar novamente</button></div></div>`;
   }
+}
+
+// Chamados técnicos dos últimos 90 dias (OS do campo, sem instalação nem
+// retirada de equipamento): cliente que chama muito tende a cancelar. Da OS só
+// sai o cliente — a leitura nunca pede a senha nem os dados de contato.
+// A OS guarda o id INTERNO do cliente (o do espelho, igual ao cliId do perfil).
+async function ifCarregarChamados(){
+  try{
+    const desde=new Date(Date.now()-90*864e5).toISOString();
+    const {data,error}=await sbClient.from('campo_os').select('cliente_id,sem_aviso,ixc_assunto_id,descricao').gte('created_at',desde).limit(5000);
+    if(error) throw error;
+    const mapa={};
+    (data||[]).forEach(o=>{
+      const assunto=String(o.ixc_assunto_id||'');
+      if(o.sem_aviso===true||assunto==='17') return;                    // retirada de equipamento
+      if(assunto==='32'||/instala/i.test(o.descricao||'')) return;        // instalação
+      const cid=String(o.cliente_id||'').trim(); if(!cid) return;
+      mapa[cid]=(mapa[cid]||0)+1;
+    });
+    return mapa;
+  }catch(e){ console.warn('[intel] chamados:', e.message||e); return null; }
 }
 
 function ifProcessar(regs){
   const faturas=regs.map(ifNormFatura).filter(f=>f.venc);
   // Junta com o cadastro local (nome, cidade, bairro, plano, status contrato/acesso)
   const clientes=gd('sf_clientes').filter(c=>c.ixcId);
-  const ctrs=gd('sf_clientes_contratos');
+  // Contratos de cada cliente, o que vale primeiro: ativo mais recente; sem
+  // ativo, o mais recente. Pegar "o primeiro da lista" trazia o plano de um
+  // contrato antigo, cancelado, no lugar do plano atual.
+  const ctrsPor={}, ctrsVistos={};
+  gd('sf_clientes_contratos').forEach(x=>{
+    [x.ixcClienteId?'i'+x.ixcClienteId:null, x.clienteId!=null&&x.clienteId!==''?'l'+x.clienteId:null].forEach(k=>{
+      if(!k) return; const vk=k+'|'+(x.id!=null?x.id:x.ixcId);
+      if(ctrsVistos[vk]) return; ctrsVistos[vk]=1; (ctrsPor[k]=ctrsPor[k]||[]).push(x);
+    });
+  });
+  const ativoCtr=x=>String(x.statusContrato||'').toUpperCase()==='A';
+  const contratosDe=c=>{
+    const m=new Map();
+    [...(ctrsPor['i'+c.ixcId]||[]),...(c.id!=null?(ctrsPor['l'+c.id]||[]):[])].forEach(x=>m.set(x.id!=null?x.id:x.ixcId,x));
+    return [...m.values()].sort((a,b)=>(ativoCtr(b)-ativoCtr(a))||String(b.dataAtivacao||'').localeCompare(String(a.dataAtivacao||'')));
+  };
   const porCliente={};
   faturas.forEach(f=>{ (porCliente[f.idCliente]=porCliente[f.idCliente]||[]).push(f); });
   // corte VIP = percentil 90 do valor médio
@@ -25586,7 +25655,8 @@ function ifProcessar(regs){
   clientes.forEach(c=>{
     const fats=porCliente[String(c.ixcId)]||[];
     if(!fats.length) return;
-    c._sca=statusContratoAcessoDe(c)||{contrato:'—',acesso:'—'};
+    const meus=contratosDe(c);
+    c._sca=(meus.length&&statusContratoAcessoDe(c,meus))||{contrato:'—',acesso:'—'};
     // Grupo pela realidade do contrato e do acesso. NEGATIVADO não é cancelado:
     // o contrato pode seguir ativo, o cliente continua devendo e o tratamento é
     // outro (acordo e baixa da negativação) — juntar os dois fazia o negativado
@@ -25597,7 +25667,11 @@ function ifProcessar(regs){
                  : /Bloqueio/.test(_ac)                          ? 'bloqueado'
                  : /Financeiro em Atraso/.test(_ac)              ? 'atraso'
                  : 'ativo';
-    const ctr=ctrs.find(x=>x.ixcClienteId==c.ixcId);
+    // já saiu da base: cancelado, ou negativado com o acesso desativado
+    const _ex = _grupo==='cancelado' || (_grupo==='negativado' && /Desativado/.test(_ac));
+    const ctr=meus[0]||null;
+    // ativação = a do contrato mais antigo (cliente que trocou de contrato segue sendo da base desde o 1º)
+    const _ativ=meus.map(x=>String(x.dataAtivacao||'').slice(0,10)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d!=='0000-00-00').sort()[0]||null;
     const p=ifPerfilBase(fats);
     const sc=ifScore(p);
     const prob=ifProbabilidades(p,c);
@@ -25614,7 +25688,8 @@ function ifProcessar(regs){
       fone:(c.whatsapp||c.tel1||c.tel2||''), cliId:c.id, nChamados90:nCham,
       cidade:c.cidade||'—', bairro:c.bairro||'—',
       plano:(ctr&&(ctr.plano||ctr.descricao))||'—',
-      sca:c._sca, grupo:_grupo, fats, p, sc, prob, seg, evolucao,
+      ativacao:_ativ, valorContrato:(ctr&&parseFloat(ctr.valor))||0,
+      sca:c._sca, grupo:_grupo, ex:_ex, fats, p, sc, prob, seg, evolucao,
       risco:ifNivelRisco(sc.score),
     });
   });
@@ -25627,39 +25702,44 @@ function ifProcessar(regs){
 
 // ── INSIGHTS automáticos (regras sobre os agregados) ──
 function ifGerarInsights(){
-  const out=[]; const M=ifMensalFiltrado(); const P=ifPerfisFiltrados();
-  const atu=M[M.length-1], ant=M[M.length-2];
+  const out=[]; const M=ifMensalFiltrado(); const P=ifPerfisAnalise();
+  const atu=M[M.length-1];
   const nomesMes=m=>{const[y,mm]=m.split('-');return ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm]+'/'+y.slice(2);};
-  if(ant&&ant.inadimpl>0){
-    const d=ifPct(atu.inadimpl)-ifPct(ant.inadimpl);
-    out.push({ico:d>0?'📈':'📉',cor:d>0?IF_CORES.vermelho:IF_CORES.verde,
-      txt:`A inadimplência ${d>0?'aumentou':'caiu'} ${Math.abs(d)} p.p. em ${nomesMes(atu.mes)} (${ifPct(atu.inadimpl)}% vs ${ifPct(ant.inadimpl)}% em ${nomesMes(ant.mes)}).`});
+  // Compara os dois últimos meses FECHADOS (30 dias após o fim do mês), pela
+  // inadimplência em 30 dias. Mês corrente contra mês fechado sempre parecia piora.
+  const fech=M.filter(m=>m.completo30&&m.inad30!=null);
+  const mA=fech[fech.length-1], mB=fech[fech.length-2];
+  if(mA&&mB){
+    const d=ifPct(mA.inad30)-ifPct(mB.inad30);
+    out.push({ico:d>0?'📈':d<0?'📉':'➖',cor:d>0?IF_CORES.vermelho:d<0?IF_CORES.verde:IF_CORES.azul,
+      txt:d===0?`A inadimplência ficou estável em ${nomesMes(mA.mes)}: ${ifPct(mA.inad30)}% das faturas não foram pagas em até 30 dias, igual a ${nomesMes(mB.mes)}.`
+        :`A inadimplência ${d>0?'aumentou':'caiu'} ${Math.abs(d)} p.p. em ${nomesMes(mA.mes)}: ${ifPct(mA.inad30)}% das faturas não foram pagas em até 30 dias, contra ${ifPct(mB.inad30)}% em ${nomesMes(mB.mes)}.`});
   }
   // por bairro
   const porBairro={};
   P.forEach(pf=>{ const b=pf.bairro||'—'; (porBairro[b]=porBairro[b]||{v:0,tot:0}); porBairro[b].v+=pf.p.valorVencido; porBairro[b].tot+=pf.p.valorVencido+pf.p.totalPago/12; });
   const bairros=Object.entries(porBairro).filter(([b,x])=>b!=='—'&&x.tot>0).map(([b,x])=>({b,taxa:x.v/x.tot,v:x.v})).filter(x=>x.v>0).sort((a,b)=>b.taxa-a.taxa);
-  if(bairros.length){ const pior=bairros[0]; out.push({ico:'📍',cor:IF_CORES.laranja,txt:`O bairro ${pior.b} concentra a maior inadimplência: R$ ${pior.v.toLocaleString('pt-BR',{minimumFractionDigits:2})} vencidos.`}); }
+  if(bairros.length){ const pior=bairros[0]; out.push({ico:'📍',cor:IF_CORES.laranja,txt:`O bairro ${ifH(pior.b)} concentra a maior inadimplência: R$ ${pior.v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} vencidos.`}); }
   // por plano
   const porPlano={};
   P.forEach(pf=>{ const pl=pf.plano||'—'; (porPlano[pl]=porPlano[pl]||{venc:0,cli:0}); porPlano[pl].venc+=pf.p.nVencidas; porPlano[pl].cli++; });
   const planos=Object.entries(porPlano).filter(([pl,x])=>pl!=='—'&&x.cli>=5).map(([pl,x])=>({pl,taxa:x.venc/x.cli}));
   if(planos.length>=2){
     const melhor=planos.sort((a,b)=>a.taxa-b.taxa)[0];
-    out.push({ico:'🏆',cor:IF_CORES.verde,txt:`O plano "${melhor.pl}" tem o menor índice de inadimplência (${melhor.taxa.toFixed(2)} fatura vencida por cliente).`});
+    out.push({ico:'🏆',cor:IF_CORES.verde,txt:`O plano "${ifH(melhor.pl)}" tem o menor índice de inadimplência (${melhor.taxa.toFixed(2).replace('.',',')} fatura vencida por cliente).`});
   }
   // recuperação
-  if(atu.recuperada>0) out.push({ico:'💰',cor:IF_CORES.ciano,txt:`R$ ${atu.recuperada.toLocaleString('pt-BR',{minimumFractionDigits:2})} foram recuperados em ${nomesMes(atu.mes)} (faturas pagas com 15+ dias de atraso).`});
+  if(atu.recuperada>0) out.push({ico:'💰',cor:IF_CORES.ciano,txt:`R$ ${atu.recuperada.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} foram recuperados em ${nomesMes(atu.mes)} (faturas pagas com 15+ dias de atraso).`});
   // melhorias
   const melhorando=P.filter(pf=>pf.evolucao.length>=4 && pf.sc.score-pf.evolucao[pf.evolucao.length-4]>=10);
   if(melhorando.length) out.push({ico:'🌱',cor:IF_CORES.verde,txt:`${melhorando.length} cliente(s) melhoraram o score em 10+ pontos nos últimos 3 meses — bons candidatos a desbloqueio de confiança.`});
   // risco concentrado
   const criticos=P.filter(pf=>pf.seg.tags.includes('Crítico')||pf.seg.tags.includes('Muito alto risco'));
   const emRisco=criticos.reduce((s,pf)=>s+pf.p.valorVencido,0);
-  if(criticos.length) out.push({ico:'⚠️',cor:IF_CORES.vermelho,txt:`${criticos.length} cliente(s) críticos concentram R$ ${emRisco.toLocaleString('pt-BR',{minimumFractionDigits:2})} em risco — priorize-os na cobrança.`});
+  if(criticos.length) out.push({ico:'⚠️',cor:IF_CORES.vermelho,txt:`${criticos.length} cliente(s) críticos concentram R$ ${emRisco.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} em risco — priorize-os na cobrança.`});
   // previsão 30/60/90
   const prev=ifPrevisao();
-  out.push({ico:'🔮',cor:IF_CORES.roxo,txt:`Previsão: R$ ${prev.d30.risco.toLocaleString('pt-BR',{minimumFractionDigits:2})} em risco de atraso nos próximos 30 dias (${prev.d30.n} faturas de clientes com alta probabilidade).`});
+  out.push({ico:'🔮',cor:IF_CORES.roxo,txt:`Previsão: R$ ${prev.d30.risco.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} em risco de atraso nos próximos 30 dias (${prev.d30.n} mensalidade(s) de clientes com alta probabilidade de atrasar).`});
   return out;
 }
 
@@ -25667,17 +25747,39 @@ function ifGerarInsights(){
 function ifPrevisao(){
   const res={d30:{risco:0,n:0},d60:{risco:0,n:0},d90:{risco:0,n:0}};
   const hj=hoje();
-  ifPerfisFiltrados().forEach(pf=>{
+  const soma=(pf,valor,d)=>{
+    const risco=valor*(pf.prob.probAtraso/100), alto=pf.prob.probAtraso>=60;
+    if(d<=30){res.d30.risco+=risco;if(alto)res.d30.n++;}
+    if(d<=60){res.d60.risco+=risco;if(alto)res.d60.n++;}
+    if(d<=90){res.d90.risco+=risco;if(alto)res.d90.n++;}
+  };
+  ifPerfisAnalise().forEach(pf=>{
     pf.fats.filter(f=>f.tipo==='aberta').forEach(f=>{
       const d=ifDiasEntre(hj,f.venc);
       if(d==null||d<0) return;
-      const risco=f.valor*(pf.prob.probAtraso/100);
-      if(d<=30){res.d30.risco+=risco;if(pf.prob.probAtraso>=60)res.d30.n++;}
-      if(d<=60){res.d60.risco+=risco;if(pf.prob.probAtraso>=60)res.d60.n++;}
-      if(d<=90){res.d90.risco+=risco;if(pf.prob.probAtraso>=60)res.d90.n++;}
+      soma(pf,f.valor,d);
     });
-    // vencidas atuais também são risco imediato
-    res.d30.risco+=pf.p.valorVencido*(1-pf.prob.probRecup/100);
+    // Mensalidades que o IXC ainda não emitiu (a fatura sai ~15 dias antes do
+    // vencimento): projetadas pelo valor do contrato, no dia de vencimento de
+    // costume do cliente. Sem isso, 60 e 90 dias davam o mesmo que 30.
+    if(!pf.ex){
+      const vs=pf.fats.filter(f=>f.tipo!=='ignorada'&&f.venc).map(f=>f.venc).sort();
+      const ult=vs[vs.length-1], valor=pf.valorContrato||pf.p.valorMedio||0;
+      if(ult&&valor>0){
+        const dia=+ult.slice(8,10);
+        for(let k=1;k<=4;k++){
+          const ym=ifAddMeses(ult.slice(0,7),k), venc=ym+'-'+String(Math.min(dia,+ifFimDoMes(ym).slice(8))).padStart(2,'0');
+          const d=ifDiasEntre(hj,venc);
+          if(d==null||d<0) continue;
+          if(d>90) break;
+          soma(pf,valor,d);
+        }
+      }
+    }
+    // vencidas atuais são risco desde já: entram nas três janelas (60 e 90
+    // dias contêm os 30 — antes só a de 30 somava, e 60/90 saíam MENORES)
+    const vRisco=pf.p.valorVencido*(1-pf.prob.probRecup/100);
+    res.d30.risco+=vRisco; res.d60.risco+=vRisco; res.d90.risco+=vRisco;
   });
   return res;
 }
@@ -25697,19 +25799,20 @@ function ifRenderTudo(){
         <div class="if-aba ${t==='chat'?'ativa':''}" onclick="ifTab('chat')">🤖 Perguntar à IA</div>
       </div>
       <div class="if-topo-dir">
-        <span class="if-carimbo">Análise: ${new Date(IF_state.geradoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${ifPerfisFiltrados().length} de ${IF_state.perfis.length} clientes no recorte</span>
+        <span class="if-carimbo">Análise: ${new Date(IF_state.geradoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${ifPerfisAnalise().length} de ${IF_state.perfis.length} clientes no recorte</span>
         <button class="btn" onclick="IF_state.geradoEm=null;_ifMensalCache={};_ifGrowthCache=null;ifAnalisar()">↻ Reanalisar</button>
       </div>
     </div>
     <div class="if-fstatus">
       <span class="if-fstatus-lab">Recorte da base:</span>
-      ${[['ativos','✅ Base atual (ativos)',IF_state.perfis.filter(p=>p.grupo!=='cancelado').length,'#3C9D23'],
+      ${[['ativos','✅ Base atual (ativos)',IF_state.perfis.filter(p=>!p.ex).length,'#3C9D23'],
          ['bloqueados','🔒 Só bloqueados',IF_state.perfis.filter(p=>p.grupo==='bloqueado').length,'#FF8C2E'],
          ['negativados','⚖️ Negativados',IF_state.perfis.filter(p=>p.grupo==='negativado').length,'#D00000'],
          ['cancelados','❌ Cancelados',IF_state.perfis.filter(p=>p.grupo==='cancelado').length,'#004E98'],
          ['todos','📚 Todos (histórico 24m)',IF_state.perfis.length,'#4DA3E8']]
         .map(([v,lab,n,cor])=>`<span class="if-fstatus-pill ${IF_state.filtroStatus===v?'ativa':''}" style="--fc:${cor}" onclick="ifSetFiltroStatus('${v}')">${lab} <b>${n}</b></span>`).join('')}
       ${IF_state.filtroStatus==='todos'?'<span class="if-fstatus-aviso">⚠ inclui ex-clientes — números não refletem a base atual</span>':''}
+      ${IF_state.filtroStatus==='ativos'?'<span class="if-fstatus-aviso" style="color:var(--text3);font-weight:500">fora da base atual: cancelados e negativados com o acesso desativado</span>':''}
     </div>
     <div id="if-corpo"></div>`;
   if(t==='dash') ifRenderDash();
@@ -25725,7 +25828,7 @@ function ifDestruirCharts(){ Object.values(IF_charts).forEach(c=>{try{c.destroy(
 // ════════ ABA 1 — DASHBOARD ════════
 function ifRenderDash(){
   ifDestruirCharts();
-  const M=ifMensalFiltrado(), P=ifPerfisFiltrados(), atu=M[M.length-1];
+  const M=ifMensalFiltrado(), P=ifPerfisAnalise(), atu=M[M.length-1];
   const prev=ifPrevisao();
   const totVencido=P.reduce((s,pf)=>s+pf.p.valorVencido,0);
   const totRecuperado12=M.reduce((s,m)=>s+m.recuperada,0);
@@ -25745,7 +25848,7 @@ function ifRenderDash(){
       ${card('#D00000','Vencido em aberto',brlS(totVencido),inadCli+' clientes inadimplentes',"ifDrill('inadimplentes')")}
       ${card('#004E98','Recuperado (12m)',brlS(totRecuperado12),'taxa de recuperação '+taxaRec+'%',"ifDrill('recuperados')")}
       ${card('#004E98','Score médio da base',scoreMedio,'de 0 a 100',"ifDrill('scoreBaixo')")}
-      ${card('#C40000','Risco 30 dias',brlS(prev.d30.risco),prev.d30.n+' faturas de alto risco',"ifDrill('risco30')")}
+      ${card('#C40000','Risco 30 dias',brlS(prev.d30.risco),prev.d30.n+' mensalidade(s) de alto risco',"ifDrill('risco30')")}
       ${card('#004E98','Bloqueados',bloq,'clientes com acesso bloqueado',"ifDrill('bloqueados')")}
       ${card('#004E98','Tempo médio de pgto',tempoMedioPgto+' d','vs vencimento (negativo = antecipa)')}
     </div>
@@ -25763,14 +25866,14 @@ function ifRenderDash(){
         <div class="if-prev-item"><div class="if-prev-d">30 dias</div><div class="if-prev-v">${brlS(prev.d30.risco)}</div></div>
         <div class="if-prev-item"><div class="if-prev-d">60 dias</div><div class="if-prev-v">${brlS(prev.d60.risco)}</div></div>
         <div class="if-prev-item"><div class="if-prev-d">90 dias</div><div class="if-prev-v">${brlS(prev.d90.risco)}</div></div>
-        <div class="if-prev-nota">Valor em risco = faturas em aberto ponderadas pela probabilidade individual de atraso de cada cliente + vencidas atuais ponderadas pela chance de não recuperação.</div>
+        <div class="if-prev-nota">Valor em risco = faturas em aberto e mensalidades ainda não emitidas (projetadas pelo valor do contrato) ponderadas pela probabilidade individual de atraso de cada cliente + vencidas atuais ponderadas pela chance de não recuperação. 60 e 90 dias são acumulados (incluem os 30).</div>
       </div>
     </div>`;
   ifChartsDash();
 }
 
 function ifChartsDash(){
-  const M=ifMensalFiltrado(), P=ifPerfisFiltrados();
+  const M=ifMensalFiltrado(), P=ifPerfisAnalise();
   const lbl=M.map(m=>{const[y,mm]=m.mes.split('-');return ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm];});
   const grid='rgba(128,128,128,0.12)';
   IF_charts.receita=new Chart(document.getElementById('if-ch-receita'),{type:'bar',data:{labels:lbl,datasets:[
@@ -25796,12 +25899,12 @@ function ifChartsDash(){
 // ════════ ABA 2 — CLIENTES & SCORES ════════
 function ifRenderClientes(){
   ifDestruirCharts();
-  const segs=['todos',...new Set(ifPerfisFiltrados().flatMap(pf=>pf.seg.tags))];
+  const segs=['todos',...new Set(ifPerfisAnalise().flatMap(pf=>pf.seg.tags))];
   document.getElementById('if-corpo').innerHTML=`
     <div class="if-filtros">
-      <input type="text" class="if-busca" placeholder="🔎 Buscar cliente, bairro, plano…" value="${IF_state.busca}" oninput="IF_state.busca=this.value;ifRenderTabela()">
+      <input type="text" class="if-busca" placeholder="🔎 Buscar cliente, bairro, plano…" value="${ifH(IF_state.busca)}" oninput="IF_state.busca=this.value;ifRenderTabela()">
       <select class="if-sel" onchange="IF_state.filtroSeg=this.value;ifRenderTabela()">
-        ${segs.map(sg=>`<option value="${sg}" ${IF_state.filtroSeg===sg?'selected':''}>${sg==='todos'?'Todos os segmentos':sg}</option>`).join('')}
+        ${segs.map(sg=>`<option value="${ifH(sg)}" ${IF_state.filtroSeg===sg?'selected':''}>${sg==='todos'?'Todos os segmentos':ifH(sg)}</option>`).join('')}
       </select>
       <select class="if-sel" onchange="IF_state.ordem=this.value;ifRenderTabela()">
         <option value="risco" ${IF_state.ordem==='risco'?'selected':''}>⚠ Maior risco primeiro</option>
@@ -25819,7 +25922,7 @@ function ifRenderClientes(){
 
 function ifRenderTabela(){
   const b=(IF_state.busca||'').toLowerCase();
-  let lista=ifPerfisFiltrados().filter(pf=>
+  let lista=ifPerfisAnalise().filter(pf=>
     (IF_state.filtroSeg==='todos'||pf.seg.tags.includes(IF_state.filtroSeg)) &&
     (!b||[pf.nome,pf.bairro,pf.cidade,pf.plano].join(' ').toLowerCase().includes(b)));
   const ord=IF_state.ordem;
@@ -25839,26 +25942,27 @@ function ifRenderTabela(){
       <tbody>${top.map(pf=>{
         const barCor=pf.risco.cor;
         return`<tr>
-          <td><div class="if-cli-nome">${pf.nome}</div><div class="if-cli-sub">${pf.bairro} · ${pf.plano}</div></td>
+          <td><div class="if-cli-nome">${ifH(pf.nome)}</div><div class="if-cli-sub">${ifH(pf.bairro)} · ${ifH(pf.plano)}</div></td>
           <td><div class="if-scorebox"><div class="if-scoreval" style="color:${barCor}">${pf.sc.score}</div><div class="if-scorebar"><div style="width:${pf.sc.score}%;background:${barCor}"></div></div></div></td>
           <td><span class="if-pill" style="background:${barCor}22;color:${barCor}">${pf.risco.txt}</span></td>
           <td class="td-mono">${pf.prob.probAtraso}%${pf.prob.diasPrevistos?`<div class="if-cli-sub">~${pf.prob.diasPrevistos}d</div>`:''}</td>
           <td class="td-mono" style="color:${pf.prob.probCancel>=60?IF_CORES.vermelho:'inherit'}">${pf.prob.probCancel}%</td>
           <td class="td-mono">${pf.p.nVencidas||'—'}</td>
-          <td class="td-mono" style="color:${pf.p.valorVencido>0?IF_CORES.vermelho:'inherit'}">${pf.p.valorVencido?'R$ '+pf.p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2}):'—'}</td>
+          <td class="td-mono" style="color:${pf.p.valorVencido>0?IF_CORES.vermelho:'inherit'}">${pf.p.valorVencido?'R$ '+pf.p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>
           <td class="td-mono">${pf.p.mediaAtraso?pf.p.mediaAtraso+'d':'—'}</td>
           <td>${pf.seg.tags.slice(0,2).map(t=>`<span class="if-pill" style="background:${(IF_SEG_CORES[t]||'#888')}22;color:${IF_SEG_CORES[t]||'#888'}">${t}</span>`).join(' ')}</td>
-          <td><button class="btn" style="font-size:10.5px;padding:4px 10px" onclick="ifAbrirPerfil('${pf.ixcId}')">👤 Perfil</button></td>
+          <td><button class="btn" style="font-size:10.5px;padding:4px 10px" onclick="ifAbrirPerfil(${ifArg(pf.ixcId)})">👤 Perfil</button></td>
         </tr>`;}).join('')}</tbody>
     </table></div>`;
 }
 
 function ifExportarScoresCSV(){
   const h='Cliente;ID IXC;Cidade;Bairro;Plano;Score;Risco;Prob Atraso %;Dias Previstos;Prob Cancel %;Prob Recup %;Faturas Pagas;Atrasos;Freq Atraso %;Atraso Medio d;Maior Atraso d;Vencidas;Valor Vencido;Valor Aberto;Total Pago;Recuperado;Tendencia;Segmento Principal;Tags';
-  const r=IF_state.perfis.map(pf=>[pf.nome.replace(/;/g,' '),pf.ixcId,pf.cidade,pf.bairro,String(pf.plano).replace(/;/g,' '),pf.sc.score,pf.risco.txt,pf.prob.probAtraso,pf.prob.diasPrevistos,pf.prob.probCancel,pf.prob.probRecup,pf.p.nPagas,pf.p.nAtrasos,ifPct(pf.p.freqAtraso),pf.p.mediaAtraso,pf.p.maiorAtraso,pf.p.nVencidas,pf.p.valorVencido.toFixed(2).replace('.',','),pf.p.valorAberto.toFixed(2).replace('.',','),pf.p.totalPago.toFixed(2).replace('.',','),pf.p.valorRecuperado.toFixed(2).replace('.',','),pf.p.tendencia,pf.seg.principal,pf.seg.tags.join('|')].join(';'));
+  // exporta o que está na tela: o recorte atual da base
+  const r=ifPerfisAnalise().map(pf=>[String(pf.nome).replace(/;/g,' '),pf.ixcId,String(pf.cidade).replace(/;/g,' '),String(pf.bairro).replace(/;/g,' '),String(pf.plano).replace(/;/g,' '),pf.sc.score,pf.risco.txt,pf.prob.probAtraso,pf.prob.diasPrevistos,pf.prob.probCancel,pf.prob.probRecup,pf.p.nPagas,pf.p.nAtrasos,ifPct(pf.p.freqAtraso),pf.p.mediaAtraso,pf.p.maiorAtraso,pf.p.nVencidas,pf.p.valorVencido.toFixed(2).replace('.',','),pf.p.valorAberto.toFixed(2).replace('.',','),pf.p.totalPago.toFixed(2).replace('.',','),pf.p.valorRecuperado.toFixed(2).replace('.',','),pf.p.tendencia,pf.seg.principal,pf.seg.tags.join('|')].join(';'));
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));
-  a.download='inteligencia_financeira_scores.csv';a.click();showToast('CSV exportado!');
+  a.download='inteligencia_financeira_scores_'+IF_state.filtroStatus+'.csv';a.click();showToast('CSV exportado!');
 }
 
 // ════════ PERFIL DO CLIENTE (modal) ════════
@@ -25873,10 +25977,10 @@ function ifAbrirPerfil(ixcId){
     <div class="modal if-perfil" style="max-width:860px">
       <div class="modal-header" style="background:#004E98;color:#fff;border-radius:12px 12px 0 0">
         <div>
-          <div style="font-size:16px;font-weight:700">${pf.nome}</div>
-          <div style="font-size:11px;opacity:.85">${pf.bairro} · ${pf.cidade} · ${pf.plano} · Contrato: ${pf.sca.contrato} / Acesso: ${pf.sca.acesso}</div>
+          <div style="font-size:16px;font-weight:700">${ifH(pf.nome)}</div>
+          <div style="font-size:11px;opacity:.85">${ifH(pf.bairro)} · ${ifH(pf.cidade)} · ${ifH(pf.plano)} · Contrato: ${ifH(pf.sca.contrato)} / Acesso: ${ifH(pf.sca.acesso)}</div>
         </div>
-        <button class="modal-close" style="color:#fff" onclick="ifFecharPerfil()">✕</button>
+        <button class="modal-close" style="color:#fff;background:rgba(255,255,255,.18)" aria-label="Fechar" onclick="ifFecharPerfil()">✕</button>
       </div>
       <div class="modal-body">
         <div class="if-perfil-topo">
@@ -25886,7 +25990,7 @@ function ifAbrirPerfil(ixcId){
             <div style="height:56px;margin-top:6px"><canvas id="if-spark"></canvas></div>
             <div class="if-gauge-lab">evolução 12 meses</div>
           </div>
-          <div class="if-resumo-ia"><div class="if-resumo-tit">🧠 Análise do motor <button class="btn" style="font-size:9.5px;padding:2px 9px;float:right" onclick="ifIAPerfil('${pf.ixcId}')">✨ Análise avançada (IA)</button></div>${ifResumoTexto(pf)}<div id="if-ia-perfil"></div></div>
+          <div class="if-resumo-ia"><div class="if-resumo-tit">🧠 Análise do motor <button class="btn" style="font-size:9.5px;padding:2px 9px;float:right" onclick="ifIAPerfil(${ifArg(pf.ixcId)})">✨ Análise avançada (IA)</button></div>${ifResumoTexto(pf)}<div id="if-ia-perfil"></div></div>
         </div>
         <div class="if-mgrid">
           ${[['Pagamentos',pf.p.nPagas],['Atrasos',pf.p.nAtrasos],['Freq. atraso',ifPct(pf.p.freqAtraso)+'%'],['Atraso médio',pf.p.mediaAtraso+'d'],['Maior atraso',pf.p.maiorAtraso+'d'],['Dias médios p/ pagar',pf.p.mediaDiasPgto+'d'],['Valor médio',brlS(pf.p.valorMedio)],['Total pago',brlS(pf.p.totalPago)],['Em aberto',brlS(pf.p.valorAberto)],['Vencido',brlS(pf.p.valorVencido)],['Recuperado',brlS(pf.p.valorRecuperado)],['Sequência em dia',pf.p.seqEmDia],['Chamados 90d',pf.nChamados90||0],['Costuma pagar',(d=>d?d.janela:'—')(ifDiaPagamento(pf.fats))]].map(([l,v])=>`<div class="if-m"><div class="if-m-l">${l}</div><div class="if-m-v">${v}</div></div>`).join('')}
@@ -25896,9 +26000,9 @@ function ifAbrirPerfil(ixcId){
             <div class="if-painel-tit">Fatores do score</div>
             ${pf.sc.fatores.map(f=>`<div class="if-fator"><span class="if-fator-delta" style="color:${f.delta<0?IF_CORES.vermelho:IF_CORES.verde}">${f.delta>0?'+':''}${f.delta}</span>${f.label}</div>`).join('')||'<div class="if-cli-sub">Sem penalidades — histórico impecável.</div>'}
             <div class="if-painel-tit" style="margin-top:12px">Probabilidades</div>
-            <div class="if-fator">🕐 Atraso: <b>${pf.prob.probAtraso}%</b> — ${pf.prob.motivos.atraso.join('; ')}</div>
-            <div class="if-fator">🚪 Cancelamento: <b>${pf.prob.probCancel}%</b> — ${pf.prob.motivos.cancel.join('; ')||'sem sinais de risco'}</div>
-            <div class="if-fator">💰 Recuperação: <b>${pf.prob.probRecup}%</b> — ${pf.prob.motivos.recup.join('; ')||'sem atrasos longos no histórico'}</div>
+            <div class="if-fator">🕐 Atraso: <b>${pf.prob.probAtraso}%</b> — ${ifH(pf.prob.motivos.atraso.join('; '))}</div>
+            <div class="if-fator">🚪 Cancelamento: <b>${pf.prob.probCancel}%</b> — ${ifH(pf.prob.motivos.cancel.join('; ')||'sem sinais de risco')}</div>
+            <div class="if-fator">💰 Recuperação: <b>${pf.prob.probRecup}%</b> — ${ifH(pf.prob.motivos.recup.join('; ')||'sem atrasos longos no histórico')}</div>
             <div class="if-painel-tit" style="margin-top:12px">Segmentos</div>
             <div>${pf.seg.tags.map(t=>`<span class="if-pill" style="background:${(IF_SEG_CORES[t]||'#888')}22;color:${IF_SEG_CORES[t]||'#888'}">${t}</span>`).join(' ')}</div>
           </div>
@@ -25920,16 +26024,16 @@ function ifFecharPerfil(){ try{IF_charts.spark?.destroy()}catch(e){} delete IF_c
 function ifRenderInsights(){
   ifDestruirCharts();
   const insights=ifGerarInsights(); // recalculado sob o recorte atual
-  const P=ifPerfisFiltrados();
+  const P=ifPerfisAnalise();
   document.getElementById('if-corpo').innerHTML=`
     <div class="if-insights">${insights.map(i=>`
       <div class="if-insight" style="border-left-color:${i.cor}"><span class="if-insight-ico">${i.ico}</span><span>${i.txt}</span></div>`).join('')}</div>
     <div class="if-painel" style="margin-top:14px"><div class="if-painel-tit">🎯 Onde agir agora — top 10 prioridades de cobrança</div>
       <div class="if-tscroll"><table class="if-t"><thead><tr><th>#</th><th>Cliente</th><th>Score</th><th>Vencido</th><th>P. recuperação</th><th>Ação sugerida</th></tr></thead>
       <tbody>${[...P].filter(pf=>pf.p.valorVencido>0).sort((a,b)=>(b.p.valorVencido*b.prob.probRecup)-(a.p.valorVencido*a.prob.probRecup)).slice(0,10).map((pf,i)=>`
-        <tr><td>${i+1}</td><td><div class="if-cli-nome">${pf.nome}</div><div class="if-cli-sub">${pf.bairro}</div></td>
+        <tr><td>${i+1}</td><td><div class="if-cli-nome">${ifH(pf.nome)}</div><div class="if-cli-sub">${ifH(pf.bairro)}</div></td>
         <td style="color:${pf.risco.cor};font-weight:700">${pf.sc.score}</td>
-        <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${pf.p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+        <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${pf.p.valorVencido.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
         <td class="td-mono">${pf.prob.probRecup}%</td>
         <td style="font-size:11px">${pf.prob.probRecup>=60?'📞 Contato direto — alta chance de recuperar':pf.prob.probCancel>=60?'🤝 Oferecer negociação — risco de cancelamento':'📋 Régua de cobrança padrão'}</td></tr>`).join('')}</tbody></table></div>
       <div class="if-cli-sub" style="margin-top:8px">Priorização = valor vencido × probabilidade de recuperação (maior retorno esperado por esforço de cobrança).</div>
@@ -25955,7 +26059,8 @@ function ifRenderChat(){
     </div>`;
   const h=document.getElementById('if-chat-hist'); h.scrollTop=h.scrollHeight;
 }
-function ifChatBolha(m){ return `<div class="if-msg ${m.de}"><div class="if-msg-b">${m.txt}</div></div>`; }
+// a pergunta do usuário é texto; a resposta já vem montada (e escapada) pelo motor
+function ifChatBolha(m){ return `<div class="if-msg ${m.de==='user'?'user':'ia'}"><div class="if-msg-b">${m.de==='user'?ifH(m.txt):m.txt}</div></div>`; }
 async function ifPerguntar(txt){
   txt=(txt||'').trim(); if(!txt)return;
   IF_state.chatHist.push({de:'user',txt});
@@ -25965,8 +26070,8 @@ async function ifPerguntar(txt){
     // Sem regra local → IA generativa (Groq) com o contexto dos dados
     IF_state.chatHist.push({de:'ia',txt:'<span class="diag-spinner"></span> Analisando com a IA…'});
     ifRenderChat();
-    try{ const r=await ifChatGroq(txt); IF_state.chatHist[IF_state.chatHist.length-1]={de:'ia',txt:'<span class="if-ia-selo">✨ IA Groq</span> '+r.replace(/\n/g,'<br>')}; }
-    catch(e){ IF_state.chatHist[IF_state.chatHist.length-1]={de:'ia',txt:'❌ IA indisponível: '+(e.message||e)+'<br>Tente uma das perguntas prontas abaixo.'}; }
+    try{ const r=await ifChatGroq(txt); IF_state.chatHist[IF_state.chatHist.length-1]={de:'ia',txt:'<span class="if-ia-selo">✨ IA Groq</span> '+ifTextoIA(r)}; }
+    catch(e){ IF_state.chatHist[IF_state.chatHist.length-1]={de:'ia',txt:'❌ IA indisponível: '+ifH(e.message||e)+'<br>Tente uma das perguntas prontas abaixo.'}; }
     ifRenderChat();
   }
   const inp=document.getElementById('if-chat-txt'); if(inp)inp.value='';
@@ -25975,50 +26080,56 @@ async function ifPerguntar(txt){
 function ifResponder(q){
   const t=q.toLowerCase();
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const P=ifPerfisFiltrados();
+  const P=ifPerfisAnalise();
   const lista=(arr,fmt)=>'<ol class="if-lista">'+arr.map(fmt).map(x=>`<li>${x}</li>`).join('')+'</ol>';
   if(/maior risco|mais risco|inadimpl[eê]ncia.*(quem|clientes)|risco de inadimpl/.test(t)){
     const top=[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,5);
-    return `Os 5 clientes com maior risco hoje:${lista(top,pf=>`<b>${pf.nome}</b> — score ${pf.sc.score} (${pf.risco.txt}), ${pf.p.nVencidas} vencida(s) somando ${brlS(pf.p.valorVencido)}. Motivo: ${pf.prob.motivos.atraso.join('; ')}.`)}`;
+    return `Os 5 clientes com maior risco hoje:${lista(top,pf=>`<b>${ifH(pf.nome)}</b> — score ${pf.sc.score} (${pf.risco.txt}), ${pf.p.nVencidas} vencida(s) somando ${brlS(pf.p.valorVencido)}. Motivo: ${ifH(pf.prob.motivos.atraso.join('; '))}.`)}`;
   }
   if(/aten[cç][aã]o hoje|priorizar|concentrar.*(esfor|cobran)|equipe de cobran/.test(t)){
     const top=[...P].filter(pf=>pf.p.valorVencido>0).sort((a,b)=>(b.p.valorVencido*b.prob.probRecup)-(a.p.valorVencido*a.prob.probRecup)).slice(0,5);
     const tot=top.reduce((s,pf)=>s+pf.p.valorVencido,0);
-    return `Concentre a cobrança nestes 5 clientes — maior retorno esperado (${brlS(tot)} vencidos com boa chance de recuperação):${lista(top,pf=>`<b>${pf.nome}</b> — ${brlS(pf.p.valorVencido)} vencidos, ${pf.prob.probRecup}% de chance de recuperar. ${pf.prob.probRecup>=60?'Contato direto recomendado.':'Considere oferecer negociação.'}`)}`;
+    return `Concentre a cobrança nestes 5 clientes — maior retorno esperado (${brlS(tot)} vencidos com boa chance de recuperação):${lista(top,pf=>`<b>${ifH(pf.nome)}</b> — ${brlS(pf.p.valorVencido)} vencidos, ${pf.prob.probRecup}% de chance de recuperar. ${pf.prob.probRecup>=60?'Contato direto recomendado.':'Considere oferecer negociação.'}`)}`;
   }
   if(/bairro/.test(t)){
     const porB={};P.forEach(pf=>{if(pf.p.valorVencido>0)porB[pf.bairro]=(porB[pf.bairro]||0)+pf.p.valorVencido;});
     const top=Object.entries(porB).sort((a,b)=>b[1]-a[1]).slice(0,5);
-    return top.length?`Bairros com maior valor vencido:${lista(top,([b,v])=>`<b>${b}</b> — ${brlS(v)}`)}`:'Nenhum bairro com faturas vencidas no momento. 🎉';
+    return top.length?`Bairros com maior valor vencido:${lista(top,([b,v])=>`<b>${ifH(b)}</b> — ${brlS(v)}`)}`:'Nenhum bairro com faturas vencidas no momento. 🎉';
   }
   if(/cancelar|cancelamento/.test(t)){
-    const top=[...P].filter(pf=>pf.seg.principal!=='Cancelado').sort((a,b)=>b.prob.probCancel-a.prob.probCancel).slice(0,5);
-    return `Clientes com maior probabilidade de cancelamento:${lista(top,pf=>`<b>${pf.nome}</b> — ${pf.prob.probCancel}%. Motivos: ${pf.prob.motivos.cancel.join('; ')||'perfil de risco geral'}.`)}`;
+    const top=[...P].filter(pf=>pf.seg.principal!=='Cancelado'&&!pf.ex).sort((a,b)=>b.prob.probCancel-a.prob.probCancel).slice(0,5);
+    if(!top.length) return 'Neste recorte não há clientes ativos para estimar cancelamento — troque o recorte para a base atual.';
+    return `Clientes com maior probabilidade de cancelamento:${lista(top,pf=>`<b>${ifH(pf.nome)}</b> — ${pf.prob.probCancel}%. Motivos: ${ifH(pf.prob.motivos.cancel.join('; ')||'perfil de risco geral')}.`)}`;
   }
   if(/tend[eê]ncia|30.*60.*90|pr[oó]ximos (30|60|90)/.test(t)){
     const pr=ifPrevisao();
-    const M=ifMensalFiltrado(); const med=M.slice(-3).reduce((s,m)=>s+m.recebida,0)/3;
-    return `Previsão baseada no comportamento individual de cada cliente:<br>• <b>30 dias:</b> ${brlS(pr.d30.risco)} em risco de atraso.<br>• <b>60 dias:</b> ${brlS(pr.d60.risco)}.<br>• <b>90 dias:</b> ${brlS(pr.d90.risco)}.<br>A receita recebida média dos últimos 3 meses foi ${brlS(med)} — mantido o padrão, é a base esperada por mês, descontando o risco acima.`;
+    // média dos 3 últimos meses FECHADOS (o corrente ainda está pela metade)
+    const M=ifMensalFiltrado(); const fech3=M.slice(-4,-1); const med=fech3.reduce((s,m)=>s+m.recebida,0)/Math.max(1,fech3.length);
+    return `Previsão baseada no comportamento individual de cada cliente:<br>• <b>30 dias:</b> ${brlS(pr.d30.risco)} em risco de atraso.<br>• <b>60 dias:</b> ${brlS(pr.d60.risco)} (acumulado).<br>• <b>90 dias:</b> ${brlS(pr.d90.risco)} (acumulado).<br>A receita recebida média dos últimos 3 meses fechados foi ${brlS(med)} — mantido o padrão, é a base esperada por mês, descontando o risco acima.`;
   }
   if(/melhoraram|melhora|recupera[çc][aã]o de clientes|em recupera/.test(t)){
     const top=P.filter(pf=>pf.evolucao.length>=4&&pf.sc.score-pf.evolucao[pf.evolucao.length-4]>=8).sort((a,b)=>(b.sc.score-b.evolucao[b.evolucao.length-4])-(a.sc.score-a.evolucao[a.evolucao.length-4])).slice(0,5);
-    return top.length?`Clientes em clara melhora (score subindo):${lista(top,pf=>`<b>${pf.nome}</b> — score foi de ${pf.evolucao[pf.evolucao.length-4]} para ${pf.sc.score} em 3 meses. ${pf.p.seqEmDia?pf.p.seqEmDia+' pagamentos seguidos em dia.':''}`)}`:'Nenhuma melhora significativa de score detectada nos últimos 3 meses.';
+    return top.length?`Clientes em clara melhora (score subindo):${lista(top,pf=>`<b>${ifH(pf.nome)}</b> — score foi de ${pf.evolucao[pf.evolucao.length-4]} para ${pf.sc.score} em 3 meses. ${pf.p.seqEmDia?pf.p.seqEmDia+' pagamentos seguidos em dia.':''}`)}`:'Nenhuma melhora significativa de score detectada nos últimos 3 meses.';
   }
   if(/queda.*arrecada|arrecada[çc][aã]o.*(queda|caiu)|por que.*caiu/.test(t)){
+    // Mês corrente ATÉ HOJE contra o MESMO trecho do mês anterior. Comparar com
+    // o mês anterior inteiro dava "queda" todo começo de mês.
     const M=ifMensalFiltrado(); const atu=M[M.length-1],ant=M[M.length-2];
-    const dif=atu.recebida-ant.recebida;
-    if(dif>=0) return `Na verdade a arrecadação <b>subiu</b> ${brlS(dif)} vs o mês anterior (${brlS(atu.recebida)} vs ${brlS(ant.recebida)}).`;
+    const fats=P.flatMap(pf=>pf.fats), dia=+hoje().slice(8,10);
+    const recAtu=ifRecebidoAteDia(fats,atu.mes,dia), recAnt=ifRecebidoAteDia(fats,ant.mes,dia);
+    const dif=recAtu-recAnt, trecho=`do dia 1 ao dia ${dia}`;
+    if(dif>=0) return `Não houve queda: ${trecho} a arrecadação foi de ${brlS(recAtu)}, contra ${brlS(recAnt)} no mesmo trecho do mês anterior (<b>+${brlS(dif)}</b>). O mês anterior fechou com ${brlS(ant.recebida)}.`;
     const vencAtu=P.reduce((s,pf)=>s+pf.p.valorVencido,0);
-    return `A arrecadação caiu ${brlS(-dif)} vs o mês anterior. Principais fatores nos dados:<br>• ${atu.nVencidas} faturas do mês estão vencidas sem pagamento.<br>• Valor total vencido na base: ${brlS(vencAtu)}.<br>• Inadimplência do mês: ${ifPct(atu.inadimpl)}% (anterior: ${ifPct(ant.inadimpl)}%).<br>Recomendação: acione os 10 clientes da aba Insights — maior retorno esperado de recuperação.`;
+    return `A arrecadação está ${brlS(-dif)} abaixo do mesmo trecho do mês anterior (${trecho}: ${brlS(recAtu)} contra ${brlS(recAnt)}). Principais fatores nos dados:<br>• ${atu.nVencidas} faturas deste mês já venceram sem pagamento.<br>• Valor total vencido na base: ${brlS(vencAtu)}.<br>Recomendação: acione os 10 clientes da aba Insights — maior retorno esperado de recuperação.`;
   }
   if(/vip|maior faturamento|mais valioso/.test(t)){
     const top=[...P].sort((a,b)=>b.p.totalPago-a.p.totalPago).slice(0,5);
-    return `Clientes de maior valor (total pago no período):${lista(top,pf=>`<b>${pf.nome}</b> — ${brlS(pf.p.totalPago)} pagos, score ${pf.sc.score}.`)}`;
+    return `Clientes de maior valor (total pago no período):${lista(top,pf=>`<b>${ifH(pf.nome)}</b> — ${brlS(pf.p.totalPago)} pagos, score ${pf.sc.score}.`)}`;
   }
   if(/campanha|etapa|funciona melhor|efetividade|r[ée]gua/.test(t)){
     const ef=ifEfetividadeRegua();
     if(!ef) return 'Ainda não há histórico de cobranças registrado para medir a efetividade. Use o Painel de Cobrança — cada envio registrado alimenta este aprendizado.';
-    return `Efetividade das etapas da régua (pagamento em até 7 dias após a cobrança):${lista(ef,e=>`<b>${e.nome}</b> — ${e.taxa}% convertem (${e.pagas7d} de ${e.enviadas} envios, R$ ${e.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} recuperados)`)}A etapa "${ef[0].nome}" é a que melhor converte hoje.`;
+    return `Efetividade das etapas da régua (pagamento em até 7 dias após a cobrança):${lista(ef,e=>`<b>${ifH(e.nome)}</b> — ${e.taxa}% convertem (${e.pagas7d} de ${e.enviadas} envios, R$ ${e.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} recuperados)`)}A etapa "${ifH(ef[0].nome)}" é a que melhor converte hoje.`;
   }
   return null; // sem regra local → cai para a IA (Groq)
 }
@@ -26030,25 +26141,26 @@ function ifResponder(q){
 
 // ── DRILL-DOWN: abre a lista de clientes por trás de qualquer número do dashboard ──
 function ifDrill(tipo, chave){
-  const P=ifPerfisFiltrados(); const mesAtu=hoje().slice(0,7);
+  const P=ifPerfisAnalise(); const mesAtu=hoje().slice(0,7);
   let titulo='', lista=[], colExtra=null;
-  if(tipo==='bairro'){ titulo='📍 Clientes do bairro '+chave; lista=P.filter(pf=>pf.bairro===chave); }
-  else if(tipo==='plano'){ titulo='📦 Clientes do plano '+chave; lista=P.filter(pf=>String(pf.plano).slice(0,18)===chave||pf.plano===chave); }
-  else if(tipo==='seg'){ titulo='🏷️ Segmento: '+chave; lista=P.filter(pf=>pf.seg.tags.includes(chave)||pf.seg.principal===chave); }
+  // título vai como HTML no modal: o nome que vem do IXC entra escapado
+  if(tipo==='bairro'){ titulo='📍 Clientes do bairro '+ifH(chave); lista=P.filter(pf=>pf.bairro===chave); }
+  else if(tipo==='plano'){ titulo='📦 Clientes do plano '+ifH(chave); lista=P.filter(pf=>String(pf.plano).slice(0,22)===chave||String(pf.plano).slice(0,18)===chave||pf.plano===chave); }
+  else if(tipo==='seg'){ titulo='🏷️ Segmento: '+ifH(chave); lista=P.filter(pf=>pf.seg.tags.includes(chave)||pf.seg.principal===chave); }
   else if(tipo==='inadimplentes'){ titulo='💸 Clientes com faturas vencidas'; lista=P.filter(pf=>pf.p.nVencidas>0); }
   else if(tipo==='bloqueados'){ titulo='🔒 Clientes com acesso bloqueado'; lista=P.filter(pf=>/Bloqueio/.test(pf.sca.acesso)); colExtra=pf=>pf.sca.acesso; }
-  else if(tipo==='pagosMes'){ titulo='✅ Clientes que pagaram este mês'; lista=P.filter(pf=>pf.fats.some(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===mesAtu)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===mesAtu);return 'R$ '+fs.reduce((s,f)=>s+(f.recebido||f.valor),0).toLocaleString('pt-BR',{minimumFractionDigits:2});}; }
-  else if(tipo==='previstoMes'){ titulo='📅 Faturas com vencimento este mês'; lista=P.filter(pf=>pf.fats.some(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===mesAtu)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===mesAtu);return 'R$ '+fs.reduce((s,f)=>s+f.valor,0).toLocaleString('pt-BR',{minimumFractionDigits:2});}; }
-  else if(tipo==='recuperados'){ titulo='💰 Clientes com valores recuperados'; lista=P.filter(pf=>pf.p.valorRecuperado>0); colExtra=pf=>'R$ '+pf.p.valorRecuperado.toLocaleString('pt-BR',{minimumFractionDigits:2}); }
+  else if(tipo==='pagosMes'){ titulo='✅ Clientes que pagaram este mês'; lista=P.filter(pf=>pf.fats.some(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===mesAtu)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo==='paga'&&ifMesDe(f.pgto)===mesAtu);return 'R$ '+fs.reduce((s,f)=>s+(f.recebido||f.valor),0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}; }
+  else if(tipo==='previstoMes'){ titulo='📅 Faturas com vencimento este mês'; lista=P.filter(pf=>pf.fats.some(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===mesAtu)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===mesAtu);return 'R$ '+fs.reduce((s,f)=>s+f.valor,0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}; }
+  else if(tipo==='recuperados'){ titulo='💰 Clientes com valores recuperados'; lista=P.filter(pf=>pf.p.valorRecuperado>0); colExtra=pf=>'R$ '+pf.p.valorRecuperado.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   else if(tipo==='risco30'){ titulo='⚠️ Alto risco nos próximos 30 dias'; lista=P.filter(pf=>pf.prob.probAtraso>=60&&(pf.p.nAbertas>0||pf.p.nVencidas>0)); colExtra=pf=>pf.prob.probAtraso+'% atraso'; }
   else if(tipo==='scoreBaixo'){ titulo='🧠 Distribuição de score — os 30 mais críticos'; lista=[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,30); }
-  else if(tipo==='mes'){ titulo='📆 Situação das faturas de '+chave; lista=P.filter(pf=>pf.fats.some(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===chave)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===chave);const v=fs.filter(f=>f.tipo==='vencida').length;const a=fs.filter(f=>f.tipo==='paga'&&f.atrasoDias>=1).length;return v?`${v} vencida(s)`:(a?`paga c/ atraso`:'em dia');}; }
+  else if(tipo==='mes'){ titulo='📆 Situação das faturas de '+ifH(/^\d{4}-\d{2}$/.test(chave)?ifPeriodoLabel(chave,'mensal'):chave); lista=P.filter(pf=>pf.fats.some(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===chave)); colExtra=pf=>{const fs=pf.fats.filter(f=>f.tipo!=='ignorada'&&ifMesDe(f.venc)===chave);const v=fs.filter(f=>f.tipo==='vencida').length;const a=fs.filter(f=>f.tipo==='paga'&&f.atrasoDias>=1).length;return v?`${v} vencida(s)`:(a?`paga c/ atraso`:'em dia');}; }
   lista=[...lista].sort((a,b)=>a.sc.score-b.sc.score);
   ifAbrirDrillModal(titulo, lista, colExtra);
 }
 
 function ifAbrirDrillModal(titulo, lista, colExtra){
-  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const html=`
   <div class="modal-overlay" id="if-modal-drill" onclick="if(event.target===this)this.remove()" style="display:flex;z-index:2900">
     <div class="modal" style="max-width:900px">
@@ -26056,21 +26168,21 @@ function ifAbrirDrillModal(titulo, lista, colExtra){
         <div style="font-size:14.5px;font-weight:700">${titulo} <span style="font-weight:400;opacity:.8;font-size:12px">· ${lista.length} cliente(s)</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="btn" style="background:rgba(255,255,255,.15);color:#fff;border-color:transparent;font-size:11px" onclick="ifDrillCSV()">↓ CSV</button>
-          <button class="modal-close" style="color:#fff" onclick="document.getElementById('if-modal-drill').remove()">✕</button>
+          <button class="modal-close" style="color:#fff;background:rgba(255,255,255,.18)" aria-label="Fechar" onclick="document.getElementById('if-modal-drill').remove()">✕</button>
         </div>
       </div>
       <div class="modal-body" style="max-height:70vh;overflow:auto">
         ${lista.length?`<table class="if-t">
           <thead><tr><th>Cliente</th><th>Score</th><th>P. atraso</th><th>Vencidas</th><th>Valor vencido</th>${colExtra?'<th>Detalhe</th>':''}<th>Segmento</th><th></th></tr></thead>
           <tbody>${lista.map(pf=>`<tr>
-            <td><div class="if-cli-nome">${pf.nome}</div><div class="if-cli-sub">${pf.bairro} · ${pf.plano}</div></td>
+            <td><div class="if-cli-nome">${ifH(pf.nome)}</div><div class="if-cli-sub">${ifH(pf.bairro)} · ${ifH(pf.plano)}</div></td>
             <td style="color:${pf.risco.cor};font-weight:700;font-family:'DM Mono',monospace">${pf.sc.score}</td>
             <td class="td-mono">${pf.prob.probAtraso}%</td>
             <td class="td-mono">${pf.p.nVencidas||'—'}</td>
             <td class="td-mono" style="color:${pf.p.valorVencido>0?IF_CORES.vermelho:'inherit'}">${pf.p.valorVencido?brlS(pf.p.valorVencido):'—'}</td>
-            ${colExtra?`<td style="font-size:11px">${colExtra(pf)}</td>`:''}
-            <td><span class="if-pill" style="background:${(IF_SEG_CORES[pf.seg.principal]||'#888')}22;color:${IF_SEG_CORES[pf.seg.principal]||'#888'}">${pf.seg.principal}</span></td>
-            <td><button class="btn" style="font-size:10px;padding:3px 9px" onclick="document.getElementById('if-modal-drill').remove();ifAbrirPerfil('${pf.ixcId}')">👤 Perfil</button></td>
+            ${colExtra?`<td style="font-size:11px">${ifH(colExtra(pf))}</td>`:''}
+            <td><span class="if-pill" style="background:${(IF_SEG_CORES[pf.seg.principal]||'#888')}22;color:${IF_SEG_CORES[pf.seg.principal]||'#888'}">${ifH(pf.seg.principal)}</span></td>
+            <td><button class="btn" style="font-size:10px;padding:3px 9px" onclick="document.getElementById('if-modal-drill').remove();ifAbrirPerfil(${ifArg(pf.ixcId)})">👤 Perfil</button></td>
           </tr>`).join('')}</tbody>
         </table>`:'<div class="cli-empty-pane">Nenhum cliente neste recorte.</div>'}
       </div>
@@ -26083,7 +26195,7 @@ function ifAbrirDrillModal(titulo, lista, colExtra){
 function ifDrillCSV(){
   const lista=window._ifDrillLista||[];
   const h='Cliente;ID IXC;Bairro;Plano;Score;Risco;Prob Atraso %;Vencidas;Valor Vencido;Segmento;Telefone';
-  const r=lista.map(pf=>[pf.nome.replace(/;/g,' '),pf.ixcId,pf.bairro,String(pf.plano).replace(/;/g,' '),pf.sc.score,pf.risco.txt,pf.prob.probAtraso,pf.p.nVencidas,pf.p.valorVencido.toFixed(2).replace('.',','),pf.seg.principal,pf.fone||''].join(';'));
+  const r=lista.map(pf=>[String(pf.nome).replace(/;/g,' '),pf.ixcId,String(pf.bairro).replace(/;/g,' '),String(pf.plano).replace(/;/g,' '),pf.sc.score,pf.risco.txt,pf.prob.probAtraso,pf.p.nVencidas,pf.p.valorVencido.toFixed(2).replace('.',','),pf.seg.principal,pf.fone||''].join(';'));
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+[h,...r].join('\n')],{type:'text/csv'}));
   a.download='drill_inteligencia.csv';a.click();showToast('CSV exportado!');
@@ -26790,7 +26902,7 @@ function ifTpl(tpl, pf, fat, dias){
   const varios=ctrs.size>1, usa=/{contrato}/.test(tpl);
   const rot=(varios||usa)?ifRotuloContrato(fat.idContrato):'';
   let t=tpl.replace(/{nome}/g,pf.nome).replace(/{primeiro_nome}/g,pf.nome.split(' ')[0])
-    .replace(/{valor}/g,'R$ '+fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2}))
+    .replace(/{valor}/g,'R$ '+fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}))
     .replace(/{vencimento}/g,venc).replace(/{dias}/g,String(Math.max(0,dias)))
     .replace(/{contrato}/g,rot);
   if(varios&&!usa) t+=`\n\n📄 ${fat.idContrato?'Contrato ':'Fatura '}${rot}`;
@@ -27024,7 +27136,7 @@ async function ifRenderCobranca(trilha){
   const valorFila=fila.reduce((s,i)=>s+i.fat.valor,0);
   const _MF=ifMensalFiltrado();
   const recup30=_MF[_MF.length-1]?.recuperada||0;
-  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const porEtapa={}; fila.forEach(i=>{(porEtapa[i.etapa.id]=porEtapa[i.etapa.id]||[]).push(i);});
   const _T=COB_TRILHAS[tr]||COB_TRILHAS.recuperacao;
   cobCorpo().innerHTML=`
@@ -27050,7 +27162,7 @@ async function ifRenderCobranca(trilha){
       <button class="btn" onclick="cobTab('regua')">⚙ Configurar régua</button>
     </div>
     ${(ef=>ef?`<div class="if-painel" style="margin-bottom:14px"><div class="if-painel-tit">📊 Efetividade da régua — % de faturas pagas em até 7 dias após a cobrança</div>
-      <div class="if-efet">${ef.map(e=>`<div class="if-efet-item"><div class="if-efet-nome">${e.nome}</div><div class="if-efet-bar"><div style="width:${e.taxa}%;background:${e.taxa>=50?IF_CORES.verde:e.taxa>=25?IF_CORES.amarelo:IF_CORES.vermelho}"></div></div><div class="if-efet-num">${e.taxa}% <span class="if-cli-sub">(${e.pagas7d}/${e.enviadas} · R$ ${e.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})})</span></div></div>`).join('')}</div>
+      <div class="if-efet">${ef.map(e=>`<div class="if-efet-item"><div class="if-efet-nome">${e.nome}</div><div class="if-efet-bar"><div style="width:${e.taxa}%;background:${e.taxa>=50?IF_CORES.verde:e.taxa>=25?IF_CORES.amarelo:IF_CORES.vermelho}"></div></div><div class="if-efet-num">${e.taxa}% <span class="if-cli-sub">(${e.pagas7d}/${e.enviadas} · R$ ${e.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})})</span></div></div>`).join('')}</div>
       <div class="if-cli-sub" style="margin-top:6px">Aprendizado contínuo: quanto mais cobranças registradas, mais precisa fica a medição de qual etapa converte melhor.</div></div>`:'')(ifEfetividadeRegua())}
     ${fila.length?regua.slice().reverse().filter(e=>porEtapa[e.id]?.length).map(e=>`
       <div class="if-painel" style="margin-bottom:12px;border-left:4px solid ${e.cor}">
@@ -27062,7 +27174,7 @@ async function ifRenderCobranca(trilha){
             const fone=ifFoneNorm(it.pf.fone);
             return`<tr id="if-cob-${e.id}-${i}">
               <td><div class="if-cli-nome">${it.pf.nome}</div><div class="if-cli-sub">${it.pf.bairro}${fone?' · 📱 '+fone:' · <span style=\'color:'+IF_CORES.vermelho+'\'>sem telefone</span>'}</div></td>
-              <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${it.fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+              <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${it.fat.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
               <td class="td-mono">${it.fat.venc.split('-').reverse().join('/').slice(0,5)}</td>
               <td class="td-mono">${it.dias>0?it.dias+'d':it.dias===0?'hoje':(-it.dias)+'d p/ vencer'}</td>
               <td style="color:${it.pf.risco.cor};font-weight:700">${it.pf.sc.score}</td>
@@ -27185,7 +27297,7 @@ function ifFaixaValor(v){
 // Linhas analíticas: cada fatura do recorte enriquecida com plano/bairro/cidade/faixa
 function ifLinhasAnaliticas(){
   const out=[];
-  ifPerfisFiltrados().forEach(pf=>{
+  ifPerfisAnalise().forEach(pf=>{
     pf.fats.forEach(f=>{
       if(f.tipo==='ignorada'||!f.venc) return;
       out.push({f, pf, plano:String(pf.plano||'—').slice(0,22), bairro:pf.bairro||'—', cidade:pf.cidade||'—', faixa:ifFaixaValor(f.valor)});
@@ -27219,7 +27331,10 @@ function ifSeriePeriodos(modo){
   const linhas=ifLinhasAnaliticas();
   const grupos={};
   linhas.forEach(l=>{ const k=ifPeriodoKey(l.f.venc,modo); if(k) (grupos[k]=grupos[k]||[]).push(l); });
-  let chaves=Object.keys(grupos).sort();
+  // faturas já emitidas para meses que ainda não chegaram não formam período:
+  // apareciam como "(atual)" com 0% de inadimplência
+  const atual=ifPeriodoKey(hoje(),modo);
+  let chaves=Object.keys(grupos).filter(k=>k<=atual).sort();
   const lim=modo==='mensal'?12:modo==='trimestral'?8:99;
   chaves=chaves.slice(-lim);
   return chaves.map(k=>({k, label:ifPeriodoLabel(k,modo), linhas:grupos[k], m:ifMetricas(grupos[k])}));
@@ -27310,13 +27425,13 @@ function ifRenderGerencial(){
         <div class="if-tscroll" style="max-height:400px"><table class="if-t">
           <thead><tr><th>${IF_state.gerDim==='faixa'?'Faixa':IF_state.gerDim[0].toUpperCase()+IF_state.gerDim.slice(1)}</th><th>Clientes</th><th>Previsto</th><th>Vencido</th><th>Inadimpl.</th><th>vs anterior</th><th></th></tr></thead>
           <tbody>${ifQuebra(serie,idx,IF_state.gerDim).map(q=>`
-            <tr><td style="font-weight:600">${q.chave}</td>
+            <tr><td style="font-weight:600">${ifH(q.chave)}</td>
             <td class="td-mono">${q.m.nClientes}</td>
             <td class="td-mono">${brlS(q.m.previsto)}</td>
             <td class="td-mono" style="color:${q.m.vencidoAberto>0?IF_CORES.vermelho:'inherit'}">${brlS(q.m.vencidoAberto)}</td>
             <td class="td-mono" style="font-weight:700">${ifPct(q.m.pctInad)}%</td>
             <td>${varBadge(q.m.pctInad,q.ant?.pctInad,true)}</td>
-            <td>${IF_state.gerDim==='bairro'||IF_state.gerDim==='plano'?`<button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifDrill('${IF_state.gerDim}','${String(q.chave).replace(/'/g,"\\'")}')">👥</button>`:''}</td></tr>`).join('')}</tbody>
+            <td>${IF_state.gerDim==='bairro'||IF_state.gerDim==='plano'?`<button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifDrill('${IF_state.gerDim}',${ifArg(q.chave)})">👥</button>`:''}</td></tr>`).join('')}</tbody>
         </table></div>
       </div>
     </div>
@@ -27340,7 +27455,7 @@ function ifRankingVar(serie, idx, cresceu){
   const lista=tudo.filter(x=>cresceu?x.varPP>0:x.varPP<0).sort((a,b)=>cresceu?b.varPP-a.varPP:a.varPP-b.varPP).slice(0,6);
   if(!lista.length) return '<div class="if-cli-sub">Nenhuma variação relevante.</div>';
   return lista.map(x=>`<div class="if-fator" style="display:flex;justify-content:space-between;gap:8px">
-    <span>${x.dim} <b>${x.chave}</b> — agora em ${x.pct}% (R$ ${x.venc.toLocaleString('pt-BR',{minimumFractionDigits:2})})</span>
+    <span>${x.dim} <b>${ifH(x.chave)}</b> — agora em ${x.pct}% (R$ ${x.venc.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})})</span>
     <span class="if-var ${cresceu?'ruim':'bom'}">${cresceu?'▲':'▼'} ${Math.abs(x.varPP)} p.p.</span></div>`).join('');
 }
 
@@ -27407,18 +27522,14 @@ function ifDiaPagamento(fats){
 }
 
 // ── ANÁLISE NOVA 2: chamados técnicos (90 dias) × risco de cancelamento ──
+// Lê o mapa que o ifCarregarChamados montou na análise. Antes lia um cache
+// ('campo_chamados') que nunca é carregado e dava sempre 0. Só o id INTERNO:
+// boa parte dos ids internos coincide com o id IXC de OUTRO cliente, então
+// casar pelos dois atribuía chamados à pessoa errada.
 function ifChamados90d(pf){
-  try{
-    const ch=gd('campo_chamados')||[];
-    const corte=(d=>{d.setDate(d.getDate()-90);return isoLocal(d);})(new Date());
-    // cliente_id pode guardar o id IXC OU o id local (peculiaridade conhecida do MoviControl)
-    return ch.filter(c=>{
-      const cid=String(c.cliente_id||'');
-      if(cid!==String(pf.ixcId)&&cid!==String(pf.cliId||'')) return false;
-      const dt=String(c.data||c.created_at||'').slice(0,10);
-      return dt>=corte;
-    }).length;
-  }catch(e){ return 0; }
+  const m=IF_state.chamados;
+  if(!m||pf.cliId==null||pf.cliId==='') return 0;
+  return m[String(pf.cliId)]||0;
 }
 
 // ── ANÁLISE NOVA 3: efetividade da régua (cobrança → pagamento em até 7 dias) ──
@@ -27478,6 +27589,7 @@ async function cobCarregarBase(msgEl){
   const cfg = await getIXCConfig();
   if(!cfg.proxyUrl) throw new Error('Configure a integração IXC em Configurações.');
   const corte = ifAddMeses(hoje().slice(0,7),-24)+'-01';
+  const chamados = ifCarregarChamados(); // em paralelo com as faturas
   const resp = await buscarTudoIXC(cfg,'fn_areceber',{
     qtype:'fn_areceber.data_emissao', query:corte, oper:'>=',
     sortname:'fn_areceber.data_vencimento', sortorder:'asc', rp:'1000'
@@ -27485,6 +27597,7 @@ async function cobCarregarBase(msgEl){
   const regs = resp.registros||[];
   if(!regs.length) throw new Error('O IXC não retornou faturas no período. Verifique a integração.');
   if(msgEl) msgEl.textContent = `Analisando ${regs.length.toLocaleString('pt-BR')} faturas…`;
+  IF_state.chamados = await chamados;
   await new Promise(r=>setTimeout(r,30));
   ifProcessar(regs);
 }
@@ -28147,7 +28260,7 @@ const NEG_SUB = { negativar:'📋 A negativar', negativados:'⚖️ Negativados'
 const NEG_ST = {elegivel:['Elegível','#004E98'],avisado:['Avisado','#C40000'],
                 negativado:['Negativado','#D00000'],baixado:['Baixado','#3C9D23'],descartado:['Descartado','#004E98']};
 
-function negBRL(v){ return 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2}); }
+function negBRL(v){ return 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function negData(d){ return d?String(d).slice(0,10).split('-').reverse().join('/'):'—'; }
 
 /* Prazo legal de baixa: 5 DIAS ÚTEIS após o pagamento (não corridos). */
@@ -28591,7 +28704,7 @@ async function cobDelOptout(fone){
 function cobRenderDesempenho(){
   const ef=ifEfetividadeRegua();
   const log=ifCobLog();
-  const brlS=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const brlS=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const por={}; log.forEach(x=>{const d=String(x.quando).slice(0,10); por[d]=(por[d]||0)+1;});
   const ult=Object.keys(por).sort().slice(-14);
   cobCorpo().innerHTML=`
@@ -28662,14 +28775,20 @@ async function ifAnaliseExecutiva(alvo){
   if(!el) return;
   el.innerHTML='<div class="if-ia-box"><span class="diag-spinner"></span> A IA está analisando os números…</div>';
   try{
-    const M=ifMensalFiltrado(), P=ifPerfisFiltrados(), atu=M[M.length-1], ant=M[M.length-2];
+    const M=ifMensalFiltrado(), P=ifPerfisAnalise(), atu=M[M.length-1], ant=M[M.length-2];
     const prev=ifPrevisao();
     const topRisco=[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,5).map(pf=>`${pf.nome} (score ${pf.sc.score}, R$${pf.p.valorVencido.toFixed(0)} vencido, bairro ${pf.bairro})`);
     const porB={};P.forEach(pf=>{if(pf.p.valorVencido>0)porB[pf.bairro]=(porB[pf.bairro]||0)+pf.p.valorVencido;});
     const ef=ifEfetividadeRegua();
+    // o mês atual está pela metade: a IA recebe isso dito, e a comparação justa
+    // (mesmo trecho do mês anterior) — senão "conclui" que a receita despencou
+    const dia=+hoje().slice(8,10), fatsP=P.flatMap(pf=>pf.fats);
+    const fech=M.filter(m=>m.completo30&&m.inad30!=null).slice(-2);
     const dados={recorte:IF_state.filtroStatus, clientes:P.length,
-      mesAtual:{prevista:atu.prevista.toFixed(0),recebida:atu.recebida.toFixed(0),inadimplenciaPct:ifPct(atu.inadimpl)},
-      mesAnterior:ant?{recebida:ant.recebida.toFixed(0),inadimplenciaPct:ifPct(ant.inadimpl)}:null,
+      mesAtual:{parcial:true, diaDoMes:dia, prevista:atu.prevista.toFixed(0),recebidaAteHoje:atu.recebida.toFixed(0),
+        recebidaMesAnteriorAteOMesmoDia:ant?ifRecebidoAteDia(fatsP,ant.mes,dia).toFixed(0):null},
+      mesAnterior:ant?{recebidaNoMesInteiro:ant.recebida.toFixed(0)}:null,
+      inadimplencia30dMesesFechados:fech.map(m=>`${ifPeriodoLabel(m.mes,'mensal')}: ${ifPct(m.inad30)}% não pago em até 30 dias`),
       vencidoTotal:P.reduce((s,pf)=>s+pf.p.valorVencido,0).toFixed(0),
       clientesInadimplentes:P.filter(pf=>pf.p.nVencidas>0).length,
       riscoProx30d:prev.d30.risco.toFixed(0),
@@ -28678,8 +28797,8 @@ async function ifAnaliseExecutiva(alvo){
       efetividadeRegua:ef?ef.map(e=>`${e.nome}: ${e.taxa}% pagam em 7d (${e.enviadas} envios)`):'sem histórico de cobrança ainda'};
     const txt=await ifGroq(IF_GROQ_SYS,
       'Analise estes indicadores do provedor e produza uma ANÁLISE EXECUTIVA curta (máx 220 palavras): 1) diagnóstico do momento; 2) principal causa provável; 3) três ações práticas priorizadas para os próximos 7 dias, com foco em recuperar dinheiro sem desgastar clientes.\n\nDADOS:\n'+JSON.stringify(dados,null,1));
-    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise executiva — IA (Groq)</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
-  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise executiva — IA (Groq)</div><div class="if-ia-txt">${ifTextoIA(txt)}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${ifH(e.message||e)}</div>`; }
 }
 
 // ── IA 2: Análise avançada do cliente (perfil) ──
@@ -28700,8 +28819,8 @@ async function ifIAPerfil(ixcId){
       chamadosTecnicos90d:ifChamados90d(pf), segmentos:pf.seg.tags};
     const txt=await ifGroq(IF_GROQ_SYS,
       'Analise este cliente do provedor e produza (máx 180 palavras): 1) leitura comportamental em 2-3 frases; 2) a MELHOR abordagem de cobrança/relacionamento para este perfil específico (canal, tom, momento do mês); 3) se houver valor vencido, uma proposta de negociação concreta e justa.\n\nCLIENTE:\n'+JSON.stringify(dados,null,1));
-    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise avançada — IA</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
-  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise avançada — IA</div><div class="if-ia-txt">${ifTextoIA(txt)}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${ifH(e.message||e)}</div>`; }
 }
 
 // ── IA 3: mensagem de cobrança personalizada (painel de cobrança) ──
@@ -28722,10 +28841,11 @@ async function ifIAMensagem(key, ixcId, btn){
 
 // ── IA 4: fallback do chat (perguntas fora das regras locais) ──
 async function ifChatGroq(pergunta){
-  const M=ifMensalFiltrado(), P=ifPerfisFiltrados(), atu=M[M.length-1];
+  const M=ifMensalFiltrado(), P=ifPerfisAnalise(), atu=M[M.length-1];
   const ef=ifEfetividadeRegua();
   const ctx={recorte:IF_state.filtroStatus, clientes:P.length,
-    inadimplenciaMesPct:ifPct(atu.inadimpl), recebidaMes:atu.recebida.toFixed(0), previstaMes:atu.prevista.toFixed(0),
+    mesAtualParcialAteODia:+hoje().slice(8,10),
+    inadimplenciaMesPct:ifPct(atu.inadimpl), recebidaMesAteHoje:atu.recebida.toFixed(0), previstaMes:atu.prevista.toFixed(0),
     vencidoTotal:P.reduce((s,pf)=>s+pf.p.valorVencido,0).toFixed(0),
     serieInadimplencia12m:M.map(m=>m.mes.slice(5)+':'+ifPct(m.inadimpl)+'%').join(' '),
     top10Risco:[...P].sort((a,b)=>a.sc.score-b.sc.score).slice(0,10).map(pf=>({nome:pf.nome,score:pf.sc.score,vencido:pf.p.valorVencido.toFixed(0),bairro:pf.bairro,probCancel:pf.prob.probCancel})),
@@ -28742,93 +28862,79 @@ async function ifChatGroq(pergunta){
 //  INVOLUNTÁRIO (inadimplência), ativações, ARPU, LTV, CAC, lifetime,
 //  NRR/GRR, cohorts e crescimento por bairro/cidade/plano com recomendação.
 //  Usa a BASE COMPLETA (churn exige os cancelados) — independe do Recorte.
-//  Ativação = data real do contrato (IXC). Mês do churn = última fatura (proxy).
+//  Ativação = contrato mais antigo do cliente (IXC). Saída = cancelado ou
+//  negativado com acesso desativado, no mês da data real de saída do IXC
+//  (sem a data, a última fatura).
 // ════════════════════════════════════════════════════════════════
 
 function ifCacCfg(){ try{return JSON.parse(localStorage.getItem('if_cac')||'{}');}catch(e){return{};} }
 function ifSalvarCac(o){ localStorage.setItem('if_cac',JSON.stringify(o)); }
 
-// ── MOTIVOS DE CANCELAMENTO (busca sob demanda no IXC) ──
-// Fonte: cliente_contrato (status D) → data_cancelamento, motivo_cancelamento, obs.
-// A tabela de nomes dos motivos é buscada de forma tolerante a versões do IXC.
-let _ifMotivos=null, _ifMotivosLoading=false;
+// ── SAÍDAS E MOTIVOS (lidos do IXC pelo servidor: api/ixc-sync › inteligencia.saidas) ──
+// Todo contrato que deixou de ser ativo — cancelado (I), desistência (D) e
+// negativado (N) — com a data real da saída e o código do motivo. Antes só
+// lia o status D (meia dúzia de contratos) e adivinhava os campos pelo nome,
+// o que trazia "Motivo #0" e datas erradas. Nomes dos motivos: os que a
+// equipe deu em Métricas recorrentes › Cancelamentos (o IXC daqui não tem a
+// tabela de nomes).
+let _ifMotivos=null, _ifMotivosLoading=false, _ifMotivosErro=null;
 async function ifBuscarMotivosChurn(force=false){
   if(_ifMotivos && !force) return _ifMotivos;
   if(_ifMotivosLoading) return null;
-  _ifMotivosLoading=true;
+  _ifMotivosLoading=true; _ifMotivosErro=null;
   try{
-    const cfg=await getIXCConfig();
-    if(!cfg.proxyUrl) throw new Error('Integração IXC não configurada.');
-    const resp=await buscarTudoIXC(cfg,'cliente_contrato',{
-      qtype:'cliente_contrato.status', query:'D', oper:'=', rp:'1000',
-      sortname:'cliente_contrato.id', sortorder:'desc'});
-    const regs=resp.registros||[];
+    const j=await ixaAPI('inteligencia.saidas', {}, 58000);
+    // por cliente, a saída mais recente (é quando ele deixou de ser cliente)
     const porCliente={};
-    regs.forEach(r=>{
-      const cid=String(r.id_cliente||''); if(!cid) return;
-      // tolerante a schema: acha campos por nome
-      let motivoId=null, dataCanc=null, obs='';
-      Object.entries(r).forEach(([k,v])=>{
-        const kl=k.toLowerCase();
-        if(v==null||v==='') return;
-        if(/motivo.*cancel|cancel.*motivo|id_motivo/.test(kl)&&!motivoId) motivoId=String(v);
-        if(/data.*cancel/.test(kl)&&!dataCanc){const d=String(v).slice(0,10);if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&d!=='0000-00-00')dataCanc=d;}
-        if(/obs.*cancel|cancel.*obs/.test(kl)) obs=String(v).slice(0,140);
-      });
-      // mantém o cancelamento mais recente por cliente
-      if(!porCliente[cid]||(dataCanc&&(!porCliente[cid].data||dataCanc>porCliente[cid].data)))
-        porCliente[cid]={motivoId, data:dataCanc, obs};
+    (j.saidas||[]).forEach(s=>{
+      const cid=String(s.c||''); if(!cid) return;
+      const at=porCliente[cid];
+      const nova={motivoId:s.k||null, data:s.x||null, obs:s.o||'', status:s.s||''};
+      if(!at || (nova.data||'')>(at.data||'') || ((nova.data||'')===(at.data||'') && !at.motivoId && nova.motivoId)) porCliente[cid]=nova;
     });
-    // nomes dos motivos (tenta os dois nomes de tabela conhecidos; falha silenciosa)
-    const nomes={};
-    for(const tabela of ['motivo_cancelamento','tipo_motivo_cancelamento']){
-      try{
-        const rm=await chamarIXC(cfg,tabela,{qtype:tabela+'.id',query:'0',oper:'>',rp:'300'});
-        (rm?.registros||[]).forEach(m=>{
-          const desc=m.motivo||m.descricao||m.nome||m.titulo;
-          if(m.id&&desc) nomes[String(m.id)]=String(desc);
-        });
-        if(Object.keys(nomes).length) break;
-      }catch(e){/* tabela pode não existir nesta versão */}
-    }
-    _ifMotivos={porCliente, nomes, quando:Date.now(), total:Object.keys(porCliente).length};
-    _ifGrowthCache=null; // datas reais de cancelamento mudam a série
+    _ifMotivos={porCliente, nomes:j.motivos||{}, quando:Date.now(), total:(j.saidas||[]).length};
+    _ifGrowthCache=null; // datas reais de saída mudam a série
     return _ifMotivos;
-  }finally{ _ifMotivosLoading=false; }
+  }catch(e){ _ifMotivosErro=e.message||String(e); throw e; }
+  finally{ _ifMotivosLoading=false; }
 }
-function ifNomeMotivo(id){
-  if(!id) return 'Não informado';
-  return (_ifMotivos?.nomes?.[String(id)]) || ('Motivo #'+id);
+function ifNomeMotivo(id, status){
+  if(!id) return status==='N' ? 'Negativação por inadimplência' : 'Sem motivo informado';
+  const n=_ifMotivos?.nomes?.[String(id)];
+  return n || (String(id).startsWith('d') ? 'Desistência nº '+String(id).slice(1) : 'Motivo nº '+id);
 }
 
 let _ifGrowthCache=null;
 function ifGrowthCalc(){
   if(_ifGrowthCache && _ifGrowthCache.quando===IF_state.geradoEm) return _ifGrowthCache;
   const P=IF_state.perfis; // base completa
-  const ctrs=gd('sf_clientes_contratos');
   const hj=hoje(), mesAtu=hj.slice(0,7);
   const meses=ifMesesRange(13); // 13 p/ ter MoM completo do 1º exibido
 
-  // ── enriquecer cada perfil com ativação real e churn derivado ──
+  // ── enriquecer cada perfil com ativação real e saída (churn) ──
   const info=P.map(pf=>{
-    const ctr=ctrs.find(x=>x.ixcClienteId==pf.ixcId)||{};
-    let ativMes=String(ctr.dataAtivacao||'').slice(0,7);
-    if(!/^\d{4}-\d{2}$/.test(ativMes)) ativMes = pf.p.primeiraFat ? pf.p.primeiraFat.slice(0,7) : null; // fallback: 1ª fatura
-    let churnMes=null, churnTipo=null, motivoId=null, motivoObs='';
-    if(pf.grupo==='cancelado'){
+    // ativação = contrato mais antigo do cliente (ifProcessar); sem data, a 1ª fatura
+    let ativMes=String(pf.ativacao||'').slice(0,7);
+    if(!/^\d{4}-\d{2}$/.test(ativMes)) ativMes = pf.p.primeiraFat ? pf.p.primeiraFat.slice(0,7) : null;
+    let churnMes=null, churnTipo=null, motivoId=null, motivoObs='', motivoSt='';
+    // Saída = cancelado OU negativado com o acesso desativado (pf.ex). O
+    // negativado desligado seguia contando como base ativa e somando MRR.
+    if(pf.ex){
       const mv=_ifMotivos?.porCliente?.[String(pf.ixcId)];
-      if(mv){ motivoId=mv.motivoId; motivoObs=mv.obs||''; }
-      // Prioridade: data REAL de cancelamento do IXC; fallback: última fatura
+      if(mv){ motivoId=mv.motivoId; motivoObs=mv.obs||''; motivoSt=mv.status||''; }
+      if(!motivoSt && pf.grupo==='negativado') motivoSt='N';
+      // Prioridade: data REAL da saída no IXC; sem ela, a última fatura
       if(mv&&mv.data) churnMes=mv.data.slice(0,7);
       else{ const vencs=pf.fats.filter(f=>f.tipo!=='ignorada'&&f.venc).map(f=>f.venc); churnMes = vencs.length ? vencs.sort().pop().slice(0,7) : ativMes; }
-      // Involuntário = saiu devendo (faturas vencidas em aberto) — cancelamento por inadimplência
-      churnTipo = pf.p.valorVencido>0 ? 'involuntario' : 'voluntario';
+      if(churnMes && ativMes && churnMes<ativMes) churnMes=ativMes;
+      // Involuntário = saiu devendo; negativado é sempre involuntário
+      churnTipo = (pf.grupo==='negativado' || pf.p.valorVencido>0) ? 'involuntario' : 'voluntario';
     }
     // valor mensal por mês (para MRR/expansão): soma faturas com venc no mês
     const valMes={};
-    pf.fats.forEach(f=>{ if(f.tipo!=='ignorada'&&f.venc) valMes[f.venc.slice(0,7)]=(valMes[f.venc.slice(0,7)]||0)+f.valor; });
-    return {pf, ativMes, churnMes, churnTipo, motivoId, motivoObs, valMes,
-      valorRef: parseFloat(ctr.valor)||pf.p.valorMedio||0,
+    pf.fats.forEach(f=>{ if(f.tipo!=='ignorada'&&f.venc) valMes[f.venc.slice(0,7)]=(valMes[f.venc.slice(0,7)]||0)+(f.valorFace!=null?f.valorFace:f.valor); });
+    return {pf, ativMes, churnMes, churnTipo, motivoId, motivoObs, motivoSt, valMes,
+      valorRef: pf.valorContrato||pf.p.valorMedio||0,
       bairro:pf.bairro||'—', cidade:pf.cidade||'—', plano:String(pf.plano||'—').slice(0,22)};
   });
 
@@ -28892,9 +28998,9 @@ function ifGrowthCalc(){
   const paybackMeses = cacValor&&arpuAtual>0 ? Math.ceil(cacValor/arpuAtual) : null;
 
   // ── churn involuntário: quem saiu devendo (lista acionável) ──
-  const perdidosDevendo=info.filter(x=>x.churnTipo==='involuntario')
+  const perdidosDevendo=info.filter(x=>x.churnTipo==='involuntario'&&x.pf.p.valorVencido>0)
     .sort((a,b)=>b.pf.p.valorVencido-a.pf.p.valorVencido)
-    .map(x=>({nome:x.pf.nome,ixcId:x.pf.ixcId,bairro:x.bairro,mes:x.churnMes,divida:x.pf.p.valorVencido,probRecup:x.pf.prob.probRecup,motivo:ifNomeMotivo(x.motivoId)}));
+    .map(x=>({nome:x.pf.nome,ixcId:x.pf.ixcId,bairro:x.bairro,mes:x.churnMes,divida:x.pf.p.valorVencido,probRecup:x.pf.prob.probRecup,motivo:ifNomeMotivo(x.motivoId,x.motivoSt)}));
 
   // ── dimensões: bairro / cidade / plano ──
   const m12ini=meses[1];
@@ -28907,7 +29013,7 @@ function ifGrowthCalc(){
       const churn12=arr.filter(x=>x.churnMes&&x.churnMes>=m12ini);
       const inv12=churn12.filter(x=>x.churnTipo==='involuntario').length;
       const mrr=arr.filter(x=>ativoEm(x,mesAtu)).reduce((s,x)=>s+(x.valMes[ultimoFechado.mes]||x.valorRef||0),0);
-      const vencido=arr.filter(x=>x.pf.grupo!=='cancelado').reduce((s,x)=>s+x.pf.p.valorVencido,0);
+      const vencido=arr.filter(x=>!x.pf.ex).reduce((s,x)=>s+x.pf.p.valorVencido,0); // só o vencido da base atual
       const inad = mrr>0 ? vencido/mrr : 0;
       const net=ativ12-churn12.length;
       const churnPct = baseAtual+churn12.length>0 ? churn12.length/(baseAtual+churn12.length) : 0;
@@ -28932,7 +29038,7 @@ function ifGrowthCalc(){
   const porMotivo=(()=>{
     const g={};
     info.filter(x=>x.churnMes&&x.churnMes>=m12ini).forEach(x=>{
-      const nome=ifNomeMotivo(x.motivoId);
+      const nome=ifNomeMotivo(x.motivoId,x.motivoSt);
       const e=(g[nome]=g[nome]||{qtd:0,vol:0,inv:0,mrrPerdido:0,bairros:{},obs:[]});
       e.qtd++; e[x.churnTipo==='involuntario'?'inv':'vol']++;
       e.mrrPerdido+=x.valorRef||0;
@@ -28977,15 +29083,16 @@ IF_state.growDim='bairro';
 
 function ifRenderGrowth(){
   ifDestruirCharts();
-  // Busca automática dos motivos de cancelamento (uma vez; re-renderiza ao chegar)
-  if(!_ifMotivos && !_ifMotivosLoading){
+  // Busca automática das saídas/motivos (uma vez; re-renderiza ao chegar ou
+  // falhar). Depois de uma falha, só tenta de novo pelo botão "Atualizar".
+  if(!_ifMotivos && !_ifMotivosLoading && !_ifMotivosErro){
     ifBuscarMotivosChurn().then(m=>{ if(m && IF_state.tab==='growth') ifRenderGrowth(); })
-      .catch(e=>console.warn('[motivos churn]', e.message||e));
+      .catch(e=>{ console.warn('[motivos churn]', e.message||e); if(IF_state.tab==='growth') ifRenderGrowth(); });
   }
   const g=ifGrowthCalc(); const k=g.kpis;
   const brlS=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const brlK=v=>'R$ '+(v>=1000?(v/1000).toFixed(1).replace('.',',')+'k':v.toFixed(0));
-  const mom=k.mrrMoM!=null?`<span class="if-var ${k.mrrMoM<0?'ruim':'bom'}">${k.mrrMoM>0?'▲':'▼'} ${Math.abs(k.mrrMoM*100).toFixed(1)}% MoM</span>`:'';
+  const mom=k.mrrMoM!=null?`<span class="if-var ${k.mrrMoM<0?'ruim':'bom'}">${k.mrrMoM>0?'▲':'▼'} ${ifDec(Math.abs(k.mrrMoM*100),1)}% MoM</span>`:'';
   const card=(grad,lab,val,sub,click)=>`<div class="if-card ${click?'if-click':''}" style="background:${grad}" ${click?`onclick="${click}"`:''}><div class="if-card-lab">${lab}</div><div class="if-card-val">${val}</div><div class="if-card-sub">${sub||''}</div></div>`;
   const dim={bairro:g.porBairro,cidade:g.porCidade,plano:g.porPlano}[IF_state.growDim];
 
@@ -28994,15 +29101,15 @@ function ifRenderGrowth(){
       <button class="btn if-btn-primario" style="font-size:12px!important;padding:8px 18px!important" onclick="ifIAGrowth()">✨ Análise de crescimento (IA)</button>
       <div id="if-ia-grow" style="flex:1"></div>
     </div>
-    <div class="if-cli-sub" style="margin:-6px 0 12px">Esta aba usa a <b>base completa dos 24 meses</b> (o churn precisa dos cancelados) — independe do Recorte acima. Ativação = data real do contrato no IXC · mês do churn = última fatura do cliente cancelado.</div>
+    <div class="if-cli-sub" style="margin:-6px 0 12px">Esta aba usa a <b>base completa dos 24 meses</b> (o churn precisa dos cancelados) — independe do Recorte acima. Ativação = data do contrato mais antigo no IXC · saída = cancelamento, desistência ou negativação com acesso desativado, no mês da data registrada no IXC${_ifMotivos?'':' (enquanto as datas não chegam, vale a última fatura)'}.</div>
 
     <div class="if-cards">
       ${card('#004E98','MRR (último mês fechado)',brlK(k.mrr),`ARR ${brlK(k.arr)} ${mom}`)}
       ${card('#004E98','Base ativa',k.baseAtiva,`ARPU ${brlS(k.arpu)}`)}
-      ${card('#D00000','Churn médio (6m)',(k.churnMedio*100).toFixed(2)+'%','ao mês · '+(k.churnInvShare*100).toFixed(0)+'% é involuntário (inadimplência)')}
+      ${card('#D00000','Churn médio (6m)',ifDec(k.churnMedio*100,2)+'%','ao mês · '+(k.churnInvShare*100).toFixed(0)+'% é involuntário (inadimplência)')}
       ${card('#3C9D23','LTV',k.ltv?brlK(k.ltv):'—',k.lifetimeEsperado?('vida esperada '+k.lifetimeEsperado.toFixed(0)+' meses'+(k.lifetimeObs?' · observada '+k.lifetimeObs+'m':'')):'churn insuficiente p/ estimar')}
-      ${card('#C40000','CAC',k.cacValor?brlS(k.cacValor):'configurar →',k.cacValor?`LTV/CAC ${k.ltvCac?.toFixed(1)}x · payback ${k.paybackMeses}m`:'informe o gasto mensal de aquisição',"ifAbrirCacCfg()")}
-      ${card('#004E98','Retenção de receita',k.nrr!=null?(k.nrr*100).toFixed(1)+'%':'—','NRR · GRR '+(k.grr!=null?(k.grr*100).toFixed(1)+'%':'—'))}
+      ${card('#C40000','CAC',k.cacValor?brlS(k.cacValor):'configurar →',k.cacValor?`LTV/CAC ${k.ltvCac!=null?ifDec(k.ltvCac,1):'—'}x · payback ${k.paybackMeses}m`:'informe o gasto mensal de aquisição',"ifAbrirCacCfg()")}
+      ${card('#004E98','Retenção de receita',k.nrr!=null?ifDec(k.nrr*100,1)+'%':'—','NRR · GRR '+(k.grr!=null?ifDec(k.grr*100,1)+'%':'—'))}
     </div>
 
     <div class="if-grid2">
@@ -29029,7 +29136,7 @@ function ifRenderGrowth(){
         <div class="if-tscroll" style="max-height:420px"><table class="if-t">
           <thead><tr><th>${IF_state.growDim[0].toUpperCase()+IF_state.growDim.slice(1)}</th><th>Base</th><th>Ativ. 12m</th><th>Perdas 12m</th><th>Líquido</th><th>Churn %</th><th>MRR</th><th>Ação</th><th></th></tr></thead>
           <tbody>${dim.map(d=>`<tr>
-            <td style="font-weight:600">${d.chave}</td>
+            <td style="font-weight:600">${ifH(d.chave)}</td>
             <td class="td-mono">${d.baseAtual}</td>
             <td class="td-mono" style="color:${IF_CORES.verde}">+${d.ativ12}</td>
             <td class="td-mono" style="color:${d.churn12?IF_CORES.vermelho:'inherit'}">−${d.churn12}${d.inv12?` <span class="if-cli-sub">(${d.inv12} inad.)</span>`:''}</td>
@@ -29037,7 +29144,7 @@ function ifRenderGrowth(){
             <td class="td-mono">${(d.churnPct*100).toFixed(0)}%</td>
             <td class="td-mono">${brlK(d.mrr)}</td>
             <td><span class="if-pill" style="background:${d.recCor}22;color:${d.recCor}">${d.rec}</span></td>
-            <td>${IF_state.growDim!=='cidade'?`<button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifDrill('${IF_state.growDim}','${String(d.chave).replace(/'/g,"\\'")}')">👥</button>`:''}</td>
+            <td>${IF_state.growDim!=='cidade'?`<button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifDrill('${IF_state.growDim}',${ifArg(d.chave)})">👥</button>`:''}</td>
           </tr>`).join('')}</tbody>
         </table></div>
       </div>
@@ -29048,15 +29155,15 @@ function ifRenderGrowth(){
       <div class="if-painel-tit">📑 Números do período — últimos 12 meses (fechados)</div>
       <div class="if-numgrid">
         ${[['Base início → fim',g.tot12.baseIni+' → '+g.tot12.baseFim],
-           ['Crescimento da base',g.tot12.crescPct!=null?((g.tot12.crescPct>=0?'+':'')+(g.tot12.crescPct*100).toFixed(1)+'%'):'—'],
-           ['Ativações',(+g.tot12.ativ)+' (média '+g.tot12.mediaAtivMes.toFixed(1)+'/mês)'],
-           ['Cancelamentos',g.tot12.churn+' (média '+g.tot12.mediaChurnMes.toFixed(1)+'/mês)'],
+           ['Crescimento da base',g.tot12.crescPct!=null?((g.tot12.crescPct>=0?'+':'')+ifDec(g.tot12.crescPct*100,1)+'%'):'—'],
+           ['Ativações',(+g.tot12.ativ)+' (média '+ifDec(g.tot12.mediaAtivMes,1)+'/mês)'],
+           ['Cancelamentos',g.tot12.churn+' (média '+ifDec(g.tot12.mediaChurnMes,1)+'/mês)'],
            ['— voluntários',g.tot12.churnVol],
            ['— por inadimplência',g.tot12.churnInv+' ('+(g.tot12.churn?Math.round(g.tot12.churnInv/g.tot12.churn*100):0)+'%)'],
            ['Saldo líquido',(g.tot12.net>0?'+':'')+g.tot12.net+' clientes'],
-           ['MRR ganho (novos)','R$ '+g.tot12.mrrNovo.toLocaleString('pt-BR',{minimumFractionDigits:2})],
-           ['MRR perdido (churn)','R$ '+g.tot12.mrrPerdido.toLocaleString('pt-BR',{minimumFractionDigits:2})],
-           ['Saldo de MRR',(v=>'R$ '+(v>0?'+':'')+v.toLocaleString('pt-BR',{minimumFractionDigits:2}))(g.tot12.mrrNovo-g.tot12.mrrPerdido)],
+           ['MRR ganho (novos)','R$ '+g.tot12.mrrNovo.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})],
+           ['MRR perdido (churn)','R$ '+g.tot12.mrrPerdido.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})],
+           ['Saldo de MRR',(v=>'R$ '+(v>0?'+':'')+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}))(g.tot12.mrrNovo-g.tot12.mrrPerdido)],
            ['Melhor mês (líquido)',g.tot12.melhorMes?g.tot12.melhorMes.label+' ('+(g.tot12.melhorMes.netClientes>0?'+':'')+g.tot12.melhorMes.netClientes+')':'—'],
            ['Pior mês (líquido)',g.tot12.piorMes?g.tot12.piorMes.label+' ('+g.tot12.piorMes.netClientes+')':'—'],
           ].map(([l,v])=>`<div class="if-num"><div class="if-num-l">${l}</div><div class="if-num-v">${v}</div></div>`).join('')}
@@ -29071,39 +29178,40 @@ function ifRenderGrowth(){
           <td class="td-mono">${p.churnsVol}</td>
           <td class="td-mono" style="color:${p.churnsInv?IF_CORES.vermelho:'inherit'}">${p.churnsInv}</td>
           <td class="td-mono" style="font-weight:800;color:${p.netClientes>0?IF_CORES.verde:p.netClientes<0?IF_CORES.vermelho:'inherit'}">${p.netClientes>0?'+':''}${p.netClientes}</td>
-          <td class="td-mono">${(p.churnRate*100).toFixed(2)}%</td>
-          <td class="td-mono">${(p.mrr/1000).toFixed(1)}k</td>
-          <td class="td-mono" style="color:${IF_CORES.verde}">${p.novoMRR?(p.novoMRR/1000).toFixed(2)+'k':'—'}</td>
-          <td class="td-mono" style="color:${p.churnMRR?IF_CORES.vermelho:'inherit'}">${p.churnMRR?(p.churnMRR/1000).toFixed(2)+'k':'—'}</td>
-          <td class="td-mono">${p.arpu.toFixed(2)}</td>
-          <td class="td-mono">${p.nrr!=null?(p.nrr*100).toFixed(1):'—'}</td>
+          <td class="td-mono">${ifDec(p.churnRate*100,2)}%</td>
+          <td class="td-mono">${ifDec(p.mrr/1000,1)}k</td>
+          <td class="td-mono" style="color:${IF_CORES.verde}">${p.novoMRR?ifDec(p.novoMRR/1000,2)+'k':'—'}</td>
+          <td class="td-mono" style="color:${p.churnMRR?IF_CORES.vermelho:'inherit'}">${p.churnMRR?ifDec(p.churnMRR/1000,2)+'k':'—'}</td>
+          <td class="td-mono">${ifDec(p.arpu,2)}</td>
+          <td class="td-mono">${p.nrr!=null?ifDec(p.nrr*100,1):'—'}</td>
         </tr>`).join('')}</tbody>
       </table></div>
     </div>
 
     <div class="if-painel" style="margin-bottom:14px">
       <div class="if-painel-tit" style="display:flex;justify-content:space-between;align-items:center">
-        <span>📵 Motivos de cancelamento — últimos 12 meses ${_ifMotivos?`<span class="if-cli-sub">(${_ifMotivos.total} contratos cancelados lidos do IXC)</span>`:''}</span>
-        <button class="btn" style="font-size:10.5px" onclick="_ifMotivos=null;ifRenderGrowth()">↻ Atualizar do IXC</button>
+        <span>📵 Motivos de cancelamento — últimos 12 meses ${_ifMotivos?`<span class="if-cli-sub">(${_ifMotivos.total} contratos encerrados lidos do IXC)</span>`:''}</span>
+        <button class="btn" style="font-size:10.5px" onclick="_ifMotivos=null;_ifMotivosErro=null;_ifGrowthCache=null;ifRenderGrowth()">↻ Atualizar do IXC</button>
       </div>
-      ${!_ifMotivos?'<div class="cli-empty-pane"><span class="diag-spinner"></span> Buscando motivos de cancelamento no IXC…</div>'
+      ${!_ifMotivos?(_ifMotivosErro?`<div class="cli-empty-pane">❌ Não consegui ler as saídas no IXC: ${ifH(_ifMotivosErro)}. Toque em “Atualizar do IXC” para tentar de novo.</div>`
+        :'<div class="cli-empty-pane"><span class="diag-spinner"></span> Buscando datas e motivos de saída no IXC…</div>')
       :(g.porMotivo.length?`
       <div class="if-grid2">
         <div class="if-chwrap" style="height:${Math.max(180,Math.min(360,g.porMotivo.length*36))}px"><canvas id="if-gr-motivo"></canvas></div>
         <div class="if-tscroll" style="max-height:360px"><table class="if-t if-t-num">
           <thead><tr><th>Motivo</th><th>Qtd</th><th>% do churn</th><th>Volunt.</th><th>Inad.</th><th>MRR perdido</th><th>Bairro + afetado</th></tr></thead>
           <tbody>${(tot=>g.porMotivo.map(m=>`<tr>
-            <td style="font-weight:600">${m.motivo}${m.obs.length?`<div class="if-cli-sub" title="${m.obs.join(' | ').replace(/"/g,'&quot;')}">💬 ${m.obs[0].slice(0,45)}…</div>`:''}</td>
+            <td style="font-weight:600">${ifH(m.motivo)}${m.obs.length?`<div class="if-cli-sub" title="${ifH(m.obs.join(' | '))}">💬 ${ifH(m.obs[0].length>45?m.obs[0].slice(0,45)+'…':m.obs[0])}</div>`:''}</td>
             <td class="td-mono" style="font-weight:800">${m.qtd}</td>
             <td class="td-mono">${tot?Math.round(m.qtd/tot*100):0}%</td>
             <td class="td-mono">${m.vol}</td>
             <td class="td-mono" style="color:${m.inv?IF_CORES.vermelho:'inherit'}">${m.inv}</td>
-            <td class="td-mono">R$ ${m.mrrPerdido.toLocaleString('pt-BR',{minimumFractionDigits:2})}/mês</td>
-            <td>${m.bairroTop}</td>
+            <td class="td-mono">R$ ${m.mrrPerdido.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/mês</td>
+            <td>${ifH(m.bairroTop)}</td>
           </tr>`).join(''))(g.porMotivo.reduce((s,m)=>s+m.qtd,0))}</tbody>
         </table></div>
       </div>
-      <div class="if-cli-sub" style="margin-top:6px">MRR perdido = mensalidade somada dos clientes que saíram por cada motivo. Motivos "Não informado" indicam cancelamentos sem motivo registrado no IXC — vale padronizar o preenchimento na equipe.</div>`
+      <div class="if-cli-sub" style="margin-top:6px">MRR perdido = mensalidade somada dos clientes que saíram por cada motivo. "Sem motivo informado" = saída sem motivo registrado no IXC — vale padronizar o preenchimento na equipe. Os códigos "Motivo nº…" ganham nome em Métricas recorrentes › Cancelamentos.</div>`
       :'<div class="if-cli-sub">Nenhum cancelamento com motivo nos últimos 12 meses.</div>')}
     </div>
 
@@ -29112,13 +29220,13 @@ function ifRenderGrowth(){
       ${g.perdidosDevendo.length?`<div class="if-tscroll" style="max-height:280px"><table class="if-t">
         <thead><tr><th>Cliente</th><th>Bairro</th><th>Perdido em</th><th>Motivo (IXC)</th><th>Dívida final</th><th>P. recuperação</th><th></th></tr></thead>
         <tbody>${g.perdidosDevendo.slice(0,25).map(x=>`<tr>
-          <td class="if-cli-nome">${x.nome}</td><td>${x.bairro}</td>
+          <td class="if-cli-nome">${ifH(x.nome)}</td><td>${ifH(x.bairro)}</td>
           <td class="td-mono">${x.mes?ifPeriodoLabel(x.mes,'mensal'):'—'}</td>
-          <td style="font-size:11px">${x.motivo}</td>
-          <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${x.divida.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+          <td style="font-size:11px">${ifH(x.motivo)}</td>
+          <td class="td-mono" style="color:${IF_CORES.vermelho}">R$ ${x.divida.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
           <td class="td-mono">${x.probRecup}%</td>
-          <td><button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifAbrirPerfil('${x.ixcId}')">👤</button></td></tr>`).join('')}</tbody></table></div>
-      <div class="if-cli-sub" style="margin-top:6px">Total: ${g.perdidosDevendo.length} clientes · R$ ${g.perdidosDevendo.reduce((s,x)=>s+x.divida,0).toLocaleString('pt-BR',{minimumFractionDigits:2})} em dívidas de ex-clientes. <b>Cada um destes é um churn que a régua de cobrança poderia ter evitado.</b></div>`
+          <td><button class="btn" style="font-size:9.5px;padding:2px 8px" onclick="ifAbrirPerfil(${ifArg(x.ixcId)})">👤</button></td></tr>`).join('')}</tbody></table></div>
+      <div class="if-cli-sub" style="margin-top:6px">Total: ${g.perdidosDevendo.length} clientes · R$ ${g.perdidosDevendo.reduce((s,x)=>s+x.divida,0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} em dívidas de ex-clientes. <b>Cada um destes é um churn que a régua de cobrança poderia ter evitado.</b></div>`
       :'<div class="if-cli-sub">Nenhum cliente perdido por inadimplência no período. 🎉</div>'}
     </div>`;
   ifChartsGrowth(g);
@@ -29199,8 +29307,8 @@ async function ifIAGrowth(){
       cohortsRetencao:g.cohorts.map(c=>c.tri+': '+c.ret+'%')};
     const txt=await ifGroq(IF_GROQ_SYS,
       'Você é consultor de crescimento de ISPs. Com estes dados de receita recorrente, produza (máx 260 palavras): 1) diagnóstico do crescimento (saudável? estagnado?); 2) o problema nº1 que mais destrói valor hoje e quanto custa; 3) em QUAIS bairros investir captação e quais precisam de retenção, com justificativa; 4) três ações práticas para os próximos 30 dias com impacto estimado.\n\nDADOS:\n'+JSON.stringify(dados,null,1));
-    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise estratégica de crescimento — IA</div><div class="if-ia-txt">${txt.replace(/\n/g,'<br>')}</div></div>`;
-  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${e.message||e}</div>`; }
+    el.innerHTML=`<div class="if-ia-box"><div class="if-ia-tit">✨ Análise estratégica de crescimento — IA</div><div class="if-ia-txt">${ifTextoIA(txt)}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="if-ia-box erro">❌ ${ifH(e.message||e)}</div>`; }
 }
 
 // ── CSV completo ──

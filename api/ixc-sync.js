@@ -17,7 +17,7 @@
 // A cópia em si (o que lê, o que compara, o que grava) está em
 // _ixc_espelho.js, com o mesmo mapeamento do navegador.
 // ============================================================================
-import { ativacoesDoIxc, bairroLimpo, nomesDosMotivos } from './_ixc_metricas.js';
+import { ativacoesDoIxc, bairroLimpo, nomesDosMotivos, saidasDoIxc } from './_ixc_metricas.js';
 // onde o IXC pode guardar os nomes dos motivos de cancelamento (varia por versão/permissão)
 const MOTIVOS_CANCELAMENTO_IXC = ['cliente_contrato_motivo_cancelamento', 'motivo_cancelamento', 'fn_motivo_cancelamento', 'cliente_contrato_motivos_cancelamento'];
 import crypto from 'crypto';
@@ -124,6 +124,20 @@ async function ixcTudo(tabela, prazo) {
     throw new Error(`IXC ${tabela}: veio ${porId.size} de ${total}`);
   }
   return [...porId.values()];
+}
+
+/* Nomes dos motivos de cancelamento/desistência: o que o IXC entregar, e o que
+   a equipe nomeou (aba Cancelamentos das Métricas) vale por cima. */
+async function nomesDeMotivos(prazo) {
+  const lerOpcional = async lista => { for (const t of lista) { try { const r = await ixcTudo(t, Math.min(prazo, Date.now() + 6e3)); if (r.length) return r; } catch { /* recurso indisponível: tenta o próximo */ } } return []; };
+  const [mCanc, mDes, mNomeados] = await Promise.all([
+    lerOpcional(MOTIVOS_CANCELAMENTO_IXC), lerOpcional(['cliente_contrato_motivo_desistencia']),
+    sb('metricas_motivos?select=codigo,nome&limit=500').catch(() => []),
+  ]);
+  return {
+    motivos: { ...nomesDosMotivos(mCanc, mDes), ...Object.fromEntries((mNomeados || []).map(m => [m.codigo, m.nome])) },
+    doIxc: Object.keys(nomesDosMotivos(mCanc, [])).length > 0,
+  };
 }
 
 /* Leitura FILTRADA do IXC (o ixcTudo acima baixa a tabela inteira — para OS,
@@ -549,17 +563,18 @@ export default async function handler(req, res) {
         ['cliente_contrato', 'vd_contratos', 'cliente', 'vd_contratos_produtos', 'cliente_contrato_descontos', 'cliente_contrato_acrescimos'].map(t => ixcTudo(t, prazo)));
       // bairros que a equipe juntou ("AGROVILA POMAR" conta como "POMAR"): quem aplica é a tela
       const juntos = await sb('metricas_bairro_alias?select=de,para&limit=1000').catch(() => []);
-      // nomes dos motivos: o que o IXC entregar; o que a equipe nomeou vale por cima
-      const lerOpcional = async lista => { for (const t of lista) { try { const r = await ixcTudo(t, Math.min(prazo, Date.now() + 6e3)); if (r.length) return r; } catch { /* recurso indisponível: tenta o próximo */ } } return []; };
-      const [mCanc, mDes, mNomeados] = await Promise.all([
-        lerOpcional(MOTIVOS_CANCELAMENTO_IXC), lerOpcional(['cliente_contrato_motivo_desistencia']),
-        sb('metricas_motivos?select=codigo,nome&limit=500').catch(() => []),
-      ]);
-      const motivos = { ...nomesDosMotivos(mCanc, mDes), ...Object.fromEntries((mNomeados || []).map(m => [m.codigo, m.nome])) };
+      const { motivos, doIxc } = await nomesDeMotivos(prazo);
       return res.status(200).json({ ok: true, lido_em: new Date().toISOString(), contratos: contratos.length,
         bairros_juntos: Object.fromEntries((juntos || []).map(j => [j.de, j.para])), motivos,
-        motivos_do_ixc: Object.keys(nomesDosMotivos(mCanc, [])).length > 0,
+        motivos_do_ixc: doIxc,
         linhas: ativacoesDoIxc({ contratos, planos, clientes, produtos, descontos, acrescimos }) });
+    }
+    /* Inteligência Financeira › Crescimento: data e motivo da saída de cada
+       contrato que deixou de ser ativo, por cliente. */
+    if (acao === 'inteligencia.saidas') {
+      const prazo = Date.now() + 45e3;
+      const [contratos, nomes] = await Promise.all([ixcTudo('cliente_contrato', prazo), nomesDeMotivos(prazo)]);
+      return res.status(200).json({ ok: true, lido_em: new Date().toISOString(), motivos: nomes.motivos, saidas: saidasDoIxc(contratos) });
     }
     /* Juntar bairros: { de, para } grava; para vazio desfaz. O destino nunca é
        um bairro que já conta como outro, e quem apontava para `de` passa a

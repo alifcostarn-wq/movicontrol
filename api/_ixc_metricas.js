@@ -81,13 +81,11 @@ export function ativacoesDoIxc({ contratos = [], planos = [], clientes = [], pro
     const saida = dataDeSaida(r);
     const ref = saida && saida < hoje ? saida : hoje;
     const final = Math.max(0, centavos(cheio - somaEm(desc.get(id), ref, cheio) + somaEm(acr.get(id), ref, cheio)));
-    const st = String(r.status || '').toUpperCase();
-    const mc = idValido(r.motivo_cancelamento), md = idValido(r.motivo_desistencia);
     linhas.push({
       m: l.data_ativacao ? String(l.data_ativacao).slice(0, 7) : null,
       a: l.data_ativacao || null,
       x: saida,
-      k: st === 'D' ? (md ? 'd' + md : (mc || null)) : (st && st !== 'A' ? (mc || null) : null),
+      k: codigoDoMotivo(r),
       b: proprio || bairroDoCliente.get(String(r.id_cliente)) || null,
       p: String(l.plano || '').trim() || null,
       v: l.velocidade_mbps || null,
@@ -97,6 +95,33 @@ export function ativacoesDoIxc({ contratos = [], planos = [], clientes = [], pro
     });
   }
   return linhas;
+}
+
+/* Código do motivo de um contrato que saiu: cancelamento, ou desistência com
+   prefixo "d" (o mesmo código que a aba Cancelamentos nomeia). */
+function codigoDoMotivo(r) {
+  const st = String(r.status || '').toUpperCase();
+  const mc = idValido(r.motivo_cancelamento), md = idValido(r.motivo_desistencia);
+  if (st === 'D') return md ? 'd' + md : (mc || null);
+  return st && st !== 'A' ? (mc || null) : null;
+}
+
+/* Inteligência Financeira › Crescimento: uma linha por contrato que saiu
+   (cancelado I, desistência D, negativado N) — só o id do cliente, a situação,
+   a data da saída, o código do motivo e a observação curta da equipe. O resto
+   do registro do contrato fica na memória do servidor e é descartado. */
+export function saidasDoIxc(contratos = []) {
+  const out = [];
+  for (const r of contratos) {
+    const st = String(r.status || '').toUpperCase();
+    if (!['I', 'D', 'N'].includes(st)) continue;
+    const c = idValido(r.id_cliente);
+    if (!c) continue;
+    const obs = String((st === 'D' ? r.obs_desistencia || r.obs_cancelamento : r.obs_cancelamento || r.obs_desistencia) || '')
+      .replace(/\s+/g, ' ').trim().slice(0, 140);
+    out.push({ c, s: st, x: dataDeSaida(r), k: codigoDoMotivo(r), o: obs || null });
+  }
+  return out;
 }
 
 /* Nomes dos motivos: { id → texto }. Desistência vem com prefixo "d". */
