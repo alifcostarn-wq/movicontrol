@@ -1,7 +1,8 @@
 // ============================================================================
 // MÉTRICAS RECORRENTES — leitura DIRETA do IXC (não usa a cópia do MoviOne)
 // ----------------------------------------------------------------------------
-// Ativações mensais: uma linha enxuta por contrato com data de ativação —
+// Ativações mensais: uma linha enxuta por contrato (data de ativação e de
+// saída, quando houve) —
 // mês, bairro, plano, velocidade, valor FINAL (tabela − descontos + acréscimos
 // do contrato em vigor) e situação. Nada de nome, documento,
 // endereço ou senha: o cadastro do cliente só passa pela memória para dar o
@@ -15,6 +16,18 @@ const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); retu
 const centavos = v => Math.round(v * 100) / 100;
 // desconto/acréscimo sem validade vale sempre; com validade, até o dia dela
 const emVigor = (validade, hoje) => { const d = ixcData(validade); return !d || d >= hoje; };
+
+/* Quando o contrato deixou de ser ativo: cancelado (I), desistência (D) ou
+   negativado (N). Contrato ativo não tem saída; sem data no IXC fica null. */
+export function dataDeSaida(r) {
+  const st = String(r.status || '').toUpperCase();
+  if (st === 'A' || st === 'P' || !st) return null;
+  const ordem = st === 'D' ? [r.data_desistencia, r.data_cancelamento]
+    : st === 'N' ? [r.data_negativacao, r.data_cancelamento, r.data_acesso_desativado]
+      : [r.data_cancelamento, r.data_desistencia, r.data_acesso_desativado];
+  for (const v of ordem) { const d = ixcData(v); if (d) return d; }
+  return null;
+}
 
 /* Valor de TABELA de cada plano de venda: o valor do plano; se o IXC não
    trouxer, a soma dos produtos dele (internet + SVA + TV…). */
@@ -59,14 +72,15 @@ export function ativacoesDoIxc({ contratos = [], planos = [], clientes = [], pro
   const linhas = [];
   for (const r of contratos) {
     const l = linhaContratoDoIxc(r, null, pv);
-    if (!l.data_ativacao) continue;
     // contrato com endereço próprio (instalado em outro lugar) vale o bairro dele
     const proprio = String(r.endereco_padrao_cliente || '').toUpperCase() === 'N' ? bairroLimpo(r.bairro) : null;
     const id = String(r.id);
     const cheio = tabelaDoContrato.get(id) || l.valor || 0;
     const final = Math.max(0, centavos(cheio - (desc.get(id) || 0) + (acr.get(id) || 0)));
     linhas.push({
-      m: String(l.data_ativacao).slice(0, 7),
+      m: l.data_ativacao ? String(l.data_ativacao).slice(0, 7) : null,
+      d: l.data_ativacao || null,
+      x: dataDeSaida(r),
       b: proprio || bairroDoCliente.get(String(r.id_cliente)) || null,
       p: String(l.plano || '').trim() || null,
       v: l.velocidade_mbps || null,

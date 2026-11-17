@@ -30038,6 +30038,17 @@ async function asnExcluirModelo(id){
 .mtr-eixo{display:flex;gap:2px;margin-top:5px}
 .mtr-eixo span{flex:1;min-width:0;text-align:center;font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden}
 .mtr-eixo span.on{color:var(--text);font-weight:700}
+.mtr-eixo.saldo span{font-size:11px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
+.mtr-col.par .dupla{display:flex;align-items:flex-end;justify-content:center;gap:2px;width:100%;height:100%}
+.mtr-col.par .br{flex:1;max-width:15px;background:var(--ebi-s1);opacity:.55}
+.mtr-col.par .br.b2{background:var(--ebi-s2)}
+.mtr-col.par:hover .br,.mtr-col.par[aria-current="true"] .br{opacity:1}
+.mtr-col.par:hover .br.b2,.mtr-col.par[aria-current="true"] .br.b2{background:var(--ebi-s2)}
+.mtr-leg{display:flex;gap:14px;font-size:11.5px;color:var(--text2);margin:-6px 0 10px}
+.mtr-leg span{display:inline-flex;align-items:center;gap:6px}
+.mtr-leg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.mtr-leg i.s1{background:var(--ebi-s1)}.mtr-leg i.s2{background:var(--ebi-s2)}
+.mtr-nomes{font-size:11px;color:var(--text3);margin-top:2px;line-height:1.35}
 .mtr-hb{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;align-items:center;gap:4px 10px}
 .mtr-hb .nm{font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mtr-hb .tr{height:14px;display:flex}
@@ -30065,27 +30076,53 @@ function mtrDin(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFra
 
 /* Tudo que a tela mostra sai daqui, calculado sobre as linhas do IXC.
    soAtivos = só as ativações cujo contrato continua ativo (status A) hoje. */
-function mtrCalcular(linhas, mes, soAtivos){
+/* Planos com nomes diferentes e a mesma oferta (velocidade + valor final)
+   contam como um só: "PROMOÇÃO 300MEGA" e "Fibra 300 Mega" a R$ 119,90. */
+function mtrPlanoGrupo(l){
+  if(!l.v) return l.p || 'Sem plano informado';
+  return l.v+' Mega'+(l.r != null ? ' · '+mtrDin(l.r) : '');
+}
+/* Permanência: dos contratos ativados no mês, quantos seguiam ativos 3, 6 e
+   12 meses depois. Só entra o prazo que TODOS os contratos do mês já
+   completaram. Contrato que saiu sem data de saída no IXC conta como perdido. */
+function mtrCoorte(doMes, mes, hojeMes){
+  const mais = (d, n) => { const [a,b,c] = d.split('-').map(Number); const x = new Date(Date.UTC(a, b-1+n, c)); return x.toISOString().slice(0,10); };
+  const r = { total: doMes.length };
+  for(const n of [3,6,12]){
+    if(!doMes.length || mtrMesSoma(mes, n) >= hojeMes){ r['m'+n] = null; continue; }
+    r['m'+n] = doMes.filter(l => l.s === 'A' || (l.x && l.d && l.x >= mais(l.d, n))).length;
+  }
+  return r;
+}
+function mtrCalcular(linhas, mes, soAtivos, hojeMes){
+  hojeMes = hojeMes || mtrMesAtual();
   const vale = l => !soAtivos || l.s === 'A';
   const doMes = linhas.filter(l => l.m === mes);
   const base = doMes.filter(vale);
   const agrupar = (arr, chave) => { const m = new Map(); for(const l of arr){ const k = chave(l); m.set(k, (m.get(k)||0)+1); } return [...m].map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd || String(a.nome).localeCompare(String(b.nome),'pt-BR')); };
   const planos = new Map();
   for(const l of base){
-    const k = l.p || 'Sem plano informado';
-    const p = planos.get(k) || planos.set(k, { nome:k, vel:l.v||null, qtd:0, soma:0, min:null, max:null, tab:null, comDesc:0 }).get(k);
+    const k = mtrPlanoGrupo(l);
+    const p = planos.get(k) || planos.set(k, { nome:k, vel:l.v||null, qtd:0, soma:0, min:null, max:null, tab:null, comDesc:0, nomes:new Map() }).get(k);
+    const nomeIxc = l.p || 'Sem plano informado'; p.nomes.set(nomeIxc, (p.nomes.get(nomeIxc)||0)+1);
     p.qtd++; const r = Number(l.r)||0; p.soma += r;
     if(l.r != null){ p.min = p.min==null ? r : Math.min(p.min, r); p.max = p.max==null ? r : Math.max(p.max, r); }
     // valor de tabela do plano (o maior, se o IXC tiver mais de um) e quantos saíram abaixo dele
     const t = Number(l.t)||0; if(t){ p.tab = p.tab==null ? t : Math.max(p.tab, t); if(l.r != null && r < t - 0.005) p.comDesc++; }
     if(!p.vel && l.v) p.vel = l.v;
   }
+  for(const p of planos.values()) p.nomes = [...p.nomes].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0],'pt-BR')).map(([nome,qtd])=>({nome,qtd}));
   const listaPlanos = [...planos.values()].sort((a,b)=>b.qtd-a.qtd || b.soma-a.soma || a.nome.localeCompare(b.nome,'pt-BR'));
   const receita = base.reduce((s,l)=>s+(Number(l.r)||0), 0);
   const receitaTabela = base.reduce((s,l)=>s+(Number(l.t)||Number(l.r)||0), 0);
-  const serie = []; for(let i=11;i>=0;i--){ const m = mtrMesSoma(mes, -i); serie.push({ mes:m, qtd: linhas.filter(l=>l.m===m && vale(l)).length }); }
+  // entradas e saídas contam TODOS os contratos (o filtro "continuam ativos" não se aplica a um saldo)
+  const serie = []; for(let i=11;i>=0;i--){ const m = mtrMesSoma(mes, -i); const doM = linhas.filter(l=>l.m===m);
+    serie.push({ mes:m, qtd: doM.filter(vale).length, ent: doM.length, sai: linhas.filter(l=>l.x && l.x.slice(0,7)===m).length, coorte: mtrCoorte(doM, m, hojeMes) }); }
   const anterior = linhas.filter(l => l.m === mtrMesSoma(mes,-1) && vale(l)).length;
+  const anoPassado = linhas.filter(l => l.m === mtrMesSoma(mes,-12) && vale(l)).length;
+  const saidas = linhas.filter(l => l.x && l.x.slice(0,7) === mes).length;
   return {
+    anoPassado, saidas, saldo: doMes.length - saidas, semDataSaida: linhas.filter(l => !l.x && l.s && l.s !== 'A' && l.s !== 'P').length,
     total: base.length, totalMes: doMes.length, aindaAtivos: doMes.filter(l=>l.s==='A').length, anterior,
     bairros: mtrBairros(base),
     velocidades: agrupar(base, l => l.v ? l.v+' Mega' : 'Sem velocidade no nome'),
@@ -30102,7 +30139,7 @@ function mtrBairros(base){
     const k = l.b || 'Sem bairro informado';
     const b = m.get(k) || m.set(k, { nome:k, qtd:0, receita:0, planos:new Map() }).get(k);
     const r = Number(l.r)||0; b.qtd++; b.receita += r;
-    const pk = l.p || 'Sem plano informado';
+    const pk = mtrPlanoGrupo(l);
     const pp = b.planos.get(pk) || b.planos.set(pk, { nome:pk, qtd:0, soma:0 }).get(pk);
     pp.qtd++; pp.soma += r;
   }
@@ -30142,11 +30179,12 @@ function mtrPintar(){
   }
   if(!MTR.linhas){ el.innerHTML = '<div class="mtr-card"><div class="mtr-vazio">Lendo os contratos direto do IXC… pode levar alguns segundos.</div></div>'; return; }
   const mesAtual = mtrMesAtual();
-  const primeiro = MTR.linhas.reduce((m,l)=> l.m < m ? l.m : m, mesAtual);
+  const primeiro = MTR.linhas.reduce((m,l)=> l.m && l.m < m ? l.m : m, mesAtual);
   const meses = []; for(let m = mesAtual; m >= primeiro && meses.length < 240; m = mtrMesSoma(m,-1)) meses.push(m);
   const c = mtrCalcular(MTR.linhas, MTR.mes, MTR.soAtivos);
   const dif = c.total - c.anterior;
   const maxSerie = Math.max(1, ...c.serie.map(s=>s.qtd));
+  const maxES = Math.max(1, ...c.serie.map(s=>Math.max(s.ent, s.sai)));
   const mv = c.maisVendido;
   const hora = MTR.lidoEm ? new Date(MTR.lidoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
   const limiteB = MTR.todosBairros ? 0 : 10;
@@ -30171,7 +30209,9 @@ function mtrPintar(){
 
     <div class="mtr-tiles">
       <div class="mtr-tile"><div class="k">${MTR.soAtivos?'Ativados no mês e ainda ativos':'Contratos ativados no mês'}</div><div class="n">${c.total}</div>
-        <div class="s">${dif===0?'igual a':(dif>0?'▲ '+dif+' a mais que':'▼ '+Math.abs(dif)+' a menos que')} ${mtrMesNome(mtrMesSoma(MTR.mes,-1))} (${c.anterior})</div></div>
+        <div class="s">${dif===0?'igual a':(dif>0?'▲ '+dif+' a mais que':'▼ '+Math.abs(dif)+' a menos que')} ${mtrMesNome(mtrMesSoma(MTR.mes,-1))} (${c.anterior})<br>${c.total===c.anoPassado?'igual a':(c.total>c.anoPassado?'▲ '+(c.total-c.anoPassado)+' a mais que':'▼ '+(c.anoPassado-c.total)+' a menos que')} ${mtrMesNome(mtrMesSoma(MTR.mes,-12))}, um ano antes (${c.anoPassado})</div></div>
+      <div class="mtr-tile"><div class="k">Saldo do mês</div><div class="n">${c.saldo>0?'+':''}${c.saldo}</div>
+        <div class="s">${c.totalMes} ativaç${c.totalMes===1?'ão':'ões'} − ${c.saidas} saída${c.saidas===1?'':'s'} (cancelados, desistências e negativados no mês)</div></div>
       <div class="mtr-tile"><div class="k">Continuam ativos hoje</div><div class="n">${c.aindaAtivos}<span style="font-size:14px;font-weight:600;color:var(--text3)"> de ${c.totalMes}</span></div>
         <div class="s">${c.totalMes?Math.round(c.aindaAtivos/c.totalMes*100)+'% dos ativados no mês seguem com contrato ativo':'sem ativações no mês'}</div></div>
       <div class="mtr-tile"><div class="k">Plano mais vendido</div><div class="n txt">${mv?mtrEsc(mv.nome):'—'}</div>
@@ -30202,11 +30242,11 @@ function mtrPintar(){
         ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
       </div>
       <div class="mtr-card">
-        <h3>Planos ativados e valores</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.planos.length} plano${c.planos.length===1?'':'s'} · valores finais, já com desconto</div>
+        <h3>Planos ativados e valores</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.planos.length} plano${c.planos.length===1?'':'s'} · nomes diferentes com a mesma velocidade e valor final contam juntos</div>
         ${c.planos.length?`<div class="mtr-rolar"><table class="mtr-tab">
           <thead><tr><th>Plano</th><th class="num">Velocidade</th><th class="num" title="Valor final do contrato, já com os descontos">Valor final</th><th class="num">Ativações</th><th class="num">Soma mensal</th></tr></thead>
           <tbody>${c.planos.map((p,i)=>`<tr>
-            <td>${mtrEsc(p.nome)}${i===0?'<span class="mtr-selo">mais vendido</span>':''}</td>
+            <td>${mtrEsc(p.nome)}${i===0?'<span class="mtr-selo">mais vendido</span>':''}${p.vel?`<div class="mtr-nomes" title="${mtrEsc(p.nomes.map(n=>n.nome+' ('+n.qtd+')').join(' · '))}">${p.nomes.slice(0,3).map(n=>mtrEsc(n.nome)+(p.nomes.length>1?' ('+n.qtd+')':'')).join(' · ')}${p.nomes.length>3?' · +'+(p.nomes.length-3):''}</div>`:''}</td>
             <td class="num">${p.vel?p.vel+' Mega':'—'}</td>
             <td class="num val-monetario">${p.min==null?'—':(p.min===p.max?mtrDin(p.min):mtrDin(p.min)+' a '+mtrDin(p.max))}</td>
             <td class="num"><span class="mini" style="width:${Math.max(2,p.qtd/c.planos[0].qtd*46)}px"></span>${p.qtd} <span style="color:var(--text3)">(${Math.round(p.qtd/c.total*100)}%)</span></td>
@@ -30233,6 +30273,28 @@ function mtrPintar(){
             <td class="num">${x.planoQtd} <span style="color:var(--text3)">de ${x.qtd}</span></td></tr>`).join('')}</tbody>
         </table></div>`:'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
         ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
+      </div>
+    </div>
+
+    <div class="mtr-grade">
+      <div class="mtr-card">
+        <h3>Entradas e saídas por mês</h3><div class="d">12 meses até ${mtrMesNome(MTR.mes,true)} · saída = contrato cancelado, desistência ou negativado no mês</div>
+        <div class="mtr-leg"><span><i class="s1"></i>Ativações</span><span><i class="s2"></i>Saídas</span></div>
+        <div class="mtr-cols">${c.serie.map(s=>`<button class="mtr-col par" aria-current="${s.mes===MTR.mes}" onclick="mtrDefMes('${s.mes}')" data-mtrtip="${mtrMesNome(s.mes,true)}: ${s.ent} ativaç${s.ent===1?'ão':'ões'}, ${s.sai} saída${s.sai===1?'':'s'} · saldo ${s.ent-s.sai>0?'+':''}${s.ent-s.sai}" aria-label="${mtrMesNome(s.mes,true)}: ${s.ent} ativações, ${s.sai} saídas">
+          <span class="dupla"><span class="br" style="height:${s.ent/maxES*100}%"></span><span class="br b2" style="height:${s.sai/maxES*100}%"></span></span></button>`).join('')}</div>
+        <div class="mtr-eixo">${c.serie.map(s=>`<span class="${s.mes===MTR.mes?'on':''}" title="${mtrMesNome(s.mes,true)}">${MTR_MESES[+s.mes.slice(5)-1]}</span>`).join('')}</div>
+        <div class="mtr-eixo saldo" title="Saldo: ativações menos saídas">${c.serie.map(s=>`<span class="${s.mes===MTR.mes?'on':''}">${s.ent-s.sai>0?'+':''}${s.ent-s.sai}</span>`).join('')}</div>
+        <div class="d" style="margin:6px 0 0">Linha de baixo: saldo do mês (ativações − saídas).${c.semDataSaida?` ${c.semDataSaida} contrato${c.semDataSaida===1?'':'s'} inativo${c.semDataSaida===1?'':'s'} sem data de saída no IXC não entra${c.semDataSaida===1?'':'m'} em nenhum mês.`:''}</div>
+      </div>
+      <div class="mtr-card">
+        <h3>Permanência das ativações</h3><div class="d">Dos contratos ativados em cada mês, quantos seguiam ativos depois de 3, 6 e 12 meses</div>
+        <div class="mtr-rolar"><table class="mtr-tab">
+          <thead><tr><th>Mês da ativação</th><th class="num">Ativados</th><th class="num">3 meses</th><th class="num">6 meses</th><th class="num">12 meses</th></tr></thead>
+          <tbody>${[...c.serie].reverse().map(s=>`<tr>
+            <td>${mtrMesNome(s.mes,true)}${s.mes===MTR.mes?'<span class="mtr-selo">mês da análise</span>':''}</td>
+            <td class="num">${s.coorte.total}</td>
+            ${[3,6,12].map(n=>{ const v = s.coorte['m'+n]; return `<td class="num">${!s.coorte.total?'—':v==null?'<span style="color:var(--text3)" title="Esse prazo ainda não se completou">ainda não</span>':`<b>${Math.round(v/s.coorte.total*100)}%</b> <span style="color:var(--text3)">${v} de ${s.coorte.total}</span>`}</td>`; }).join('')}</tr>`).join('')}</tbody>
+        </table></div>
       </div>
     </div>`;
   mtrLigarDicas(el);
