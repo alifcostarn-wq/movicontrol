@@ -30055,7 +30055,7 @@ async function asnExcluirModelo(id){
 .mtr-rolar{overflow-x:auto}
 </style>
 <script>
-const MTR = { linhas:null, lidoEm:null, mes:null, soAtivos:false, todosBairros:false, carregando:false, erro:null };
+const MTR = { linhas:null, lidoEm:null, mes:null, soAtivos:false, todosBairros:false, ordemBairro:'qtd', carregando:false, erro:null };
 const MTR_MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function mtrMesNome(m, longo){ const [a,b] = m.split('-'); return longo ? ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][+b-1]+' de '+a : MTR_MESES[+b-1]+'/'+a.slice(2); }
 function mtrMesSoma(m, d){ const [a,b] = m.split('-').map(Number); const t = a*12 + (b-1) + d; return Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0'); }
@@ -30087,11 +30087,29 @@ function mtrCalcular(linhas, mes, soAtivos){
   const anterior = linhas.filter(l => l.m === mtrMesSoma(mes,-1) && vale(l)).length;
   return {
     total: base.length, totalMes: doMes.length, aindaAtivos: doMes.filter(l=>l.s==='A').length, anterior,
-    bairros: agrupar(base, l => l.b || 'Sem bairro informado'),
+    bairros: mtrBairros(base),
     velocidades: agrupar(base, l => l.v ? l.v+' Mega' : 'Sem velocidade no nome'),
     planos: listaPlanos, maisVendido: listaPlanos[0] || null,
     receita, receitaTabela, ticket: base.length ? receita/base.length : 0, serie,
   };
+}
+
+/* Por bairro: quantidade, receita mensal (soma dos valores finais), ticket
+   médio e o plano mais vendido ali (empate: o de maior receita). */
+function mtrBairros(base){
+  const m = new Map();
+  for(const l of base){
+    const k = l.b || 'Sem bairro informado';
+    const b = m.get(k) || m.set(k, { nome:k, qtd:0, receita:0, planos:new Map() }).get(k);
+    const r = Number(l.r)||0; b.qtd++; b.receita += r;
+    const pk = l.p || 'Sem plano informado';
+    const pp = b.planos.get(pk) || b.planos.set(pk, { nome:pk, qtd:0, soma:0 }).get(pk);
+    pp.qtd++; pp.soma += r;
+  }
+  return [...m.values()].map(b=>{
+    const tops = [...b.planos.values()].sort((x,y)=>y.qtd-x.qtd || y.soma-x.soma || x.nome.localeCompare(y.nome,'pt-BR'));
+    return { nome:b.nome, qtd:b.qtd, receita:b.receita, ticket:b.receita/b.qtd, plano:tops[0].nome, planoQtd:tops[0].qtd, planos:tops.length };
+  }).sort((a,b)=>b.qtd-a.qtd || b.receita-a.receita || a.nome.localeCompare(b.nome,'pt-BR'));
 }
 
 async function mtrCarregar(forcar){
@@ -30132,6 +30150,11 @@ function mtrPintar(){
   const mv = c.maisVendido;
   const hora = MTR.lidoEm ? new Date(MTR.lidoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
   const limiteB = MTR.todosBairros ? 0 : 10;
+  const porValor = MTR.ordemBairro === 'valor';
+  const bairrosOrd = porValor ? [...c.bairros].sort((a,b)=>b.receita-a.receita || b.qtd-a.qtd || a.nome.localeCompare(b.nome,'pt-BR')) : c.bairros;
+  const bairrosTela = limiteB ? bairrosOrd.slice(0, limiteB) : bairrosOrd;
+  const maxB = Math.max(0.01, ...c.bairros.map(b=>porValor ? b.receita : b.qtd));
+  const bTop = [...c.bairros].filter(b=>b.nome!=='Sem bairro informado').sort((a,b)=>b.receita-a.receita || b.qtd-a.qtd)[0] || null;
   el.innerHTML = `
     <div class="mtr-topo">
       <div class="mtr-mes">
@@ -30155,6 +30178,8 @@ function mtrPintar(){
         <div class="s">${c.totalMes?Math.round(c.aindaAtivos/c.totalMes*100)+'% dos ativados no mês seguem com contrato ativo':'sem ativações no mês'}</div></div>
       <div class="mtr-tile"><div class="k">Plano mais vendido</div><div class="n txt">${mv?mtrEsc(mv.nome):'—'}</div>
         <div class="s">${mv?`${mv.qtd} ativaç${mv.qtd===1?'ão':'ões'} · ${Math.round(mv.qtd/c.total*100)}% do mês${mv.min!=null?' · '+(mv.min===mv.max?mtrDin(mv.min):mtrDin(mv.min)+' a '+mtrDin(mv.max)):''}`:'sem ativações no mês'}</div></div>
+      <div class="mtr-tile"><div class="k">Bairro que mais rendeu</div><div class="n txt">${bTop?mtrEsc(bTop.nome):'—'}</div>
+        <div class="s">${bTop?`<span class="val-monetario">${mtrDin(bTop.receita)}</span> por mês · ${bTop.qtd} ativaç${bTop.qtd===1?'ão':'ões'} · ${c.receita?Math.round(bTop.receita/c.receita*100):0}% da receita nova`:'sem ativações no mês'}</div></div>
       <div class="mtr-tile"><div class="k">Receita mensal nova</div><div class="n val-monetario">${mtrDin(c.receita)}</div>
         <div class="s">valor final, já com desconto · ticket médio <span class="val-monetario">${mtrDin(c.ticket)}</span></div></div>
     </div>
@@ -30172,12 +30197,28 @@ function mtrPintar(){
       </div>
     </div>
 
-    <div class="mtr-grade">
-      <div class="mtr-card">
-        <h3>Ativações por bairro</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.bairros.length} bairro${c.bairros.length===1?'':'s'}</div>
-        ${mtrBarras(c.bairros, c.total, limiteB)}
-        ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
+    <div class="mtr-card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;gap:8px 14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px"><h3>Bairros: vendas, plano mais vendido e receita</h3>
+          <div class="d">${mtrMesNome(MTR.mes,true)} · ${c.bairros.length} bairro${c.bairros.length===1?'':'s'} · receita = soma das mensalidades finais dos contratos ativados</div></div>
+        <div class="mtr-seg" role="group" aria-label="Ordenar os bairros">
+          <button aria-pressed="${!porValor}" onclick="mtrDefOrdemBairro('qtd')">Mais ativações</button>
+          <button aria-pressed="${porValor}" onclick="mtrDefOrdemBairro('valor')">Maior receita</button>
+        </div>
       </div>
+      ${c.bairros.length?`<div class="mtr-rolar"><table class="mtr-tab">
+        <thead><tr><th>Bairro</th><th>${porValor?'Receita mensal':'Ativações'}</th><th class="num">${porValor?'Ativações':'Receita mensal'}</th><th class="num">Ticket médio</th><th>Plano mais vendido no bairro</th></tr></thead>
+        <tbody>${bairrosTela.map((x,i)=>`<tr>
+          <td>${mtrEsc(x.nome)}${i===0 && x.nome!=='Sem bairro informado'?`<span class="mtr-selo">${porValor?'maior receita':'mais ativações'}</span>`:''}</td>
+          <td style="min-width:150px" data-mtrtip="${mtrEsc(x.nome)}: ${x.qtd} ativaç${x.qtd===1?'ão':'ões'} · ${mtrDin(x.receita)} por mês"><span class="mini" style="height:12px;width:${Math.max(2,(porValor?x.receita:x.qtd)/maxB*110)}px"></span><b class="${porValor?'val-monetario':''}">${porValor?mtrDin(x.receita):x.qtd}</b> <span style="color:var(--text3)">${Math.round((porValor?(c.receita?x.receita/c.receita:0):x.qtd/c.total)*100)}%</span></td>
+          <td class="num ${porValor?'':'val-monetario'}">${porValor?x.qtd:mtrDin(x.receita)}</td>
+          <td class="num val-monetario">${mtrDin(x.ticket)}</td>
+          <td>${mtrEsc(x.plano)} <span style="color:var(--text3)">· ${x.planoQtd} de ${x.qtd}${x.planos>1?' · '+x.planos+' planos':''}</span></td></tr>`).join('')}</tbody>
+      </table></div>`:'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
+      ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 primeiros':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
+    </div>
+
+    <div class="mtr-grade">
       <div class="mtr-card">
         <h3>Planos ativados e valores</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.planos.length} plano${c.planos.length===1?'':'s'} · valores finais, já com desconto</div>
         ${c.planos.length?`<div class="mtr-rolar"><table class="mtr-tab">
@@ -30196,6 +30237,7 @@ function mtrPintar(){
 function mtrDefMes(m){ MTR.mes = m; MTR.todosBairros = false; mtrPintar(); }
 function mtrIrMes(d){ mtrDefMes(mtrMesSoma(MTR.mes, d)); }
 function mtrDefAtivos(v){ MTR.soAtivos = !!v; mtrPintar(); }
+function mtrDefOrdemBairro(v){ MTR.ordemBairro = v; mtrPintar(); }
 /* dica ao passar o mouse nas barras */
 function mtrLigarDicas(raiz){
   let tip = document.getElementById('mtr-tip');
