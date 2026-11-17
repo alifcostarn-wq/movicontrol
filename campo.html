@@ -67,6 +67,15 @@ body{font-family:'Inter Tight','DM Sans',system-ui,sans-serif;background:var(--b
    ficava também entre "movi" e "Tec", e a marca aparecia como "movi Tec" */
 .topbar-brand .marca-ico{width:28px;height:28px;border-radius:8px;display:block;flex-shrink:0}
 .topbar-right{display:flex;align-items:center;gap:6px}
+/* aviso do registro do trajeto (OS em andamento) */
+.trj-aviso{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--blu-bg);color:var(--blu);border-bottom:1px solid var(--bd);font-size:12px;line-height:1.35;flex-shrink:0}
+.trj-aviso[hidden]{display:none}
+.trj-aviso.erro{background:var(--red-bg);color:var(--red)}
+.trj-aviso .trj-txt{flex:1;min-width:0}
+.trj-aviso button{flex-shrink:0;font:inherit;font-size:11.5px;font-weight:700;color:inherit;background:transparent;border:1px solid currentColor;border-radius:7px;padding:3px 8px;cursor:pointer;opacity:.9}
+.trj-pulso{width:9px;height:9px;border-radius:50%;background:currentColor;flex-shrink:0;animation:trjPulso 1.6s ease-in-out infinite}
+@keyframes trjPulso{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.trj-pulso{animation:none}}
 .topbar-user{font-size:11px;color:var(--tx2);font-weight:500;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ico-btn{width:36px;height:36px;border-radius:9px;border:1px solid var(--bd);background:var(--sf2);color:var(--tx2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px}
 .tb-estado{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;
@@ -623,6 +632,7 @@ body.dk .btn-red{background:#C42B27}  /* o vermelho do tema escuro é claro dema
     </div>
   </div>
 </div>
+<div class="trj-aviso" id="trj-aviso" role="status" hidden></div>
 
 <div id="main-scroll">
   <div class="content">
@@ -1039,6 +1049,7 @@ async function login(){
 
 async function logout(){
   await registrarAcesso('saida',true);
+  trjParar(false); TRJ.os = null; trjPintar();
   await sb.auth.signOut(); _tec=null; _os=[];
   $('ls').classList.remove('hide');
 }
@@ -1084,6 +1095,7 @@ async function atualizar(manual=false, smart=false){
   renderMeuEstoque();
   // Se estiver na aba rota, re-renderiza a lista (sem recalcular, só atualiza status)
   if(_view==='rota' && _rotaState.paradas.length) _renderRota();
+  trjAvaliar();
 }
 
 /* ---- MEU ESTOQUE (sub-estoque do técnico) ---- */
@@ -1861,6 +1873,152 @@ function _getGPS(){
   });
 }
 
+/* ============================================================
+   📍 TRAJETO DA OS EM ANDAMENTO
+   Enquanto o técnico tem OS assumida (a caminho) ou em execução e o
+   moviTec está aberto na tela, grava pontos de GPS (no máximo um a cada
+   15 s; parado, um a cada 2 min) e, em cada etapa, um marco: assumiu,
+   chegou, finalizou. O escritório vê o trajeto e os tempos no MoviOne.
+   O navegador NÃO deixa ler o GPS com o app fechado, a tela apagada ou
+   outro app na frente (Google Maps, WhatsApp): nesses intervalos não há
+   pontos, e quando o moviTec volta à tela grava um marco "retomou". Por
+   isso, a caminho do cliente, a tela fica ligada enquanto o moviTec está
+   aberto (o técnico pode desligar isso). O aviso no alto da tela mostra
+   ao técnico que o trajeto está sendo registrado. Sem internet, os pontos
+   esperam no aparelho e sobem depois.
+   ============================================================ */
+const TRJ = { watch:null, os:null, ultimo:null, fila:[], enviando:false, negado:false, retomar:false, wake:null };
+const TRJ_FILA = 'mtk_trajeto_fila', TRJ_TELA = 'mtk_trajeto_tela';
+function trjCarregarFila(){ try{ TRJ.fila = JSON.parse(localStorage.getItem(TRJ_FILA) || '[]') || []; }catch(e){ TRJ.fila = []; } }
+function trjSalvarFila(){ try{ localStorage.setItem(TRJ_FILA, JSON.stringify(TRJ.fila.slice(-3000))); }catch(e){} }
+function trjTelaLigada(){ try{ return localStorage.getItem(TRJ_TELA) !== 'nao'; }catch(e){ return true; } }
+/* a OS em andamento: a que está em execução; senão a assumida mais recente */
+function trjOsAtual(){
+  const minhas = (_os || []).filter(o => o.status === 'executando' || o.status === 'assumida');
+  const recente = (arr, campo) => arr.slice().sort((a, b) => String(b[campo] || '').localeCompare(String(a[campo] || '')))[0] || null;
+  return recente(minhas.filter(o => o.status === 'executando'), 'executando_em') || recente(minhas, 'assumido_em');
+}
+function trjDist(a, b){
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function trjEnfileirar(osId, tipo, pos){
+  if(!_tec || !osId || !pos || !pos.coords) return;
+  const c = pos.coords;
+  TRJ.fila.push({ os_id: osId, tecnico_id: _tec.id, tipo, em: new Date(pos.timestamp || Date.now()).toISOString(),
+    lat: +(+c.latitude).toFixed(6), lng: +(+c.longitude).toFixed(6),
+    precisao: c.accuracy != null ? Math.round(c.accuracy) : null,
+    velocidade: c.speed != null && isFinite(c.speed) ? Math.round(c.speed * 10) / 10 : null });
+  trjSalvarFila();
+}
+/* sobe a fila em lotes; um ponto recusado pelo banco (OS que não é mais do
+   técnico, hora fora do prazo) é descartado sem prender os outros */
+async function trjEnviar(){
+  if(TRJ.enviando || !TRJ.fila.length || !navigator.onLine || !_tec) return;
+  TRJ.enviando = true;
+  const recusa = e => /row-level security|violates|42501|23514|23503/i.test((e && (e.message || e.code)) || '');
+  try{
+    while(TRJ.fila.length){
+      const lote = TRJ.fila.slice(0, 100);
+      const { error } = await sb.from('campo_os_trajeto').insert(lote);
+      if(!error){ TRJ.fila.splice(0, lote.length); trjSalvarFila(); continue; }
+      if(!recusa(error)) break;                       // sem rede ou servidor fora: tenta depois
+      for(const p of lote){                           // separa o ponto ruim
+        const { error: e1 } = await sb.from('campo_os_trajeto').insert(p);
+        if(e1 && !recusa(e1)) return;
+        TRJ.fila.splice(TRJ.fila.indexOf(p), 1); trjSalvarFila();
+      }
+    }
+  } finally { TRJ.enviando = false; trjPintar(); }
+}
+function trjPonto(pos){
+  TRJ.negado = false;
+  const c = pos.coords; if(!c || c.accuracy > 150 || !TRJ.os) return;   // leitura ruim não entra
+  const agora = pos.timestamp || Date.now(), p = { lat: c.latitude, lng: c.longitude };
+  if(TRJ.retomar){ TRJ.retomar = false; trjEnfileirar(TRJ.os, 'retomou', pos); TRJ.ultimo = { ...p, t: agora }; trjEnviar(); trjPintar(); return; }
+  const u = TRJ.ultimo;
+  if(u && agora - u.t < 15000) return;
+  if(u && trjDist(u, p) < 40 && agora - u.t < 120000) return;           // parado: um ponto a cada 2 min
+  trjEnfileirar(TRJ.os, 'ponto', pos); TRJ.ultimo = { ...p, t: agora };
+  if(TRJ.fila.length >= 10) trjEnviar();
+  trjPintar();
+}
+function trjErro(e){ if(e && e.code === 1){ TRJ.negado = true; trjParar(false); } trjPintar(); }
+function trjParar(intervalo){
+  if(TRJ.watch != null){ try{ navigator.geolocation.clearWatch(TRJ.watch); }catch(e){} TRJ.watch = null; if(intervalo && TRJ.os) TRJ.retomar = true; }
+  trjSoltarTela();
+}
+/* liga/desliga conforme há OS em andamento e o app está na frente */
+function trjAvaliar(){
+  const visivel = document.visibilityState === 'visible';
+  const os = _tec ? trjOsAtual() : null;
+  if(!os){ trjParar(false); TRJ.os = null; TRJ.retomar = false; trjPintar(); trjEnviar(); return; }
+  if(TRJ.os !== os.id){ TRJ.os = os.id; TRJ.ultimo = null; TRJ.retomar = false; }
+  if(!visivel){ trjParar(true); trjPintar(); return; }
+  if(TRJ.watch == null && navigator.geolocation && !TRJ.negado){
+    TRJ.watch = navigator.geolocation.watchPosition(trjPonto, trjErro, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+  }
+  trjSegurarTela(os.status === 'assumida');
+  trjPintar(); trjEnviar();
+}
+/* a caminho do cliente a tela fica ligada (com ela apagada o GPS para) */
+async function trjSegurarTela(aCaminho){
+  if(!aCaminho || !trjTelaLigada() || !('wakeLock' in navigator)){ trjSoltarTela(); return; }
+  if(TRJ.wake) return;
+  try{ TRJ.wake = await navigator.wakeLock.request('screen'); TRJ.wake.addEventListener('release', () => { TRJ.wake = null; trjPintar(); }); }
+  catch(e){ TRJ.wake = null; }
+  trjPintar();
+}
+function trjSoltarTela(){ if(TRJ.wake){ try{ TRJ.wake.release(); }catch(e){} TRJ.wake = null; } }
+function trjAlternarTela(){
+  try{ localStorage.setItem(TRJ_TELA, trjTelaLigada() ? 'nao' : 'sim'); }catch(e){}
+  if(!trjTelaLigada()) trjSoltarTela();
+  trjAvaliar();
+}
+/* marco de uma etapa: a posição na hora em que o técnico apertou o botão */
+function trjGpsAgora(){
+  return new Promise(res => {
+    if(!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(p => res(p), () => res(null), { enableHighAccuracy: true, timeout: 10000, maximumAge: 20000 });
+  });
+}
+async function trjMarco(osId, tipo, geo){
+  if(!_tec || !osId) return;
+  const pos = geo && geo.lat != null ? { coords: { latitude: geo.lat, longitude: geo.lng, accuracy: geo.acc }, timestamp: Date.now() } : await trjGpsAgora();
+  if(!pos) return;                              // sem GPS: a hora da etapa já fica gravada na OS
+  trjEnfileirar(osId, tipo, pos);
+  if(tipo !== 'finalizou' && TRJ.os === osId) TRJ.ultimo = { lat: pos.coords.latitude, lng: pos.coords.longitude, t: pos.timestamp || Date.now() };
+  trjEnviar();
+}
+function trjPintar(){
+  const el = document.getElementById('trj-aviso'); if(!el) return;
+  const os = TRJ.os ? (_os || []).find(o => o.id === TRJ.os) : null;
+  if(!os){ el.hidden = true; return; }
+  el.hidden = false;
+  const num = os.numero || os.id, fila = TRJ.fila.length;
+  const espera = fila && !navigator.onLine ? ` · ${fila} ponto${fila === 1 ? '' : 's'} esperando internet` : '';
+  if(TRJ.negado){
+    el.className = 'trj-aviso erro';
+    el.innerHTML = `📍 <b>GPS bloqueado</b>: o trajeto da OS ${_escR(String(num))} não está sendo registrado. Libere a localização do moviTec nas permissões do navegador.`;
+    return;
+  }
+  const aCaminho = os.status === 'assumida';
+  el.className = 'trj-aviso';
+  el.innerHTML = `<span class="trj-pulso" aria-hidden="true"></span><span class="trj-txt">Registrando o trajeto da <b>OS ${_escR(String(num))}</b> (${aCaminho ? 'a caminho' : 'em execução'})${espera}</span>
+    ${aCaminho && 'wakeLock' in navigator ? `<button type="button" onclick="trjAlternarTela()" title="Com a tela apagada o celular para o GPS e o trajeto fica com falhas">${trjTelaLigada() ? '🔆 Tela ligada' : '🌙 Tela pode apagar'}</button>` : ''}
+    <button type="button" onclick="trjExplicar()" aria-label="Como funciona o registro do trajeto">ⓘ</button>`;
+}
+function trjExplicar(){
+  alert('Registro do trajeto\n\nEnquanto você tem uma OS assumida ou em execução e o moviTec está aberto na tela, o app grava a sua posição para o escritório acompanhar o deslocamento e o tempo de atendimento. Em cada etapa (assumir, chegar e finalizar) também fica gravado onde você estava.\n\nCom o app fechado, a tela apagada ou outro app na frente, o celular não deixa o moviTec usar o GPS: esses trechos ficam sem registro.\n\nAo finalizar a OS o registro para.');
+}
+document.addEventListener('visibilitychange', () => { if(_tec) trjAvaliar(); });
+window.addEventListener('online', () => { trjEnviar(); trjPintar(); });
+window.addEventListener('offline', trjPintar);
+setInterval(() => { if(_tec) trjEnviar(); }, 30000);
+trjCarregarFila();
+
 function iniciarTelaRota(){
   // Se já há rota calculada nesta sessão, re-renderiza com status atualizado
   if(_rotaState.paradas.length){ _renderRota(); _renderMapaRota(); return; }
@@ -2518,6 +2676,7 @@ async function rapido(evt, id, status){
   const {error} = await sb.from('campo_os').update(campos).eq('id',id);
   ld(false);
   if(error){ toast('Erro: '+error.message); return; }
+  if(status==='assumida' || status==='executando') trjMarco(id, status==='assumida' ? 'assumiu' : 'chegou');
   await atualizar(false, true);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Executando!'}[status]||'Atualizado!');
   // Aviso automático ao cliente (WhatsApp)
@@ -2996,6 +3155,7 @@ async function rapidoRota(id, status){
   const {error} = await sb.from('campo_os').update(campos).eq('id',id);
   ld(false);
   if(error){ toast('Erro: '+error.message); return; }
+  if(status==='assumida' || status==='executando') trjMarco(id, status==='assumida' ? 'assumiu' : 'chegou');
   await atualizar(false, false);
   toast({assumida:'✋ OS assumida!',executando:'🔧 Em execução!'}[status]||'Atualizado!');
   const _osNotif = _os.find(x=>x.id==id);
@@ -4586,6 +4746,7 @@ async function confirmarFin(){
 
     if(error){ toast('Erro: '+error.message); return; }
     try{ sessionStorage.removeItem(_kChave); }catch(e){}
+    trjMarco(_aberta.id, 'finalizou', _finGeo && (_finGeo.acc==null || _finGeo.acc<=150) ? _finGeo : null);
 
     // Aviso automático ao cliente (WhatsApp) — atendimento concluído
     _autoWaStatus(_aberta, 'finalizada');

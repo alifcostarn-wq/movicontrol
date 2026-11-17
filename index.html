@@ -2594,6 +2594,34 @@ body.dark-mode .hub-ico{color:color-mix(in srgb,var(--c) 55%,#fff)}
 .reg-p-nome{font-size:15px;font-weight:700;color:var(--text)}
 .reg-p-meta{font-size:12px;color:var(--text2);margin-top:2px}
 .reg-sec{margin-top:13px}
+.reg-trj-etapas{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:6px;align-items:stretch}
+.reg-trj-et{border:1px solid var(--border);border-radius:12px;padding:9px 10px;display:flex;flex-direction:column;gap:2px;min-width:0;border-top:3px solid var(--trj-c,var(--border))}
+.reg-trj-et b{font-size:12px;color:var(--text2);font-weight:600}
+.reg-trj-et .reg-trj-h{font-size:18px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+.reg-trj-et small{font-size:11px;color:var(--text3);line-height:1.3}
+.reg-trj-ico{font-size:14px}
+.reg-trj-et.assumiu{--trj-c:#eb6834}.reg-trj-et.chegou{--trj-c:#1baf7a}.reg-trj-et.finalizou{--trj-c:#6250d6}
+body.dark-mode .reg-trj-et.assumiu{--trj-c:#d95926}body.dark-mode .reg-trj-et.chegou{--trj-c:#199e70}body.dark-mode .reg-trj-et.finalizou{--trj-c:#9085e9}
+.reg-trj-seta{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 2px;color:var(--text3);font-size:11px}
+.reg-trj-seta b{font-size:13px;color:var(--text);white-space:nowrap}
+.reg-trj-seta b::before{content:"→ ";color:var(--text3);font-weight:400}
+.reg-trj-num{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--text3);margin:10px 0 6px}
+.reg-trj-num b{color:var(--text)}
+.reg-trj-alerta{font-size:12px;border-radius:9px;padding:7px 10px;margin-top:6px;line-height:1.4}
+.reg-trj-alerta.aviso{background:var(--warn-bg);color:var(--text)}
+.reg-trj-alerta.info{background:var(--info-bg);color:var(--text)}
+.reg-trj-mapa{height:300px;border-radius:12px;border:1px solid var(--border);margin-top:10px;overflow:hidden;z-index:0;position:relative}
+.reg-trj-leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;color:var(--text3);margin-top:6px}
+.reg-trj-leg span{display:inline-flex;align-items:center;gap:5px}
+.reg-trj-leg i{display:inline-block}
+.reg-trj-leg i.rota{width:16px;height:3px;border-radius:2px;background:#2a78d6}
+body.dark-mode .reg-trj-leg i.rota{background:#3987e5}
+.reg-trj-leg i.sem{width:16px;height:0;border-top:2px dashed #898781}
+.reg-trj-leg i.pt{width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 2px var(--surface)}
+.reg-trj-leg i.pt.assumiu{background:#eb6834}.reg-trj-leg i.pt.chegou{background:#1baf7a}.reg-trj-leg i.pt.finalizou{background:#6250d6}
+body.dark-mode .reg-trj-leg i.pt.assumiu{background:#d95926}body.dark-mode .reg-trj-leg i.pt.chegou{background:#199e70}body.dark-mode .reg-trj-leg i.pt.finalizou{background:#9085e9}
+.reg-trj-leg i.ref{width:12px;height:12px;border-radius:50%;border:2px dashed #2a78d6}
+@media (max-width:640px){.reg-trj-etapas{grid-template-columns:1fr}.reg-trj-seta{flex-direction:row;gap:6px;padding:2px 0}.reg-trj-seta b::before{content:"↓ "}}
 .reg-sec-t{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
 .reg-ass{background:#fff;border:1px solid var(--border);border-radius:10px;height:86px;display:flex;align-items:center;justify-content:center}
 .reg-ass a{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
@@ -20049,7 +20077,7 @@ function popularSelectsTecnicosCampo(){
 // (bucket "assinaturas", link temporário), as fotos (R2, pelo /api/ixc-proxy
 // com a sessão de quem olha) e o que o técnico registrou, com o material.
 // ============================================================
-const REG = { sel:null, ass:new Map(), fotos:new Map(), equip:new Map(), _t:null };
+const REG = { sel:null, ass:new Map(), fotos:new Map(), equip:new Map(), trj:new Map(), mapa:null, _t:null };
 const REG_FIM = ['finalizada','concluida'];
 const regEsc = v => escHtml(String(v ?? ''));
 const regQtdFotos = o => Array.isArray(o && o.fotos_r2) ? o.fotos_r2.length : 0;
@@ -20070,6 +20098,153 @@ function regVisitas(){
     .filter(o => filtro !== 'sem_foto' || !regQtdFotos(o))
     .sort((a, b) => (Date.parse(b.finalizado_em || '') || 0) - (Date.parse(a.finalizado_em || '') || 0));
 }
+/* ---------- Tempos e trajeto da visita ----------
+   Os horários vêm dos botões do técnico (assumir, cheguei, finalizar); o
+   trajeto, dos pontos de GPS que o moviTec grava enquanto está aberto na tela
+   (campo_os_trajeto). Trecho sem pontos por mais de 5 min = app fechado, tela
+   apagada ou outro app na frente: aparece tracejado e não conta como "com GPS".
+   O local de referência é onde a OS foi finalizada (GPS do técnico ao
+   assinar); sem ele, a coordenada do cliente no cadastro. */
+const REG_TRJ_CORES = { claro:{ rota:'#2a78d6', assumiu:'#eb6834', chegou:'#1baf7a', finalizou:'#6250d6' },
+                        escuro:{ rota:'#3987e5', assumiu:'#d95926', chegou:'#199e70', finalizou:'#9085e9' } };
+function regDist(a, b){
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function regDistTxt(m){ return m == null ? '—' : m < 20 ? Math.round(m) + ' m' : m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' km'; }
+function regDurTxt(ms){
+  if(ms == null || !isFinite(ms) || ms < 0) return '—';
+  const min = Math.round(ms / 60e3);
+  if(min < 60) return min + ' min';
+  const h = Math.floor(min / 60), r = min % 60;
+  return h + 'h' + (r ? String(r).padStart(2, '0') : '');
+}
+function regHora(t){ return t ? new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'; }
+function regTrajetoCalc(o, d){
+  const pts = (d.pts || []).filter(p => p.lat != null && p.lng != null && !isNaN(Date.parse(p.em)))
+    .map(p => ({ tipo: p.tipo, lat: +p.lat, lng: +p.lng, t: Date.parse(p.em) })).sort((a, b) => a.t - b.t);
+  const marco = tipo => pts.find(p => p.tipo === tipo) || null;
+  const finOk = o.fin_lat != null && o.fin_lng != null && (o.fin_precisao == null || o.fin_precisao <= 150);
+  const ref = finOk ? { lat: +o.fin_lat, lng: +o.fin_lng, de: 'onde a OS foi finalizada' }
+    : d.cliente ? { lat: d.cliente.lat, lng: d.cliente.lng, de: 'coordenada do cliente no cadastro' } : null;
+  const GAP = 5 * 60e3;
+  const tA = Date.parse(o.assumido_em || '') || null, tC = Date.parse(o.executando_em || '') || null, tF = Date.parse(o.finalizado_em || '') || null;
+  let kmGps = 0, kmSem = 0, coberto = 0;
+  const trechos = []; let atual = null;
+  for(let i = 0; i < pts.length; i++){
+    const p = pts[i], q = pts[i - 1];
+    if(!q){ atual = { gap: false, pts: [[p.lat, p.lng]] }; trechos.push(atual); continue; }
+    const m = regDist(q, p), gap = p.t - q.t > GAP;
+    if(gap){ kmSem += m; trechos.push({ gap: true, pts: [[q.lat, q.lng], [p.lat, p.lng]] }); atual = { gap: false, pts: [[p.lat, p.lng]] }; trechos.push(atual); }
+    else {
+      kmGps += m; atual.pts.push([p.lat, p.lng]);
+      if(tA && tF){ const a = Math.max(q.t, tA), b = Math.min(p.t, tF); if(b > a) coberto += b - a; }
+    }
+  }
+  const as = marco('assumiu'), ch = marco('chegou'), fi = marco('finalizou');
+  const dRef = p => (p && ref) ? regDist(p, ref) : null;
+  // a chegada que o GPS viu: o primeiro ponto a até 150 m do local, depois de assumir
+  const chegadaGps = ref ? (pts.find(p => (!tA || p.t >= tA - 60e3) && regDist(p, ref) <= 150) || null) : null;
+  const alertas = [];
+  if(!pts.length) alertas.push({ tipo: 'info', txt: 'Sem registro de trajeto nesta visita: ela é anterior ao registro, ou o moviTec ficou fechado (ou sem permissão de localização) durante o atendimento.' });
+  if(as && ref && dRef(as) <= 200) alertas.push({ tipo: 'aviso', txt: `Assumiu a OS já no local do atendimento (a ${regDistTxt(dRef(as))}): o deslocamento não foi medido pelos botões.` });
+  else if(tA && tC && tC - tA < 2 * 60e3) alertas.push({ tipo: 'aviso', txt: `Assumiu e marcou "cheguei" com ${regDurTxt(tC - tA)} de diferença: o deslocamento não foi medido pelos botões.` });
+  if(ch && ref && dRef(ch) > 300) alertas.push({ tipo: 'aviso', txt: `Marcou "cheguei" a ${regDistTxt(dRef(ch))} do local do atendimento.` });
+  if(chegadaGps && tC && Math.abs(chegadaGps.t - tC) > 10 * 60e3) alertas.push({ tipo: 'info', txt: `Pelo GPS chegou ao local às ${regHora(chegadaGps.t)}; o "cheguei" foi marcado às ${regHora(tC)}.` });
+  return { pts, ref, as, ch, fi, tA, tC, tF, kmGps, kmSem, trechos, chegadaGps, alertas,
+    cobertura: tA && tF && tF > tA && pts.length ? Math.min(1, coberto / (tF - tA)) : null,
+    dAs: dRef(as), dCh: dRef(ch), dFi: dRef(fi) };
+}
+function regTrajetoHtml(t){
+  const et = (ico, rot, tm, dist, cls, nota) => `<div class="reg-trj-et ${cls}"><span class="reg-trj-ico" aria-hidden="true">${ico}</span><b>${rot}</b><span class="reg-trj-h">${regHora(tm)}</span><small>${nota || (dist != null ? 'a ' + regDistTxt(dist) + ' do local' : 'sem GPS nesta etapa')}</small></div>`;
+  // finalizou É o local de referência quando há GPS da finalização: "a 0 m" não diz nada
+  const notaFim = t.ref && t.ref.de === 'onde a OS foi finalizada' ? 'é o local de referência do atendimento' : null;
+  const seta = (ms, rot) => `<div class="reg-trj-seta" aria-hidden="false"><b>${regDurTxt(ms)}</b><small>${rot}</small></div>`;
+  return `<div class="reg-trj-etapas">
+      ${et('✋', 'Assumiu', t.tA, t.dAs, 'assumiu')}${seta(t.tA && t.tC ? t.tC - t.tA : null, 'deslocamento')}
+      ${et('📍', 'Chegou', t.tC, t.dCh, 'chegou')}${seta(t.tC && t.tF ? t.tF - t.tC : null, 'no local')}
+      ${et('✅', 'Finalizou', t.tF, t.dFi, 'finalizou', notaFim)}
+    </div>
+    <div class="reg-trj-num">
+      <span><b>${regDurTxt(t.tA && t.tF ? t.tF - t.tA : null)}</b> do assumir ao finalizar</span>
+      ${t.pts.length ? `<span><b>${regDistTxt(t.kmGps)}</b> percorridos com GPS</span>` : ''}
+      ${t.kmSem >= 50 ? `<span><b>${regDistTxt(t.kmSem)}</b> em trechos sem registro (em linha reta)</span>` : ''}
+      ${t.cobertura != null ? `<span><b>${Math.round(t.cobertura * 100)}%</b> do tempo com GPS</span>` : ''}
+      ${t.chegadaGps ? `<span>chegada ao local pelo GPS: <b>${regHora(t.chegadaGps.t)}</b></span>` : ''}
+    </div>
+    ${t.alertas.map(a => `<div class="reg-trj-alerta ${a.tipo}" role="note">${a.tipo === 'aviso' ? '⚠️' : 'ℹ️'} ${regEsc(a.txt)}</div>`).join('')}
+    ${t.pts.length || t.ref ? `<div class="reg-trj-mapa" id="reg-trj-mapa" aria-label="Mapa do trajeto"></div>
+    <div class="reg-trj-leg"><span><i class="rota"></i>trajeto com GPS</span><span><i class="sem"></i>sem registro</span>
+      <span><i class="pt assumiu"></i>assumiu</span><span><i class="pt chegou"></i>chegou</span><span><i class="pt finalizou"></i>finalizou</span>
+      ${t.ref ? `<span><i class="ref"></i>local do atendimento (${regEsc(t.ref.de)})</span>` : ''}</div>` : ''}`;
+}
+let _regLeaflet = null;
+function regLeaflet(){
+  if(window.L && window.L.map) return Promise.resolve(window.L);
+  if(_regLeaflet) return _regLeaflet;
+  _regLeaflet = new Promise((ok, erro) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+    const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+    s.onload = () => window.L && window.L.map ? ok(window.L) : erro(new Error('mapa indisponível'));
+    s.onerror = () => { _regLeaflet = null; erro(new Error('mapa indisponível')); };
+    document.head.appendChild(s);
+  });
+  return _regLeaflet;
+}
+async function regTrajetoMapa(t, osId){
+  let Lf;
+  try{ Lf = await regLeaflet(); }
+  catch(e){ const b = document.getElementById('reg-trj-mapa'); if(b) b.innerHTML = '<div class="reg-vazio">Não consegui carregar o mapa agora.</div>'; return; }
+  const box = document.getElementById('reg-trj-mapa'); if(!box || REG.sel !== osId) return;
+  if(REG.mapa){ try{ REG.mapa.remove(); }catch(e){} REG.mapa = null; }
+  const cores = REG_TRJ_CORES[document.body.classList.contains('dark-mode') ? 'escuro' : 'claro'];
+  const map = Lf.map(box, { zoomControl: true, scrollWheelZoom: false }); REG.mapa = map;
+  Lf.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  const lim = [];
+  for(const tr of t.trechos){
+    if(tr.pts.length < 2) continue;
+    Lf.polyline(tr.pts, tr.gap ? { color: '#898781', weight: 2, dashArray: '6 6', opacity: .9 } : { color: cores.rota, weight: 3, opacity: .9 }).addTo(map);
+    lim.push(...tr.pts);
+  }
+  t.pts.filter(p => p.tipo === 'retomou').forEach(p => Lf.circleMarker([p.lat, p.lng], { radius: 3, color: '#898781', weight: 1, fillOpacity: .8 }).bindTooltip(`O app voltou à tela às ${regHora(p.t)}`).addTo(map));
+  if(t.ref){
+    Lf.circleMarker([t.ref.lat, t.ref.lng], { radius: 11, color: cores.rota, weight: 2, dashArray: '3 3', fillOpacity: .08 }).bindTooltip('Local do atendimento (' + t.ref.de + ')').addTo(map);
+    lim.push([t.ref.lat, t.ref.lng]);
+  }
+  for(const [p, rot, cor, tm] of [[t.as, '✋ Assumiu', cores.assumiu, t.tA], [t.ch, '📍 Chegou', cores.chegou, t.tC], [t.fi, '✅ Finalizou', cores.finalizou, t.tF]]){
+    if(!p) continue;
+    Lf.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 2, fillColor: cor, fillOpacity: 1 }).bindTooltip(`${rot} às ${regHora(tm || p.t)}`).addTo(map);
+    lim.push([p.lat, p.lng]);
+  }
+  if(lim.length) map.fitBounds(lim, { padding: [28, 28], maxZoom: 17 }); else map.setView([-5.66, -37.8], 13);
+  setTimeout(() => { try{ map.invalidateSize(); }catch(e){} }, 80);
+}
+async function regCarregarTrajeto(o){
+  const el = document.getElementById('reg-trj'); if(!el) return;
+  let d = REG.trj.get(o.id);
+  if(!d){
+    try{
+      const [r1, r2] = await Promise.all([
+        sbClient.from('campo_os_trajeto').select('tipo,em,lat,lng').eq('os_id', o.id).order('em').limit(5000),
+        o.cliente_id ? sbClient.from('clientes').select('latitude,longitude').eq('ixc_id', String(o.cliente_id)).limit(1) : Promise.resolve({ data: [] }),
+      ]);
+      if(r1.error) throw r1.error;
+      const c = r2 && r2.data && r2.data[0];
+      d = { pts: r1.data || [], cliente: c && c.latitude != null && c.longitude != null && +c.latitude && +c.longitude ? { lat: +c.latitude, lng: +c.longitude } : null };
+      REG.trj.set(o.id, d);
+    }catch(e){ if(REG.sel === o.id) el.innerHTML = `<div class="reg-vazio alerta">Não consegui ler o trajeto: ${regEsc(e.message || e)}</div>`; return; }
+  }
+  if(REG.sel !== o.id) return;
+  const t = regTrajetoCalc(o, d);
+  el.innerHTML = regTrajetoHtml(t);
+  if(t.pts.length || t.ref) regTrajetoMapa(t, o.id);
+}
+/* mediana, para o resumo não ser puxado por uma OS esquecida aberta */
+function regMediana(v){ const a = v.filter(x => x != null && isFinite(x) && x >= 0).sort((x, y) => x - y); if(!a.length) return null; const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; }
+const regNoLocal = o => { const a = Date.parse(o.executando_em || ''), b = Date.parse(o.finalizado_em || ''); return a && b && b >= a ? b - a : null; };
+const regDesloc = o => { const a = Date.parse(o.assumido_em || ''), b = Date.parse(o.executando_em || ''); return a && b && b >= a ? b - a : null; };
+
 function regFiltroMudou(){ clearTimeout(REG._t); REG._t = setTimeout(renderRegistros, 120); }
 function renderRegistros(){
   const selTec = document.getElementById('reg-tec');
@@ -20077,14 +20252,16 @@ function renderRegistros(){
   const lista = regVisitas();
   const res = document.getElementById('reg-resumo');
   if(res){ const ass = lista.filter(o => o.assinatura_path).length, fot = lista.filter(o => regQtdFotos(o)).length;
-    res.innerHTML = `<span><b>${lista.length}</b> visita${lista.length === 1 ? '' : 's'} finalizada${lista.length === 1 ? '' : 's'}</span><span><b>${ass}</b> com assinatura</span><span><b>${lista.length - ass}</b> sem assinatura</span><span><b>${fot}</b> com fotos</span>`; }
+    res.innerHTML = `<span><b>${lista.length}</b> visita${lista.length === 1 ? '' : 's'} finalizada${lista.length === 1 ? '' : 's'}</span><span><b>${ass}</b> com assinatura</span><span><b>${lista.length - ass}</b> sem assinatura</span><span><b>${fot}</b> com fotos</span>`
+      + `<span title="Mediana entre &quot;cheguei&quot; e finalizar">no local: <b>${regDurTxt(regMediana(lista.map(regNoLocal)))}</b></span>`
+      + `<span title="Mediana entre assumir e &quot;cheguei&quot;, pelos botões do técnico">deslocamento: <b>${regDurTxt(regMediana(lista.map(regDesloc)))}</b></span>`; }
   if(!REG.sel || !lista.some(o => o.id === REG.sel)) REG.sel = lista[0] ? lista[0].id : null;
   const el = document.getElementById('reg-lista');
   if(el){
     el.innerHTML = lista.length ? lista.map(o => `<button type="button" class="reg-item ${o.id === REG.sel ? 'sel' : ''}" role="listitem" aria-current="${o.id === REG.sel}" onclick="regEscolher(${Number(o.id)})">
         <div class="reg-l1"><span>${regEsc(o.cliente || 'Cliente')}</span><span class="reg-data">${regData(o.finalizado_em)}</span></div>
         <div class="reg-l2">OS ${regEsc(o.numero || o.id)}${regIxc(o) ? ' · IXC ' + regEsc(regIxc(o)) : ''} · ${regEsc(o.tecnico_nome || 'sem técnico')}${o.descricao ? ' · ' + regEsc(String(o.descricao).slice(0, 60)) : ''}</div>
-        <div class="reg-tags">${o.assinatura_path ? '<span class="reg-tag ok">✍️ Assinada</span>' : '<span class="reg-tag falta">Sem assinatura</span>'}${regQtdFotos(o) ? `<span class="reg-tag">📷 ${regQtdFotos(o)} foto${regQtdFotos(o) > 1 ? 's' : ''}</span>` : '<span class="reg-tag">Sem fotos</span>'}</div>
+        <div class="reg-tags">${o.assinatura_path ? '<span class="reg-tag ok">✍️ Assinada</span>' : '<span class="reg-tag falta">Sem assinatura</span>'}${regQtdFotos(o) ? `<span class="reg-tag">📷 ${regQtdFotos(o)} foto${regQtdFotos(o) > 1 ? 's' : ''}</span>` : '<span class="reg-tag">Sem fotos</span>'}${regNoLocal(o) != null ? `<span class="reg-tag">⏱️ ${regDurTxt(regNoLocal(o))} no local</span>` : ''}</div>
       </button>`).join('')
       : '<div class="reg-vazio" style="margin:14px">Nenhuma visita finalizada com esse filtro.</div>';
   }
@@ -20105,11 +20282,13 @@ function regPainel(){
     <div class="reg-p-meta">OS ${regEsc(o.numero || o.id)}${regIxc(o) ? ' · OS do IXC ' + regEsc(regIxc(o)) : ' · sem OS no IXC (anterior à integração)'} · técnico ${regEsc(o.tecnico_nome || '—')} · finalizada em ${regData(o.finalizado_em)}</div>
     <div class="reg-sec"><div class="reg-sec-t">Assinatura do cliente</div><div id="reg-ass">${o.assinatura_path ? '<div class="reg-vazio">Carregando a assinatura…</div>' : '<div class="reg-vazio alerta">O cliente não assinou esta visita.</div>'}</div></div>
     <div class="reg-sec"><div class="reg-sec-t" id="reg-fotos-t">Fotos da visita</div><div id="reg-fotos"><div class="reg-vazio">Procurando as fotos…</div></div></div>
+    <div class="reg-sec"><div class="reg-sec-t">Tempos e trajeto</div><div id="reg-trj"><div class="reg-vazio">Lendo o trajeto…</div></div></div>
     <div class="reg-sec"><div class="reg-sec-t">O que o técnico registrou</div>
       <dl class="reg-dl"><dt>Solução</dt><dd>${regEsc(o.solucao || '—')}</dd><dt>Sinal da fibra</dt><dd>${regEsc(sinal)}</dd><dt>Velocidade</dt><dd>${regEsc(vel)}</dd>
         <dt>Material (estoque)</dt><dd>${regEsc(o.pecas || '—')}</dd>${o.obs ? `<dt>Observações</dt><dd>${regEsc(o.obs)}</dd>` : ''}</dl>
       <div id="reg-equip"></div></div>`;
-  regCarregarAssinatura(o); regCarregarFotos(o); regCarregarEquip(o);
+  if(REG.mapa){ try{ REG.mapa.remove(); }catch(e){} REG.mapa = null; }
+  regCarregarAssinatura(o); regCarregarFotos(o); regCarregarEquip(o); regCarregarTrajeto(o);
 }
 async function regCarregarAssinatura(o){
   if(!o.assinatura_path) return;
