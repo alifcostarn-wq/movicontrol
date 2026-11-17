@@ -1,7 +1,7 @@
 // ============================================================================
 // MÉTRICAS RECORRENTES — leitura DIRETA do IXC (não usa a cópia do MoviOne)
 // ----------------------------------------------------------------------------
-// Ativações mensais: uma linha enxuta por contrato com data de ativação —
+// Ativações mensais: uma linha enxuta por contrato —
 // mês, bairro, plano, velocidade, valor FINAL (tabela − descontos + acréscimos
 // do contrato em vigor) e situação. Nada de nome, documento,
 // endereço ou senha: o cadastro do cliente só passa pela memória para dar o
@@ -59,14 +59,14 @@ export function ativacoesDoIxc({ contratos = [], planos = [], clientes = [], pro
   const linhas = [];
   for (const r of contratos) {
     const l = linhaContratoDoIxc(r, null, pv);
-    if (!l.data_ativacao) continue;
     // contrato com endereço próprio (instalado em outro lugar) vale o bairro dele
     const proprio = String(r.endereco_padrao_cliente || '').toUpperCase() === 'N' ? bairroLimpo(r.bairro) : null;
     const id = String(r.id);
     const cheio = tabelaDoContrato.get(id) || l.valor || 0;
     const final = Math.max(0, centavos(cheio - (desc.get(id) || 0) + (acr.get(id) || 0)));
     linhas.push({
-      m: String(l.data_ativacao).slice(0, 7),
+      // sem data de ativação não entra em mês nenhum, mas conta na base ativa do bairro
+      m: l.data_ativacao ? String(l.data_ativacao).slice(0, 7) : null,
       b: proprio || bairroDoCliente.get(String(r.id_cliente)) || null,
       p: String(l.plano || '').trim() || null,
       v: l.velocidade_mbps || null,

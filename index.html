@@ -30038,6 +30038,15 @@ async function asnExcluirModelo(id){
 .mtr-eixo{display:flex;gap:2px;margin-top:5px}
 .mtr-eixo span{flex:1;min-width:0;text-align:center;font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden}
 .mtr-eixo span.on{color:var(--text);font-weight:700}
+.mtr-comp{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--text2)}
+.mtr-comp select{width:auto;max-width:260px;font-weight:600}
+.mtr-ov{position:fixed;inset:0;z-index:2500;background:rgba(10,12,30,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.mtr-ov-cx{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:14px;width:min(620px,100%);max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.mtr-ov-topo{display:flex;align-items:center;justify-content:space-between;font-size:15px;margin-bottom:6px}
+.mtr-ov-lista{overflow:auto;border-top:1px solid var(--border)}
+.mtr-ov-linha{display:grid;grid-template-columns:1fr minmax(150px,46%);gap:10px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--ebi-grid);font-size:13px}
+.mtr-ov-linha span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mtr-ov-linha small{color:var(--text3);margin-left:4px}
 .mtr-nomes{font-size:11px;color:var(--text3);margin-top:2px;line-height:1.35}
 .mtr-hb{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;align-items:center;gap:4px 10px}
 .mtr-hb .nm{font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -30056,7 +30065,7 @@ async function asnExcluirModelo(id){
 .mtr-rolar{overflow-x:auto}
 </style>
 <script>
-const MTR = { linhas:null, lidoEm:null, mes:null, soAtivos:false, todosBairros:false, carregando:false, erro:null };
+const MTR = { linhas:null, brutas:null, juntos:{}, lidoEm:null, mes:null, comparar:'anterior', soAtivos:false, todosBairros:false, carregando:false, erro:null };
 const MTR_MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function mtrMesNome(m, longo){ const [a,b] = m.split('-'); return longo ? ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][+b-1]+' de '+a : MTR_MESES[+b-1]+'/'+a.slice(2); }
 function mtrMesSoma(m, d){ const [a,b] = m.split('-').map(Number); const t = a*12 + (b-1) + d; return Math.floor(t/12)+'-'+String(t%12+1).padStart(2,'0'); }
@@ -30072,7 +30081,22 @@ function mtrPlanoGrupo(l){
   if(!l.v) return l.p || 'Sem plano informado';
   return l.v+' Mega'+(l.r != null ? ' · '+mtrDin(l.r) : '');
 }
-function mtrCalcular(linhas, mes, soAtivos){
+/* Bairros que a equipe juntou: a linha passa a contar no bairro de destino. */
+function mtrAplicarJuntos(){
+  const j = MTR.juntos || {};
+  MTR.linhas = (MTR.brutas || []).map(l => (l.b && j[l.b]) ? { ...l, b: j[l.b] } : l);
+}
+const MTR_FAIXAS = [['Até R$ 79,99', 0, 80], ['R$ 80 a R$ 99,99', 80, 100], ['R$ 100 a R$ 119,99', 100, 120], ['R$ 120 ou mais', 120, Infinity]];
+/* Os números de um mês, para comparar com outro. */
+function mtrResumo(arr){
+  const receita = arr.reduce((s,l)=>s+(Number(l.r)||0), 0);
+  const pl = new Map(); for(const l of arr){ const k = mtrPlanoGrupo(l); pl.set(k, (pl.get(k)||0)+1); }
+  const top = [...pl].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0],'pt-BR'))[0];
+  return { total: arr.length, receita, ticket: arr.length ? receita/arr.length : 0, bairros: new Set(arr.map(l=>l.b||'')).size,
+    ativos: arr.filter(l=>l.s==='A').length, plano: top ? top[0] : null, planoQtd: top ? top[1] : 0 };
+}
+function mtrMesComparado(mes, comparar){ return comparar === 'ano' ? mtrMesSoma(mes,-12) : /^\d{4}-\d{2}$/.test(comparar||'') ? comparar : mtrMesSoma(mes,-1); }
+function mtrCalcular(linhas, mes, soAtivos, comparar){
   const vale = l => !soAtivos || l.s === 'A';
   const doMes = linhas.filter(l => l.m === mes);
   const base = doMes.filter(vale);
@@ -30094,9 +30118,16 @@ function mtrCalcular(linhas, mes, soAtivos){
   const receitaTabela = base.reduce((s,l)=>s+(Number(l.t)||Number(l.r)||0), 0);
   const serie = []; for(let i=11;i>=0;i--){ const m = mtrMesSoma(mes, -i); serie.push({ mes:m, qtd: linhas.filter(l=>l.m===m && vale(l)).length }); }
   const anterior = linhas.filter(l => l.m === mtrMesSoma(mes,-1) && vale(l)).length;
+  const mesComp = mtrMesComparado(mes, comparar);
+  // base ativa de cada bairro hoje (todos os contratos ativos, de qualquer época)
+  const baseAtiva = new Map(); for(const l of linhas) if(l.s === 'A'){ const k = l.b || 'Sem bairro informado'; baseAtiva.set(k, (baseAtiva.get(k)||0)+1); }
+  const bairros = mtrBairros(base); for(const b of bairros) b.base = baseAtiva.get(b.nome) || 0;
+  const faixas = MTR_FAIXAS.map(([nome,de,ate]) => ({ nome, qtd: base.filter(l => l.r != null && Number(l.r) >= de && Number(l.r) < ate).length }));
+  const semValor = base.filter(l => l.r == null).length; if(semValor) faixas.push({ nome:'Sem valor no IXC', qtd: semValor });
   return {
+    mesComp, atual: mtrResumo(base), comp: mtrResumo(linhas.filter(l => l.m === mesComp && vale(l))), faixas, baseTotal: linhas.filter(l=>l.s==='A').length,
     total: base.length, totalMes: doMes.length, aindaAtivos: doMes.filter(l=>l.s==='A').length, anterior,
-    bairros: mtrBairros(base),
+    bairros,
     velocidades: agrupar(base, l => l.v ? l.v+' Mega' : 'Sem velocidade no nome'),
     planos: listaPlanos, maisVendido: listaPlanos[0] || null,
     receita, receitaTabela, ticket: base.length ? receita/base.length : 0, serie,
@@ -30127,7 +30158,7 @@ async function mtrCarregar(forcar){
   MTR.carregando = true; MTR.erro = null; mtrPintar();
   try{
     const j = await ixaAPI('metricas.ativacoes', {}, 58000);
-    MTR.linhas = j.linhas || []; MTR.lidoEm = j.lido_em || new Date().toISOString();
+    MTR.brutas = j.linhas || []; MTR.juntos = j.bairros_juntos || {}; mtrAplicarJuntos(); MTR.lidoEm = j.lido_em || new Date().toISOString();
     if(!MTR.mes) MTR.mes = mtrMesAtual();
   }catch(e){ MTR.erro = e.message || String(e); }
   MTR.carregando = false; mtrPintar();
@@ -30136,12 +30167,12 @@ function renderMetricas(){ mtrPintar(); mtrCarregar(false); }
 
 function mtrBarras(lista, total, limite){
   if(!lista.length) return '<div class="mtr-vazio">Nenhuma ativação neste mês.</div>';
-  const max = lista[0].qtd || 1;
+  const max = Math.max(1, ...lista.map(x=>x.qtd));
   const mostra = limite ? lista.slice(0, limite) : lista;
   return `<div class="mtr-hb">${mostra.map(x=>`
     <span class="nm" title="${mtrEsc(x.nome)}">${mtrEsc(x.nome)}</span>
-    <span class="tr" data-mtrtip="${mtrEsc(x.nome)}: ${x.qtd} ativaç${x.qtd===1?'ão':'ões'} (${Math.round(x.qtd/total*100)}% do mês)"><i style="width:${Math.max(1.5, x.qtd/max*100)}%"></i></span>
-    <span class="vl">${x.qtd}<small>${Math.round(x.qtd/total*100)}%</small></span>`).join('')}</div>`;
+    <span class="tr" data-mtrtip="${mtrEsc(x.nome)}: ${x.qtd} ativaç${x.qtd===1?'ão':'ões'} (${Math.round(x.qtd/total*100)}% do mês)"><i style="width:${x.qtd?Math.max(1.5, x.qtd/max*100):0}%;${x.qtd?'':'min-width:0'}"></i></span>
+    <span class="vl">${x.qtd}<small>${total?Math.round(x.qtd/total*100):0}%</small></span>`).join('')}</div>`;
 }
 
 function mtrPintar(){
@@ -30153,8 +30184,12 @@ function mtrPintar(){
   const mesAtual = mtrMesAtual();
   const primeiro = MTR.linhas.reduce((m,l)=> l.m && l.m < m ? l.m : m, mesAtual);
   const meses = []; for(let m = mesAtual; m >= primeiro && meses.length < 240; m = mtrMesSoma(m,-1)) meses.push(m);
-  const c = mtrCalcular(MTR.linhas, MTR.mes, MTR.soAtivos);
-  const dif = c.total - c.anterior;
+  const c = mtrCalcular(MTR.linhas, MTR.mes, MTR.soAtivos, MTR.comparar);
+  const dif = c.total - c.comp.total;
+  const nJuntos = Object.keys(MTR.juntos||{}).length;
+  // diferença entre o mês da análise e o comparado: "▲ 6 (+40%)"
+  const difTxt = (a, b, fmt) => { const d = a - b; if(Math.abs(d) < 0.005) return 'igual'; const pc = b ? ' ('+(d>0?'+':'−')+Math.abs(Math.round(d/b*100))+'%)' : ''; return (d>0?'▲ ':'▼ ')+fmt(Math.abs(d))+pc; };
+  const inteiro = v => String(Math.round(v));
   const maxSerie = Math.max(1, ...c.serie.map(s=>s.qtd));
   const mv = c.maisVendido;
   const hora = MTR.lidoEm ? new Date(MTR.lidoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
@@ -30169,6 +30204,12 @@ function mtrPintar(){
         <select onchange="mtrDefMes(this.value)" aria-label="Mês da análise">${meses.map(m=>`<option value="${m}" ${m===MTR.mes?'selected':''}>${mtrMesNome(m,true)}</option>`).join('')}</select>
         <button class="mtr-seta" title="Próximo mês" onclick="mtrIrMes(1)" ${MTR.mes>=mesAtual?'disabled':''}>›</button>
       </div>
+      <label class="mtr-comp">Comparar com
+        <select onchange="mtrDefComparar(this.value)" aria-label="Mês de comparação">
+          <option value="anterior" ${MTR.comparar==='anterior'?'selected':''}>Mês anterior (${mtrMesNome(mtrMesSoma(MTR.mes,-1))})</option>
+          <option value="ano" ${MTR.comparar==='ano'?'selected':''}>Mesmo mês do ano anterior (${mtrMesNome(mtrMesSoma(MTR.mes,-12))})</option>
+          <optgroup label="Escolher o mês">${meses.filter(m=>m!==MTR.mes).map(m=>`<option value="${m}" ${m===MTR.comparar?'selected':''}>${mtrMesNome(m,true)}</option>`).join('')}</optgroup>
+        </select></label>
       <div class="mtr-seg" role="group" aria-label="Quais ativações contar">
         <button aria-pressed="${!MTR.soAtivos}" onclick="mtrDefAtivos(false)" title="Todo contrato ativado no mês, mesmo que tenha sido cancelado depois">Todas as ativações</button>
         <button aria-pressed="${MTR.soAtivos}" onclick="mtrDefAtivos(true)" title="Só os contratos ativados no mês que continuam ativos hoje">Só os que continuam ativos</button>
@@ -30180,7 +30221,7 @@ function mtrPintar(){
 
     <div class="mtr-tiles">
       <div class="mtr-tile"><div class="k">${MTR.soAtivos?'Ativados no mês e ainda ativos':'Contratos ativados no mês'}</div><div class="n">${c.total}</div>
-        <div class="s">${dif===0?'igual a':(dif>0?'▲ '+dif+' a mais que':'▼ '+Math.abs(dif)+' a menos que')} ${mtrMesNome(mtrMesSoma(MTR.mes,-1))} (${c.anterior})</div></div>
+        <div class="s">${dif===0?'igual a':(dif>0?'▲ '+dif+' a mais que':'▼ '+Math.abs(dif)+' a menos que')} ${mtrMesNome(c.mesComp)} (${c.comp.total})</div></div>
       <div class="mtr-tile"><div class="k">Continuam ativos hoje</div><div class="n">${c.aindaAtivos}<span style="font-size:14px;font-weight:600;color:var(--text3)"> de ${c.totalMes}</span></div>
         <div class="s">${c.totalMes?Math.round(c.aindaAtivos/c.totalMes*100)+'% dos ativados no mês seguem com contrato ativo':'sem ativações no mês'}</div></div>
       <div class="mtr-tile"><div class="k">Plano mais vendido</div><div class="n txt">${mv?mtrEsc(mv.nome):'—'}</div>
@@ -30208,6 +30249,7 @@ function mtrPintar(){
       <div class="mtr-card">
         <h3>Ativações por bairro</h3><div class="d">${mtrMesNome(MTR.mes,true)} · ${c.bairros.length} bairro${c.bairros.length===1?'':'s'}</div>
         ${mtrBarras(c.bairros, c.total, limiteB)}
+        <button class="mtr-mais" style="float:right" onclick="mtrAbrirJuntar()" title="Bairros que são o mesmo lugar com nomes diferentes passam a contar juntos">Juntar bairros${nJuntos?' ('+nJuntos+' junto'+(nJuntos===1?'':'s')+')':''}</button>
         ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
       </div>
       <div class="mtr-card">
@@ -30243,12 +30285,78 @@ function mtrPintar(){
         </table></div>`:'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
         ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
       </div>
+    </div>
+
+    <div class="mtr-grade">
+      <div class="mtr-card">
+        <h3>Comparação: ${mtrMesNome(MTR.mes,true)} × ${mtrMesNome(c.mesComp,true)}</h3><div class="d">Troque o mês comparado em "Comparar com", no alto da tela</div>
+        <div class="mtr-rolar"><table class="mtr-tab">
+          <thead><tr><th>Indicador</th><th class="num">${mtrMesNome(MTR.mes)}</th><th class="num">${mtrMesNome(c.mesComp)}</th><th class="num">Diferença</th></tr></thead>
+          <tbody>
+            <tr><td>Contratos ativados</td><td class="num"><b>${c.atual.total}</b></td><td class="num">${c.comp.total}</td><td class="num">${difTxt(c.atual.total, c.comp.total, inteiro)}</td></tr>
+            <tr><td>Receita mensal nova</td><td class="num val-monetario"><b>${mtrDin(c.atual.receita)}</b></td><td class="num val-monetario">${mtrDin(c.comp.receita)}</td><td class="num val-monetario">${difTxt(c.atual.receita, c.comp.receita, mtrDin)}</td></tr>
+            <tr><td>Ticket médio</td><td class="num val-monetario"><b>${mtrDin(c.atual.ticket)}</b></td><td class="num val-monetario">${mtrDin(c.comp.ticket)}</td><td class="num val-monetario">${c.atual.total&&c.comp.total?difTxt(c.atual.ticket, c.comp.ticket, mtrDin):'—'}</td></tr>
+            <tr><td>Bairros com ativação</td><td class="num"><b>${c.atual.bairros}</b></td><td class="num">${c.comp.bairros}</td><td class="num">${difTxt(c.atual.bairros, c.comp.bairros, inteiro)}</td></tr>
+            <tr><td>Continuam ativos hoje</td><td class="num"><b>${c.atual.ativos}</b></td><td class="num">${c.comp.ativos}</td><td class="num">${difTxt(c.atual.ativos, c.comp.ativos, inteiro)}</td></tr>
+            <tr><td>Plano mais vendido</td><td class="num"><b>${c.atual.plano?mtrEsc(c.atual.plano)+' ('+c.atual.planoQtd+')':'—'}</b></td><td class="num">${c.comp.plano?mtrEsc(c.comp.plano)+' ('+c.comp.planoQtd+')':'—'}</td><td class="num">${c.atual.plano&&c.comp.plano?(c.atual.plano===c.comp.plano?'o mesmo':'mudou'):'—'}</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="mtr-card">
+        <h3>Ativações por faixa de valor</h3><div class="d">${mtrMesNome(MTR.mes,true)} · pelo valor final da mensalidade</div>
+        ${c.total?mtrBarras(c.faixas, c.total):'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
+      </div>
+    </div>
+
+    <div class="mtr-card" style="margin-bottom:12px">
+      <h3>Bairros: ativações do mês × base ativa</h3><div class="d">${mtrMesNome(MTR.mes,true)} · base ativa = contratos ativos hoje no bairro (${c.baseTotal} no total) · crescimento = ativações do mês ÷ base ativa</div>
+      ${c.bairros.length?`<div class="mtr-rolar"><table class="mtr-tab">
+        <thead><tr><th>Bairro</th><th class="num">Ativações no mês</th><th class="num">Contratos ativos hoje</th><th>Crescimento</th></tr></thead>
+        <tbody>${(limiteB?c.bairros.slice(0,limiteB):c.bairros).map(x=>{ const cr = x.base ? x.qtd/x.base : null; return `<tr>
+          <td>${mtrEsc(x.nome)}</td><td class="num"><b>${x.qtd}</b></td><td class="num">${x.base}</td>
+          <td style="min-width:150px">${cr==null?'<span style="color:var(--text3)">sem contrato ativo hoje</span>':`<span class="mini" style="height:10px;width:${Math.max(2, Math.min(1,cr)*90)}px"></span>${Math.round(cr*100)}%`}</td></tr>`; }).join('')}</tbody>
+      </table></div>`:'<div class="mtr-vazio">Nenhuma ativação neste mês.</div>'}
+      ${c.bairros.length>10?`<button class="mtr-mais" onclick="MTR.todosBairros=!MTR.todosBairros;mtrPintar()">${MTR.todosBairros?'Mostrar só os 10 maiores':'Ver todos os '+c.bairros.length+' bairros'}</button>`:''}
     </div>`;
   mtrLigarDicas(el);
 }
 function mtrDefMes(m){ MTR.mes = m; MTR.todosBairros = false; mtrPintar(); }
 function mtrIrMes(d){ mtrDefMes(mtrMesSoma(MTR.mes, d)); }
 function mtrDefAtivos(v){ MTR.soAtivos = !!v; mtrPintar(); }
+function mtrDefComparar(v){ MTR.comparar = v; mtrPintar(); }
+
+/* ---- Juntar bairros: o mesmo lugar escrito de jeitos diferentes ---- */
+function mtrAbrirJuntar(){
+  let ov = document.getElementById('mtr-juntar');
+  if(!ov){ ov = document.createElement('div'); ov.id = 'mtr-juntar'; ov.className = 'mtr-ov'; document.body.appendChild(ov);
+    ov.addEventListener('click', ev => { if(ev.target === ov) mtrFecharJuntar(); }); }
+  mtrPintarJuntar();
+}
+function mtrFecharJuntar(){ const ov = document.getElementById('mtr-juntar'); if(ov) ov.remove(); }
+function mtrPintarJuntar(aviso){
+  const ov = document.getElementById('mtr-juntar'); if(!ov) return;
+  const j = MTR.juntos || {};
+  const cont = new Map(); for(const l of (MTR.brutas||[])) if(l.b) cont.set(l.b, (cont.get(l.b)||0)+1);
+  for(const k of Object.keys(j)) if(!cont.has(k)) cont.set(k, 0);
+  const nomes = [...cont.keys()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const destinos = nomes.filter(n => !j[n]);            // quem já conta como outro não pode ser destino
+  ov.innerHTML = `<div class="mtr-ov-cx" role="dialog" aria-label="Juntar bairros">
+    <div class="mtr-ov-topo"><b>Juntar bairros</b><button class="mtr-seta" onclick="mtrFecharJuntar()" title="Fechar">✕</button></div>
+    <div class="d" style="margin:0 0 10px">Quando o mesmo lugar aparece com nomes diferentes no IXC, escolha em "conta como" o nome que vale. Só muda esta análise — o cadastro no IXC não é alterado.</div>
+    ${aviso?`<div style="color:var(--danger);font-size:12.5px;margin-bottom:8px">${mtrEsc(aviso)}</div>`:''}
+    <div class="mtr-ov-lista">${nomes.map((n,i)=>`<div class="mtr-ov-linha">
+      <span title="${mtrEsc(n)}">${mtrEsc(n)} <small>${cont.get(n)} contrato${cont.get(n)===1?'':'s'}</small></span>
+      <select data-mtrde="${i}" aria-label="${mtrEsc(n)} conta como"><option value="">— ele mesmo —</option>${destinos.filter(d=>d!==n).map(d=>`<option value="${mtrEsc(d)}" ${j[n]===d?'selected':''}>conta como ${mtrEsc(d)}</option>`).join('')}</select></div>`).join('')}</div>
+  </div>`;
+  ov.querySelectorAll('select[data-mtrde]').forEach(sel => sel.onchange = () => mtrJuntar(nomes[+sel.dataset.mtrde], sel.value, sel));
+}
+async function mtrJuntar(de, para, sel){
+  if(sel) sel.disabled = true;
+  try{
+    const r = await ixaAPI('metricas.bairro_juntar', { de, para });
+    MTR.juntos = r.bairros_juntos || {}; mtrAplicarJuntos(); mtrPintar(); mtrPintarJuntar();
+  }catch(e){ mtrPintarJuntar('Não consegui salvar: '+(e.message||e)); }
+}
 /* dica ao passar o mouse nas barras */
 function mtrLigarDicas(raiz){
   let tip = document.getElementById('mtr-tip');

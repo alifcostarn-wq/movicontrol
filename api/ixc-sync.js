@@ -17,7 +17,7 @@
 // A cópia em si (o que lê, o que compara, o que grava) está em
 // _ixc_espelho.js, com o mesmo mapeamento do navegador.
 // ============================================================================
-import { ativacoesDoIxc } from './_ixc_metricas.js';
+import { ativacoesDoIxc, bairroLimpo } from './_ixc_metricas.js';
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc } from './_ixc_espelho.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs } from './_ixc_os.js';
@@ -545,8 +545,32 @@ export default async function handler(req, res) {
       const prazo = Date.now() + 45e3;
       const [contratos, planos, clientes, produtos, descontos, acrescimos] = await Promise.all(
         ['cliente_contrato', 'vd_contratos', 'cliente', 'vd_contratos_produtos', 'cliente_contrato_descontos', 'cliente_contrato_acrescimos'].map(t => ixcTudo(t, prazo)));
+      // bairros que a equipe juntou ("AGROVILA POMAR" conta como "POMAR"): quem aplica é a tela
+      const juntos = await sb('metricas_bairro_alias?select=de,para&limit=1000').catch(() => []);
       return res.status(200).json({ ok: true, lido_em: new Date().toISOString(), contratos: contratos.length,
+        bairros_juntos: Object.fromEntries((juntos || []).map(j => [j.de, j.para])),
         linhas: ativacoesDoIxc({ contratos, planos, clientes, produtos, descontos, acrescimos }) });
+    }
+    /* Juntar bairros: { de, para } grava; para vazio desfaz. O destino nunca é
+       um bairro que já conta como outro, e quem apontava para `de` passa a
+       apontar para o novo destino — a regra fica sempre de um nível só. */
+    if (acao === 'metricas.bairro_juntar') {
+      const de = bairroLimpo(b.de), para = bairroLimpo(b.para);
+      if (!de || de.length > 80 || (para && para.length > 80)) return res.status(400).json({ erro: 'bairro inválido' });
+      if (!para || para === de) {
+        await sb(`metricas_bairro_alias?de=eq.${encodeURIComponent(de)}`, { method: 'DELETE', prefer: 'return=minimal' });
+      } else {
+        const atuais = await sb('metricas_bairro_alias?select=de,para&limit=1000');
+        const destino = ((atuais || []).find(j => j.de === para) || {}).para || para;
+        if (destino === de) return res.status(400).json({ erro: `${para} já conta como ${de}: desfaça essa junção antes` });
+        const agora = new Date().toISOString();
+        await sb('metricas_bairro_alias?on_conflict=de', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal',
+          body: { de, para: destino, atualizado_por: quem.nome, atualizado_em: agora } });
+        await sb(`metricas_bairro_alias?para=eq.${encodeURIComponent(de)}`, { method: 'PATCH', prefer: 'return=minimal',
+          body: { para: destino, atualizado_por: quem.nome, atualizado_em: agora } });
+      }
+      const juntos = await sb('metricas_bairro_alias?select=de,para&limit=1000');
+      return res.status(200).json({ ok: true, bairros_juntos: Object.fromEntries((juntos || []).map(j => [j.de, j.para])) });
     }
     const cfg = await lerConfig();
     if (!cfg) return res.status(500).json({ erro: 'falta criar a tabela ixc_sync_config no banco' });
