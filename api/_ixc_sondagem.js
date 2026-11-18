@@ -53,10 +53,14 @@ async function sondarPendentes(io, olt) {
 
 /* Caixas e contas do financeiro do IXC (tabela "contas"), para conferir com o
    MoviOne: de cada uma só o que a identifica — nome, se está ativa, tipo e
-   banco — e quanto movimentou nos últimos dias (fn_movim_finan por id_conta).
+   banco — e quanto recebeu nos últimos dias (títulos baixados em fn_areceber).
    O registro do IXC traz também agência, número da conta, CNPJ, endereço e a
    credencial de integração do banco: passa só pela memória e é reduzido aqui
-   aos campos desta lista. */
+   aos campos desta lista. Do título só sai a soma por conta.
+   Atenção: em fn_movim_finan o id_conta é a conta do PLANO DE CONTAS (ids na
+   casa das centenas/milhares), não o caixa — conferido em 18/11/2026. */
+// campos do título que podem apontar o caixa/conta da baixa (o primeiro que bater com um id de "contas" vale)
+const CAMPOS_CONTA_DA_BAIXA = ['conta_recebimento', 'id_conta'];
 const nomeDaConta = v => {
   const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 60);
   if (!s) return '';
@@ -69,35 +73,38 @@ export async function sondarContasFinanceiro(io, { dias = 30, agora = new Date()
   const v = await io.ixcListar('contas', { qtype: 'contas.id', query: '0', oper: '>', sortorder: 'asc' }, { paginas: 1, rp: 200 });
   const regs = (v && v.registros) || [];
   const desde = new Date(agora.getTime() - d * 864e5).toISOString().slice(0, 10);
-  let movs = [], erroMov = null;
+  const ids = new Set(regs.map(r => String(r.id ?? '').trim()).filter(id => /^\d{1,9}$/.test(id)));
+  // títulos baixados no período: a soma vai para o caixa/conta que o título aponta
+  let titulos = [], erroRec = null;
   try {
-    const m = await io.ixcListar('fn_movim_finan', { qtype: 'fn_movim_finan.data', query: desde, oper: '>=', sortorder: 'asc' }, { paginas: MAX_PAGINAS, rp: 1000 });
-    movs = (m && m.registros) || [];
-  } catch (err) { erroMov = String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 160); }
-  const uso = new Map();
-  for (const m of movs) {
-    const id = String(m.id_conta ?? '').trim();
-    if (!/^\d{1,9}$/.test(id)) continue;
-    const u = uso.get(id) || { movimentos: 0, entradas: 0, saidas: 0, ultimo: null };
-    u.movimentos++; u.entradas += valor(m.credito); u.saidas += valor(m.debito);
-    const dt = String(m.data || '').slice(0, 10);
+    const m = await io.ixcListar('fn_areceber', { qtype: 'fn_areceber.pagamento_data', query: desde, oper: '>=', sortorder: 'asc' }, { paginas: MAX_PAGINAS, rp: 1000 });
+    titulos = (m && m.registros) || [];
+  } catch (err) { erroRec = String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 160); }
+  const uso = new Map(), campo_da_conta = { nenhum: 0 };
+  for (const c of CAMPOS_CONTA_DA_BAIXA) campo_da_conta[c] = 0;
+  for (const tt of titulos) {
+    if (!['R', 'P'].includes(String(tt.status || '').toUpperCase())) continue;     // recebido ou parcial
+    const campo = CAMPOS_CONTA_DA_BAIXA.find(c => ids.has(String(tt[c] ?? '').trim()));
+    if (!campo) { campo_da_conta.nenhum++; continue; }
+    campo_da_conta[campo]++;
+    const id = String(tt[campo]).trim();
+    const u = uso.get(id) || { recebimentos: 0, recebido: 0, ultimo: null };
+    u.recebimentos++; u.recebido += valor(tt.valor_recebido) || valor(tt.pagamento_valor);
+    const dt = String(tt.pagamento_data || '').slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && (!u.ultimo || dt > u.ultimo)) u.ultimo = dt;
     uso.set(id, u);
   }
-  const ids = new Set();
   const contas = regs.map(r => {
-    const id = String(r.id ?? '').trim(); ids.add(id);
-    const u = uso.get(id) || { movimentos: 0, entradas: 0, saidas: 0, ultimo: null };
+    const id = String(r.id ?? '').trim();
+    const u = uso.get(id) || { recebimentos: 0, recebido: 0, ultimo: null };
     const aberta = String(r.data_abertura || '');
     return { id: /^\d{1,9}$/.test(id) ? id : '?', nome: nomeDaConta(r.conta), ativo: String(r.ativo || '').toUpperCase() === 'S',
       tipo_conta: codigo(r.tipo_conta), modalidade: codigo(r.modalidade_conta), cod_banco: codigo(r.cod_banco), banco: nomeDaConta(r.razao_banco),
       filial_padrao: codigo(r.filial_padrao), aberta_em: /^\d{4}-\d{2}-\d{2}/.test(aberta) && !aberta.startsWith('0000') ? aberta.slice(0, 10) : null,
-      movimentos: u.movimentos, entradas: reais(u.entradas), saidas: reais(u.saidas), ultimo_movimento: u.ultimo };
-  }).sort((a, b) => (b.ativo - a.ativo) || (b.movimentos - a.movimentos) || (Number(a.id) - Number(b.id)));
-  // movimento numa conta que não está no cadastro (só o id e quantos)
-  const sem_cadastro = Object.fromEntries([...uso].filter(([id]) => !ids.has(id)).map(([id, u]) => [id, u.movimentos]).slice(0, 20));
+      recebimentos: u.recebimentos, recebido: reais(u.recebido), ultimo_recebimento: u.ultimo };
+  }).sort((a, b) => (b.ativo - a.ativo) || (b.recebimentos - a.recebimentos) || (Number(a.id) - Number(b.id)));
   return { total: v && v.total != null ? Number(v.total) || regs.length : regs.length, ativas: contas.filter(c => c.ativo).length,
-    movimentos_desde: desde, movimentos_lidos: movs.length, erro_movimentos: erroMov, contas, sem_cadastro };
+    recebimentos_desde: desde, titulos_lidos: titulos.length, campo_da_conta, erro_recebimentos: erroRec, contas };
 }
 
 /* Pedido: [{ tabela, contar?: [campos], filtro?: { qtype, query, oper } }]
