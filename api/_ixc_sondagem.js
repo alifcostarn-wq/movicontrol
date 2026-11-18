@@ -51,11 +51,66 @@ async function sondarPendentes(io, olt) {
   return r;
 }
 
-/* Pedido: [{ tabela, contar?: [campos], filtro?: { qtype, query, oper } }]. */
+/* Caixas e contas do financeiro do IXC (tabela "contas"), para conferir com o
+   MoviOne: de cada uma só o que a identifica — nome, se está ativa, tipo e
+   banco — e quanto movimentou nos últimos dias (fn_movim_finan por id_conta).
+   O registro do IXC traz também agência, número da conta, CNPJ, endereço e a
+   credencial de integração do banco: passa só pela memória e é reduzido aqui
+   aos campos desta lista. */
+const nomeDaConta = v => {
+  const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (!s) return '';
+  return /^[\d\s.\-/xX]+$/.test(s) ? '(número)' : s.replace(/\d{5,}/g, '(número)');   // nome que é número de conta não sai
+};
+const valor = v => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+const reais = n => Math.round(n * 100) / 100;
+export async function sondarContasFinanceiro(io, { dias = 30, agora = new Date() } = {}) {
+  const d = Math.min(Math.max(parseInt(dias, 10) || 30, 1), 120);
+  const v = await io.ixcListar('contas', { qtype: 'contas.id', query: '0', oper: '>', sortorder: 'asc' }, { paginas: 1, rp: 200 });
+  const regs = (v && v.registros) || [];
+  const desde = new Date(agora.getTime() - d * 864e5).toISOString().slice(0, 10);
+  let movs = [], erroMov = null;
+  try {
+    const m = await io.ixcListar('fn_movim_finan', { qtype: 'fn_movim_finan.data', query: desde, oper: '>=', sortorder: 'asc' }, { paginas: MAX_PAGINAS, rp: 1000 });
+    movs = (m && m.registros) || [];
+  } catch (err) { erroMov = String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 160); }
+  const uso = new Map();
+  for (const m of movs) {
+    const id = String(m.id_conta ?? '').trim();
+    if (!/^\d{1,9}$/.test(id)) continue;
+    const u = uso.get(id) || { movimentos: 0, entradas: 0, saidas: 0, ultimo: null };
+    u.movimentos++; u.entradas += valor(m.credito); u.saidas += valor(m.debito);
+    const dt = String(m.data || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && (!u.ultimo || dt > u.ultimo)) u.ultimo = dt;
+    uso.set(id, u);
+  }
+  const ids = new Set();
+  const contas = regs.map(r => {
+    const id = String(r.id ?? '').trim(); ids.add(id);
+    const u = uso.get(id) || { movimentos: 0, entradas: 0, saidas: 0, ultimo: null };
+    const aberta = String(r.data_abertura || '');
+    return { id: /^\d{1,9}$/.test(id) ? id : '?', nome: nomeDaConta(r.conta), ativo: String(r.ativo || '').toUpperCase() === 'S',
+      tipo_conta: codigo(r.tipo_conta), modalidade: codigo(r.modalidade_conta), cod_banco: codigo(r.cod_banco), banco: nomeDaConta(r.razao_banco),
+      filial_padrao: codigo(r.filial_padrao), aberta_em: /^\d{4}-\d{2}-\d{2}/.test(aberta) && !aberta.startsWith('0000') ? aberta.slice(0, 10) : null,
+      movimentos: u.movimentos, entradas: reais(u.entradas), saidas: reais(u.saidas), ultimo_movimento: u.ultimo };
+  }).sort((a, b) => (b.ativo - a.ativo) || (b.movimentos - a.movimentos) || (Number(a.id) - Number(b.id)));
+  // movimento numa conta que não está no cadastro (só o id e quantos)
+  const sem_cadastro = Object.fromEntries([...uso].filter(([id]) => !ids.has(id)).map(([id, u]) => [id, u.movimentos]).slice(0, 20));
+  return { total: v && v.total != null ? Number(v.total) || regs.length : regs.length, ativas: contas.filter(c => c.ativo).length,
+    movimentos_desde: desde, movimentos_lidos: movs.length, erro_movimentos: erroMov, contas, sem_cadastro };
+}
+
+/* Pedido: [{ tabela, contar?: [campos], filtro?: { qtype, query, oper } }]
+   ou { contas_financeiro: true, dias? } para os caixas e contas do financeiro. */
 export async function sondarIxc(io, pedido, { agora = new Date() } = {}) {
   const itens = (Array.isArray(pedido) ? pedido : []).slice(0, MAX_TABELAS);
   const tabelas = {};
   for (const it of itens) {
+    if (it && it.contas_financeiro === true) {
+      try { tabelas.contas_financeiro = await sondarContasFinanceiro(io, { dias: it.dias, agora }); }
+      catch (err) { tabelas.contas_financeiro = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; }
+      continue;
+    }
     if (it && it.pendentes_olt != null) {
       try { tabelas[`onus_pendentes_olt_${String(it.pendentes_olt).slice(0, 9)}`] = await sondarPendentes(io, it.pendentes_olt); }
       catch (err) { tabelas[`onus_pendentes_olt_${String(it.pendentes_olt).slice(0, 9)}`] = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; }
