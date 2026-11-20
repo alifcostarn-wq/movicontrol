@@ -21,12 +21,21 @@
 // (radpop_radio, que tem a senha da OLT) nunca é lida: as OLTs saem das caixas.
 // Modo 'teste': grava de verdade só na OS do cliente de teste; nos outros
 // clientes faz tudo até montar o cadastro e mostra o que seria enviado.
+//
+// TROCA DE ONU (desautorizarOnu): antes de autorizar a ONU nova, a antiga sai —
+//   1. desautorizada na OLT (o "Excluir do dispositivo" da Integração OLT);
+//   2. o cadastro de fibra dela é excluído do login do cliente;
+//   3. confere: o cadastro não existe mais.
+// Depois o login fica livre e a ONU nova vai pelo caminho de sempre. Repetir uma
+// etapa da troca é seguro: desautorizar a ONU que já saiu da OLT só faz o IXC
+// dizer que ela não existe, e excluir o cadastro já excluído também.
 // ============================================================================
 import { idValido } from './_ixc_espelho.js';
 
 export const MODOS_ONU = ['desligado', 'teste', 'ativo'];
 export const BOTAO_LIBERAR = 'fh_onu_nao_autorizadas_22396';      // libera a ONU pendente (get_id = linha da grade)
 export const BOTAO_GRAVAR = 'botao_gravar_dispositivo_22408';     // Integração OLT › Gravar no dispositivo
+export const BOTAO_EXCLUIR = 'botao_excluir_dispositivo_22434';   // Integração OLT › Excluir do dispositivo (desautoriza a ONU na OLT)
 const OS_ENCERRADA = ['finalizada', 'concluida', 'cancelada'];
 const MAX_ONU_NA_PON = 128;
 
@@ -166,8 +175,12 @@ export async function inicioOnu(io, { tec, osId, cfg }) {
   return {
     ok: true, simulacao: ehSimulacao(cfg, ctx.cliIxc), cliente: ctx.nome, os_numero: ctx.os.numero,
     logins: ctx.logins.map(l => {
-      const tem = fibras.find(f => f.id_login === l.id && f.mac);
-      return { ...l, onu: tem ? tem.mac : null };
+      const doLogin = fibras.filter(f => f.id_login === l.id && f.mac);
+      const tem = doLogin[0];                                       // o mais novo
+      const cx = tem ? caixas.find(c => c.id === tem.id_caixa_ftth) : null;
+      // de onde a ONU atual está ligada: para mostrar na troca e reaproveitar caixa e porta na ONU nova
+      return { ...l, onu: tem ? tem.mac : null, onus_no_login: doLogin.length,
+        onu_local: tem ? { olt: tem.id_transmissor || null, slot: tem.slotno, pon: tem.ponno, caixa_id: cx ? cx.id : null, caixa: cx ? cx.nome : null, porta: inteiro(tem.porta_ftth) } : null };
     }),
     olts: olts.map(o => ({ id: o, perfil: perfilPadrao(fibras, o) })),
     perfis: perfis.map(p => ({ id: p.id, nome: p.nome })),
@@ -272,6 +285,8 @@ export function textoDaResposta(m) {
     .replace(/\s+/g, ' ').replace(/(?:\s*·\s*)+/g, ' · ').replace(/^[\s·]+|[\s·]+$/g, '').slice(0, 300);
 }
 export const respostaIndisponivel = d => /n[aã]o est[aá] dispon[ií]vel|recurso n[aã]o (existe|encontrado)|n[aã]o possui permiss/i.test(textoDaResposta(d));
+// a ONU (ou o cadastro) que se quer tirar já não existe: na troca, isso é o resultado desejado
+export const respostaSemDispositivo = d => /(registro|onu|dispositivo|cadastro|equipamento)\s+n[aã]o\s+(foi\s+)?(encontrad[oa]|localizad[oa])|n[aã]o\s+existe|not\s+found/i.test(textoDaResposta(d));
 export function respostaComErro(d) {
   const msg = typeof d === 'string' ? d : d && d.message;
   return !!(d && d.type === 'error') || /^\s*(erro|falha)\b/i.test(textoDaResposta(msg)) || /panel-danger|alert-danger/i.test(String(msg || ''));
@@ -283,18 +298,29 @@ const transitorio = err => /demorou|HTTP 5\d\d|ECONNRESET|fetch failed|socket|se
 // ---------------------------------------------------------------------------
 // A autorização, etapa por etapa
 // ---------------------------------------------------------------------------
-const SEL = 'id,os_id,tecnico_id,ixc_cliente_id,ixc_login_id,olt_id,serial,chave,etapa,status,fibra_id,enviado,respostas,erro,simulacao,rodando_desde';
+const SEL = 'id,tipo,os_id,tecnico_id,ixc_cliente_id,ixc_login_id,olt_id,serial,chave,etapa,status,fibra_id,enviado,respostas,erro,simulacao,rodando_desde';
 const TRAVA_MS = 70e3;
 const ETAPAS = { cadastrado: 'Cadastro de fibra criado no IXC', liberado: 'ONU liberada na lista de pendentes', gravado: 'Configuração gravada na OLT', conferido: 'Conferido: a ONU saiu da lista de pendentes' };
+const ETAPAS_TROCA = { desautorizado: 'ONU desautorizada na OLT', excluido: 'ONU tirada do login do cliente no IXC', conferido: 'Conferido: o login ficou sem a ONU antiga' };
 export function paraOApp(a) {
+  if (a.tipo === 'desautorizar') {
+    const feitas = ['desautorizado', 'excluido', 'conferido'];
+    const ate = feitas.indexOf(a.etapa), e = a.enviado || {};
+    return { ok: true, tipo: 'desautorizar', id: a.id, status: a.status, etapa: a.etapa, simulacao: !!a.simulacao, serial: a.serial, fibra_id: a.fibra_id || null,
+      passos: feitas.map((et, i) => ({ etapa: et, texto: ETAPAS_TROCA[et], feito: i <= ate })),
+      continuar: a.status === 'andamento', erro: a.erro || null, enviado: a.enviado || null, pode_repetir: a.status === 'incerta',
+      // onde a ONU antiga estava: a ONU nova pode ir na mesma caixa e porta
+      antiga: { olt: e.id_transmissor || a.olt_id || null, caixa_id: e.id_caixa_ftth || null, caixa_nome: e.caixa_nome || null, porta: inteiro(e.porta_ftth) } };
+  }
   const feitas = ['cadastrado', 'liberado', 'gravado', 'conferido'];
   const ate = feitas.indexOf(a.etapa);
-  return { ok: true, id: a.id, status: a.status, etapa: a.etapa, simulacao: !!a.simulacao, serial: a.serial, fibra_id: a.fibra_id || null,
+  return { ok: true, tipo: 'autorizar', id: a.id, status: a.status, etapa: a.etapa, simulacao: !!a.simulacao, serial: a.serial, fibra_id: a.fibra_id || null,
     passos: feitas.map((e, i) => ({ etapa: e, texto: ETAPAS[e], feito: i <= ate })),
     continuar: a.status === 'andamento', erro: a.erro || null, enviado: a.enviado || null };
 }
+// grava a etapa e solta a trava (quem passar rodando_desde no corpo mantém a trava)
 async function gravarEtapa(io, a, body) {
-  const r = await io.sb(`ixc_onu_autorizacoes?id=eq.${a.id}`, { method: 'PATCH', prefer: 'return=representation', body: { ...body, rodando_desde: null, atualizado_em: new Date().toISOString() } });
+  const r = await io.sb(`ixc_onu_autorizacoes?id=eq.${a.id}`, { method: 'PATCH', prefer: 'return=representation', body: { rodando_desde: null, ...body, atualizado_em: new Date().toISOString() } });
   return (r && r[0]) || { ...a, ...body };
 }
 
@@ -333,7 +359,7 @@ export async function autorizarOnu(io, { tec, osId, cfg, loginId, olt, serial, c
   const doSerial = fibras.filter(f => mesmoSerial(f.mac, pendente.serial));
   const doLogin = fibras.filter(f => f.id_login === login.id && f.mac && !mesmoSerial(f.mac, pendente.serial));
   if (doSerial.some(f => f.id_login !== login.id)) throw new ErroOnu('Essa ONU já está cadastrada no IXC para outro login. Peça ao escritório para liberar o cadastro antigo.');
-  if (doLogin.length) throw new ErroOnu(`Esse login já tem a ONU ${doLogin[0].mac} cadastrada no IXC. A troca de ONU ainda é feita pelo escritório.`);
+  if (doLogin.length) throw new ErroOnu(`Esse login já tem a ONU ${doLogin[0].mac} cadastrada no IXC. Para trocar, desautorize a ONU antiga primeiro (botão "Trocar ONU").`);
   const jaCriado = doSerial.find(f => f.id_login === login.id) || null;
 
   const m = montarCadastro({ pendente, fibras, login, nome: ctx.nome, caixa, porta: portaN, perfil });
@@ -389,7 +415,94 @@ export async function autorizarOnu(io, { tec, osId, cfg, loginId, olt, serial, c
   return paraOApp(await gravarEtapa(io, a, { etapa: 'cadastrado', fibra_id: fibraId, respostas }));
 }
 
-/* A próxima etapa de uma autorização em andamento. Uma etapa por chamada.
+/* TROCA DE ONU, começo: confere que a ONU escolhida está mesmo no login do
+   cliente desta OS e registra a troca. As etapas no IXC vão pelo continuarOnu. */
+export async function desautorizarOnu(io, { tec, osId, cfg, loginId, serial }) {
+  if ((cfg.onu_modo || 'desligado') === 'desligado') throw new ErroOnu('A troca de ONU pelo app está desligada.', 403);
+  const ctx = await contextoDaOs(io, tec, osId);
+  const login = ctx.logins.find(l => l.id === String(loginId));
+  if (!login) throw new ErroOnu('Esse login não é do cliente desta OS.');
+  if (!serialLimpo(serial)) throw new ErroOnu('Escolha a ONU que vai sair.');
+  const simulacao = ehSimulacao(cfg, ctx.cliIxc);
+  const [doLogin, caixas] = await Promise.all([
+    lerFibras(io, { qtype: 'radpop_radio_cliente_fibra.id_login', query: login.id, oper: '=' }),
+    lerCaixas(io).catch(() => []),
+  ]);
+  const f = doLogin.find(x => x.id_login === login.id && mesmoSerial(x.mac, serial));
+  if (!f || !idValido(f.id)) throw new ErroOnu('Essa ONU não está mais cadastrada neste login no IXC. Feche e abra de novo para atualizar.');
+  const cx = caixas.find(c => c.id === f.id_caixa_ftth) || null;
+  // o que fica guardado: só o técnico da ONU que sai (sem nome, senha ou script)
+  const enviado = { acao: 'desautorizar', fibra_id: f.id, mac: f.mac, id_transmissor: f.id_transmissor || null, slotno: f.slotno, ponno: f.ponno, onu_numero: f.onu_numero,
+    id_caixa_ftth: f.id_caixa_ftth || null, caixa_nome: cx ? cx.nome : null, porta_ftth: f.porta_ftth || null, id_perfil: f.id_perfil || null, vlan: f.vlan || null,
+    outros_cadastros_no_login: doLogin.filter(x => x.id !== f.id && x.mac).length };
+  let a;
+  try {
+    a = ((await io.sb('ixc_onu_autorizacoes', { method: 'POST', prefer: 'return=representation', body: {
+      tipo: 'desautorizar', os_id: ctx.os.id, tecnico_id: tec.id, tecnico_nome: tec.nome || null, ixc_cliente_id: ctx.cliIxc, ixc_login_id: login.id, ixc_contrato_id: login.contrato,
+      olt_id: f.id_transmissor || null, serial: serialLimpo(f.mac), fibra_id: f.id, etapa: 'validado', status: simulacao ? 'simulada' : 'andamento',
+      simulacao, enviado, respostas: {}, rodando_desde: null } })) || [])[0];
+  } catch (err) {
+    if (/23505|duplicate|unique/i.test(String(err.message))) throw new ErroOnu('Essa ONU já está com uma autorização ou troca em andamento. Aguarde um instante.', 409);
+    throw err;
+  }
+  if (!a) throw new Error('não consegui registrar a troca');
+  return paraOApp(a);
+}
+// o cadastro de fibra ainda existe? true / false / null (não consegui ler)
+async function existeFibra(io, id) {
+  try { return (await lerFibras(io, { qtype: 'radpop_radio_cliente_fibra.id', query: String(id), oper: '=' })).some(f => f.id === String(id)); }
+  catch { return null; }
+}
+/* Uma etapa da troca (já com a trava pega). Sem resposta, a etapa fica
+   'incerta' e o técnico manda repetir — seguro nas duas etapas. */
+async function passoDaTroca(io, a, respostas) {
+  const falhou = erro => gravarEtapa(io, a, { status: 'falhou', respostas, erro }).then(paraOApp);
+  const incerta = erro => gravarEtapa(io, a, { status: 'incerta', respostas, erro }).then(paraOApp);
+  const segue = (etapa, extra = {}) => gravarEtapa(io, a, { status: 'andamento', etapa, erro: null, respostas, ...extra }).then(paraOApp);
+  if (a.etapa === 'validado') {
+    let d;
+    try { d = await io.ixcBotao(BOTAO_EXCLUIR, { id: String(a.fibra_id) }, 50e3); }
+    catch (err) {
+      if (transitorio(err)) return incerta('O IXC demorou para responder ao desautorizar na OLT. Toque em Tentar de novo: repetir é seguro.');
+      respostas.desautorizar = { erro: textoDaResposta(err.message) };
+      return falhou(`O IXC não desautorizou a ONU: ${textoDaResposta(err.message)}. Nada foi tirado do login.`);
+    }
+    respostas.desautorizar = resumo(d);
+    if (respostaIndisponivel(d)) return falhou('O IXC não libera o "Excluir do dispositivo" pela API para este usuário. Nada foi feito: avise o escritório.');
+    if (respostaSemDispositivo(d)) respostas.desautorizar.ja_fora_da_olt = true;        // já não estava na OLT: segue para tirar do login
+    else if (respostaComErro(d)) return falhou(`A OLT recusou desautorizar: ${textoDaResposta(d) || 'sem mensagem'}. Nada foi tirado do login.`);
+    return segue('desautorizado');
+  }
+  if (a.etapa === 'desautorizado') {
+    let d;
+    try { d = await io.ixcExcluirFibra(String(a.fibra_id)); }
+    catch (err) {
+      // sem resposta: pode ter excluído — confere antes
+      const ainda = await existeFibra(io, a.fibra_id);
+      if (ainda === false) { respostas.excluir = { sem_resposta_mas_saiu: true }; return segue('excluido'); }
+      if (transitorio(err) || ainda === null) return incerta('O IXC demorou para responder ao tirar a ONU do login. Toque em Tentar de novo: repetir é seguro.');
+      respostas.excluir = { erro: textoDaResposta(err.message) };
+      return falhou(`A ONU já saiu da OLT, mas o IXC não tirou o cadastro dela do login: ${textoDaResposta(err.message)}. Faça a troca de novo ou peça ao escritório para excluir o cadastro de fibra ${a.fibra_id}.`);
+    }
+    respostas.excluir = resumo(d);
+    if (respostaSemDispositivo(d)) respostas.excluir.ja_excluido = true;
+    else if (respostaIndisponivel(d) || respostaComErro(d)) {
+      return falhou(`A ONU já saiu da OLT, mas o IXC não tirou o cadastro dela do login: ${textoDaResposta(d) || 'sem mensagem'}. Faça a troca de novo ou peça ao escritório para excluir o cadastro de fibra ${a.fibra_id}.`);
+    }
+    return segue('excluido');
+  }
+  if (a.etapa === 'excluido') {
+    const ainda = await existeFibra(io, a.fibra_id);
+    respostas.conferencia = { cadastro_existe: ainda };
+    if (ainda === true) {
+      return gravarEtapa(io, a, { status: 'nao_confirmada', respostas, erro: `O IXC respondeu que tirou a ONU do login, mas o cadastro de fibra ${a.fibra_id} continua lá. Peça ao escritório para conferir.` }).then(paraOApp);
+    }
+    return gravarEtapa(io, a, { status: 'concluida', etapa: 'conferido', respostas, erro: ainda === null ? 'Feito. Não consegui reler o IXC para a conferência final.' : null }).then(paraOApp);
+  }
+  return paraOApp(await gravarEtapa(io, a, {}));
+}
+
+/* A próxima etapa de uma autorização (ou troca) em andamento. Uma etapa por chamada.
    `repetir`: só depois de uma etapa sem resposta em que a conferência mostrou
    que a ONU continua pendente — quem decide repetir é o técnico. */
 export async function continuarOnu(io, { tec, id, repetir = false, agora = new Date() }) {
@@ -406,6 +519,7 @@ export async function continuarOnu(io, { tec, id, repetir = false, agora = new D
   if (!Array.isArray(pego) || !pego.length) return { ...paraOApp(a), ocupado: true };
   a = { ...a, ...pego[0] };
   const respostas = { ...(a.respostas || {}) };
+  if (a.tipo === 'desautorizar') return passoDaTroca(io, a, respostas);
 
   // ficou sem resposta numa gravação: antes de qualquer coisa, a ONU ainda está pendente?
   if (a.status === 'incerta' && !repetir) {

@@ -2794,7 +2794,10 @@ async function rapido(evt, id, status){
    escolhe a ONU que a OLT está enxergando, a caixa/porta e o perfil; o servidor
    (/api/ixc-sync, ações onu.*) cria o cadastro de fibra no IXC e manda gravar
    na OLT, uma etapa por chamada. Sem resposta numa gravação, nada se repete
-   sozinho: primeiro confere. */
+   sozinho: primeiro confere.
+   TROCA (onu.desautorizar): a ONU antiga é desautorizada na OLT e o cadastro
+   dela sai do login; depois a ONU nova vai pelo caminho de sempre, já com a
+   caixa e a porta da antiga. */
 let _onuLigado = false, _onu = null;
 const _oe = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function onuApi(acao, dados){
@@ -2816,14 +2819,15 @@ async function onuApi(acao, dados){
 }
 async function onuVerModo(){ try{ _onuLigado = !!(await onuApi('onu.modo')).ligado; }catch(e){ _onuLigado = false; } }
 function fecharOnu(){
-  if(_onu && _onu.rodando){ toast('Aguarde: a autorização está em andamento.'); return; }
+  if(_onu && _onu.rodando){ toast(_onu.aut && _onu.aut.tipo==='desautorizar' ? 'Aguarde: a troca está em andamento.' : 'Aguarde: a autorização está em andamento.'); return; }
   $('ov-onu').classList.remove('open'); _onu = null;
 }
 const _onuErro = (msg, botao) => `<div class="alert red" role="alert">${_oe(msg)}</div>${botao||''}<button class="btn-full btn-ghost" onclick="fecharOnu()">Fechar</button>`;
 const _onuEspera = txt => `<div style="padding:26px 0;text-align:center;color:var(--tx3);font-size:13.5px" role="status">⏳ ${_oe(txt)}</div>`;
 
-async function abrirOnu(osId){
-  _onu = { osId, ini:null, onus:[], falhas:[], sel:null, login:null, caixa:null, porta:null, perfil:'', ocupadas:null, filtro:'', aut:null, rodando:false };
+async function abrirOnu(osId, modo){
+  _onu = { osId, modo: modo==='trocar' ? 'trocar' : 'autorizar', ini:null, onus:[], falhas:[], sel:null, login:null, caixa:null, porta:null, perfil:'', ocupadas:null, filtro:'', aut:null, rodando:false, reusar:null };
+  $('onu-titulo').textContent = _onu.modo==='trocar' ? '🔁 Trocar ONU' : '📡 Autorizar ONU';
   $('onu-sub').textContent = '—';
   $('onu-body').innerHTML = _onuEspera('Consultando o IXC…');
   $('ov-onu').classList.add('open');
@@ -2833,7 +2837,13 @@ async function abrirOnu(osId){
     _onu.ini = ini;
     _onu.login = (ini.logins.find(l=>l.da_os) || ini.logins[0]).id;
     $('onu-sub').textContent = `${ini.cliente}${ini.os_numero?` · OS ${ini.os_numero}`:''}`;
-    await onuBuscar();
+    if(_onu.modo==='trocar'){
+      // na troca, começa pelo login que tem ONU (o da OS, se ele tiver)
+      const comOnu = ini.logins.filter(l=>l.onu);
+      const alvo = comOnu.find(l=>l.da_os) || comOnu[0];
+      if(alvo) _onu.login = alvo.id;
+      onuPintarTroca();
+    } else await onuBuscar();
   }catch(e){
     if(_onu) $('onu-body').innerHTML = _onuErro(e.message);
   }
@@ -2877,6 +2887,13 @@ function onuEscolher(i){
   o.sel = x; o.caixa = null; o.porta = null; o.ocupadas = null; o.buscaCaixa = '';
   const olt = (o.ini.olts||[]).find(t => t.id===String(x.olt));
   o.perfil = olt ? (olt.perfil||'') : '';
+  // depois da troca: a ONU nova vai, de saída, na caixa e porta da antiga (se for a mesma OLT)
+  const r = o.reusar;
+  if(r && r.caixa && (o.ini.caixas||[]).some(c => c.id===r.caixa && c.olt===String(x.olt))){
+    o.porta = r.porta || null;
+    onuCaixa(r.caixa, true);
+    return;
+  }
   onuPintarForm();
 }
 function onuPintarForm(){
@@ -2896,7 +2913,7 @@ function onuPintarForm(){
   $('onu-body').innerHTML = `${_onuAviso()}
     <div class="row-sec"><div class="drow"><span class="dlab">ONU</span><span class="dval mono">${_oe(x.serial)}</span></div>
       <div class="drow"><span class="dlab">OLT</span><span class="dval">${_oe(x.olt_nome || ('OLT '+x.olt))} · placa ${_oe(x.slot)} · PON ${_oe(x.pon)}</span></div></div>
-    ${login && login.onu ? `<div class="alert warn">Este login já tem a ONU <b>${_oe(login.onu)}</b> cadastrada no IXC. Troca de ONU ainda é feita pelo escritório.</div>`:''}
+    ${login && login.onu ? `<div class="alert warn">Este login já tem a ONU <b>${_oe(login.onu)}</b> cadastrada no IXC. Para trocar, desautorize a antiga primeiro.<button class="btn-full btn-amb" style="margin-top:8px;min-height:44px;padding:10px" onclick="onuIrTroca()">🔁 Trocar: desautorizar a ONU antiga</button></div>`:''}
     <label class="flabel" for="onu-login">Login do cliente</label>
     <select class="finput" id="onu-login" onchange="_onu.login=this.value;onuPintarForm()">${i.logins.map(l=>`<option value="${_oe(l.id)}" ${l.id===o.login?'selected':''}>${_oe(l.login)}${l.ativo?'':' (inativo)'}${l.onu?' — já tem ONU':''}</option>`).join('')}</select>
     <label class="flabel" for="onu-cx">Caixa (CTO)</label>
@@ -2904,6 +2921,7 @@ function onuPintarForm(){
       : `<input class="finput" id="onu-cx" placeholder="Digite o nome da caixa" value="${_oe(o.buscaCaixa||'')}" oninput="_onu.buscaCaixa=this.value;onuPintarForm();const e=$('onu-cx');e.focus();e.setSelectionRange(e.value.length,e.value.length)" autocomplete="off">
          ${achadas.map(c=>`<button class="onu-item" style="margin:6px 0 0" onclick="onuCaixa('${_oe(c.id)}')"><span style="flex:1">${_oe(c.nome)}</span><small>${c.capacidade?c.capacidade+' portas':''}</small></button>`).join('')}
          ${b && !achadas.length ? '<div style="font-size:12.5px;color:var(--tx3);margin-top:6px">Nenhuma caixa desta OLT com esse nome. Se a caixa não está cadastrada no IXC, peça ao escritório para cadastrar.</div>':''}`}
+    ${cx && o.reusar && o.reusar.caixa===cx.id ? `<div style="font-size:11.5px;color:var(--tx3);margin:-2px 0 4px">Mesma caixa${o.reusar.porta?' e porta':''} da ONU antiga. Troque se mudou.</div>`:''}
     ${cx ? `<label class="flabel">Porta da caixa</label>${portas}`:''}
     <label class="flabel" for="onu-perfil">Perfil da ONU</label>
     <select class="finput" id="onu-perfil" onchange="_onu.perfil=this.value">
@@ -2914,28 +2932,40 @@ function onuPintarForm(){
     <button class="btn-full btn-green" onclick="onuAutorizar()" ${login && login.onu ? 'disabled':''}>${i.simulacao?'Simular autorização':'✅ Autorizar esta ONU'}</button>
     <button class="btn-full btn-ghost" onclick="onuPintarLista()" style="margin-top:6px">‹ Escolher outra ONU</button>`;
 }
-async function onuCaixa(id){
-  const o = _onu; o.caixa = id; o.porta = null; o.ocupadas = null; onuPintarForm();
+async function onuCaixa(id, manterPorta){
+  const o = _onu; o.caixa = id; if(!manterPorta) o.porta = null; o.ocupadas = null; onuPintarForm();
   try{
     const r = await onuApi('onu.portas', { os_id: o.osId, caixa: id });
-    if(_onu===o && o.caixa===id && !o.aut){ o.ocupadas = r.ocupadas || []; onuPintarForm(); }
+    if(_onu===o && o.caixa===id && !o.aut){
+      o.ocupadas = r.ocupadas || [];
+      if(o.porta && o.ocupadas.includes(o.porta)) o.porta = null;      // a porta da antiga foi ocupada nesse meio-tempo
+      onuPintarForm();
+    }
   }catch(e){ if(_onu===o && o.caixa===id && !o.aut){ o.ocupadas = []; onuPintarForm(); toast('Não consegui ver as portas ocupadas.'); } }
 }
 function onuPintarAndamento(extra){
-  const o = _onu, a = o.aut;
+  const o = _onu, a = o.aut, troca = a.tipo==='desautorizar';
   const passos = (a.passos||[]).map((p,k) => {
     const atual = !p.feito && (a.passos[k-1]?a.passos[k-1].feito:true) && a.status==='andamento';
     return `<div class="onu-passo${p.feito?' feito':''}"><i>${p.feito?'✅':atual?'⏳':'○'}</i><span>${_oe(p.texto)}</span></div>`;
   }).join('');
+  const fechar = `<button class="btn-full btn-ghost" onclick="_onu.rodando=false;fecharOnu()" style="margin-top:6px">Fechar</button>`;
   let fim = '';
-  if(a.status==='concluida') fim = `<div class="alert" role="status" style="margin-top:12px">✅ ONU <b>${_oe(a.serial)}</b> autorizada no IXC.${a.erro?`<br>${_oe(a.erro)}`:''} Confira o sinal e a navegação do cliente.</div><button class="btn-full btn-green" onclick="_onu.rodando=false;fecharOnu()">Concluir</button>`;
-  else if(a.status==='incerta') fim = `<div class="alert warn" role="alert" style="margin-top:12px">${_oe(a.erro||'O IXC não respondeu.')}</div>
+  if(a.status==='concluida') fim = troca
+    ? `<div class="alert" role="status" style="margin-top:12px">✅ ONU <b>${_oe(a.serial)}</b> desautorizada na OLT e tirada do login do cliente.${a.erro?`<br>${_oe(a.erro)}`:''}<br>Agora ligue a ONU nova na fibra e autorize.</div>
+       <button class="btn-full btn-green" onclick="onuDepoisDaTroca()">📡 Autorizar a ONU nova</button>${fechar}`
+    : `<div class="alert" role="status" style="margin-top:12px">✅ ONU <b>${_oe(a.serial)}</b> autorizada no IXC.${a.erro?`<br>${_oe(a.erro)}`:''} Confira o sinal e a navegação do cliente.</div><button class="btn-full btn-green" onclick="_onu.rodando=false;fecharOnu()">Concluir</button>`;
+  else if(a.status==='incerta') fim = troca
+    ? `<div class="alert warn" role="alert" style="margin-top:12px">${_oe(a.erro||'O IXC não respondeu.')}</div>
+       <button class="btn-full btn-amb" onclick="onuContinuar(true)">🔄 Tentar de novo</button>${fechar}`
+    : `<div class="alert warn" role="alert" style="margin-top:12px">${_oe(a.erro||'O IXC não respondeu.')}</div>
       <button class="btn-full btn-green" onclick="onuContinuar(false)">🔎 Conferir</button>
       ${extra && extra.pode_repetir ? `<button class="btn-full btn-amb" onclick="onuContinuar(true)" style="margin-top:6px">Tentar esta etapa de novo</button>`:''}
-      <button class="btn-full btn-ghost" onclick="_onu.rodando=false;fecharOnu()" style="margin-top:6px">Fechar</button>`;
-  else if(a.status==='falhou' || a.status==='nao_confirmada') fim = `<div class="alert red" role="alert" style="margin-top:12px">${_oe(a.erro||'Não foi possível autorizar.')}</div><button class="btn-full btn-ghost" onclick="_onu.rodando=false;fecharOnu()">Fechar</button>`;
-  else fim = `<div style="font-size:12.5px;color:var(--tx3);margin-top:12px;line-height:1.5" role="status">Gravando na OLT. Cada etapa pode levar até 1 minuto — <b>não feche o app</b>.</div>`;
-  $('onu-body').innerHTML = `<div class="row-sec"><div class="drow"><span class="dlab">ONU</span><span class="dval mono">${_oe(a.serial)}</span></div></div>${passos}${fim}`;
+      ${fechar}`;
+  else if(a.status==='falhou' || a.status==='nao_confirmada') fim = `<div class="alert red" role="alert" style="margin-top:12px">${_oe(a.erro||(troca?'Não foi possível trocar a ONU.':'Não foi possível autorizar.'))}</div>`
+      + (troca && a.status==='falhou' ? `<button class="btn-full btn-amb" onclick="_onu.rodando=false;onuDesautorizar()">🔁 Tentar a troca de novo</button>${fechar}` : `<button class="btn-full btn-ghost" onclick="_onu.rodando=false;fecharOnu()">Fechar</button>`);
+  else fim = `<div style="font-size:12.5px;color:var(--tx3);margin-top:12px;line-height:1.5" role="status">${troca?'Tirando a ONU antiga da OLT e do login':'Gravando na OLT'}. Cada etapa pode levar até 1 minuto — <b>não feche o app</b>.</div>`;
+  $('onu-body').innerHTML = `<div class="row-sec"><div class="drow"><span class="dlab">${troca?'ONU que sai':'ONU'}</span><span class="dval mono">${_oe(a.serial)}</span></div></div>${passos}${fim}`;
 }
 function onuPintarSimulacao(){
   const e = _onu.aut.enviado || {};
@@ -2977,7 +3007,7 @@ async function onuSeguir(){
       o.aut = r; extra = r;
     }catch(e){
       // sem internet ou servidor sem resposta: a etapa pode ter rodado — espera e pergunta de novo, sem repetir
-      if(++falhasRede >= 4){ o.aut = { ...o.aut, status:'incerta', continuar:false, erro:'Fiquei sem resposta do servidor. A autorização pode ter continuado: toque em Conferir.' }; break; }
+      if(++falhasRede >= 4){ o.aut = { ...o.aut, status:'incerta', continuar:false, erro: o.aut.tipo==='desautorizar' ? 'Fiquei sem resposta do servidor. A troca pode ter continuado: toque em Tentar de novo (é seguro).' : 'Fiquei sem resposta do servidor. A autorização pode ter continuado: toque em Conferir.' }; break; }
       await new Promise(z=>setTimeout(z,5000));
     }
   }
@@ -2985,7 +3015,9 @@ async function onuSeguir(){
 }
 async function onuContinuar(repetir){
   const o = _onu; if(!o || !o.aut) return;
-  if(repetir && !confirm('Tentar gravar de novo na OLT?')) return;
+  const troca = o.aut.tipo==='desautorizar';
+  // na troca, repetir é seguro (desautorizar/excluir o que já saiu não faz mal): sem pergunta
+  if(repetir && !troca && !confirm('Tentar gravar de novo na OLT?')) return;
   $('onu-body').innerHTML = _onuEspera(repetir ? 'Tentando de novo…' : 'Conferindo na OLT…');
   try{
     const r = await onuApi('onu.continuar', { id:o.aut.id, repetir: repetir===true });
@@ -2996,6 +3028,80 @@ async function onuContinuar(repetir){
     o.aut = { ...o.aut, erro: e.message };
     onuPintarAndamento(null);
   }
+}
+
+/* ---- TROCA DE ONU ----
+   A ONU antiga sai antes da nova entrar: desautorizada na OLT e tirada do
+   login (onu.desautorizar + onu.continuar). No fim, "Autorizar a ONU nova"
+   segue para a lista de pendentes já com a caixa e a porta da antiga. */
+function onuPintarTroca(){
+  const o = _onu, i = o.ini;
+  const l = i.logins.find(x=>x.id===o.login) || i.logins[0];
+  const sel = i.logins.length>1 ? `<label class="flabel" for="onu-login-t">Login do cliente</label>
+    <select class="finput" id="onu-login-t" onchange="_onu.login=this.value;onuPintarTroca()">${i.logins.map(x=>`<option value="${_oe(x.id)}" ${x.id===l.id?'selected':''}>${_oe(x.login)}${x.ativo?'':' (inativo)'}${x.onu?' — ONU '+_oe(x.onu):' — sem ONU'}</option>`).join('')}</select>` : '';
+  if(!l.onu){
+    $('onu-body').innerHTML = `${_onuAviso()}${sel}
+      <div style="padding:16px 4px;text-align:center;color:var(--tx3);font-size:13.5px;line-height:1.5">${i.logins.length>1?'Este login':'O login do cliente'} não tem ONU cadastrada no IXC: não há o que desautorizar.</div>
+      <button class="btn-full btn-green" onclick="onuIrAutorizar()">📡 Autorizar ONU nova</button>
+      <button class="btn-full btn-ghost" onclick="fecharOnu()" style="margin-top:6px">Fechar</button>`;
+    return;
+  }
+  const loc = l.onu_local;
+  const linha = (r,v) => v==null||v===''?'':`<div class="drow"><span class="dlab">${r}</span><span class="dval">${_oe(v)}</span></div>`;
+  $('onu-body').innerHTML = `${_onuAviso()}${sel}
+    <div class="row-sec" style="margin-top:${sel?'10px':'0'}">
+      <div class="drow"><span class="dlab">ONU atual</span><span class="dval mono">${_oe(l.onu)}</span></div>
+      ${loc ? linha('Na OLT', `placa ${loc.slot||'?'} · PON ${loc.pon||'?'}`) : ''}
+      ${loc ? linha('Caixa / porta', loc.caixa ? `${loc.caixa}${loc.porta?' · porta '+loc.porta:''}` : 'sem caixa no cadastro') : ''}
+    </div>
+    ${l.onus_no_login>1?`<div class="alert warn">Este login tem ${l.onus_no_login} ONUs cadastradas no IXC. Aqui sai só a ${_oe(l.onu)}.</div>`:''}
+    <div style="font-size:12.5px;color:var(--tx2);line-height:1.55;margin:10px 0 2px">A ONU antiga sai em duas etapas:<br>1. <b>desautorizada na OLT</b>;<br>2. <b>tirada do login</b> do cliente no IXC.<br>O cliente fica sem internet até você autorizar a ONU nova.</div>
+    <button class="btn-full btn-red" onclick="onuDesautorizar()">${i.simulacao?'Simular a troca':'🔁 Desautorizar e tirar do login'}</button>
+    <button class="btn-full btn-ghost" onclick="fecharOnu()" style="margin-top:6px">Cancelar</button>`;
+}
+function onuIrAutorizar(){ const o = _onu; if(!o) return; o.modo = 'autorizar'; $('onu-titulo').textContent = '📡 Autorizar ONU'; onuBuscar(); }
+function onuIrTroca(){ const o = _onu; if(!o) return; o.modo = 'trocar'; $('onu-titulo').textContent = '🔁 Trocar ONU'; onuPintarTroca(); }
+async function onuDesautorizar(){
+  const o = _onu; if(!o || o.rodando) return;
+  const l = o.ini.logins.find(x=>x.id===o.login); if(!l || !l.onu) return;
+  if(!o.ini.simulacao && !confirm(`Desautorizar a ONU ${l.onu} na OLT e tirar do login ${l.login}?\n\nO cliente fica sem internet até a ONU nova ser autorizada.`)) return;
+  o.rodando = true; o.aut = null;
+  $('onu-body').innerHTML = _onuEspera('Conferindo a ONU no IXC…');
+  try{
+    o.aut = await onuApi('onu.desautorizar', { os_id:o.osId, login:o.login, serial:l.onu });
+  }catch(e){
+    o.rodando = false;
+    if(_onu===o) $('onu-body').innerHTML = `<div class="alert red" role="alert">${_oe(e.message)}</div><button class="btn-full btn-ghost" onclick="onuPintarTroca()">‹ Voltar</button>`;
+    return;
+  }
+  if(o.aut.simulacao){ o.rodando = false; onuPintarSimulacaoTroca(); return; }
+  await onuSeguir();
+}
+function onuPintarSimulacaoTroca(){
+  const e = _onu.aut.enviado || {};
+  const linha = (r,v) => v==null||v===''?'':`<div class="drow"><span class="dlab">${r}</span><span class="dval">${_oe(v)}</span></div>`;
+  $('onu-body').innerHTML = `<div class="alert warn">Simulação: <b>nada foi feito</b> no IXC. Isto é o que a troca faria.</div>
+    <div class="row-sec">${linha('ONU que sai', e.mac)}${linha('1. Desautorizar na OLT', `OLT ${e.id_transmissor||'?'} · placa ${e.slotno||'?'} · PON ${e.ponno||'?'}`)}
+      ${linha('2. Tirar do login', `cadastro de fibra ${e.fibra_id}`)}${linha('Caixa / porta que liberam', e.caixa_nome ? `${e.caixa_nome}${e.porta_ftth?' · porta '+e.porta_ftth:''}` : '')}</div>
+    <button class="btn-full btn-ghost" onclick="fecharOnu()">Fechar</button>`;
+}
+// troca concluída: relê o cliente (o login ficou sem ONU) e vai para a ONU nova, com a caixa e a porta da antiga
+async function onuDepoisDaTroca(){
+  const o = _onu; if(!o || !o.aut) return;
+  const ant = o.aut.antiga || {}, login = o.login;
+  o.reusar = ant.caixa_id ? { caixa: String(ant.caixa_id), porta: ant.porta || null } : null;
+  o.aut = null; o.rodando = false; o.modo = 'autorizar';
+  $('onu-titulo').textContent = '📡 Autorizar ONU';
+  $('onu-body').innerHTML = _onuEspera('Atualizando o cadastro do cliente…');
+  try{
+    const ini = await onuApi('onu.inicio', { os_id: o.osId });
+    if(_onu!==o) return;
+    o.ini = ini;
+    o.login = ini.logins.some(x=>x.id===login) ? login : (ini.logins.find(x=>x.da_os) || ini.logins[0]).id;
+  }catch(e){
+    const l = o.ini.logins.find(x=>x.id===login); if(l){ l.onu = null; l.onu_local = null; }
+  }
+  await onuBuscar();
 }
 
 /* ---- DETALHE DA OS ---- */
@@ -3167,7 +3273,8 @@ async function abrirDet(id){
       <div class="row-sec-title">📡 ONU do cliente</div>
       <div style="padding:10px 12px">
         <button onclick="abrirOnu(${os.id})" class="btn-full btn-green" style="margin-top:0;font-size:13.5px;padding:12px">📡 Autorizar ONU no IXC</button>
-        <div style="font-size:11.5px;color:var(--tx3);margin-top:6px;line-height:1.4">Ligue a ONU na fibra e espere a luz PON ficar fixa antes de buscar.</div>
+        <button onclick="abrirOnu(${os.id},'trocar')" class="btn-full btn-ghost" style="font-size:13.5px;padding:12px">🔁 Trocar ONU (desautorizar a antiga)</button>
+        <div style="font-size:11.5px;color:var(--tx3);margin-top:6px;line-height:1.4">Ligue a ONU na fibra e espere a luz PON ficar fixa antes de buscar. Na troca, a ONU antiga sai da OLT e do login do cliente antes de autorizar a nova.</div>
       </div>
     </div>`;
   }

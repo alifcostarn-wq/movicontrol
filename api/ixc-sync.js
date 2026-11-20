@@ -30,7 +30,7 @@ import { lerFaturasAbertas } from './_ixc_faturas.js';
 import { copiarRedeFibra } from './_ixc_fibra.js';
 import { copiarEstoqueDoIxc } from './_ixc_estoque.js';
 import { reconciliarFibra, processarVinculosFibra } from './_ixc_fibra_sinc.js';
-import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR } from './_ixc_onu.js';
+import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, desautorizarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR, BOTAO_EXCLUIR } from './_ixc_onu.js';
 
 export const config = { maxDuration: 60 };
 
@@ -241,10 +241,11 @@ async function ixcGrade(tabela, { olt }, prazo, maxMs = 30e3) {
   if (d == null) throw new Error('IXC: resposta que não é JSON');
   return d;
 }
-/* Autorização de ONU (ver _ixc_onu.js): criar o cadastro de fibra e os dois
-   botões do IXC que falam com a OLT. Só estes três endereços. A resposta volta
-   crua (texto ou JSON): quem julga é o _ixc_onu.js. */
-const BOTOES_ONU = new Set([BOTAO_LIBERAR, BOTAO_GRAVAR]);
+/* Autorização e troca de ONU (ver _ixc_onu.js): criar o cadastro de fibra e os
+   três botões do IXC que falam com a OLT (liberar, gravar e excluir do
+   dispositivo). Só estes endereços. A resposta volta crua (texto ou JSON): quem
+   julga é o _ixc_onu.js. */
+const BOTOES_ONU = new Set([BOTAO_LIBERAR, BOTAO_GRAVAR, BOTAO_EXCLUIR]);
 async function ixcOnuPost(endpoint, corpo, maxMs) {
   if (endpoint !== 'radpop_radio_cliente_fibra' && !BOTOES_ONU.has(endpoint)) throw new Error(`endereço do IXC não permitido: ${endpoint}`);
   const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
@@ -256,6 +257,25 @@ async function ixcOnuPost(endpoint, corpo, maxMs) {
       method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify(corpo),
+    });
+  } catch (err) {
+    throw new Error(err.name === 'AbortError' ? 'o IXC demorou demais para responder' : `IXC: ${err.message}`);
+  } finally { clearTimeout(timer); }
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`IXC HTTP ${r.status}`);
+  try { return JSON.parse(txt); } catch { return txt; }
+}
+/* Troca de ONU: excluir o cadastro de fibra (a ONU) do login do cliente. Só esta
+   tabela e só por id numérico — nenhuma outra exclusão no IXC sai daqui. */
+async function ixcOnuExcluirFibra(id, maxMs) {
+  if (!/^\d+$/.test(String(id || '')) || String(id) === '0') throw new Error('cadastro de fibra inválido');
+  const auth = 'Basic ' + Buffer.from(`${process.env.IXC_USER || ''}:${process.env.IXC_TOKEN || ''}`).toString('base64');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), maxMs);
+  let r;
+  try {
+    r = await fetch(`${IXC_URL}/webservice/v1/radpop_radio_cliente_fibra/${String(id)}`, {
+      method: 'DELETE', signal: ctl.signal, headers: { Authorization: auth, ixcsoft: 'deletar' },
     });
   } catch (err) {
     throw new Error(err.name === 'AbortError' ? 'o IXC demorou demais para responder' : `IXC: ${err.message}`);
@@ -443,7 +463,7 @@ async function tecnicoQueChama(req) {
   return { id: t[0].id, nome: t[0].nome || 'Técnico' };
 }
 
-/* Autorização de ONU pelo app do técnico (ver _ixc_onu.js). */
+/* Autorização e troca de ONU pelo app do técnico (ver _ixc_onu.js). */
 async function acaoOnu(acao, b, req, res) {
   const tec = await tecnicoQueChama(req);
   if (!tec) return res.status(401).json({ erro: 'Sessão expirada: entre de novo no moviTec.' });
@@ -452,13 +472,15 @@ async function acaoOnu(acao, b, req, res) {
   if (!process.env.IXC_USER || !process.env.IXC_TOKEN) return res.status(500).json({ erro: 'IXC não configurado no servidor.' });
   const prazo = Date.now() + 52e3;
   const io = { sb, ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcGrade: (t, f) => ixcGrade(t, f, prazo, 25e3),
-    ixcInserirFibra: c => ixcOnuPost('radpop_radio_cliente_fibra', c, 20e3), ixcBotao: (ep, c, ms) => ixcOnuPost(ep, c, Math.min(ms || 30e3, 50e3)) };
+    ixcInserirFibra: c => ixcOnuPost('radpop_radio_cliente_fibra', c, 20e3), ixcBotao: (ep, c, ms) => ixcOnuPost(ep, c, Math.min(ms || 30e3, 50e3)),
+    ixcExcluirFibra: id => ixcOnuExcluirFibra(id, 25e3) };
   try {
     if (acao === 'onu.inicio') return res.status(200).json(await inicioOnu(io, { tec, osId: b.os_id, cfg }));
     if (acao === 'onu.pendentes') return res.status(200).json(await pendentesOnu(io, { tec, osId: b.os_id, cfg }));
     if (acao === 'onu.portas') return res.status(200).json(await portasDaCaixa(io, { tec, osId: b.os_id, caixa: b.caixa, cfg }));
     if (acao === 'onu.autorizar') return res.status(200).json(await autorizarOnu(io, { tec, osId: b.os_id, cfg, loginId: b.login, olt: b.olt, serial: b.serial, caixaId: b.caixa, porta: b.porta, perfilId: b.perfil }));
     if (acao === 'onu.continuar') return res.status(200).json(await continuarOnu(io, { tec, id: b.id, repetir: b.repetir === true }));
+    if (acao === 'onu.desautorizar') return res.status(200).json(await desautorizarOnu(io, { tec, osId: b.os_id, cfg, loginId: b.login, serial: b.serial }));
     return res.status(400).json({ erro: 'ação desconhecida' });
   } catch (err) {
     if (err instanceof ErroOnu) return res.status(err.status).json({ erro: err.message });
@@ -699,9 +721,9 @@ export default async function handler(req, res) {
         sb('campo_tecnicos?select=nome,status,ixc_funcionario_id&order=nome.asc').catch(() => []),
       ]);
       const nomeIxc = new Map((funcionarios || []).map(f => [String(f.id), f.nome]));
-      // últimas ONUs autorizadas pelos técnicos: só serial, técnico e resultado
-      const onus = await sb(`ixc_onu_autorizacoes?select=id,criado_em,tecnico_nome,serial,status,erro&order=id.desc&limit=6`).catch(() => []);
-      return { ...st, onus: (onus || []).map(o => ({ em: o.criado_em, tecnico: o.tecnico_nome || null, serial: String(o.serial || '').slice(0, 32), status: o.status, erro: o.erro ? String(o.erro).slice(0, 200) : null })),
+      // últimas ONUs autorizadas ou trocadas pelos técnicos: só serial, técnico e resultado
+      const onus = await sb(`ixc_onu_autorizacoes?select=id,tipo,criado_em,tecnico_nome,serial,status,erro&order=id.desc&limit=8`).catch(() => []);
+      return { ...st, onus: (onus || []).map(o => ({ em: o.criado_em, tipo: o.tipo === 'desautorizar' ? 'desautorizar' : 'autorizar', tecnico: o.tecnico_nome || null, serial: String(o.serial || '').slice(0, 32), status: o.status, erro: o.erro ? String(o.erro).slice(0, 200) : null })),
         funcionarios: funcionarios || [],
         tecnicos_ixc: (tecs || []).filter(t => t.status !== 'inativo').map(t => ({ nome: t.nome, ixc: t.ixc_funcionario_id ? (nomeIxc.get(String(t.ixc_funcionario_id)) || `#${t.ixc_funcionario_id}`) : null })) };
     };

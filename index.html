@@ -25499,12 +25499,13 @@ function ixaRenderSecao(st, erro){
 const IXA_ONU_ST = {concluida:'autorizada', simulada:'simulação', falhou:'falhou', nao_confirmada:'não confirmada', incerta:'sem resposta', andamento:'em andamento'};
 function ixaOnuHtml(st){
   const c = st.config || {}, admin = !!st.admin, modo = c.onu_modo || 'desligado';
-  const ult = (st.onus || []).map(o => `<div>${escHtml(_ixaHora(o.em))} · ${escHtml(o.tecnico || 'técnico')} · <span style="font-family:monospace">${escHtml(o.serial)}</span> · `
-    + `<span class="${o.status==='concluida'?'ixa-ok':(o.status==='falhou'||o.status==='nao_confirmada')?'ixa-erro':''}">${escHtml(IXA_ONU_ST[o.status] || o.status)}</span>`
+  // troca = a ONU antiga saiu da OLT e do login do cliente (antes da nova entrar)
+  const ult = (st.onus || []).map(o => `<div>${escHtml(_ixaHora(o.em))} · ${escHtml(o.tecnico || 'técnico')} · ${o.tipo==='desautorizar'?'🔁 troca · ':''}<span style="font-family:monospace">${escHtml(o.serial)}</span> · `
+    + `<span class="${o.status==='concluida'?'ixa-ok':(o.status==='falhou'||o.status==='nao_confirmada')?'ixa-erro':''}">${escHtml(o.tipo==='desautorizar' && o.status==='concluida' ? 'desautorizada e tirada do login' : (IXA_ONU_ST[o.status] || o.status))}</span>`
     + `${o.erro && o.status!=='concluida' ? ' — <span class="ixa-erro">'+escHtml(o.erro)+'</span>' : ''}</div>`).join('');
   return `<div class="ixa-box">
-    <div class="ixa-tit">Autorização de ONU pelo técnico (moviTec)</div>
-    <div class="ixa-sub">Dentro da OS, o técnico escolhe a ONU que a OLT está enxergando, a caixa, a porta e o perfil; o sistema cria o cadastro de fibra no IXC e grava na OLT. Troca de ONU continua sendo feita pelo escritório.</div>
+    <div class="ixa-tit">Autorização e troca de ONU pelo técnico (moviTec)</div>
+    <div class="ixa-sub">Dentro da OS, o técnico escolhe a ONU que a OLT está enxergando, a caixa, a porta e o perfil; o sistema cria o cadastro de fibra no IXC e grava na OLT. Na troca, a ONU antiga é desautorizada na OLT e tirada do login do cliente antes de a nova ser autorizada.</div>
     <div class="ixa-linha">
       <label for="ixa-onu">Situação</label>
       <select id="ixa-onu" class="cp-form-input" ${admin?'':'disabled'} onchange="ixaOnuSalvar()">
@@ -25514,7 +25515,7 @@ function ixaOnuHtml(st){
       </select>
       <span class="ixa-salvo" id="ixa-onu-salvo" aria-live="polite"></span>
     </div>
-    ${ult ? `<div class="ixa-estado"><div><b>Últimas autorizações</b></div>${ult}</div>` : ''}
+    ${ult ? `<div class="ixa-estado"><div><b>Últimas autorizações e trocas</b></div>${ult}</div>` : ''}
   </div>`;
 }
 async function ixaOnuSalvar(){
