@@ -51,7 +51,7 @@ import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
 import { groqChat, groqTranscrever, groqModelos, groqModelosAudio } from './_groq.js';
-import { linhaClienteDoIxc, linhaContratoDoIxc, idValido } from './_ixc_espelho.js';
+import { linhaClienteDoIxc, linhaContratoDoIxc, idValido, mudou } from './_ixc_espelho.js';
 import { desbloquearEmConfianca, pedirPelaCentral } from './_ixc_confianca.js';
 import { corpoAbrirOs, osDoClienteNoPainel, textoIxc } from './_ixc_os.js';
 
@@ -7318,15 +7318,71 @@ async function cobrancaAutomatica(e) {
 // não tinha como saber por quê.
 //
 // Aqui a cópia se atualiza sozinha. Não é a sincronização completa do
-// MoviOne (aquela relê a base inteira, corrige telefone trocado, endereço
-// alterado): esta pergunta ao IXC só o que é NOVO — cliente e contrato com id
-// acima do último que já temos — e por isso é barata o bastante para rodar de
-// carona no tráfego que o painel já faz.
+// MoviOne (aquela relê a base inteira): esta pergunta ao IXC só o que é NOVO
+// — cliente e contrato com id acima do último que já temos — e o cadastro que
+// MUDOU desde a última conferência (cliente.ultima_atualizacao, que o IXC
+// carimba a cada gravação). Por isso é barata o bastante para rodar de carona
+// no tráfego que o painel já faz.
+//
+// O "que mudou" entrou em 24/11/2026 pelo caso da Rayane: cadastro antigo do
+// IXC (de 2013) reativado com contrato novo. Id antigo não passa no "acima do
+// último", então a cópia rápida nunca via a alteração e ela só apareceu no
+// MoviTalk depois da cópia completa.
 // ============================================================================
 const SYNC_IXC_CADA_MS = Number(process.env.ATEND_SYNC_IXC_MIN || 10) * 60 * 1000;
-const SYNC_IXC_BUSCA_MS = 30 * 1000;   // piso quando a busca não achou nada
+const SYNC_IXC_BUSCA_MS = 30 * 1000;   // piso entre duas conferências puxadas pela busca
 const SYNC_IXC_RP = 200;      // registros por página pedidos ao IXC
 const SYNC_IXC_PAGINAS = 5;   // teto: 1000 novos por rodada já é muita coisa
+const SYNC_IXC_ALTERADOS_RP = 200;        // alterados por rodada, os mais novos primeiro
+const SYNC_IXC_ALTERADOS_JANELA_H = 24;   // sem marco ainda: o que mudou nas últimas 24 h
+const SYNC_IXC_ALTERADOS_FOLGA_MIN = 5;   // relê 5 min antes do marco: gravação que chegou atrasada
+// a busca espera a conferência no máximo isto; IXC lento não trava a tela
+const SYNC_IXC_BUSCA_PRAZO_MS = Number(process.env.ATEND_SYNC_BUSCA_PRAZO_MS || 7000);
+
+/* Hora do IXC: 'AAAA-MM-DD HH:MM:SS', na hora local do servidor dele. As
+   contas com ela são feitas nela mesma, sem fuso: o 'Z' abaixo é só para o
+   Date não converter nada. */
+const ehHoraIxc = v => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(v ?? '')) && !String(v).startsWith('0000');
+function horaIxcMais(hora, minutos) {
+  return new Date(Date.parse(String(hora).replace(' ', 'T') + 'Z') + minutos * 60e3).toISOString().slice(0, 19).replace('T', ' ');
+}
+/* A hora daqui só vira a do IXC aproximadamente (o servidor dele está em
+   UTC-3, conferido em 24/11/2026). Por isso ela só serve onde sobra folga:
+   a janela de 24 h da primeira rodada e o teto contra hora no futuro. */
+function horaIxcAprox(agoraMs = Date.now()) {
+  return new Date(agoraMs - 3 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/* A linha que a cópia rápida grava: a do espelho, SEM a senha da central do
+   assinante. Código novo não lê nem guarda senha de cliente (quem ainda cuida
+   dessa coluna é a cópia completa). Tirar a chave, e não pôr null, deixa o
+   que já está gravado como está. E todas as linhas saem com as mesmas chaves:
+   o PostgREST recusa lote com chaves diferentes. */
+function linhaClienteRapida(reg) {
+  const l = linhaClienteDoIxc(reg);
+  delete l.ixc_senha;
+  return l;
+}
+const COLS_CLIENTE_RAPIDA = Object.keys(linhaClienteRapida({})).filter(k => k !== 'ixc_id');
+
+/* Mudou mesmo? As regras de "igual" são as da cópia completa ('' é vazio,
+   89.9 é "89.90"). Cidade e UF que o IXC manda como número ficam fora da
+   conta: o banco troca pelo nome ao gravar, então pareceriam diferentes toda
+   vez e cada conferência regravaria a linha (e cada linha regravada faz o
+   MoviOne aberto reler a tabela). Mudança só de cidade a cópia completa traz. */
+function clienteMudou(linha, atual) {
+  const numero = v => /^\d+$/.test(String(v ?? '').trim());
+  const cols = COLS_CLIENTE_RAPIDA.filter(c => !((c === 'cidade' || c === 'uf') && numero(linha[c])));
+  return mudou(linha, atual, cols);
+}
+
+/* Espera a promessa até `ms`; passou disso, segue com `seAtrasar`. A promessa
+   continua sozinha, sem ninguém esperando por ela. */
+function esperarNoMaximo(promessa, ms, seAtrasar) {
+  let timer;
+  const prazo = new Promise(r => { timer = setTimeout(() => r(seAtrasar), ms); });
+  return Promise.race([promessa, prazo]).finally(() => clearTimeout(timer));
+}
 
 /* O mapeamento campo a campo (cliente e contrato) é o mesmo da cópia
    completa que roda no servidor e no navegador: mora em _ixc_espelho.js. */
@@ -7372,23 +7428,56 @@ async function ixcAcima(e, tabela, campoId, marco) {
   return saida;
 }
 
-/* Traz do IXC o que entrou depois da última cópia.
+/* Cadastros que MUDARAM no IXC desde uma hora (dele). Os mais novos primeiro
+   e numa página só: numa alteração em massa, o que fica de fora é o mais
+   antigo, e esse a cópia completa (de 30 em 30 min) traz. O que a atendente
+   procura é o que acabou de ser mexido. */
+async function ixcAlteradosDesde(e, tabela, desde) {
+  const resp = await ixc(e, tabela, {
+    qtype: `${tabela}.ultima_atualizacao`, query: desde, oper: '>=',
+    page: '1', rp: String(SYNC_IXC_ALTERADOS_RP),
+    sortname: `${tabela}.ultima_atualizacao`, sortorder: 'desc',
+  }, 'listar');
+  if (resp && resp.type === 'error') throw new Error(`IXC ${tabela}: ${String(resp.message || 'recusou a consulta').slice(0, 160)}`);
+  return resp?.registros || [];
+}
+
+/* Traz do IXC o que entrou depois da última cópia e o cadastro que mudou.
 
    Sobe cliente antes de contrato de propósito: o contrato guarda o id LOCAL
    do cliente, que só existe depois do upsert. E o contrato de um cliente que
    ainda não temos puxa esse cliente junto — é o caso de quem já estava
-   cadastrado no IXC há tempos e só agora teve o contrato ativado. */
-async function sincronizarNovosDoIxc(e) {
+   cadastrado no IXC há tempos e só agora teve o contrato ativado.
+
+   `marcoAlteracao` é até onde os alterados já foram lidos (hora do IXC). A
+   rodada devolve o novo em `marco_alteracao`; quem chama só o grava se a
+   rodada terminou bem. Contrato alterado fica com a cópia completa: aqui ele
+   passaria sem a tabela de planos e trocaria o nome do plano pelo número. */
+async function sincronizarNovosDoIxc(e, marcoAlteracao) {
   const marcos = await sb(e, 'rpc/atend_ixc_marcos', { method: 'POST', body: {} });
   const m = (Array.isArray(marcos) ? marcos[0] : marcos) || {};
   const marcoCli = Number(m.maior_cliente || 0);
   const marcoCtr = Number(m.maior_contrato || 0);
 
-  const [novosCli, novosCtr] = await Promise.all([
+  // de onde perguntar o que mudou: do marco da última rodada boa, com folga
+  // para gravação que chegou atrasada; sem marco, das últimas 24 h
+  const temMarco = ehHoraIxc(marcoAlteracao);
+  const desde = temMarco
+    ? horaIxcMais(marcoAlteracao, -SYNC_IXC_ALTERADOS_FOLGA_MIN)
+    : horaIxcMais(horaIxcAprox(), -SYNC_IXC_ALTERADOS_JANELA_H * 60);
+
+  let erroAlterados = null;
+  const [novosCli, novosCtr, alteradosCli] = await Promise.all([
     ixcAcima(e, 'cliente', 'id', marcoCli),
     ixcAcima(e, 'cliente_contrato', 'id', marcoCtr).catch(err => {
       console.error('[sync-ixc] contratos:', err.message);
       return [];
+    }),
+    // falha aqui não segura os novos: só o marco não anda
+    ixcAlteradosDesde(e, 'cliente', desde).catch(err => {
+      console.error('[sync-ixc] alterados:', err.message);
+      erroAlterados = String(err.message || err).slice(0, 200);
+      return null;
     }),
   ]);
 
@@ -7408,17 +7497,43 @@ async function sincronizarNovosDoIxc(e) {
     }
   }
 
+  // Cadastros alterados: só vai para o banco o que difere da cópia. A folga
+  // antes do marco relê os mesmos registros a cada rodada; sem esta
+  // conferência eles seriam regravados toda vez.
+  const idsNovos = new Set(novosCli.map(r => String(r.id || '')));
+  const vistosAlt = new Set();
+  const alterados = [];
+  for (const r of alteradosCli || []) {
+    const id = String(r.id || '');
+    if (!idValido(id) || idsNovos.has(id) || vistosAlt.has(id)) continue;
+    vistosAlt.add(id);
+    alterados.push(r);
+  }
+  const gravarAlterados = [];
+  if (alterados.length) {
+    const atuais = new Map();
+    for (const lote of emLotes(alterados.map(r => String(r.id)), 100)) {
+      const linhas = await sb(e, `clientes?ixc_id=in.(${lote.join(',')})&select=ixc_id,${COLS_CLIENTE_RAPIDA.join(',')}`);
+      for (const c of (linhas || [])) atuais.set(String(c.ixc_id), c);
+    }
+    for (const r of alterados) {
+      const linha = linhaClienteRapida(r);
+      const atual = atuais.get(linha.ixc_id);
+      if (!atual || clienteMudou(linha, atual)) gravarAlterados.push(linha);
+    }
+  }
+
   let clientes = 0, contratos = 0;
-  if (novosCli.length) {
-    const linhas = novosCli.map(linhaClienteDoIxc).filter(l => l.ixc_id);
-    for (const lote of emLotes(linhas, 200)) {
+  const linhasCli = [...novosCli.map(linhaClienteRapida).filter(l => l.ixc_id), ...gravarAlterados];
+  if (linhasCli.length) {
+    for (const lote of emLotes(linhasCli, 200)) {
       await sb(e, 'clientes?on_conflict=ixc_id', {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: lote,
       });
     }
-    clientes = linhas.length;
+    clientes = linhasCli.length;
   }
 
   if (novosCtr.length) {
@@ -7438,7 +7553,35 @@ async function sincronizarNovosDoIxc(e) {
     contratos = linhas.length;
   }
 
-  return { clientes, contratos, marco_cliente: marcoCli, marco_contrato: marcoCtr };
+  // O novo marco sai da hora do próprio IXC: a maior ultima_atualizacao lida.
+  // Hora muito no futuro (relógio errado, dado torto) não conta: um marco em
+  // 2099 calaria a conferência para sempre. Sem nada lido, fica o que havia
+  // (ou o começo da janela, na primeira rodada). Se a consulta falhou, o
+  // marco não anda e a próxima rodada pergunta de novo.
+  let marcoNovo = temMarco ? marcoAlteracao : null;
+  if (alteradosCli) {
+    const teto = horaIxcMais(horaIxcAprox(), 6 * 60);
+    let maior = temMarco ? marcoAlteracao : desde;
+    for (const r of alteradosCli) {
+      const h = String(r.ultima_atualizacao || '').trim();
+      if (ehHoraIxc(h) && h > maior && h <= teto) maior = h;
+    }
+    marcoNovo = maior;
+  }
+
+  return {
+    clientes, contratos, marco_cliente: marcoCli, marco_contrato: marcoCtr,
+    // ids (do IXC) dos alterados lidos: é por eles que se confere, depois,
+    // se um cadastro mexido entrou na conta. Id não é dado pessoal.
+    alterados: alteradosCli
+      ? {
+        desde, lidos: alteradosCli.length, gravados: gravarAlterados.length,
+        ...(alteradosCli.length >= SYNC_IXC_ALTERADOS_RP ? { cortado: true } : {}),
+        ids: [...vistosAlt].slice(0, 20),
+      }
+      : { desde, erro: erroAlterados },
+    marco_alteracao: marcoNovo,
+  };
 }
 
 /* De carona no tráfego do painel, como a varredura de inatividade.
@@ -7467,10 +7610,15 @@ async function talvezSincronizarIxc(e, janelaMs) {
     // cliente entra com "1161" no lugar da cidade e isso vira contrato.
     try { await sincronizarCidadesIxc(e); }
     catch (err) { console.error('[cidades]', err.message); }
-    const r = await sincronizarNovosDoIxc(e);
+    // o PATCH que reservou a janela já devolve a linha: o marco vem nela
+    const r = await sincronizarNovosDoIxc(e, claim[0].marco_alteracao);
     await sb(e, 'atend_sync_ixc?id=eq.1', {
       method: 'PATCH', prefer: 'return=minimal',
-      body: { ultimo_resultado: { ...r, em: new Date().toISOString() } },
+      body: {
+        ultimo_resultado: { ...r, em: new Date().toISOString() },
+        // só rodada que terminou bem move o marco; falha (abaixo) não mexe nele
+        ...(r.marco_alteracao ? { marco_alteracao: r.marco_alteracao } : {}),
+      },
     });
     return { sincronizado: true, ...r };
   } catch (err) {
@@ -11298,22 +11446,35 @@ export default async function handler(req, res) {
           return await r.json();
         };
 
+        // ANTES de procurar, a cópia confere com o IXC o que entrou e o que
+        // mudou lá desde a última conferência (no máximo uma vez a cada 30 s,
+        // somando todos os atendentes). Cliente cadastrado ou reativado há
+        // dez minutos é justamente o que a atendente está procurando.
+        //
+        // Antes só se conferia quando a busca vinha vazia, e isso falhou com
+        // a Rayane (24/11): havia outras "Rayane" na cópia, a busca achava
+        // essas, não conferia nada, e o cadastro dela (antigo, reativado com
+        // contrato novo) só apareceu depois da cópia completa do MoviOne.
+        let sincronizou = null;
+        try {
+          sincronizou = await esperarNoMaximo(talvezSincronizarIxc(e, SYNC_IXC_BUSCA_MS),
+            SYNC_IXC_BUSCA_PRAZO_MS, { sincronizado: false, demorou: true });
+        } catch (err) {
+          console.error('[clientes.buscar] sync:', err.message);
+          sincronizou = { sincronizado: false, erro: err.message };
+        }
+
         let clientes;
         try { clientes = await procurar(); }
         catch (err) { return res.status(500).json({ ok: false, error: err.message }); }
 
-        // Não achou? Antes de dizer "não existe", conferir com o IXC.
-        // Cliente ativado há dez minutos ainda não está na cópia, e é
-        // justamente ele que a atendente está procurando — dizer "não
-        // encontrado" aqui manda a pessoa procurar erro onde não há.
-        let sincronizou = null;
-        if (!clientes.length) {
-          try {
-            sincronizou = await talvezSincronizarIxc(e, SYNC_IXC_BUSCA_MS);
-            if (sincronizou.clientes || sincronizou.contratos) clientes = await procurar();
-          } catch (err) { console.error('[clientes.buscar] sync:', err.message); }
-        }
-        return res.status(200).json({ ok: true, clientes, sincronizou, por_fone: !!soFone });
+        // para a tela só vai o que ela usa para explicar uma lista vazia
+        const s = sincronizou || {};
+        return res.status(200).json({
+          ok: true, clientes, por_fone: !!soFone,
+          sincronizou: { sincronizado: !!s.sincronizado, recente: !!s.recente, demorou: !!s.demorou,
+            erro: s.erro ? String(s.erro).slice(0, 160) : null, motivo: s.motivo || null },
+        });
       }
 
       case 'conversas.vincular': {

@@ -3962,9 +3962,9 @@ const api = {
   },
   async buscarClientes(termo, fone){
     const j = await chamar('clientes.buscar', { termo, ...(fone?{fone}:{}) });
-    // `sincronizou` só vem quando a busca local não achou nada e o servidor
-    // foi conferir com o IXC: é o que permite dizer ao atendente se o vazio
-    // é "não existe" ou "existe e acabou de ser copiado"
+    // `sincronizou`: antes de procurar, o servidor confere com o IXC o que
+    // entrou e o que mudou (no máximo a cada 30 s). É o que permite dizer ao
+    // atendente se o vazio é "não existe" ou "o IXC não respondeu a tempo"
     const lista = j.clientes || [];
     lista.sincronizou = j.sincronizou || null;
     return lista;
@@ -5561,12 +5561,19 @@ function abrirBuscaCliente(c, aoVincular){
 
   // por que o vazio ficou vazio — a diferença entre "não existe" e
   // "existe e a cópia do IXC ainda não tinha alcançado"
-  const notaDoVazio=(res)=>{
-    const sy = res.sincronizou;
-    if(sy && sy.sincronizado) return 'Conferimos com o IXC agora e ele também não tem esse nome.';
-    if(sy && sy.recente)      return 'Conferimos com o IXC há instantes e ele também não tem esse nome.';
+  const notaDoVazio=(res, oque)=>{
+    const sy = res.sincronizou, o = oque || 'esse nome';
+    if(sy && sy.sincronizado) return 'Conferimos com o IXC agora (cadastros novos e alterados) e ele também não tem '+o+'.';
+    if(sy && sy.recente)      return 'Conferimos com o IXC há instantes e ele também não tem '+o+'.';
+    if(sy && sy.demorou)      return 'O IXC demorou a responder; procurei no que já estava copiado. Tente de novo em instantes.';
     if(sy && sy.erro)         return 'Não consegui conferir com o IXC: '+esc(sy.erro);
     return 'A busca é por nome, CPF/CNPJ ou telefone.';
+  };
+  // o que foi procurado, pela mesma regra do servidor (11+ dígitos é
+  // documento; 8 a 10 é telefone; sem dígito é nome)
+  const oQueFoi=termo=>{
+    const d=String(termo||'').replace(/\D/g,'').length;
+    return d>=11 ? 'esse CPF/CNPJ' : d>=8 ? 'esse telefone' : 'esse nome';
   };
 
   /* Primeiro tiro: o TELEFONE da conversa.
@@ -5586,7 +5593,7 @@ function abrirBuscaCliente(c, aoVincular){
       pintar(res, '<div class="cli-vazio">Nenhum cadastro com este telefone.'
         + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'
         + 'O nome que aparece aqui é o do perfil do WhatsApp e costuma ser apelido ou nome do negócio — '
-        + 'procure pelo <b>CPF/CNPJ</b> ou pelo nome do titular.<br>' + notaDoVazio(res) + '</div></div>',
+        + 'procure pelo <b>CPF/CNPJ</b> ou pelo nome do titular.<br>' + notaDoVazio(res, 'esse telefone') + '</div></div>',
         '<div class="cli-origem">📞 Encontrado pelo <b>telefone desta conversa</b> ('
         + esc(c.fone) + ')</div>');
     }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
@@ -5600,7 +5607,7 @@ function abrirBuscaCliente(c, aoVincular){
       const res=await api.buscarClientes(termo);
       pintar(res, '<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado'
         + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'
-        + notaDoVazio(res) + '</div></div>');
+        + notaDoVazio(res, oQueFoi(termo)) + '</div></div>');
     }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
   };
 
@@ -14101,8 +14108,12 @@ async function abrirAvisoRapido(pre){
         if(termo.length<2){ res.innerHTML=''; return; }
         AV.buscando=setTimeout(async()=>{
           res.innerHTML='<div class="av-res-vazio">Procurando…</div>';
+          // a primeira busca pode esperar a conferência com o IXC e voltar
+          // depois da seguinte: resposta velha não pinta por cima da nova
+          const vez=AV.vezBusca=(AV.vezBusca||0)+1;
           try{
             const lista=await api.buscarClientes(termo);
+            if(vez!==AV.vezBusca) return;
             res.innerHTML = lista.length
               ? lista.map((x,i)=>`<div class="av-r" data-i="${i}">
                   <div class="av-r-n">${esc(x.nome||'—')}</div>
@@ -14114,7 +14125,7 @@ async function abrirAvisoRapido(pre){
               AV.cliente={ nome:x.nome, fone:x.fone||x.telefone||x.whatsapp||'', ixcId:x.ixc_id||null };
               AV.faturas=null; AV.fatura=null; pintar();
             });
-          }catch(err){ res.innerHTML=`<div class="av-res-vazio">Falha: ${esc(err.message)}</div>`; }
+          }catch(err){ if(vez===AV.vezBusca) res.innerHTML=`<div class="av-res-vazio">Falha: ${esc(err.message)}</div>`; }
         },320);
       };
       // telefone digitado direto vira "cliente sem cadastro"
