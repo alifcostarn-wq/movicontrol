@@ -7384,6 +7384,31 @@ function esperarNoMaximo(promessa, ms, seAtrasar) {
   return Promise.race([promessa, prazo]).finally(() => clearTimeout(timer));
 }
 
+/* "Recente" pode ser duas coisas: a conferência acabou há instantes, ou OUTRA
+   busca está no meio dela (reservou a janela e ainda não gravou). No segundo
+   caso, procurar já seria procurar na cópia de antes, e dizer "conferimos e
+   ele também não tem" seria falso. É o caso comum: a busca automática pelo
+   telefone, ao abrir "Selecionar Cliente", reserva e confere (uns 2 s), e a
+   atendente digita o nome nesse meio-tempo. Então espera a outra terminar,
+   dentro do prazo; não terminou, diz que está em andamento. Reserva antiga
+   sem resultado (rodada que morreu no meio) não segura ninguém. */
+const SYNC_IXC_RESERVA_MORTA_MS = 25 * 1000;
+async function esperarConferenciaEmCurso(e, prazoMs) {
+  const fim = Date.now() + Math.max(0, prazoMs);
+  for (;;) {
+    const s = await sbUm(e, 'atend_sync_ixc?id=eq.1&select=ultima_em,ultimo_resultado');
+    const reservou = Date.parse(s?.ultima_em || '') || 0;
+    const r = s?.ultimo_resultado || {};
+    if ((Date.parse(r.em || '') || 0) >= reservou) {
+      // terminou: o que deu errado nela vale para esta busca também
+      if (r.erro) return { sincronizado: false, erro: r.erro };
+      return { sincronizado: false, recente: true, ...(r.alterados?.erro ? { erro_alterados: r.alterados.erro } : {}) };
+    }
+    if (Date.now() - reservou > SYNC_IXC_RESERVA_MORTA_MS || Date.now() >= fim) return { sincronizado: false, em_andamento: true };
+    await new Promise(ok => setTimeout(ok, 300));
+  }
+}
+
 /* O mapeamento campo a campo (cliente e contrato) é o mesmo da cópia
    completa que roda no servidor e no navegador: mora em _ixc_espelho.js. */
 
@@ -11451,14 +11476,20 @@ export default async function handler(req, res) {
         // somando todos os atendentes). Cliente cadastrado ou reativado há
         // dez minutos é justamente o que a atendente está procurando.
         //
-        // Antes só se conferia quando a busca vinha vazia, e isso falhou com
-        // a Rayane (24/11): havia outras "Rayane" na cópia, a busca achava
-        // essas, não conferia nada, e o cadastro dela (antigo, reativado com
-        // contrato novo) só apareceu depois da cópia completa do MoviOne.
+        // Caso da Rayane (24/11): cadastro antigo do IXC reativado com
+        // contrato novo. A conferência rodou, mas só perguntava por id novo,
+        // e ela só apareceu depois da cópia completa do MoviOne (por isso a
+        // conferência agora traz também o alterado). E ela só rodava quando a
+        // busca vinha vazia: com outros nomes parecidos na cópia, nem rodaria.
         let sincronizou = null;
+        const inicioBusca = Date.now();
         try {
           sincronizou = await esperarNoMaximo(talvezSincronizarIxc(e, SYNC_IXC_BUSCA_MS),
             SYNC_IXC_BUSCA_PRAZO_MS, { sincronizado: false, demorou: true });
+          // outra busca está no meio da conferência: espera ela gravar
+          if (sincronizou && sincronizou.recente) {
+            sincronizou = await esperarConferenciaEmCurso(e, SYNC_IXC_BUSCA_PRAZO_MS - (Date.now() - inicioBusca));
+          }
         } catch (err) {
           console.error('[clientes.buscar] sync:', err.message);
           sincronizou = { sincronizado: false, erro: err.message };
@@ -11468,12 +11499,18 @@ export default async function handler(req, res) {
         try { clientes = await procurar(); }
         catch (err) { return res.status(500).json({ ok: false, error: err.message }); }
 
-        // para a tela só vai o que ela usa para explicar uma lista vazia
+        // Para a tela só vai o que ela usa para explicar uma lista vazia. Se a
+        // parte dos alterados falhou, a tela não pode dizer que conferiu.
         const s = sincronizou || {};
+        const erroAlt = (s.alterados && s.alterados.erro) || s.erro_alterados || null;
         return res.status(200).json({
           ok: true, clientes, por_fone: !!soFone,
-          sincronizou: { sincronizado: !!s.sincronizado, recente: !!s.recente, demorou: !!s.demorou,
-            erro: s.erro ? String(s.erro).slice(0, 160) : null, motivo: s.motivo || null },
+          sincronizou: {
+            sincronizado: !!s.sincronizado && !erroAlt, recente: !!s.recente && !erroAlt,
+            demorou: !!s.demorou, em_andamento: !!s.em_andamento,
+            erro: s.erro ? String(s.erro).slice(0, 160) : erroAlt ? ('cadastros alterados: ' + erroAlt).slice(0, 160) : null,
+            motivo: s.motivo || null,
+          },
         });
       }
 

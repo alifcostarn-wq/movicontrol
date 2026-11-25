@@ -5565,6 +5565,7 @@ function abrirBuscaCliente(c, aoVincular){
     const sy = res.sincronizou, o = oque || 'esse nome';
     if(sy && sy.sincronizado) return 'Conferimos com o IXC agora (cadastros novos e alterados) e ele também não tem '+o+'.';
     if(sy && sy.recente)      return 'Conferimos com o IXC há instantes e ele também não tem '+o+'.';
+    if(sy && sy.em_andamento) return 'A conferência com o IXC ainda está em andamento; procurei no que já estava copiado. Tente de novo em instantes.';
     if(sy && sy.demorou)      return 'O IXC demorou a responder; procurei no que já estava copiado. Tente de novo em instantes.';
     if(sy && sy.erro)         return 'Não consegui conferir com o IXC: '+esc(sy.erro);
     return 'A busca é por nome, CPF/CNPJ ou telefone.';
@@ -5582,11 +5583,17 @@ function abrirBuscaCliente(c, aoVincular){
      "Neidinha🎀", "Mnv🥷🤠" — e quase nunca é o nome do cadastro. Pedir para
      a atendente digitar um nome é pedir que ela adivinhe qual. O número não
      precisa de adivinhação: é o mesmo dos dois lados. */
+  // A resposta mais nova manda. A busca automática pelo telefone é a que
+  // confere com o IXC (uns 2 s) e pode voltar DEPOIS da que a atendente
+  // digitou: sem isto, ela apagaria a lista que a atendente ia clicar.
+  let vez=0;
   const porFone=async()=>{
+    const minha=++vez;
     if(!c.fone){ lista.innerHTML='<div class="cli-vazio">Digite o nome do cliente, o CPF ou o telefone para localizar o cadastro.</div>'; return; }
     lista.innerHTML='<div class="cli-vazio">Procurando pelo telefone desta conversa…</div>';
     try{
       const res=await api.buscarClientes('', c.fone);
+      if(minha!==vez) return;
       // dizer DE ONDE veio o resultado. A conversa se chama "NP LANCHE" e o
       // cadastro é de Paula Thatiane: sem essa linha, a atendente vê um nome
       // que não reconhece e não sabe se pode confiar.
@@ -5596,19 +5603,21 @@ function abrirBuscaCliente(c, aoVincular){
         + 'procure pelo <b>CPF/CNPJ</b> ou pelo nome do titular.<br>' + notaDoVazio(res, 'esse telefone') + '</div></div>',
         '<div class="cli-origem">📞 Encontrado pelo <b>telefone desta conversa</b> ('
         + esc(c.fone) + ')</div>');
-    }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
+    }catch(err){ if(minha===vez) lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
   };
 
   const buscar=async()=>{
     const termo=inp.value.trim();
     if(termo.length<2){ porFone(); return; }
+    const minha=++vez;
     lista.innerHTML='<div class="cli-vazio">Buscando…</div>';
     try{
       const res=await api.buscarClientes(termo);
+      if(minha!==vez) return;
       pintar(res, '<div class="cli-vazio">⚠️<br>Nenhum cliente encontrado'
         + '<div style="font-size:11px;margin-top:7px;line-height:1.5;color:var(--text-low)">'
         + notaDoVazio(res, oQueFoi(termo)) + '</div></div>');
-    }catch(err){ lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
+    }catch(err){ if(minha===vez) lista.innerHTML=`<div class="cli-vazio" style="color:var(--red)">${esc(err.message)}</div>`; }
   };
 
   porFone();
