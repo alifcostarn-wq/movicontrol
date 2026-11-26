@@ -112,13 +112,23 @@ export async function sondarLocalizacaoDoCliente(io, ixcId) {
     const a = await io.sb(`ixc_acoes?acao=eq.localizacao&status=eq.feita&ixc_cliente_id=eq.${String(ixcId)}&select=feita_em,resposta&order=id.desc&limit=1`).catch(() => null);
     envio = (Array.isArray(a) && a[0]) || null;
   }
-  const depois = envio && envio.resposta && envio.resposta.depois ? { latitude: envio.resposta.depois.lat, longitude: envio.resposta.depois.lng } : null;
-  const p = { ixc: coordDe(cli), copia: coordDe(copia), enviado: coordDe(depois) };
+  const ponto = o => (o && o.lat != null ? { latitude: o.lat, longitude: o.lng } : null);
+  const r0 = (envio && envio.resposta) || {};
+  const p = { ixc: coordDe(cli), copia: coordDe(copia), enviado: coordDe(ponto(r0.depois)), antes: coordDe(ponto(r0.antes)) };
+  // os logins do cliente têm ponto próprio no IXC: o envio do técnico só grava no cadastro
+  const lg = await io.ixcListar('radusuarios', { qtype: 'radusuarios.id_cliente', query: String(ixcId), oper: '=' }, { paginas: 1, rp: 20 }).catch(() => null);
+  const logins = ((lg && lg.registros) || []).map(coordDe).filter(Boolean);
+  const menor = (a, lista) => { const d = lista.map(l => metros(a, l)).filter(x => x != null); return d.length ? Math.min(...d) : null; };
   const arred = m => (m == null ? null : Math.round(m * 100) / 100);
   return {
     copia_fixada: copia ? copia.coord_fixada === true : null,
-    tem: { ixc: !!p.ixc, copia: !!p.copia, enviado: !!p.enviado },
-    distancias_m: { ixc_copia: arred(metros(p.ixc, p.copia)), ixc_enviado: arred(metros(p.ixc, p.enviado)), copia_enviado: arred(metros(p.copia, p.enviado)) },
+    tem: { ixc: !!p.ixc, copia: !!p.copia, enviado: !!p.enviado, antes_do_envio: !!p.antes, logins_com_ponto: logins.length },
+    distancias_m: {
+      ixc_copia: arred(metros(p.ixc, p.copia)), ixc_enviado: arred(metros(p.ixc, p.enviado)), copia_enviado: arred(metros(p.copia, p.enviado)),
+      // o IXC voltou ao ponto de antes do envio? e o login, ficou com o ponto antigo?
+      ixc_antes_do_envio: arred(metros(p.ixc, p.antes)), antes_enviado: arred(metros(p.antes, p.enviado)),
+      ixc_login: arred(menor(p.ixc, logins)), enviado_login: arred(menor(p.enviado, logins)), antes_login: arred(menor(p.antes, logins)),
+    },
     atualizado_ixc: horaIxc(cli),
     enviado_em: envio && envio.feita_em ? String(envio.feita_em).slice(0, 16) : null,
   };
