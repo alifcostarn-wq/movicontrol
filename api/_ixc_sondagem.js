@@ -96,6 +96,34 @@ export async function sondarLocalizacaoDaOs(io, osId) {
   };
 }
 
+/* O mesmo para um cliente: o ponto do cadastro no IXC, o da cópia (o que o
+   moviTec mostra) e o último enviado pelo técnico ao IXC. Só distâncias e
+   datas — para saber se uma localização fixada que difere do IXC foi mudada
+   lá depois do envio (e quanto). */
+export async function sondarLocalizacaoDoCliente(io, ixcId) {
+  if (!/^[1-9]\d{0,9}$/.test(String(ixcId ?? ''))) return { erro: 'cliente inválido' };
+  const v = await io.ixcListar('cliente', { qtype: 'cliente.id', query: String(ixcId), oper: '=' }, { paginas: 1, rp: 1 });
+  const cli = (v && v.registros && v.registros[0]) || null;
+  if (!cli) return { erro: 'cliente não encontrado no IXC' };
+  let copia = null, envio = null;
+  if (typeof io.sb === 'function') {
+    const l = await io.sb(`clientes?ixc_id=eq.${String(ixcId)}&select=latitude,longitude,coord_fixada&limit=1`).catch(() => null);
+    copia = (Array.isArray(l) && l[0]) || null;
+    const a = await io.sb(`ixc_acoes?acao=eq.localizacao&status=eq.feita&ixc_cliente_id=eq.${String(ixcId)}&select=feita_em,resposta&order=id.desc&limit=1`).catch(() => null);
+    envio = (Array.isArray(a) && a[0]) || null;
+  }
+  const depois = envio && envio.resposta && envio.resposta.depois ? { latitude: envio.resposta.depois.lat, longitude: envio.resposta.depois.lng } : null;
+  const p = { ixc: coordDe(cli), copia: coordDe(copia), enviado: coordDe(depois) };
+  const arred = m => (m == null ? null : Math.round(m * 100) / 100);
+  return {
+    copia_fixada: copia ? copia.coord_fixada === true : null,
+    tem: { ixc: !!p.ixc, copia: !!p.copia, enviado: !!p.enviado },
+    distancias_m: { ixc_copia: arred(metros(p.ixc, p.copia)), ixc_enviado: arred(metros(p.ixc, p.enviado)), copia_enviado: arred(metros(p.copia, p.enviado)) },
+    atualizado_ixc: horaIxc(cli),
+    enviado_em: envio && envio.feita_em ? String(envio.feita_em).slice(0, 16) : null,
+  };
+}
+
 /* Caixas e contas do financeiro do IXC (tabela "contas"), para conferir com o
    MoviOne: de cada uma só o que a identifica — nome, se está ativa, tipo e
    banco — e quanto recebeu nos últimos dias (títulos baixados em fn_areceber).
@@ -161,6 +189,12 @@ export async function sondarIxc(io, pedido, { agora = new Date() } = {}) {
     if (it && it.contas_financeiro === true) {
       try { tabelas.contas_financeiro = await sondarContasFinanceiro(io, { dias: it.dias, agora }); }
       catch (err) { tabelas.contas_financeiro = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; }
+      continue;
+    }
+    if (it && it.localizacao_cliente != null) {
+      const k = `localizacao_cliente_${String(it.localizacao_cliente).replace(/\D/g, '').slice(0, 10)}`;
+      try { tabelas[k] = await sondarLocalizacaoDoCliente(io, it.localizacao_cliente); }
+      catch (err) { tabelas[k] = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; }
       continue;
     }
     if (it && it.localizacao_os != null) {
