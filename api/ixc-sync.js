@@ -31,7 +31,7 @@ import { lerFaturasAbertas } from './_ixc_faturas.js';
 import { copiarRedeFibra } from './_ixc_fibra.js';
 import { copiarEstoqueDoIxc } from './_ixc_estoque.js';
 import { reconciliarFibra, processarVinculosFibra } from './_ixc_fibra_sinc.js';
-import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, desautorizarOnu, ErroOnu, BOTAO_LIBERAR, BOTAO_GRAVAR, BOTAO_EXCLUIR } from './_ixc_onu.js';
+import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, desautorizarOnu, ErroOnu, serialLimpo, BOTAO_LIBERAR, BOTAO_GRAVAR, BOTAO_EXCLUIR } from './_ixc_onu.js';
 
 export const config = { maxDuration: 60 };
 
@@ -483,18 +483,40 @@ async function acaoOnu(acao, b, req, res) {
   const io = { sb, ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcGrade: (t, f) => ixcGrade(t, f, prazo, 25e3),
     ixcInserirFibra: c => ixcOnuPost('radpop_radio_cliente_fibra', c, 20e3), ixcBotao: (ep, c, ms) => ixcOnuPost(ep, c, Math.min(ms || 30e3, 50e3)),
     ixcExcluirFibra: id => ixcOnuExcluirFibra(id, 25e3) };
+  /* O que o técnico viu (tela e lista de pendentes) e o que foi recusado vai
+     para ixc_onu_eventos: recusa antes de gravar não deixa rastro em
+     ixc_onu_autorizacoes, só na tela do técnico. Só ids, posição na OLT e o
+     serial da ONU. Se o registro falhar, a resposta ao app é a mesma. */
+  const registrar = (resultado, mensagem = null, dados = null) => sb('ixc_onu_eventos', { method: 'POST', prefer: 'return=minimal',
+    body: { acao, os_id: idValido(b.os_id), tecnico_id: idValido(tec.id), resultado, mensagem: mensagem ? String(mensagem).slice(0, 600) : null, dados } }).catch(() => null);
+  const pedido = () => (['onu.autorizar', 'onu.desautorizar'].includes(acao)
+    ? { login: idValido(b.login), olt: idValido(b.olt), serial: serialLimpo(b.serial) || null, caixa: idValido(b.caixa), porta: Number.parseInt(b.porta, 10) || null, perfil: idValido(b.perfil) }
+    : acao === 'onu.continuar' ? { autorizacao: idValido(b.id) } : null);
   try {
-    if (acao === 'onu.inicio') return res.status(200).json(await inicioOnu(io, { tec, osId: b.os_id, cfg }));
-    if (acao === 'onu.pendentes') return res.status(200).json(await pendentesOnu(io, { tec, osId: b.os_id, cfg }));
+    if (acao === 'onu.inicio') {
+      const r = await inicioOnu(io, { tec, osId: b.os_id, cfg });
+      await registrar('ok', null, { simulacao: r.simulacao, logins: r.logins.map(l => ({ id: l.id, da_os: l.da_os, onus_no_login: l.onus_no_login, olt: l.onu_local ? l.onu_local.olt : null })) });
+      return res.status(200).json(r);
+    }
+    if (acao === 'onu.pendentes') {
+      const { _diag, ...r } = await pendentesOnu(io, { tec, osId: b.os_id, cfg });
+      await registrar('ok', null, { olts: r.olts, falhas: r.falhas.map(f => f.olt), onus: _diag });
+      return res.status(200).json(r);
+    }
     if (acao === 'onu.portas') return res.status(200).json(await portasDaCaixa(io, { tec, osId: b.os_id, caixa: b.caixa, cfg }));
     if (acao === 'onu.autorizar') return res.status(200).json(await autorizarOnu(io, { tec, osId: b.os_id, cfg, loginId: b.login, olt: b.olt, serial: b.serial, caixaId: b.caixa, porta: b.porta, perfilId: b.perfil }));
     if (acao === 'onu.continuar') return res.status(200).json(await continuarOnu(io, { tec, id: b.id, repetir: b.repetir === true }));
     if (acao === 'onu.desautorizar') return res.status(200).json(await desautorizarOnu(io, { tec, osId: b.os_id, cfg, loginId: b.login, serial: b.serial }));
     return res.status(400).json({ erro: 'ação desconhecida' });
   } catch (err) {
-    if (err instanceof ErroOnu) return res.status(err.status).json({ erro: err.message });
-    console.error('[ixc-sync] onu:', semDadosDoCliente(err.message || err));
-    return res.status(502).json({ erro: `Não consegui falar com o IXC: ${semDadosDoCliente(err.message || err).slice(0, 160)}` });
+    if (err instanceof ErroOnu) {
+      await registrar('recusada', err.message, { ...(err.dados || {}), pedido: pedido() });
+      return res.status(err.status).json({ erro: err.message });
+    }
+    const msg = semDadosDoCliente(err.message || err);
+    console.error('[ixc-sync] onu:', msg);
+    await registrar('erro', msg, { pedido: pedido() });
+    return res.status(502).json({ erro: `Não consegui falar com o IXC: ${msg.slice(0, 160)}` });
   }
 }
 

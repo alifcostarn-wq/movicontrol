@@ -39,8 +39,9 @@ export const BOTAO_EXCLUIR = 'botao_excluir_dispositivo_22434';   // Integraçã
 const OS_ENCERRADA = ['finalizada', 'concluida', 'cancelada'];
 const MAX_ONU_NA_PON = 128;
 
+// `dados`: o porquê da recusa (regra e ids), para o registro em ixc_onu_eventos — não vai para o app
 export class ErroOnu extends Error {
-  constructor(msg, status = 400) { super(msg); this.status = status; }
+  constructor(msg, status = 400, dados = null) { super(msg); this.status = status; this.dados = dados; }
 }
 const texto = v => String(v ?? '').trim();
 const inteiro = v => { const n = parseInt(texto(v), 10); return Number.isFinite(n) && n > 0 ? n : null; };
@@ -109,10 +110,40 @@ export async function pendentesDaOlt(io, olt) {
 // Leitura reduzida do IXC
 // ---------------------------------------------------------------------------
 const CAMPOS_FIBRA = ['id', 'id_transmissor', 'slotno', 'ponno', 'ponid', 'onu_numero', 'mac', 'id_login', 'id_contrato', 'id_caixa_ftth', 'porta_ftth',
-  'id_perfil', 'id_projeto', 'vlan', 'gemport', 'id_radpop_radio_porta', 'radpop_estrutura', 'tipo_autenticacao', 'endereco_padrao_cliente', 'onu_rede_neutra'];
+  'id_perfil', 'id_projeto', 'vlan', 'gemport', 'id_radpop_radio_porta', 'radpop_estrutura', 'tipo_autenticacao', 'endereco_padrao_cliente', 'onu_rede_neutra', 'data_sinal'];
 /* Do cadastro de fibra ficam só os campos técnicos: nome, endereço e a senha
    da ONU (senha_onu_cliente) são descartados aqui, na leitura. */
 export const fibraTecnica = r => Object.fromEntries(CAMPOS_FIBRA.map(c => [c, texto(r && r[c])]));
+const dataBr = v => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(texto(v)); return m && m[1] !== '0000' ? `${m[3]}/${m[2]}/${m[1]}` : null; };
+// onde fica um cadastro de fibra, em texto curto: "cadastro de fibra #477, OLT 10, PON 1/1, ONU 2"
+export function ondeEstaOCadastro(f) {
+  const partes = [`cadastro de fibra #${f.id}`];
+  if (idValido(f.id_transmissor)) partes.push(`OLT ${f.id_transmissor}`);
+  if (inteiro(f.slotno) || inteiro(f.ponno)) partes.push(`PON ${texto(f.slotno) || '?'}/${texto(f.ponno) || '?'}`);
+  if (inteiro(f.onu_numero)) partes.push(`ONU ${inteiro(f.onu_numero)}`);
+  return partes.join(', ');
+}
+// só ids e posição na OLT: é o que vai para o registro
+export const resumoDoCadastro = f => ({ fibra: f.id, login: idValido(f.id_login), contrato: idValido(f.id_contrato), olt: idValido(f.id_transmissor),
+  slot: texto(f.slotno) || null, pon: texto(f.ponno) || null, onu: inteiro(f.onu_numero), sinal: dataBr(f.data_sinal) });
+/* A ONU escolhida já tem cadastro de fibra no IXC fora do login escolhido: diz
+   qual, para o técnico conferir a etiqueta e o escritório saber o que tirar.
+   Cadastro sem login não é "outro login": é cadastro que ficou sem cliente no
+   IXC (o IXC tem dezenas assim, com posição na OLT e sem contrato). */
+export function erroDeOutroCadastro(cadastros, loginsDoCliente = []) {
+  const dados = { cadastros: cadastros.slice(0, 5).map(resumoDoCadastro) };
+  const doCliente = cadastros.map(f => loginsDoCliente.find(l => l.id === f.id_login)).find(Boolean);
+  if (doCliente) return new ErroOnu(`Essa ONU já está cadastrada no IXC no outro login deste mesmo cliente (${doCliente.login}). Escolha esse login na lista e tente de novo.`, 400, { regra: 'serial_no_outro_login_do_cliente', ...dados });
+  const comLogin = cadastros.find(f => idValido(f.id_login));
+  if (comLogin) {
+    const sinal = dataBr(comLogin.data_sinal);
+    return new ErroOnu(`Essa ONU já está cadastrada no IXC para outro login (login #${comLogin.id_login}: ${ondeEstaOCadastro(comLogin)}${sinal ? `, último sinal em ${sinal}` : ''}). `
+      + 'Confira o serial na etiqueta da ONU. Se for esta mesma, peça ao escritório para tirar esse cadastro antigo e tente de novo.', 400, { regra: 'serial_em_outro_login', ...dados });
+  }
+  const f = cadastros[0];
+  return new ErroOnu(`Essa ONU já tem um cadastro antigo no IXC que ficou sem login (${ondeEstaOCadastro(f)}${idValido(f.id_contrato) ? `, contrato #${f.id_contrato}` : ''}). `
+    + 'Peça ao escritório para conferir e excluir esse cadastro antigo; depois toque em Autorizar de novo.', 400, { regra: 'serial_sem_login', ...dados });
+}
 async function lerFibras(io, filtro = null) {
   const v = await io.ixcListar('radpop_radio_cliente_fibra', filtro || { qtype: 'radpop_radio_cliente_fibra.id', query: '0', oper: '>' }, { paginas: 5, rp: 1000 });
   return ((v && v.registros) || []).map(fibraTecnica).sort((a, b) => Number(b.id) - Number(a.id));
@@ -188,18 +219,26 @@ export async function inicioOnu(io, { tec, osId, cfg }) {
   };
 }
 
-/* As ONUs que as OLTs enxergam agora e ninguém autorizou. */
+/* As ONUs que as OLTs enxergam agora e ninguém autorizou. `_diag` é só para o
+   registro (o servidor tira antes de responder ao app): se cada ONU pendente já
+   tem cadastro de fibra no IXC, e onde. */
 export async function pendentesOnu(io, { tec, osId, cfg }) {
   if ((cfg.onu_modo || 'desligado') === 'desligado') throw new ErroOnu('A autorização de ONU pelo app está desligada.', 403);
-  await contextoDaOs(io, tec, osId);
+  const ctx = await contextoDaOs(io, tec, osId);
   const olts = oltsDasCaixas(await lerCaixas(io));
   if (!olts.length) throw new ErroOnu('Nenhuma OLT com caixa cadastrada no IXC.');
   const onus = [], falhas = [];
-  await Promise.all(olts.map(async o => {
-    try { onus.push(...await pendentesDaOlt(io, o)); }
-    catch (err) { falhas.push({ olt: o, motivo: textoDaResposta(err.message).slice(0, 120) }); }
-  }));
-  return { ok: true, onus: onus.map(({ chave, ...resto }) => resto), falhas, olts };
+  const [fibras] = await Promise.all([
+    lerFibras(io).catch(() => null),
+    ...olts.map(async o => {
+      try { onus.push(...await pendentesDaOlt(io, o)); }
+      catch (err) { falhas.push({ olt: o, motivo: textoDaResposta(err.message).slice(0, 120) }); }
+    }),
+  ]);
+  const cadastrosDe = o => (fibras ? fibras.filter(f => mesmoSerial(f.mac, o.serial)).slice(0, 5)
+    .map(f => ({ ...resumoDoCadastro(f), do_cliente: ctx.logins.some(l => l.id === f.id_login) })) : null);
+  return { ok: true, onus: onus.map(({ chave, ...resto }) => resto), falhas, olts,
+    _diag: onus.map(o => ({ olt: o.olt, slot: o.slot, pon: o.pon, serial: o.serial, cadastros: cadastrosDe(o) })) };
 }
 
 export async function portasDaCaixa(io, { tec, osId, caixa, cfg }) {
@@ -358,8 +397,10 @@ export async function autorizarOnu(io, { tec, osId, cfg, loginId, olt, serial, c
   // ONU ou login que já têm cadastro de fibra
   const doSerial = fibras.filter(f => mesmoSerial(f.mac, pendente.serial));
   const doLogin = fibras.filter(f => f.id_login === login.id && f.mac && !mesmoSerial(f.mac, pendente.serial));
-  if (doSerial.some(f => f.id_login !== login.id)) throw new ErroOnu('Essa ONU já está cadastrada no IXC para outro login. Peça ao escritório para liberar o cadastro antigo.');
-  if (doLogin.length) throw new ErroOnu(`Esse login já tem a ONU ${doLogin[0].mac} cadastrada no IXC. Para trocar, desautorize a ONU antiga primeiro (botão "Trocar ONU").`);
+  const foraDoLogin = doSerial.filter(f => f.id_login !== login.id);
+  if (foraDoLogin.length) throw erroDeOutroCadastro(foraDoLogin, ctx.logins);
+  if (doLogin.length) throw new ErroOnu(`Esse login já tem a ONU ${doLogin[0].mac} cadastrada no IXC. Para trocar, desautorize a ONU antiga primeiro (botão "Trocar ONU").`, 400,
+    { regra: 'login_ja_tem_onu', cadastros: doLogin.slice(0, 3).map(resumoDoCadastro) });
   const jaCriado = doSerial.find(f => f.id_login === login.id) || null;
 
   const m = montarCadastro({ pendente, fibras, login, nome: ctx.nome, caixa, porta: portaN, perfil });
