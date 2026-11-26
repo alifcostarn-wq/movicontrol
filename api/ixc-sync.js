@@ -22,6 +22,7 @@ import { ativacoesDoIxc, bairroLimpo, nomesDosMotivos, saidasDoIxc } from './_ix
 const MOTIVOS_CANCELAMENTO_IXC = ['cliente_contrato_motivo_cancelamento', 'motivo_cancelamento', 'fn_motivo_cancelamento', 'cliente_contrato_motivos_cancelamento'];
 import crypto from 'crypto';
 import { sincronizarTudoDoIxc, sincronizarApoioDoIxc, idValido } from './_ixc_espelho.js';
+import { copiarClientesAlterados } from './_ixc_alterados.js';
 import { previaOsDoIxc, importarOsDoIxc, linhaFuncionarioDoIxc, processarAcoesIxc, codigosDasOs,
   osDoClienteNaAba, historicoDaOs, acaoOsDoEscritorio, ACOES_DO_ESCRITORIO } from './_ixc_os.js';
 import { processarLocalizacoesIxc } from './_ixc_localizacao.js';
@@ -343,7 +344,8 @@ async function rodarOs(cfg, prazo) {
   if (!Array.isArray(pego) || !pego.length) return { ok: true, modo, pulado: 'outra rodada das OS em andamento' };
   const io = { ixcListar: (t, f, o = {}) => ixcListar(t, f, { ...o, prazo }), ixcFecharOs: c => ixcFecharOs(c, prazo),
     ixcGravar: (ep, c) => ixcGravar(ep, c, prazo), ixcEditarCliente: (id, c) => ixcEditarCliente(id, c, prazo),
-    ixcEditarFibra: (id, c) => ixcEditarFibra(id, c, prazo), ixcGrade: (t, f) => ixcGrade(t, f, prazo, 12e3), sb, sbTudo };
+    ixcEditarFibra: (id, c) => ixcEditarFibra(id, c, prazo), ixcGrade: (t, f) => ixcGrade(t, f, prazo, 12e3), sb, sbTudo,
+    sbRpc: (nome, corpo) => sb(`rpc/${nome}`, { method: 'POST', body: corpo }) };
   let resultado, extra = {};
   try {
     if (modo === 'previa') {
@@ -355,9 +357,16 @@ async function rodarOs(cfg, prazo) {
       // nomes dos assuntos: a OS de retirada entra marcada para não avisar o cliente
       const listaAss = await sb('ixc_assuntos?select=id,assunto&limit=1000').catch(() => []) || [];
       const assuntos = new Map(listaAss.map(x => [String(x.id), x.assunto]));
+      // cadastros mexidos no IXC (com a localização) → cópia e OS em aberto,
+      // ANTES de trazer OS nova: ela já chega ao celular com o dado novo
+      let cliAlt;
+      try {
+        const c = await copiarClientesAlterados(io, { marco: cfg.cli_alt_marco, agora: new Date(agora) });
+        cliAlt = c.resumo; extra.cli_alt_marco = c.marco;
+      } catch (err) { cliAlt = { ok: false, erro: semDadosDoCliente(err.message || err) }; }
       const r = await importarOsDoIxc(io, { cursor: cfg.os_cursor, campoAtual: cfg.os_campo, tecnicos, agora: new Date(agora), assuntos });
-      resultado = { ok: true, ...r };
-      extra = { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo };
+      resultado = { ok: true, ...r, clientes_alterados: cliAlt };
+      Object.assign(extra, { os_cursor: r.cursor || cfg.os_cursor || null, os_campo: r.campo === undefined ? (cfg.os_campo || null) : r.campo });
       // colaboradores do IXC (só id, nome, ativo): o IXC exige um responsável para fechar a OS
       if (!cfg.os_funcionarios_em || agora - Date.parse(cfg.os_funcionarios_em) > FUNCIONARIOS_CADA_MS) {
         try {

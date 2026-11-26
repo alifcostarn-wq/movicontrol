@@ -152,12 +152,17 @@ const lista = ids => [...new Set(ids.filter(Boolean).map(String))].map(x => enco
    nome do assunto no IXC. */
 export const assuntoSemAviso = nome => /retirad/i.test(String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
 
+const juntarEndereco = l => l.map(x => textoIxc(x)).filter(Boolean).join(', ');
+/* O endereço da OS quando ela não traz um próprio: o do cadastro do cliente
+   (a cópia). Exportado para quem precisa saber se o endereço de uma OS veio
+   do cadastro — e então pode trocá-lo quando o cadastro mudar. */
+export const enderecoDoCliente = c => c ? juntarEndereco([c.endereco, c.numero, c.complemento, c.bairro, c.cidade, c.uf]) : '';
+
 export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, numero = null, campoAtual = null, agora = new Date(), assuntos = null } = {}) {
   const endOs = textoIxc(o.endereco);
-  const juntar = l => l.map(x => textoIxc(x)).filter(Boolean).join(', ');
   const endereco = endOs
-    ? juntar([endOs, o.numero, o.complemento, o.bairro, cidade && cidade.nome, cidade && cidade.uf])
-    : cliente ? juntar([cliente.endereco, cliente.numero, cliente.complemento, cliente.bairro, cliente.cidade, cliente.uf]) : '';
+    ? juntarEndereco([endOs, o.numero, o.complemento, o.bairro, cidade && cidade.nome, cidade && cidade.uf])
+    : enderecoDoCliente(cliente);
   const idCli = idValido(o.id_cliente);
   const st = String(o.status || '').trim().toUpperCase() || null;
   const agenda = st === 'AG' ? ixcData(o.data_agenda) : null;
@@ -225,7 +230,7 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
   // 3) o que já está no moviTec
   const ids = registros.map(o => String(o.id));
   const existentes = ids.length
-    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em,ixc_assunto_id,sem_aviso`) || []
+    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em,ixc_assunto_id,sem_aviso,descricao,prioridade,endereco,telefone,cliente,cliente_id`) || []
     : [];
   const porOs = new Map(existentes.map(o => [String(o.ixc_os_id), o]));
 
@@ -279,12 +284,58 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
   const hoje = diaDaqui(agora.getTime());
   // o motivo vai na observação sem perder a referência do endereço
   const comRef = (os, texto) => { const ref = String(os.obs || '').match(/Referência: [^\n]*/); return [texto, ref && ref[0]].filter(Boolean).join(' '); };
+  // a referência nova entra no lugar da antiga; as outras notas da observação ficam
+  const trocaRef = (obs, ref) => [String(obs || '').replace(/\s*Referência: [^\n]*/, '').trim(), `Referência: ${ref}`].filter(Boolean).join(' ');
+
+  // 5a) Os DADOS da OS que ainda não terminou: descrição, endereço, prioridade
+  //     e referência (mudados na OS do IXC) e nome e telefone (do cadastro, na
+  //     cópia). Antes só status, técnico, dia e assunto andavam; o resto ficava
+  //     como no minuto em que a OS chegou ao celular. Os gatilhos de campo_os
+  //     só olham status e reagendamento: mexer nestes campos não volta ao IXC
+  //     nem avisa o cliente.
+  const FINAIS = ['finalizada', 'concluida', 'cancelada'];
+  const emAberto = registros.filter(o => { const os = porOs.get(String(o.id)); return os && !FINAIS.includes(os.status); });
+  const porId = (l, k) => new Map((l || []).map(x => [String(x[k]), x]));
+  let cliA = new Map(), lgA = new Map(), cidA = new Map();
+  if (emAberto.length) {
+    const [cl, lg, cid] = await Promise.all([
+      io.sb(`clientes?ixc_id=in.(${lista(emAberto.map(o => idValido(o.id_cliente)))})&select=id,ixc_id,nome,tel1,whatsapp,endereco,numero,complemento,bairro,cidade,uf,referencia,ixc_login`).catch(() => []),
+      io.sb(`clientes_logins?ixc_id=in.(${lista(emAberto.map(o => idValido(o.id_login)))})&select=ixc_id,login`).catch(() => []),
+      io.sb(`ixc_cidades?ixc_id=in.(${lista(emAberto.map(o => idValido(o.id_cidade)))})&select=ixc_id,nome,uf`).catch(() => []),
+    ]);
+    cliA = porId(cl, 'ixc_id'); lgA = porId(lg, 'ixc_id'); cidA = porId(cid, 'ixc_id');
+  }
+  const dadosNovos = (o, os) => {
+    const d = {};
+    const idCli = idValido(o.id_cliente);
+    const cli = idCli ? cliA.get(idCli) || null : null;
+    const nova = osDoIxc(o, { cliente: cli, login: lgA.get(String(idValido(o.id_login))) || null, cidade: cidA.get(String(idValido(o.id_cidade))) || null,
+      tec: { id: os.tecnico_id, nome: null }, numero: os.numero, campoAtual: campo || null, agora, assuntos });
+    const difere = (k, v) => v != null && String(v).trim() !== '' && String(v) !== String(os[k] ?? '');
+    if (textoIxc(o.mensagem) && difere('descricao', nova.descricao)) d.descricao = nova.descricao;
+    if (String(o.prioridade || '').trim() && difere('prioridade', nova.prioridade)) d.prioridade = nova.prioridade;
+    if (difere('endereco', nova.endereco)) d.endereco = nova.endereco;
+    if (cli) {
+      if (difere('cliente', nova.cliente)) d.cliente = nova.cliente;
+      if (difere('telefone', nova.telefone)) d.telefone = nova.telefone;
+      // OS que chegou antes do cliente estar na cópia: guardou o id do IXC e o nome provisório
+      if (String(os.cliente_id ?? '') === idCli && os.cliente === `Cliente IXC #${idCli}` && String(cli.id) !== idCli) d.cliente_id = String(cli.id);
+    }
+    const ref = String(nova.obs || '').replace(/^Referência: /, '').trim();
+    if (ref && !String(os.obs || '').includes(`Referência: ${ref}`)) d.obs = trocaRef(os.obs, ref);
+    return d;
+  };
+
   for (const o of registros) {
     const os = porOs.get(String(o.id));
     if (!os) continue;
     const st = stDe(o);
     const tecIxc = idValido(o.id_tecnico);
     const marca = {};                                 // o que o IXC diz: sempre
+    if (!FINAIS.includes(os.status)) {
+      const d = dadosNovos(o, os);
+      if (Object.keys(d).length) { Object.assign(marca, d); r.dados_atualizados = (r.dados_atualizados || 0) + 1; }
+    }
     if (st && st !== os.ixc_status) marca.ixc_status = st;
     if (campo && horaIxcIso(o[campo])) marca.ixc_atualizado_em = horaIxcIso(o[campo]);
     // o assunto (trocado no IXC, ou OS importada antes desta regra): decide se o cliente é avisado

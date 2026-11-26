@@ -51,7 +51,8 @@ import { PNG } from 'pngjs';
 import { PDFDocument } from 'pdf-lib';
 import { AwsClient } from 'aws4fetch';
 import { groqChat, groqTranscrever, groqModelos, groqModelosAudio } from './_groq.js';
-import { linhaClienteDoIxc, linhaContratoDoIxc, idValido, mudou } from './_ixc_espelho.js';
+import { linhaClienteDoIxc, linhaContratoDoIxc, idValido, ehHoraIxc, linhaClienteRapida, desdeDoMarco, marcoDepois,
+  gravarClientesAlterados, ALTERADOS_RP } from './_ixc_espelho.js';
 import { desbloquearEmConfianca, pedirPelaCentral } from './_ixc_confianca.js';
 import { corpoAbrirOs, osDoClienteNoPainel, textoIxc } from './_ixc_os.js';
 
@@ -7333,48 +7334,12 @@ const SYNC_IXC_CADA_MS = Number(process.env.ATEND_SYNC_IXC_MIN || 10) * 60 * 100
 const SYNC_IXC_BUSCA_MS = 30 * 1000;   // piso entre duas conferências puxadas pela busca
 const SYNC_IXC_RP = 200;      // registros por página pedidos ao IXC
 const SYNC_IXC_PAGINAS = 5;   // teto: 1000 novos por rodada já é muita coisa
-const SYNC_IXC_ALTERADOS_RP = 200;        // alterados por rodada, os mais novos primeiro
-const SYNC_IXC_ALTERADOS_JANELA_H = 24;   // sem marco ainda: o que mudou nas últimas 24 h
-const SYNC_IXC_ALTERADOS_FOLGA_MIN = 5;   // relê 5 min antes do marco: gravação que chegou atrasada
 // a busca espera a conferência no máximo isto; IXC lento não trava a tela
 const SYNC_IXC_BUSCA_PRAZO_MS = Number(process.env.ATEND_SYNC_BUSCA_PRAZO_MS || 7000);
 
-/* Hora do IXC: 'AAAA-MM-DD HH:MM:SS', na hora local do servidor dele. As
-   contas com ela são feitas nela mesma, sem fuso: o 'Z' abaixo é só para o
-   Date não converter nada. */
-const ehHoraIxc = v => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(v ?? '')) && !String(v).startsWith('0000');
-function horaIxcMais(hora, minutos) {
-  return new Date(Date.parse(String(hora).replace(' ', 'T') + 'Z') + minutos * 60e3).toISOString().slice(0, 19).replace('T', ' ');
-}
-/* A hora daqui só vira a do IXC aproximadamente (o servidor dele está em
-   UTC-3, conferido em 24/11/2026). Por isso ela só serve onde sobra folga:
-   a janela de 24 h da primeira rodada e o teto contra hora no futuro. */
-function horaIxcAprox(agoraMs = Date.now()) {
-  return new Date(agoraMs - 3 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
-}
-
-/* A linha que a cópia rápida grava: a do espelho, SEM a senha da central do
-   assinante. Código novo não lê nem guarda senha de cliente (quem ainda cuida
-   dessa coluna é a cópia completa). Tirar a chave, e não pôr null, deixa o
-   que já está gravado como está. E todas as linhas saem com as mesmas chaves:
-   o PostgREST recusa lote com chaves diferentes. */
-function linhaClienteRapida(reg) {
-  const l = linhaClienteDoIxc(reg);
-  delete l.ixc_senha;
-  return l;
-}
-const COLS_CLIENTE_RAPIDA = Object.keys(linhaClienteRapida({})).filter(k => k !== 'ixc_id');
-
-/* Mudou mesmo? As regras de "igual" são as da cópia completa ('' é vazio,
-   89.9 é "89.90"). Cidade e UF que o IXC manda como número ficam fora da
-   conta: o banco troca pelo nome ao gravar, então pareceriam diferentes toda
-   vez e cada conferência regravaria a linha (e cada linha regravada faz o
-   MoviOne aberto reler a tabela). Mudança só de cidade a cópia completa traz. */
-function clienteMudou(linha, atual) {
-  const numero = v => /^\d+$/.test(String(v ?? '').trim());
-  const cols = COLS_CLIENTE_RAPIDA.filter(c => !((c === 'cidade' || c === 'uf') && numero(linha[c])));
-  return mudou(linha, atual, cols);
-}
+/* Hora do IXC, linha do cadastro sem a senha, "mudou mesmo?" e a gravação dos
+   alterados moram em _ixc_espelho.js: a rodada de 2 min das OS usa o mesmo
+   código (lá com a localização, que daqui não se grava). */
 
 /* Espera a promessa até `ms`; passou disso, segue com `seAtrasar`. A promessa
    continua sozinha, sem ninguém esperando por ela. */
@@ -7460,7 +7425,7 @@ async function ixcAcima(e, tabela, campoId, marco) {
 async function ixcAlteradosDesde(e, tabela, desde) {
   const resp = await ixc(e, tabela, {
     qtype: `${tabela}.ultima_atualizacao`, query: desde, oper: '>=',
-    page: '1', rp: String(SYNC_IXC_ALTERADOS_RP),
+    page: '1', rp: String(ALTERADOS_RP),
     sortname: `${tabela}.ultima_atualizacao`, sortorder: 'desc',
   }, 'listar');
   if (resp && resp.type === 'error') throw new Error(`IXC ${tabela}: ${String(resp.message || 'recusou a consulta').slice(0, 160)}`);
@@ -7487,9 +7452,7 @@ async function sincronizarNovosDoIxc(e, marcoAlteracao) {
   // de onde perguntar o que mudou: do marco da última rodada boa, com folga
   // para gravação que chegou atrasada; sem marco, das últimas 24 h
   const temMarco = ehHoraIxc(marcoAlteracao);
-  const desde = temMarco
-    ? horaIxcMais(marcoAlteracao, -SYNC_IXC_ALTERADOS_FOLGA_MIN)
-    : horaIxcMais(horaIxcAprox(), -SYNC_IXC_ALTERADOS_JANELA_H * 60);
+  const desde = desdeDoMarco(marcoAlteracao);
 
   let erroAlterados = null;
   const [novosCli, novosCtr, alteradosCli] = await Promise.all([
@@ -7522,44 +7485,23 @@ async function sincronizarNovosDoIxc(e, marcoAlteracao) {
     }
   }
 
-  // Cadastros alterados: só vai para o banco o que difere da cópia. A folga
-  // antes do marco relê os mesmos registros a cada rodada; sem esta
-  // conferência eles seriam regravados toda vez.
-  const idsNovos = new Set(novosCli.map(r => String(r.id || '')));
-  const vistosAlt = new Set();
-  const alterados = [];
-  for (const r of alteradosCli || []) {
-    const id = String(r.id || '');
-    if (!idValido(id) || idsNovos.has(id) || vistosAlt.has(id)) continue;
-    vistosAlt.add(id);
-    alterados.push(r);
-  }
-  const gravarAlterados = [];
-  if (alterados.length) {
-    const atuais = new Map();
-    for (const lote of emLotes(alterados.map(r => String(r.id)), 100)) {
-      const linhas = await sb(e, `clientes?ixc_id=in.(${lote.join(',')})&select=ixc_id,${COLS_CLIENTE_RAPIDA.join(',')}`);
-      for (const c of (linhas || [])) atuais.set(String(c.ixc_id), c);
-    }
-    for (const r of alterados) {
-      const linha = linhaClienteRapida(r);
-      const atual = atuais.get(linha.ixc_id);
-      if (!atual || clienteMudou(linha, atual)) gravarAlterados.push(linha);
-    }
+  let clientes = 0, contratos = 0;
+  const linhasNovas = novosCli.map(linhaClienteRapida).filter(l => l.ixc_id);
+  for (const lote of emLotes(linhasNovas, 200)) {
+    await sb(e, 'clientes?on_conflict=ixc_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: lote,
+    });
   }
 
-  let clientes = 0, contratos = 0;
-  const linhasCli = [...novosCli.map(linhaClienteRapida).filter(l => l.ixc_id), ...gravarAlterados];
-  if (linhasCli.length) {
-    for (const lote of emLotes(linhasCli, 200)) {
-      await sb(e, 'clientes?on_conflict=ixc_id', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: lote,
-      });
-    }
-    clientes = linhasCli.length;
-  }
+  // Cadastros alterados: só vai para o banco o que difere da cópia (a folga
+  // antes do marco relê os mesmos registros a cada rodada). A localização
+  // daqui não se grava: quem a leva é a rodada de 2 min das OS.
+  const alt = alteradosCli
+    ? await gravarClientesAlterados({ sb: (p, o) => sb(e, p, o) }, alteradosCli, { pular: new Set(novosCli.map(r => String(r.id || ''))) })
+    : null;
+  clientes = linhasNovas.length + (alt ? alt.gravados : 0);
 
   if (novosCtr.length) {
     // o id local do cliente só existe depois do upsert acima
@@ -7583,26 +7525,19 @@ async function sincronizarNovosDoIxc(e, marcoAlteracao) {
   // 2099 calaria a conferência para sempre. Sem nada lido, fica o que havia
   // (ou o começo da janela, na primeira rodada). Se a consulta falhou, o
   // marco não anda e a próxima rodada pergunta de novo.
-  let marcoNovo = temMarco ? marcoAlteracao : null;
-  if (alteradosCli) {
-    const teto = horaIxcMais(horaIxcAprox(), 6 * 60);
-    let maior = temMarco ? marcoAlteracao : desde;
-    for (const r of alteradosCli) {
-      const h = String(r.ultima_atualizacao || '').trim();
-      if (ehHoraIxc(h) && h > maior && h <= teto) maior = h;
-    }
-    marcoNovo = maior;
-  }
+  const marcoNovo = alteradosCli
+    ? marcoDepois(alteradosCli, { marco: temMarco ? marcoAlteracao : null, desde })
+    : (temMarco ? marcoAlteracao : null);
 
   return {
     clientes, contratos, marco_cliente: marcoCli, marco_contrato: marcoCtr,
     // ids (do IXC) dos alterados lidos: é por eles que se confere, depois,
     // se um cadastro mexido entrou na conta. Id não é dado pessoal.
-    alterados: alteradosCli
+    alterados: alt
       ? {
-        desde, lidos: alteradosCli.length, gravados: gravarAlterados.length,
-        ...(alteradosCli.length >= SYNC_IXC_ALTERADOS_RP ? { cortado: true } : {}),
-        ids: [...vistosAlt].slice(0, 20),
+        desde, lidos: alteradosCli.length, gravados: alt.gravados,
+        ...(alteradosCli.length >= ALTERADOS_RP ? { cortado: true } : {}),
+        ids: alt.ids,
       }
       : { desde, erro: erroAlterados },
     marco_alteracao: marcoNovo,

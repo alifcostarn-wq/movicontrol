@@ -511,3 +511,121 @@ export async function sincronizarSetoresAssuntos(io, agora = new Date().toISOStr
   }
   return { setores: setoresOk.length, setores_tabela: set.t, assuntos: assuntosOk.length, ...(erros.length ? { erros_setor_assunto: erros } : {}) };
 }
+
+// ---------------------------------------------------------------------------
+// Cadastros ALTERADOS no IXC entre uma cópia completa e outra
+// ---------------------------------------------------------------------------
+// O IXC carimba cliente.ultima_atualizacao a cada gravação. Perguntar "o que
+// mudou desde a última conferência" é barato o bastante para rodar a toda
+// hora: usam a conferência do MoviTalk (de carona no painel) e a rodada de 2
+// min das OS (que leva o cadastro novo, com a localização, ao moviTec antes
+// de a OS chegar lá). A cópia completa, de 30 em 30 min, continua cobrindo o
+// resto. Caso que trouxe isto: Raissa (26/11/2026), localização mudada no IXC
+// às 14:57, OS no celular às 15:00 com o ponto antigo; só a cópia completa
+// (ou a manual do MoviOne) levava a localização.
+export const ALTERADOS_RP = 200;          // por rodada, os mais novos primeiro
+export const ALTERADOS_JANELA_H = 24;     // sem marco ainda: as últimas 24 h
+export const ALTERADOS_FOLGA_MIN = 5;     // relê 5 min antes do marco (gravação atrasada)
+
+/* Hora do IXC: 'AAAA-MM-DD HH:MM:SS', na hora local do servidor dele. As
+   contas são feitas nela mesma, sem fuso: o 'Z' é só para o Date não converter. */
+export const ehHoraIxc = v => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(v ?? '')) && !String(v).startsWith('0000');
+export function horaIxcMais(hora, minutos) {
+  return new Date(Date.parse(String(hora).replace(' ', 'T') + 'Z') + minutos * 60e3).toISOString().slice(0, 19).replace('T', ' ');
+}
+/* A hora daqui só vira a do IXC aproximadamente (servidor dele em UTC-3,
+   conferido em 24/11/2026): serve só onde sobra folga — a janela da primeira
+   rodada e o teto contra hora no futuro. */
+export function horaIxcAprox(agoraMs = Date.now()) {
+  return new Date(agoraMs - 3 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
+}
+// de onde perguntar: do marco da última rodada boa, com folga; sem marco, das últimas 24 h
+export function desdeDoMarco(marco, agoraMs = Date.now()) {
+  return ehHoraIxc(marco) ? horaIxcMais(marco, -ALTERADOS_FOLGA_MIN) : horaIxcMais(horaIxcAprox(agoraMs), -ALTERADOS_JANELA_H * 60);
+}
+/* O novo marco sai da hora do próprio IXC: a maior ultima_atualizacao lida.
+   Hora muito no futuro (relógio errado, dado torto) não conta — um marco em
+   2099 calaria a conferência para sempre. Sem nada lido, fica o que havia. */
+export function marcoDepois(regs, { marco = null, desde, agoraMs = Date.now() } = {}) {
+  const teto = horaIxcMais(horaIxcAprox(agoraMs), 6 * 60);
+  let maior = ehHoraIxc(marco) ? marco : desde;
+  for (const r of regs || []) {
+    const h = String((r && r.ultima_atualizacao) || '').trim();
+    if (ehHoraIxc(h) && h > maior && h <= teto) maior = h;
+  }
+  return maior;
+}
+
+/* A linha que as cópias rápidas gravam: a do espelho, SEM a senha da Central
+   do assinante. Código novo não lê nem guarda senha de cliente (quem ainda
+   cuida dessa coluna é a cópia completa). Tirar a chave, e não pôr null, deixa
+   o que já está gravado como está; e todas as linhas saem com as mesmas
+   chaves (o PostgREST recusa lote com chaves diferentes). */
+export function linhaClienteRapida(reg) {
+  const l = linhaClienteDoIxc(reg);
+  delete l.ixc_senha;
+  return l;
+}
+export const COLS_CLIENTE_RAPIDA = Object.keys(linhaClienteRapida({})).filter(k => k !== 'ixc_id');
+
+/* Mudou mesmo? As regras de "igual" da cópia completa ('' é vazio, 89.9 é
+   "89.90"). Cidade que o IXC manda como número fica fora, e a UF junto: o
+   banco troca a cidade pelo nome ao gravar e, com a UF vazia, põe a do estado
+   da cidade — pareceriam diferentes toda vez (cada linha regravada faz o
+   MoviOne aberto reler a tabela). UF em número também fica fora. Mudança só
+   de cidade ou UF a cópia completa traz. */
+export function clienteMudou(linha, atual) {
+  const numero = v => /^\d+$/.test(String(v ?? '').trim());
+  const cidadeNum = numero(linha.cidade);
+  const cols = COLS_CLIENTE_RAPIDA.filter(c => !(c === 'cidade' && cidadeNum) && !(c === 'uf' && (cidadeNum || numero(linha.uf))));
+  return mudou(linha, atual, cols);
+}
+
+/* Grava, dos cadastros que o IXC diz que mudaram, só o que difere da cópia.
+   io: { sb(caminho, { method, prefer, body }), sbRpc(nome, corpo) }.
+   `pular`: ids que o chamador já grava por outro caminho.
+   `coordenadas`: também a localização (latitude/longitude), pela mesma função
+   da cópia completa — que nunca mexe na localização fixada pelo técnico. A
+   fixada que difere do IXC só é contada (fixadas_diferentes).
+   Devolve, além das contas, `mudancas`: [{ ixc_id, antes }] com a linha como
+   estava (para quem precisa atualizar o que foi copiado dela, como a OS). */
+export async function gravarClientesAlterados(io, regs, { pular = new Set(), coordenadas = false } = {}) {
+  const vistos = new Set(), lista = [];
+  for (const r of regs || []) {
+    const id = String((r && r.id) || '');
+    if (!idValido(id) || pular.has(id) || vistos.has(id)) continue;
+    vistos.add(id); lista.push(r);
+  }
+  const res = { gravados: 0, coordenadas: 0, fixadas_diferentes: 0, ids: [...vistos].slice(0, 20), mudancas: [] };
+  if (!lista.length) return res;
+  const atuais = new Map();
+  for (let i = 0; i < lista.length; i += 100) {
+    const lote = lista.slice(i, i + 100).map(r => String(r.id));
+    const linhas = await io.sb(`clientes?ixc_id=in.(${lote.join(',')})&select=id,ixc_id,latitude,longitude,coord_fixada,${COLS_CLIENTE_RAPIDA.join(',')}`);
+    for (const c of (linhas || [])) atuais.set(String(c.ixc_id), c);
+  }
+  const gravar = [];
+  for (const r of lista) {
+    const linha = linhaClienteRapida(r);
+    const atual = atuais.get(linha.ixc_id);
+    if (!atual || clienteMudou(linha, atual)) { gravar.push(linha); res.mudancas.push({ ixc_id: linha.ixc_id, antes: atual || null }); }
+  }
+  for (let i = 0; i < gravar.length; i += 200) {
+    await io.sb('clientes?on_conflict=ixc_id', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: gravar.slice(i, i + 200) });
+  }
+  res.gravados = gravar.length;
+  if (coordenadas) {
+    const coords = [];
+    for (const r of lista) {
+      const lat = ixcCoord(r.latitude), lng = ixcCoord(r.longitude);
+      if (lat == null || lng == null) continue;
+      const atual = atuais.get(String(r.id));
+      const igualCopia = atual && igual('valor', lat, atual.latitude) && igual('valor', lng, atual.longitude);
+      if (atual && atual.coord_fixada) { if (!igualCopia) res.fixadas_diferentes++; continue; }
+      if (igualCopia) continue;
+      coords.push({ ixc_id: String(r.id), lat, lng });
+    }
+    if (coords.length) { await io.sbRpc('atualizar_coords_ixc_lote', { p_dados: coords }); res.coordenadas = coords.length; }
+  }
+  return res;
+}
