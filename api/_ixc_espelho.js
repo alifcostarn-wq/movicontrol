@@ -581,6 +581,15 @@ export function clienteMudou(linha, atual) {
   return mudou(linha, atual, cols);
 }
 
+// distância em metros entre dois pontos (Infinity quando falta um deles)
+function metrosEntre(la1, lo1, la2, lo2) {
+  const a = [la1, lo1, la2, lo2].map(v => Number(v));
+  if (a.some(v => !Number.isFinite(v))) return Infinity;
+  const t = x => x * Math.PI / 180, dLa = t(a[2] - a[0]), dLo = t(a[3] - a[1]);
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a[0])) * Math.cos(t(a[2])) * Math.sin(dLo / 2) ** 2;
+  return 2 * 6371e3 * Math.asin(Math.sqrt(h));
+}
+
 /* Grava, dos cadastros que o IXC diz que mudaram, só o que difere da cópia.
    io: { sb(caminho, { method, prefer, body }), sbRpc(nome, corpo) }.
    `pular`: ids que o chamador já grava por outro caminho.
@@ -621,7 +630,10 @@ export async function gravarClientesAlterados(io, regs, { pular = new Set(), coo
       if (lat == null || lng == null) continue;
       const atual = atuais.get(String(r.id));
       const igualCopia = atual && igual('valor', lat, atual.latitude) && igual('valor', lng, atual.longitude);
-      if (atual && atual.coord_fixada) { if (!igualCopia) res.fixadas_diferentes++; continue; }
+      // a fixada só conta como diferente a mais de 1 m: o envio ao IXC grava com 7
+      // casas (cerca de 1 cm) e o GPS do técnico tem 15 — sem isso, todo ponto
+      // enviado pareceria "diferente do IXC" (conferido em 26/11/2026)
+      if (atual && atual.coord_fixada) { if (metrosEntre(lat, lng, atual.latitude, atual.longitude) > 1) res.fixadas_diferentes++; continue; }
       if (igualCopia) continue;
       coords.push({ ixc_id: String(r.id), lat, lng });
     }
