@@ -51,6 +51,51 @@ async function sondarPendentes(io, olt) {
   return r;
 }
 
+/* Onde está a localização de uma OS: no próprio chamado, no login dela ou no
+   cadastro do cliente, e qual delas o moviTec mostra (a cópia do cadastro, com
+   a marca de "fixada pelo técnico"). Sai só a DISTÂNCIA em metros entre os
+   pontos, a origem do endereço (código curto) e as horas de atualização:
+   nenhuma coordenada, nenhum endereço. */
+const coordDe = r => {
+  const la = Number(String((r && r.latitude) ?? '').replace(',', '.')), lo = Number(String((r && r.longitude) ?? '').replace(',', '.'));
+  return Number.isFinite(la) && Number.isFinite(lo) && la !== 0 && lo !== 0 && Math.abs(la) <= 90 && Math.abs(lo) <= 180 ? { la, lo } : null;
+};
+const metros = (a, b) => {
+  if (!a || !b) return null;
+  const t = x => x * Math.PI / 180, dLa = t(b.la - a.la), dLo = t(b.lo - a.lo);
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a.la)) * Math.cos(t(b.la)) * Math.sin(dLo / 2) ** 2;
+  return Math.round(2 * 6371e3 * Math.asin(Math.sqrt(h)));
+};
+const horaIxc = r => { const s = String((r && r.ultima_atualizacao) || '').trim(); return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) && !s.startsWith('0000') ? s : null; };
+export async function sondarLocalizacaoDaOs(io, osId) {
+  const idOk = v => /^[1-9]\d{0,9}$/.test(String(v ?? ''));
+  if (!idOk(osId)) return { erro: 'OS inválida' };
+  const um = async (t, id) => {
+    if (!idOk(id)) return null;
+    const v = await io.ixcListar(t, { qtype: `${t}.id`, query: String(id), oper: '=' }, { paginas: 1, rp: 1 });
+    return (v && v.registros && v.registros[0]) || null;
+  };
+  const os = await um('su_oss_chamado', osId);
+  if (!os) return { erro: 'OS não encontrada no IXC' };
+  const [login, cli] = await Promise.all([um('radusuarios', os.id_login).catch(() => null), um('cliente', os.id_cliente).catch(() => null)]);
+  let copia = null;
+  if (typeof io.sb === 'function' && idOk(os.id_cliente)) {
+    const l = await io.sb(`clientes?ixc_id=eq.${String(os.id_cliente)}&select=latitude,longitude,coord_fixada&limit=1`).catch(() => null);
+    copia = (Array.isArray(l) && l[0]) || null;
+  }
+  const p = { os: coordDe(os), login: coordDe(login), cliente: coordDe(cli), copia: coordDe(copia) };
+  return {
+    origem_endereco: codigo(os.origem_endereco), status: codigo(os.status),
+    tem: { os: !!p.os, login: !!p.login, cliente: !!p.cliente, copia: !!p.copia, login_achado: !!login },
+    copia_fixada: copia ? copia.coord_fixada === true : null,
+    distancias_m: {
+      os_login: metros(p.os, p.login), os_cliente: metros(p.os, p.cliente), login_cliente: metros(p.login, p.cliente),
+      copia_os: metros(p.copia, p.os), copia_login: metros(p.copia, p.login), copia_cliente: metros(p.copia, p.cliente),
+    },
+    atualizado: { os: horaIxc(os), login: horaIxc(login), cliente: horaIxc(cli) },
+  };
+}
+
 /* Caixas e contas do financeiro do IXC (tabela "contas"), para conferir com o
    MoviOne: de cada uma só o que a identifica — nome, se está ativa, tipo e
    banco — e quanto recebeu nos últimos dias (títulos baixados em fn_areceber).
@@ -116,6 +161,12 @@ export async function sondarIxc(io, pedido, { agora = new Date() } = {}) {
     if (it && it.contas_financeiro === true) {
       try { tabelas.contas_financeiro = await sondarContasFinanceiro(io, { dias: it.dias, agora }); }
       catch (err) { tabelas.contas_financeiro = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; }
+      continue;
+    }
+    if (it && it.localizacao_os != null) {
+      const k = `localizacao_os_${String(it.localizacao_os).replace(/\D/g, '').slice(0, 10)}`;
+      try { tabelas[k] = await sondarLocalizacaoDaOs(io, it.localizacao_os); }
+      catch (err) { tabelas[k] = { erro: String((err && err.message) || err).replace(/\d{6,}/g, '(número)').slice(0, 200) }; }
       continue;
     }
     if (it && it.pendentes_olt != null) {
