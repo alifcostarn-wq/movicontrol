@@ -44,6 +44,8 @@ export class ErroOnu extends Error {
   constructor(msg, status = 400, dados = null) { super(msg); this.status = status; this.dados = dados; }
 }
 const texto = v => String(v ?? '').trim();
+// espera no máximo `ms`; depois segue com `seAtrasar` (a promessa continua sozinha, ninguém mais espera)
+export const noMaximo = (p, ms, seAtrasar = null) => { let t; return Promise.race([p, new Promise(r => { t = setTimeout(() => r(seAtrasar), ms); })]).finally(() => clearTimeout(t)); };
 const inteiro = v => { const n = parseInt(texto(v), 10); return Number.isFinite(n) && n > 0 ? n : null; };
 export const serialLimpo = v => texto(v).replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
 export const mesmoSerial = (a, b) => serialLimpo(a) !== '' && serialLimpo(a).toUpperCase() === serialLimpo(b).toUpperCase();
@@ -133,7 +135,11 @@ export const resumoDoCadastro = f => ({ fibra: f.id, login: idValido(f.id_login)
 export function erroDeOutroCadastro(cadastros, loginsDoCliente = []) {
   const dados = { cadastros: cadastros.slice(0, 5).map(resumoDoCadastro) };
   const doCliente = cadastros.map(f => loginsDoCliente.find(l => l.id === f.id_login)).find(Boolean);
-  if (doCliente) return new ErroOnu(`Essa ONU já está cadastrada no IXC no outro login deste mesmo cliente (${doCliente.login}). Escolha esse login na lista e tente de novo.`, 400, { regra: 'serial_no_outro_login_do_cliente', ...dados });
+  if (doCliente) {
+    // o técnico precisa do nome do login para escolher na lista; o registro guarda só o id
+    const frase = quem => `Essa ONU já está cadastrada no IXC no outro login deste mesmo cliente (${quem}). Escolha esse login na lista e tente de novo.`;
+    return new ErroOnu(frase(doCliente.login), 400, { regra: 'serial_no_outro_login_do_cliente', ...dados, mensagem_registro: frase(`login #${doCliente.id}`) });
+  }
   const comLogin = cadastros.find(f => idValido(f.id_login));
   if (comLogin) {
     const sinal = dataBr(comLogin.data_sinal);
@@ -229,7 +235,8 @@ export async function pendentesOnu(io, { tec, osId, cfg }) {
   if (!olts.length) throw new ErroOnu('Nenhuma OLT com caixa cadastrada no IXC.');
   const onus = [], falhas = [];
   const [fibras] = await Promise.all([
-    lerFibras(io).catch(() => null),
+    noMaximo(lerFibras(io).catch(() => null), 8e3),            // é só para o registro: não segura a lista
+
     ...olts.map(async o => {
       try { onus.push(...await pendentesDaOlt(io, o)); }
       catch (err) { falhas.push({ olt: o, motivo: textoDaResposta(err.message).slice(0, 120) }); }

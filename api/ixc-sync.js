@@ -31,7 +31,7 @@ import { lerFaturasAbertas } from './_ixc_faturas.js';
 import { copiarRedeFibra } from './_ixc_fibra.js';
 import { copiarEstoqueDoIxc } from './_ixc_estoque.js';
 import { reconciliarFibra, processarVinculosFibra } from './_ixc_fibra_sinc.js';
-import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, desautorizarOnu, ErroOnu, serialLimpo, BOTAO_LIBERAR, BOTAO_GRAVAR, BOTAO_EXCLUIR } from './_ixc_onu.js';
+import { inicioOnu, pendentesOnu, portasDaCaixa, autorizarOnu, continuarOnu, desautorizarOnu, ErroOnu, serialLimpo, noMaximo, BOTAO_LIBERAR, BOTAO_GRAVAR, BOTAO_EXCLUIR } from './_ixc_onu.js';
 
 export const config = { maxDuration: 60 };
 
@@ -486,9 +486,9 @@ async function acaoOnu(acao, b, req, res) {
   /* O que o técnico viu (tela e lista de pendentes) e o que foi recusado vai
      para ixc_onu_eventos: recusa antes de gravar não deixa rastro em
      ixc_onu_autorizacoes, só na tela do técnico. Só ids, posição na OLT e o
-     serial da ONU. Se o registro falhar, a resposta ao app é a mesma. */
-  const registrar = (resultado, mensagem = null, dados = null) => sb('ixc_onu_eventos', { method: 'POST', prefer: 'return=minimal',
-    body: { acao, os_id: idValido(b.os_id), tecnico_id: idValido(tec.id), resultado, mensagem: mensagem ? String(mensagem).slice(0, 600) : null, dados } }).catch(() => null);
+     serial da ONU. Se o registro falhar ou demorar (mais de 3 s), a resposta ao app é a mesma. */
+  const registrar = (resultado, mensagem = null, dados = null) => noMaximo(sb('ixc_onu_eventos', { method: 'POST', prefer: 'return=minimal',
+    body: { acao, os_id: idValido(b.os_id), tecnico_id: idValido(tec.id), resultado, mensagem: mensagem ? String(mensagem).slice(0, 600) : null, dados } }).catch(() => null), 3e3);
   const pedido = () => (['onu.autorizar', 'onu.desautorizar'].includes(acao)
     ? { login: idValido(b.login), olt: idValido(b.olt), serial: serialLimpo(b.serial) || null, caixa: idValido(b.caixa), porta: Number.parseInt(b.porta, 10) || null, perfil: idValido(b.perfil) }
     : acao === 'onu.continuar' ? { autorizacao: idValido(b.id) } : null);
@@ -510,7 +510,8 @@ async function acaoOnu(acao, b, req, res) {
     return res.status(400).json({ erro: 'ação desconhecida' });
   } catch (err) {
     if (err instanceof ErroOnu) {
-      await registrar('recusada', err.message, { ...(err.dados || {}), pedido: pedido() });
+      const { mensagem_registro, ...porque } = err.dados || {};
+      await registrar('recusada', mensagem_registro || err.message, { ...porque, pedido: pedido() });
       return res.status(err.status).json({ erro: err.message });
     }
     const msg = semDadosDoCliente(err.message || err);
