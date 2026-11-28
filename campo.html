@@ -1391,6 +1391,10 @@ function _potCls(v){
   return 'ok';
 }
 function _escR(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+// ponto de referência da casa: coluna própria da OS, vem do IXC junto com o endereço
+function _refOs(os){ return String((os && os.referencia) || '').trim(); }
+// a observação sem a "Referência: ..." (ela já aparece junto do endereço)
+function _obsSemRef(obs){ return String(obs || '').replace(/\s*Referência:\s*[^\n]*/g, '').trim(); }
 
 function iniciarTelaRede(){
   if(_redeCaixas.length){ renderRede(); return; }
@@ -2366,7 +2370,7 @@ function _renderRota(){
       <div class="rota-card-body">
         ${ativaBadge}
         <div class="rota-cli">${p.cliente||'Cliente'}</div>
-        <div class="rota-end">${p.endereco||'—'}</div>
+        <div class="rota-end">${p.endereco||'—'}${_refOs(p)?`<br><span class="rota-ref">📌 ${_escR(_refOs(p))}</span>`:''}</div>
         <div class="rota-meta">
           <span class="st ${stClCard}" style="font-size:10.5px;padding:2px 8px"><span class="st-dot"></span>${stLbCard}</span>
           <span class="rota-tag dist">🚗 ${p._distAnt.toFixed(1)} km</span>
@@ -2756,6 +2760,7 @@ function render(){
           <span class="prio ${prCl}">${prLb}</span>
           <span style="font-size:11px;color:var(--tx3)">📅 ${fmtD(os.data)}</span>
           ${os.endereco?`<span style="font-size:11px;color:var(--tx3)">📍 ${os.endereco.slice(0,35)}${os.endereco.length>35?'…':''}</span>`:''}
+          ${_refOs(os)?`<span class="card-ref" style="font-size:11px;color:var(--tx3)">📌 ${_escR(_refOs(os).slice(0,40))}${_refOs(os).length>40?'…':''}</span>`:''}
         </div>
       </div>
     </div>`;
@@ -3205,6 +3210,7 @@ async function abrirDet(id){
     <div class="drow"><span class="dlab">Nome</span><span class="dval">${os.cliente||'—'}</span></div>
     <div class="drow"><span class="dlab">Telefone</span><span class="dval">${os.telefone||'—'}</span></div>
     <div class="drow"><span class="dlab">Endereço</span><span class="dval">${os.endereco||'—'}</span></div>
+    ${_refOs(os)?`<div class="drow"><span class="dlab">Referência</span><span class="dval">${_escR(_refOs(os))}</span></div>`:''}
   </div>`;
 
   // Comodato (equipamentos da empresa na casa do cliente)
@@ -3233,7 +3239,7 @@ async function abrirDet(id){
     <div class="drow"><span class="dlab">Prioridade</span><span class="dval">${PR_LB[os.prioridade]||'—'}</span></div>
     <div class="drow"><span class="dlab">Data</span><span class="dval">${fmtD(os.data)}</span></div>
     ${os.pecas?`<div class="drow"><span class="dlab">Peças</span><span class="dval">${os.pecas}</span></div>`:''}
-    ${os.obs?`<div class="drow"><span class="dlab">Obs.</span><span class="dval">${os.obs}</span></div>`:''}
+    ${_obsSemRef(os.obs)?`<div class="drow"><span class="dlab">Obs.</span><span class="dval">${_escR(_obsSemRef(os.obs))}</span></div>`:''}
   </div>`;
 
   // Histórico de status

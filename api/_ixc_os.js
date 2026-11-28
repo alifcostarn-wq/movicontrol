@@ -166,7 +166,11 @@ export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, n
   const idCli = idValido(o.id_cliente);
   const st = String(o.status || '').trim().toUpperCase() || null;
   const agenda = st === 'AG' ? ixcData(o.data_agenda) : null;
-  const ref = textoIxc(o.referencia) || (cliente && textoIxc(cliente.referencia)) || '';
+  // a referência do cadastro vale para o endereço do cadastro e o do login (que no
+  // IXC quase nunca tem endereço próprio); OS com endereço digitado à mão
+  // (origem M) pode ser outra casa: fica só com a referência dela
+  const manual = String(o.origem_endereco || '').trim().toUpperCase() === 'M';
+  const ref = textoIxc(o.referencia) || (cliente && !manual && textoIxc(cliente.referencia)) || '';
   return {
     numero,
     ixc_os_id: String(o.id),
@@ -186,6 +190,8 @@ export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, n
     status: 'aberta',
     data: agenda || diaDaqui(agora.getTime()),
     obs: ref ? `Referência: ${ref}` : null,
+    // coluna própria: o moviTec mostra junto do endereço (obs o técnico sobrescreve ao finalizar)
+    referencia: ref || null,
     ixc_os_numero: String(o.id),
     ixc_assunto_id: idValido(o.id_assunto),
     sem_aviso: assuntoSemAviso(assuntos && assuntos.get(String(idValido(o.id_assunto)))),
@@ -230,7 +236,7 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
   // 3) o que já está no moviTec
   const ids = registros.map(o => String(o.id));
   const existentes = ids.length
-    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em,ixc_assunto_id,sem_aviso,descricao,prioridade,endereco,telefone,cliente,cliente_id`) || []
+    ? await io.sb(`campo_os?ixc_os_id=in.(${lista(ids)})&select=id,numero,ixc_os_id,ixc_status,ixc_tecnico_id,status,tecnico_id,data,obs,ixc_fechado_em,ixc_retirada_em,ixc_assunto_id,sem_aviso,descricao,prioridade,endereco,telefone,cliente,cliente_id,referencia`) || []
     : [];
   const porOs = new Map(existentes.map(o => [String(o.ixc_os_id), o]));
 
@@ -323,6 +329,10 @@ export async function importarOsDoIxc(io, { cursor = null, campoAtual = null, di
     }
     const ref = String(nova.obs || '').replace(/^Referência: /, '').trim();
     if (ref && !String(os.obs || '').includes(`Referência: ${ref}`)) d.obs = trocaRef(os.obs, ref);
+    // a coluna da referência acompanha o endereço: quando dá para saber a
+    // referência (a OS traz a dela, ou o cadastro está na cópia), uma vazia
+    // LIMPA a antiga — senão ficava a referência velha debaixo de outro endereço
+    if ((textoIxc(o.referencia) || cli) && (nova.referencia || null) !== (os.referencia || null)) d.referencia = nova.referencia || null;
     return d;
   };
 

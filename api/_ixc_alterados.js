@@ -11,16 +11,17 @@
 // A localização fixada pelo técnico (coord_fixada) continua intocada, como na
 // cópia completa; a que difere do IXC só é contada (fixadas_diferentes).
 // Na OS em aberto troca-se só o que tinha vindo do cadastro: nome, telefone e
-// o endereço quando a OS não tinha um próprio. O moviTec lê a localização
+// o endereço e a referência da casa quando a OS não tinha os seus. O moviTec lê a localização
 // direto da cópia, então ela não precisa ser copiada para a OS.
 // O resultado guarda ids e contas: nada de nome, telefone, endereço ou ponto.
 // ============================================================================
 import { ALTERADOS_RP, desdeDoMarco, marcoDepois, gravarClientesAlterados, idValido } from './_ixc_espelho.js';
-import { enderecoDoCliente } from './_ixc_os.js';
+import { enderecoDoCliente, textoIxc } from './_ixc_os.js';
 
 const FINAIS = ['finalizada', 'concluida', 'cancelada'];
 const provisorio = ixcId => `Cliente IXC #${ixcId}`;
 const telDe = c => (c && (c.tel1 || c.whatsapp)) || null;
+const refDe = c => (c && textoIxc(c.referencia)) || null;
 
 /* As OS que ainda não terminaram dos clientes cujo cadastro mudou.
    mudancas: [{ ixc_id, antes }] (a linha da cópia como estava). */
@@ -30,13 +31,13 @@ export async function refrescarOsDosClientes(io, mudancas) {
   const ixcIds = [...antesPorIxc.keys()];
   if (!ixcIds.length) return r;
   // como os cadastros ficaram (o banco já traduziu a cidade)
-  const novos = await io.sb(`clientes?ixc_id=in.(${ixcIds.join(',')})&select=id,ixc_id,nome,tel1,whatsapp,endereco,numero,complemento,bairro,cidade,uf`) || [];
+  const novos = await io.sb(`clientes?ixc_id=in.(${ixcIds.join(',')})&select=id,ixc_id,nome,tel1,whatsapp,endereco,numero,complemento,bairro,cidade,uf,referencia`) || [];
   if (!novos.length) return r;
   const porLocal = new Map(novos.map(c => [String(c.id), c]));
   const porIxc = new Map(novos.map(c => [String(c.ixc_id), c]));
   // pelo id local; e pelo do IXC a OS que chegou antes do cliente estar na cópia
   const chaves = [...new Set([...porLocal.keys(), ...ixcIds])];
-  const abertas = await io.sb(`campo_os?cliente_id=in.(${chaves.join(',')})&status=not.in.(${FINAIS.join(',')})&select=id,cliente_id,cliente,telefone,endereco`) || [];
+  const abertas = await io.sb(`campo_os?cliente_id=in.(${chaves.join(',')})&status=not.in.(${FINAIS.join(',')})&select=id,cliente_id,cliente,telefone,endereco,referencia`) || [];
   for (const os of abertas) {
     const chave = String(os.cliente_id ?? '');
     // o mesmo número pode ser o id do IXC de um cliente e o id local de outro:
@@ -54,6 +55,13 @@ export async function refrescarOsDosClientes(io, mudancas) {
     // endereço: só o que era o do cadastro (a OS com endereço próprio fica com o dela)
     const endNovo = enderecoDoCliente(novo);
     if (endNovo && os.endereco !== endNovo && (!os.endereco || (antes && os.endereco === enderecoDoCliente(antes)))) p.endereco = endNovo;
+    // referência da casa: a que veio do cadastro troca (o cadastro que ficou sem
+    // referência limpa a que tinha vindo dele); a vazia só é preenchida quando o
+    // endereço da OS é o do cadastro — OS com endereço próprio pode ser outra casa
+    const refNova = refDe(novo);
+    const doCadastro = antes && os.referencia && os.referencia === refDe(antes);
+    const vaziaNoEnderecoDoCadastro = !os.referencia && (p.endereco || os.endereco) === endNovo;
+    if ((os.referencia || null) !== refNova && (doCadastro || vaziaNoEnderecoDoCadastro)) p.referencia = refNova;
     if (!Object.keys(p).length) continue;
     await io.sb(`campo_os?id=eq.${Number(os.id)}&status=not.in.(${FINAIS.join(',')})`, { method: 'PATCH', prefer: 'return=minimal', body: p });
     r.os_atualizadas++;
