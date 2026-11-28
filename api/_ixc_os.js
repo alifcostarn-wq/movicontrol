@@ -168,9 +168,11 @@ export function osDoIxc(o, { cliente = null, login = null, cidade = null, tec, n
   const agenda = st === 'AG' ? ixcData(o.data_agenda) : null;
   // a referência do cadastro vale para o endereço do cadastro e o do login (que no
   // IXC quase nunca tem endereço próprio); OS com endereço digitado à mão
-  // (origem M) pode ser outra casa: fica só com a referência dela
+  // (origem M) pode ser outra casa: fica só com a referência dela — a não ser que
+  // o endereço digitado seja o mesmo do cadastro (a mesma regra da cópia, em _ixc_alterados.js)
   const manual = String(o.origem_endereco || '').trim().toUpperCase() === 'M';
-  const ref = textoIxc(o.referencia) || (cliente && !manual && textoIxc(cliente.referencia)) || '';
+  const daCasaDoCadastro = cliente && (!manual || (endereco && endereco === enderecoDoCliente(cliente)));
+  const ref = textoIxc(o.referencia) || (daCasaDoCadastro && textoIxc(cliente.referencia)) || '';
   return {
     numero,
     ixc_os_id: String(o.id),
